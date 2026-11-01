@@ -228,10 +228,14 @@
   new IntersectionObserver(
     ([entry]) => {
       visible = entry.isIntersecting;
-      if (visible) startAutoplay();
+      // With scroll scenes on, motion.js says when the window has landed.
+      if (visible && !document.documentElement.classList.contains("motion")) startAutoplay();
     },
     { threshold: 0.6 },
   ).observe(root);
+
+  document.addEventListener("pheeme:demo-ready", startAutoplay);
+  if (document.querySelector('[data-scene="inbox"]')?.dataset.landed) startAutoplay();
 
   render();
 })();

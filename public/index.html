@@ -21,11 +21,41 @@
   <link rel="manifest" href="/site.webmanifest">
 
   <link rel="preload" href="/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/art/fama-engraved.webp" as="image">
   <link rel="stylesheet" href="/styles.css">
+  <!-- Scroll scenes only switch on with JS and when the visitor hasn't asked for reduced motion. -->
+  <script>if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("motion");</script>
+  <script src="/motion.js" defer></script>
   <script src="/demo.js" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
+
+  <!-- The stamp, drawn once and reused by the hero and the Pheme scene. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <pattern id="perf-h" patternUnits="userSpaceOnUse" x="0" y="-12" width="24" height="24"><circle cx="12" cy="12" r="8.5" fill="#000"/></pattern>
+      <pattern id="perf-v" patternUnits="userSpaceOnUse" x="-12" y="0" width="24" height="24"><circle cx="12" cy="12" r="8.5" fill="#000"/></pattern>
+      <mask id="perf" maskUnits="userSpaceOnUse" x="0" y="0" width="600" height="792">
+        <rect width="600" height="792" fill="#fff"/>
+        <rect x="0" y="-12" width="600" height="24" fill="url(#perf-h)"/>
+        <rect x="0" y="780" width="600" height="24" fill="url(#perf-h)"/>
+        <rect x="-12" y="0" width="24" height="792" fill="url(#perf-v)"/>
+        <rect x="588" y="0" width="24" height="792" fill="url(#perf-v)"/>
+      </mask>
+      <clipPath id="stamp-window"><rect x="46" y="96" width="508" height="572"/></clipPath>
+      <symbol id="stamp" viewBox="0 0 600 792">
+        <rect width="600" height="792" fill="#F6F7FB" mask="url(#perf)"/>
+        <rect x="30" y="30" width="540" height="732" fill="none" stroke="#16388A" stroke-width="2.5"/>
+        <image href="/art/fama-engraved.webp" x="46" y="96" width="508" height="666" clip-path="url(#stamp-window)" preserveAspectRatio="xMidYMin slice"/>
+        <rect x="46" y="96" width="508" height="572" fill="none" stroke="#16388A" stroke-width="1.5"/>
+        <text x="300" y="76" text-anchor="middle" fill="#16388A" font-family="Instrument Sans, system-ui, sans-serif" font-size="34" font-weight="600" font-stretch="80%" letter-spacing="10.5">PHEEME</text>
+        <text x="50" y="748" fill="#16388A" font-family="Instrument Sans, system-ui, sans-serif" font-size="74" font-weight="650" font-stretch="80%">0</text>
+        <text x="96" y="716" fill="#16388A" font-family="Instrument Sans, system-ui, sans-serif" font-size="22" font-weight="600">pheeme.app</text>
+        <text x="96" y="742" fill="#16388A" font-family="Instrument Sans, system-ui, sans-serif" font-size="17" font-weight="400">Free and open source</text>
+      </symbol>
+    </defs>
+  </svg>
 
   <header class="top wrap">
     <a href="/" class="brand" aria-label="pheeme home">
@@ -42,63 +72,90 @@
   </header>
 
   <main id="main">
+    <!-- 1. Hero: the stamp settles, then gets postmarked. -->
     <section class="hero wrap">
       <div class="hero-copy">
-        <h1>Email at the speed of your keyboard.</h1>
-        <p class="lede">pheeme is an open-source email client for developers. It opens fast, stays fast, and never makes you reach for the mouse.</p>
-        <div class="actions">
+        <h1 class="intro" style="--d:.05s">Email at the speed of your keyboard.</h1>
+        <p class="lede intro" style="--d:.2s">pheeme is an open-source email client for developers. It opens fast, stays fast, and never makes you reach for the mouse.</p>
+        <div class="actions intro" style="--d:.32s">
           <a class="btn btn-gold" href="https://github.com/AlexGenovezos/pheeme">Star on GitHub</a>
           <a class="btn btn-ghost" href="#roadmap">See what's coming</a>
         </div>
-        <p class="fine">It's early. There's nothing to download yet. Star the repo to follow the build.</p>
+        <p class="fine intro" style="--d:.42s">It's early. There's nothing to download yet. Star the repo to follow the build.</p>
       </div>
-      <img class="hero-art" src="/art/fama.webp" width="738" height="1315"
-           alt="Halftone print of a gilded statue of Pheme, winged, blowing a long trumpet and holding a laurel wreath">
-    </section>
-
-    <section class="demo-section wrap" aria-labelledby="demo-title">
-      <h2 id="demo-title" class="sr-only">Try the keyboard inbox</h2>
-      <div class="window" id="demo" tabindex="0" aria-describedby="demo-help">
-        <div class="titlebar" aria-hidden="true">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-          <span class="title">Inbox</span>
-          <span class="search" id="search" hidden><span class="slash">/</span><span id="query"></span><span class="caret"></span></span>
-        </div>
-        <div class="panes">
-          <aside class="folders" aria-hidden="true">
-            <ul>
-              <li class="on">Inbox <span id="count">7</span></li>
-              <li>Starred <span id="starcount">1</span></li>
-              <li>Done <span id="donecount">0</span></li>
-              <li>Sent</li>
-              <li>Drafts</li>
-            </ul>
-          </aside>
-          <ol class="list" id="list" aria-label="Messages" aria-live="polite"></ol>
-          <article class="reader" id="reader" aria-live="polite"></article>
-        </div>
-        <div class="keybar" id="demo-help">
-          <span class="hint" id="hint">Your keyboard runs this demo.</span>
-          <span class="keys">
-            <button type="button" data-key="j"><kbd>j</kbd> next</button>
-            <button type="button" data-key="k"><kbd>k</kbd> previous</button>
-            <button type="button" data-key="e"><kbd>e</kbd> done</button>
-            <button type="button" data-key="s"><kbd>s</kbd> star</button>
-            <button type="button" data-key="/"><kbd>/</kbd> search</button>
-            <button type="button" data-key="z"><kbd>z</kbd> undo</button>
-          </span>
-        </div>
+      <div class="post">
+        <svg class="stamp" viewBox="0 0 600 792" role="img" aria-label="A postage stamp engraved with the statue of Pheme blowing a trumpet, marked pheeme.app, value 0, free and open source">
+          <use href="#stamp"/>
+        </svg>
+        <svg class="postmark" viewBox="0 0 680 200" aria-hidden="true">
+          <defs><path id="pm-ring" d="M100 100 m-73 0 a73 73 0 1 1 146 0 a73 73 0 1 1 -146 0"/></defs>
+          <g class="pm-stamp">
+            <circle cx="100" cy="100" r="92"/><circle cx="100" cy="100" r="56"/>
+            <text class="pm-ring"><textPath href="#pm-ring">PHEEME.APP • BUILT IN PUBLIC •</textPath></text>
+            <text x="100" y="97" text-anchor="middle" class="pm-date">OCT 31</text>
+            <text x="100" y="121" text-anchor="middle" class="pm-year">2026</text>
+          </g>
+          <g class="pm-waves">
+            <path pathLength="1" d="M196 52 q 30 -17 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0"/>
+            <path pathLength="1" d="M200 84 q 30 -17 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0"/>
+            <path pathLength="1" d="M200 116 q 30 -17 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0"/>
+            <path pathLength="1" d="M196 148 q 30 -17 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0 t 60 0"/>
+          </g>
+        </svg>
       </div>
     </section>
 
-    <section class="pillars wrap" aria-label="What pheeme is">
-      <div class="pillar">
-        <h2>Fast is the feature.</h2>
-        <p>Your mail lives in a local cache, so opening a thread, searching, and archiving don't wait on a server. The goal is that nothing you do takes longer than a keystroke. When something's slow, that's a bug.</p>
+    <!-- 2. The inbox tilts up to face you as you scroll, then comes alive. -->
+    <section class="scene scene-inbox" data-scene="inbox" aria-labelledby="demo-title">
+      <div class="sticky">
+        <h2 id="demo-title" class="scene-title">Every action is one keystroke.</h2>
+        <div class="tilt wrap">
+          <div class="window" id="demo" tabindex="0" aria-describedby="demo-help">
+            <div class="titlebar" aria-hidden="true">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+              <span class="title">Inbox</span>
+              <span class="search" id="search" hidden><span class="slash">/</span><span id="query"></span><span class="caret"></span></span>
+            </div>
+            <div class="panes">
+              <aside class="folders" aria-hidden="true">
+                <ul>
+                  <li class="on">Inbox <span id="count">7</span></li>
+                  <li>Starred <span id="starcount">1</span></li>
+                  <li>Done <span id="donecount">0</span></li>
+                  <li>Sent</li>
+                  <li>Drafts</li>
+                </ul>
+              </aside>
+              <ol class="list" id="list" aria-label="Messages" aria-live="polite"></ol>
+              <article class="reader" id="reader" aria-live="polite"></article>
+            </div>
+            <div class="keybar" id="demo-help">
+              <span class="hint" id="hint">Your keyboard runs this demo.</span>
+              <span class="keys">
+                <button type="button" data-key="j"><kbd>j</kbd> next</button>
+                <button type="button" data-key="k"><kbd>k</kbd> previous</button>
+                <button type="button" data-key="e"><kbd>e</kbd> done</button>
+                <button type="button" data-key="s"><kbd>s</kbd> star</button>
+                <button type="button" data-key="/"><kbd>/</kbd> search</button>
+                <button type="button" data-key="z"><kbd>z</kbd> undo</button>
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="pillar">
+    </section>
+
+    <!-- 3. A statement that lights up word by word as you read it. -->
+    <section class="scene scene-words" data-scene="words">
+      <div class="sticky wrap">
+        <p class="statement" data-words>Most email clients wait on a server. pheeme keeps your mail on your machine, so opening, searching, and archiving happen as fast as you can type. When something's slow, that's a bug.</p>
+      </div>
+    </section>
+
+    <section class="pair wrap" aria-label="Keyboard and source">
+      <div class="pillar" data-reveal>
         <h2>Hands stay on the keys.</h2>
-        <p>Every action has a shortcut, and the shortcuts you already know from Vim and Gmail work on day one.</p>
+        <p>Every action has a shortcut, and the ones you already know from Vim and Gmail work on day one.</p>
         <table class="shortcuts">
           <tbody>
             <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>Move through messages</td></tr>
@@ -109,7 +166,7 @@
           </tbody>
         </table>
       </div>
-      <div class="pillar">
+      <div class="pillar" data-reveal style="--d:.12s">
         <h2>Yours to read and fork.</h2>
         <p>Your inbox is the most private thing on your computer. You should be able to read every line of the app that opens it. pheeme is open source, so you can.</p>
         <pre class="term" aria-label="Terminal"><code><span class="p">~</span> gh repo clone AlexGenovezos/pheeme
@@ -118,35 +175,53 @@
       </div>
     </section>
 
-    <section class="name wrap" aria-labelledby="name-title">
-      <figure>
-        <img src="/art/fama-detail.webp" width="1100" height="762" loading="lazy"
-             alt="Close-up halftone of Pheme's head, trumpet, and outstretched wings">
-        <figcaption>Fama by Robert Henze, on the roof of the Dresden Academy of Fine Arts.</figcaption>
-      </figure>
-      <div>
-        <h2 id="name-title">Named for the goddess of news.</h2>
-        <p>In Greek myth, Pheme was the voice that carried news. She had wings and a trumpet, and word traveled as fast as she could fly. The Romans called her Fama, and she still stands on a rooftop in Dresden, gilded and mid-announcement.</p>
-        <p>We borrowed her name, added an e, and pointed her at your inbox.</p>
+    <!-- 4. Pheme: the stamp holds still while we zoom in on her, and the story of the name plays out. -->
+    <section class="scene scene-pheme" data-scene="pheme" aria-labelledby="name-title">
+      <div class="sticky wrap">
+        <div class="captions">
+          <h2 id="name-title" class="sr-only">Why it's called pheeme</h2>
+          <p class="cap" data-cap="0">In Greek myth, Pheme was the voice that carried the news.</p>
+          <p class="cap" data-cap="1">She had wings and a trumpet, and word traveled as fast as she could fly.</p>
+          <p class="cap" data-cap="2">We borrowed her name, added an e, and pointed her at your inbox.</p>
+        </div>
+        <figure class="lens">
+          <div class="lens-frame">
+            <svg class="zoom" viewBox="0 0 600 792" role="img" aria-label="The pheeme stamp, close up on Pheme's face and trumpet"><use href="#stamp"/></svg>
+          </div>
+          <figcaption>Fama (the Roman name for Pheme) by Robert Henze, on the roof of the Dresden Academy of Fine Arts.</figcaption>
+        </figure>
       </div>
     </section>
 
+    <!-- 5. Roadmap as a row of postmarks. -->
     <section class="roadmap wrap" id="roadmap" aria-labelledby="roadmap-title">
-      <h2 id="roadmap-title">Built in public</h2>
-      <p class="section-lede">Here's the plan, in order. Watch the repo to see each step land.</p>
+      <h2 id="roadmap-title" data-reveal>Built in public</h2>
+      <p class="section-lede" data-reveal style="--d:.08s">Here's the plan, in order. Each one gets stamped when it ships.</p>
       <ol class="steps">
-        <li class="done"><span class="state">Done</span><h3>Name, logo, and this site</h3><p>You're looking at it.</p></li>
-        <li class="next"><span class="state">Up next</span><h3>Sync engine</h3><p>IMAP and a local cache that keeps your mail on your machine.</p></li>
-        <li><span class="state">Planned</span><h3>The keyboard inbox</h3><p>The demo above, for real, with your own mail.</p></li>
-        <li><span class="state">Planned</span><h3>Public alpha</h3><p>First builds anyone can download and break.</p></li>
+        <li class="done" data-reveal style="--d:.1s">
+          <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">DONE</text></svg>
+          <h3>Name, logo, and this site</h3><p>You're looking at it.</p>
+        </li>
+        <li class="next" data-reveal style="--d:.22s">
+          <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">NEXT</text></svg>
+          <h3>Sync engine</h3><p>IMAP and a local cache that keeps your mail on your machine.</p>
+        </li>
+        <li data-reveal style="--d:.34s">
+          <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">LATER</text></svg>
+          <h3>The keyboard inbox</h3><p>The demo above, for real, with your own mail.</p>
+        </li>
+        <li data-reveal style="--d:.46s">
+          <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">LATER</text></svg>
+          <h3>Public alpha</h3><p>First builds anyone can download and break.</p>
+        </li>
       </ol>
     </section>
 
     <section class="closer wrap">
-      <img src="/brand/pheeme-mark-color.svg" alt="" width="96" height="96">
-      <h2>Watch it get built.</h2>
-      <p>Star the repo and you'll see every commit from the first line of the sync engine to the alpha.</p>
-      <a class="btn btn-gold" href="https://github.com/AlexGenovezos/pheeme">Star on GitHub</a>
+      <img src="/brand/pheeme-mark-color.svg" alt="" width="96" height="96" data-reveal>
+      <h2 data-reveal style="--d:.08s">Watch it get built.</h2>
+      <p data-reveal style="--d:.16s">Star the repo and you'll see every commit from the first line of the sync engine to the alpha.</p>
+      <a class="btn btn-gold" href="https://github.com/AlexGenovezos/pheeme" data-reveal style="--d:.24s">Star on GitHub</a>
     </section>
   </main>
 
@@ -157,7 +232,7 @@
       <a href="https://github.com/AlexGenovezos/pheeme">GitHub</a>
       <a href="/logos">Logos</a>
     </nav>
-    <p class="credit">Statue art is adapted from <a href="https://commons.wikimedia.org/wiki/File:Dresden_Fama_(2005).jpg">a photo by Brunswyk</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>). We cut it out, halftoned and recolored it, and share the result under the same license.</p>
+    <p class="credit">The stamp engraving is adapted from <a href="https://commons.wikimedia.org/wiki/File:Dresden_Fama_(2005).jpg">a photo by Brunswyk</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>). We cut it out, redrew it as a line engraving, and share the result under the same license.</p>
   </footer>
 </body>
 </html>
