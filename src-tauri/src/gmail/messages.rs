@@ -38,7 +38,7 @@ impl GmailClient {
 
     /// Gmail moves large text/plain and text/html bodies out of the payload behind an
     /// `attachmentId`. Fetch them so the parser sees the body like any other.
-    fn fill_external_bodies<'a>(
+    pub(crate) fn fill_external_bodies<'a>(
         &'a self,
         message_id: &'a str,
         part: &'a mut MessagePart,
@@ -48,7 +48,15 @@ impl GmailClient {
                 self.fill_external_bodies(message_id, child).await?;
             }
             let mime = part.mime_type.to_ascii_lowercase();
-            let is_body = (mime == "text/plain" || mime == "text/html") && part.filename.is_empty();
+            // Same rule as `mime::classify`: unnamed, not marked as an attachment.
+            let is_attachment = part.header("Content-Disposition").is_some_and(|d| {
+                d.trim_start()
+                    .to_ascii_lowercase()
+                    .starts_with("attachment")
+            });
+            let is_body = (mime == "text/plain" || mime == "text/html")
+                && part.filename.is_empty()
+                && !is_attachment;
             if let (true, None, Some(attachment_id)) =
                 (is_body, &part.body.data, &part.body.attachment_id)
             {

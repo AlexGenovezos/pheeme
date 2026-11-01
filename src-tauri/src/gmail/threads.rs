@@ -21,8 +21,15 @@ impl GmailClient {
     }
 
     pub async fn get_thread(&self, id: &str, format: MessageFormat) -> Result<Thread, GmailError> {
-        self.send_json(ApiRequest::get(&["threads", id]).query("format", format.as_str()))
-            .await
+        let mut thread: Thread = self
+            .send_json(ApiRequest::get(&["threads", id]).query("format", format.as_str()))
+            .await?;
+        for msg in &mut thread.messages {
+            if let Some(payload) = msg.payload.as_mut() {
+                self.fill_external_bodies(&msg.id, payload).await?;
+            }
+        }
+        Ok(thread)
     }
 
     pub async fn modify_thread(
@@ -49,6 +56,35 @@ mod tests {
     use serde_json::Value;
     use wiremock::matchers::{body_json, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn get_thread_fetches_externally_stored_bodies() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/threads/t1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "t1",
+                "messages": [{"id": "m1", "threadId": "t1", "labelIds": [],
+                    "payload": {"mimeType": "text/html", "filename": "", "headers": [],
+                        "body": {"attachmentId": "big", "size": 900000}}}]
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/messages/m1/attachments/big"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "size": 4, "data": crate::gmail::mime::encode_base64url(b"<p>")
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let thread = client.get_thread("t1", MessageFormat::Full).await.unwrap();
+        assert_eq!(
+            thread.messages[0].parse().unwrap().body_html.as_deref(),
+            Some("<p>")
+        );
+    }
 
     fn fixture(s: &str) -> Value {
         serde_json::from_str(s).unwrap()
