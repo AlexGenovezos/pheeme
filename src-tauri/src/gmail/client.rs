@@ -248,10 +248,11 @@ impl GmailClient {
                         Some("rateLimitExceeded" | "userRateLimitExceeded")
                     ));
             let retryable = rate_limited || (status.is_server_error() && req.retry_ambiguous);
-            if retryable && attempt < self.retry.max_retries {
-                let delay = retry_after
-                    .map(|d| d.min(self.retry.max_delay))
-                    .unwrap_or_else(|| self.retry.backoff(attempt));
+            // A server asking for longer than our cap gets the error back (with `retry_after`)
+            // instead of an early retry; the caller decides when to try again.
+            let wait_too_long = retry_after.is_some_and(|d| d > self.retry.max_delay);
+            if retryable && !wait_too_long && attempt < self.retry.max_retries {
+                let delay = retry_after.unwrap_or_else(|| self.retry.backoff(attempt));
                 warn!(
                     attempt,
                     status = status.as_u16(),
@@ -577,11 +578,22 @@ mod tests {
         assert!(err.is_not_found());
     }
 
+    fn retry_after_client(server: &MockServer) -> GmailClient {
+        GmailClient::new(Arc::new(CountingTokens::default()))
+            .with_base_url(server.uri())
+            .with_retry_policy(RetryPolicy {
+                max_retries: 2,
+                base_delay: Duration::from_millis(1),
+                multiplier: 2,
+                max_delay: Duration::from_millis(500),
+            })
+    }
+
     #[tokio::test]
-    async fn retry_after_header_is_honoured_and_capped() {
+    async fn retry_after_header_is_honoured() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "1"))
+            .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "0.3"))
             .up_to_n_times(1)
             .mount(&server)
             .await;
@@ -589,31 +601,35 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(profile_json()))
             .mount(&server)
             .await;
-        let tokens = Arc::new(CountingTokens::default());
-        // Backoff alone would wait 1 ms; Retry-After asks for 1 s, capped at max_delay = 250 ms.
-        let client = GmailClient::new(tokens)
-            .with_base_url(server.uri())
-            .with_retry_policy(RetryPolicy {
-                max_retries: 2,
-                base_delay: Duration::from_millis(1),
-                multiplier: 2,
-                max_delay: Duration::from_millis(250),
-            });
-
+        // Backoff alone would wait 1 ms; Retry-After asks for 300 ms, within the 500 ms cap.
         let started = Instant::now();
-        let _: Value = client
+        let _: Value = retry_after_client(&server)
             .send_json(ApiRequest::get(&["profile"]))
             .await
             .unwrap();
         let elapsed = started.elapsed();
         assert!(
-            elapsed >= Duration::from_millis(250),
+            elapsed >= Duration::from_millis(300),
             "waited only {elapsed:?}"
         );
-        assert!(
-            elapsed < Duration::from_millis(900),
-            "cap ignored: {elapsed:?}"
-        );
+    }
+
+    #[tokio::test]
+    async fn retry_after_beyond_cap_returns_rate_limit_without_retrying() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "120"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let err = retry_after_client(&server)
+            .send_json::<Value>(ApiRequest::get(&["profile"]))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            GmailError::RateLimit { retry_after: Some(d) } if d == Duration::from_secs(120)
+        ));
     }
 
     #[tokio::test]

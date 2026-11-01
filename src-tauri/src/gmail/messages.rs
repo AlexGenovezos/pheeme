@@ -2,8 +2,8 @@
 
 use super::client::{ApiRequest, GmailClient, MAX_CONCURRENT_REQUESTS};
 use super::error::GmailError;
-use super::mime::decode_base64url;
-use super::types::{AttachmentBody, Message, MessageFormat, MessageListResponse};
+use super::mime::{decode_base64url, encode_base64url};
+use super::types::{AttachmentBody, Message, MessageFormat, MessageListResponse, MessagePart};
 use futures::stream::{self, StreamExt};
 use serde_json::json;
 
@@ -27,8 +27,36 @@ impl GmailClient {
         id: &str,
         format: MessageFormat,
     ) -> Result<Message, GmailError> {
-        self.send_json(ApiRequest::get(&["messages", id]).query("format", format.as_str()))
-            .await
+        let mut msg: Message = self
+            .send_json(ApiRequest::get(&["messages", id]).query("format", format.as_str()))
+            .await?;
+        if let Some(payload) = msg.payload.as_mut() {
+            self.fill_external_bodies(id, payload).await?;
+        }
+        Ok(msg)
+    }
+
+    /// Gmail moves large text/plain and text/html bodies out of the payload behind an
+    /// `attachmentId`. Fetch them so the parser sees the body like any other.
+    fn fill_external_bodies<'a>(
+        &'a self,
+        message_id: &'a str,
+        part: &'a mut MessagePart,
+    ) -> futures::future::BoxFuture<'a, Result<(), GmailError>> {
+        Box::pin(async move {
+            for child in &mut part.parts {
+                self.fill_external_bodies(message_id, child).await?;
+            }
+            let mime = part.mime_type.to_ascii_lowercase();
+            let is_body = (mime == "text/plain" || mime == "text/html") && part.filename.is_empty();
+            if let (true, None, Some(attachment_id)) =
+                (is_body, &part.body.data, &part.body.attachment_id)
+            {
+                let bytes = self.get_attachment(message_id, attachment_id).await?;
+                part.body.data = Some(encode_base64url(&bytes));
+            }
+            Ok(())
+        })
     }
 
     /// Fetch many messages concurrently (at most [`MAX_CONCURRENT_REQUESTS`] in flight, shared
@@ -111,6 +139,41 @@ mod tests {
 
     fn fixture(s: &str) -> Value {
         serde_json::from_str(s).unwrap()
+    }
+
+    #[tokio::test]
+    async fn get_message_fetches_externally_stored_bodies() {
+        // Gmail moves large bodies behind an attachmentId; they must parse as the body.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/messages/m1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "m1", "threadId": "t1", "labelIds": ["INBOX"],
+                "payload": {"mimeType": "multipart/alternative", "filename": "", "headers": [],
+                    "body": {"size": 0},
+                    "parts": [{"partId": "0", "mimeType": "text/html", "filename": "",
+                        "headers": [{"name": "Content-Type", "value": "text/html; charset=UTF-8"}],
+                        "body": {"attachmentId": "big", "size": 900000}}]}
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/messages/m1/attachments/big"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "size": 17, "data": encode_base64url(b"<p>big body</p>")
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let parsed = client
+            .get_message("m1", MessageFormat::Full)
+            .await
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(parsed.body_html.as_deref(), Some("<p>big body</p>"));
+        assert!(!parsed.has_attachment);
     }
 
     #[tokio::test]

@@ -249,7 +249,9 @@ struct PartInfo<'a> {
 fn classify(p: &PartInfo) -> PartKind {
     let named = p.filename.is_some_and(|f| !f.is_empty());
     let is_body_type = p.mime == "text/plain" || p.mime == "text/html";
-    if is_body_type && !named && !p.disposition_attachment && !p.has_attachment_id {
+    // Gmail stores large bodies externally (`attachmentId`); they are still bodies, and
+    // `GmailClient::get_message` fills their data in before parsing.
+    if is_body_type && !named && !p.disposition_attachment {
         return if p.mime == "text/html" {
             PartKind::Html
         } else {
