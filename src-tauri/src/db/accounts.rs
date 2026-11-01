@@ -9,9 +9,6 @@ pub struct DbAccount {
     pub display_name: Option<String>,
     pub profile_photo_url: Option<String>,
     pub client_id: String,
-    pub access_token_encrypted: Option<String>,
-    pub refresh_token_encrypted: Option<String>,
-    pub token_expiry: Option<i64>,
     pub history_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -22,18 +19,14 @@ pub async fn insert_account(pool: &SqlitePool, account: &DbAccount) -> Result<()
         r#"
         INSERT INTO accounts (
             id, email, display_name, profile_photo_url, client_id,
-            access_token_encrypted, refresh_token_encrypted, token_expiry,
             history_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         "#,
         account.id,
         account.email,
         account.display_name,
         account.profile_photo_url,
         account.client_id,
-        account.access_token_encrypted,
-        account.refresh_token_encrypted,
-        account.token_expiry,
         account.history_id,
         account.created_at,
         account.updated_at,
@@ -48,7 +41,6 @@ pub async fn get_account(pool: &SqlitePool, account_id: &str) -> Result<Option<D
         DbAccount,
         r#"
         SELECT id, email, display_name, profile_photo_url, client_id,
-               access_token_encrypted, refresh_token_encrypted, token_expiry,
                history_id, created_at, updated_at
         FROM accounts WHERE id = ?
         "#,
@@ -64,7 +56,6 @@ pub async fn get_account_by_email(pool: &SqlitePool, email: &str) -> Result<Opti
         DbAccount,
         r#"
         SELECT id, email, display_name, profile_photo_url, client_id,
-               access_token_encrypted, refresh_token_encrypted, token_expiry,
                history_id, created_at, updated_at
         FROM accounts WHERE email = ?
         "#,
@@ -80,7 +71,6 @@ pub async fn list_accounts(pool: &SqlitePool) -> Result<Vec<DbAccount>> {
         DbAccount,
         r#"
         SELECT id, email, display_name, profile_photo_url, client_id,
-               access_token_encrypted, refresh_token_encrypted, token_expiry,
                history_id, created_at, updated_at
         FROM accounts ORDER BY created_at ASC
         "#
@@ -88,34 +78,6 @@ pub async fn list_accounts(pool: &SqlitePool) -> Result<Vec<DbAccount>> {
     .fetch_all(pool)
     .await?;
     Ok(accounts)
-}
-
-pub async fn update_tokens(
-    pool: &SqlitePool,
-    account_id: &str,
-    access_token_encrypted: Option<&str>,
-    refresh_token_encrypted: Option<&str>,
-    token_expiry: Option<i64>,
-    updated_at: i64,
-) -> Result<()> {
-    sqlx::query!(
-        r#"
-        UPDATE accounts
-        SET access_token_encrypted = ?,
-            refresh_token_encrypted = ?,
-            token_expiry = ?,
-            updated_at = ?
-        WHERE id = ?
-        "#,
-        access_token_encrypted,
-        refresh_token_encrypted,
-        token_expiry,
-        updated_at,
-        account_id
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
 }
 
 pub async fn update_history_id(

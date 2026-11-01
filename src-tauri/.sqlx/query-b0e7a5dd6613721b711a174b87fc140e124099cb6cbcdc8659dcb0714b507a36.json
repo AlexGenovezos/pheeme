@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO accounts (\n            id, email, display_name, profile_photo_url, client_id,\n            history_id, created_at, updated_at\n        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "b0e7a5dd6613721b711a174b87fc140e124099cb6cbcdc8659dcb0714b507a36"
+}

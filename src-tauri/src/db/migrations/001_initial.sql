@@ -4,9 +4,6 @@ CREATE TABLE accounts (
   display_name TEXT,
   profile_photo_url TEXT,
   client_id TEXT NOT NULL,
-  access_token_encrypted TEXT,
-  refresh_token_encrypted TEXT,
-  token_expiry INTEGER,
   history_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -32,7 +29,6 @@ CREATE TABLE threads (
   subject TEXT,
   snippet TEXT,
   history_id TEXT,
-  label_ids TEXT,
   last_message_date INTEGER,
   message_count INTEGER NOT NULL DEFAULT 0,
   unread_count INTEGER NOT NULL DEFAULT 0,
@@ -71,10 +67,21 @@ CREATE TABLE attachments (
   mime_type TEXT,
   size INTEGER,
   attachment_id TEXT,
-  PRIMARY KEY (id, message_id, account_id)
+  PRIMARY KEY (id, message_id, account_id),
+  FOREIGN KEY (message_id, account_id) REFERENCES messages(id, account_id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_threads_account_label ON threads(account_id, label_ids);
+CREATE TABLE thread_labels (
+  account_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  label_id TEXT NOT NULL,
+  last_message_date INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (account_id, thread_id, label_id),
+  FOREIGN KEY (thread_id, account_id) REFERENCES threads(id, account_id) ON DELETE CASCADE
+);
+
 CREATE INDEX idx_threads_date ON threads(last_message_date DESC);
 CREATE INDEX idx_messages_thread ON messages(thread_id, account_id);
 CREATE INDEX idx_messages_date ON messages(date DESC);
+CREATE INDEX idx_thread_labels_listing
+  ON thread_labels(label_id, last_message_date DESC, account_id DESC, thread_id DESC);

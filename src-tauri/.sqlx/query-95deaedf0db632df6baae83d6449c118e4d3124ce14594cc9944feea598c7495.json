@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT label_id FROM thread_labels\n        WHERE account_id = ? AND thread_id = ?\n        ORDER BY label_id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "label_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "95deaedf0db632df6baae83d6449c118e4d3124ce14594cc9944feea598c7495"
+}

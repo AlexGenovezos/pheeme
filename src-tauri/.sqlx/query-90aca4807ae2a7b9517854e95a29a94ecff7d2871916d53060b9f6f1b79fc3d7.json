@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM thread_labels WHERE account_id = ? AND thread_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "90aca4807ae2a7b9517854e95a29a94ecff7d2871916d53060b9f6f1b79fc3d7"
+}
