@@ -12,7 +12,9 @@
     "test:ci": "vitest run",
     "preview": "vite preview",
     "tauri": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "version:set": "node scripts/version.mjs set",
+    "version:check": "node scripts/version.mjs check"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -41,6 +41,7 @@ jobs:
           shared-key: ${{ matrix.os || 'ubuntu-22.04' }}-debug
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
+      - run: npm run version:check
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:ci
