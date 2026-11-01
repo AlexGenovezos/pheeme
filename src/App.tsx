@@ -5,7 +5,9 @@ function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    invoke<string>("greet", { name: "world" }).then(() => setReady(true));
+    invoke<string>("greet", { name: "world" })
+      .then(() => setReady(true))
+      .catch((err) => console.error("greet failed", err));
   }, []);
 
   return (

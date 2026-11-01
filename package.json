@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest",
-    "test:ci": "vitest run --passWithNoTests",
+    "test:ci": "vitest run",
     "preview": "vite preview",
     "tauri": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri"
   },
@@ -27,6 +27,9 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@tauri-apps/cli": "^2",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
     "@types/dompurify": "^3",
     "@types/react": "^18",
     "@types/react-dom": "^18",
@@ -35,6 +38,7 @@
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^15.15.0",
+    "jsdom": "^25.0.1",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.72.1",
     "vite": "^6",
