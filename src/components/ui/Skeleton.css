@@ -1,0 +1,45 @@
+.ui-skeleton {
+  display: block;
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--color-skeleton-highlight) 50%,
+      transparent 100%
+    )
+    var(--color-skeleton-bg) no-repeat;
+  background-size: 50% 100%;
+  animation: ui-skeleton-shimmer var(--duration-shimmer) var(--ease-standard) infinite;
+}
+
+.ui-skeleton--text {
+  width: 100%;
+  height: var(--font-size-md);
+  border-radius: var(--radius-xs);
+}
+
+.ui-skeleton--circle {
+  width: var(--avatar-size-md);
+  height: var(--avatar-size-md);
+  border-radius: var(--radius-full);
+}
+
+.ui-skeleton--block {
+  width: 100%;
+  height: var(--space-12);
+  border-radius: var(--radius-sm);
+}
+
+@keyframes ui-skeleton-shimmer {
+  from {
+    background-position: -50% 0;
+  }
+  to {
+    background-position: 150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-skeleton {
+    animation: none;
+  }
+}

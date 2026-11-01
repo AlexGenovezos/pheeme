@@ -4,7 +4,31 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Pheeme</title>
+    <!--
+      Critical paint: the theme background before any CSS or JS loads, so launch
+      never flashes white. Colors must equal --color-app-bg in
+      src/styles/themes/{light,dark}.ts (theme.test.ts checks).
+    -->
+    <style>
+      html { background: #ffffff; color-scheme: light; }
+      @media (prefers-color-scheme: dark) {
+        html { background: #15191a; color-scheme: dark; }
+      }
+      html[data-theme="light"] { background: #ffffff; color-scheme: light; }
+      html[data-theme="dark"] { background: #15191a; color-scheme: dark; }
+    </style>
+    <script>
+      // Apply an explicit Light/Dark choice before first paint (System needs no JS:
+      // the media query above handles it). Key mirrors THEME_MODE_KEY in src/theme/theme.ts.
+      (function () {
+        try {
+          var mode = localStorage.getItem("pheeme.theme-mode");
+          if (mode === "light" || mode === "dark") document.documentElement.setAttribute("data-theme", mode);
+        } catch (e) {}
+      })();
+    </script>
   </head>
 
   <body>
