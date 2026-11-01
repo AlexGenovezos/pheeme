@@ -21,6 +21,7 @@ if ! command -v sqlx >/dev/null 2>&1; then
   cargo install sqlx-cli --no-default-features --features sqlite,rustls
 fi
 
+command -v npm >/dev/null 2>&1 || fail "Install npm (ships with Node.js 22+): https://nodejs.org"
 npm ci
 
 echo "Ready: npm run tauri dev"

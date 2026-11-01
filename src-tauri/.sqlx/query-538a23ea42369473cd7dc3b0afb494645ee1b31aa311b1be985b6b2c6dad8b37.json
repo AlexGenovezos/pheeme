@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               tl.last_message_date AS \"cursor_date!\"\n        FROM thread_labels tl\n        JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id\n        WHERE tl.label_id = ?1\n          AND tl.account_id IN (SELECT value FROM json_each(?2))\n          AND (tl.last_message_date, tl.account_id, tl.thread_id) < (?3, ?4, ?5)\n          AND (?6 IS NULL OR EXISTS (\n                SELECT 1 FROM thread_labels x\n                WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id\n                  AND x.label_id = ?6))\n        ORDER BY tl.last_message_date DESC, tl.account_id DESC, tl.thread_id DESC\n        LIMIT ?7\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_id!",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "subject",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "snippet",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "history_id",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_message_date",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "message_count!",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "unread_count!",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "has_attachment!",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "cursor_date!",
+        "ordinal": 9,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "538a23ea42369473cd7dc3b0afb494645ee1b31aa311b1be985b6b2c6dad8b37"
+}

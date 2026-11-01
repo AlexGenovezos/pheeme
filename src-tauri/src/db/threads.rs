@@ -209,6 +209,19 @@ pub struct ThreadPage {
     pub next: Option<ThreadCursor>,
 }
 
+struct ThreadRow {
+    id: String,
+    account_id: String,
+    subject: Option<String>,
+    snippet: Option<String>,
+    history_id: Option<String>,
+    last_message_date: Option<i64>,
+    message_count: i64,
+    unread_count: i64,
+    has_attachment: i64,
+    cursor_date: i64,
+}
+
 /// Lists threads newest first (`last_message_date DESC, account_id DESC,
 /// thread_id DESC`) straight off `idx_thread_labels_listing`, paged by keyset.
 pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<ThreadPage> {
@@ -222,17 +235,14 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
     let fetch_limit = q.limit.saturating_add(1);
 
     let account_ids = serde_json::to_string(q.account_ids)?;
-    let (before_date, before_account, before_thread) = match q.before {
-        Some(c) => (
-            Some(c.last_message_date),
-            Some(c.account_id.as_str()),
-            Some(c.thread_id.as_str()),
-        ),
-        None => (None, None, None),
-    };
 
-    let rows = sqlx::query!(
-        r#"
+    // Two queries rather than `?3 IS NULL OR (...) < (...)`: the plain row-value
+    // comparison lets SQLite seek into `idx_thread_labels_listing` at the cursor.
+    let rows = match q.before {
+        None => {
+            sqlx::query_as!(
+                ThreadRow,
+                r#"
         SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
                t.history_id, t.last_message_date, t.message_count AS "message_count!",
                t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
@@ -241,8 +251,34 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
         JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
         WHERE tl.label_id = ?1
           AND tl.account_id IN (SELECT value FROM json_each(?2))
-          AND (?3 IS NULL OR
-               (tl.last_message_date, tl.account_id, tl.thread_id) < (?3, ?4, ?5))
+          AND (?3 IS NULL OR EXISTS (
+                SELECT 1 FROM thread_labels x
+                WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id
+                  AND x.label_id = ?3))
+        ORDER BY tl.last_message_date DESC, tl.account_id DESC, tl.thread_id DESC
+        LIMIT ?4
+        "#,
+                q.label_id,
+                account_ids,
+                q.also_label_id,
+                fetch_limit,
+            )
+            .fetch_all(pool)
+            .await?
+        }
+        Some(c) => {
+            sqlx::query_as!(
+                ThreadRow,
+                r#"
+        SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count AS "message_count!",
+               t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               tl.last_message_date AS "cursor_date!"
+        FROM thread_labels tl
+        JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
+        WHERE tl.label_id = ?1
+          AND tl.account_id IN (SELECT value FROM json_each(?2))
+          AND (tl.last_message_date, tl.account_id, tl.thread_id) < (?3, ?4, ?5)
           AND (?6 IS NULL OR EXISTS (
                 SELECT 1 FROM thread_labels x
                 WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id
@@ -250,16 +286,18 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
         ORDER BY tl.last_message_date DESC, tl.account_id DESC, tl.thread_id DESC
         LIMIT ?7
         "#,
-        q.label_id,
-        account_ids,
-        before_date,
-        before_account,
-        before_thread,
-        q.also_label_id,
-        fetch_limit,
-    )
-    .fetch_all(pool)
-    .await?;
+                q.label_id,
+                account_ids,
+                c.last_message_date,
+                c.account_id,
+                c.thread_id,
+                q.also_label_id,
+                fetch_limit,
+            )
+            .fetch_all(pool)
+            .await?
+        }
+    };
 
     let has_more = rows.len() > page_limit;
     let mut rows = rows;
@@ -473,6 +511,34 @@ mod tests {
         assert_eq!(page.threads.len(), 2);
         assert_eq!(page.threads[0].id, "dated");
         assert_eq!(page.next.as_ref().map(|c| c.last_message_date), Some(0));
+    }
+
+    #[tokio::test]
+    async fn list_threads_pages_through_undated_threads() {
+        let pool = seeded_pool().await;
+        seed(&pool, "a1", "undated-a", None, &["INBOX"]).await;
+        seed(&pool, "a1", "undated-b", None, &["INBOX"]).await;
+        seed(&pool, "a1", "undated-c", None, &["INBOX"]).await;
+        seed(&pool, "a1", "dated", Some(100), &["INBOX"]).await;
+
+        let accounts = labels(&["a1"]);
+        let mut seen = vec![];
+        let mut cursor: Option<ThreadCursor> = None;
+        let mut pages = 0;
+        loop {
+            let page = list_threads(&pool, &query(&accounts, cursor.as_ref(), 1))
+                .await
+                .unwrap();
+            pages += 1;
+            assert!(pages <= 4, "paging did not terminate");
+            seen.extend(page.threads.into_iter().map(|t| t.id));
+            match page.next {
+                Some(next) => cursor = Some(next),
+                None => break,
+            }
+        }
+
+        assert_eq!(seen, vec!["dated", "undated-c", "undated-b", "undated-a"]);
     }
 
     #[tokio::test]

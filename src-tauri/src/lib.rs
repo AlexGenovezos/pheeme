@@ -5,6 +5,7 @@ pub mod identity;
 pub mod secrets;
 pub mod sync;
 
+use anyhow::Context;
 use sqlx::SqlitePool;
 use std::path::Path;
 use tauri::Manager;
@@ -17,7 +18,9 @@ pub struct AppState {
 /// Build application state: open the database in `data_dir` and apply migrations.
 /// Tauri-independent so it can be tested without an app handle.
 pub async fn build_state(data_dir: &Path) -> anyhow::Result<AppState> {
-    let db = db::init_db(data_dir).await?;
+    let db = db::init_db(data_dir)
+        .await
+        .with_context(|| format!("failed to initialize database in {}", data_dir.display()))?;
     Ok(AppState { db })
 }
 

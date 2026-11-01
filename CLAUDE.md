@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Source of truth:** [docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md) sets scope, priorities and the phase order, and overrides `Gmail client project plan.md` wherever they disagree (see its §9). The plan remains the detailed technical reference.
 
-**Current state:** Phase 1 (scaffold) and Phase 2 (SQLite layer) are committed. Next is "Foundation fixes + PR CI" (design §10–§12), before OAuth.
+**Current state:** Phase 1 (scaffold), Phase 2 (SQLite layer) and the foundation fixes (identity, startup, schema, keychain secret store, PR CI) are done. Next is OAuth + multi-account onboarding (design §12 step 2).
 
 ## Commands
 
@@ -53,7 +53,8 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `commands/` | Tauri command handlers (the IPC surface the frontend calls) |
 | `gmail/` | Gmail REST API client: auth, messages, threads, labels, drafts |
 | `sync/` | Background sync engine using Gmail History API for incremental updates |
-| `crypto.rs` | Token encryption/decryption for keyring-stored OAuth tokens |
+| `identity.rs` | App identifier and keychain service constants |
+| `secrets.rs` | OS keychain secret store; tokens never go in SQLite |
 
 ### Frontend State
 
@@ -64,16 +65,17 @@ Three Zustand stores (defined, not yet wired up):
 
 ### Database Schema Summary
 
-Five tables. Known gaps scheduled in design §10: `attachments` has no foreign key (no cascade yet), token columns on `accounts` are to be removed (tokens belong in the OS keychain), and label filtering moves from the JSON `label_ids` column to a `thread_labels` table.
-- `accounts` — OAuth tokens (encrypted), Gmail history_id for sync
+Six tables.
+- `accounts` — Account identity and Gmail history_id for sync (no tokens; those are in the keychain)
 - `labels` — Gmail labels with unread/total counters
-- `threads` — Conversation threads; `label_ids` stored as JSON array
+- `threads` — Conversation threads (no label column)
+- `thread_labels` — Thread/label membership; label listing uses keyset-paged `list_threads`
 - `messages` — Full message data; `to_addresses`, `cc_addresses`, `raw_headers` as JSON
-- `attachments` — Attachment metadata (content not stored)
+- `attachments` — Attachment metadata (content not stored); cascades from messages
 
 ## Key Conventions
 
 - **IPC pattern:** Add a Rust fn in `commands/<domain>.rs`, register it in `lib.rs`'s `Builder`, add a typed wrapper in `src/lib/tauri.ts`.
 - **DB queries:** Use `sqlx::query_as!` macros for compile-time checking. All queries go in `db/<entity>.rs`.
-- **Label IDs** are stored as `TEXT` JSON arrays in SQLite — use serde for serialization on both sides.
+- **Thread labels** live in the `thread_labels` table; `messages.label_ids` JSON remains only for per-message display.
 - Tauri dev server runs on **port 1420** (HMR on 1421). Don't change these without updating `tauri.conf.json`.
