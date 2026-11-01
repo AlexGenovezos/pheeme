@@ -92,6 +92,8 @@ jobs:
       contents: write
     strategy:
       fail-fast: false
+      # Serialized: tauri-action read-modify-writes latest.json and does list-then-create on the release.
+      max-parallel: 1
       matrix:
         include:
           - os: macos-latest
