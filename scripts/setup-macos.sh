@@ -18,10 +18,11 @@ node -e 'if (Number(process.versions.node.split(".")[0]) < 22) process.exit(1)' 
   || fail "Install Node.js 22 or newer from: https://nodejs.org"
 command -v npm >/dev/null 2>&1 || fail "Install npm (ships with Node.js 22+): https://nodejs.org"
 
+rustup toolchain install
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-if ! command -v sqlx >/dev/null 2>&1; then
-  cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features sqlite,rustls
+if ! sqlx --version 2>/dev/null | grep -qF "sqlx-cli 0.8.6"; then
+  cargo install sqlx-cli --version 0.8.6 --locked --force --no-default-features --features sqlite,rustls
 fi
 
 npm ci
