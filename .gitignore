@@ -26,3 +26,4 @@ dist-ssr
 # Local AI tooling
 .claude/
 .codex
+coverage

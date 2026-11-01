@@ -5,9 +5,12 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   SQLX_OFFLINE: "true"
@@ -21,8 +24,8 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-22.04]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -31,17 +34,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          shared-key: ${{ matrix.os || 'ubuntu-22.04' }}-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
+      - run: npm run version:check
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:ci
-      - run: npm run build
+      - run: npx vite build
       - name: Rust formatting
         working-directory: src-tauri
         run: cargo fmt --check
@@ -51,27 +55,32 @@ jobs:
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test
+      - name: Keychain round trip
+        if: matrix.os != 'ubuntu-22.04'
+        working-directory: src-tauri
+        run: cargo test -- --ignored keyring_store_round_trip_on_this_os
 
   sqlx-cache:
     name: SQLx offline cache
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Ubuntu dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          shared-key: ubuntu-22.04-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
         with:
-          tool: sqlx-cli
+          tool: sqlx-cli@0.8.6
       - name: Validate SQLx cache
         working-directory: src-tauri
         run: |
-          unset SQLX_OFFLINE
           export DATABASE_URL="sqlite://$PWD/ci.sqlite"
           sqlx database create
           sqlx migrate run --source src/db/migrations
@@ -87,8 +96,8 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-22.04]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -97,14 +106,70 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          shared-key: ${{ matrix.os || 'ubuntu-22.04' }}-debug
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      - run: npx tauri build --debug
-      - uses: actions/upload-artifact@v4
+      - name: Bundle (deb)
+        if: matrix.os == 'ubuntu-22.04'
+        run: npx tauri build --debug --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Bundle (nsis)
+        if: matrix.os == 'windows-latest'
+        run: npx tauri build --debug --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Bundle (dmg)
+        if: matrix.os == 'macos-latest'
+        run: npx tauri build --debug --bundles dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - uses: actions/upload-artifact@v7
         with:
           name: pheeme-${{ matrix.os }}
-          path: src-tauri/target/debug/bundle/**
+          path: |
+            src-tauri/target/debug/bundle/deb/*.deb
+            src-tauri/target/debug/bundle/nsis/*.exe
+            src-tauri/target/debug/bundle/dmg/*.dmg
+          if-no-files-found: error
           retention-days: 7
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
+      - run: rustup toolchain install
+      - run: rustup component add llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: ubuntu-22.04-coverage
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: Rust coverage
+        working-directory: src-tauri
+        shell: bash
+        run: |
+          set +e
+          cargo llvm-cov --summary-only --fail-under-lines 75 | tee rust-coverage.txt
+          status=${PIPESTATUS[0]}
+          { echo '### Rust coverage'; echo '```'; grep -E "^(Filename|TOTAL)" rust-coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - run: npm ci
+      - name: Frontend coverage
+        shell: bash
+        run: |
+          set +e
+          npm run test:coverage | tee frontend-coverage.txt
+          status=${PIPESTATUS[0]}
+          { echo '### Frontend coverage'; echo '```'; sed -n '/Coverage summary/,$p' frontend-coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

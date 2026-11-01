@@ -205,7 +205,7 @@ pub struct ThreadQuery<'a> {
 
 pub struct ThreadPage {
     pub threads: Vec<DbThread>,
-    /// `Some` only when the page is full, i.e. there may be more rows.
+    /// `Some` when more rows exist.
     pub next: Option<ThreadCursor>,
 }
 
@@ -225,13 +225,10 @@ struct ThreadRow {
 /// Lists threads newest first (`last_message_date DESC, account_id DESC,
 /// thread_id DESC`) straight off `idx_thread_labels_listing`, paged by keyset.
 pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<ThreadPage> {
-    let page_limit: usize = q
-        .limit
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("thread list limit must be positive"))?;
-    if page_limit == 0 {
+    if q.limit <= 0 {
         anyhow::bail!("thread list limit must be positive");
     }
+    let page_limit = q.limit as usize;
     let fetch_limit = q.limit.saturating_add(1);
 
     let account_ids = serde_json::to_string(q.account_ids)?;
@@ -301,9 +298,7 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
 
     let has_more = rows.len() > page_limit;
     let mut rows = rows;
-    if has_more {
-        rows.truncate(page_limit);
-    }
+    rows.truncate(page_limit);
 
     let next = if has_more {
         rows.last().map(|r| ThreadCursor {
@@ -336,6 +331,7 @@ mod tests {
     use super::*;
     use crate::db::accounts::{insert_account, DbAccount};
     use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::Row;
 
     fn labels(ids: &[&str]) -> Vec<String> {
         ids.iter().map(|s| s.to_string()).collect()
@@ -402,6 +398,67 @@ mod tests {
         }
     }
 
+    const FIRST_PAGE_SQL: &str = r#"
+        SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count AS "message_count!",
+               t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               tl.last_message_date AS "cursor_date!"
+        FROM thread_labels tl
+        JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
+        WHERE tl.label_id = ?1
+          AND tl.account_id IN (SELECT value FROM json_each(?2))
+          AND (?3 IS NULL OR EXISTS (
+                SELECT 1 FROM thread_labels x
+                WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id
+                  AND x.label_id = ?3))
+        ORDER BY tl.last_message_date DESC, tl.account_id DESC, tl.thread_id DESC
+        LIMIT ?4
+        "#;
+
+    const CURSOR_PAGE_SQL: &str = r#"
+        SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count AS "message_count!",
+               t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               tl.last_message_date AS "cursor_date!"
+        FROM thread_labels tl
+        JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
+        WHERE tl.label_id = ?1
+          AND tl.account_id IN (SELECT value FROM json_each(?2))
+          AND (tl.last_message_date, tl.account_id, tl.thread_id) < (?3, ?4, ?5)
+          AND (?6 IS NULL OR EXISTS (
+                SELECT 1 FROM thread_labels x
+                WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id
+                  AND x.label_id = ?6))
+        ORDER BY tl.last_message_date DESC, tl.account_id DESC, tl.thread_id DESC
+        LIMIT ?7
+        "#;
+
+    /// Pages through the whole listing, returning `(account_id, id)` pairs.
+    async fn page_all(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Vec<(String, String)> {
+        let mut out = vec![];
+        let mut cursor: Option<ThreadCursor> = None;
+        loop {
+            let page = list_threads(
+                pool,
+                &ThreadQuery {
+                    before: cursor.as_ref(),
+                    ..*q
+                },
+            )
+            .await
+            .unwrap();
+            out.extend(page.threads.into_iter().map(|t| (t.account_id, t.id)));
+            match page.next {
+                Some(next) => cursor = Some(next),
+                None => return out,
+            }
+        }
+    }
+
+    fn pair(a: &str, t: &str) -> (String, String) {
+        (a.to_string(), t.to_string())
+    }
+
     #[tokio::test]
     async fn list_threads_orders_newest_first_across_accounts() {
         let pool = seeded_pool().await;
@@ -435,6 +492,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(second.threads.len(), 1);
+        assert_eq!(second.next, None);
 
         let mut seen: Vec<_> = first
             .threads
@@ -542,26 +600,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_threads_includes_maximum_timestamp_on_first_page() {
-        let pool = seeded_pool().await;
-        seed(&pool, "a1", "max", Some(i64::MAX), &["INBOX"]).await;
-
-        let accounts = labels(&["a1"]);
-        let page = list_threads(&pool, &query(&accounts, None, 1))
-            .await
-            .unwrap();
-
-        assert_eq!(
-            page.threads
-                .iter()
-                .map(|t| t.id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["max"]
-        );
-        assert_eq!(page.next, None);
-    }
-
-    #[tokio::test]
     async fn list_threads_rejects_non_positive_limit() {
         let pool = seeded_pool().await;
         let accounts = labels(&["a1"]);
@@ -617,5 +655,263 @@ mod tests {
 
         assert!(page.threads.iter().all(|t| t.account_id == "a1"));
         assert_eq!(page.threads.len(), 1);
+    }
+
+    async fn run_first_page(
+        pool: &SqlitePool,
+        prefix: &str,
+        account_ids: &str,
+    ) -> Vec<sqlx::sqlite::SqliteRow> {
+        sqlx::query(&format!("{prefix}{FIRST_PAGE_SQL}"))
+            .bind("INBOX")
+            .bind(account_ids)
+            .bind(None::<&str>)
+            .bind(10_i64)
+            .fetch_all(pool)
+            .await
+            .unwrap()
+    }
+
+    async fn run_cursor_page(
+        pool: &SqlitePool,
+        prefix: &str,
+        account_ids: &str,
+    ) -> Vec<sqlx::sqlite::SqliteRow> {
+        sqlx::query(&format!("{prefix}{CURSOR_PAGE_SQL}"))
+            .bind("INBOX")
+            .bind(account_ids)
+            .bind(250_i64)
+            .bind("zz")
+            .bind("zz")
+            .bind(None::<&str>)
+            .bind(10_i64)
+            .fetch_all(pool)
+            .await
+            .unwrap()
+    }
+
+    fn column(rows: &[sqlx::sqlite::SqliteRow], name: &str) -> Vec<String> {
+        rows.iter().map(|r| r.get::<String, _>(name)).collect()
+    }
+
+    #[tokio::test]
+    async fn list_threads_uses_listing_index_without_sort() {
+        // FIRST_PAGE_SQL and CURSOR_PAGE_SQL are copies of the queries in
+        // list_threads (query_as! needs literals); the row checks below fail
+        // if they drift apart.
+        let production = include_str!("threads.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        let production = normalize(production);
+        for (name, sql) in [
+            ("FIRST_PAGE_SQL", FIRST_PAGE_SQL),
+            ("CURSOR_PAGE_SQL", CURSOR_PAGE_SQL),
+        ] {
+            assert!(
+                production.contains(&normalize(sql)),
+                "{name} drifted from the query in list_threads"
+            );
+        }
+
+        let pool = seeded_pool().await;
+        for (a, t, d) in [("a1", "t1", 300), ("a2", "t2", 200), ("a1", "t3", 100)] {
+            seed(&pool, a, t, Some(d), &["INBOX"]).await;
+        }
+        let accounts = labels(&["a1", "a2"]);
+        let account_json = serde_json::to_string(&accounts).unwrap();
+
+        let first = list_threads(&pool, &query(&accounts, None, 10))
+            .await
+            .unwrap();
+        let first_ids: Vec<_> = first.threads.iter().map(|t| t.id.clone()).collect();
+        assert_eq!(
+            column(&run_first_page(&pool, "", &account_json).await, "id!"),
+            first_ids
+        );
+
+        let cursor = ThreadCursor {
+            last_message_date: 250,
+            account_id: "zz".into(),
+            thread_id: "zz".into(),
+        };
+        let second = list_threads(&pool, &query(&accounts, Some(&cursor), 10))
+            .await
+            .unwrap();
+        let second_ids: Vec<_> = second.threads.iter().map(|t| t.id.clone()).collect();
+        assert_eq!(second_ids, vec!["t2", "t3"]);
+        assert_eq!(
+            column(&run_cursor_page(&pool, "", &account_json).await, "id!"),
+            second_ids
+        );
+
+        let prefix = "EXPLAIN QUERY PLAN ";
+        let first_plan = column(
+            &run_first_page(&pool, prefix, &account_json).await,
+            "detail",
+        )
+        .join("\n");
+        let cursor_plan = column(
+            &run_cursor_page(&pool, prefix, &account_json).await,
+            "detail",
+        )
+        .join("\n");
+        println!("first page plan:\n{first_plan}\ncursor page plan:\n{cursor_plan}");
+        for plan in [&first_plan, &cursor_plan] {
+            assert!(plan.contains("idx_thread_labels_listing"), "{plan}");
+            assert!(!plan.contains("TEMP B-TREE"), "{plan}");
+        }
+        assert!(
+            cursor_plan.contains("(last_message_date,account_id,thread_id)<"),
+            "{cursor_plan}"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_threads_cursor_page_applies_label_account_and_also_filters() {
+        let pool = seeded_pool().await;
+        let rows: [(&str, &str, i64, &[&str]); 12] = [
+            ("a1", "p1", 120, &["INBOX", "CATEGORY_PRIMARY"]),
+            ("a2", "p2", 110, &["INBOX", "CATEGORY_PRIMARY"]),
+            ("a1", "s1", 100, &["SENT"]),
+            ("a1", "n1", 90, &["CATEGORY_PRIMARY"]),
+            ("a2", "n2", 80, &["CATEGORY_PRIMARY"]),
+            ("a1", "p3", 70, &["INBOX", "CATEGORY_PRIMARY"]),
+            ("a1", "so1", 60, &["INBOX", "CATEGORY_SOCIAL"]),
+            ("a2", "p4", 50, &["INBOX", "CATEGORY_PRIMARY"]),
+            ("a1", "p5", 40, &["INBOX", "CATEGORY_PRIMARY"]),
+            ("a2", "so2", 30, &["INBOX", "CATEGORY_SOCIAL"]),
+            ("a1", "n3", 20, &["CATEGORY_PRIMARY"]),
+            ("a1", "p6", 10, &["INBOX", "CATEGORY_PRIMARY"]),
+        ];
+        for (a, t, d, l) in rows {
+            seed(&pool, a, t, Some(d), l).await;
+        }
+
+        let accounts = labels(&["a1"]);
+        let q = |limit| ThreadQuery {
+            account_ids: &accounts,
+            label_id: "CATEGORY_PRIMARY",
+            also_label_id: Some("INBOX"),
+            before: None,
+            limit,
+        };
+        let all = page_all(&pool, &q(100)).await;
+        assert!(all.len() >= 3);
+        assert_eq!(
+            all,
+            vec![
+                pair("a1", "p1"),
+                pair("a1", "p3"),
+                pair("a1", "p5"),
+                pair("a1", "p6")
+            ]
+        );
+        assert_eq!(page_all(&pool, &q(1)).await, all);
+    }
+
+    #[tokio::test]
+    async fn list_threads_also_label_is_per_account() {
+        let pool = seeded_pool().await;
+        seed(&pool, "a1", "t1", Some(250), &["CATEGORY_PRIMARY"]).await;
+        seed(&pool, "a2", "t1", Some(150), &["INBOX"]).await;
+        seed(&pool, "a1", "m3", Some(300), &["INBOX", "CATEGORY_PRIMARY"]).await;
+        seed(&pool, "a1", "m2", Some(200), &["INBOX", "CATEGORY_PRIMARY"]).await;
+        seed(&pool, "a1", "m1", Some(100), &["INBOX", "CATEGORY_PRIMARY"]).await;
+
+        let accounts = labels(&["a1", "a2"]);
+        let got = page_all(
+            &pool,
+            &ThreadQuery {
+                account_ids: &accounts,
+                label_id: "CATEGORY_PRIMARY",
+                also_label_id: Some("INBOX"),
+                before: None,
+                limit: 1,
+            },
+        )
+        .await;
+
+        assert_eq!(
+            got,
+            vec![pair("a1", "m3"), pair("a1", "m2"), pair("a1", "m1")]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_threads_ties_across_accounts_at_page_boundary() {
+        let pool = seeded_pool().await;
+        for a in ["a1", "a2"] {
+            for i in 1..=5 {
+                seed(&pool, a, &format!("t{i}"), Some(500), &["INBOX"]).await;
+            }
+        }
+
+        let accounts = labels(&["a1", "a2"]);
+        let got = page_all(&pool, &query(&accounts, None, 3)).await;
+
+        let expected: Vec<_> = ["a2", "a1"]
+            .into_iter()
+            .flat_map(|a| (1..=5).rev().map(move |i| pair(a, &format!("t{i}"))))
+            .collect();
+        assert_eq!(got, expected);
+    }
+
+    #[tokio::test]
+    async fn list_threads_exact_multiple_of_limit_has_no_empty_trailing_page() {
+        let pool = seeded_pool().await;
+        for i in 0..20 {
+            seed(&pool, "a1", &format!("t{i:02}"), Some(i), &["INBOX"]).await;
+        }
+
+        let accounts = labels(&["a1"]);
+        let first = list_threads(&pool, &query(&accounts, None, 10))
+            .await
+            .unwrap();
+        let cursor = first.next.clone().expect("first page has a cursor");
+        let second = list_threads(&pool, &query(&accounts, Some(&cursor), 10))
+            .await
+            .unwrap();
+
+        assert_eq!([first.threads.len(), second.threads.len()], [10, 10]);
+        assert_eq!(second.next, None);
+    }
+
+    #[tokio::test]
+    async fn list_threads_reflects_relabel_and_redate() {
+        let pool = seeded_pool().await;
+        seed(&pool, "a1", "t1", Some(300), &["INBOX"]).await;
+        seed(&pool, "a1", "t2", Some(200), &["INBOX"]).await;
+        seed(&pool, "a1", "t3", Some(100), &["INBOX"]).await;
+        let accounts = labels(&["a1"]);
+        let ids = || async {
+            list_threads(&pool, &query(&accounts, None, 10))
+                .await
+                .unwrap()
+                .threads
+                .into_iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>()
+        };
+
+        update_thread_labels(&pool, "a1", "t1", &labels(&["SENT"]))
+            .await
+            .unwrap();
+        assert_eq!(ids().await, vec!["t2", "t3"]);
+
+        seed(&pool, "a1", "t3", Some(400), &["INBOX"]).await;
+        assert_eq!(ids().await, vec!["t3", "t2"]);
+    }
+
+    #[tokio::test]
+    async fn list_threads_empty_account_list_returns_empty_page() {
+        let pool = seeded_pool().await;
+        seed(&pool, "a1", "t1", Some(100), &["INBOX"]).await;
+
+        let page = list_threads(&pool, &query(&[], None, 10)).await.unwrap();
+
+        assert!(page.threads.is_empty());
+        assert_eq!(page.next, None);
     }
 }

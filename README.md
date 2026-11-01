@@ -11,6 +11,21 @@ A fast, open-source desktop client for Gmail, with Google Calendar coming next, 
 
 Website: [pheeme.app](https://pheeme.app)
 
+## Install
+
+Download the latest build from [Releases](https://github.com/AlexGenovezos/pheeme/releases/latest). Versions are two-part (`v0.2`); 0.x is beta, and 1.0 is when Pheeme leaves beta.
+
+- **macOS:** open the `.dmg` and drag Pheeme to Applications. If the build is
+  unsigned, right-click the app and choose Open, or run
+  `xattr -dr com.apple.quarantine /Applications/Pheeme.app`.
+- **Windows:** run the installer. If SmartScreen warns about it, choose
+  More info, then Run anyway.
+- **Linux:** `chmod +x Pheeme_*.AppImage` and run it, or install the deb with
+  `sudo apt install ./Pheeme_*.deb`.
+
+Pheeme checks for updates on launch and every 6 hours, and asks before
+restarting to apply one.
+
 ## Docs
 
 - [Design](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md): scope, priorities and roadmap
@@ -35,6 +50,26 @@ integration once, run:
 cd src-tauri
 SQLX_OFFLINE=true cargo test -- --ignored keyring_store_round_trip_on_this_os
 ```
+
+## Releasing
+
+Versions are two-part (`v0.2`): 0.x is beta, and 1.0 is when Pheeme leaves beta.
+
+1. `npm run version:set 0.2` (files store `0.2.0`; Cargo and MSI need three parts)
+2. Commit as `release: v0.2` and merge it through a PR.
+3. After the merge: `git tag v0.2 && git push origin v0.2`
+4. The Release workflow creates a draft release, builds macOS (universal),
+   Windows and Linux, checks `latest.json`, then publishes.
+
+Signing setup:
+
+- macOS signing and notarization need a one-time
+  `scripts/setup-release-secrets-macos.sh` run on a Mac with your Developer ID
+  certificate. Without those secrets the macOS build is unsigned.
+- The updater private key lives in the GitHub secrets
+  `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and in
+  Alex's password manager. If the key is lost, existing installs can't
+  auto-update.
 
 ## License
 
