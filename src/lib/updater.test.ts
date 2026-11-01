@@ -1,3 +1,5 @@
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   CHECK_INTERVAL_MS,
@@ -7,6 +9,9 @@ import {
   type PendingUpdate,
   type UpdaterDeps,
 } from "./updater";
+
+vi.mock("@tauri-apps/plugin-updater", () => ({ check: vi.fn() }));
+vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn(async () => {}) }));
 
 let stop: () => void = () => {};
 
@@ -113,4 +118,28 @@ test("stop() cancels the interval", async () => {
   stop();
   await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS * 2);
   expect(deps.check).toHaveBeenCalledTimes(1);
+});
+
+test("default deps adapt the tauri plugins", async () => {
+  const order: string[] = [];
+  const downloadAndInstall = vi.fn(async () => {
+    order.push("install");
+  });
+  vi.mocked(relaunch).mockImplementation(async () => {
+    order.push("relaunch");
+  });
+  vi.mocked(check).mockResolvedValueOnce({ version: "0.3.0", downloadAndInstall } as never);
+  stop = startUpdateChecks();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(useUpdateStore.getState().available).toBe("0.3.0");
+
+  await useUpdateStore.getState().apply();
+  expect(order).toEqual(["install", "relaunch"]);
+});
+
+test("default deps leave the store empty when no update exists", async () => {
+  vi.mocked(check).mockResolvedValueOnce(null);
+  stop = startUpdateChecks();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(useUpdateStore.getState().available).toBeNull();
 });

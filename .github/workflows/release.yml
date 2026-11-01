@@ -56,6 +56,7 @@ jobs:
         with:
           workspaces: src-tauri
           shared-key: release-${{ matrix.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - if: matrix.os == 'ubuntu-22.04'
         run: bash scripts/resolve-apple-env.test.sh
@@ -120,6 +121,7 @@ jobs:
         with:
           workspaces: src-tauri
           shared-key: release-${{ matrix.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - name: apple-env
         if: matrix.os == 'macos-latest'

@@ -207,7 +207,7 @@ mod tests {
         assert!(matches!(err, SecretsError::Corrupt));
         assert!(!err.to_string().contains("not json"));
         assert!(matches!(
-            decode("{\"client_secret\":\"x\"}"),
+            decode(r#"{"client_secret":"x"}"#),
             Err(SecretsError::Corrupt)
         ));
     }
