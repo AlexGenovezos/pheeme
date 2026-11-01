@@ -45,7 +45,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "targets": ["app", "dmg", "msi", "nsis", "appimage", "deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -57,6 +58,15 @@
   "plugins": {
     "shell": {
       "open": true
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE5QjI4QTRCREUyRTA2OUEKUldTYUJpN2VTNHF5R2NtTUxKSERGOUUyREtZd0FQQ3A4Q1ZBaXFhaDN3U1dKcnNrYUwwckdTaDIK",
+      "endpoints": [
+        "https://github.com/AlexGenovezos/pheeme/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

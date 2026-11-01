@@ -14,16 +14,40 @@ mod tests {
 
     #[test]
     fn identifier_matches_tauri_conf() {
-        let conf: serde_json::Value =
-            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let conf = conf();
         assert_eq!(conf["identifier"], APP_IDENTIFIER);
         assert_eq!(conf["productName"], "Pheeme");
     }
 
+    fn conf() -> serde_json::Value {
+        serde_json::from_str(include_str!("../tauri.conf.json")).unwrap()
+    }
+
     fn security() -> serde_json::Value {
-        let conf: serde_json::Value =
-            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
-        conf["app"]["security"].clone()
+        conf()["app"]["security"].clone()
+    }
+
+    #[test]
+    fn updater_config_points_at_github_releases() {
+        use base64::Engine;
+        let conf = conf();
+        let updater = &conf["plugins"]["updater"];
+        assert_eq!(
+            updater["endpoints"],
+            serde_json::json!([
+                "https://github.com/AlexGenovezos/pheeme/releases/latest/download/latest.json"
+            ])
+        );
+        let pubkey = updater["pubkey"].as_str().unwrap();
+        assert!(!pubkey.is_empty());
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(pubkey)
+            .expect("pubkey must be base64");
+        assert!(String::from_utf8(decoded)
+            .unwrap()
+            .contains("minisign public key"));
+        assert_eq!(conf["bundle"]["createUpdaterArtifacts"], true);
+        assert!(include_str!("../capabilities/default.json").contains("\"updater:default\""));
     }
 
     #[test]
