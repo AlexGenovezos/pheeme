@@ -152,11 +152,19 @@ jobs:
           tool: cargo-llvm-cov
       - name: Rust coverage
         working-directory: src-tauri
+        shell: bash
         run: |
+          set +e
           cargo llvm-cov --summary-only --fail-under-lines 75 | tee rust-coverage.txt
+          status=${PIPESTATUS[0]}
           { echo '### Rust coverage'; echo '```'; grep -E "^(Filename|TOTAL)" rust-coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
       - run: npm ci
       - name: Frontend coverage
+        shell: bash
         run: |
+          set +e
           npm run test:coverage | tee frontend-coverage.txt
+          status=${PIPESTATUS[0]}
           { echo '### Frontend coverage'; echo '```'; sed -n '/Coverage summary/,$p' frontend-coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
