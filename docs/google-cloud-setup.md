@@ -1,0 +1,92 @@
+# Set up your Google Cloud app
+
+Pheeme reaches Gmail through a Google Cloud app that you own ("bring your own
+client"). Setup takes about 15 minutes, costs nothing, and you only do it once:
+other Google accounts can share the same app.
+
+Pheeme walks you through these steps itself on first launch. This page mirrors
+that guide (`src/onboarding/steps.ts`); keep the two in step.
+
+## 1. Create a project
+
+1. Open [New Project](https://console.cloud.google.com/projectcreate) and sign
+   in. Any Google account works; it doesn't have to be the mailbox you connect.
+2. Name it, for example `Pheeme`, and click **Create**.
+3. Check the new project is selected in the project picker at the top.
+
+## 2. Turn on the Gmail API
+
+Open the [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com)
+page, check your project is selected, and click **Enable**.
+
+## 3. Turn on the Google Calendar API
+
+Open the [Google Calendar API](https://console.cloud.google.com/apis/library/calendar-json.googleapis.com)
+page and click **Enable**. Calendar is coming to Pheeme; enabling it now means
+you won't repeat setup later. Pheeme doesn't ask for calendar access until you
+open the calendar.
+
+## 4. Set up the sign-in screen
+
+1. Open [Google Auth Platform](https://console.cloud.google.com/auth/overview)
+   and click **Get started**.
+2. **App information:** app name `Pheeme`, and your email as the support email.
+3. **Audience:** External. Choose Internal only for a Google Workspace project
+   used by your organization's accounts alone.
+4. **Contact information:** your email. Agree to the policy and click **Create**.
+5. Optional: under **Data access**, add these scopes. Pheeme requests them at
+   sign-in either way.
+   ```
+   https://www.googleapis.com/auth/gmail.modify
+   https://www.googleapis.com/auth/userinfo.email
+   https://www.googleapis.com/auth/userinfo.profile
+   ```
+
+## 5. Publish the app
+
+Open [Audience](https://console.cloud.google.com/auth/audience). Under
+**Publishing status**, click **Publish app**, then **Confirm**. (Internal apps
+skip this step.)
+
+An app left in **Testing** signs you out of Gmail every 7 days. Publishing stops
+that. It doesn't submit anything for review or make the app public: only people
+you give the client ID to can use it.
+
+## 6. Create a desktop client
+
+1. Open [Create client](https://console.cloud.google.com/auth/clients/create).
+2. **Application type:** Desktop app. **Name:** `Pheeme desktop`.
+3. Click **Create**. Google shows the client ID and secret; keep the dialog
+   open, or download the JSON.
+
+Use the **Desktop app** type: other types fail with `redirect_uri_mismatch`.
+
+## 7. Connect Pheeme
+
+1. Paste the client ID and secret into Pheeme (or paste the downloaded JSON
+   file's contents into the client ID box). The secret is stored in your system
+   keychain, never in Pheeme's database.
+2. Pheeme opens Google's sign-in page in your browser. Google says **"Google
+   hasn't verified this app"**. That's expected: the app is yours, and Google
+   only verifies apps offered to other people. Click **Advanced**, then **Go to
+   Pheeme (unsafe)**.
+3. Leave every box ticked, especially Gmail, and click **Continue**. Pheeme can
+   read, organize and send your mail, but can't permanently delete it (only move
+   it to Trash).
+4. When the browser says you can close the tab, go back to Pheeme.
+
+To add another account, use **Add account**. It reuses this app by default; pick
+"Use a different OAuth client" for a work account whose administrator requires
+its own.
+
+## Troubleshooting
+
+| You see | Fix |
+|---|---|
+| `Error 400: redirect_uri_mismatch` | The client isn't a Desktop app client. Create a Desktop app client and use its ID and secret. |
+| `Error 401: invalid_client` / "The OAuth client was not found" | Typo in the client ID, or the client was deleted. Copy it again from [Clients](https://console.cloud.google.com/auth/clients). |
+| `Error 403: org_internal` | The audience is Internal: only accounts in that Workspace organization can sign in. Use one, or switch the audience to External. |
+| `Error 403: access_denied` ("has not completed the Google verification process") | The app is in Testing and this account isn't a test user. Publish the app, or add the address under Test users. |
+| `Error 400: admin_policy_enforced` | Your Workspace administrator blocks unapproved apps. Ask them to trust your client ID (Admin console → Security → API controls). |
+| Signed out after 7 days | The app is still in Testing. Publish it (step 5), then sign in again. |
+| "No system keychain is available" (Linux) | Install and unlock a Secret Service provider such as GNOME Keyring or KWallet. |

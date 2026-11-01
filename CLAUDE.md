@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Source of truth:** [docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md) sets scope, priorities and the phase order, and overrides `Gmail client project plan.md` wherever they disagree (see its §9). The plan remains the detailed technical reference.
 
-**Current state:** Phase 1 (scaffold), Phase 2 (SQLite layer) and the foundation fixes (identity, startup, schema, keychain secret store, PR CI) are done. Next is OAuth + multi-account onboarding (design §12 step 2).
+**Current state:** Phase 1 (scaffold), Phase 2 (SQLite layer), the foundation fixes (identity, startup, schema, keychain secret store, PR CI) and OAuth + multi-account onboarding (design §12 step 2) are done. Next is the Gmail API client (§12 step 3).
 
 ## Commands
 
@@ -51,15 +51,16 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `lib.rs` | Bootstraps `AppState` (SQLite pool), runs migrations, registers Tauri commands (commands register here, not in `main.rs`) |
 | `db/` | All SQLite CRUD via SQLx — one file per entity (messages, threads, labels) |
 | `commands/` | Tauri command handlers (the IPC surface the frontend calls) |
-| `gmail/` | Gmail REST API client: auth, messages, threads, labels, drafts |
+| `gmail/` | Gmail REST API client. `auth.rs` is OAuth (PKCE + loopback redirect); the rest lands in Phase 3 |
 | `sync/` | Background sync engine using Gmail History API for incremental updates |
+| `accounts.rs` | Tauri-free account service: sign-in flow, list/remove, access tokens (cached in memory) |
 | `identity.rs` | App identifier and keychain service constants |
 | `secrets.rs` | OS keychain secret store; tokens never go in SQLite |
 
 ### Frontend State
 
-Three Zustand stores (defined, not yet wired up):
-- `accountStore` — auth state, active account
+Three Zustand stores; only `accountStore` is wired up so far:
+- `accountStore` — connected accounts (load, upsert, remove)
 - `mailStore` — threads, messages, labels cache
 - `uiStore` — selected thread, active label, pane layout
 
@@ -78,4 +79,6 @@ Six tables.
 - **IPC pattern:** Add a Rust fn in `commands/<domain>.rs`, register it in `lib.rs`'s `Builder`, add a typed wrapper in `src/lib/tauri.ts`.
 - **DB queries:** Use `sqlx::query_as!` macros for compile-time checking. All queries go in `db/<entity>.rs`.
 - **Thread labels** live in the `thread_labels` table; `messages.label_ids` JSON remains only for per-message display.
+- **Command errors** reject with `{ code, message }` (`CommandError` in `commands/mod.rs`): branch on `code`, show `message`.
+- **Onboarding guide text** lives in `src/onboarding/steps.ts` and is mirrored in `docs/google-cloud-setup.md`; change both together.
 - Tauri dev server runs on **port 1420** (HMR on 1421). Don't change these without updating `tauri.conf.json`.
