@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+const PUBLIC_VERSION = /^\d+\.\d+$/;
+const PUBLIC_TAG = /^v\d+\.\d+$/;
 const VERSION_LINE = /^(\s*version\s*=\s*)"([^"]*)"/;
 
 const files = {
@@ -60,15 +61,21 @@ export function readVersions(root) {
   };
 }
 
+// Public versions are MAJOR.MINOR; files store MAJOR.MINOR.0 because Cargo and MSI need three parts.
 export function checkVersions(root, expectedTag) {
+  if (expectedTag && !PUBLIC_TAG.test(expectedTag)) {
+    return [`tag ${expectedTag} is not of the form vMAJOR.MINOR`];
+  }
   const versions = readVersions(root);
-  const expected = expectedTag ? expectedTag.replace(/^v/, "") : versions.packageJson;
+  const expected = expectedTag ? `${expectedTag.slice(1)}.0` : versions.packageJson;
   const reference = expectedTag ? `tag ${expectedTag}` : "package.json";
-  return Object.entries(files)
-    .filter(([key]) => versions[key] !== expected)
-    .map(
-      ([key, file]) => `${file} has version ${versions[key]}, expected ${expected} (${reference})`,
-    );
+  return Object.entries(files).flatMap(([key, file]) => {
+    const actual = versions[key];
+    if (actual !== expected) {
+      return [`${file} has version ${actual}, expected ${expected} (${reference})`];
+    }
+    return /^\d+\.\d+\.0$/.test(actual) ? [] : [`${file} has version ${actual}, patch must be 0`];
+  });
 }
 
 // Replaces the string value at the given key path, leaving all other text untouched.
@@ -117,7 +124,8 @@ function setLine(root, file, find, version) {
 }
 
 export function setVersion(root, version) {
-  if (!SEMVER.test(version)) throw new Error(`not a semver version: ${version}`);
+  if (!PUBLIC_VERSION.test(version)) throw new Error(`not a MAJOR.MINOR version: ${version}`);
+  version = `${version}.0`;
   setJson(root, files.packageJson, [["version"]], version);
   setJson(root, files.packageLock, [["version"], ["packages", "", "version"]], version);
   setJson(root, files.tauriConf, [["version"]], version);
@@ -138,9 +146,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     console.log("versions in sync");
   } else if (command === "set" && args[0]) {
     setVersion(root, args[0]);
-    console.log(`set version ${args[0]}`);
+    console.log(`set version ${args[0]}.0`);
   } else {
-    console.error("usage: version.mjs check [--tag vX.Y.Z] | set X.Y.Z");
+    console.error("usage: version.mjs check [--tag vX.Y] | set X.Y");
     process.exit(2);
   }
 }

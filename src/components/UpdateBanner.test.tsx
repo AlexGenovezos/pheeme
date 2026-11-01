@@ -13,7 +13,7 @@ test("renders nothing when there is no update", () => {
 test("shows the available version", () => {
   useUpdateStore.setState({ available: "0.2.0" });
   render(<UpdateBanner />);
-  expect(screen.getByText("Pheeme 0.2.0 is ready")).toBeInTheDocument();
+  expect(screen.getByText("Pheeme 0.2 is ready")).toBeInTheDocument();
 });
 
 test("clicking restart applies the update", () => {

@@ -14,6 +14,9 @@ export interface UpdaterDeps {
   log(msg: string, err: unknown): void;
 }
 
+/** Public versions are two-part; the files store a trailing `.0` patch. */
+export const displayVersion = (v: string) => v.replace(/^(\d+\.\d+)\.0$/, "$1");
+
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const tauriDeps: UpdaterDeps = {

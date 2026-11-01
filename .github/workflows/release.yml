@@ -140,9 +140,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Pheeme ${{ github.ref_name }}'
+          releaseName: ${{ format('Pheeme {0}{1}', github.ref_name, startsWith(github.ref_name, 'v0.') && ' beta' || '') }}
           releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
           uploadUpdaterJson: true
           args: ${{ matrix.args }}
 
@@ -159,7 +158,7 @@ jobs:
       - name: Validate latest.json on the draft
         run: |
           gh release download "$GITHUB_REF_NAME" -p latest.json -D "$RUNNER_TEMP"
-          jq -e --arg v "${GITHUB_REF_NAME#v}" '
+          jq -e --arg v "${GITHUB_REF_NAME#v}.0" '
             .version == $v and
             ([.platforms["darwin-aarch64", "darwin-x86_64", "windows-x86_64", "linux-x86_64"]
               | (.url // "") != "" and (.signature // "") != ""] | all)

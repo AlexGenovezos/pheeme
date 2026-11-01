@@ -395,8 +395,8 @@ The review found the listing SQL correct, but the cursor branch (`threads.rs` ~2
 
 - [ ] After merge, Alex chooses: make the repo public (spec §7 says public; the updater and anonymous downloads require it) or keep it private for now. With a private repo, releases build and publish, but the in-app updater check gets a 404 and logs quietly (Review Focus 3).
 - [ ] Alex runs `scripts/setup-release-secrets-macos.sh` on the Mac. This can come later; unsigned builds work meanwhile.
-- [ ] Controller (with Alex's go-ahead): `git tag v0.1.0 && git push origin v0.1.0`. Watch the release run (confirm it started, and flag stuck/queued jobs).
+- [ ] Controller (with Alex's go-ahead): `git tag v0.1 && git push origin v0.1`. Watch the release run (confirm it started, and flag stuck/queued jobs).
 - [ ] Expect a published release with dmg, msi, nsis exe, AppImage, deb and `latest.json` listing four platforms.
 - [ ] Alex installs the dmg on the Mac and the app opens. While the repo is private, Alex downloads it logged in.
 - [ ] **Blocked until the repo is public** (or there's another public release host): anonymous downloads and the updater end-to-end test.
-- [ ] Updater end-to-end: release `v0.1.1` and confirm the 0.1.0 app shows the banner, then restarts into 0.1.1.
+- [ ] Updater end-to-end: release `v0.2` and confirm the 0.1 app shows the banner, then restarts into 0.2.

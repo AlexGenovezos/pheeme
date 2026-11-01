@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   CHECK_INTERVAL_MS,
   __resetForTests,
+  displayVersion,
   startUpdateChecks,
   useUpdateStore,
   type PendingUpdate,
@@ -142,4 +143,13 @@ test("default deps leave the store empty when no update exists", async () => {
   stop = startUpdateChecks();
   await vi.advanceTimersByTimeAsync(0);
   expect(useUpdateStore.getState().available).toBeNull();
+});
+
+test.each([
+  ["0.2.0", "0.2"],
+  ["1.0.0", "1.0"],
+  ["0.2.1", "0.2.1"],
+  ["0.2", "0.2"],
+])("displayVersion(%s) is %s", (input, expected) => {
+  expect(displayVersion(input)).toBe(expected);
 });

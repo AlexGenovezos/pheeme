@@ -13,7 +13,7 @@ Website: [pheeme.app](https://pheeme.app)
 
 ## Install
 
-Download the latest build from [Releases](https://github.com/AlexGenovezos/pheeme/releases/latest).
+Download the latest build from [Releases](https://github.com/AlexGenovezos/pheeme/releases/latest). Versions are two-part (`v0.2`); 0.x is beta, and 1.0 is when Pheeme leaves beta.
 
 - **macOS:** open the `.dmg` and drag Pheeme to Applications. If the build is
   unsigned, right-click the app and choose Open, or run
@@ -53,9 +53,11 @@ SQLX_OFFLINE=true cargo test -- --ignored keyring_store_round_trip_on_this_os
 
 ## Releasing
 
-1. `npm run version:set X.Y.Z`
-2. Commit as `release: vX.Y.Z` and merge it through a PR.
-3. After the merge: `git tag vX.Y.Z && git push origin vX.Y.Z`
+Versions are two-part (`v0.2`): 0.x is beta, and 1.0 is when Pheeme leaves beta.
+
+1. `npm run version:set 0.2` (files store `0.2.0`; Cargo and MSI need three parts)
+2. Commit as `release: v0.2` and merge it through a PR.
+3. After the merge: `git tag v0.2 && git push origin v0.2`
 4. The Release workflow creates a draft release, builds macOS (universal),
    Windows and Linux, checks `latest.json`, then publishes.
 
