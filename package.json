@@ -11,7 +11,8 @@
     "test": "vitest",
     "test:ci": "vitest run",
     "preview": "vite preview",
-    "tauri": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri"
+    "tauri": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -34,6 +35,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@vitejs/plugin-react": "^4",
+    "@vitest/coverage-v8": "2.1.9",
     "cross-env": "^7",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",
