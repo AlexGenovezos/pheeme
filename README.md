@@ -18,6 +18,24 @@ Website: [pheeme.app](https://pheeme.app)
 
 A step-by-step Google Cloud setup guide comes with the OAuth phase.
 
+## Develop on macOS
+
+```bash
+git clone https://github.com/AlexGenovezos/pheeme.git
+cd pheeme
+scripts/setup-macos.sh
+npm run tauri dev
+```
+
+The setup script checks the Apple and Rust toolchains, installs the universal
+Rust targets and SQLx CLI, and runs `npm ci`. To test the real macOS keychain
+integration once, run:
+
+```bash
+cd src-tauri
+SQLX_OFFLINE=true cargo test -- --ignored keyring_store_round_trip_on_this_os
+```
+
 ## License
 
 MIT

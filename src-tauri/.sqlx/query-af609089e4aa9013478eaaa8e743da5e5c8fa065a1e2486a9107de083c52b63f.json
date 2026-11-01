@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT id, account_id, subject, snippet, history_id,\n               label_ids, last_message_date, message_count, unread_count, has_attachment\n        FROM threads\n        WHERE account_id = ?\n          AND EXISTS (\n            SELECT 1 FROM json_each(label_ids) WHERE value = ?\n          )\n        ORDER BY last_message_date DESC\n        LIMIT ? OFFSET ?\n        ",
+  "query": "\n        SELECT id, account_id, subject, snippet, history_id,\n               last_message_date, message_count, unread_count, has_attachment\n        FROM threads WHERE account_id = ? AND id = ?\n        ",
   "describe": {
     "columns": [
       {
@@ -29,38 +29,32 @@
         "type_info": "Text"
       },
       {
-        "name": "label_ids",
-        "ordinal": 5,
-        "type_info": "Text"
-      },
-      {
         "name": "last_message_date",
-        "ordinal": 6,
+        "ordinal": 5,
         "type_info": "Integer"
       },
       {
         "name": "message_count",
-        "ordinal": 7,
+        "ordinal": 6,
         "type_info": "Integer"
       },
       {
         "name": "unread_count",
-        "ordinal": 8,
+        "ordinal": 7,
         "type_info": "Integer"
       },
       {
         "name": "has_attachment",
-        "ordinal": 9,
+        "ordinal": 8,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 4
+      "Right": 2
     },
     "nullable": [
       false,
       false,
-      true,
       true,
       true,
       true,
@@ -70,5 +64,5 @@
       false
     ]
   },
-  "hash": "f831c251a90defec00a04b2510bc19490d363b0b32f6fcc40734f0510a45d50d"
+  "hash": "af609089e4aa9013478eaaa8e743da5e5c8fa065a1e2486a9107de083c52b63f"
 }

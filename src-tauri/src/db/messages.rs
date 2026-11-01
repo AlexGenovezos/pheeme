@@ -7,7 +7,7 @@ pub struct DbMessage {
     pub id: String,
     pub account_id: String,
     pub thread_id: String,
-    pub label_ids: Option<String>,    // JSON array
+    pub label_ids: Option<String>, // JSON array
     pub from_address: Option<String>,
     pub from_name: Option<String>,
     pub to_addresses: Option<String>, // JSON array
@@ -21,7 +21,7 @@ pub struct DbMessage {
     pub has_attachment: i64,
     pub is_read: i64,
     pub is_starred: i64,
-    pub raw_headers: Option<String>,  // JSON
+    pub raw_headers: Option<String>, // JSON
     pub fully_fetched: i64,
 }
 

@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    gmail_client_lib::run()
+    pheeme_lib::run()
 }

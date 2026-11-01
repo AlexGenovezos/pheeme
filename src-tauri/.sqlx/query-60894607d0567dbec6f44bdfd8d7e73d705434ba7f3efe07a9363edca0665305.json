@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO thread_labels (account_id, thread_id, label_id, last_message_date)\n            VALUES (?, ?, ?, COALESCE(?, 0))\n            ON CONFLICT(account_id, thread_id, label_id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "60894607d0567dbec6f44bdfd8d7e73d705434ba7f3efe07a9363edca0665305"
+}
