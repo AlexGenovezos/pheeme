@@ -1,22 +1,38 @@
 use crate::identity::KEYCHAIN_SERVICE;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, PoisonError};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountSecrets {
     pub client_secret: String,
     pub refresh_token: String,
 }
 
-#[derive(Debug, PartialEq, thiserror::Error)]
+impl std::fmt::Debug for AccountSecrets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "AccountSecrets { client_secret: \"<redacted>\", refresh_token: \"<redacted>\" }",
+        )
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum SecretsError {
-    #[error("No system keychain is available. On Linux, install and unlock a Secret Service provider such as GNOME Keyring or KWallet, then try again.")]
-    Unavailable,
+    #[error("{}", unavailable_message(.0))]
+    Unavailable(#[source] keyring::Error),
     #[error("Stored credentials for this account are unreadable; please sign in again.")]
     Corrupt,
     #[error("Keychain error: {0}")]
     Other(String),
+}
+
+fn unavailable_message(cause: &keyring::Error) -> String {
+    if cfg!(target_os = "linux") {
+        "No system keychain is available. On Linux, install and unlock a Secret Service provider such as GNOME Keyring or KWallet, then try again.".to_owned()
+    } else {
+        format!("the system keychain is unavailable: {cause}")
+    }
 }
 
 pub trait SecretStore: Send + Sync {
@@ -25,26 +41,29 @@ pub trait SecretStore: Send + Sync {
     fn delete(&self, account_id: &str) -> Result<(), SecretsError>;
 }
 
+/// Calls may block on an OS keychain prompt; async callers must use `spawn_blocking`.
 pub struct KeyringStore;
+
+// Keyring backends are not safe for concurrent access to the same entry.
+static KEYRING_LOCK: Mutex<()> = Mutex::new(());
+
+pub(crate) fn entry_name(account_id: &str) -> String {
+    format!("account:{account_id}")
+}
+
+pub(crate) fn decode(json: &str) -> Result<AccountSecrets, SecretsError> {
+    serde_json::from_str(json).map_err(|_| SecretsError::Corrupt)
+}
 
 impl KeyringStore {
     fn with_entry<T>(
         account_id: &str,
         operation: impl FnOnce(&keyring::Entry) -> keyring::Result<T>,
     ) -> keyring::Result<T> {
-        let _guard = keyring_lock().lock().map_err(|_| {
-            keyring::Error::PlatformFailure(Box::new(std::io::Error::other(
-                "keyring lock poisoned",
-            )))
-        })?;
-        let entry = keyring::Entry::new(KEYCHAIN_SERVICE, &format!("account:{account_id}"))?;
+        let _guard = KEYRING_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let entry = keyring::Entry::new(KEYCHAIN_SERVICE, &entry_name(account_id))?;
         operation(&entry)
     }
-}
-
-fn keyring_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
 }
 
 impl SecretStore for KeyringStore {
@@ -60,9 +79,7 @@ impl SecretStore for KeyringStore {
             Err(keyring::Error::NoEntry) => return Ok(None),
             Err(error) => return Err(map_keyring_error(error)),
         };
-        serde_json::from_str(&value)
-            .map(Some)
-            .map_err(|_| SecretsError::Corrupt)
+        decode(&value).map(Some)
     }
 
     fn delete(&self, account_id: &str) -> Result<(), SecretsError> {
@@ -111,9 +128,9 @@ impl SecretStore for MemoryStore {
 }
 
 pub fn map_keyring_error(error: keyring::Error) -> SecretsError {
-    match error {
+    match &error {
         keyring::Error::NoStorageAccess(_) | keyring::Error::PlatformFailure(_) => {
-            SecretsError::Unavailable
+            SecretsError::Unavailable(error)
         }
         keyring::Error::BadEncoding(_) => SecretsError::Corrupt,
         other => SecretsError::Other(other.to_string()),
@@ -149,20 +166,64 @@ mod tests {
     #[test]
     fn keyring_unavailable_maps_to_clear_error() {
         let unavailable = keyring::Error::NoStorageAccess(Box::new(std::io::Error::other("x")));
-        assert_eq!(map_keyring_error(unavailable), SecretsError::Unavailable);
+        assert!(matches!(
+            map_keyring_error(unavailable),
+            SecretsError::Unavailable(_)
+        ));
 
         let failure = keyring::Error::PlatformFailure(Box::new(std::io::Error::other("x")));
         let error = map_keyring_error(failure);
-        assert_eq!(error, SecretsError::Unavailable);
-        assert!(error.to_string().contains("Secret Service"));
+        assert!(matches!(error, SecretsError::Unavailable(_)));
+        if cfg!(target_os = "linux") {
+            assert!(error.to_string().contains("Secret Service"));
+        } else {
+            assert!(error.to_string().contains("x"));
+        }
     }
 
     #[test]
     fn bad_encoding_maps_to_corrupt() {
-        assert_eq!(
+        assert!(matches!(
             map_keyring_error(keyring::Error::BadEncoding(vec![0xff])),
             SecretsError::Corrupt
-        );
+        ));
+    }
+
+    #[test]
+    fn account_secrets_debug_redacts() {
+        let s = AccountSecrets {
+            client_secret: "cs-123".into(),
+            refresh_token: "rt-456".into(),
+        };
+        let out = format!("{:?}", s);
+        assert!(!out.contains("cs-123"));
+        assert!(!out.contains("rt-456"));
+        assert!(out.contains("<redacted>"));
+    }
+
+    #[test]
+    fn decode_rejects_non_json_and_missing_fields() {
+        let err = decode("not json").unwrap_err();
+        assert!(matches!(err, SecretsError::Corrupt));
+        assert!(!err.to_string().contains("not json"));
+        assert!(matches!(
+            decode("{\"client_secret\":\"x\"}"),
+            Err(SecretsError::Corrupt)
+        ));
+    }
+
+    #[test]
+    fn decode_round_trips_serialized_secrets() {
+        let expected = secrets();
+        let json = serde_json::to_string(&expected).unwrap();
+        assert_eq!(decode(&json).unwrap(), expected);
+    }
+
+    #[test]
+    fn keychain_entry_name_is_stable() {
+        // Changing either value orphans every token already stored in users' keychains.
+        assert_eq!(entry_name("abc"), "account:abc");
+        assert_eq!(KEYCHAIN_SERVICE, "app.pheeme.desktop");
     }
 
     #[test]
