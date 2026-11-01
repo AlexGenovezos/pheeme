@@ -21,7 +21,7 @@ command -v npm >/dev/null 2>&1 || fail "Install npm (ships with Node.js 22+): ht
 rustup toolchain install
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-if ! sqlx --version 2>/dev/null | grep -qF "sqlx-cli 0.8.6"; then
+if [ "$(sqlx --version 2>/dev/null)" != "sqlx-cli 0.8.6" ]; then
   cargo install sqlx-cli --version 0.8.6 --locked --force --no-default-features --features sqlite,rustls
 fi
 
