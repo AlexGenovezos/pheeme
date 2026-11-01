@@ -699,6 +699,22 @@ mod tests {
         // FIRST_PAGE_SQL and CURSOR_PAGE_SQL are copies of the queries in
         // list_threads (query_as! needs literals); the row checks below fail
         // if they drift apart.
+        let production = include_str!("threads.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        let production = normalize(production);
+        for (name, sql) in [
+            ("FIRST_PAGE_SQL", FIRST_PAGE_SQL),
+            ("CURSOR_PAGE_SQL", CURSOR_PAGE_SQL),
+        ] {
+            assert!(
+                production.contains(&normalize(sql)),
+                "{name} drifted from the query in list_threads"
+            );
+        }
+
         let pool = seeded_pool().await;
         for (a, t, d) in [("a1", "t1", 300), ("a2", "t2", 200), ("a1", "t3", 100)] {
             seed(&pool, a, t, Some(d), &["INBOX"]).await;
