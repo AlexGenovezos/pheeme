@@ -126,3 +126,21 @@ pub async fn delete_account(pool: &SqlitePool, account_id: &str) -> Result<()> {
         .await?;
     Ok(())
 }
+
+/// Re-signing in an existing account can switch it to a different OAuth client.
+pub async fn update_client_id(
+    pool: &SqlitePool,
+    account_id: &str,
+    client_id: &str,
+    updated_at: i64,
+) -> Result<()> {
+    sqlx::query!(
+        "UPDATE accounts SET client_id = ?, updated_at = ? WHERE id = ?",
+        client_id,
+        updated_at,
+        account_id
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
