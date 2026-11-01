@@ -35,6 +35,9 @@ export function AppShell({ onManageAccounts }: { onManageAccounts?: () => void }
   const listSpace = width > 0 ? width - (sidebarCollapsed ? 0 : sidebarWidth) : 0;
   const listMax = listSpace > 0 ? Math.max(PANE.listMin, listSpace - PANE.viewMin) : Math.max(listWidth, PANE.listMin);
 
+  // The grid squeezes the list when the window shrinks; drags and arrow keys start from what's on screen.
+  const renderedListWidth = Math.min(Math.max(listWidth, PANE.listMin), listMax);
+
   const style = {
     "--shell-sidebar-w": `${sidebarWidth}px`,
     "--shell-list-w": `${listWidth}px`,
@@ -70,7 +73,7 @@ export function AppShell({ onManageAccounts }: { onManageAccounts?: () => void }
       <Divider
         className="shell__divider--list"
         label="Resize conversation list"
-        value={listWidth}
+        value={renderedListWidth}
         min={PANE.listMin}
         max={listMax}
         onResize={(w) => setListWidth(w, listSpace)}

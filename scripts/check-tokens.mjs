@@ -16,10 +16,11 @@ export const ALLOWED = new Set([
 const RULES = [
   { name: "hex color", re: /#[0-9a-f]{3,8}\b/gi },
   { name: "color function", re: /\b(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb)\(/gi },
-  // Any non-zero length or duration. Unitless numbers, %, fr and zero are fine.
+  // Any non-zero length or duration, signed or not (but not digits inside names like
+  // `--space-4`). Unitless numbers, %, fr and zero are fine.
   {
     name: "length/duration",
-    re: /(?<![\w#-])(?!0*\.?0+(?:px|r?em|m?s|v[hw]|pt|ch)\b)\d*\.?\d+(?:px|r?em|ms|s|v[hw]|pt|ch)\b/g,
+    re: /(?<![\w#]|\w-)(?!0*\.?0+(?:px|r?em|m?s|v[hw]|pt|ch)\b)\d*\.?\d+(?:px|r?em|ms|s|v[hw]|pt|ch)\b/g,
   },
 ];
 

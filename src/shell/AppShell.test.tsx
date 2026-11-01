@@ -60,6 +60,32 @@ describe("pane dividers", () => {
     expect(divider).toHaveAttribute("aria-valuenow", String(PANE.sidebarDefault));
   });
 
+  test("after the window shrinks, dragging starts from the rendered list width", () => {
+    // A 1000 px window with a 220 px sidebar leaves room for a 380 px list (view min 400).
+    class FixedWidthObserver {
+      constructor(private cb: ResizeObserverCallback) {}
+      observe() {
+        this.cb([{ contentRect: { width: 1000 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+      }
+      disconnect() {}
+    }
+    const original = window.ResizeObserver;
+    window.ResizeObserver = FixedWidthObserver as unknown as typeof ResizeObserver;
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarWidth: 220, listWidth: 660, sidebarCollapsed: false }));
+      __resetUiStoreForTests();
+      render(<AppShell />);
+      const divider = screen.getByRole("separator", { name: "Resize conversation list" });
+      expect(divider).toHaveAttribute("aria-valuenow", "380");
+      fireEvent.pointerDown(divider, { button: 0, clientX: 600 });
+      fireEvent.pointerMove(divider, { clientX: 560 });
+      fireEvent.pointerUp(divider, { clientX: 560 });
+      expect(useUiStore.getState().listWidth).toBe(340);
+    } finally {
+      window.ResizeObserver = original;
+    }
+  });
+
   test("a stored layout is restored on launch", () => {
     localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarWidth: 260, listWidth: 420, sidebarCollapsed: true }));
     __resetUiStoreForTests();

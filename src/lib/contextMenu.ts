@@ -43,9 +43,14 @@ export function toAccelerator(shortcut: string | undefined): string | undefined 
 }
 
 let seq = 0;
-let lastNativeMenu: Menu | null = null;
+/** The last native menu and its items. GTK popups return before they close, so they stay alive until the next menu. */
+let lastNative: Array<{ close(): Promise<void> }> = [];
 
 async function showNative(items: ContextMenuItem[], at?: { x: number; y: number }) {
+  // Free the previous menu's Rust resources (menu and items) before new items reuse their ids.
+  const previous = lastNative;
+  lastNative = [];
+  await Promise.all(previous.map((r) => r.close().catch(() => {})));
   const built = await Promise.all(
     items.map((item) => {
       if (item.type === "separator") return PredefinedMenuItem.new({ item: "Separator" });
@@ -62,10 +67,7 @@ async function showNative(items: ContextMenuItem[], at?: { x: number; y: number 
     }),
   );
   const menu = await Menu.new({ items: built });
-  // Free the previous menu's Rust resources; GTK popups return before they close,
-  // so the current one stays alive until the next menu replaces it.
-  void lastNativeMenu?.close().catch(() => {});
-  lastNativeMenu = menu;
+  lastNative = [menu, ...built];
   await menu.popup(at ? new LogicalPosition(at.x, at.y) : undefined);
 }
 
