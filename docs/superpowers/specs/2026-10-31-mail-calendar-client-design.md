@@ -68,6 +68,12 @@ Alex's own daily use is the first bar: v1 is done when Alex can make Pheeme his 
 3. Gmail push via Pub/Sub (existing plan, Phase 10 "Future").
 4. Mail extras, tracked as GitHub issues labelled `post-v1`: snooze (#1), scheduled send (#2), signatures (#3), send-as aliases (#4), contact autocomplete (#5). Snooze and scheduled send are local-only because Gmail's API has neither.
 
+### v2
+- **AI integration via a local MCP server** ([#6](https://github.com/AlexGenovezos/pheeme/issues/6)): MCP clients (Claude Code, Claude Desktop, …) can search mail, read threads, list labels/events, find free time, and create drafts, all served from the local cache. Read-only by default, with write tools individually opt-in, **no direct send** (drafts only), an activity log, and localhost only.
+
+### Architecture rule that v2 depends on (applies from now)
+Business logic lives in Rust service modules that don't depend on Tauri (`db/`, `gmail/`, `sync/`, and later `mail/` and `calendar/` services). `commands/` stays a thin IPC adapter: it parses arguments, calls a service, and maps errors. The MCP server (or any future API) is then a second adapter over the same services, not a rewrite.
+
 ## 5. Speed principles
 
 "Stupid fast" means *perceived* speed. These are requirements, not aspirations:
