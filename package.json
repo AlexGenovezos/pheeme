@@ -6,30 +6,38 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:ci": "vitest run --passWithNoTests",
     "preview": "vite preview",
-    "tauri": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri",
-    "test": "vitest"
+    "tauri": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-notification": "^2",
+    "@tauri-apps/plugin-shell": "^2",
+    "date-fns": "^3",
+    "dompurify": "^3",
+    "lucide-react": "0.468.0",
     "react": "^18",
     "react-dom": "^18",
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-shell": "^2",
-    "@tauri-apps/plugin-notification": "^2",
-    "zustand": "^4",
-    "dompurify": "^3",
-    "date-fns": "^3",
-    "lucide-react": "latest"
+    "zustand": "^4"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@tauri-apps/cli": "^2",
+    "@types/dompurify": "^3",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/dompurify": "^3",
     "@vitejs/plugin-react": "^4",
+    "cross-env": "^7",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^15.15.0",
     "typescript": "~5.8.3",
+    "typescript-eslint": "^8.72.1",
     "vite": "^6",
-    "vitest": "^2",
-    "@tauri-apps/cli": "^2",
-    "cross-env": "^7"
+    "vitest": "^2"
   }
 }
