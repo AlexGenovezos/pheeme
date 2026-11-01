@@ -1,0 +1,16 @@
+{
+  "threads": [
+    {
+      "id": "18c3aa00bb11cc22",
+      "snippet": "Sounds good, see you then",
+      "historyId": "1204800"
+    },
+    {
+      "id": "18c3aa00bb11cc30",
+      "snippet": "Your receipt",
+      "historyId": "1204790"
+    }
+  ],
+  "nextPageToken": "09876543210987654321",
+  "resultSizeEstimate": 201
+}
