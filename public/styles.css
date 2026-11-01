@@ -99,17 +99,28 @@ kbd {
 /* ---------- hero ---------- */
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
-  gap: 3rem;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 2rem;
   align-items: end;
-  padding-block: clamp(3rem, 9vw, 7rem) 3.5rem;
+  padding-top: clamp(2rem, 6vw, 4.5rem);
 }
+.hero-copy { align-self: center; padding-bottom: 4rem; }
 .hero h1 {
-  font-size: var(--t-4);
+  font-size: clamp(3rem, 7.2vw, 6.75rem);
   font-stretch: 78%;
   font-weight: 650;
   line-height: .92;
   letter-spacing: -0.025em;
+}
+.hero .lede { margin-top: 1.75rem; }
+/* Pheme stands on the inbox window the way she stands on her dome in Dresden. */
+.hero-art {
+  position: relative;
+  z-index: 1;
+  justify-self: center;
+  width: auto;
+  height: clamp(440px, 50vw, 700px);
+  margin-bottom: -3px;
 }
 .lede { font-size: var(--t-1); line-height: 1.45; color: var(--paper); max-width: 34ch; }
 .actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 2rem; }
@@ -229,6 +240,19 @@ kbd {
 .term .p { color: var(--gold); }
 .cursor { display: inline-block; width: .6em; height: 1.1em; vertical-align: -.2em; background: var(--paper); animation: blink 1s steps(1) infinite; }
 
+/* ---------- the name ---------- */
+.name {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 5rem);
+  align-items: center;
+  padding-bottom: clamp(5rem, 10vw, 8rem);
+}
+.name figure { margin: 0; }
+.name figcaption { margin-top: .75rem; font-size: .85rem; color: var(--muted); }
+.name h2 { font-size: var(--t-3); font-stretch: 80%; line-height: 1; letter-spacing: -0.02em; }
+.name p { margin-top: 1.1rem; color: #c9d3ee; max-width: 42ch; }
+
 /* ---------- roadmap ---------- */
 .roadmap { padding-bottom: clamp(5rem, 10vw, 8rem); }
 .roadmap > h2 { font-size: var(--t-3); font-stretch: 80%; line-height: 1; letter-spacing: -0.02em; }
@@ -278,12 +302,17 @@ kbd {
 .foot nav { margin-left: auto; display: flex; gap: 1.5rem; }
 .foot nav a { text-decoration: none; }
 .foot nav a:hover { color: var(--paper); }
+.foot .credit { flex-basis: 100%; font-size: .8rem; max-width: 80ch; }
+.foot .credit a { color: var(--muted); }
 
 @keyframes blink { 50% { opacity: 0; } }
 
 /* ---------- responsive ---------- */
 @media (max-width: 960px) {
-  .hero { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  .hero-copy { padding-bottom: 0; }
+  .hero-art { height: clamp(320px, 70vw, 480px); }
+  .name { grid-template-columns: minmax(0, 1fr); }
   .panes { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .folders { display: none; }
   .pillars { grid-template-columns: minmax(0, 1fr); }

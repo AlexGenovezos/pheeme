@@ -27,7 +27,8 @@ wrangler dev          # or: python3 -m http.server -d public 8787
 | `public/index.html`, `styles.css`, `demo.js` | Home page and the keyboard inbox demo |
 | `public/logos.html` | Logo download page (pheeme.app/logos) |
 | `public/brand/` | Generated logo set: SVG + PNG, plus `pheeme-brand.zip` |
-| `brand-src/` | Logo sources: outlined wordmark and the social card template |
+| `public/art/` | Halftone Pheme statue art (built by `scripts/build-fama.sh`) |
+| `brand-src/` | Logo sources: outlined wordmark, social card template, statue source photo |
 | `scripts/build-brand.mjs` | Regenerates `public/brand`, favicons, app icons and `og.png` |
 
 ## Logos
@@ -39,3 +40,7 @@ node scripts/build-brand.mjs
 ```
 
 It needs `magick` (ImageMagick), `zip`, and a Playwright `chrome-headless-shell` (or set `CHROME=/path/to/chrome`). The wordmark is Poppins SemiBold outlined to a path by `scripts/wordmark.py`, so it doesn't depend on the font. Site type is Instrument Sans and Martian Mono (both SIL OFL), self-hosted in `public/fonts`.
+
+## Statue art and license
+
+The hero statue is Fama (the Roman name for Pheme) by Robert Henze, on the Dresden Academy of Fine Arts. The source photo is [Dresden Fama (2005).jpg](https://commons.wikimedia.org/wiki/File:Dresden_Fama_(2005).jpg) by Brunswyk, licensed [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). `scripts/build-fama.sh` cuts it out, halftones and recolors it. The edited images in `public/art/` and the statue in `public/og.png` are shared under CC BY-SA 3.0 as well, and the site footer carries the credit. Keep the statue out of the logo, since that would put the logo under the same license.
