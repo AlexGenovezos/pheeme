@@ -20,15 +20,44 @@ mod tests {
         assert_eq!(conf["productName"], "Pheeme");
     }
 
-    #[test]
-    fn csp_is_strict() {
+    fn security() -> serde_json::Value {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
-        let csp = &conf["app"]["security"]["csp"];
-        assert!(!csp.is_null(), "CSP must be set");
-        let s = csp.to_string();
-        assert!(s.contains("default-src") && s.contains("'self'"));
-        assert!(!s.contains("unsafe-eval"));
-        assert!(!s.contains("script-src 'self' 'unsafe-inline'"));
+        conf["app"]["security"].clone()
+    }
+
+    #[test]
+    fn csp_is_strict() {
+        let sec = security();
+        let csp = sec["csp"].as_object().expect("csp must be an object");
+        assert_eq!(csp["default-src"], "'self'");
+        assert_eq!(csp["script-src"], "'self'");
+        for (directive, value) in csp {
+            let value = value.as_str().unwrap();
+            assert!(!value.contains("unsafe-eval"), "{directive} allows eval");
+            if directive != "style-src" {
+                assert!(
+                    !value.contains("unsafe-inline"),
+                    "{directive} allows unsafe-inline"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dev_csp_allows_vite_but_never_eval() {
+        let sec = security();
+        let dev = sec["devCsp"].as_object().expect("devCsp must be an object");
+        assert_eq!(dev["default-src"], "'self'");
+        assert_eq!(dev["script-src"], "'self' 'unsafe-inline'");
+        let connect = dev["connect-src"].as_str().unwrap();
+        assert!(connect.contains("ws://localhost:1420"));
+        assert!(connect.contains("ws://localhost:1421"));
+        for (directive, value) in dev {
+            assert!(
+                !value.as_str().unwrap().contains("unsafe-eval"),
+                "{directive} allows eval"
+            );
+        }
     }
 }
