@@ -1,12 +1,12 @@
 [package]
-name = "gmail-client"
+name = "pheeme"
 version = "0.1.0"
-description = "A cross-platform Gmail client"
+description = "Pheeme: an open-source desktop Gmail client"
 authors = []
 edition = "2021"
 
 [lib]
-name = "gmail_client_lib"
+name = "pheeme_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

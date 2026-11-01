@@ -10,7 +10,7 @@ function App() {
 
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "sans-serif" }}>
-      {ready ? <h2>Gmail Client — ready</h2> : <p>Loading...</p>}
+      {ready ? <h2>Pheeme — ready</h2> : <p>Loading...</p>}
     </div>
   );
 }

@@ -1,8 +1,9 @@
-mod commands;
-mod crypto;
-mod db;
-mod gmail;
-mod sync;
+pub mod commands;
+pub mod crypto;
+pub mod db;
+pub mod gmail;
+pub mod identity;
+pub mod sync;
 
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -39,9 +40,7 @@ pub fn run() {
                     .await
                     .expect("failed to initialize database");
 
-                app_handle.manage(AppState {
-                    db: Arc::new(pool),
-                });
+                app_handle.manage(AppState { db: Arc::new(pool) });
 
                 info!("Database ready");
             });
