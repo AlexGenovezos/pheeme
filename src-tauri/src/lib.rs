@@ -1,8 +1,8 @@
 pub mod commands;
-pub mod crypto;
 pub mod db;
 pub mod gmail;
 pub mod identity;
+pub mod secrets;
 pub mod sync;
 
 use sqlx::SqlitePool;
