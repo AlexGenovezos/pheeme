@@ -92,3 +92,65 @@ describe("setVersion", () => {
     expect(() => setVersion(fixture(), "1.2")).toThrow();
   });
 });
+
+describe("formatting and table boundaries", () => {
+  const file = (root, name) => path.join(root, name);
+
+  it("keeps inline arrays and indentation in JSON files", () => {
+    const root = fixture();
+    const tauri =
+      '{\n    "productName": "Pheeme",\n    "version": "0.1.0",\n    "bundle": {"targets": ["app", "dmg"], "version": "7"}\n}';
+    fs.writeFileSync(file(root, "src-tauri/tauri.conf.json"), tauri);
+    setVersion(root, "1.2.3");
+    expect(fs.readFileSync(file(root, "src-tauri/tauri.conf.json"), "utf8")).toBe(
+      tauri.replace('"version": "0.1.0"', '"version": "1.2.3"'),
+    );
+  });
+
+  it("only touches the root entries in package-lock.json", () => {
+    const root = fixture();
+    const lock = json({
+      name: "pheeme",
+      version: "0.1.0",
+      packages: { "": { version: "0.1.0" }, "node_modules/x": { version: "0.1.0" } },
+    });
+    fs.writeFileSync(file(root, "package-lock.json"), lock);
+    setVersion(root, "1.2.3");
+    const out = JSON.parse(fs.readFileSync(file(root, "package-lock.json"), "utf8"));
+    expect(out.packages["node_modules/x"].version).toBe("0.1.0");
+    expect(out.packages[""].version).toBe("1.2.3");
+  });
+
+  it("finds the pheeme lock entry regardless of field order and comments", () => {
+    const root = fixture();
+    fs.writeFileSync(
+      file(root, "src-tauri/Cargo.lock"),
+      '[[package]]\nname = "foo"\nversion = "0.1.0"\n\n[[package]]\nversion = "0.1.0"\n# note\nname = "pheeme"\n',
+    );
+    expect(readVersions(root).cargoLock).toBe("0.1.0");
+    setVersion(root, "1.2.3");
+    expect(fs.readFileSync(file(root, "src-tauri/Cargo.lock"), "utf8")).toBe(
+      '[[package]]\nname = "foo"\nversion = "0.1.0"\n\n[[package]]\nversion = "1.2.3"\n# note\nname = "pheeme"\n',
+    );
+  });
+
+  it("handles a commented [package] header and indented tables", () => {
+    const root = fixture();
+    const toml = '[package] # app\nname = "pheeme"\nversion = "0.1.0"\n\n  [dependencies]\n  foo = "1"\n  version = "9.9.9"\n';
+    fs.writeFileSync(file(root, "src-tauri/Cargo.toml"), toml);
+    setVersion(root, "1.2.3");
+    expect(fs.readFileSync(file(root, "src-tauri/Cargo.toml"), "utf8")).toBe(
+      toml.replace('version = "0.1.0"', 'version = "1.2.3"'),
+    );
+  });
+
+  it("reports a [package] without a version instead of reading another table", () => {
+    const root = fixture();
+    fs.writeFileSync(
+      file(root, "src-tauri/Cargo.toml"),
+      '[package]\nname = "pheeme"\n\n[workspace.package]\nversion = "0.1.0"\n',
+    );
+    expect(checkVersions(root).join("\n")).toContain("Cargo.toml");
+    expect(() => setVersion(root, "1.2.3")).toThrow();
+  });
+});

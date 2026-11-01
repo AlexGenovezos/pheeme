@@ -16,23 +16,31 @@ const files = {
 const read = (root, file) => fs.readFileSync(path.join(root, file), "utf8");
 const write = (root, file, text) => fs.writeFileSync(path.join(root, file), text);
 
-// Index of the version line inside the block that starts at the first line matching `isStart`
-// and ends at the next `[...]` header.
-function findVersionLine(lines, isStart) {
-  const start = lines.findIndex(isStart);
-  if (start < 0) return -1;
-  for (let i = start + 1; i < lines.length && !lines[i].startsWith("["); i++) {
-    if (VERSION_LINE.test(lines[i])) return i;
+const HEADER = /^\s*\[\[?[^\]]+\]\]?\s*(#.*)?$/;
+const NAME_PHEEME = /^\s*name\s*=\s*"pheeme"\s*(#.*)?$/;
+
+// Index of the version line in the first table whose header and body satisfy the predicates.
+function findVersionLine(lines, isHeader, isBody = () => true) {
+  for (let start = 0; start < lines.length; start++) {
+    if (!HEADER.test(lines[start]) || !isHeader(lines[start])) continue;
+    let end = start + 1;
+    while (end < lines.length && !HEADER.test(lines[end])) end++;
+    const body = lines.slice(start + 1, end);
+    if (!isBody(body)) continue;
+    const i = body.findIndex((l) => VERSION_LINE.test(l));
+    return i < 0 ? -1 : start + 1 + i;
   }
   return -1;
 }
 
-const cargoTomlLine = (lines) => findVersionLine(lines, (l) => l.trim() === "[package]");
+const cargoTomlLine = (lines) => findVersionLine(lines, (h) => /^\s*\[package\]\s*(#.*)?$/.test(h));
 
-function cargoLockLine(lines) {
-  const name = lines.findIndex((l) => l.trim() === 'name = "pheeme"');
-  return name >= 0 && VERSION_LINE.test(lines[name + 1] ?? "") ? name + 1 : -1;
-}
+const cargoLockLine = (lines) =>
+  findVersionLine(
+    lines,
+    (h) => /^\s*\[\[package\]\]\s*(#.*)?$/.test(h),
+    (body) => body.some((l) => NAME_PHEEME.test(l)),
+  );
 
 function readLine(root, file, find) {
   const lines = read(root, file).split("\n");
@@ -63,10 +71,41 @@ export function checkVersions(root, expectedTag) {
     );
 }
 
-function setJson(root, file, update) {
-  const data = JSON.parse(read(root, file));
-  update(data);
-  write(root, file, JSON.stringify(data, null, 2) + "\n");
+// Replaces the string value at the given key path, leaving all other text untouched.
+function replaceJsonString(text, targetPath, value) {
+  const target = JSON.stringify(targetPath);
+  const stack = [];
+  let expectKey = false;
+  let result = null;
+  for (const m of text.matchAll(/"(?:[^"\\]|\\.)*"|[{}[\],]/g)) {
+    const token = m[0];
+    const top = stack[stack.length - 1];
+    if (token === "{" || token === "[") {
+      stack.push({ object: token === "{", key: "" });
+      expectKey = token === "{";
+    } else if (token === "}" || token === "]") {
+      stack.pop();
+      expectKey = false;
+    } else if (token === ",") {
+      expectKey = top?.object ?? false;
+    } else if (expectKey) {
+      top.key = JSON.parse(token);
+      expectKey = false;
+    } else if (JSON.stringify(stack.map((c) => c.key)) === target) {
+      if (result) throw new Error(`duplicate ${targetPath.join(".")}`);
+      result = text.slice(0, m.index) + JSON.stringify(value) + text.slice(m.index + token.length);
+    }
+  }
+  if (!result) throw new Error(`${targetPath.join(".")} not found`);
+  return result;
+}
+
+function setJson(root, file, paths, version) {
+  let text = read(root, file);
+  for (const p of paths) text = replaceJsonString(text, p, version);
+  const data = JSON.parse(text);
+  if (data.version !== version) throw new Error(`failed to set version in ${file}`);
+  write(root, file, text);
 }
 
 function setLine(root, file, find, version) {
@@ -79,12 +118,9 @@ function setLine(root, file, find, version) {
 
 export function setVersion(root, version) {
   if (!SEMVER.test(version)) throw new Error(`not a semver version: ${version}`);
-  setJson(root, files.packageJson, (d) => (d.version = version));
-  setJson(root, files.packageLock, (d) => {
-    d.version = version;
-    d.packages[""].version = version;
-  });
-  setJson(root, files.tauriConf, (d) => (d.version = version));
+  setJson(root, files.packageJson, [["version"]], version);
+  setJson(root, files.packageLock, [["version"], ["packages", "", "version"]], version);
+  setJson(root, files.tauriConf, [["version"]], version);
   setLine(root, files.cargoToml, cargoTomlLine, version);
   setLine(root, files.cargoLock, cargoLockLine, version);
 }
