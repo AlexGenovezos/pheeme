@@ -1,0 +1,80 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT id, email, display_name, profile_photo_url, client_id,\n               access_token_encrypted, refresh_token_encrypted, token_expiry,\n               history_id, created_at, updated_at\n        FROM accounts WHERE email = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "email",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "profile_photo_url",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "client_id",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "access_token_encrypted",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "refresh_token_encrypted",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "token_expiry",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "history_id",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 10,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "c696ddaf24e36486302172ff2f52b2a8d0b114ba029456068403d622cfbee843"
+}

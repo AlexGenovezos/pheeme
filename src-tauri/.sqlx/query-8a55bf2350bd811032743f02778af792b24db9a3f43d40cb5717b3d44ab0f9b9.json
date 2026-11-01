@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO labels (\n            id, account_id, name, type,\n            message_list_visibility, label_list_visibility,\n            color_background, color_text,\n            messages_total, messages_unread\n        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n        ON CONFLICT(id, account_id) DO UPDATE SET\n            name = excluded.name,\n            type = excluded.type,\n            message_list_visibility = excluded.message_list_visibility,\n            label_list_visibility = excluded.label_list_visibility,\n            color_background = excluded.color_background,\n            color_text = excluded.color_text,\n            messages_total = excluded.messages_total,\n            messages_unread = excluded.messages_unread\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "8a55bf2350bd811032743f02778af792b24db9a3f43d40cb5717b3d44ab0f9b9"
+}

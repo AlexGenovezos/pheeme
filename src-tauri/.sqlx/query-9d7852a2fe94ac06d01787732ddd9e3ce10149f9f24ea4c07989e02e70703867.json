@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE accounts\n        SET display_name = ?, profile_photo_url = ?, updated_at = ?\n        WHERE id = ?\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "9d7852a2fe94ac06d01787732ddd9e3ce10149f9f24ea4c07989e02e70703867"
+}

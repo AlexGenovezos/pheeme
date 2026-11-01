@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE messages SET label_ids = ?, is_read = ?, is_starred = ? WHERE account_id = ? AND id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "d1f15bd12f3913b518ce0c87e65b6bf8830e216e52578af4a0187bf2484b0762"
+}
