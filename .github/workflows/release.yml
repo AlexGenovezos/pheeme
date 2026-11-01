@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/version.mjs
+      - scripts/resolve-apple-env.sh
+      - src-tauri/tauri.conf.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    name: Dry run (${{ matrix.os }})
+    if: github.event_name != 'push'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --target universal-apple-darwin
+            bundle-dir: src-tauri/target/universal-apple-darwin/release/bundle
+          - os: windows-latest
+            args: ''
+            bundle-dir: src-tauri/target/release/bundle
+          - os: ubuntu-22.04
+            args: ''
+            bundle-dir: src-tauri/target/release/bundle
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Ubuntu dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
+      - run: rustup toolchain install
+      - if: matrix.os == 'macos-latest'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: release-${{ matrix.os }}
+      - run: npm ci
+      - if: matrix.os == 'ubuntu-22.04'
+        run: bash scripts/resolve-apple-env.test.sh
+      - run: npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}' ${{ matrix.args }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pheeme-dry-run-${{ matrix.os }}
+          path: |
+            ${{ matrix.bundle-dir }}/dmg/*.dmg
+            ${{ matrix.bundle-dir }}/msi/*.msi
+            ${{ matrix.bundle-dir }}/nsis/*.exe
+            ${{ matrix.bundle-dir }}/appimage/*.AppImage
+            ${{ matrix.bundle-dir }}/deb/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    name: Verify tag matches version
+    if: github.event_name == 'push'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node scripts/version.mjs check --tag "$GITHUB_REF_NAME"
+
+  build:
+    name: Build (${{ matrix.os }})
+    if: github.event_name == 'push'
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --target universal-apple-darwin
+          - os: windows-latest
+            args: ''
+          - os: ubuntu-22.04
+            args: ''
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Ubuntu dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
+      - run: rustup toolchain install
+      - if: matrix.os == 'macos-latest'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: release-${{ matrix.os }}
+      - run: npm ci
+      - name: apple-env
+        if: matrix.os == 'macos-latest'
+        run: bash scripts/resolve-apple-env.sh
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Pheeme ${{ github.ref_name }}'
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          uploadUpdaterJson: true
+          args: ${{ matrix.args }}
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Validate latest.json on the draft
+        run: |
+          gh release download "$GITHUB_REF_NAME" -p latest.json -D "$RUNNER_TEMP"
+          jq -e --arg v "${GITHUB_REF_NAME#v}" '
+            .version == $v and
+            ([.platforms["darwin-aarch64", "darwin-x86_64", "windows-x86_64", "linux-x86_64"]
+              | (.url // "") != "" and (.signature // "") != ""] | all)
+          ' "$RUNNER_TEMP/latest.json"
+      - run: gh release edit "$GITHUB_REF_NAME" --draft=false
