@@ -220,3 +220,22 @@ test("leaving mid-sign-in cancels the backend wait", async () => {
   unmount();
   expect(calls).toContainEqual({ cmd: "cancel_oauth", args: { flowId: "f9" } });
 });
+
+test("cancelling while begin_oauth is still pending never opens Google", async () => {
+  let resolveBegin: (value: unknown) => void = () => {};
+  const calls = backend({
+    begin_oauth: () => new Promise((resolve) => (resolveBegin = resolve)),
+    complete_oauth: () => account,
+  });
+  render(<Onboarding accounts={[account]} onConnected={() => {}} onClose={() => {}} />);
+  fireEvent.click(screen.getByText(/The one me@example.com signed in with/));
+  await vi.waitFor(() => expect(calls.map((c) => c.cmd)).toContain("begin_oauth"));
+  // The waiting screen's Cancel (the second one closes the add-account screen).
+  fireEvent.click(screen.getAllByRole("button", { name: "Cancel" })[0]);
+  await act(async () => resolveBegin({ flowId: "late", authUrl: "https://accounts.google.com/x" }));
+  await vi.waitFor(() => expect(calls).toContainEqual({ cmd: "cancel_oauth", args: { flowId: "late" } }));
+  const cmds = calls.map((c) => c.cmd);
+  expect(cmds).not.toContain("open_external");
+  expect(cmds).not.toContain("complete_oauth");
+  expect(screen.getByText("Add an account")).toBeInTheDocument();
+});

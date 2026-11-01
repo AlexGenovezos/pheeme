@@ -39,6 +39,9 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
   const [error, setError] = useState<CommandError | null>(null);
   const [connected, setConnected] = useState<AccountInfo | null>(null);
   const flowRef = useRef<string | null>(null);
+  // Bumped on every start, cancel and unmount, so a late response from an
+  // abandoned attempt (e.g. begin_oauth stuck behind a keychain prompt) is ignored.
+  const attemptRef = useRef(0);
 
   useEffect(() => {
     if (firstRun && view !== "choose" && view !== "error" && view !== "done") {
@@ -46,35 +49,42 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
     }
   }, [firstRun, view, clientId]);
 
+  function abandonAttempt() {
+    attemptRef.current += 1;
+    const flowId = flowRef.current;
+    flowRef.current = null;
+    if (flowId) void cancelOauth(flowId).catch(() => {});
+  }
+
   // Leaving the screen mid-sign-in stops the backend from waiting for the browser.
-  useEffect(
-    () => () => {
-      if (flowRef.current) void cancelOauth(flowRef.current).catch(() => {});
-    },
-    [],
-  );
+  useEffect(() => abandonAttempt, []);
 
   async function startSignIn(next: ClientChoice) {
+    abandonAttempt();
+    const attempt = attemptRef.current;
+    const current = () => attemptRef.current === attempt;
     setChoice(next);
     setError(null);
     setAuthUrl("");
     setView("authorize");
-    let flowId: string | null = null;
     try {
       const start = await beginOauth(next);
-      flowId = start.flowId;
-      flowRef.current = flowId;
+      if (!current()) {
+        void cancelOauth(start.flowId).catch(() => {});
+        return;
+      }
+      flowRef.current = start.flowId;
       setAuthUrl(start.authUrl);
       void openExternal(start.authUrl).catch(() => {});
-      const account = await completeOauth(flowId);
-      if (flowRef.current !== flowId) return;
+      const account = await completeOauth(start.flowId);
+      if (!current()) return;
       flowRef.current = null;
       if (firstRun) clearProgress();
       setConnected(account);
       setView("done");
     } catch (raw) {
-      // A cancelled or superseded flow already moved the screen on.
-      if (flowId !== null && flowRef.current !== flowId) return;
+      // A cancelled or superseded attempt already moved the screen on.
+      if (!current()) return;
       flowRef.current = null;
       setError(toCommandError(raw));
       setView("error");
@@ -82,9 +92,7 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
   }
 
   function cancelSignIn() {
-    const flowId = flowRef.current;
-    flowRef.current = null;
-    if (flowId) void cancelOauth(flowId).catch(() => {});
+    abandonAttempt();
     setView(choice?.kind === "sameAs" ? "choose" : "credentials");
   }
 

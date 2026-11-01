@@ -282,14 +282,7 @@ impl AccountService {
                 }
             }
         };
-        let waited = pending.callback.await;
-        {
-            let mut active = lock(&self.active);
-            if active.as_ref().is_some_and(|(id, _)| id == flow_id) {
-                *active = None;
-            }
-        }
-        let code = match waited {
+        let code = match pending.callback.await {
             Ok(result) => result?,
             Err(error) if error.is_cancelled() => return Err(OAuthError::Cancelled.into()),
             Err(error) => return Err(AccountError::Internal(error.to_string())),
@@ -312,6 +305,15 @@ impl AccountService {
             .clone()
             .ok_or(OAuthError::NoRefreshToken)?;
         let profile = auth::user_info(&self.http, &self.endpoints, &tokens.access_token).await?;
+
+        // A flow cancelled or replaced while talking to Google must not save anything.
+        {
+            let mut active = lock(&self.active);
+            if !active.as_ref().is_some_and(|(id, _)| id == flow_id) {
+                return Err(OAuthError::Cancelled.into());
+            }
+            *active = None;
+        }
 
         let account = self
             .save_account(&profile, &pending.creds, refresh_token)
@@ -648,6 +650,39 @@ mod tests {
         };
         let (result, ()) = tokio::join!(complete, cancel);
         assert_eq!(result.unwrap_err().code(), "cancelled");
+    }
+
+    #[tokio::test]
+    async fn cancel_during_token_exchange_saves_nothing() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        h.server.reset().await;
+        Mock::given(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(token_body(Some("r"), &auth::SCOPES.join(" ")))
+                    .set_delay(Duration::from_millis(300)),
+            )
+            .mount(&h.server)
+            .await;
+        Mock::given(path("/userinfo"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"email": "me@example.com"})),
+            )
+            .mount(&h.server)
+            .await;
+
+        let start = h.service.begin_sign_in(new_client(CLIENT_A)).await.unwrap();
+        approve(&start, "code-1").await;
+        let complete = h.service.complete_sign_in(&start.flow_id);
+        let cancel = async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            h.service.cancel_sign_in(&start.flow_id);
+        };
+        let (result, ()) = tokio::join!(complete, cancel);
+        assert_eq!(result.unwrap_err().code(), "cancelled");
+        assert!(h.service.list_accounts().await.unwrap().is_empty());
     }
 
     #[tokio::test]
