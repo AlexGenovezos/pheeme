@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pheeme: email at the speed of your keyboard</title>
+  <meta name="description" content="pheeme is a fast, keyboard-first, open-source email client for developers. Built in public.">
+  <link rel="canonical" href="https://pheeme.app/">
+  <meta name="theme-color" content="#071434">
+
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://pheeme.app/">
+  <meta property="og:title" content="pheeme: email at the speed of your keyboard">
+  <meta property="og:description" content="A fast, keyboard-first, open-source email client for developers. Built in public.">
+  <meta property="og:image" content="https://pheeme.app/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+
+  <link rel="preload" href="/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/demo.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top wrap">
+    <a href="/" class="brand" aria-label="pheeme home">
+      <img src="/brand/pheeme-logo-horizontal-color-dark.svg" alt="pheeme" width="150" height="40">
+    </a>
+    <nav aria-label="Main">
+      <a href="#roadmap">Roadmap</a>
+      <a href="/logos">Logos</a>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/AlexGenovezos/pheeme">
+        <svg class="gh" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap">
+      <h1>Email at the speed of your keyboard.</h1>
+      <div class="hero-side">
+        <p class="lede">pheeme is an open-source email client for developers. It opens fast, stays fast, and never makes you reach for the mouse.</p>
+        <div class="actions">
+          <a class="btn btn-gold" href="https://github.com/AlexGenovezos/pheeme">Star on GitHub</a>
+          <a class="btn btn-ghost" href="#roadmap">See what's coming</a>
+        </div>
+        <p class="fine">It's early. There's nothing to download yet. Star the repo to follow the build.</p>
+      </div>
+    </section>
+
+    <section class="demo-section wrap" aria-labelledby="demo-title">
+      <h2 id="demo-title" class="sr-only">Try the keyboard inbox</h2>
+      <div class="window" id="demo" tabindex="0" aria-describedby="demo-help">
+        <div class="titlebar" aria-hidden="true">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="title">Inbox</span>
+          <span class="search" id="search" hidden><span class="slash">/</span><span id="query"></span><span class="caret"></span></span>
+        </div>
+        <div class="panes">
+          <aside class="folders" aria-hidden="true">
+            <ul>
+              <li class="on">Inbox <span id="count">7</span></li>
+              <li>Starred <span id="starcount">1</span></li>
+              <li>Done <span id="donecount">0</span></li>
+              <li>Sent</li>
+              <li>Drafts</li>
+            </ul>
+          </aside>
+          <ol class="list" id="list" aria-label="Messages" aria-live="polite"></ol>
+          <article class="reader" id="reader" aria-live="polite"></article>
+        </div>
+        <div class="keybar" id="demo-help">
+          <span class="hint" id="hint">Your keyboard runs this demo.</span>
+          <span class="keys">
+            <button type="button" data-key="j"><kbd>j</kbd> next</button>
+            <button type="button" data-key="k"><kbd>k</kbd> previous</button>
+            <button type="button" data-key="e"><kbd>e</kbd> done</button>
+            <button type="button" data-key="s"><kbd>s</kbd> star</button>
+            <button type="button" data-key="/"><kbd>/</kbd> search</button>
+            <button type="button" data-key="z"><kbd>z</kbd> undo</button>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="pillars wrap" aria-label="What pheeme is">
+      <div class="pillar">
+        <h2>Fast is the feature.</h2>
+        <p>Your mail lives in a local cache, so opening a thread, searching, and archiving don't wait on a server. The goal is that nothing you do takes longer than a keystroke. When something's slow, that's a bug.</p>
+      </div>
+      <div class="pillar">
+        <h2>Hands stay on the keys.</h2>
+        <p>Every action has a shortcut, and the shortcuts you already know from Vim and Gmail work on day one.</p>
+        <table class="shortcuts">
+          <tbody>
+            <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>Move through messages</td></tr>
+            <tr><td><kbd>e</kbd></td><td>Mark done and move on</td></tr>
+            <tr><td><kbd>r</kbd> <kbd>a</kbd></td><td>Reply, reply all</td></tr>
+            <tr><td><kbd>/</kbd></td><td>Search everything</td></tr>
+            <tr><td><kbd>⌘</kbd> <kbd>K</kbd></td><td>Run any command</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pillar">
+        <h2>Yours to read and fork.</h2>
+        <p>Your inbox is the most private thing on your computer. You should be able to read every line of the app that opens it. pheeme is open source, so you can.</p>
+        <pre class="term" aria-label="Terminal"><code><span class="p">~</span> gh repo clone AlexGenovezos/pheeme
+<span class="p">~</span> cd pheeme
+<span class="p">~/pheeme</span> <span class="cursor"></span></code></pre>
+      </div>
+    </section>
+
+    <section class="roadmap wrap" id="roadmap" aria-labelledby="roadmap-title">
+      <h2 id="roadmap-title">Built in public</h2>
+      <p class="section-lede">Here's the plan, in order. Watch the repo to see each step land.</p>
+      <ol class="steps">
+        <li class="done"><span class="state">Done</span><h3>Name, logo, and this site</h3><p>You're looking at it.</p></li>
+        <li class="next"><span class="state">Up next</span><h3>Sync engine</h3><p>IMAP and a local cache that keeps your mail on your machine.</p></li>
+        <li><span class="state">Planned</span><h3>The keyboard inbox</h3><p>The demo above, for real, with your own mail.</p></li>
+        <li><span class="state">Planned</span><h3>Public alpha</h3><p>First builds anyone can download and break.</p></li>
+      </ol>
+    </section>
+
+    <section class="closer wrap">
+      <img src="/brand/pheeme-mark-color.svg" alt="" width="96" height="96">
+      <h2>Watch it get built.</h2>
+      <p>Star the repo and you'll see every commit from the first line of the sync engine to the alpha.</p>
+      <a class="btn btn-gold" href="https://github.com/AlexGenovezos/pheeme">Star on GitHub</a>
+    </section>
+  </main>
+
+  <footer class="foot wrap">
+    <img src="/brand/pheeme-logo-horizontal-white.svg" alt="pheeme" width="105" height="28">
+    <p>Open source, built in public. © 2026</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/AlexGenovezos/pheeme">GitHub</a>
+      <a href="/logos">Logos</a>
+    </nav>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pheeme logos</title>
+  <meta name="description" content="Download the pheeme logo, wordmark, and app icon in SVG and PNG.">
+  <link rel="canonical" href="https://pheeme.app/logos">
+  <meta name="theme-color" content="#071434">
+  <meta property="og:image" content="https://pheeme.app/og.png">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .logos-head { padding-block: 3rem 2.5rem; display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: end; justify-content: space-between; }
+    .logos-head h1 { font-size: var(--t-3); font-stretch: 80%; line-height: 1; letter-spacing: -0.02em; }
+    .logos-head p { margin-top: .9rem; color: var(--muted); max-width: 52ch; }
+    .group { padding-bottom: 3.5rem; }
+    .group h2 { font-size: var(--t-1); margin-bottom: 1rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+    .tile { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--deep); }
+    .tile .art { height: 180px; padding: 1.75rem; }
+    .tile .art img { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
+    .tile .art.light { background: #fff; }
+    .tile .art.dark { background: var(--midnight); }
+    .tile .art.blue { background: #2a62d0; }
+    .tile .art.grey { background: #e9ecf3; }
+    .tile .info { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .75rem 1rem; background: var(--deep); font-size: .9rem; }
+    .tile .info span { color: var(--paper); }
+    .tile .info nav { display: flex; gap: .75rem; white-space: nowrap; }
+    .tile .info a { color: var(--muted); }
+    .tile .info a:hover { color: var(--gold); }
+    .colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; }
+    .swatch { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; font-size: .9rem; }
+    .swatch div { height: 84px; }
+    .swatch p { padding: .6rem .9rem; background: var(--deep); }
+    .swatch code { font-family: var(--mono); font-size: .78rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="top wrap">
+    <a href="/" class="brand" aria-label="pheeme home"><img src="/brand/pheeme-logo-horizontal-color-dark.svg" alt="pheeme" width="150" height="40"></a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/AlexGenovezos/pheeme">GitHub</a>
+    </nav>
+  </header>
+
+  <main class="wrap" id="main">
+    <div class="logos-head">
+      <div>
+        <h1>Logos</h1>
+        <p>Use the color logo on light backgrounds and the color-on-dark version on dark ones. When you only have one color to work with, use white, navy, or black. Please don't redraw, recolor, or stretch the mark.</p>
+      </div>
+      <a class="btn btn-gold" href="/brand/pheeme-brand.zip" download>Download everything (.zip)</a>
+    </div>
+
+    <section class="group"><h2>Horizontal logo</h2><div class="grid" data-set="logo-horizontal"></div></section>
+    <section class="group"><h2>Stacked logo</h2><div class="grid" data-set="logo-stacked"></div></section>
+    <section class="group"><h2>Mark</h2><div class="grid" data-set="mark"></div></section>
+    <section class="group"><h2>Wordmark</h2><div class="grid" data-set="wordmark"></div></section>
+    <section class="group"><h2>App icon</h2><div class="grid" data-set="app"></div></section>
+
+    <section class="group">
+      <h2>Colors</h2>
+      <div class="colors">
+        <div class="swatch"><div style="background:#16388A"></div><p>Ink <code>#16388A</code></p></div>
+        <div class="swatch"><div style="background:linear-gradient(135deg,#4A8DF2,#173C92)"></div><p>Envelope blue <code>#4A8DF2 to #173C92</code></p></div>
+        <div class="swatch"><div style="background:linear-gradient(45deg,#C08A35,#E8C579,#F8E6B4)"></div><p>Wing gold <code>#C08A35 to #F8E6B4</code></p></div>
+        <div class="swatch"><div style="background:#071434"></div><p>Midnight <code>#071434</code></p></div>
+        <div class="swatch"><div style="background:#EEF2FB"></div><p>Paper <code>#EEF2FB</code></p></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot wrap">
+    <img src="/brand/pheeme-logo-horizontal-white.svg" alt="pheeme" width="105" height="28">
+    <p>Open source, built in public. © 2026</p>
+    <nav aria-label="Footer"><a href="https://github.com/AlexGenovezos/pheeme">GitHub</a><a href="/">Home</a></nav>
+  </footer>
+
+  <script>
+    // name, background, png widths
+    const SETS = {
+      "logo-horizontal": [["color", "light"], ["color-dark", "dark"], ["white", "blue"], ["navy", "light"], ["black", "grey"]],
+      "logo-stacked": [["color", "light"], ["color-dark", "dark"], ["white", "blue"], ["navy", "light"], ["black", "grey"]],
+      mark: [["color", "light"], ["white", "blue"], ["navy", "light"], ["black", "grey"]],
+      wordmark: [["color", "light"], ["white", "dark"], ["black", "grey"]],
+    };
+    const PNG = { "logo-horizontal": [1200, 2400], "logo-stacked": [1200, 2400], mark: [512, 1024], wordmark: [1200], app: [512, 1024] };
+    const LABEL = { color: "Color", "color-dark": "Color on dark", white: "White", navy: "Navy", black: "Black" };
+    const tile = (file, label, bg, widths) =>
+      `<div class="tile"><div class="art ${bg}"><img src="/brand/${file}.svg" alt="${label}" loading="lazy"></div>` +
+      `<div class="info"><span>${label}</span><nav><a href="/brand/${file}.svg" download>SVG</a>` +
+      widths.map((w) => `<a href="/brand/${file}@${w}.png" download>PNG ${w}</a>`).join("") + `</nav></div></div>`;
+    for (const el of document.querySelectorAll("[data-set]")) {
+      const set = el.dataset.set;
+      if (set === "app") {
+        el.innerHTML =
+          tile("pheeme-app-icon", "Rounded", "light", PNG.app) +
+          tile("pheeme-app-icon-square", "Square (iOS, macOS)", "light", PNG.app) +
+          tile("pheeme-app-icon-maskable", "Maskable (Android)", "light", PNG.app);
+        continue;
+      }
+      el.innerHTML = SETS[set].map(([way, bg]) => tile(`pheeme-${set}-${way}`, LABEL[way], bg, PNG[set])).join("");
+    }
+  </script>
+</body>
+</html>
