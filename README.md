@@ -31,7 +31,7 @@ restarting to apply one.
 - [Design](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md): scope, priorities and roadmap
 - [Technical plan](Gmail%20client%20project%20plan.md): the detailed implementation reference
 
-A step-by-step Google Cloud setup guide comes with the OAuth phase.
+- [Google Cloud setup](docs/google-cloud-setup.md): create the OAuth client Pheeme signs in with (the app also walks you through it)
 
 ## Develop on macOS
 
@@ -41,6 +41,12 @@ cd pheeme
 scripts/setup-macos.sh
 npm run tauri dev
 ```
+
+`npm run dev` alone serves the UI in a plain browser with a fake backend
+(`src/dev/mockBackend.ts`), for UI work without a native build. Query
+parameters shape it: `?accounts=1` starts with a connected account,
+`?fail=invalid_grant` makes sign-in fail with that code, `?delay=ms` sets how
+long sign-in takes.
 
 The setup script checks the Apple and Rust toolchains, installs the universal
 Rust targets and SQLx CLI, and runs `npm ci`. To test the real macOS keychain

@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod commands;
 pub mod db;
 pub mod gmail;
@@ -6,22 +7,29 @@ pub mod secrets;
 pub mod sync;
 
 use anyhow::Context;
+use secrets::SecretStore;
 use sqlx::SqlitePool;
 use std::path::Path;
+use std::sync::Arc;
 use tauri::Manager;
 use tracing::info;
 
 pub struct AppState {
     pub db: SqlitePool,
+    pub accounts: accounts::AccountService,
 }
 
 /// Build application state: open the database in `data_dir` and apply migrations.
 /// Tauri-independent so it can be tested without an app handle.
-pub async fn build_state(data_dir: &Path) -> anyhow::Result<AppState> {
+pub async fn build_state(
+    data_dir: &Path,
+    secrets: Arc<dyn SecretStore>,
+) -> anyhow::Result<AppState> {
     let db = db::init_db(data_dir)
         .await
         .with_context(|| format!("failed to initialize database in {}", data_dir.display()))?;
-    Ok(AppState { db })
+    let accounts = accounts::AccountService::new(db.clone(), secrets);
+    Ok(AppState { db, accounts })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -47,14 +55,25 @@ pub fn run() {
             info!("App data directory: {}", data_dir.display());
 
             // Block until the database is ready so commands never run without state.
-            let state = tauri::async_runtime::block_on(build_state(&data_dir))?;
+            let state = tauri::async_runtime::block_on(build_state(
+                &data_dir,
+                Arc::new(secrets::KeyringStore),
+            ))?;
             app.manage(state);
 
             info!("Database ready");
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::greet])
+        .invoke_handler(tauri::generate_handler![
+            commands::open_external,
+            commands::auth::begin_oauth,
+            commands::auth::complete_oauth,
+            commands::auth::cancel_oauth,
+            commands::auth::refresh_token,
+            commands::accounts::list_accounts,
+            commands::accounts::remove_account,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -66,7 +85,9 @@ mod tests {
     #[tokio::test]
     async fn build_state_creates_db_and_migrates() {
         let dir = tempfile::tempdir().unwrap();
-        let state = build_state(dir.path()).await.unwrap();
+        let state = build_state(dir.path(), Arc::new(secrets::MemoryStore::new()))
+            .await
+            .unwrap();
         assert!(dir.path().join("db.sqlite").exists());
         let n: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM accounts")
             .fetch_one(&state.db)
