@@ -372,6 +372,21 @@ kbd {
 .foot .credit { flex-basis: 100%; font-size: .8rem; max-width: 80ch; }
 .foot .credit a { color: var(--muted); }
 
+/* ---------- legal pages (privacy, terms) ---------- */
+.legal { max-width: 72ch; padding-block: 3rem 5rem; }
+.legal h1 { font-size: var(--t-3); font-stretch: 80%; line-height: 1; letter-spacing: -0.02em; }
+.legal .updated { margin-top: .9rem; color: var(--muted); font-family: var(--mono); font-size: .8rem; }
+.legal .summary { margin-top: 2rem; padding: 1.25rem 1.5rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--deep); }
+.legal .summary ul { margin: .5rem 0 0; padding-left: 1.2rem; }
+.legal h2 { margin-top: 2.75rem; font-size: var(--t-1); }
+.legal h3 { margin-top: 1.5rem; font-size: 1.05rem; }
+.legal p, .legal li { color: #cdd6ee; line-height: 1.65; }
+.legal p { margin-top: .9rem; }
+.legal ul { margin-top: .6rem; padding-left: 1.2rem; }
+.legal li + li { margin-top: .35rem; }
+.legal a { color: var(--gold); }
+.legal strong { color: var(--paper); }
+
 @keyframes blink { 50% { opacity: 0; } }
 
 /* ---------- responsive ---------- */
