@@ -412,6 +412,47 @@ async fn backfill_pages_until_done_and_switches_to_metadata() {
 }
 
 #[tokio::test]
+async fn rate_limited_backfill_keeps_what_it_fetched() {
+    let h = harness().await;
+    for id in ["a", "b", "c", "d"] {
+        h.fake
+            .seed(FakeMsg::new(id, &format!("t{id}"), &["SENT"]).days_ago(1));
+    }
+    h.engine.run_initial_sync().await.unwrap();
+    let before = h.fake.calls("get_message");
+    // Two fetches succeed, the third is rate limited, the fourth succeeds.
+    h.fake.fail_after(
+        "get_message",
+        2,
+        GmailError::RateLimit { retry_after: None },
+    );
+
+    assert!(h.engine.backfill_step().await.is_err());
+    assert_eq!(h.fake.calls("get_message") - before, 4);
+    let mut cached = 0;
+    for id in ["a", "b", "c", "d"] {
+        if messages::get_message(&h.pool, ACCT, id)
+            .await
+            .unwrap()
+            .is_some()
+        {
+            cached += 1;
+        }
+    }
+    assert_eq!(cached, 3, "the successful fetches were saved");
+
+    // The retry fetches only the message that failed, then finishes the page.
+    assert_eq!(
+        h.engine.backfill_step().await.unwrap(),
+        BackfillProgress::Done
+    );
+    assert_eq!(h.fake.calls("get_message") - before, 5);
+    let mut threads = listed(&h.pool, "SENT").await;
+    threads.sort();
+    assert_eq!(threads, s(&["ta", "tb", "tc", "td"]));
+}
+
+#[tokio::test]
 async fn backfill_does_not_overwrite_newer_cache() {
     let h = harness().await;
     h.fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
