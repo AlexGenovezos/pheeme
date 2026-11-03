@@ -21,6 +21,10 @@ impl std::fmt::Debug for AccountSecrets {
 pub enum SecretsError {
     #[error("{}", unavailable_message(.0))]
     Unavailable(#[source] keyring::Error),
+    /// The keychain exists but refused to prompt: it's locked, or this process runs
+    /// outside the user's desktop session (e.g. started over SSH).
+    #[error("{LOCKED_MESSAGE}")]
+    Locked(#[source] keyring::Error),
     #[error("Stored credentials for this account are unreadable; please sign in again.")]
     Corrupt,
     #[error("Keychain error: {0}")]
@@ -33,6 +37,24 @@ fn unavailable_message(cause: &keyring::Error) -> String {
     } else {
         format!("the system keychain is unavailable: {cause}")
     }
+}
+
+const LOCKED_MESSAGE: &str = "Your keychain is locked, or Pheeme can't ask for keychain access from here. Unlock your Mac and try again. If Pheeme was started from a terminal over SSH, start it on the Mac itself.";
+
+/// macOS `errSecInteractionNotAllowed`: the keychain needs a prompt it isn't allowed to show.
+#[cfg(target_os = "macos")]
+const ERR_SEC_INTERACTION_NOT_ALLOWED: i32 = -25308;
+
+#[cfg(target_os = "macos")]
+fn interaction_not_allowed(cause: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+    cause
+        .downcast_ref::<security_framework::base::Error>()
+        .is_some_and(|error| error.code() == ERR_SEC_INTERACTION_NOT_ALLOWED)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn interaction_not_allowed(_: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+    false
 }
 
 pub trait SecretStore: Send + Sync {
@@ -327,6 +349,9 @@ impl SecretStore for MemoryStore {
 
 pub fn map_keyring_error(error: keyring::Error) -> SecretsError {
     match &error {
+        keyring::Error::PlatformFailure(cause) if interaction_not_allowed(cause.as_ref()) => {
+            SecretsError::Locked(error)
+        }
         keyring::Error::NoStorageAccess(_) | keyring::Error::PlatformFailure(_) => {
             SecretsError::Unavailable(error)
         }
@@ -378,6 +403,19 @@ mod tests {
         } else {
             assert!(error.to_string().contains("x"));
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn interaction_not_allowed_maps_to_locked() {
+        let cause = security_framework::base::Error::from_code(ERR_SEC_INTERACTION_NOT_ALLOWED);
+        let error = map_keyring_error(keyring::Error::PlatformFailure(Box::new(cause)));
+        assert!(matches!(error, SecretsError::Locked(_)));
+        assert!(error.to_string().contains("keychain is locked"));
+
+        let other = security_framework::base::Error::from_code(-25293); // errSecAuthFailed
+        let error = map_keyring_error(keyring::Error::PlatformFailure(Box::new(other)));
+        assert!(matches!(error, SecretsError::Unavailable(_)));
     }
 
     #[test]

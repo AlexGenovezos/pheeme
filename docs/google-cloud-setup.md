@@ -110,3 +110,4 @@ its own.
 | `Missing domain: pheeme.app` on the Branding page | Under **Authorized domains**, click **Add domain**, enter `pheeme.app`, then click **Save**. |
 | Signed out after 7 days | The app is still in Testing. Publish it (step 6), then sign in again. |
 | "No system keychain is available" (Linux) | Install and unlock a Secret Service provider such as GNOME Keyring or KWallet. |
+| "Your keychain is locked" (macOS) | Unlock your Mac and try again. If you started Pheeme from a terminal over SSH, start it on the Mac itself: macOS only lets apps in your desktop session use the keychain. |

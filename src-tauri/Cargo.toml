@@ -39,6 +39,10 @@ mailparse = "0.15"
 futures = "0.3"
 async-trait = "0.1"
 
+# Same major as keyring's apple-native backend, to recognise its macOS error codes.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
 [dev-dependencies]
 tempfile = "3"
 wiremock = "0.6"
