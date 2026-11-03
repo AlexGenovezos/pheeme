@@ -45,7 +45,9 @@ pub fn run() {
 
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(app_menu::build).on_menu_event(app_menu::on_event);
+    let builder = builder
+        .menu(app_menu::build)
+        .on_menu_event(app_menu::on_event);
 
     builder
         .plugin(tauri_plugin_shell::init())
