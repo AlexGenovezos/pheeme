@@ -141,13 +141,13 @@ function apply(keys: ThreadKey[] | undefined, change: Change, { announce, keepCh
   const op = newOp();
 
   // Everything up to the command runs before the first await, so the list answers at once.
+  // A change can do both: the flag change follows the conversation into other mailboxes, the removal is scoped to this one.
+  if (change.patch) mail().patch(rowKeys, change.patch, op);
   if (change.leavesList) {
     const next = nextOpenAfter(new Set(rowKeys));
     mail().remove(rowKeys, op);
     if (next === null) ui().setOpenThread(null);
     else if (next !== undefined) openAndMarkRead(next);
-  } else if (change.patch) {
-    mail().patch(rowKeys, change.patch, op);
   }
   const patchDetail = change.detail;
   if (patchDetail) for (const key of rowKeys) useThreadStore.getState().patchDetail(key, patchDetail, op);
@@ -169,8 +169,8 @@ function apply(keys: ThreadKey[] | undefined, change: Change, { announce, keepCh
 async function revert(done: Map<string, string[]>, original: Change, inverse: Change) {
   const op = newOp();
   const keys = keysOf(done);
+  if (inverse.patch) mail().patch(keys, inverse.patch, op);
   if (inverse.leavesList) mail().remove(keys, op);
-  else if (inverse.patch) mail().patch(keys, inverse.patch, op);
   await send(done, inverse, op);
   // Rows the change had taken out of the list can only come back from the cache.
   if (original.leavesList) await mail().reload();

@@ -412,6 +412,31 @@ describe("unstarring in Starred", () => {
     expect(reload).toHaveBeenCalled();
   });
 
+  test("while the command is pending, All Mail shows it unstarred and s stars it again", async () => {
+    useRealReload();
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "STARRED" }, openThread: key(1) });
+    const starredRows = [thread(1, "a1", { starred: true }), thread(2, "a1", { starred: true })];
+    setList(starredRows);
+    const release = hold();
+
+    const unstarring = setStarred(false);
+    expect(listKeys()).toEqual([key(2)]);
+    // Switch to All Mail: the cache still has the star, but the change is on its way.
+    useMailStore.setState({ query: { accountIds: ["a1"], labelId: "ALL" } });
+    await reloadWith(starredRows);
+    expect(useMailStore.getState().threads.map((t) => [threadKey(t.accountId, t.id), t.starred])).toEqual([
+      [key(1), false],
+      [key(2), true],
+    ]);
+
+    useUiStore.setState({ openThread: key(1) });
+    const starring = toggleStar();
+    await flush();
+    expect(modifyCalls().map((c) => [c.add, c.remove])).toEqual([[[], ["STARRED"]], [["STARRED"], []]]);
+    release();
+    await Promise.all([unstarring, starring]);
+  });
+
   test("starring there keeps the row, and elsewhere unstarring keeps it too", async () => {
     setList([thread(1, "a1", { starred: true })]);
     useUiStore.setState({ openThread: key(1) });
