@@ -7,9 +7,11 @@ use crate::db::messages::{parse_labels, DbMessage};
 use crate::db::threads::{self, DbThread, ThreadCursor, ThreadQuery};
 use crate::db::{labels, messages};
 use crate::gmail::mime::EmailAddress;
+use crate::gmail::MessageFormat;
 use crate::render;
 use crate::sync::engine::SyncError;
 use crate::sync::manager::SyncManager;
+use crate::sync::MailApi;
 use crate::sync::{outbox, SyncEvent};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -250,8 +252,10 @@ pub fn safe_file_name(name: Option<&str>) -> String {
 
 /// `dir/name`, or `dir/name (1).ext`, `dir/name (2).ext`, … if that already exists.
 pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
+    // `symlink_metadata` (not `exists`) so a dangling symlink counts as occupied.
+    let taken = |p: &Path| std::fs::symlink_metadata(p).is_ok();
     let first = dir.join(name);
-    if !first.exists() {
+    if !taken(&first) {
         return first;
     }
     let (stem, ext) = match name.rfind('.') {
@@ -260,7 +264,7 @@ pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
     };
     (1..)
         .map(|n| dir.join(format!("{stem} ({n}){ext}")))
-        .find(|p| !p.exists())
+        .find(|p| !taken(p))
         .expect("an unused name exists")
 }
 
@@ -468,6 +472,8 @@ impl MailService {
             return InlineResponse::not_found();
         };
         match self.inline_image(&account, &message, &cid).await {
+            // The type comes from the sender's MIME headers; it must be a valid header value.
+            Ok(image) if !is_header_safe(&image.mime_type) => InlineResponse::not_found(),
             Ok(image) => InlineResponse {
                 status: 200,
                 content_type: Some(image.mime_type),
@@ -495,7 +501,9 @@ impl MailService {
             .await?;
         let name = safe_file_name(att.filename.as_deref());
         tokio::fs::create_dir_all(dir).await.map_err(io_error)?;
-        loop {
+        // Each collision re-scans, and every occupied entry (even a dangling symlink) is
+        // skipped, so this makes progress; the cap only guards against a runaway.
+        for _ in 0..1000 {
             let path = unique_path(dir, &name);
             // `create_new` so a file that appears after the check is never overwritten.
             match tokio::fs::OpenOptions::new()
@@ -513,6 +521,9 @@ impl MailService {
                 Err(e) => return Err(io_error(e)),
             }
         }
+        Err(MailError::Invalid(
+            "Couldn't find a free file name in Downloads.".into(),
+        ))
     }
 
     async fn bytes_of(&self, row: DbAttachment) -> Result<AttachmentBytes, MailError> {
@@ -529,14 +540,16 @@ impl MailService {
         let bytes = match tokio::fs::read(&cached).await {
             Ok(bytes) => bytes,
             Err(_) => {
-                let gmail_id = row.attachment_id.as_deref().ok_or(MailError::NotFound)?;
-                let bytes = self
-                    .sync
-                    .engine(&row.account_id)
-                    .api
-                    .get_attachment(&row.message_id, gmail_id)
-                    .await
-                    .map_err(SyncError::from)?;
+                let api = self.sync.engine(&row.account_id).api;
+                let bytes = match row.attachment_id.as_deref() {
+                    Some(gmail_id) => api
+                        .get_attachment(&row.message_id, gmail_id)
+                        .await
+                        .map_err(SyncError::from)?,
+                    // Small parts travel inside the message: re-read it and take the part
+                    // at this row's index (rows are numbered in parse order).
+                    None => embedded_bytes(api.as_ref(), &row).await?,
+                };
                 if let Err(e) = write_cache(&cached, &bytes).await {
                     tracing::warn!(error = %e, "couldn't cache an attachment");
                 }
@@ -554,6 +567,33 @@ impl MailService {
     pub fn sync_now(&self, account_id: Option<String>) {
         self.sync.trigger(account_id);
     }
+}
+
+/// Bytes of an attachment that has no Gmail attachment id, from the full message.
+async fn embedded_bytes(api: &dyn MailApi, row: &DbAttachment) -> Result<Vec<u8>, MailError> {
+    let index: usize = row.id.parse().map_err(|_| MailError::NotFound)?;
+    let (_, fetched) = api
+        .batch_get_messages(std::slice::from_ref(&row.message_id), MessageFormat::Full)
+        .await
+        .into_iter()
+        .next()
+        .ok_or(MailError::NotFound)?;
+    let parsed = fetched
+        .map_err(SyncError::from)?
+        .parse()
+        .map_err(SyncError::from)?;
+    parsed
+        .attachments
+        .into_iter()
+        .nth(index)
+        .and_then(|a| a.data)
+        .filter(|bytes| !bytes.is_empty())
+        .ok_or(MailError::NotFound)
+}
+
+/// Printable ASCII only: nothing that could end a header line or fail response building.
+fn is_header_safe(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|b| (0x20..0x7f).contains(&b))
 }
 
 fn io_error(e: std::io::Error) -> MailError {
@@ -964,6 +1004,112 @@ mod tests {
         assert_eq!(
             unique_path(dir.path(), "README"),
             dir.path().join("README (1)")
+        );
+    }
+
+    #[tokio::test]
+    async fn embedded_parts_without_an_attachment_id_are_served_and_saved() {
+        let (dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"])
+                .with_embedded("logo.png", "image/png", Some("logo"), b"tiny-png")
+                .with_embedded("note.txt", "text/plain", None, b"hello"),
+            &[],
+        )
+        .await;
+        // The rows keep no bytes and no Gmail attachment id.
+        let rows = attachments::get_attachments_for_message(&mail.db, "a1", "m1")
+            .await
+            .unwrap();
+        assert!(rows.iter().all(|r| r.attachment_id.is_none()));
+        assert_eq!(rows.len(), 2);
+
+        let url = render::attachment_url("a1", "m1", "logo");
+        let served = mail.serve_inline_image(&url).await;
+        assert_eq!(
+            (served.status, served.body.as_slice()),
+            (200, &b"tiny-png"[..])
+        );
+        assert_eq!(
+            fake.attachment_fetches(),
+            0,
+            "nothing to download from Gmail"
+        );
+
+        // The regular download is the second row (rows follow parse order).
+        let note = rows.iter().find(|r| r.content_id.is_none()).unwrap();
+        let saved = mail
+            .save_attachment("a1", "m1", &note.id, &dir.path().join("Downloads"))
+            .await
+            .unwrap();
+        assert_eq!(saved.file_name().unwrap(), "note.txt");
+        assert_eq!(std::fs::read(saved).unwrap(), b"hello");
+
+        // Later reads come from the disk cache, not another message fetch.
+        let reads = fake.calls("get_message");
+        mail.inline_image("a1", "m1", "logo").await.unwrap();
+        assert_eq!(fake.calls("get_message"), reads);
+        assert!(dir.path().join("cache/attachments/a1/m1").is_dir());
+    }
+
+    #[tokio::test]
+    async fn a_part_with_no_bytes_anywhere_is_not_found() {
+        let (_dir, _fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_embedded(
+                "e.png",
+                "image/png",
+                Some("e"),
+                b"",
+            ),
+            &[],
+        )
+        .await;
+        assert!(matches!(
+            mail.inline_image("a1", "m1", "e").await,
+            Err(MailError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_header_unsafe_mime_type_is_a_404() {
+        let (_dir, _fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_inline("l.png", "image/png", "g1", "logo"),
+            &[("g1", b"png")],
+        )
+        .await;
+        sqlx::query("UPDATE attachments SET mime_type = 'image/png\nX-Evil: 1'")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        let served = mail
+            .serve_inline_image(&render::attachment_url("a1", "m1", "logo"))
+            .await;
+        assert_eq!(served, InlineResponse::not_found());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn save_attachment_skips_a_dangling_symlink() {
+        let (dir, _fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
+            &[("g1", b"%PDF")],
+        )
+        .await;
+        let target = dir.path().join("Downloads");
+        std::fs::create_dir(&target).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("nowhere"), target.join("a.pdf")).unwrap();
+
+        let saved = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            mail.save_attachment("a1", "m1", "0", &target),
+        )
+        .await
+        .expect("must not retry forever")
+        .unwrap();
+
+        assert_eq!(saved, target.join("a (1).pdf"));
+        assert!(
+            !dir.path().join("nowhere").exists(),
+            "the link was not followed"
         );
     }
 }

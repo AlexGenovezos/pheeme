@@ -159,6 +159,7 @@ mod tests {
                 attachment_id: Some("g0".into()),
                 content_id: Some("logo@x".into()),
                 is_inline: true,
+                data: None,
             },
             ParsedAttachment {
                 filename: Some("a.pdf".into()),
@@ -167,6 +168,7 @@ mod tests {
                 attachment_id: Some("g1".into()),
                 content_id: None,
                 is_inline: false,
+                data: None,
             },
         ];
 

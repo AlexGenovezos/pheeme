@@ -69,8 +69,14 @@ impl SyncEvents for TauriEvents {
 }
 
 /// Adapts a protocol answer to an HTTP response. Images are immutable per signed URL, and
-/// the response carries its own lockdown in case it is ever navigated to directly.
+/// the response carries its own lockdown in case it is ever navigated to directly. If a
+/// header can't be built the answer is a bare 404, never a panic.
 fn attachment_response(served: mail::InlineResponse) -> tauri::http::Response<Vec<u8>> {
+    let not_found = || {
+        let mut response = tauri::http::Response::new(Vec::new());
+        *response.status_mut() = tauri::http::StatusCode::NOT_FOUND;
+        response
+    };
     let mut response = tauri::http::Response::builder().status(served.status);
     if let Some(content_type) = served.content_type {
         response = response
@@ -82,9 +88,7 @@ fn attachment_response(served: mail::InlineResponse) -> tauri::http::Response<Ve
                 "default-src 'none'; style-src 'unsafe-inline'; sandbox",
             );
     }
-    response
-        .body(served.body)
-        .expect("static status and headers are valid")
+    response.body(served.body).unwrap_or_else(|_| not_found())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -181,6 +185,32 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attachment_response_never_panics_on_a_bad_content_type() {
+        let ok = attachment_response(mail::InlineResponse {
+            status: 200,
+            content_type: Some("image/png".into()),
+            body: vec![1],
+        });
+        assert_eq!(ok.status(), 200);
+        assert_eq!(ok.headers()["content-type"], "image/png");
+        assert_eq!(ok.body(), &[1]);
+
+        for bad in ["image/png\nX-Evil: 1", "image/png\0"] {
+            let response = attachment_response(mail::InlineResponse {
+                status: 200,
+                content_type: Some(bad.into()),
+                body: vec![1],
+            });
+            assert_eq!(response.status(), 404, "{bad:?}");
+            assert!(response.body().is_empty());
+        }
+        assert_eq!(
+            attachment_response(mail::InlineResponse::not_found()).status(),
+            404
+        );
+    }
 
     #[tokio::test]
     async fn build_state_creates_db_and_migrates() {

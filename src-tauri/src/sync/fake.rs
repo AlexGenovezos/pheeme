@@ -40,6 +40,8 @@ pub struct FakeAttachment {
     pub attachment_id: String,
     pub content_id: Option<String>,
     pub size: u64,
+    /// Bytes carried in the message itself (`body.data`, no `attachmentId`).
+    pub embedded: Option<Vec<u8>>,
 }
 
 impl FakeMsg {
@@ -66,6 +68,26 @@ impl FakeMsg {
             attachment_id: attachment_id.into(),
             content_id: None,
             size: 1,
+            embedded: None,
+        });
+        self
+    }
+
+    /// Attach a small part whose bytes travel inside the message (no `attachmentId`).
+    pub fn with_embedded(
+        mut self,
+        filename: &str,
+        mime_type: &str,
+        content_id: Option<&str>,
+        bytes: &[u8],
+    ) -> Self {
+        self.attachments.push(FakeAttachment {
+            filename: filename.into(),
+            mime_type: mime_type.into(),
+            attachment_id: String::new(),
+            content_id: content_id.map(Into::into),
+            size: bytes.len() as u64,
+            embedded: Some(bytes.to_vec()),
         });
         self
     }
@@ -84,6 +106,7 @@ impl FakeMsg {
             attachment_id: attachment_id.into(),
             content_id: Some(content_id.into()),
             size: 1,
+            embedded: None,
         });
         self
     }
@@ -145,10 +168,17 @@ impl FakeMsg {
                                     value: format!("<{cid}>"),
                                 })
                                 .collect(),
-                            body: MessagePartBody {
-                                attachment_id: Some(a.attachment_id.clone()),
-                                size: a.size,
-                                ..Default::default()
+                            body: match &a.embedded {
+                                Some(bytes) => MessagePartBody {
+                                    data: Some(encode_base64url(bytes)),
+                                    size: a.size,
+                                    ..Default::default()
+                                },
+                                None => MessagePartBody {
+                                    attachment_id: Some(a.attachment_id.clone()),
+                                    size: a.size,
+                                    ..Default::default()
+                                },
                             },
                             ..Default::default()
                         }
