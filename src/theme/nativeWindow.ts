@@ -25,18 +25,14 @@ let revealed = false;
 
 /**
  * The window starts hidden (`visible: false` in tauri.conf.json) so launch never shows the native background in the
- * wrong theme or an empty frame. Show it once the first real screen has painted; the Rust side shows it anyway after
+ * wrong theme or an empty frame. Show it once the first real screen is rendered; the Rust side shows it anyway after
  * a timeout if this never runs.
  */
 export function revealWindow() {
   if (revealed) return;
   revealed = true;
-  // Two frames: the first runs before paint, the second after it.
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      getCurrentWindow()
-        .show()
-        .catch((err: unknown) => console.warn("show failed", err));
-    }),
-  );
+  // Called after React commits the first screen. Not via requestAnimationFrame: a hidden window may never get one.
+  getCurrentWindow()
+    .show()
+    .catch((err: unknown) => console.warn("show failed", err));
 }
