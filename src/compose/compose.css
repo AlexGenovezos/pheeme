@@ -1,0 +1,503 @@
+/* Compose panels: docked along the bottom-right edge of the window, newest on the right. */
+.compose-dock {
+  position: fixed;
+  inset-block-end: var(--space-0);
+  inset-inline-end: var(--space-4);
+  z-index: var(--z-overlay);
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: var(--space-3);
+  max-width: calc(100% - var(--space-8));
+  inset-inline-start: var(--space-4);
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+/* Toasts move to the left while a panel covers the bottom-right corner. */
+:root:has(.compose-dock[data-open]) .ui-toast-viewport {
+  inset-inline-end: auto;
+  inset-inline-start: var(--space-4);
+}
+
+.compose-dock__slot {
+  display: flex;
+  min-width: var(--space-0);
+  pointer-events: auto;
+}
+
+.compose {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: var(--compose-width);
+  max-width: 100%;
+  height: var(--compose-height);
+  max-height: var(--compose-max-height);
+  border: var(--border-width) solid var(--color-menu-border);
+  border-block-end: none;
+  border-start-start-radius: var(--radius-lg);
+  border-start-end-radius: var(--radius-lg);
+  background: var(--color-pane-bg);
+  color: var(--color-foreground);
+  box-shadow: var(--shadow-overlay);
+  animation: compose-in var(--duration-base) var(--ease-out);
+}
+
+.compose--minimized {
+  width: var(--compose-minimized-width);
+  height: auto;
+}
+
+.compose-dock__slot[data-drop-target] .compose {
+  outline: var(--focus-ring-width) dashed var(--color-accent);
+  outline-offset: var(--focus-ring-inset);
+}
+
+@keyframes compose-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--enter-offset));
+  }
+}
+
+.compose__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-0-5);
+  height: var(--compose-header-height);
+  padding: var(--space-0) var(--space-1-5) var(--space-0) var(--space-3);
+  border-block-end: var(--border-width) solid var(--color-border-subtle);
+  user-select: none;
+}
+
+.compose--minimized .compose__header {
+  border-block-end: none;
+}
+
+.compose__title {
+  flex: 1;
+  min-width: var(--space-0);
+  overflow: hidden;
+  font-weight: var(--font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose__title--button {
+  height: 100%;
+  padding: var(--space-0);
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--font-weight-semibold);
+  text-align: start;
+  cursor: default;
+}
+.compose__title--button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-inset);
+}
+
+.compose__loading {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-foreground-subtle);
+}
+
+.compose__fields {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-0) var(--space-3);
+}
+
+.compose-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height-lg);
+  border-block-end: var(--border-width) solid var(--color-border-subtle);
+}
+
+.compose-field--recipients {
+  align-items: flex-start;
+  padding-block: var(--space-1);
+}
+
+.compose-field__label {
+  flex: none;
+  width: var(--compose-field-label-width);
+  color: var(--color-foreground-muted);
+  line-height: var(--control-height-md);
+  user-select: none;
+}
+
+.compose-field__input {
+  flex: 1;
+  min-width: var(--space-0);
+  height: var(--control-height-md);
+  padding: var(--space-0);
+  border: none;
+  background: transparent;
+  color: var(--color-foreground);
+  font: inherit;
+}
+.compose-field__input:focus-visible {
+  outline: none;
+}
+
+.compose-field__toggles {
+  display: flex;
+  flex: none;
+  gap: var(--space-0-5);
+  align-self: center;
+}
+
+.compose-toggle {
+  height: var(--control-height-sm);
+  padding: var(--space-0) var(--space-1-5);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-foreground-muted);
+  font: inherit;
+  cursor: default;
+}
+.compose-toggle:hover {
+  background: var(--color-control-hover-bg);
+  color: var(--color-foreground);
+}
+.compose-toggle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.compose-chips {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: var(--space-0);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+
+.compose-chips__input {
+  display: flex;
+  flex: 1;
+  min-width: var(--compose-field-label-width);
+}
+
+.compose-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: var(--control-height-sm);
+  padding-inline-start: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-badge-bg);
+  color: var(--color-badge-foreground);
+  font-size: var(--font-size-sm);
+}
+
+.compose-chip--invalid {
+  box-shadow: inset 0 0 0 var(--border-width) var(--color-danger);
+  color: var(--color-danger);
+}
+
+.compose-chip__text {
+  overflow: hidden;
+  padding: var(--space-0);
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.compose-chip__remove,
+.compose-attachment__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-inline: var(--space-0-5);
+  padding: var(--space-0-5);
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-foreground-muted);
+  cursor: default;
+}
+.compose-chip__remove:hover,
+.compose-attachment__remove:hover {
+  background: var(--color-control-hover-bg);
+  color: var(--color-foreground);
+}
+.compose-chip__remove svg,
+.compose-attachment__remove svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+.compose-chip__text:focus-visible,
+.compose-chip__remove:focus-visible,
+.compose-attachment__remove:focus-visible,
+.compose-quote__toggle:focus-visible,
+.compose-from:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.compose-from {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: var(--space-0);
+  height: var(--control-height-sm);
+  padding: var(--space-0) var(--space-1-5);
+  margin-inline-start: calc(-1 * var(--space-1-5));
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-foreground);
+  font: inherit;
+  cursor: default;
+}
+button.compose-from:hover {
+  background: var(--color-control-hover-bg);
+}
+.compose-from svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  color: var(--color-foreground-muted);
+}
+.compose-from__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: var(--space-0);
+  overflow-y: auto;
+}
+
+.compose-editor {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  min-height: var(--compose-editor-min-height);
+  padding: var(--space-3);
+  cursor: text;
+}
+
+.compose-editor > .compose-editor__content {
+  flex: 1;
+}
+
+.compose-editor__content {
+  min-height: 100%;
+  font-size: var(--font-size-reading);
+  line-height: var(--line-height-reading);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.compose-editor__content:focus-visible {
+  outline: none;
+}
+.compose-editor__content p {
+  margin: var(--space-0);
+}
+.compose-editor__content ul,
+.compose-editor__content ol {
+  margin: var(--space-1) var(--space-0);
+  padding-inline-start: var(--space-6);
+}
+.compose-editor__content blockquote {
+  margin: var(--space-1) var(--space-0);
+  padding-inline-start: var(--space-3);
+  border-inline-start: var(--selection-bar-width) solid var(--color-border);
+  color: var(--color-foreground-muted);
+}
+.compose-editor__content a {
+  color: var(--color-link);
+}
+
+.compose-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-0-5);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-pane-bg);
+}
+
+.compose-toolbar__button.compose-toolbar__button--on {
+  background: var(--color-control-active-bg);
+  color: var(--color-foreground);
+}
+
+.compose-toolbar__separator {
+  width: var(--border-width);
+  height: var(--icon-size-md);
+  margin-inline: var(--space-1);
+  background: var(--color-border-subtle);
+}
+
+.compose-link {
+  display: flex;
+  margin-inline-start: var(--space-1);
+}
+
+.compose-link__input {
+  width: var(--compose-link-input-width);
+  height: var(--control-height-sm);
+  padding: var(--space-0) var(--space-2);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+  color: var(--color-input-foreground);
+  font: inherit;
+  font-size: var(--font-size-sm);
+}
+.compose-link__input:focus-visible {
+  border-color: var(--color-focus-border);
+  outline: none;
+}
+
+.compose-quote {
+  padding: var(--space-0) var(--space-3) var(--space-3);
+}
+
+.compose-quote__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--space-3);
+  padding: var(--space-0) var(--space-1);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: var(--color-button-secondary-bg);
+  color: var(--color-foreground-muted);
+  cursor: default;
+}
+.compose-quote__toggle:hover {
+  background: var(--color-button-secondary-hover-bg);
+}
+.compose-quote__toggle svg {
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+}
+.compose-quote .email-body {
+  margin-block-start: var(--space-2);
+  padding: var(--space-0);
+}
+
+.compose-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+  margin: var(--space-0);
+  padding: var(--space-0) var(--space-3) var(--space-2);
+  list-style: none;
+}
+
+.compose-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  max-width: var(--compose-attachment-max-width);
+  height: var(--control-height-md);
+  padding-inline-start: var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.compose-attachment--pending {
+  padding-inline-end: var(--space-2);
+  color: var(--color-foreground-subtle);
+}
+
+.compose-attachment__icon {
+  flex: none;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  color: var(--color-foreground-muted);
+}
+
+.compose-attachment__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose-attachment__size {
+  flex: none;
+  color: var(--color-foreground-subtle);
+}
+
+.compose__error {
+  margin: var(--space-0);
+  padding: var(--space-1-5) var(--space-3);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.compose__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-block-start: var(--border-width) solid var(--color-border-subtle);
+}
+
+.compose__size {
+  color: var(--color-foreground-subtle);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.compose__size--over {
+  color: var(--color-danger);
+}
+
+.compose__status {
+  flex: 1;
+  overflow: hidden;
+  color: var(--color-foreground-subtle);
+  font-size: var(--font-size-sm);
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose__confirm {
+  position: absolute;
+  inset: var(--compose-header-height) var(--space-0) var(--space-0);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  background: var(--color-scrim);
+  backdrop-filter: blur(var(--settings-backdrop-blur));
+}
+
+.compose__confirm-title {
+  margin: var(--space-0);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-medium);
+}
+
+.compose__confirm-actions {
+  display: flex;
+  gap: var(--space-2);
+}

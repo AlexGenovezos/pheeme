@@ -10,6 +10,7 @@
     "core:window:allow-set-background-color",
     "core:window:allow-show",
     "opener:default",
+    "dialog:allow-open",
     "updater:default",
     "process:allow-restart"
   ]

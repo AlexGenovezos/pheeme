@@ -105,9 +105,13 @@ function stepMatches(step: Step, e: KeyboardEvent, isMac: boolean): boolean {
   return !shiftSignificant(step.key) || e.shiftKey === step.shift;
 }
 
-/** Text fields own their keystrokes; only `global` commands fire inside them. */
+/**
+ * Text fields own their keystrokes; only `global` commands fire inside them. So does anything inside a
+ * `data-owns-keys` region (a compose panel), where `e` or `a` on a button mustn't archive or reply.
+ */
 export function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
+  if (target.closest("[data-owns-keys]")) return true;
   if (target instanceof HTMLElement && target.isContentEditable) return true;
   if (target.closest('[contenteditable]:not([contenteditable="false"])')) return true;
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;

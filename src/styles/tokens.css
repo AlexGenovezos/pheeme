@@ -102,6 +102,16 @@
   --settings-backdrop-blur: 6px;
   --settings-recorder-min-width: 120px;
   --chord-hint-offset: 12px;
+  /* Compose panels, docked to the bottom of the window. */
+  --compose-width: 560px;
+  --compose-height: 600px;
+  --compose-max-height: calc(100vh - var(--titlebar-height) - var(--space-4));
+  --compose-minimized-width: 280px;
+  --compose-header-height: 36px;
+  --compose-field-label-width: 56px;
+  --compose-editor-min-height: 160px;
+  --compose-link-input-width: 220px;
+  --compose-attachment-max-width: 240px;
   --brand-mark-size: 48px;
   /* Onboarding and account screens. */
   --onboarding-rail-width: 220px;

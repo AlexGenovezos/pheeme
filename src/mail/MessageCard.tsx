@@ -1,5 +1,7 @@
-import { ChevronUp } from "lucide-react";
+import { ChevronUp, Pencil } from "lucide-react";
+import { useComposeStore } from "../compose/composeStore";
 import { Avatar } from "../components/ui/Avatar";
+import { Button } from "../components/ui/Button";
 import { formatFullDate, formatListDate } from "../lib/dates";
 import type { EmailAddress, MessageDetail } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
@@ -35,7 +37,8 @@ export function MessageCard({ message, accountId, expanded, onToggle }: MessageC
   const myAddress = useAccountStore((s) =>
     s.accounts.find((a) => a.id === accountId)?.email.toLowerCase(),
   );
-  const name = senderName(message);
+  const isDraft = message.labelIds.includes("DRAFT");
+  const name = isDraft ? "Draft" : senderName(message);
   const when = message.date > 0 ? new Date(message.date) : null;
 
   if (!expanded) {
@@ -48,7 +51,11 @@ export function MessageCard({ message, accountId, expanded, onToggle }: MessageC
           onClick={onToggle}
         >
           <Avatar name={name} email={message.fromAddress ?? undefined} />
-          <span className="message-card__sender" data-unread={message.unread || undefined}>
+          <span
+            className="message-card__sender"
+            data-unread={message.unread || undefined}
+            data-draft={isDraft || undefined}
+          >
             {name}
           </span>
           <span className="message-card__snippet">{message.snippet}</span>
@@ -72,7 +79,9 @@ export function MessageCard({ message, accountId, expanded, onToggle }: MessageC
         <Avatar name={name} email={message.fromAddress ?? undefined} />
         <div className="message-card__from">
           <div className="message-card__identity">
-            <span className="message-card__name selectable">{name}</span>
+            <span className="message-card__name selectable" data-draft={isDraft || undefined}>
+              {name}
+            </span>
             {message.fromName && message.fromAddress && (
               <span className="message-card__address selectable">{message.fromAddress}</span>
             )}
@@ -105,6 +114,17 @@ export function MessageCard({ message, accountId, expanded, onToggle }: MessageC
         messageId={message.id}
         attachments={message.attachments}
       />
+      {isDraft && (
+        <div className="message-card__draft-actions">
+          <Button
+            size="sm"
+            icon={<Pencil />}
+            onClick={() => void useComposeStore.getState().editDraft(accountId, message.id)}
+          >
+            Edit draft
+          </Button>
+        </div>
+      )}
     </article>
   );
 }
