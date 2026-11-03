@@ -55,7 +55,7 @@ struct Payload {
     /// Sends: the conversation a reply belongs in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     thread_id: Option<String>,
-    /// Sends: the saved Gmail draft this message came from, deleted as it is sent.
+    /// Sends: the saved Gmail draft this message came from, deleted once it is sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     draft_id: Option<String>,
 }
@@ -265,7 +265,7 @@ pub async fn match_sends(
 pub struct SendOptions {
     /// Reply: the Gmail thread it belongs in.
     pub thread_id: Option<String>,
-    /// The saved draft this message replaces; deleted just before sending.
+    /// The saved draft this message replaces; deleted once the message is sent.
     pub draft_id: Option<String>,
     /// Not before this time (Unix ms): the undo-send window. 0 sends at once.
     pub send_at: i64,
@@ -561,21 +561,6 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
     if !store::claim_send(&engine.db, &op.id, &checking, now).await? {
         return Ok(Step::Continue);
     }
-    // The message replaces its draft. Deleted first: a failed send keeps its content in
-    // the outbox, while a draft left behind would sit in Drafts looking unsent.
-    if let Some(draft) = payload.draft_id.as_deref() {
-        match engine.api.delete_draft(draft).await {
-            Ok(()) => {}
-            Err(e) if e.is_not_found() => {}
-            Err(e) if never_sent(&e) => {
-                // Nothing went out: back to pending (it's ours, claimed above).
-                defer(engine, op, now, &e).await?;
-                return Ok(Step::Blocked);
-            }
-            Err(e) => tracing::warn!(op = %op.id, error = %e, "couldn't delete the sent draft"),
-        }
-    }
-
     match engine
         .api
         .send_message(&raw, payload.thread_id.as_deref())
@@ -583,6 +568,7 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
     {
         Ok(_) => {
             store::delete(&engine.db, &op.id).await?;
+            delete_source_draft(engine, op).await;
             send_status(engine, op, "sent");
             Ok(Step::Done)
         }
@@ -616,6 +602,19 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
             send_status(engine, op, CHECKING);
             Ok(Step::Continue)
         }
+    }
+}
+
+/// The message replaced a saved draft: remove it once the message is in Sent. Kept until
+/// then, so a send that never leaves (and is cancelled) loses nothing.
+async fn delete_source_draft(engine: &SyncEngine, op: &DbOp) {
+    let Ok(Some(draft)) = Payload::of(op).map(|p| p.draft_id) else {
+        return;
+    };
+    match engine.api.delete_draft(&draft).await {
+        Ok(()) => {}
+        Err(e) if e.is_not_found() => {}
+        Err(e) => tracing::warn!(op = %op.id, error = %e, "couldn't delete the sent draft"),
     }
 }
 
@@ -653,6 +652,7 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
     };
     if found {
         store::delete(&engine.db, &op.id).await?;
+        delete_source_draft(engine, op).await;
         send_status(engine, op, "sent");
         return Ok(true);
     }

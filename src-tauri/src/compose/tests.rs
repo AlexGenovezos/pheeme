@@ -301,3 +301,44 @@ async fn saving_a_draft_deleted_elsewhere_creates_a_new_one() {
     assert_ne!(again.draft_id, saved.draft_id);
     assert_eq!(h.fake.drafts().len(), 1);
 }
+
+#[tokio::test]
+async fn a_draft_survives_a_send_that_never_left() {
+    let h = harness().await;
+    let mut d = draft_to("bo@example.com");
+    let saved = h.compose.save_draft(ACCT, &d).await.unwrap();
+    d.draft_id = Some(saved.draft_id);
+    let queued = h.compose.send(ACCT, &d, 30_000).await.unwrap();
+    h.fake
+        .fail_next("send_message", GmailError::Offline("down".into()));
+    outbox::process(&h.sync.engine(ACCT), queued.send_at)
+        .await
+        .unwrap();
+
+    assert!(h.compose.cancel_send(&queued.op_id).await.unwrap());
+    assert_eq!(h.fake.drafts().len(), 1, "still in Drafts");
+}
+
+#[tokio::test]
+async fn reply_carries_the_images_its_quote_shows_but_not_files() {
+    let h = harness().await;
+    h.fake.seed(
+        FakeMsg::new("m1", "t1", &["INBOX"])
+            .with_attachment("a.pdf", "application/pdf", "g1")
+            .with_inline("logo.png", "image/png", "g2", "logo"),
+    );
+    h.fake.seed_attachment("m1", "g2", b"PNG");
+    h.sync.sync_account(ACCT).await.unwrap();
+
+    let d = h
+        .compose
+        .template(ACCT, "m1", ComposeMode::Reply)
+        .await
+        .unwrap();
+    assert_eq!(d.attachments.len(), 1);
+    assert_eq!(d.attachments[0].content_id.as_deref(), Some("logo"));
+    assert_eq!(
+        h.compose.staging.read(&d.attachments[0]).await.unwrap(),
+        b"PNG"
+    );
+}

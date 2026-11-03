@@ -241,11 +241,13 @@ impl ComposeService {
         };
         let mut draft = template::template(mode, &original, &me.address, &chrono::Local);
 
-        // A forward carries the original's files (and the images its quote shows).
-        if mode == ComposeMode::Forward {
-            let rows =
+        // The images the quote shows (`cid:`) go along; a forward also carries the files.
+        {
+            let mut rows =
                 attachments::get_attachments_for_message(&self.db, account_id, message_id).await?;
-            let mut rows = rows;
+            rows.retain(|r| {
+                mode == ComposeMode::Forward || (r.is_inline != 0 && r.content_id.is_some())
+            });
             rows.sort_by_key(|r| r.id.parse::<u64>().unwrap_or(u64::MAX));
             for row in rows {
                 let bytes = self

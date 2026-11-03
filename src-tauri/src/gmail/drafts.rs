@@ -37,8 +37,15 @@ impl GmailClient {
     }
 
     pub async fn get_draft(&self, id: &str, format: MessageFormat) -> Result<Draft, GmailError> {
-        self.send_json(ApiRequest::get(&["drafts", id]).query("format", format.as_str()))
-            .await
+        let mut draft: Draft = self
+            .send_json(ApiRequest::get(&["drafts", id]).query("format", format.as_str()))
+            .await?;
+        if let Some(msg) = draft.message.as_mut() {
+            if let Some(payload) = msg.payload.as_mut() {
+                self.fill_external_bodies(&msg.id, payload).await?;
+            }
+        }
+        Ok(draft)
     }
 
     /// Save a new draft from an RFC 2822 message (a reply passes its thread).
