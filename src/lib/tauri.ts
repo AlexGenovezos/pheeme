@@ -151,6 +151,13 @@ export const modifyThreads = (accountId: string, threadIds: string[], add: strin
   invoke<void>("modify_threads", { accountId, threadIds, add, remove });
 export const trashThreads = (accountId: string, threadIds: string[]) =>
   invoke<void>("trash_threads", { accountId, threadIds });
+/** Saves an attachment into the Downloads folder and resolves to the file's absolute path. */
+export const saveAttachment = (accountId: string, messageId: string, attachmentId: string) =>
+  invoke<string>("save_attachment", { accountId, messageId, attachmentId });
+/** Shows a file saved by `saveAttachment` in the system file manager. */
+export const revealDownload = (path: string) => invoke<void>("reveal_download", { path });
+/** Opens an http, https or mailto link from an email; anything else is rejected. */
+export const openMailLink = (url: string) => invoke<void>("open_mail_link", { url });
 /** Sync one account now, or every account when omitted. */
 export const syncNow = (accountId?: string | null) => invoke<void>("sync_now", { accountId: accountId ?? null });
 

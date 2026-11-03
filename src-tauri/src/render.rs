@@ -85,6 +85,30 @@ fn decode_hex(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// Parses a protocol request URI (`/{account}/{message}/{cid}?t={token}`, segments
+/// percent-encoded) into the decoded triple, or `None` unless it has exactly those three
+/// non-empty segments and a token minted by [`attachment_url`] for them. Pure and checked
+/// first, so an unsigned request never reaches the database, the disk cache or Gmail.
+pub fn parse_attachment_request(uri: &str) -> Option<(String, String, String)> {
+    let url = Url::parse(uri).ok()?;
+    let mut segments = url.path_segments()?;
+    let (account, message, cid) = (segments.next()?, segments.next()?, segments.next()?);
+    if segments.next().is_some() {
+        return None;
+    }
+    let decode = |s: &str| -> Option<String> {
+        let decoded = percent_decode_str(s).decode_utf8().ok()?;
+        (!decoded.is_empty()).then(|| decoded.into_owned())
+    };
+    let (account, message, cid) = (decode(account)?, decode(message)?, decode(cid)?);
+    let mut tokens = url.query_pairs().filter(|(key, _)| key == "t");
+    let token = tokens.next()?.1;
+    if tokens.next().is_some() {
+        return None;
+    }
+    verify_attachment_token(&account, &message, &cid, &token).then_some((account, message, cid))
+}
+
 /// URL the webview resolves to an attachment's bytes, signed with `?t=<token>`.
 pub fn attachment_url(account_id: &str, message_id: &str, content_id: &str) -> String {
     let base = if cfg!(windows) {
@@ -592,5 +616,60 @@ mod tests {
         ] {
             assert!(!clean(plain).declares_dark_mode, "{plain}");
         }
+    }
+
+    #[test]
+    fn protocol_request_needs_a_valid_signed_url() {
+        let url = attachment_url("acc 1", "m/1", "logo@x.com");
+        assert_eq!(
+            parse_attachment_request(&url),
+            Some(("acc 1".into(), "m/1".into(), "logo@x.com".into()))
+        );
+        let (path, query) = url.split_once('?').unwrap();
+        let token = query.strip_prefix("t=").unwrap();
+
+        // Missing, empty, wrong, doubled and non-hex tokens.
+        assert_eq!(parse_attachment_request(path), None);
+        assert_eq!(parse_attachment_request(&format!("{path}?t=")), None);
+        let wrong = if token.starts_with('0') { "1" } else { "0" };
+        assert_eq!(
+            parse_attachment_request(&format!("{path}?t={wrong}{}", &token[1..])),
+            None
+        );
+        assert_eq!(
+            parse_attachment_request(&format!("{path}?t={token}&t={token}")),
+            None
+        );
+        assert_eq!(parse_attachment_request(&format!("{path}?t=zz")), None);
+        assert_eq!(parse_attachment_request(&format!("{path}?x={token}")), None);
+
+        // A token only fits the triple it was minted for.
+        for other in [
+            attachment_url("acc 2", "m/1", "logo@x.com"),
+            attachment_url("acc 1", "m/2", "logo@x.com"),
+            attachment_url("acc 1", "m/1", "other"),
+        ] {
+            let (other_path, _) = other.split_once('?').unwrap();
+            assert_eq!(
+                parse_attachment_request(&format!("{other_path}?t={token}")),
+                None
+            );
+        }
+
+        // Extra or missing segments, even with a token that is valid for the first three.
+        assert_eq!(
+            parse_attachment_request(&format!("{path}/extra?t={token}")),
+            None
+        );
+        assert_eq!(
+            parse_attachment_request(&format!("{path}/?t={token}")),
+            None
+        );
+        let short = path.rsplit_once('/').unwrap().0;
+        assert_eq!(
+            parse_attachment_request(&format!("{short}?t={token}")),
+            None
+        );
+        assert_eq!(parse_attachment_request("not a url"), None);
     }
 }

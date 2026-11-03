@@ -27,11 +27,13 @@ pub struct AppState {
     pub sync: Arc<SyncManager>,
 }
 
-/// Build application state: open the database in `data_dir`, apply migrations, and set up
+/// Build application state: open the database in `data_dir` (attachment bytes are cached
+/// under `cache_dir`), apply migrations, and set up
 /// sync (not started). Tauri-independent so it can be tested without an app handle; must
 /// run inside a tokio runtime.
 pub async fn build_state(
     data_dir: &Path,
+    cache_dir: &Path,
     secrets: Arc<dyn SecretStore>,
     events: Arc<dyn SyncEvents>,
 ) -> anyhow::Result<AppState> {
@@ -45,7 +47,7 @@ pub async fn build_state(
         Arc::new(gmail::GmailClient::new(provider)) as Arc<dyn sync::MailApi>
     });
     let sync = SyncManager::new(db.clone(), api_for, events);
-    let mail = mail::MailService::new(db.clone(), sync.clone());
+    let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
     Ok(AppState {
         db,
         accounts,
@@ -64,6 +66,25 @@ impl SyncEvents for TauriEvents {
             tracing::warn!(error = %e, "couldn't emit {}", event.name());
         }
     }
+}
+
+/// Adapts a protocol answer to an HTTP response. Images are immutable per signed URL, and
+/// the response carries its own lockdown in case it is ever navigated to directly.
+fn attachment_response(served: mail::InlineResponse) -> tauri::http::Response<Vec<u8>> {
+    let mut response = tauri::http::Response::builder().status(served.status);
+    if let Some(content_type) = served.content_type {
+        response = response
+            .header("Content-Type", content_type)
+            .header("Cache-Control", "private, max-age=31536000, immutable")
+            .header("X-Content-Type-Options", "nosniff")
+            .header(
+                "Content-Security-Policy",
+                "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            );
+    }
+    response
+        .body(served.body)
+        .expect("static status and headers are valid")
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -85,12 +106,30 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
+        .register_asynchronous_uri_scheme_protocol(
+            render::ATTACHMENT_SCHEME,
+            |ctx, request, responder| {
+                let uri = request.uri().to_string();
+                let mail = ctx
+                    .app_handle()
+                    .try_state::<AppState>()
+                    .map(|state| state.mail.clone());
+                tauri::async_runtime::spawn(async move {
+                    let served = match mail {
+                        Some(mail) => mail.serve_inline_image(&uri).await,
+                        None => mail::InlineResponse::not_found(),
+                    };
+                    responder.respond(attachment_response(served));
+                });
+            },
+        )
         .setup(|app| {
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
             let data_dir = app.path().app_data_dir()?;
+            let cache_dir = app.path().app_cache_dir()?;
 
             info!("App data directory: {}", data_dir.display());
 
@@ -98,6 +137,7 @@ pub fn run() {
             let events = Arc::new(TauriEvents(app.handle().clone()));
             let state = tauri::async_runtime::block_on(build_state(
                 &data_dir,
+                &cache_dir,
                 Arc::new(secrets::KeyringStore::new()),
                 events,
             ))?;
@@ -117,6 +157,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::open_external,
+            commands::open_mail_link,
+            commands::attachments::save_attachment,
+            commands::attachments::reveal_download,
             commands::auth::begin_oauth,
             commands::auth::complete_oauth,
             commands::auth::cancel_oauth,
@@ -144,6 +187,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let state = build_state(
             dir.path(),
+            &dir.path().join("cache"),
             Arc::new(secrets::MemoryStore::new()),
             Arc::new(sync::NoopEvents),
         )

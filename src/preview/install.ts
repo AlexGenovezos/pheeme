@@ -65,6 +65,9 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       if (index !== -1) accounts.splice(index, 1);
     },
     open_external: () => undefined,
+    open_mail_link: () => undefined,
+    save_attachment: () => "/Users/you/Downloads/attachment.pdf",
+    reveal_download: () => undefined,
     "plugin:updater|check": () => null,
   };
 }

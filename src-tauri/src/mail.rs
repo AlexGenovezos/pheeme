@@ -13,6 +13,7 @@ use crate::sync::manager::SyncManager;
 use crate::sync::{outbox, SyncEvent};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub const DEFAULT_PAGE: i64 = 50;
@@ -201,14 +202,83 @@ pub struct CountDto {
     pub unread: i64,
 }
 
+/// An attachment's content with what is needed to serve or save it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentBytes {
+    pub filename: Option<String>,
+    pub mime_type: String,
+    pub bytes: Vec<u8>,
+}
+
+/// What the `pheeme-att` protocol answers with; the Tauri adapter only converts it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineResponse {
+    pub status: u16,
+    pub content_type: Option<String>,
+    pub body: Vec<u8>,
+}
+
+impl InlineResponse {
+    pub fn not_found() -> Self {
+        Self {
+            status: 404,
+            content_type: None,
+            body: Vec::new(),
+        }
+    }
+}
+
+/// A file name that is safe to create in a directory: only the last path component,
+/// without `:` or control characters, no leading/trailing dots or spaces.
+pub fn safe_file_name(name: Option<&str>) -> String {
+    let last = name
+        .unwrap_or_default()
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default();
+    let cleaned: String = last
+        .chars()
+        .filter(|c| *c != ':' && !c.is_control())
+        .collect();
+    let cleaned = cleaned.trim_matches(|c: char| c == '.' || c.is_whitespace());
+    if cleaned.is_empty() {
+        "attachment".to_owned()
+    } else {
+        cleaned.to_owned()
+    }
+}
+
+/// `dir/name`, or `dir/name (1).ext`, `dir/name (2).ext`, … if that already exists.
+pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => name.split_at(i),
+        _ => (name, ""),
+    };
+    (1..)
+        .map(|n| dir.join(format!("{stem} ({n}){ext}")))
+        .find(|p| !p.exists())
+        .expect("an unused name exists")
+}
+
+#[derive(Clone)]
 pub struct MailService {
     db: SqlitePool,
     sync: Arc<SyncManager>,
+    /// Attachment bytes live under `cache_dir/attachments/{account}/{message}/{row id}`.
+    cache_dir: PathBuf,
 }
 
 impl MailService {
-    pub fn new(db: SqlitePool, sync: Arc<SyncManager>) -> Self {
-        Self { db, sync }
+    pub fn new(db: SqlitePool, sync: Arc<SyncManager>, cache_dir: PathBuf) -> Self {
+        Self {
+            db,
+            sync,
+            cache_dir,
+        }
     }
 
     /// Threads under `label_id` (and `also_label_id`, for a category tab) across
@@ -360,10 +430,146 @@ impl MailService {
         }
     }
 
+    /// An attachment's bytes: from the disk cache, else downloaded from Gmail once.
+    pub async fn attachment(
+        &self,
+        account_id: &str,
+        message_id: &str,
+        attachment_row_id: &str,
+    ) -> Result<AttachmentBytes, MailError> {
+        let row = attachments::get_one(&self.db, account_id, message_id, attachment_row_id)
+            .await?
+            .ok_or(MailError::NotFound)?;
+        self.bytes_of(row).await
+    }
+
+    /// The image behind a `cid:` reference; anything that isn't an `image/*` is `NotFound`.
+    pub async fn inline_image(
+        &self,
+        account_id: &str,
+        message_id: &str,
+        content_id: &str,
+    ) -> Result<AttachmentBytes, MailError> {
+        let row = attachments::get_by_content_id(&self.db, account_id, message_id, content_id)
+            .await?
+            .filter(|r| {
+                r.mime_type
+                    .as_deref()
+                    .is_some_and(|m| m.trim().to_ascii_lowercase().starts_with("image/"))
+            })
+            .ok_or(MailError::NotFound)?;
+        self.bytes_of(row).await
+    }
+
+    /// Answers a `pheeme-att` request. The URI is parsed and its signature verified before
+    /// anything else is touched; every failure is a bare 404.
+    pub async fn serve_inline_image(&self, uri: &str) -> InlineResponse {
+        let Some((account, message, cid)) = render::parse_attachment_request(uri) else {
+            return InlineResponse::not_found();
+        };
+        match self.inline_image(&account, &message, &cid).await {
+            Ok(image) => InlineResponse {
+                status: 200,
+                content_type: Some(image.mime_type),
+                body: image.bytes,
+            },
+            Err(e) => {
+                tracing::debug!(error = %e, "inline image not served");
+                InlineResponse::not_found()
+            }
+        }
+    }
+
+    /// Writes an attachment into `dir` under a sanitized, collision-free name and returns
+    /// the path.
+    pub async fn save_attachment(
+        &self,
+        account_id: &str,
+        message_id: &str,
+        attachment_row_id: &str,
+        dir: &Path,
+    ) -> Result<PathBuf, MailError> {
+        use tokio::io::AsyncWriteExt;
+        let att = self
+            .attachment(account_id, message_id, attachment_row_id)
+            .await?;
+        let name = safe_file_name(att.filename.as_deref());
+        tokio::fs::create_dir_all(dir).await.map_err(io_error)?;
+        loop {
+            let path = unique_path(dir, &name);
+            // `create_new` so a file that appears after the check is never overwritten.
+            match tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .await
+            {
+                Ok(mut file) => {
+                    file.write_all(&att.bytes).await.map_err(io_error)?;
+                    file.flush().await.map_err(io_error)?;
+                    return Ok(path);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(io_error(e)),
+            }
+        }
+    }
+
+    async fn bytes_of(&self, row: DbAttachment) -> Result<AttachmentBytes, MailError> {
+        let mime_type = row
+            .mime_type
+            .clone()
+            .unwrap_or_else(|| "application/octet-stream".to_owned());
+        let cached = self
+            .cache_dir
+            .join("attachments")
+            .join(&row.account_id)
+            .join(&row.message_id)
+            .join(&row.id);
+        let bytes = match tokio::fs::read(&cached).await {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                let gmail_id = row.attachment_id.as_deref().ok_or(MailError::NotFound)?;
+                let bytes = self
+                    .sync
+                    .engine(&row.account_id)
+                    .api
+                    .get_attachment(&row.message_id, gmail_id)
+                    .await
+                    .map_err(SyncError::from)?;
+                if let Err(e) = write_cache(&cached, &bytes).await {
+                    tracing::warn!(error = %e, "couldn't cache an attachment");
+                }
+                bytes
+            }
+        };
+        Ok(AttachmentBytes {
+            filename: row.filename,
+            mime_type,
+            bytes,
+        })
+    }
+
     /// Manual refresh: one account, or all.
     pub fn sync_now(&self, account_id: Option<String>) {
         self.sync.trigger(account_id);
     }
+}
+
+fn io_error(e: std::io::Error) -> MailError {
+    MailError::Sync(SyncError::Db(anyhow::Error::new(e)))
+}
+
+/// Atomic: a half-written file is never read back as the attachment.
+async fn write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let mut tmp_name = path.file_name().unwrap_or_default().to_owned();
+    tmp_name.push(format!(".tmp-{}", uuid::Uuid::new_v4()));
+    let tmp = path.with_file_name(tmp_name);
+    tokio::fs::write(&tmp, bytes).await?;
+    tokio::fs::rename(&tmp, path).await
 }
 
 #[cfg(test)]
@@ -450,7 +656,7 @@ mod tests {
             events.clone(),
         );
         sync.sync_account("a1").await.unwrap();
-        let mail = MailService::new(pool.clone(), sync.clone());
+        let mail = MailService::new(pool.clone(), sync.clone(), dir.path().join("cache"));
         events.take();
 
         mail.modify_threads("a1", &["t1".into()], &[], &["UNREAD".into()])
@@ -520,7 +726,7 @@ mod tests {
             Arc::new(RecordingEvents::default()),
         );
         sync.sync_account("a1").await.unwrap();
-        let mail = MailService::new(pool.clone(), sync.clone());
+        let mail = MailService::new(pool.clone(), sync.clone(), dir.path().join("cache"));
 
         let detail = mail.get_thread("a1", "t1").await.unwrap();
 
@@ -576,7 +782,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        let mail = MailService::new(pool.clone(), sync.clone());
+        let mail = MailService::new(pool.clone(), sync.clone(), dir.path().join("cache"));
 
         let detail = mail.get_thread("a1", "t1").await.unwrap();
 
@@ -589,5 +795,175 @@ mod tests {
         let plain = detail.messages.iter().find(|m| m.id == "m2").unwrap();
         assert_eq!(plain.body_html, None);
         assert!(!plain.has_remote_content && !plain.declares_dark_mode);
+    }
+
+    /// A synced account whose single message carries the given attachments.
+    async fn attachment_fixture(
+        msg: FakeMsg,
+        seed: &[(&str, &[u8])],
+    ) -> (tempfile::TempDir, Arc<FakeGmail>, MailService) {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::init_db(dir.path()).await.unwrap();
+        accounts::insert_account(
+            &pool,
+            &DbAccount {
+                id: "a1".into(),
+                email: "me@example.com".into(),
+                display_name: None,
+                profile_photo_url: None,
+                client_id: "c".into(),
+                history_id: None,
+                created_at: 0,
+                updated_at: 0,
+            },
+        )
+        .await
+        .unwrap();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(msg);
+        for (id, bytes) in seed {
+            fake.seed_attachment("m1", id, bytes);
+        }
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            Arc::new(RecordingEvents::default()),
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(pool, sync, dir.path().join("cache"));
+        (dir, fake, mail)
+    }
+
+    #[tokio::test]
+    async fn attachment_bytes_are_fetched_once_then_cached() {
+        let (dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
+            &[("g1", b"%PDF-bytes")],
+        )
+        .await;
+
+        let first = mail.attachment("a1", "m1", "0").await.unwrap();
+        let second = mail.attachment("a1", "m1", "0").await.unwrap();
+
+        assert_eq!(first.bytes, b"%PDF-bytes");
+        assert_eq!(second, first);
+        assert_eq!(first.mime_type, "application/pdf");
+        assert_eq!(first.filename.as_deref(), Some("a.pdf"));
+        assert_eq!(fake.attachment_fetches(), 1);
+        assert!(dir.path().join("cache/attachments/a1/m1/0").is_file());
+        assert!(matches!(
+            mail.attachment("a1", "m1", "9").await,
+            Err(MailError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn inline_image_rejects_non_images() {
+        let (_dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"])
+                .with_inline("logo.png", "image/png", "g1", "logo")
+                .with_inline("doc.pdf", "application/pdf", "g2", "doc"),
+            &[("g1", b"png"), ("g2", b"pdf")],
+        )
+        .await;
+
+        assert!(matches!(
+            mail.inline_image("a1", "m1", "doc").await,
+            Err(MailError::NotFound)
+        ));
+        assert_eq!(fake.attachment_fetches(), 0, "not even downloaded");
+        assert!(matches!(
+            mail.inline_image("a1", "m1", "missing").await,
+            Err(MailError::NotFound)
+        ));
+        assert_eq!(
+            mail.inline_image("a1", "m1", "logo").await.unwrap().bytes,
+            b"png"
+        );
+    }
+
+    #[tokio::test]
+    async fn protocol_serves_signed_urls_only() {
+        let (_dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_inline("logo.png", "image/png", "g1", "logo"),
+            &[("g1", b"png")],
+        )
+        .await;
+        let url = render::attachment_url("a1", "m1", "logo");
+        let unsigned = url.split_once('?').unwrap().0;
+
+        assert_eq!(mail.serve_inline_image(unsigned).await.status, 404);
+        assert_eq!(fake.attachment_fetches(), 0, "unsigned never reaches Gmail");
+
+        let ok = mail.serve_inline_image(&url).await;
+        assert_eq!(ok.status, 200);
+        assert_eq!(ok.content_type.as_deref(), Some("image/png"));
+        assert_eq!(ok.body, b"png");
+
+        let other = render::attachment_url("a1", "m1", "nope");
+        assert_eq!(mail.serve_inline_image(&other).await.status, 404);
+    }
+
+    #[tokio::test]
+    async fn save_attachment_sanitizes_and_dedupes() {
+        let (dir, _fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
+            &[("g1", b"%PDF")],
+        )
+        .await;
+        sqlx::query("UPDATE attachments SET filename = '../evil/a.pdf'")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        let target = dir.path().join("Downloads");
+
+        let one = mail
+            .save_attachment("a1", "m1", "0", &target)
+            .await
+            .unwrap();
+        let two = mail
+            .save_attachment("a1", "m1", "0", &target)
+            .await
+            .unwrap();
+
+        assert_eq!(one, target.join("a.pdf"));
+        assert_eq!(two, target.join("a (1).pdf"));
+        assert_eq!(std::fs::read(&one).unwrap(), b"%PDF");
+        assert_eq!(std::fs::read(&two).unwrap(), b"%PDF");
+        assert!(!dir.path().join("evil").exists());
+    }
+
+    #[test]
+    fn safe_file_name_cases() {
+        assert_eq!(safe_file_name(None), "attachment");
+        assert_eq!(safe_file_name(Some("...")), "attachment");
+        assert_eq!(safe_file_name(Some("  . ")), "attachment");
+        assert_eq!(safe_file_name(Some("a\u{0}b.txt")), "ab.txt");
+        assert_eq!(safe_file_name(Some("../evil/a.pdf")), "a.pdf");
+        assert_eq!(safe_file_name(Some("C:\\Temp\\a:b.pdf")), "ab.pdf");
+        assert_eq!(safe_file_name(Some("dir/")), "attachment");
+        assert_eq!(safe_file_name(Some(".hidden")), "hidden");
+        assert_eq!(safe_file_name(Some("ok name.txt ")), "ok name.txt");
+    }
+
+    #[test]
+    fn unique_path_counts_up_before_the_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            unique_path(dir.path(), "a.tar.gz"),
+            dir.path().join("a.tar.gz")
+        );
+        std::fs::write(dir.path().join("a.tar.gz"), "").unwrap();
+        std::fs::write(dir.path().join("a.tar (1).gz"), "").unwrap();
+        assert_eq!(
+            unique_path(dir.path(), "a.tar.gz"),
+            dir.path().join("a.tar (2).gz")
+        );
+        std::fs::write(dir.path().join("README"), "").unwrap();
+        assert_eq!(
+            unique_path(dir.path(), "README"),
+            dir.path().join("README (1)")
+        );
     }
 }
