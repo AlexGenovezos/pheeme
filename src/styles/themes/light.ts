@@ -92,9 +92,7 @@ export const lightTheme: ThemeDefinition = {
     "--color-avatar-5": "#8c6410",
     "--color-avatar-6": "#a13e5b",
 
-    "--shadow-popover":
-      "0 0 0 1px #0e14140f, 0 2px 6px #0e141414, 0 10px 28px -6px #0e14142e",
-    "--shadow-overlay":
-      "0 0 0 1px #0e141414, 0 4px 12px #0e141414, 0 24px 56px -12px #0e141447",
+    "--shadow-popover": "0 0 0 1px #0e14140f, 0 2px 6px #0e141414, 0 10px 28px -6px #0e14142e",
+    "--shadow-overlay": "0 0 0 1px #0e141414, 0 4px 12px #0e141414, 0 24px 56px -12px #0e141447",
   },
 };

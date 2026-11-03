@@ -43,7 +43,10 @@ export function checkTokens(root = repoRoot) {
   return cssFiles(path.join(root, "src"))
     .map((file) => path.relative(root, file).split(path.sep).join("/"))
     .filter((file) => !ALLOWED.has(file))
-    .map((file) => ({ file, values: findRawValues(fs.readFileSync(path.join(root, file), "utf8")) }))
+    .map((file) => ({
+      file,
+      values: findRawValues(fs.readFileSync(path.join(root, file), "utf8")),
+    }))
     .filter((r) => r.values.length > 0);
 }
 

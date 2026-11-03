@@ -128,18 +128,25 @@ export interface MailboxCount {
   unread: number;
 }
 
-export const listThreads = (query: ThreadQuery & { before?: ThreadCursor | null; limit?: number }) =>
-  invoke<ThreadPage>("list_threads", { ...query });
+export const listThreads = (
+  query: ThreadQuery & { before?: ThreadCursor | null; limit?: number },
+) => invoke<ThreadPage>("list_threads", { ...query });
 export const getThread = (accountId: string, threadId: string) =>
   invoke<ThreadDetail>("get_thread", { accountId, threadId });
 export const listLabels = (accountId: string) => invoke<LabelInfo[]>("list_labels", { accountId });
-export const mailboxCounts = (accountIds: string[]) => invoke<MailboxCount[]>("mailbox_counts", { accountIds });
-export const modifyThreads = (accountId: string, threadIds: string[], add: string[], remove: string[]) =>
-  invoke<void>("modify_threads", { accountId, threadIds, add, remove });
+export const mailboxCounts = (accountIds: string[]) =>
+  invoke<MailboxCount[]>("mailbox_counts", { accountIds });
+export const modifyThreads = (
+  accountId: string,
+  threadIds: string[],
+  add: string[],
+  remove: string[],
+) => invoke<void>("modify_threads", { accountId, threadIds, add, remove });
 export const trashThreads = (accountId: string, threadIds: string[]) =>
   invoke<void>("trash_threads", { accountId, threadIds });
 /** Sync one account now, or every account when omitted. */
-export const syncNow = (accountId?: string | null) => invoke<void>("sync_now", { accountId: accountId ?? null });
+export const syncNow = (accountId?: string | null) =>
+  invoke<void>("sync_now", { accountId: accountId ?? null });
 
 /** Call an event unlisten fn, ignoring failures (e.g. the IPC bridge is already gone). */
 export function stopQuietly(stop: () => void) {

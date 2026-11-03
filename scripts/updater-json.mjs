@@ -23,8 +23,7 @@ function platformKeys(name) {
   let m = name.match(/_(universal|aarch64|x64)\.app\.tar\.gz$/);
   if (m) {
     const arch = ARCH[m[1]];
-    const arches =
-      arch === "universal" ? ["aarch64", "x86_64", "universal"] : [arch];
+    const arches = arch === "universal" ? ["aarch64", "x86_64", "universal"] : [arch];
     return arches.flatMap((a) => [`darwin-${a}`, `darwin-${a}-app`]);
   }
   m = name.match(/_(x64)(?:_[\w-]+)?\.msi$/);
@@ -48,10 +47,7 @@ export function buildUpdaterJson({ version, assets, signatures, pubDate }) {
   // msi before nsis so `windows-x86_64` ends up on the msi, as tauri-action does.
   const signed = assets
     .filter((a) => signatures[a.name] !== undefined)
-    .sort(
-      (a, b) =>
-        Number(a.name.endsWith(".msi")) - Number(b.name.endsWith(".msi")),
-    );
+    .sort((a, b) => Number(a.name.endsWith(".msi")) - Number(b.name.endsWith(".msi")));
   for (const asset of signed) {
     for (const key of platformKeys(asset.name)) {
       platforms[key] = { signature: signatures[asset.name], url: asset.url };
@@ -69,10 +65,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const assets = JSON.parse(fs.readFileSync(assetsFile, "utf8"));
   const signatures = {};
   for (const file of fs.readdirSync(sigDir).filter((f) => f.endsWith(".sig"))) {
-    signatures[file.slice(0, -".sig".length)] = fs.readFileSync(
-      path.join(sigDir, file),
-      "utf8",
-    );
+    signatures[file.slice(0, -".sig".length)] = fs.readFileSync(path.join(sigDir, file), "utf8");
   }
   const json = buildUpdaterJson({
     version,

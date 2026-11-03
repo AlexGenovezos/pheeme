@@ -26,11 +26,15 @@ describe("preview IPC", () => {
   test("invoke answers from fixtures once installed", async () => {
     installPreview();
     await expect(invoke("list_accounts")).resolves.toMatchObject(fixtureAccounts);
-    await expect(invoke("list_threads", { accountIds: ["acc-personal"], labelId: "SENT" })).resolves.toEqual({
+    await expect(
+      invoke("list_threads", { accountIds: ["acc-personal"], labelId: "SENT" }),
+    ).resolves.toEqual({
       threads: fixtureThreadsIn("SENT").map(toSummary),
       next: null,
     });
-    await expect(invoke("get_thread", { accountId: "acc-personal", threadId: "t-01" })).resolves.toMatchObject({
+    await expect(
+      invoke("get_thread", { accountId: "acc-personal", threadId: "t-01" }),
+    ).resolves.toMatchObject({
       thread: { id: "t-01" },
     });
     await expect(invoke("greet", { name: "Alex" })).resolves.toContain("Alex");
@@ -51,7 +55,7 @@ test("preview onboarding can connect and remove an account", async () => {
   const handlers = createPreviewHandlers("?accounts=0&delay=0");
   expect(handlers.list_accounts(undefined)).toEqual([]);
   const flow = handlers.begin_oauth(undefined) as { flowId: string };
-  const account = await handlers.complete_oauth(flow) as { id: string };
+  const account = (await handlers.complete_oauth(flow)) as { id: string };
   expect(handlers.list_accounts(undefined)).toEqual([account]);
   handlers.remove_account({ accountId: "missing" });
   expect(handlers.list_accounts(undefined)).toEqual([account]);

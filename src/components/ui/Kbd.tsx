@@ -4,7 +4,15 @@ import { cx } from "../../lib/utils";
 import "./Kbd.css";
 
 /** A shortcut drawn as key caps; chord steps are separated by a small gap. */
-export function Kbd({ shortcut, platform, className }: { shortcut: string; platform?: Platform; className?: string }) {
+export function Kbd({
+  shortcut,
+  platform,
+  className,
+}: {
+  shortcut: string;
+  platform?: Platform;
+  className?: string;
+}) {
   const steps = formatShortcut(shortcut, platform);
   return (
     <span className={cx("ui-kbd", className)} aria-hidden="true">

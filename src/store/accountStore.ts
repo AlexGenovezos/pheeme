@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import { type AccountInfo, type CommandError, listAccounts, removeAccount, toCommandError } from "../lib/tauri";
+import {
+  type AccountInfo,
+  type CommandError,
+  listAccounts,
+  removeAccount,
+  toCommandError,
+} from "../lib/tauri";
 
 interface AccountState {
   accounts: AccountInfo[];

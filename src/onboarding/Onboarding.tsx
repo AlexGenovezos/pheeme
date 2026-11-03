@@ -29,7 +29,9 @@ const CLIENT_ID_SUFFIX = ".apps.googleusercontent.com";
 
 export function Onboarding({ accounts, onConnected, onClose }: Props) {
   const firstRun = accounts.length === 0;
-  const [initial] = useState(() => (firstRun ? loadProgress() : { step: "choose" as View, clientId: "" }));
+  const [initial] = useState(() =>
+    firstRun ? loadProgress() : { step: "choose" as View, clientId: "" },
+  );
   const [view, setView] = useState<View>(initial.step);
   const [guide, setGuide] = useState(firstRun);
   const [clientId, setClientId] = useState(initial.clientId);
@@ -124,11 +126,21 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
                 setClientSecret(secret);
               }}
               onSubmit={() => {
-                setChoice({ kind: "new", clientId: clientId.trim(), clientSecret: clientSecret.trim() });
+                setChoice({
+                  kind: "new",
+                  clientId: clientId.trim(),
+                  clientSecret: clientSecret.trim(),
+                });
                 setView("unverified");
               }}
               onGuide={guide ? undefined : () => goTo("project")}
-              onBack={guide ? () => setView("client") : accounts.length > 0 ? () => setView("choose") : undefined}
+              onBack={
+                guide
+                  ? () => setView("client")
+                  : accounts.length > 0
+                    ? () => setView("choose")
+                    : undefined
+              }
             />
           )}
           {view === "authorize" && (
@@ -148,25 +160,32 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
           {view === "done" && connected && (
             <Done account={connected} onContinue={() => onConnected(connected)} />
           )}
-          {stepIndex(view as StepId) !== -1 &&
-            !["credentials", "authorize"].includes(view) && (
-              <GuidePage
-                step={stepById(view as StepId)}
-                primary={
-                  view === "unverified"
-                    ? { label: "Continue to Google", onClick: () => choice && void startSignIn(choice) }
-                    : { label: view === "welcome" ? "Get started" : "Next", onClick: () => setView(STEPS[stepIndex(view as StepId) + 1].id) }
-                }
-                onBack={
-                  view === "welcome"
-                    ? undefined
-                    : () =>
-                        setView(
-                          view === "unverified" ? "credentials" : STEPS[stepIndex(view as StepId) - 1].id,
-                        )
-                }
-              />
-            )}
+          {stepIndex(view as StepId) !== -1 && !["credentials", "authorize"].includes(view) && (
+            <GuidePage
+              step={stepById(view as StepId)}
+              primary={
+                view === "unverified"
+                  ? {
+                      label: "Continue to Google",
+                      onClick: () => choice && void startSignIn(choice),
+                    }
+                  : {
+                      label: view === "welcome" ? "Get started" : "Next",
+                      onClick: () => setView(STEPS[stepIndex(view as StepId) + 1].id),
+                    }
+              }
+              onBack={
+                view === "welcome"
+                  ? undefined
+                  : () =>
+                      setView(
+                        view === "unverified"
+                          ? "credentials"
+                          : STEPS[stepIndex(view as StepId) - 1].id,
+                      )
+              }
+            />
+          )}
         </div>
         {onClose && view !== "done" && (
           <button type="button" className="btn btn--quiet onboarding-close" onClick={onClose}>
@@ -185,7 +204,12 @@ function Rail({ current, onSelect }: { current: View; onSelect: (step: StepId) =
       <div className="onboarding-rail__brand">Pheeme</div>
       <ol>
         {STEPS.map((step, index) => {
-          const state = current === "done" || index < currentIndex ? "done" : index === currentIndex ? "current" : "todo";
+          const state =
+            current === "done" || index < currentIndex
+              ? "done"
+              : index === currentIndex
+                ? "current"
+                : "todo";
           // Only steps already reached are clickable: the guide is meant to be followed in order.
           // Not while a sign-in is waiting on the browser or finished.
           const reachable =
@@ -317,7 +341,15 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ExternalButton({ label, url, primary }: { label: string; url: string; primary?: boolean }) {
+function ExternalButton({
+  label,
+  url,
+  primary,
+}: {
+  label: string;
+  url: string;
+  primary?: boolean;
+}) {
   const [failed, flash] = useFlash();
   return (
     <button
@@ -379,8 +411,8 @@ function Credentials({
     >
       <h1>Paste your client ID and secret</h1>
       <p className="guide-lead">
-        Copy both from the dialog Google showed when you created the Desktop app client. You can also paste the
-        downloaded JSON file's contents into the first box.
+        Copy both from the dialog Google showed when you created the Desktop app client. You can
+        also paste the downloaded JSON file's contents into the first box.
       </p>
       <div className="field">
         <label htmlFor="client-id">Client ID</label>
@@ -394,7 +426,9 @@ function Credentials({
           autoFocus
           aria-invalid={Boolean(idProblem || jsonError)}
         />
-        {(jsonError || idProblem) && <small className="field__error">{jsonError || idProblem}</small>}
+        {(jsonError || idProblem) && (
+          <small className="field__error">{jsonError || idProblem}</small>
+        )}
       </div>
       <div className="field">
         <label htmlFor="client-secret">Client secret</label>
@@ -406,7 +440,9 @@ function Credentials({
           spellCheck={false}
           autoComplete="off"
         />
-        <small className="field__hint">Stored in your system keychain, never in Pheeme's database.</small>
+        <small className="field__hint">
+          Stored in your system keychain, never in Pheeme's database.
+        </small>
       </div>
       {onGuide && (
         <p className="guide-why">
@@ -416,7 +452,10 @@ function Credentials({
           </button>
         </p>
       )}
-      <Footer onBack={onBack} primary={{ label: "Next", onClick: onSubmit, disabled: !ready, submit: true }} />
+      <Footer
+        onBack={onBack}
+        primary={{ label: "Next", onClick: onSubmit, disabled: !ready, submit: true }}
+      />
     </form>
   );
 }
@@ -432,17 +471,23 @@ function ChooseClient({
 }) {
   // One option per distinct OAuth client, labelled by the first account using it.
   const byClient = new Map<string, AccountInfo>();
-  for (const account of accounts) if (!byClient.has(account.clientId)) byClient.set(account.clientId, account);
+  for (const account of accounts)
+    if (!byClient.has(account.clientId)) byClient.set(account.clientId, account);
   return (
     <>
       <h1>Add an account</h1>
       <p className="guide-lead">
-        Another Google account can sign in through the Google Cloud app you already set up. A work account whose
-        administrator requires its own OAuth client needs a different one.
+        Another Google account can sign in through the Google Cloud app you already set up. A work
+        account whose administrator requires its own OAuth client needs a different one.
       </p>
       <div className="choice-list">
         {[...byClient.values()].map((account) => (
-          <button key={account.clientId} type="button" className="choice" onClick={() => onReuse(account.id)}>
+          <button
+            key={account.clientId}
+            type="button"
+            className="choice"
+            onClick={() => onReuse(account.id)}
+          >
             <strong>Use the same Google Cloud app</strong>
             <span>The one {account.email} signed in with</span>
           </button>
@@ -502,7 +547,9 @@ function Waiting({
               <strong>{problem.title}</strong>
               <p>{problem.fix}</p>
               <div className="button-row">
-                {problem.link && <ExternalButton label={problem.link.label} url={problem.link.url} />}
+                {problem.link && (
+                  <ExternalButton label={problem.link.label} url={problem.link.url} />
+                )}
                 {problem.action === "credentials" && onFixCredentials && (
                   <button type="button" className="btn btn--small" onClick={onFixCredentials}>
                     Change client ID or secret
@@ -573,7 +620,9 @@ function Done({ account, onContinue }: { account: AccountInfo; onContinue: () =>
         ✓
       </div>
       <h1>{account.email} is connected</h1>
-      <p className="guide-lead">Pheeme can now reach this account. You can add more accounts at any time.</p>
+      <p className="guide-lead">
+        Pheeme can now reach this account. You can add more accounts at any time.
+      </p>
       <Footer primary={{ label: "Continue", onClick: onContinue }} />
     </>
   );

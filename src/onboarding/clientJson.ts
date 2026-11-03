@@ -16,7 +16,8 @@ export function parseClientJson(text: string): ParsedClient | null {
   if (root.web) {
     return {
       ok: false,
-      reason: "That's a Web application client. Create a client with application type Desktop app instead.",
+      reason:
+        "That's a Web application client. Create a client with application type Desktop app instead.",
     };
   }
   const client = root.installed;

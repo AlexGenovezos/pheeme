@@ -36,15 +36,56 @@ export function ViewPane() {
   return (
     <div className="view-pane">
       <div className="toolbar toolbar--view" {...dragRegion}>
-        <IconButton label="Archive" shortcut="e" icon={<Archive />} disabled={off} onClick={() => notYet("Archive")} />
-        <IconButton label="Delete" shortcut="#" icon={<Trash2 />} disabled={off} onClick={() => notYet("Delete")} />
-        <IconButton label="Mark as unread" shortcut="shift+u" icon={<MailOpen />} disabled={off} onClick={() => notYet("Mark as unread")} />
-        <IconButton label="Star" shortcut="s" icon={<Star />} disabled={off} onClick={() => notYet("Star")} />
+        <IconButton
+          label="Archive"
+          shortcut="e"
+          icon={<Archive />}
+          disabled={off}
+          onClick={() => notYet("Archive")}
+        />
+        <IconButton
+          label="Delete"
+          shortcut="#"
+          icon={<Trash2 />}
+          disabled={off}
+          onClick={() => notYet("Delete")}
+        />
+        <IconButton
+          label="Mark as unread"
+          shortcut="shift+u"
+          icon={<MailOpen />}
+          disabled={off}
+          onClick={() => notYet("Mark as unread")}
+        />
+        <IconButton
+          label="Star"
+          shortcut="s"
+          icon={<Star />}
+          disabled={off}
+          onClick={() => notYet("Star")}
+        />
         <span className="toolbar__separator" />
-        <IconButton label="Reply" shortcut="r" icon={<Reply />} disabled={off} onClick={() => notYet("Reply")} />
-        <IconButton label="Forward" shortcut="f" icon={<Forward />} disabled={off} onClick={() => notYet("Forward")} />
+        <IconButton
+          label="Reply"
+          shortcut="r"
+          icon={<Reply />}
+          disabled={off}
+          onClick={() => notYet("Reply")}
+        />
+        <IconButton
+          label="Forward"
+          shortcut="f"
+          icon={<Forward />}
+          disabled={off}
+          onClick={() => notYet("Forward")}
+        />
         <span className="toolbar__spacer" {...dragRegion} />
-        <IconButton label="More actions" icon={<MoreHorizontal />} disabled={off} onClick={openMore} />
+        <IconButton
+          label="More actions"
+          icon={<MoreHorizontal />}
+          disabled={off}
+          onClick={openMore}
+        />
       </div>
 
       <div className="view-pane__scroll">
@@ -55,7 +96,9 @@ export function ViewPane() {
               <Avatar name={senderOf(thread)} email={thread.fromAddress ?? undefined} />
               <div className="message__from">
                 <span className="message__name selectable">{senderOf(thread)}</span>
-                {thread.fromAddress && <span className="message__address selectable">{thread.fromAddress}</span>}
+                {thread.fromAddress && (
+                  <span className="message__address selectable">{thread.fromAddress}</span>
+                )}
               </div>
               {thread.date > 0 && (
                 <time className="message__date" dateTime={new Date(thread.date).toISOString()}>
@@ -69,8 +112,8 @@ export function ViewPane() {
           <div className="pane-empty">
             <p className="pane-empty__title">No conversation selected</p>
             <p className="pane-empty__hint">
-              <Kbd shortcut="j" /> and <Kbd shortcut="k" /> move through the list. <Kbd shortcut="mod+k" /> shows every
-              command.
+              <Kbd shortcut="j" /> and <Kbd shortcut="k" /> move through the list.{" "}
+              <Kbd shortcut="mod+k" /> shows every command.
             </p>
           </div>
         )}

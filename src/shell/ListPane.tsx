@@ -19,17 +19,29 @@ import { dragRegion } from "./chrome";
 export const SEARCH_INPUT_ID = "mail-search";
 
 /** Placeholder until the mail UI (Phase 6) wires real actions. */
-export const notYet = (action: string) => toast({ title: `${action} isn't wired up yet`, description: "It arrives with the mail UI." });
+export const notYet = (action: string) =>
+  toast({ title: `${action} isn't wired up yet`, description: "It arrives with the mail UI." });
 
 /** Mailboxes the sidebar shows that have no backing Gmail label yet (Phase 6). */
 const UNBACKED_MAILBOXES = new Set(["ALL"]);
 
-export const senderOf = (t: Pick<ThreadSummary, "fromName" | "fromAddress">) => t.fromName ?? t.fromAddress ?? "Unknown sender";
+export const senderOf = (t: Pick<ThreadSummary, "fromName" | "fromAddress">) =>
+  t.fromName ?? t.fromAddress ?? "Unknown sender";
 
 const rowMenu = (t: ThreadSummary) => [
   { id: "archive", label: "Archive", shortcut: "e", onSelect: () => notYet("Archive") },
-  { id: "read", label: t.unread ? "Mark as read" : "Mark as unread", shortcut: "shift+u", onSelect: () => notYet("Mark as read") },
-  { id: "star", label: t.starred ? "Remove star" : "Add star", shortcut: "s", onSelect: () => notYet("Star") },
+  {
+    id: "read",
+    label: t.unread ? "Mark as read" : "Mark as unread",
+    shortcut: "shift+u",
+    onSelect: () => notYet("Mark as read"),
+  },
+  {
+    id: "star",
+    label: t.starred ? "Remove star" : "Add star",
+    shortcut: "s",
+    onSelect: () => notYet("Star"),
+  },
   { type: "separator" as const },
   { id: "delete", label: "Delete", shortcut: "#", danger: true, onSelect: () => notYet("Delete") },
 ];
@@ -53,19 +65,37 @@ export function ListPane() {
     else void load({ accountIds: ids, labelId: mailbox });
   }, [mailbox, accountIds]);
 
-  const box = fixtureMailboxes.find((m) => m.id === mailbox) ?? fixtureLabels.find((l) => l.id === mailbox);
+  const box =
+    fixtureMailboxes.find((m) => m.id === mailbox) ?? fixtureLabels.find((l) => l.id === mailbox);
   const unread = threads.filter((t) => t.unread).length;
   const index = threads.findIndex((t) => t.id === selected);
 
   const move = (delta: 1 | -1) => {
     if (!threads.length) return;
-    const next = index < 0 ? (delta === 1 ? 0 : threads.length - 1) : Math.min(Math.max(index + delta, 0), threads.length - 1);
+    const next =
+      index < 0
+        ? delta === 1
+          ? 0
+          : threads.length - 1
+        : Math.min(Math.max(index + delta, 0), threads.length - 1);
     select(threads[next].id);
   };
 
   useCommands([
-    { id: "list.next", title: "Next conversation", group: "Conversation", shortcut: "j", run: () => move(1) },
-    { id: "list.previous", title: "Previous conversation", group: "Conversation", shortcut: "k", run: () => move(-1) },
+    {
+      id: "list.next",
+      title: "Next conversation",
+      group: "Conversation",
+      shortcut: "j",
+      run: () => move(1),
+    },
+    {
+      id: "list.previous",
+      title: "Previous conversation",
+      group: "Conversation",
+      shortcut: "k",
+      run: () => move(-1),
+    },
     {
       id: "search.focus",
       title: "Search mail",
@@ -91,8 +121,19 @@ export function ListPane() {
 
   return (
     <div className="list-pane">
-      <div className="toolbar toolbar--list" data-sidebar-collapsed={collapsed || undefined} {...dragRegion}>
-        {collapsed && <IconButton label="Show sidebar" shortcut="mod+b" icon={<PanelLeftOpen />} onClick={toggleSidebar} />}
+      <div
+        className="toolbar toolbar--list"
+        data-sidebar-collapsed={collapsed || undefined}
+        {...dragRegion}
+      >
+        {collapsed && (
+          <IconButton
+            label="Show sidebar"
+            shortcut="mod+b"
+            icon={<PanelLeftOpen />}
+            onClick={toggleSidebar}
+          />
+        )}
         <h1 className="toolbar__title" {...dragRegion}>
           {box?.name ?? "Mail"}
         </h1>
@@ -139,9 +180,20 @@ export function ListPane() {
                 title={t.messageCount > 1 ? `${sender} (${t.messageCount})` : sender}
                 meta={
                   <>
-                    {t.hasAttachment && <Paperclip aria-label="Has attachment" className="list-pane__glyph" />}
-                    {t.starred && <Star aria-label="Starred" className="list-pane__glyph list-pane__glyph--star" />}
-                    {t.date > 0 && <time dateTime={new Date(t.date).toISOString()}>{formatListDate(t.date)}</time>}
+                    {t.hasAttachment && (
+                      <Paperclip aria-label="Has attachment" className="list-pane__glyph" />
+                    )}
+                    {t.starred && (
+                      <Star
+                        aria-label="Starred"
+                        className="list-pane__glyph list-pane__glyph--star"
+                      />
+                    )}
+                    {t.date > 0 && (
+                      <time dateTime={new Date(t.date).toISOString()}>
+                        {formatListDate(t.date)}
+                      </time>
+                    )}
                   </>
                 }
                 subtitle={t.subject ?? "(no subject)"}

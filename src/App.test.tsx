@@ -10,11 +10,20 @@ import { __resetUiStoreForTests, useUiStore } from "./store/uiStore";
 import { useAccountStore } from "./store/accountStore";
 import { __resetMailStoreForTests } from "./store/mailStore";
 
-const account = { id: "a1", email: "me@example.com", displayName: "Me", clientId: "c.apps.googleusercontent.com" };
+const account = {
+  id: "a1",
+  email: "me@example.com",
+  displayName: "Me",
+  clientId: "c.apps.googleusercontent.com",
+};
 const fixtureBackend = createPreviewHandlers();
 /** One account; threads come from the preview fixtures. */
 const backend = (cmd: string, args?: unknown) =>
-  cmd === "list_accounts" ? [account] : cmd === "list_threads" ? fixtureBackend.list_threads(args as never) : undefined;
+  cmd === "list_accounts"
+    ? [account]
+    : cmd === "list_threads"
+      ? fixtureBackend.list_threads(args as never)
+      : undefined;
 
 beforeEach(() => {
   localStorage.clear();
@@ -34,7 +43,9 @@ test("renders nothing until accounts load", () => {
 test("first run with no accounts opens the setup guide", async () => {
   mockIPC((cmd) => (cmd === "list_accounts" ? [] : undefined));
   render(<App />);
-  expect(await screen.findByText("Connect Gmail with your own Google Cloud app")).toBeInTheDocument();
+  expect(
+    await screen.findByText("Connect Gmail with your own Google Cloud app"),
+  ).toBeInTheDocument();
   expect(screen.getByRole("navigation", { name: "Setup steps" })).toBeInTheDocument();
 });
 
@@ -62,7 +73,8 @@ test("with accounts it shows them and can add or remove one", async () => {
 test("a failed remove keeps the account and shows why", async () => {
   mockIPC((cmd) => {
     if (cmd === "list_accounts") return [account];
-    if (cmd === "remove_account") throw { code: "keychain_unavailable", message: "No system keychain is available." };
+    if (cmd === "remove_account")
+      throw { code: "keychain_unavailable", message: "No system keychain is available." };
   });
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Manage accounts" }));
@@ -127,7 +139,9 @@ test("shortcuts typed into search don't fire commands", async () => {
 test("right-clicking a conversation opens the menu (DOM fallback in preview)", async () => {
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
-  const [first] = await within(screen.getByRole("listbox", { name: "Inbox conversations" })).findAllByRole("option");
+  const [first] = await within(
+    screen.getByRole("listbox", { name: "Inbox conversations" }),
+  ).findAllByRole("option");
   fireEvent.contextMenu(first, { clientX: 100, clientY: 100 });
   expect(screen.getByRole("menu")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
@@ -153,7 +167,7 @@ test("account management returns to the inbox", async () => {
 });
 
 test("mail shortcuts do not run during onboarding", async () => {
-  mockIPC((cmd) => cmd === "list_accounts" ? [] : undefined);
+  mockIPC((cmd) => (cmd === "list_accounts" ? [] : undefined));
   render(<App />);
   await screen.findByRole("navigation", { name: "Setup steps" });
   fireEvent.keyDown(window, { key: "b", ctrlKey: true });
@@ -194,7 +208,12 @@ test("a change Gmail rejects shows a toast", async () => {
   await screen.findByRole("navigation", { name: "Mailboxes" });
   // Listeners attach asynchronously after mount.
   await vi.waitFor(async () => {
-    await emit("outbox:rejected", { accountId: "a1", opId: "op1", kind: "archive", message: "Not found" });
+    await emit("outbox:rejected", {
+      accountId: "a1",
+      opId: "op1",
+      kind: "archive",
+      message: "Not found",
+    });
     expect(screen.getByText("Couldn't archive")).toBeInTheDocument();
   });
   expect(screen.getByText("Gmail said: Not found. Your change was undone.")).toBeInTheDocument();

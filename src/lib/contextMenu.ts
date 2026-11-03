@@ -76,7 +76,10 @@ async function showNative(items: ContextMenuItem[], at?: { x: number; y: number 
  * the native one fails). `at` is in viewport coordinates; omit it to open at
  * the pointer (native) — the DOM fallback then uses the top-left corner.
  */
-export async function showContextMenu(items: ContextMenuItem[], at?: { x: number; y: number }): Promise<void> {
+export async function showContextMenu(
+  items: ContextMenuItem[],
+  at?: { x: number; y: number },
+): Promise<void> {
   if (isTauri()) {
     try {
       await showNative(items, at);

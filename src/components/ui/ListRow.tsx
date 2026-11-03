@@ -21,7 +21,19 @@ export interface ListRowProps extends Omit<HTMLAttributes<HTMLDivElement>, "titl
  * navigation and sets `role`; rows default to `option` for listboxes.
  */
 export const ListRow = forwardRef<HTMLDivElement, ListRowProps>(function ListRow(
-  { title, leading, meta, subtitle, description, selected, unread, density = "comfortable", className, role = "option", ...rest },
+  {
+    title,
+    leading,
+    meta,
+    subtitle,
+    description,
+    selected,
+    unread,
+    density = "comfortable",
+    className,
+    role = "option",
+    ...rest
+  },
   ref,
 ) {
   return (

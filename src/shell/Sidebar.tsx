@@ -36,7 +36,11 @@ const ICONS: Record<FixtureMailbox["icon"], typeof Inbox> = {
 };
 
 const MODE_ICON: Record<ThemeMode, typeof Sun> = { system: Monitor, light: Sun, dark: Moon };
-const MODE_LABEL: Record<ThemeMode, string> = { system: "Match system", light: "Light", dark: "Dark" };
+const MODE_LABEL: Record<ThemeMode, string> = {
+  system: "Match system",
+  light: "Light",
+  dark: "Dark",
+};
 
 function activateOnKey(e: KeyboardEvent, run: () => void) {
   if (e.key === "Enter" || e.key === " ") {
@@ -76,7 +80,11 @@ export function Sidebar({ onManageAccounts }: { onManageAccounts?: () => void })
       selected={active === id}
       leading={icon}
       title={label}
-      meta={unread > 0 ? <Badge count={unread} tone={active === id ? "accent" : "neutral"} /> : undefined}
+      meta={
+        unread > 0 ? (
+          <Badge count={unread} tone={active === id ? "accent" : "neutral"} />
+        ) : undefined
+      }
       onClick={() => setActive(id)}
       onKeyDown={(e) => activateOnKey(e, () => setActive(id))}
     />
@@ -86,7 +94,12 @@ export function Sidebar({ onManageAccounts }: { onManageAccounts?: () => void })
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
         <span className="toolbar__spacer" {...dragRegion} />
-        <IconButton label="Hide sidebar" shortcut="mod+b" icon={<PanelLeftClose />} onClick={toggleSidebar} />
+        <IconButton
+          label="Hide sidebar"
+          shortcut="mod+b"
+          icon={<PanelLeftClose />}
+          onClick={toggleSidebar}
+        />
       </div>
 
       <nav className="sidebar__scroll" aria-label="Mailboxes">
@@ -103,12 +116,22 @@ export function Sidebar({ onManageAccounts }: { onManageAccounts?: () => void })
       </nav>
 
       <div className="sidebar__footer">
-        <Avatar name={account?.displayName ?? account?.email ?? "Account"} email={account?.email} size="sm" />
+        <Avatar
+          name={account?.displayName ?? account?.email ?? "Account"}
+          email={account?.email}
+          size="sm"
+        />
         <span className="sidebar__account" title={account?.email}>
           {account?.email}
         </span>
-        {onManageAccounts && <IconButton label="Manage accounts" icon={<Settings />} onClick={onManageAccounts} />}
-        <IconButton label={`Appearance: ${MODE_LABEL[mode]}`} icon={<ModeIcon />} onClick={openThemeMenu} />
+        {onManageAccounts && (
+          <IconButton label="Manage accounts" icon={<Settings />} onClick={onManageAccounts} />
+        )}
+        <IconButton
+          label={`Appearance: ${MODE_LABEL[mode]}`}
+          icon={<ModeIcon />}
+          onClick={openThemeMenu}
+        />
       </div>
     </div>
   );

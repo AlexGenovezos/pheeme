@@ -8,8 +8,8 @@
  */
 :root {
   /* Type. One bundled family so the app looks the same on every OS. */
-  --font-family-ui: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, -apple-system,
-    "Segoe UI", sans-serif;
+  --font-family-ui:
+    "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-size-xs: 11px;
   --font-size-sm: 12px;
   --font-size-md: 13px;

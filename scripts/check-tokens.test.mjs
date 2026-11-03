@@ -5,14 +5,24 @@ import { checkTokens, findRawValues } from "./check-tokens.mjs";
 describe("check-tokens", () => {
   it("flags raw colors, lengths and durations", () => {
     expect(
-      findRawValues(".x { color: #fff; padding: 4px; transition: opacity 120ms; width: .5rem; background: rgb(0 0 0); }"),
-    ).toEqual(["hex color #fff", "color function rgb(", "length/duration 4px", "length/duration 120ms", "length/duration .5rem"]);
+      findRawValues(
+        ".x { color: #fff; padding: 4px; transition: opacity 120ms; width: .5rem; background: rgb(0 0 0); }",
+      ),
+    ).toEqual([
+      "hex color #fff",
+      "color function rgb(",
+      "length/duration 4px",
+      "length/duration 120ms",
+      "length/duration .5rem",
+    ]);
   });
 
   it("flags negative lengths but not digits inside token names", () => {
-    expect(findRawValues(".x { margin-left: -12px; gap: var(--space-4px); top: calc(-1 * var(--space-2)); }")).toEqual([
-      "length/duration 12px",
-    ]);
+    expect(
+      findRawValues(
+        ".x { margin-left: -12px; gap: var(--space-4px); top: calc(-1 * var(--space-2)); }",
+      ),
+    ).toEqual(["length/duration 12px"]);
   });
 
   it("allows tokens, zero, unitless numbers, percentages and comments", () => {
