@@ -19,6 +19,7 @@ import { Badge } from "../components/ui/Badge";
 import { IconButton } from "../components/ui/IconButton";
 import { ListRow } from "../components/ui/ListRow";
 import { showContextMenu } from "../lib/contextMenu";
+import type { MailboxRef } from "../mail/mailboxes";
 import { fixtureLabels, fixtureMailboxes, type FixtureMailbox } from "../preview/fixtures";
 import { useAccountStore } from "../store/accountStore";
 import { useUiStore } from "../store/uiStore";
@@ -46,8 +47,8 @@ function activateOnKey(e: KeyboardEvent, run: () => void) {
 }
 
 export function Sidebar({ onManageAccounts }: { onManageAccounts?: () => void }) {
-  const active = useUiStore((s) => s.activeMailbox);
-  const setActive = useUiStore((s) => s.setActiveMailbox);
+  const mailbox = useUiStore((s) => s.mailbox);
+  const setMailbox = useUiStore((s) => s.setMailbox);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
@@ -67,20 +68,25 @@ export function Sidebar({ onManageAccounts }: { onManageAccounts?: () => void })
     );
   };
 
-  const row = (id: string, label: string, icon: ReactNode, unread: number) => (
-    <ListRow
-      key={id}
-      role="link"
-      tabIndex={0}
-      density="compact"
-      selected={active === id}
-      leading={icon}
-      title={label}
-      meta={unread > 0 ? <Badge count={unread} tone={active === id ? "accent" : "neutral"} /> : undefined}
-      onClick={() => setActive(id)}
-      onKeyDown={(e) => activateOnKey(e, () => setActive(id))}
-    />
-  );
+  // Interim rows (the stacked sidebar replaces them): each is one label across every account.
+  const row = (id: string, label: string, icon: ReactNode, unread: number) => {
+    const ref: MailboxRef = { accountId: null, labelId: id };
+    const active = mailbox.accountId === null && !mailbox.category && mailbox.labelId === id;
+    return (
+      <ListRow
+        key={id}
+        role="link"
+        tabIndex={0}
+        density="compact"
+        selected={active}
+        leading={icon}
+        title={label}
+        meta={unread > 0 ? <Badge count={unread} tone={active ? "accent" : "neutral"} /> : undefined}
+        onClick={() => setMailbox(ref)}
+        onKeyDown={(e) => activateOnKey(e, () => setMailbox(ref))}
+      />
+    );
+  };
 
   return (
     <div className="sidebar">

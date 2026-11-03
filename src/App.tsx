@@ -14,7 +14,9 @@ import { CommandPalette } from "./palette/CommandPalette";
 import { isTauri } from "./preview/runtime";
 import { AppShell } from "./shell/AppShell";
 import { ContextMenuHost } from "./shell/ContextMenuHost";
+import { useLabelStore } from "./store/labelStore";
 import { useMailStore } from "./store/mailStore";
+import { useThreadStore } from "./store/threadStore";
 
 /** Hide the webview's own menu (Reload, Inspect…) outside text; dev builds keep it for devtools. */
 function useNativeContextMenuOnly() {
@@ -30,7 +32,7 @@ function useNativeContextMenuOnly() {
   }, []);
 }
 
-/** Keep the thread list fresh on sync, and say when Gmail refuses a queued change. */
+/** Keep the thread list, labels, counts and cached threads fresh on sync, and say when Gmail refuses a queued change. */
 function useSyncEvents() {
   useEffect(() => {
     let stopped = false;
@@ -38,6 +40,9 @@ function useSyncEvents() {
     const keep = (stop: () => void) => (stopped ? stopQuietly(stop) : stops.push(stop));
     const log = (err: unknown) => console.warn("sync event listener failed", err);
     useMailStore.getState().subscribe().then(keep, log);
+    useLabelStore.getState().subscribe().then(keep, log);
+    useThreadStore.getState().subscribe().then(keep, log);
+    useAccountStore.getState().subscribe().then(keep, log);
     listen<OutboxRejected>(SYNC_EVENTS.outboxRejected, ({ payload }) =>
       toast({
         title: `Couldn't ${payload.kind}`,
@@ -52,11 +57,20 @@ function useSyncEvents() {
   }, []);
 }
 
+/** Load labels and counts for the connected accounts, again whenever the set changes. */
+function useLabelsAndCounts() {
+  const accountIds = useAccountStore((s) => s.accounts.map((a) => a.id).join("\n"));
+  useEffect(() => {
+    void useLabelStore.getState().load(accountIds ? accountIds.split("\n") : []);
+  }, [accountIds]);
+}
+
 function MailScreen({ onManageAccounts }: { onManageAccounts: () => void }) {
   useGlobalShortcuts();
   useAppCommands();
   useNativeContextMenuOnly();
   useSyncEvents();
+  useLabelsAndCounts();
 
   return (
     <>

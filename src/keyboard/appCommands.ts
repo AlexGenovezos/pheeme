@@ -26,7 +26,7 @@ export function appCommands(): Command[] {
         title: `Go to ${m.name}`,
         group: "Navigation",
         shortcut: `g ${m.goKey}`,
-        run: () => ui().setActiveMailbox(m.id),
+        run: () => ui().setMailbox({ accountId: null, labelId: m.id }),
       })),
     {
       id: "view.toggleSidebar",

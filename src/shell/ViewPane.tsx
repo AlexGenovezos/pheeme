@@ -5,6 +5,7 @@ import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
 import { showContextMenu } from "../lib/contextMenu";
 import { formatFullDate } from "../lib/dates";
+import { parseThreadKey, threadKey } from "../mail/mailboxes";
 import { fixtureThreads } from "../preview/fixtures";
 import { isPreview } from "../preview/runtime";
 import { useMailStore } from "../store/mailStore";
@@ -13,10 +14,10 @@ import { dragRegion } from "./chrome";
 import { notYet, senderOf } from "./ListPane";
 
 export function ViewPane() {
-  const selectedId = useUiStore((s) => s.selectedThreadId);
-  const summary = useMailStore((s) => s.threads.find((t) => t.id === selectedId));
+  const openKey = useUiStore((s) => s.openThread);
+  const summary = useMailStore((s) => s.threads.find((t) => threadKey(t.accountId, t.id) === openKey));
   // Preview mode has full fixture bodies; real threads show their summary until the Phase 6 thread view.
-  const fixture = isPreview() ? fixtureThreads.find((t) => t.id === selectedId) : undefined;
+  const fixture = isPreview() && openKey ? fixtureThreads.find((t) => t.id === parseThreadKey(openKey).threadId) : undefined;
   const thread = fixture ?? summary;
   const off = !thread;
 

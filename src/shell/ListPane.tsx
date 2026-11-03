@@ -10,6 +10,7 @@ import { useCommands } from "../keyboard/useCommands";
 import { openContextMenuFromEvent } from "../lib/contextMenu";
 import { formatListDate } from "../lib/dates";
 import type { ThreadSummary } from "../lib/tauri";
+import { queryFor, threadKey } from "../mail/mailboxes";
 import { fixtureMailboxes, fixtureLabels } from "../preview/fixtures";
 import { useAccountStore } from "../store/accountStore";
 import { useMailStore } from "../store/mailStore";
@@ -20,9 +21,6 @@ export const SEARCH_INPUT_ID = "mail-search";
 
 /** Placeholder until the mail UI (Phase 6) wires real actions. */
 export const notYet = (action: string) => toast({ title: `${action} isn't wired up yet`, description: "It arrives with the mail UI." });
-
-/** Mailboxes the sidebar shows that have no backing Gmail label yet (Phase 6). */
-const UNBACKED_MAILBOXES = new Set(["ALL"]);
 
 export const senderOf = (t: Pick<ThreadSummary, "fromName" | "fromAddress">) => t.fromName ?? t.fromAddress ?? "Unknown sender";
 
@@ -35,9 +33,9 @@ const rowMenu = (t: ThreadSummary) => [
 ];
 
 export function ListPane() {
-  const mailbox = useUiStore((s) => s.activeMailbox);
-  const selected = useUiStore((s) => s.selectedThreadId);
-  const select = useUiStore((s) => s.selectThread);
+  const { accountId, labelId, category } = useUiStore((s) => s.mailbox);
+  const selected = useUiStore((s) => s.openThread);
+  const select = useUiStore((s) => s.setOpenThread);
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const listRef = useRef<HTMLDivElement>(null);
@@ -45,22 +43,22 @@ export function ListPane() {
   const accountIds = useAccountStore((s) => s.accounts.map((a) => a.id).join("\n"));
   const threads = useMailStore((s) => s.threads);
 
-  // All Inboxes: every connected account, refetched when the mailbox or the accounts change.
+  // Refetched when the mailbox or the accounts change.
   useEffect(() => {
     const { load, clear } = useMailStore.getState();
     const ids = accountIds ? accountIds.split("\n") : [];
-    if (UNBACKED_MAILBOXES.has(mailbox) || ids.length === 0) clear();
-    else void load({ accountIds: ids, labelId: mailbox });
-  }, [mailbox, accountIds]);
+    if (ids.length === 0) clear();
+    else void load(queryFor({ accountId, labelId, category }, ids));
+  }, [accountId, labelId, category, accountIds]);
 
-  const box = fixtureMailboxes.find((m) => m.id === mailbox) ?? fixtureLabels.find((l) => l.id === mailbox);
+  const box = fixtureMailboxes.find((m) => m.id === labelId) ?? fixtureLabels.find((l) => l.id === labelId);
   const unread = threads.filter((t) => t.unread).length;
-  const index = threads.findIndex((t) => t.id === selected);
+  const index = threads.findIndex((t) => threadKey(t.accountId, t.id) === selected);
 
   const move = (delta: 1 | -1) => {
     if (!threads.length) return;
     const next = index < 0 ? (delta === 1 ? 0 : threads.length - 1) : Math.min(Math.max(index + delta, 0), threads.length - 1);
-    select(threads[next].id);
+    select(threadKey(threads[next].accountId, threads[next].id));
   };
 
   useCommands([
@@ -130,10 +128,11 @@ export function ListPane() {
         ) : (
           threads.map((t) => {
             const sender = senderOf(t);
+            const key = threadKey(t.accountId, t.id);
             return (
               <ListRow
-                key={t.id}
-                selected={t.id === selected}
+                key={key}
+                selected={key === selected}
                 unread={t.unread}
                 leading={<Avatar name={sender} email={t.fromAddress ?? undefined} />}
                 title={t.messageCount > 1 ? `${sender} (${t.messageCount})` : sender}
@@ -146,9 +145,9 @@ export function ListPane() {
                 }
                 subtitle={t.subject ?? "(no subject)"}
                 description={t.snippet}
-                onClick={() => select(t.id)}
+                onClick={() => select(key)}
                 onContextMenu={(e) => {
-                  select(t.id);
+                  select(key);
                   openContextMenuFromEvent(e, rowMenu(t));
                 }}
               />

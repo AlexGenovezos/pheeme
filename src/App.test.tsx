@@ -92,11 +92,11 @@ test("renders the three-pane shell with fixture mail", async () => {
 test("g then i goes to the inbox; j selects the first conversation", async () => {
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
-  useUiStore.getState().setActiveMailbox("SENT");
+  useUiStore.getState().setMailbox({ accountId: null, labelId: "SENT" });
   fireEvent.keyDown(window, { key: "g" });
   expect(screen.getByRole("status")).toHaveTextContent("Go to Inbox");
   fireEvent.keyDown(window, { key: "i" });
-  expect(useUiStore.getState().activeMailbox).toBe("INBOX");
+  expect(useUiStore.getState().mailbox).toEqual({ accountId: null, labelId: "INBOX" });
 
   const list = screen.getByRole("listbox", { name: "Inbox conversations" });
   await within(list).findAllByRole("option");
@@ -121,7 +121,7 @@ test("shortcuts typed into search don't fire commands", async () => {
   fireEvent.keyDown(window, { key: "/" });
   expect(search).toHaveFocus();
   fireEvent.keyDown(search, { key: "j" });
-  expect(useUiStore.getState().selectedThreadId).toBeNull();
+  expect(useUiStore.getState().openThread).toBeNull();
 });
 
 test("right-clicking a conversation opens the menu (DOM fallback in preview)", async () => {
@@ -174,7 +174,7 @@ test("the shell lists threads for every connected account", async () => {
   expect(queries).toContainEqual({ accountIds: ["a1"], labelId: "INBOX" });
 });
 
-test("All Mail has no backing label yet: nothing is requested and the list is empty", async () => {
+test("All Mail lists every cached thread through the ALL pseudo-label", async () => {
   const queries: unknown[] = [];
   mockIPC((cmd, args) => {
     if (cmd === "list_threads") queries.push(args);
@@ -183,9 +183,30 @@ test("All Mail has no backing label yet: nothing is requested and the list is em
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
   queries.length = 0;
-  act(() => useUiStore.getState().setActiveMailbox("ALL"));
-  expect(await screen.findByText("No conversations in All Mail")).toBeInTheDocument();
-  expect(queries).toEqual([]);
+  act(() => useUiStore.getState().setMailbox({ accountId: null, labelId: "ALL" }));
+  const list = await screen.findByRole("listbox", { name: "All Mail conversations" });
+  await vi.waitFor(() => expect(within(list).getAllByRole("option").length).toBeGreaterThan(0));
+  expect(queries).toEqual([{ accountIds: ["a1"], labelId: "ALL" }]);
+});
+
+test("the shell loads labels and counts for the connected accounts and marks accounts synced", async () => {
+  const calls: string[] = [];
+  mockIPC(
+    (cmd, args) => {
+      calls.push(cmd);
+      return backend(cmd, args);
+    },
+    { shouldMockEvents: true },
+  );
+  useAccountStore.setState({ accounts: [], loaded: false, error: null });
+  render(<App />);
+  await screen.findByRole("navigation", { name: "Mailboxes" });
+  await vi.waitFor(() => expect(calls).toEqual(expect.arrayContaining(["list_labels", "label_counts", "mailbox_counts"])));
+  expect(useAccountStore.getState().accounts[0].synced).toBeFalsy();
+  await vi.waitFor(async () => {
+    await emit("sync:completed", { accountId: "a1" });
+    expect(useAccountStore.getState().accounts[0].synced).toBe(true);
+  });
 });
 
 test("a change Gmail rejects shows a toast", async () => {
