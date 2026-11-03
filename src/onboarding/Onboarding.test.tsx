@@ -41,6 +41,7 @@ test("walks the guide in order and saves progress without the secret", () => {
     "Turn on the Gmail API",
     "Turn on the Google Calendar API",
     "Set up the sign-in screen",
+    "Add Pheeme's links to the branding",
     "Publish the app",
     "Create a desktop client",
     "Paste your client ID and secret",
