@@ -23,8 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# Local AI tooling
-.claude/
+# Local AI tooling (project skills in .claude/skills are shared)
+.claude/*
+!.claude/skills/
 .codex
 coverage
 

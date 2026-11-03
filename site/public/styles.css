@@ -388,6 +388,15 @@ kbd {
 .legal a { color: var(--gold); }
 .legal strong { color: var(--paper); }
 
+/* ---------- changelog ---------- */
+.changelog .release { margin-top: 3rem; padding-top: 2.25rem; border-top: 1px solid var(--line); }
+.changelog .release:first-child { border-top: 0; padding-top: 0; }
+.changelog .release h2 { margin-top: 0; font-size: var(--t-2); font-stretch: 80%; letter-spacing: -0.01em; }
+.changelog .release h2 a { color: var(--paper); text-decoration: none; }
+.changelog .release-notes p:first-child { color: var(--paper); font-size: 1.08rem; }
+.changelog .release-notes code { font-family: var(--mono); font-size: .82em; padding: .1em .35em; border-radius: 4px; background: var(--deep); }
+.changelog-status { color: var(--muted); }
+
 @keyframes blink { 50% { opacity: 0; } }
 
 /* ---------- responsive ---------- */

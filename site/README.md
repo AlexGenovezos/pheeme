@@ -36,6 +36,7 @@ wrangler dev          # or: python3 -m http.server -d public 8787
 | `public/motion.js` | Scroll scenes and reveal-on-enter animations |
 | `public/demo.js` | The keyboard inbox demo |
 | `public/download.js` | Points the hero download button at the latest release installer for the visitor's OS |
+| `public/changelog.html`, `changelog.js` | pheeme.app/changelog: every GitHub release with its notes, fetched live (notes come from `docs/releases/` in the app repo) |
 | `public/logos.html` | Logo download page (pheeme.app/logos) |
 | `public/brand/` | Generated logo set: SVG + PNG, plus `pheeme-brand.zip` |
 | `public/art/` | Line-engraved Pheme statue for the stamp (built by `scripts/build-fama.sh`) |
