@@ -4,7 +4,7 @@ pub mod api;
 pub mod convert;
 pub mod engine;
 pub mod events;
-#[cfg(test)]
+#[cfg(any(test, feature = "bench"))]
 pub mod fake;
 pub mod manager;
 pub mod outbox;

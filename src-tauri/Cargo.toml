@@ -9,6 +9,11 @@ edition = "2021"
 name = "pheeme_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# The benchmarks (Linux, needs valgrind and libclang): exposes the in-memory Gmail
+# (`sync::fake`) and pulls in gungraun.
+bench = ["dep:gungraun"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -42,6 +47,10 @@ async-trait = "0.1"
 ammonia = "4"
 percent-encoding = "2"
 
+# Valgrind only runs on Linux. Optional so that plain builds don't need libclang.
+[target.'cfg(target_os = "linux")'.dependencies]
+gungraun = { version = "0.20.0", features = ["act"], optional = true }
+
 # Same major as keyring's apple-native backend, to recognise its macOS error codes.
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"
@@ -49,3 +58,10 @@ security-framework = "3"
 [dev-dependencies]
 tempfile = "3"
 wiremock = "0.6"
+
+# Instruction-count benchmarks under Valgrind: `cargo bench --features bench`
+# (needs `gungraun-runner` 0.20.0 too). See docs/performance.md.
+[[bench]]
+name = "hot_paths"
+harness = false
+required-features = ["bench"]
