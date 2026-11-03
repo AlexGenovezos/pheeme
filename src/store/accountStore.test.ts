@@ -12,7 +12,9 @@ const account = (id: string, synced: boolean): AccountInfo => ({
   synced,
 });
 
-beforeEach(() => useAccountStore.setState({ accounts: [account("a", false), account("b", false)], loaded: true, error: null }));
+beforeEach(() =>
+  useAccountStore.setState({ accounts: [account("a", false), account("b", false)], loaded: true, error: null, syncErrors: {} }),
+);
 
 test("markSynced flips one account and leaves the rest", () => {
   const before = useAccountStore.getState().accounts;
@@ -32,5 +34,21 @@ test("sync:completed marks that account synced", async () => {
   await emit("sync:completed", { accountId: "a" });
   await vi.waitFor(() => expect(useAccountStore.getState().accounts.find((a) => a.id === "a")?.synced).toBe(true));
   expect(useAccountStore.getState().accounts.find((a) => a.id === "b")?.synced).toBe(false);
+  stop();
+});
+
+test("sync:error records the failure per account until that account completes a sync", async () => {
+  mockIPC(() => undefined, { shouldMockEvents: true });
+  const stop = await useAccountStore.getState().subscribe();
+  await emit("sync:error", { accountId: "a", code: "network", message: "Gmail didn't answer" });
+  await emit("sync:error", { accountId: "b", code: "auth", message: "Sign in again" });
+  await vi.waitFor(() =>
+    expect(useAccountStore.getState().syncErrors).toEqual({
+      a: { code: "network", message: "Gmail didn't answer" },
+      b: { code: "auth", message: "Sign in again" },
+    }),
+  );
+  await emit("sync:completed", { accountId: "a" });
+  await vi.waitFor(() => expect(useAccountStore.getState().syncErrors).toEqual({ b: { code: "auth", message: "Sign in again" } }));
   stop();
 });

@@ -34,7 +34,7 @@ const ONE = account("a1", "me@home.test");
 const TWO = account("a2", "me@work.test");
 
 function seed(accounts: AccountInfo[]) {
-  useAccountStore.setState({ accounts, loaded: true, error: null });
+  useAccountStore.setState({ accounts, loaded: true, error: null, syncErrors: {} });
   useLabelStore.setState({
     labels: {
       a1: [
@@ -226,15 +226,34 @@ describe("stacked layout", () => {
 
   test("sync error on an account shows a warning on its header", async () => {
     seed([ONE, TWO]);
-    render(<Sidebar />);
+    const stop = await useAccountStore.getState().subscribe();
+    const { unmount } = render(<Sidebar />);
     expect(accountHeader(TWO.email)).not.toHaveAttribute("aria-description");
     await act(() => emit("sync:error", { accountId: "a2", code: "network", message: "Gmail didn't answer" }));
     await waitFor(() =>
       expect(accountHeader(TWO.email)).toHaveAttribute("aria-description", expect.stringContaining("Gmail didn't answer")),
     );
     expect(accountHeader(ONE.email)).not.toHaveAttribute("aria-description");
+
+    // The failure is session state, not the sidebar's: it survives a remount.
+    unmount();
+    render(<Sidebar />);
+    expect(accountHeader(TWO.email)).toHaveAttribute("aria-description", expect.stringContaining("Gmail didn't answer"));
+
     await act(() => emit("sync:completed", { accountId: "a2" }));
     await waitFor(() => expect(accountHeader(TWO.email)).not.toHaveAttribute("aria-description"));
+    stop();
+  });
+
+  test("rows open with Enter and Space", () => {
+    seed([ONE, TWO]);
+    render(<Sidebar />);
+    fireEvent.keyDown(link("Updates", accountGroup(TWO.email)), { key: "Enter" });
+    expect(useUiStore.getState().mailbox).toEqual({ accountId: "a2", labelId: "INBOX", category: "CATEGORY_UPDATES" });
+    fireEvent.keyDown(link("Drafts", region("Favorites")), { key: " " });
+    expect(useUiStore.getState().mailbox).toEqual({ accountId: "a2", labelId: "DRAFT" });
+    fireEvent.keyDown(link("All Inboxes"), { key: "x" });
+    expect(useUiStore.getState().mailbox).toEqual({ accountId: "a2", labelId: "DRAFT" });
   });
 
   test("footer offers Add account", () => {

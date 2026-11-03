@@ -26,7 +26,7 @@ beforeEach(() => {
   usePaletteStore.setState({ open: false });
   mockIPC(backend);
   __resetMailStoreForTests();
-  useAccountStore.setState({ accounts: [], loaded: false, error: null });
+  useAccountStore.setState({ accounts: [], loaded: false, error: null, syncErrors: {} });
 });
 
 test("renders nothing until accounts load", () => {
@@ -202,7 +202,7 @@ test("the shell loads labels and counts for the connected accounts and marks acc
     },
     { shouldMockEvents: true },
   );
-  useAccountStore.setState({ accounts: [], loaded: false, error: null });
+  useAccountStore.setState({ accounts: [], loaded: false, error: null, syncErrors: {} });
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
   await vi.waitFor(() => expect(calls).toEqual(expect.arrayContaining(["list_labels", "label_counts", "mailbox_counts"])));
@@ -223,4 +223,24 @@ test("a change Gmail rejects shows a toast", async () => {
     expect(screen.getByText("Couldn't archive")).toBeInTheDocument();
   });
   expect(screen.getByText("Gmail said: Not found. Your change was undone.")).toBeInTheDocument();
+});
+
+test("an account's sync failure survives opening and closing Manage accounts", async () => {
+  mockIPC(backend, { shouldMockEvents: true });
+  render(<App />);
+  await screen.findByRole("navigation", { name: "Mailboxes" });
+  // Listeners attach asynchronously after mount.
+  await vi.waitFor(async () => {
+    await emit("sync:error", { accountId: "a1", code: "network", message: "Gmail didn't answer" });
+    expect(screen.getByText("Sync failed: Gmail didn't answer")).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Manage accounts" }));
+  // A failure that arrives while the mail screen is closed is kept too.
+  await act(() => emit("sync:error", { accountId: "a1", code: "auth", message: "Sign in again" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
+  expect(await screen.findByText("Sync failed: Sign in again")).toBeInTheDocument();
+
+  await act(() => emit("sync:completed", { accountId: "a1" }));
+  await vi.waitFor(() => expect(screen.queryByText(/Sync failed/)).not.toBeInTheDocument());
 });

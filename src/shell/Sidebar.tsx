@@ -1,4 +1,3 @@
-import { listen } from "@tauri-apps/api/event";
 import {
   ChevronRight,
   type LucideIcon,
@@ -12,12 +11,12 @@ import {
   TriangleAlert,
   UserPlus,
 } from "lucide-react";
-import { type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useId } from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { IconButton } from "../components/ui/IconButton";
 import { ListRow } from "../components/ui/ListRow";
 import { showContextMenu } from "../lib/contextMenu";
-import { type AccountInfo, stopQuietly, SYNC_EVENTS, type SyncAccountEvent, type SyncErrorEvent } from "../lib/tauri";
+import type { AccountInfo } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import {
   accountColorIndex,
@@ -49,33 +48,6 @@ function activateOnKey(e: KeyboardEvent, run: () => void) {
     e.preventDefault();
     run();
   }
-}
-
-/** The latest sync failure per account, cleared when that account next completes a sync. */
-function useSyncErrors(): Record<string, string> {
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  useEffect(() => {
-    let stopped = false;
-    const stops: (() => void)[] = [];
-    const keep = (stop: () => void) => (stopped ? stopQuietly(stop) : stops.push(stop));
-    const log = (err: unknown) => console.warn("sync event listener failed", err);
-    listen<SyncErrorEvent>(SYNC_EVENTS.error, ({ payload }) =>
-      setErrors((e) => ({ ...e, [payload.accountId]: payload.message })),
-    ).then(keep, log);
-    listen<SyncAccountEvent>(SYNC_EVENTS.completed, ({ payload }) =>
-      setErrors((e) => {
-        if (!(payload.accountId in e)) return e;
-        const rest = { ...e };
-        delete rest[payload.accountId];
-        return rest;
-      }),
-    ).then(keep, log);
-    return () => {
-      stopped = true;
-      stops.forEach(stopQuietly);
-    };
-  }, []);
-  return errors;
 }
 
 interface MailboxRowProps {
@@ -237,7 +209,7 @@ export function Sidebar({ onManageAccounts, onAddAccount }: { onManageAccounts?:
   const allInboxUnread = useLabelStore((s) => s.allInboxUnread);
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
-  const errors = useSyncErrors();
+  const errors = useAccountStore((s) => s.syncErrors);
   const ModeIcon = MODE_ICON[mode];
 
   const activeId = resolveActiveAccount(storedActive, accounts);
@@ -274,9 +246,9 @@ export function Sidebar({ onManageAccounts, onAddAccount }: { onManageAccounts?:
           {single ? (
             <>
               {errors[single.id] && (
-                <div className="sidebar__sync-error" role="status" title={errors[single.id]}>
+                <div className="sidebar__sync-error" role="status" title={errors[single.id].message}>
                   <TriangleAlert aria-hidden="true" />
-                  <span>Sync failed: {errors[single.id]}</span>
+                  <span>Sync failed: {errors[single.id].message}</span>
                 </div>
               )}
               <CategoryRows accountId={single.id} />
@@ -292,7 +264,7 @@ export function Sidebar({ onManageAccounts, onAddAccount }: { onManageAccounts?:
                 target={ALL_INBOXES}
               />
               {accounts.map((a) => (
-                <AccountSection key={a.id} account={a} accounts={accounts} error={errors[a.id]} />
+                <AccountSection key={a.id} account={a} accounts={accounts} error={errors[a.id]?.message} />
               ))}
             </>
           )}

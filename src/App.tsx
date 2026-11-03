@@ -42,7 +42,6 @@ function useSyncEvents() {
     useMailStore.getState().subscribe().then(keep, log);
     useLabelStore.getState().subscribe().then(keep, log);
     useThreadStore.getState().subscribe().then(keep, log);
-    useAccountStore.getState().subscribe().then(keep, log);
     listen<OutboxRejected>(SYNC_EVENTS.outboxRejected, ({ payload }) =>
       toast({
         title: `Couldn't ${payload.kind}`,
@@ -81,12 +80,35 @@ function MailScreen({ onManageAccounts, onAddAccount }: { onManageAccounts: () =
   );
 }
 
+/**
+ * Account sync state (first sync done, last failure) for the whole session. Subscribed above the
+ * screens, so opening Manage accounts or onboarding doesn't drop events or forget a failure.
+ */
+function useAccountSyncEvents() {
+  useEffect(() => {
+    let stopped = false;
+    let stop: (() => void) | null = null;
+    useAccountStore
+      .getState()
+      .subscribe()
+      .then(
+        (s) => (stopped ? stopQuietly(s) : (stop = s)),
+        (err: unknown) => console.warn("sync event listener failed", err),
+      );
+    return () => {
+      stopped = true;
+      if (stop) stopQuietly(stop);
+    };
+  }, []);
+}
+
 function App() {
   const { accounts, loaded, error, load, upsert } = useAccountStore();
   const [adding, setAdding] = useState(false);
   const [managing, setManaging] = useState(false);
 
   useEffect(() => { void load(); }, [load]);
+  useAccountSyncEvents();
   useEffect(() => {
     if (import.meta.env.PROD && isTauri()) return startUpdateChecks();
   }, []);
