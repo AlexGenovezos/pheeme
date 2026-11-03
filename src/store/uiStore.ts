@@ -1,6 +1,6 @@
 // UI state: pane layout and navigation preferences (persisted), current mailbox, open and checked threads.
 import { create } from "zustand";
-import type { MailboxRef, ThreadKey } from "../mail/mailboxes";
+import { homeMailbox, type MailboxRef, parseThreadKey, type ThreadKey } from "../mail/mailboxes";
 
 /** Pane geometry in CSS px. The shell writes these into CSS variables. */
 export const PANE = {
@@ -113,6 +113,11 @@ interface UiState extends PaneLayout, NavPrefs {
   checkAll(keys: ThreadKey[]): void;
   clearChecked(): void;
   toggleAccountCollapsed(accountId: string): void;
+  /**
+   * An account was removed: leave its mailbox for the home mailbox of the `remaining` accounts (All Inboxes, or the
+   * last account's Primary), and drop its open and checked conversations and its stored navigation choices.
+   */
+  forgetAccount(accountId: string, remaining: { id: string }[]): void;
 }
 
 const persistedOf = (s: PaneLayout & NavPrefs): PaneLayout & NavPrefs => ({
@@ -167,6 +172,21 @@ export const useUiStore = create<UiState>((set, get) => {
       }),
     checkAll: (keys) => set({ checked: [...keys], anchor: keys[keys.length - 1] ?? null }),
     clearChecked: () => set({ checked: [], anchor: null }),
+    forgetAccount: (id, remaining) => {
+      const s = get();
+      const ofAccount = (key: ThreadKey | null) => key !== null && parseThreadKey(key).accountId === id;
+      if (s.mailbox.accountId === id) set({ ...navReset(), mailbox: homeMailbox(remaining) });
+      else
+        set({
+          openThread: ofAccount(s.openThread) ? null : s.openThread,
+          checked: s.checked.filter((k) => !ofAccount(k)),
+          anchor: ofAccount(s.anchor) ? null : s.anchor,
+        });
+      persist({
+        activeAccountId: s.activeAccountId === id ? null : s.activeAccountId,
+        collapsedAccounts: s.collapsedAccounts.filter((a) => a !== id),
+      });
+    },
     toggleAccountCollapsed: (id) => {
       const { collapsedAccounts } = get();
       persist({

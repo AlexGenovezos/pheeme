@@ -11,6 +11,7 @@ import {
   type SyncErrorEvent,
   toCommandError,
 } from "../lib/tauri";
+import { useUiStore } from "./uiStore";
 
 export interface SyncFailure {
   code: string;
@@ -26,6 +27,7 @@ interface AccountState {
   load: () => Promise<void>;
   /** Adds or replaces (re-sign-in of the same address keeps its id). */
   upsert: (account: AccountInfo) => void;
+  /** Removes the account and moves navigation off it (`uiStore.forgetAccount`). */
   remove: (accountId: string) => Promise<void>;
   /** The account's first sync finished, so its cache is usable. */
   markSynced: (accountId: string) => void;
@@ -57,6 +59,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   remove: async (accountId) => {
     await removeAccount(accountId);
     set((state) => ({ accounts: state.accounts.filter((a) => a.id !== accountId) }));
+    // Navigation pointing at the removed account would keep querying it.
+    useUiStore.getState().forgetAccount(accountId, get().accounts);
   },
   markSynced: (accountId) =>
     set((state) =>
