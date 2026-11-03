@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import tauriConf from "../../src-tauri/tauri.conf.json";
 import { buildSrcdoc, type SrcdocOptions } from "./srcdoc";
 
 const base: SrcdocOptions = {
@@ -142,4 +143,12 @@ describe("buildSrcdoc", () => {
     expect(css).not.toContain("url(");
     expect(css).not.toContain("red}");
   });
+});
+
+// A srcdoc frame inherits the app's CSP. Left alone, Tauri adds a nonce to style-src for index.html's
+// inline <style>, which voids 'unsafe-inline': every email then renders unstyled (black serif text on
+// the dark theme, no inversion) because the frame's <style> and style="" are blocked.
+test("the app CSP leaves style-src unmodified so the email frame's styles apply", () => {
+  expect(tauriConf.app.security.dangerousDisableAssetCspModification).toContain("style-src");
+  expect(tauriConf.app.security.csp["style-src"]).toContain("'unsafe-inline'");
 });

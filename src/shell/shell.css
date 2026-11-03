@@ -375,9 +375,9 @@ body[data-resizing] .shell__divider:active::after {
   overflow-y: auto;
   padding: var(--space-0) var(--space-1-5) var(--space-2);
 }
+/* The list is focused for its arrow keys; the open row's highlight already shows where they act. */
 .list-pane__scroll:focus-visible {
-  outline: var(--focus-ring-width) solid var(--color-focus-border);
-  outline-offset: var(--focus-ring-inset);
+  outline: none;
 }
 
 .list-pane__glyph {
