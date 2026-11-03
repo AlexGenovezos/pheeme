@@ -15,7 +15,7 @@ use super::events::SyncEvent;
 use crate::db::outbox::{self as store, DbOp, DbOpMessage, OpProgress};
 use crate::db::threads::{self, RecomputeResult};
 use crate::db::{self, messages};
-use crate::gmail::mime::encode_base64url;
+use crate::gmail::mime::{encode_base64url, rfc822_message_id};
 use crate::gmail::{GmailError, MessageFormat};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
@@ -252,7 +252,7 @@ pub async fn queue_send(
     account_id: &str,
     raw: &[u8],
 ) -> Result<String, SyncError> {
-    let (message_id, raw) = match header_value(raw, "Message-ID") {
+    let (message_id, raw) = match rfc822_message_id(raw) {
         Some(id) => (id, raw.to_vec()),
         None => {
             let id = format!("<{}@pheeme.app>", uuid::Uuid::new_v4());
@@ -305,22 +305,6 @@ pub async fn resend(pool: &SqlitePool, op_id: &str) -> Result<bool, SyncError> {
     };
     store::update_progress(pool, op_id, &progress, now_ms()).await?;
     Ok(true)
-}
-
-/// Value of a top-level header in a raw message (unfolded lines only).
-fn header_value(raw: &[u8], name: &str) -> Option<String> {
-    let text = String::from_utf8_lossy(raw);
-    for line in text.split("\r\n").flat_map(|l| l.split('\n')) {
-        if line.is_empty() {
-            break;
-        }
-        if let Some((key, value)) = line.split_once(':') {
-            if key.trim().eq_ignore_ascii_case(name) && !value.trim().is_empty() {
-                return Some(value.trim().to_owned());
-            }
-        }
-    }
-    None
 }
 
 /// Gmail definitively refused (not a network, auth, rate-limit or server problem).

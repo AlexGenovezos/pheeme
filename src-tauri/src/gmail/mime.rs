@@ -17,7 +17,7 @@ use base64::{
 };
 use mailparse::{
     addrparse_header, dateparse, parse_content_disposition, parse_content_type, parse_header,
-    parse_mail, MailAddr, MailHeaderMap, ParsedMail,
+    parse_headers, parse_mail, MailAddr, MailHeaderMap, ParsedMail,
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +36,16 @@ pub fn decode_base64url(data: &str) -> Result<Vec<u8>, GmailError> {
 /// Encode an RFC 2822 message for the `raw` field of send/draft requests.
 pub fn encode_base64url(bytes: &[u8]) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// The `Message-ID` of a raw RFC 2822 message, angle brackets included. Reads the header
+/// block only (folded headers are unfolded); a `Message-ID:` line in the body doesn't count.
+pub fn rfc822_message_id(raw: &[u8]) -> Option<String> {
+    let (headers, _) = parse_headers(raw).ok()?;
+    headers
+        .get_first_value("Message-ID")
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -657,6 +667,23 @@ mod tests {
         );
         assert_eq!(list[0].name.as_deref(), Some("Doe, Jane"));
         assert!(parse_addresses("To", "undisclosed-recipients:;").is_empty());
+    }
+
+    #[test]
+    fn rfc822_message_id_reads_headers_only() {
+        assert_eq!(
+            rfc822_message_id(b"Subject: a\r\nmessage-id: <a@x>\r\n\r\nbody").as_deref(),
+            Some("<a@x>")
+        );
+        assert_eq!(
+            rfc822_message_id(b"Message-ID:\r\n <folded@x>\r\nTo: b@x\r\n\r\n").as_deref(),
+            Some("<folded@x>")
+        );
+        assert_eq!(
+            rfc822_message_id(b"Subject: a\r\n\r\nMessage-ID: <body@x>\r\n"),
+            None
+        );
+        assert_eq!(rfc822_message_id(b"Message-ID:   \r\n\r\n"), None);
     }
 
     #[test]

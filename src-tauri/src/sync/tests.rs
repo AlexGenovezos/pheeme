@@ -991,3 +991,40 @@ async fn offline_send_stays_pending_and_retries() {
     assert!(op_status(&h, &op.id).await.is_none());
     assert_eq!(h.fake.sent().len(), 1);
 }
+
+#[tokio::test]
+async fn queue_send_keeps_a_folded_message_id() {
+    let h = harness().await;
+    let raw = b"From: me@example.com\r\nMessage-ID:\r\n <existing@example.com>\r\nSubject: Hi\r\n\r\nHello";
+    let id = outbox::queue_send(&h.pool, ACCT, raw).await.unwrap();
+    let op = store::get(&h.pool, &id).await.unwrap().unwrap();
+    assert_eq!(
+        op.rfc822_message_id.as_deref(),
+        Some("<existing@example.com>")
+    );
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    let sent = crate::gmail::mime::decode_base64url(&h.fake.sent()[0]).unwrap();
+    assert_eq!(sent, raw, "no second Message-ID is added");
+    assert_eq!(
+        h.fake.message("sent-1").unwrap().message_id,
+        "<existing@example.com>"
+    );
+}
+
+#[tokio::test]
+async fn queue_send_ignores_a_message_id_line_in_the_body() {
+    let h = harness().await;
+    let raw = b"From: me@example.com\r\nSubject: Hi\r\n\r\nMessage-ID: <body@example.com>\r\n";
+    let id = outbox::queue_send(&h.pool, ACCT, raw).await.unwrap();
+    let op = store::get(&h.pool, &id).await.unwrap().unwrap();
+    let mid = op.rfc822_message_id.unwrap();
+    assert!(mid.ends_with("@pheeme.app>"), "{mid}");
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    let sent = crate::gmail::mime::decode_base64url(&h.fake.sent()[0]).unwrap();
+    assert!(String::from_utf8(sent)
+        .unwrap()
+        .starts_with(&format!("Message-ID: {mid}\r\n")));
+    // The fake read the header, not the body line, so the send shows up in Sent.
+    let sent_msg = h.fake.message("sent-1").unwrap();
+    assert_eq!(sent_msg.message_id, mid);
+}
