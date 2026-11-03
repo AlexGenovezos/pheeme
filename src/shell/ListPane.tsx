@@ -4,7 +4,8 @@ import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
 import { TextInput } from "../components/ui/TextInput";
 import { toast } from "../components/ui/Toast";
-import { useCommands } from "../keyboard/useCommands";
+import { registry } from "../keyboard/registry";
+import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import type { ThreadSummary } from "../lib/tauri";
 import { archive, moveSelection, setRead, setStarred, trash } from "../mail/actions";
 import { mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
@@ -42,24 +43,31 @@ export const rowMenu = (t: ThreadSummary) => {
   const key = threadKey(t.accountId, t.id);
   const keys = useUiStore.getState().checked.includes(key) ? undefined : [key];
   return [
-    { id: "archive", label: "Archive", shortcut: "e", onSelect: () => void archive(keys) },
+    {
+      id: "archive",
+      label: "Archive",
+      shortcut: registry.shortcutFor("conversation.archive", "e"),
+      onSelect: () => void archive(keys),
+    },
     {
       id: "read",
       label: t.unread ? "Mark as read" : "Mark as unread",
-      shortcut: t.unread ? "shift+i" : "shift+u",
+      shortcut: t.unread
+        ? registry.shortcutFor("conversation.mark-read", "shift+i")
+        : registry.shortcutFor("conversation.mark-unread", "shift+u"),
       onSelect: () => void setRead(t.unread, keys),
     },
     {
       id: "star",
       label: t.starred ? "Remove star" : "Add star",
-      shortcut: "s",
+      shortcut: registry.shortcutFor("conversation.star", "s"),
       onSelect: () => void setStarred(!t.starred, keys),
     },
     { type: "separator" as const },
     {
       id: "delete",
       label: "Delete",
-      shortcut: "#",
+      shortcut: registry.shortcutFor("conversation.delete", "#"),
       danger: true,
       onSelect: () => void trash(keys),
     },
@@ -86,6 +94,8 @@ export function ListPane() {
   const userLabels = useLabelStore((s) => (accountId ? s.userLabels(accountId) : NO_LABELS));
   const title = mailboxTitle({ accountId, labelId, category }, userLabels);
   const unread = threads.filter((t) => t.unread).length;
+  const sidebarKey = useKeybinding("view.toggleSidebar", "mod+b");
+  const searchKey = useKeybinding("search.focus", "/");
 
   useCommands([
     {
@@ -135,7 +145,7 @@ export function ListPane() {
         {collapsed && (
           <IconButton
             label="Show sidebar"
-            shortcut="mod+b"
+            shortcut={sidebarKey}
             icon={<PanelLeftOpen />}
             onClick={toggleSidebar}
           />
@@ -157,7 +167,7 @@ export function ListPane() {
           placeholder="Search mail"
           aria-label="Search mail"
           leading={<Search />}
-          trailing={<Kbd shortcut="/" />}
+          trailing={searchKey && <Kbd shortcut={searchKey} />}
           onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
         />
       </div>

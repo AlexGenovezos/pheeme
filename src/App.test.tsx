@@ -8,6 +8,7 @@ import * as updater from "./lib/updater";
 import { parseThreadKey } from "./mail/mailboxes";
 import { createPreviewHandlers } from "./preview/install";
 import { usePaletteStore } from "./palette/paletteStore";
+import { useSettingsStore } from "./settings/settingsStore";
 import { __resetUiStoreForTests, useUiStore } from "./store/uiStore";
 import { useAccountStore } from "./store/accountStore";
 import { __resetMailStoreForTests } from "./store/mailStore";
@@ -47,6 +48,7 @@ beforeEach(() => {
   localStorage.clear();
   __resetUiStoreForTests();
   usePaletteStore.setState({ open: false });
+  useSettingsStore.setState({ open: false, page: "appearance" });
   mockIPC(backend);
   __resetMailStoreForTests();
   __resetThreadStoreForTests();
@@ -79,12 +81,16 @@ test("with accounts it shows them and can add or remove one", async () => {
   });
   render(<App />);
   expect(await screen.findByText(account.email)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Manage accounts" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  const dialog = screen.getByRole("dialog", { name: /Settings/ });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Accounts" }));
 
-  fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add account" }));
   expect(screen.getByText("Add an account")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
   expect(screen.getByText(/Nothing changes in Gmail/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
@@ -98,8 +104,9 @@ test("a failed remove keeps the account and shows why", async () => {
     if (cmd === "remove_account")
       throw { code: "keychain_unavailable", message: "No system keychain is available." };
   });
+  useSettingsStore.setState({ page: "accounts" });
   render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "Manage accounts" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("No system keychain is available.");
@@ -207,12 +214,20 @@ test("the updater never starts outside the desktop app, even in production build
   vi.unstubAllEnvs();
 });
 
-test("account management returns to the inbox", async () => {
+test("settings opens over the inbox, holds the keyboard, and Escape closes it", async () => {
   render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "Manage accounts" }));
-  expect(screen.getByRole("heading", { name: "Accounts" })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
+  await screen.findByRole("navigation", { name: "Mailboxes" });
+  fireEvent.keyDown(window, { key: ",", ctrlKey: true });
+  expect(screen.getByRole("dialog", { name: /Settings/ })).toBeInTheDocument();
+  // The inbox stays mounted behind the dialog, but its shortcuts don't fire.
   expect(screen.getByRole("navigation", { name: "Mailboxes" })).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+  expect(useUiStore.getState().sidebarCollapsed).toBe(false);
+
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+  expect(useUiStore.getState().sidebarCollapsed).toBe(true);
 });
 
 test("mail shortcuts do not run during onboarding", async () => {
@@ -293,7 +308,7 @@ test("a change Gmail rejects shows a toast", async () => {
   expect(screen.getByText("Gmail said: Not found. Your change was undone.")).toBeInTheDocument();
 });
 
-test("an account's sync failure survives opening and closing Manage accounts", async () => {
+test("an account's sync failure survives adding an account and coming back", async () => {
   mockIPC(backend, { shouldMockEvents: true });
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
@@ -303,17 +318,17 @@ test("an account's sync failure survives opening and closing Manage accounts", a
     expect(screen.getByText("Sync failed: Gmail didn't answer")).toBeInTheDocument();
   });
 
-  fireEvent.click(screen.getByRole("button", { name: "Manage accounts" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add account" }));
   // A failure that arrives while the mail screen is closed is kept too.
   await act(() => emit("sync:error", { accountId: "a1", code: "auth", message: "Sign in again" }));
-  fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(await screen.findByText("Sync failed: Sign in again")).toBeInTheDocument();
 
   await act(() => emit("sync:completed", { accountId: "a1" }));
   await vi.waitFor(() => expect(screen.queryByText(/Sync failed/)).not.toBeInTheDocument());
 });
 
-test("a sync change to the open conversation while Manage accounts is open shows on return", async () => {
+test("a sync change to the open conversation while adding an account shows on return", async () => {
   let subject = "Before";
   mockIPC(
     (cmd, args) => {
@@ -331,12 +346,12 @@ test("a sync change to the open conversation while Manage accounts is open shows
   expect(await screen.findByRole("heading", { name: "Before" })).toBeInTheDocument();
   const { accountId, threadId } = parseThreadKey(useUiStore.getState().openThread!);
 
-  fireEvent.click(screen.getByRole("button", { name: "Manage accounts" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add account" }));
   subject = "After";
   await act(() =>
     emit("sync:messages_updated", { accountId, added: [], removed: [], modified: [threadId] }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
   expect(await screen.findByRole("heading", { name: "After" })).toBeInTheDocument();
 });

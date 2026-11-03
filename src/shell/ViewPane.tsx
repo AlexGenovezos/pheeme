@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { type MouseEvent, useMemo } from "react";
 import { IconButton } from "../components/ui/IconButton";
+import { registry } from "../keyboard/registry";
+import { useKeybinding } from "../keyboard/useCommands";
 import { showContextMenu } from "../lib/contextMenu";
 import {
   archive,
@@ -42,6 +44,15 @@ export function ViewPane() {
   const stale = rows.length === 0;
   const anyUnread = rows.some((t) => t.unread);
   const starred = rows[0]?.starred ?? false;
+  const keys = {
+    archive: useKeybinding("conversation.archive", "e"),
+    delete: useKeybinding("conversation.delete", "#"),
+    read: useKeybinding("conversation.mark-read", "shift+i"),
+    unread: useKeybinding("conversation.mark-unread", "shift+u"),
+    star: useKeybinding("conversation.star", "s"),
+    reply: useKeybinding("conversation.reply", "r"),
+    forward: useKeybinding("conversation.forward", "f"),
+  };
 
   const openMore = (e: MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -50,7 +61,7 @@ export function ViewPane() {
         {
           id: "label",
           label: "Label as…",
-          shortcut: "l",
+          shortcut: registry.shortcutFor("conversation.labels", "l"),
           onSelect: () => void openLabelMenu({ x: r.left, y: r.bottom }),
         },
         { id: "move", label: "Move to…", shortcut: "v", onSelect: () => notYet("Move") },
@@ -66,28 +77,28 @@ export function ViewPane() {
       <div className="toolbar toolbar--view" {...dragRegion}>
         <IconButton
           label="Archive"
-          shortcut="e"
+          shortcut={keys.archive}
           icon={<Archive />}
           disabled={stale}
           onClick={() => void archive()}
         />
         <IconButton
           label="Delete"
-          shortcut="#"
+          shortcut={keys.delete}
           icon={<Trash2 />}
           disabled={stale}
           onClick={() => void trash()}
         />
         <IconButton
           label={anyUnread ? "Mark as read" : "Mark as unread"}
-          shortcut={anyUnread ? "shift+i" : "shift+u"}
+          shortcut={anyUnread ? keys.read : keys.unread}
           icon={anyUnread ? <Mail /> : <MailOpen />}
           disabled={stale}
           onClick={() => void setRead(anyUnread)}
         />
         <IconButton
           label={starred ? "Remove star" : "Star"}
-          shortcut="s"
+          shortcut={keys.star}
           icon={<Star />}
           disabled={stale}
           onClick={() => void toggleStar()}
@@ -95,14 +106,14 @@ export function ViewPane() {
         <span className="toolbar__separator" />
         <IconButton
           label="Reply"
-          shortcut="r"
+          shortcut={keys.reply}
           icon={<Reply />}
           disabled={off}
           onClick={composeLater}
         />
         <IconButton
           label="Forward"
-          shortcut="f"
+          shortcut={keys.forward}
           icon={<Forward />}
           disabled={off}
           onClick={composeLater}

@@ -333,34 +333,3 @@
 .problems p {
   color: var(--color-foreground-muted);
 }
-
-.account-row {
-  list-style: none;
-}
-
-.account-row:hover {
-  background: var(--color-app-bg);
-  border-color: var(--color-border);
-}
-
-.account-row__main {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.account-row__text {
-  display: grid;
-}
-
-.account-row__text span {
-  color: var(--color-foreground-muted);
-}
-
-.account-row__confirm {
-  display: grid;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  color: var(--color-foreground-muted);
-}

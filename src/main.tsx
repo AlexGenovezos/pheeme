@@ -5,6 +5,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { platform } from "./lib/platform";
+import { loadBindings } from "./keyboard/bindings";
 import { isPreview, isTauri } from "./preview/runtime";
 import { syncNativeWindow, vibrancy } from "./theme/nativeWindow";
 import { initTheme } from "./theme/theme";
@@ -16,6 +17,7 @@ if (vibrancy) root.dataset.vibrancy = "";
 
 // Theme tokens land on :root before the first React render, so nothing paints unthemed.
 initTheme(isTauri() ? syncNativeWindow : undefined);
+loadBindings();
 
 function render() {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

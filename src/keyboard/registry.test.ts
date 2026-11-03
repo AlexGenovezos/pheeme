@@ -174,3 +174,47 @@ describe("formatting", () => {
     expect(describeShortcut("mod+k", "linux")).toBe("Ctrl+K");
   });
 });
+
+describe("user bindings", () => {
+  test("an override replaces the default for matching, listing and labels", () => {
+    const run = vi.fn();
+    reg.register({ id: "archive", title: "Archive", shortcut: "e", run });
+    reg.setOverrides({ archive: "y" });
+    expect(reg.handleKeyDown(press("e"))).toBe(false);
+    expect(reg.handleKeyDown(press("y"))).toBe(true);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(reg.list()[0].shortcut).toBe("y");
+    expect(reg.get("archive")?.shortcut).toBe("y");
+    expect(reg.defaultShortcut("archive")).toBe("e");
+    expect(reg.shortcutFor("archive")).toBe("y");
+  });
+
+  test("null removes the shortcut; overrides apply to commands registered later", () => {
+    const run = vi.fn();
+    reg.setOverrides({ archive: null, star: "mod+shift+s" });
+    reg.register({ id: "archive", title: "Archive", shortcut: "e", run });
+    reg.register({ id: "star", title: "Star", shortcut: "s", run });
+    expect(reg.handleKeyDown(press("e"))).toBe(false);
+    expect(reg.shortcutFor("archive", "e")).toBeUndefined();
+    expect(reg.handleKeyDown(press("S", { ctrlKey: true, shiftKey: true }))).toBe(true);
+    expect(reg.shortcutFor("unregistered", "v")).toBe("v");
+  });
+
+  test("a stored binding that doesn't parse falls back to the default", () => {
+    const run = vi.fn();
+    reg.setOverrides({ archive: "mod+shift" });
+    reg.register({ id: "archive", title: "Archive", shortcut: "e", run });
+    expect(reg.handleKeyDown(press("e"))).toBe(true);
+  });
+
+  test("suspend stops all shortcuts until resumed", () => {
+    const run = vi.fn();
+    reg.register({ id: "palette", title: "Palette", shortcut: "mod+k", global: true, run });
+    const resume = reg.suspend();
+    expect(reg.handleKeyDown(press("k", { ctrlKey: true }))).toBe(false);
+    resume();
+    resume(); // idempotent
+    expect(reg.handleKeyDown(press("k", { ctrlKey: true }))).toBe(true);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+});

@@ -72,6 +72,8 @@ Five Zustand stores:
 - `threadStore` — thread-detail cache with prefetch; evicts on `sync:messages_updated`
 - `uiStore` — active mailbox, selected thread, multi-select, pane layout
 
+Settings is a dialog over the app (`src/settings/`). Pages, sections and rows are declared as data in `src/settings/pages.tsx`: a new setting is one `SettingDef` there. Keyboard shortcuts come from the command registry; user rebindings are overrides stored by `src/keyboard/bindings.ts`, so label a button with `useKeybinding(commandId)` rather than a literal key.
+
 Mail actions (archive, trash, star, read, labels) live in `src/mail/actions.ts`, shared by buttons, menus and shortcuts. Browser preview (`npm run dev`) answers every command from `src/preview/` fixtures, which mutate and emit `sync:messages_updated` like the app.
 
 ### Database Schema Summary

@@ -5,6 +5,8 @@ export { IconButton } from "./IconButton";
 export { Kbd } from "./Kbd";
 export { ListRow } from "./ListRow";
 export { Menu, type MenuItem } from "./Menu";
+export { SegmentedControl, type Segment } from "./SegmentedControl";
 export { Skeleton } from "./Skeleton";
+export { Switch } from "./Switch";
 export { TextInput } from "./TextInput";
 export { ToastProvider, dismissToast, toast, useToastStore } from "./Toast";

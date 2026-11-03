@@ -99,13 +99,16 @@ async function round(page: Page, n: number) {
     await goTo(page, mailbox);
   }
 
-  for (const mode of ["Dark", "Light", "Match system"]) {
-    await page.getByRole("button", { name: /^Appearance:/ }).click();
-    await page.getByRole("menuitemcheckbox", { name: mode }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: /Settings/ });
+  for (const mode of ["Dark", "Light", "System"]) {
+    await settings.getByRole("radio", { name: mode }).click();
   }
-
-  await page.getByRole("button", { name: "Manage accounts" }).click();
-  await page.getByRole("button", { name: "Back to inbox" }).click();
+  for (const section of ["Keyboard shortcuts", "Accounts", "About", "Appearance"]) {
+    await settings.getByRole("button", { name: section, exact: true }).click();
+  }
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
   await expect(rows).toBeVisible();
 
   for (let i = 0; i < SYNC_EVENTS; i++) {

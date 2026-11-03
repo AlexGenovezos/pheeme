@@ -89,6 +89,18 @@
   --palette-list-max-height: 360px;
   --palette-offset-top: 14vh;
   --toast-width: 340px;
+  --switch-width: 28px;
+  --switch-height: 16px;
+  --switch-thumb: 12px;
+  --switch-inset: 2px;
+  /* Settings dialog: a floating window over the blurred app. */
+  --settings-width: 920px;
+  --settings-height: 640px;
+  --settings-margin: 48px;
+  --settings-nav-width: 220px;
+  --settings-content-width: 680px;
+  --settings-backdrop-blur: 6px;
+  --settings-recorder-min-width: 120px;
   --chord-hint-offset: 12px;
   --brand-mark-size: 48px;
   /* Onboarding and account screens. */

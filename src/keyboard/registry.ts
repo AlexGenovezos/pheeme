@@ -49,7 +49,15 @@ const KEY_ALIASES: Record<string, string> = {
   del: "delete",
 };
 
-const MODIFIER_KEYS = new Set(["shift", "control", "alt", "meta", "os", "altgraph", "capslock"]);
+export const MODIFIER_KEYS = new Set([
+  "shift",
+  "control",
+  "alt",
+  "meta",
+  "os",
+  "altgraph",
+  "capslock",
+]);
 
 export function parseShortcut(shortcut: string): Step[] {
   return shortcut
@@ -80,11 +88,11 @@ export function parseShortcut(shortcut: string): Step[] {
     });
 }
 
-const stepId = (s: Step) =>
+export const stepId = (s: Step) =>
   `${s.mod ? "mod+" : ""}${s.ctrl ? "ctrl+" : ""}${s.alt ? "alt+" : ""}${s.shift ? "shift+" : ""}${s.meta ? "meta+" : ""}${s.key}`;
 
 /** Keys whose shifted form is a different character ("?", "#") already encode Shift in `event.key`. */
-const shiftSignificant = (key: string) => key.length > 1 || /^[a-z0-9]$/.test(key);
+export const shiftSignificant = (key: string) => key.length > 1 || /^[a-z0-9]$/.test(key);
 
 function stepMatches(step: Step, e: KeyboardEvent, isMac: boolean): boolean {
   let key = e.key.toLowerCase();
@@ -125,13 +133,39 @@ export function createRegistry({
   const entries = new Map<string, Entry>();
   const listeners = new Set<() => void>();
   let snapshot: Command[] = [];
+  /** User rebindings by command id; `null` means the user removed the shortcut. */
+  let overrides: Readonly<Record<string, string | null>> = {};
   let pending: string[] = [];
+  let suspended = 0;
   let pendingTimer: ReturnType<typeof setTimeout> | undefined;
 
   const emit = () => listeners.forEach((l) => l());
 
+  const hasOverride = (id: string) => Object.prototype.hasOwnProperty.call(overrides, id);
+
+  /** The shortcut a command answers to: the user's binding if they set one, else its default. */
+  function effective(command: Command): string | undefined {
+    return hasOverride(command.id) ? (overrides[command.id] ?? undefined) : command.shortcut;
+  }
+
+  function stepsFor(command: Command): Step[] {
+    const shortcut = effective(command);
+    if (!shortcut) return [];
+    try {
+      return parseShortcut(shortcut);
+    } catch {
+      // A stored binding that no longer parses: fall back to the default.
+      return command.shortcut ? parseShortcut(command.shortcut) : [];
+    }
+  }
+
+  function view(command: Command): Command {
+    const shortcut = effective(command);
+    return shortcut === command.shortcut ? command : { ...command, shortcut };
+  }
+
   function rebuild() {
-    snapshot = [...entries.values()].map((e) => e.command);
+    snapshot = [...entries.values()].map((e) => view(e.command));
     emit();
   }
 
@@ -149,17 +183,16 @@ export function createRegistry({
   return {
     /** Add (or replace) a command. Returns a function that removes it. */
     register(command: Command): () => void {
-      const entry: Entry = {
-        command,
-        steps: command.shortcut ? parseShortcut(command.shortcut) : [],
-      };
-      if (import.meta.env.DEV && command.shortcut) {
+      if (command.shortcut) parseShortcut(command.shortcut); // a bad default is a bug: throw now
+      const entry: Entry = { command, steps: stepsFor(command) };
+      const shortcut = effective(command);
+      if (import.meta.env.DEV && shortcut) {
         const clash = [...entries.values()].find(
-          (e) => e.command.id !== command.id && e.command.shortcut === command.shortcut,
+          (e) => e.command.id !== command.id && effective(e.command) === shortcut,
         );
         if (clash)
           console.warn(
-            `Shortcut "${command.shortcut}" is bound to both ${clash.command.id} and ${command.id}`,
+            `Shortcut "${shortcut}" is bound to both ${clash.command.id} and ${command.id}`,
           );
       }
       entries.set(command.id, entry);
@@ -173,7 +206,45 @@ export function createRegistry({
 
     list: (): Command[] => snapshot,
 
-    get: (id: string): Command | undefined => entries.get(id)?.command,
+    /** The command as it behaves now: `shortcut` is the effective one. */
+    get: (id: string): Command | undefined => {
+      const command = entries.get(id)?.command;
+      return command && view(command);
+    },
+
+    /** The shortcut the command was registered with, before any user binding. */
+    defaultShortcut: (id: string): string | undefined => entries.get(id)?.command.shortcut,
+
+    /**
+     * The shortcut to show for a command: the user's binding, else the registered default, else
+     * `fallback` (for labels drawn while the command isn't registered).
+     */
+    shortcutFor(id: string, fallback?: string): string | undefined {
+      if (hasOverride(id)) return overrides[id] ?? undefined;
+      return entries.get(id)?.command.shortcut ?? fallback;
+    },
+
+    overrides: () => overrides,
+
+    /** Replace the user's bindings; every command re-reads its shortcut. */
+    setOverrides(next: Record<string, string | null>) {
+      overrides = { ...next };
+      for (const entry of entries.values()) entry.steps = stepsFor(entry.command);
+      setPending([]);
+      rebuild();
+    },
+
+    /** Stop handling keys (while a dialog owns the keyboard). Returns a function that resumes. */
+    suspend(): () => void {
+      suspended++;
+      setPending([]);
+      let resumed = false;
+      return () => {
+        if (resumed) return;
+        resumed = true;
+        suspended--;
+      };
+    },
 
     run(id: string): boolean {
       const command = entries.get(id)?.command;
@@ -199,7 +270,12 @@ export function createRegistry({
 
     /** Returns true when the event triggered (or continued) a shortcut. */
     handleKeyDown(e: KeyboardEvent): boolean {
-      if (e.defaultPrevented || e.isComposing || MODIFIER_KEYS.has(e.key.toLowerCase()))
+      if (
+        suspended ||
+        e.defaultPrevented ||
+        e.isComposing ||
+        MODIFIER_KEYS.has(e.key.toLowerCase())
+      )
         return false;
       const editable = isEditableTarget(e.target);
       const live = [...entries.values()].filter(
@@ -246,6 +322,8 @@ export function createRegistry({
     /** Test helper: drop all commands and chord state. */
     clear() {
       entries.clear();
+      overrides = {};
+      suspended = 0;
       setPending([]);
       rebuild();
     },
