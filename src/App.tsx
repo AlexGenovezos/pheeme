@@ -32,7 +32,7 @@ function useNativeContextMenuOnly() {
   }, []);
 }
 
-/** Keep the thread list, labels, counts and cached threads fresh on sync, and say when Gmail refuses a queued change. */
+/** Keep the thread list, labels and counts fresh on sync, and say when Gmail refuses a queued change. */
 function useSyncEvents() {
   useEffect(() => {
     let stopped = false;
@@ -41,7 +41,6 @@ function useSyncEvents() {
     const log = (err: unknown) => console.warn("sync event listener failed", err);
     useMailStore.getState().subscribe().then(keep, log);
     useLabelStore.getState().subscribe().then(keep, log);
-    useThreadStore.getState().subscribe().then(keep, log);
     listen<OutboxRejected>(SYNC_EVENTS.outboxRejected, ({ payload }) =>
       toast({
         title: `Couldn't ${payload.kind}`,
@@ -81,23 +80,21 @@ function MailScreen({ onManageAccounts, onAddAccount }: { onManageAccounts: () =
 }
 
 /**
- * Account sync state (first sync done, last failure) for the whole session. Subscribed above the
- * screens, so opening Manage accounts or onboarding doesn't drop events or forget a failure.
+ * Account sync state (first sync done, last failure) and the cached conversation details, for the whole
+ * session. Subscribed above the screens, so opening Manage accounts or onboarding doesn't drop events,
+ * forget a failure, or leave the reading pane showing a conversation as it was before.
  */
-function useAccountSyncEvents() {
+function useSessionSyncEvents() {
   useEffect(() => {
     let stopped = false;
-    let stop: (() => void) | null = null;
-    useAccountStore
-      .getState()
-      .subscribe()
-      .then(
-        (s) => (stopped ? stopQuietly(s) : (stop = s)),
-        (err: unknown) => console.warn("sync event listener failed", err),
-      );
+    const stops: (() => void)[] = [];
+    const keep = (stop: () => void) => (stopped ? stopQuietly(stop) : stops.push(stop));
+    const log = (err: unknown) => console.warn("sync event listener failed", err);
+    useAccountStore.getState().subscribe().then(keep, log);
+    useThreadStore.getState().subscribe().then(keep, log);
     return () => {
       stopped = true;
-      if (stop) stopQuietly(stop);
+      stops.forEach(stopQuietly);
     };
   }, []);
 }
@@ -108,7 +105,7 @@ function App() {
   const [managing, setManaging] = useState(false);
 
   useEffect(() => { void load(); }, [load]);
-  useAccountSyncEvents();
+  useSessionSyncEvents();
   useEffect(() => {
     if (import.meta.env.PROD && isTauri()) return startUpdateChecks();
   }, []);

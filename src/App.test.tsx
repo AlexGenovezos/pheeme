@@ -3,12 +3,15 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import App from "./App";
+import type { ThreadDetail } from "./lib/tauri";
 import * as updater from "./lib/updater";
+import { parseThreadKey } from "./mail/mailboxes";
 import { createPreviewHandlers } from "./preview/install";
 import { usePaletteStore } from "./palette/paletteStore";
 import { __resetUiStoreForTests, useUiStore } from "./store/uiStore";
 import { useAccountStore } from "./store/accountStore";
 import { __resetMailStoreForTests } from "./store/mailStore";
+import { __resetThreadStoreForTests } from "./store/threadStore";
 import { stubLayout } from "./test/layout";
 
 const account = { id: "a1", email: "me@example.com", displayName: "Me", clientId: "c.apps.googleusercontent.com" };
@@ -36,6 +39,7 @@ beforeEach(() => {
   usePaletteStore.setState({ open: false });
   mockIPC(backend);
   __resetMailStoreForTests();
+  __resetThreadStoreForTests();
   useAccountStore.setState({ accounts: [], loaded: false, error: null, syncErrors: {} });
   restoreLayout = stubLayout(); // jsdom has no layout, so the virtualized list would render no rows
 });
@@ -279,4 +283,30 @@ test("an account's sync failure survives opening and closing Manage accounts", a
 
   await act(() => emit("sync:completed", { accountId: "a1" }));
   await vi.waitFor(() => expect(screen.queryByText(/Sync failed/)).not.toBeInTheDocument());
+});
+
+test("a sync change to the open conversation while Manage accounts is open shows on return", async () => {
+  let subject = "Before";
+  mockIPC(
+    (cmd, args) => {
+      const out = backend(cmd, args);
+      if (cmd !== "get_thread") return out;
+      const detail = out as ThreadDetail;
+      return { ...detail, thread: { ...detail.thread, subject } };
+    },
+    { shouldMockEvents: true },
+  );
+  render(<App />);
+  const list = await screen.findByRole("listbox", { name: "Primary conversations" });
+  const [first] = await within(list).findAllByRole("option");
+  fireEvent.click(first);
+  expect(await screen.findByRole("heading", { name: "Before" })).toBeInTheDocument();
+  const { accountId, threadId } = parseThreadKey(useUiStore.getState().openThread!);
+
+  fireEvent.click(screen.getByRole("button", { name: "Manage accounts" }));
+  subject = "After";
+  await act(() => emit("sync:messages_updated", { accountId, added: [], removed: [], modified: [threadId] }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
+
+  expect(await screen.findByRole("heading", { name: "After" })).toBeInTheDocument();
 });
