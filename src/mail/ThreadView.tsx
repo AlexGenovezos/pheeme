@@ -2,6 +2,7 @@ import { Forward, Reply, ReplyAll, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
+import { useKeybinding } from "../keyboard/useCommands";
 import type { LabelInfo, ThreadDetail } from "../lib/tauri";
 import { useLabelStore } from "../store/labelStore";
 import { useThreadStore } from "../store/threadStore";
@@ -112,10 +113,7 @@ export function ThreadView() {
     content = (
       <div className="pane-empty">
         <p className="pane-empty__title">No conversation selected</p>
-        <p className="pane-empty__hint">
-          <Kbd shortcut="j" /> and <Kbd shortcut="k" /> move through the list.{" "}
-          <Kbd shortcut="mod+k" /> shows every command.
-        </p>
+        <EmptyHint />
       </div>
     );
   } else if (detail) {
@@ -176,5 +174,26 @@ export function ThreadView() {
     <div className="view-pane__scroll" ref={scroller}>
       {content}
     </div>
+  );
+}
+
+/** "J and K move through the list. ⌘K shows every command.", with the user's keys. */
+function EmptyHint() {
+  const next = useKeybinding("list.next", "j");
+  const previous = useKeybinding("list.previous", "k");
+  const palette = useKeybinding("palette.toggle", "mod+k");
+  return (
+    <p className="pane-empty__hint">
+      {next && previous && (
+        <>
+          <Kbd shortcut={next} /> and <Kbd shortcut={previous} /> move through the list.{" "}
+        </>
+      )}
+      {palette && (
+        <>
+          <Kbd shortcut={palette} /> shows every command.
+        </>
+      )}
+    </p>
   );
 }

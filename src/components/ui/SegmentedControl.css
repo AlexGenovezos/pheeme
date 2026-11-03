@@ -1,0 +1,33 @@
+.ui-segmented {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: var(--space-0-5);
+  gap: var(--space-0-5);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+}
+
+.ui-segmented__option {
+  height: var(--control-height-sm);
+  padding: var(--space-0) var(--space-2-5);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: default;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.ui-segmented__option:hover {
+  color: var(--color-foreground);
+}
+
+.ui-segmented__option[aria-checked="true"] {
+  background: var(--color-button-secondary-bg);
+  color: var(--color-foreground);
+}

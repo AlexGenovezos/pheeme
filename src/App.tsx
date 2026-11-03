@@ -1,7 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { toast, ToastProvider } from "./components/ui/Toast";
-import { AccountsHome } from "./components/AccountsHome";
 import { Onboarding } from "./onboarding/Onboarding";
 import { useAccountStore } from "./store/accountStore";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -11,6 +10,8 @@ import { useGlobalShortcuts } from "./keyboard/useCommands";
 import { type OutboxRejected, stopQuietly, SYNC_EVENTS } from "./lib/tauri";
 import { listenForManualChecks, startUpdateChecks } from "./lib/updater";
 import { CommandPalette } from "./palette/CommandPalette";
+import { Settings } from "./settings/Settings";
+import { useSettingsStore } from "./settings/settingsStore";
 import { isTauri } from "./preview/runtime";
 import { revealWindow } from "./theme/nativeWindow";
 import { AppShell } from "./shell/AppShell";
@@ -64,13 +65,7 @@ function useLabelsAndCounts() {
   }, [accountIds]);
 }
 
-function MailScreen({
-  onManageAccounts,
-  onAddAccount,
-}: {
-  onManageAccounts: () => void;
-  onAddAccount: () => void;
-}) {
+function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
   useGlobalShortcuts();
   useAppCommands();
   useNativeContextMenuOnly();
@@ -79,8 +74,9 @@ function MailScreen({
 
   return (
     <>
-      <AppShell onManageAccounts={onManageAccounts} onAddAccount={onAddAccount} />
+      <AppShell onAddAccount={onAddAccount} />
       <CommandPalette />
+      <Settings onAddAccount={onAddAccount} />
       <ContextMenuHost />
     </>
   );
@@ -88,7 +84,7 @@ function MailScreen({
 
 /**
  * Account sync state (first sync done, last failure) and the cached conversation details, for the whole
- * session. Subscribed above the screens, so opening Manage accounts or onboarding doesn't drop events,
+ * session. Subscribed above the screens, so adding an account (onboarding) doesn't drop events,
  * forget a failure, or leave the reading pane showing a conversation as it was before.
  */
 function useSessionSyncEvents() {
@@ -109,7 +105,11 @@ function useSessionSyncEvents() {
 function App() {
   const { accounts, loaded, error, load, upsert } = useAccountStore();
   const [adding, setAdding] = useState(false);
-  const [managing, setManaging] = useState(false);
+  // Onboarding replaces the mail screen; the settings dialog closes so it doesn't reopen on return.
+  const addAccount = () => {
+    useSettingsStore.getState().close();
+    setAdding(true);
+  };
 
   useEffect(() => {
     void load();
@@ -144,17 +144,12 @@ function App() {
         onConnected={(account) => {
           upsert(account);
           setAdding(false);
-          setManaging(false);
         }}
         onClose={accounts.length > 0 ? () => setAdding(false) : undefined}
       />
     );
-  } else if (loaded && managing) {
-    screen = <AccountsHome onAdd={() => setAdding(true)} onClose={() => setManaging(false)} />;
   } else if (loaded) {
-    screen = (
-      <MailScreen onManageAccounts={() => setManaging(true)} onAddAccount={() => setAdding(true)} />
-    );
+    screen = <MailScreen onAddAccount={addAccount} />;
   }
   return <ToastProvider pinned={<UpdateBanner />}>{screen}</ToastProvider>;
 }

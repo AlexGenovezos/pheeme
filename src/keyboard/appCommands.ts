@@ -16,6 +16,7 @@ import {
   resolveActiveAccount,
 } from "../mail/mailboxes";
 import { usePaletteStore } from "../palette/paletteStore";
+import { useSettingsStore } from "../settings/settingsStore";
 import { useAccountStore } from "../store/accountStore";
 import { useUiStore } from "../store/uiStore";
 import { useThemeStore } from "../theme/theme";
@@ -38,6 +39,29 @@ export function appCommands(): Command[] {
       global: true,
       hidden: true,
       run: () => usePaletteStore.getState().toggle(),
+    },
+    {
+      id: "settings.open",
+      title: "Open settings",
+      group: "General",
+      shortcut: "mod+,",
+      keywords: ["preferences", "options"],
+      global: true,
+      run: () => useSettingsStore.getState().openSettings(),
+    },
+    {
+      id: "settings.keyboard",
+      title: "Keyboard shortcuts",
+      group: "General",
+      keywords: ["keybindings", "hotkeys", "settings"],
+      run: () => useSettingsStore.getState().openSettings("keyboard"),
+    },
+    {
+      id: "settings.accounts",
+      title: "Manage accounts",
+      group: "General",
+      keywords: ["settings", "add account", "remove account", "sign out"],
+      run: () => useSettingsStore.getState().openSettings("accounts"),
     },
     {
       id: "go.inbox",

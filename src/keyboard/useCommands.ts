@@ -43,3 +43,16 @@ export function useGlobalShortcuts(reg: CommandRegistry = registry) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [reg]);
 }
+
+/**
+ * The shortcut to label a button or menu item with for command `id`: the user's binding, else the
+ * default. `fallback` covers labels drawn while the command isn't registered.
+ */
+export function useKeybinding(
+  id: string,
+  fallback?: string,
+  reg: CommandRegistry = registry,
+): string | undefined {
+  const read = () => reg.shortcutFor(id, fallback);
+  return useSyncExternalStore(reg.subscribe, read, read);
+}

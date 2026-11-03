@@ -2,27 +2,16 @@ import {
   ChevronRight,
   type LucideIcon,
   Mails,
-  Monitor,
-  Moon,
   PanelLeftClose,
   Settings,
-  Sun,
   Tag,
   TriangleAlert,
   UserPlus,
 } from "lucide-react";
-import {
-  type CSSProperties,
-  type KeyboardEvent,
-  type MouseEvent,
-  type ReactNode,
-  useEffect,
-  useId,
-} from "react";
+import { type CSSProperties, type KeyboardEvent, type ReactNode, useEffect, useId } from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { IconButton } from "../components/ui/IconButton";
 import { ListRow } from "../components/ui/ListRow";
-import { showContextMenu } from "../lib/contextMenu";
 import type { AccountInfo } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import {
@@ -39,16 +28,10 @@ import {
 } from "../mail/mailboxes";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
+import { useKeybinding } from "../keyboard/useCommands";
+import { useSettingsStore } from "../settings/settingsStore";
 import { useUiStore } from "../store/uiStore";
-import { useThemeStore, type ThemeMode } from "../theme/theme";
 import { dragRegion } from "./chrome";
-
-const MODE_ICON: Record<ThemeMode, typeof Sun> = { system: Monitor, light: Sun, dark: Moon };
-const MODE_LABEL: Record<ThemeMode, string> = {
-  system: "Match system",
-  light: "Light",
-  dark: "Dark",
-};
 
 const NO_COUNTS: Record<string, never> = {};
 
@@ -236,22 +219,16 @@ function GmailLabels({ accountId }: { accountId: string }) {
   );
 }
 
-export function Sidebar({
-  onManageAccounts,
-  onAddAccount,
-}: {
-  onManageAccounts?: () => void;
-  onAddAccount?: () => void;
-}) {
+export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   const accounts = useAccountStore((s) => s.accounts);
   const storedActive = useUiStore((s) => s.activeAccountId);
   const allInboxes = useUiStore((s) => sameMailbox(s.mailbox, ALL_INBOXES));
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const allInboxUnread = useLabelStore((s) => s.allInboxUnread);
-  const mode = useThemeStore((s) => s.mode);
-  const setMode = useThemeStore((s) => s.setMode);
   const errors = useAccountStore((s) => s.syncErrors);
-  const ModeIcon = MODE_ICON[mode];
+  const openSettings = useSettingsStore((s) => s.openSettings);
+  const settingsShortcut = useKeybinding("settings.open");
+  const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
 
   const activeId = resolveActiveAccount(storedActive, accounts);
   const active = accounts.find((a) => a.id === activeId);
@@ -271,26 +248,13 @@ export function Sidebar({
       useUiStore.getState().setMailbox(home);
   }, [mailbox, accounts, labels]);
 
-  const openThemeMenu = (e: MouseEvent<HTMLButtonElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    void showContextMenu(
-      (["system", "light", "dark"] as const).map((m) => ({
-        id: `theme-${m}`,
-        label: MODE_LABEL[m],
-        checked: mode === m,
-        onSelect: () => setMode(m),
-      })),
-      { x: r.left, y: r.bottom },
-    );
-  };
-
   return (
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton
           label="Hide sidebar"
-          shortcut="mod+b"
+          shortcut={sidebarShortcut}
           icon={<PanelLeftClose />}
           onClick={toggleSidebar}
         />
@@ -347,13 +311,11 @@ export function Sidebar({
         {onAddAccount && (
           <IconButton label="Add account" icon={<UserPlus />} onClick={onAddAccount} />
         )}
-        {onManageAccounts && (
-          <IconButton label="Manage accounts" icon={<Settings />} onClick={onManageAccounts} />
-        )}
         <IconButton
-          label={`Appearance: ${MODE_LABEL[mode]}`}
-          icon={<ModeIcon />}
-          onClick={openThemeMenu}
+          label="Settings"
+          shortcut={settingsShortcut}
+          icon={<Settings />}
+          onClick={() => openSettings()}
         />
       </div>
     </div>

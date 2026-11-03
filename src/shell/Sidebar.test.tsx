@@ -3,6 +3,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, test } from "vitest";
 import { appCommands } from "../keyboard/appCommands";
+import { useSettingsStore } from "../settings/settingsStore";
 import type { AccountInfo, LabelInfo } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
@@ -321,13 +322,15 @@ describe("stacked layout", () => {
     expect(useUiStore.getState().mailbox).toEqual({ accountId: "a2", labelId: "DRAFT" });
   });
 
-  test("footer offers Add account", () => {
+  test("footer offers Add account and Settings", () => {
     seed([ONE, TWO]);
     let added = 0;
-    render(<Sidebar onAddAccount={() => added++} onManageAccounts={() => {}} />);
+    render(<Sidebar onAddAccount={() => added++} />);
     fireEvent.click(screen.getByRole("button", { name: "Add account" }));
     expect(added).toBe(1);
-    expect(screen.getByRole("button", { name: "Manage accounts" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(useSettingsStore.getState().open).toBe(true);
+    act(() => useSettingsStore.getState().close());
   });
 });
 

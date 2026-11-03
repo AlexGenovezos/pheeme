@@ -1,0 +1,36 @@
+.ui-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: var(--switch-width);
+  height: var(--switch-height);
+  padding: var(--space-0);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+  cursor: default;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.ui-switch[aria-checked="true"] {
+  background: var(--color-accent);
+}
+
+.ui-switch__thumb {
+  position: absolute;
+  top: var(--switch-inset);
+  left: var(--switch-inset);
+  width: var(--switch-thumb);
+  height: var(--switch-thumb);
+  border-radius: var(--radius-full);
+  background: var(--color-foreground-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.ui-switch[aria-checked="true"] .ui-switch__thumb {
+  background: var(--color-accent-foreground);
+  transform: translateX(calc(var(--switch-width) - var(--switch-thumb) - var(--switch-inset) * 2));
+}
+
+.ui-switch:disabled {
+  opacity: 0.5;
+}

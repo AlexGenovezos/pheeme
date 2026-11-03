@@ -3,6 +3,7 @@ import { Archive, Mail, MailOpen, Paperclip, Star, Trash2 } from "lucide-react";
 import { memo, type MouseEvent, useState } from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { IconButton } from "../components/ui/IconButton";
+import { registry } from "../keyboard/registry";
 import { ListRow } from "../components/ui/ListRow";
 import { cx } from "../lib/utils";
 import { formatListDate } from "../lib/dates";
@@ -137,7 +138,7 @@ export const ThreadRow = memo(function ThreadRow({
                 size="sm"
                 tabIndex={-1}
                 label="Archive"
-                shortcut="e"
+                shortcut={registry.shortcutFor("conversation.archive", "e")}
                 icon={<Archive />}
                 onClick={act("archive")}
               />
@@ -145,7 +146,7 @@ export const ThreadRow = memo(function ThreadRow({
                 size="sm"
                 tabIndex={-1}
                 label="Delete"
-                shortcut="#"
+                shortcut={registry.shortcutFor("conversation.delete", "#")}
                 icon={<Trash2 />}
                 onClick={act("delete")}
               />
@@ -153,7 +154,11 @@ export const ThreadRow = memo(function ThreadRow({
                 size="sm"
                 tabIndex={-1}
                 label={thread.unread ? "Mark as read" : "Mark as unread"}
-                shortcut="shift+u"
+                shortcut={
+                  thread.unread
+                    ? registry.shortcutFor("conversation.mark-read", "shift+i")
+                    : registry.shortcutFor("conversation.mark-unread", "shift+u")
+                }
                 icon={thread.unread ? <MailOpen /> : <Mail />}
                 onClick={act("read")}
               />
