@@ -142,6 +142,51 @@ test("a refresh that marks messages read doesn't fold the open cards, but a new 
   expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
 });
 
+test("a sync event while the detail loads doesn't let mark-read overtake it", async () => {
+  // The backend's body fetch emits messages_updated before get_thread returns, so the first request is superseded
+  // by a refresh. The superseded answer is dropped; the refresh answers as the cache is when it answers, so a
+  // mark-read sent in between would bring every message back read.
+  let read = false;
+  let requests = 0;
+  let refreshAsked!: () => void;
+  const refreshing = new Promise<void>((resolve) => (refreshAsked = resolve));
+  let readSent!: () => void;
+  const readArrived = new Promise<void>((resolve) => (readSent = resolve));
+  mockIPC(
+    async (cmd) => {
+      if (cmd === "modify_threads") {
+        read = true;
+        readSent();
+      }
+      if (cmd !== "get_thread") return undefined;
+      const n = ++requests;
+      if (n === 1) {
+        // Real IPC answers later; the mock would otherwise deliver the event inside the call itself.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await emit("sync:messages_updated", { accountId: "a1", added: [], removed: [], modified: ["t1"] });
+        await refreshing;
+      } else {
+        refreshAsked();
+        await Promise.race([readArrived, new Promise((resolve) => setTimeout(resolve, 50))]);
+      }
+      return detail([message(1), message(2, { unread: !read }), message(3)]);
+    },
+    { shouldMockEvents: true },
+  );
+  useMailStore.setState({ threads: [{ ...detail([]).thread, unread: true }] });
+  const stop = await useThreadStore.getState().subscribe();
+  renderView();
+
+  act(() => openAndMarkRead(KEY));
+  await waitFor(() => expect(read).toBe(true));
+  expect(requests).toBe(2);
+  // The cards were decided from the refresh's answer, given before the read was sent.
+  await waitFor(() => expect(screen.getByText("Body 3")).toBeInTheDocument());
+  expect(screen.getByText("Body 2")).toBeInTheDocument();
+  expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
+  stop();
+});
+
 test("opening an unread conversation keeps its unread messages expanded although opening marks them read", async () => {
   // The cache as the backend sees it: marking the thread read clears every message's unread flag at once.
   let read = false;

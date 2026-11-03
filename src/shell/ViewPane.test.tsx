@@ -70,7 +70,7 @@ test("the toggles follow the checked rows, not an unrelated open conversation", 
   });
   render(<ViewPane />);
 
-  // Something checked is unread and not everything is starred.
+  // Something checked is unread; the first checked row isn't starred.
   expect(button("Mark as read")).toBeEnabled();
   expect(button("Star")).toBeEnabled();
   expect(button("Reply")).toBeEnabled();
@@ -86,6 +86,16 @@ test("with every checked row starred and read, the toggles offer the opposite", 
   render(<ViewPane />);
   expect(button("Mark as unread")).toBeEnabled();
   expect(button("Remove star")).toBeEnabled();
+});
+
+test("Star follows the first checked row, like the s shortcut", () => {
+  act(() => {
+    useUiStore.getState().toggleChecked(key(2)); // starred
+    useUiStore.getState().toggleChecked(key(1)); // not starred
+  });
+  render(<ViewPane />);
+  fireEvent.click(button("Remove star"));
+  expect(modified).toEqual([{ accountId: "a1", threadIds: ["t2", "t1"], add: [], remove: ["STARRED"] }]);
 });
 
 test("checked rows that have all left the list leave the mutations off", () => {

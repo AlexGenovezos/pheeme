@@ -303,3 +303,27 @@ test("sync:completed for the account re-requests the open detail if it is missin
   expect(requests).toEqual(["a:t1"]);
   stop();
 });
+
+test("waitForDetail outlasts a request evicted before it answers, and resolves once the detail is cached", async () => {
+  const answers: Array<(d: ThreadDetail) => void> = [];
+  mockIPC((cmd) => (cmd === "get_thread" ? new Promise<ThreadDetail>((resolve) => answers.push(resolve)) : undefined));
+  let done = false;
+  const waiting = store().waitForDetail("a:t1").then(() => (done = true));
+  await vi.waitFor(() => expect(answers).toHaveLength(1));
+  store().evict("a", ["t1"]); // the first answer will be dropped
+  answers[0](detail("t1", "a", "Dropped"));
+  await vi.waitFor(() => expect(answers).toHaveLength(2)); // so it asks again
+  expect(done).toBe(false);
+  answers[1](detail("t1", "a", "Cached"));
+  await waiting;
+  expect(store().details.get("a:t1")?.thread.subject).toBe("Cached");
+});
+
+test("waitForDetail resolves on a failure, and at once for a cached detail", async () => {
+  const requests = backend({ "a:t2": detail("t2") });
+  await store().waitForDetail("a:missing");
+  expect(store().errors["a:missing"]?.code).toBe("not_found");
+  await store().load("a:t2");
+  await store().waitForDetail("a:t2");
+  expect(requests).toEqual(["a:missing", "a:t2"]);
+});

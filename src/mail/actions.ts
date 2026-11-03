@@ -135,18 +135,21 @@ interface ApplyOptions {
   announce?: { title: string; undo?: Change };
   /** Opening a thread marks it read without disturbing the selection. */
   keepChecked?: boolean;
-  /** Hold the command (not the list change) until this settles. */
-  after?: Promise<unknown>;
+  /** Hold the command (not the list change) until this resolves; `false` drops it and lets the list go back. */
+  after?: Promise<boolean>;
+  /** An explicit read, unread, archive or delete: a pending automatic read of these conversations is dropped. */
+  cancelsAutoRead?: boolean;
 }
 
 function apply(
   keys: ThreadKey[] | undefined,
   change: Change,
-  { announce, keepChecked, after }: ApplyOptions = {},
+  { announce, keepChecked, after, cancelsAutoRead }: ApplyOptions = {},
 ): Promise<void> {
   const rows = present(keys);
   if (rows.length === 0) return Promise.resolve();
   const rowKeys = rows.map((r) => r.key);
+  if (cancelsAutoRead) rowKeys.forEach((k) => autoReads.delete(k));
   const groups = byAccount(rowKeys);
   const op = newOp();
 
@@ -164,7 +167,12 @@ function apply(
   if (!keepChecked) ui().clearChecked();
 
   const go = () => send(groups, change, op);
-  return (after ? after.then(go, go) : go()).then((done) => {
+  const drop = () => {
+    mail().settle(op, rowKeys);
+    useThreadStore.getState().settleDetails(op, rowKeys);
+    return new Map<string, string[]>();
+  };
+  return (after ? after.then((wanted) => (wanted ? go() : drop()), go) : go()).then((done) => {
     if (!announce || done.size === 0) return;
     const count = keysOf(done).length;
     const { undo } = announce;
@@ -193,6 +201,7 @@ const inInbox = () => ui().mailbox.labelId === "INBOX";
 export function archive(keys?: ThreadKey[]): Promise<void> {
   return apply(keys, modify([], ["INBOX"], { leavesList: inInbox() }), {
     announce: { title: "Archived", undo: modify(["INBOX"], []) },
+    cancelsAutoRead: true,
   });
 }
 
@@ -205,7 +214,7 @@ export function trash(keys?: ThreadKey[]): Promise<void> {
   return apply(
     keys,
     { leavesList: true, send: (accountId, ids) => trashThreads(accountId, ids) },
-    { announce: { title: "Moved to Trash" } },
+    { announce: { title: "Moved to Trash" }, cancelsAutoRead: true },
   );
 }
 
@@ -228,6 +237,7 @@ export function toggleStar(keys?: ThreadKey[]): Promise<void> {
 export function setRead(read: boolean, keys?: ThreadKey[]): Promise<void> {
   return apply(keys, readChange(read), {
     announce: { title: read ? "Marked as read" : "Marked as unread", undo: readChange(!read) },
+    cancelsAutoRead: true,
   });
 }
 
@@ -321,17 +331,32 @@ function prefetchAround(key: ThreadKey) {
   if (near.length > 0) useThreadStore.getState().prefetch(near);
 }
 
+/** Automatic mark-reads waiting for their conversation's detail. An explicit change to the conversation drops one. */
+const autoReads = new Map<ThreadKey, object>();
+
 /**
  * Show a conversation. Opening it marks it read (Builder's call 7), quietly and once. The row turns read at once, but
- * the command waits for the conversation's detail: answered after the change, every message would arrive read and
- * the view couldn't tell which ones to expand.
+ * the command waits until the conversation's detail is cached: answered after the change, every message would
+ * arrive read and the view couldn't tell which ones to expand. If the user marks it unread (or archives or deletes
+ * it) in the meantime, the automatic read is dropped rather than sent after their change.
  */
 export function openAndMarkRead(key: ThreadKey): void {
   ui().setOpenThread(key);
   const row = present([key])[0];
-  const loaded = row?.thread.unread ? useThreadStore.getState().load(key) : undefined;
+  if (row?.thread.unread) {
+    const ticket = {};
+    autoReads.set(key, ticket);
+    const wanted = useThreadStore
+      .getState()
+      .waitForDetail(key)
+      .then(() => {
+        const current = autoReads.get(key) === ticket;
+        if (current) autoReads.delete(key);
+        return current;
+      });
+    void apply([key], readChange(true), { keepChecked: true, after: wanted });
+  }
   prefetchAround(key);
-  if (loaded) void apply([key], readChange(true), { keepChecked: true, after: loaded });
 }
 
 /** j / k and the arrow keys: open the next or previous row, or the first/last when none is open. */

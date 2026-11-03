@@ -34,6 +34,11 @@ interface ThreadState {
    * and a cached detail missing a body is shown while it is requested again.
    */
   load(key: ThreadKey): Promise<void>;
+  /**
+   * Resolves once the detail is cached, or a request for it has failed. Unlike one `load`, it outlasts a request
+   * that ends without caching anything because a refresh superseded it or an eviction dropped it.
+   */
+  waitForDetail(key: ThreadKey): Promise<void>;
   /** Warm the cache for neighbours of the open thread. Failures are ignored. */
   prefetch(keys: ThreadKey[]): void;
   /**
@@ -120,6 +125,16 @@ export const useThreadStore = create<ThreadState>((set, get) => {
       if (!joined) return fetchDetail(key);
       joined.quiet = false;
       return joined.promise;
+    },
+    waitForDetail: async (key) => {
+      // Each round joins the request in flight (a refresh that superseded ours) or starts one. Bounded, so a
+      // conversation that keeps changing can't hold its caller forever.
+      for (let round = 0; round < 5 && !get().details.has(key); round++) {
+        const before = get().errors[key];
+        await get().load(key);
+        const after = get().errors[key];
+        if (after !== undefined && after !== before) return;
+      }
     },
     prefetch: (keys) => {
       for (const key of keys) {

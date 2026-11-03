@@ -50,6 +50,8 @@ let rejecting: Set<string>;
 let listPage: ThreadSummary[];
 /** What `get_thread` answers, by thread key. */
 let details: Record<string, ThreadDetail>;
+/** While set, `get_thread` answers only once it settles. */
+let detailGate: Promise<void> | null;
 /** Commands held back: `modify_threads` and `trash_threads` calls that match wait for their gate, as when the cache hasn't applied them yet. */
 let gates: Array<{ match: (args: Record<string, unknown>) => boolean; open: Promise<void> }>;
 /** Hold the matching commands (all of them by default); returns the release. */
@@ -96,12 +98,17 @@ beforeEach(() => {
   useMailStore.setState({ reload, query: null });
   listPage = [];
   details = {};
+  detailGate = null;
   gates = [];
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: a });
     if (cmd === "list_threads") return { threads: listPage, next: null };
-    if (cmd === "get_thread") return details[threadKey(a.accountId as string, a.threadId as string)];
+    if (cmd === "get_thread")
+      return (async () => {
+        await detailGate;
+        return details[threadKey(a.accountId as string, a.threadId as string)];
+      })();
     if (cmd !== "modify_threads" && cmd !== "trash_threads") return undefined;
     return (async () => {
       await Promise.all(gates.filter((g) => g.match(a)).map((g) => g.open));
@@ -459,6 +466,37 @@ describe("opening", () => {
     // Quiet, and the selection is left alone.
     expect(toasts()).toEqual([]);
     expect(useUiStore.getState().checked).toEqual([key(2)]);
+  });
+
+  test.each([
+    ["marking it unread", () => setRead(false, [key(1)]), { add: ["UNREAD"], remove: [] }],
+    ["archiving it", () => archive([key(1)]), { add: [], remove: ["INBOX"] }],
+  ])("%s while its detail is still loading cancels the automatic read", async (_, act, sent) => {
+    let release!: () => void;
+    detailGate = new Promise((resolve) => (release = resolve));
+    setList([thread(1, "a1", { unread: true }), thread(2)]);
+    openAndMarkRead(key(1));
+    expect(useMailStore.getState().threads[0].unread).toBe(false);
+
+    await act();
+    release();
+    await vi.waitFor(() => expect(calls.filter((c) => c.cmd === "get_thread").length).toBeGreaterThan(0));
+    await flush();
+    await flush();
+
+    // Only the explicit change reaches Gmail; the older automatic read never follows it.
+    expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1"], ...sent }]);
+  });
+
+  test("a mark-unread on another conversation leaves this one's automatic read alone", async () => {
+    let release!: () => void;
+    detailGate = new Promise((resolve) => (release = resolve));
+    setList([thread(1, "a1", { unread: true }), thread(2)]);
+    openAndMarkRead(key(1));
+    await setRead(false, [key(2)]);
+    release();
+    await vi.waitFor(() => expect(modifyCalls()).toHaveLength(2));
+    expect(modifyCalls()[1]).toEqual({ accountId: "a1", threadIds: ["t1"], add: [], remove: ["UNREAD"] });
   });
 
   test("an already-read thread sends nothing", async () => {

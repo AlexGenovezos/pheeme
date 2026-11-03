@@ -2,7 +2,7 @@ import { Archive, Forward, Mail, MailOpen, MoreHorizontal, Reply, Star, Trash2 }
 import { type MouseEvent, useMemo } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { showContextMenu } from "../lib/contextMenu";
-import { archive, composeLater, openLabelMenu, setRead, setStarred, targetsOf, trash } from "../mail/actions";
+import { archive, composeLater, openLabelMenu, setRead, targetsOf, toggleStar, trash } from "../mail/actions";
 import { threadKey } from "../mail/mailboxes";
 import { ThreadView } from "../mail/ThreadView";
 import { useMailStore } from "../store/mailStore";
@@ -17,13 +17,14 @@ export function ViewPane() {
   const off = !openKey; // Reply and Forward need an open conversation
   // What the mutations act on (the checked rows, else the open one) that is still in the list. Rows that have
   // left it (archived elsewhere) are skipped by the actions, so with none left the buttons stay off.
+  // In target order, so the first is the one `toggleStar` (and `s`) decides from.
   const rows = useMemo(() => {
-    const wanted = new Set(targetsOf(checked, openKey));
-    return threads.filter((t) => wanted.has(threadKey(t.accountId, t.id)));
+    const byKey = new Map(threads.map((t) => [threadKey(t.accountId, t.id), t]));
+    return [...new Set(targetsOf(checked, openKey))].flatMap((k) => byKey.get(k) ?? []);
   }, [checked, openKey, threads]);
   const stale = rows.length === 0;
   const anyUnread = rows.some((t) => t.unread);
-  const allStarred = !stale && rows.every((t) => t.starred);
+  const starred = rows[0]?.starred ?? false;
 
   const openMore = (e: MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -51,11 +52,11 @@ export function ViewPane() {
           onClick={() => void setRead(anyUnread)}
         />
         <IconButton
-          label={allStarred ? "Remove star" : "Star"}
+          label={starred ? "Remove star" : "Star"}
           shortcut="s"
           icon={<Star />}
           disabled={stale}
-          onClick={() => void setStarred(!allStarred)}
+          onClick={() => void toggleStar()}
         />
         <span className="toolbar__separator" />
         <IconButton label="Reply" shortcut="r" icon={<Reply />} disabled={off} onClick={composeLater} />
