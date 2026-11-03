@@ -97,7 +97,7 @@ pub fn run() {
             let events = Arc::new(TauriEvents(app.handle().clone()));
             let state = tauri::async_runtime::block_on(build_state(
                 &data_dir,
-                Arc::new(secrets::KeyringStore),
+                Arc::new(secrets::KeyringStore::new()),
                 events,
             ))?;
             state.sync.start();

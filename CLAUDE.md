@@ -56,7 +56,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `mail.rs` | Tauri-free mail service the commands call: cached list/thread/label reads, changes via the outbox |
 | `accounts.rs` | Tauri-free account service: sign-in flow, list/remove, access tokens (cached in memory) |
 | `identity.rs` | App identifier and keychain service constants |
-| `secrets.rs` | OS keychain secret store; tokens never go in SQLite |
+| `secrets.rs` | OS keychain secret store: all accounts in one cached item (`accounts`), read once per launch; tokens never go in SQLite |
 
 ### Frontend State
 

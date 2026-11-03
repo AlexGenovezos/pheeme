@@ -6,7 +6,7 @@ use pheeme_lib::secrets::{KeyringStore, SecretStore};
 #[test]
 fn keyring_store_missing_entry_is_none_and_delete_ok() {
     keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
-    let store = KeyringStore;
+    let store = KeyringStore::new();
     assert!(matches!(store.get("never-written"), Ok(None)));
     assert!(matches!(store.delete("never-written"), Ok(())));
 }
