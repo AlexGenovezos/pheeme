@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Source of truth:** [docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md) sets scope, priorities and the phase order, and overrides `Gmail client project plan.md` wherever they disagree (see its §9). The plan remains the detailed technical reference.
 
-**Current state:** Foundation, OAuth + multi-account onboarding, the Gmail API client, the app shell and the sync engine (design §12 steps 1–5) are implemented (progress per phase: GitHub epic #21). The list pane reads real mail from the cache; the rest of the mail UI (§12 step 6) is next.
+**Current state:** Foundation, OAuth + multi-account onboarding, the Gmail API client, the app shell and the sync engine (design §12 steps 1–5) are implemented (progress per phase: GitHub epic #21). The Phase 6 mail UI (§12 step 6) is implemented on branch `feat/mail-ui`: sidebar with All Inboxes and per-account category inboxes, virtualized multi-select list, thread view with sandboxed HTML bodies and attachments, optimistic actions with undo. Compose (Phase 7) is next.
 
 ## Commands
 
@@ -53,6 +53,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `commands/` | Tauri command handlers (the IPC surface the frontend calls) |
 | `gmail/` | Gmail REST API client. `auth.rs` is OAuth (PKCE + loopback redirect); the rest lands in Phase 3 |
 | `sync/` | `engine.rs` initial/incremental (`history.list`)/expiry-reconcile/backfill; `outbox.rs` optimistic ops + safe sends; `manager.rs` per-account scheduling and triggers; `api.rs` the `MailApi` trait (`fake.rs` is the in-memory Gmail for tests) |
+| `render.rs` | Email HTML sanitizer (`ammonia`) and signed `pheeme-att` URLs for inline `cid:` images |
 | `mail.rs` | Tauri-free mail service the commands call: cached list/thread/label reads, changes via the outbox |
 | `accounts.rs` | Tauri-free account service: sign-in flow, list/remove, access tokens (cached in memory) |
 | `identity.rs` | App identifier and keychain service constants |
@@ -60,10 +61,14 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 
 ### Frontend State
 
-Three Zustand stores:
+Five Zustand stores:
 - `accountStore` — connected accounts (load, upsert, remove)
-- `mailStore` — the thread list for the active mailbox, reloaded on `sync:*` events
-- `uiStore` — selected thread, active label, pane layout
+- `mailStore` — the thread list for the active mailbox (paged, optimistic patches), reloaded on `sync:*` events
+- `labelStore` — per-account labels, label counts and category counts, plus the All Inboxes unread count
+- `threadStore` — thread-detail cache with prefetch; evicts on `sync:messages_updated`
+- `uiStore` — active mailbox, selected thread, multi-select, pane layout
+
+Mail actions (archive, trash, star, read, labels) live in `src/mail/actions.ts`, shared by buttons, menus and shortcuts. Browser preview (`npm run dev`) answers every command from `src/preview/` fixtures, which mutate and emit `sync:messages_updated` like the app.
 
 ### Database Schema Summary
 
@@ -73,7 +78,7 @@ Nine tables.
 - `threads` — Conversation rows, derived from their messages by `threads::recompute_threads` (never written directly by sync)
 - `thread_labels` — Thread/label membership; label listing uses keyset-paged `list_threads`
 - `messages` — Full message data; `to_addresses`, `cc_addresses`, `raw_headers` as JSON; `fully_fetched = 0` means metadata only
-- `attachments` — Attachment metadata (content not stored); cascades from messages
+- `attachments` — Attachment metadata incl. `content_id`/`is_inline` (content is cached on disk, not stored); cascades from messages
 - `outbox` / `outbox_messages` — Ordered queue of local changes and sends waiting for Gmail, with each target message's labels before the change
 - `sync_state` — Per-account backfill position
 

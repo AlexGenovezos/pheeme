@@ -13,6 +13,11 @@ import { stubLayout } from "./test/layout";
 
 const account = { id: "a1", email: "me@example.com", displayName: "Me", clientId: "c.apps.googleusercontent.com" };
 const fixtureBackend = createPreviewHandlers();
+/** The fixture account that owns a thread, so `get_thread` works for the test's single account "a1". */
+const ownerOf = (threadId: unknown) =>
+  (fixtureBackend.list_threads({ accountIds: [], labelId: "ALL" }) as { threads: { id: string; accountId: string }[] }).threads.find(
+    (t) => t.id === threadId,
+  )?.accountId;
 /** One account; threads come from the preview fixtures, whichever fixture account they belong to. */
 const backend = (cmd: string, args?: unknown) =>
   cmd === "list_accounts"
@@ -20,7 +25,7 @@ const backend = (cmd: string, args?: unknown) =>
     : cmd === "list_threads"
       ? fixtureBackend.list_threads({ ...(args as object), accountIds: [] })
       : cmd === "get_thread"
-        ? fixtureBackend.get_thread(args as Record<string, unknown>)
+        ? fixtureBackend.get_thread({ ...(args as object), accountId: ownerOf((args as { threadId?: unknown }).threadId) })
         : undefined;
 
 let restoreLayout: () => void;
@@ -116,7 +121,7 @@ test("g then i goes to the inbox (Primary, with one account); j selects the firs
   const first = within(list).getAllByRole("option")[0];
   expect(first).toHaveAttribute("data-selected", "true");
   expect(list).toHaveAttribute("aria-activedescendant", first.id);
-  expect(await screen.findByRole("article")).toBeInTheDocument();
+  expect((await screen.findAllByRole("article")).length).toBeGreaterThan(0);
 });
 
 test("Ctrl+B toggles the sidebar; Ctrl+K opens the palette", async () => {

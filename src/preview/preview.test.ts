@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { describe, expect, test, vi } from "vitest";
-import { fixtureAccounts, fixtureThreadsIn } from "./fixtures";
-import { createPreviewHandlers, handlePreviewCommand, installPreview, toSummary } from "./install";
+import { listen } from "@tauri-apps/api/event";
+import { type ThreadDetail, SYNC_EVENTS, type SyncMessagesUpdated } from "../lib/tauri";
+import { fixtureAccounts } from "./fixtures";
+import { createPreviewHandlers, handlePreviewCommand, installPreview } from "./install";
 import { detectTauri, isPreview, isTauri } from "./runtime";
 
 describe("runtime detection", () => {
@@ -22,50 +24,133 @@ describe("runtime detection", () => {
   });
 });
 
+const CATEGORIES = ["CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS"];
+type Page = { threads: { id: string; unread: boolean; starred: boolean }[] };
+type Counts = { labelId: string; unread: number }[];
+
 describe("preview IPC", () => {
   test("invoke answers from fixtures once installed", async () => {
     installPreview();
     await expect(invoke("list_accounts")).resolves.toMatchObject(fixtureAccounts);
-    await expect(invoke("list_threads", { accountIds: ["acc-personal"], labelId: "SENT" })).resolves.toEqual({
-      threads: fixtureThreadsIn("SENT").map(toSummary),
-      next: null,
-    });
-    await expect(invoke("get_thread", { accountId: "acc-personal", threadId: "t-01" })).resolves.toMatchObject({
-      thread: { id: "t-01" },
+    const sent = (await invoke("list_threads", { accountIds: ["acc-personal"], labelId: "SENT" })) as Page;
+    expect(sent.threads.map((t) => t.id)).toEqual(["p-13"]);
+    await expect(invoke("get_thread", { accountId: "acc-personal", threadId: "p-01" })).resolves.toMatchObject({
+      thread: { id: "p-01", messageCount: 4 },
     });
     await expect(invoke("greet", { name: "Alex" })).resolves.toContain("Alex");
   });
 
-  test("list_threads honours All Mail and the category tabs", () => {
+  test("list_threads honours All Mail and the category inboxes", () => {
     const handlers = createPreviewHandlers();
-    const ids = (args: Record<string, unknown>) => (handlers.list_threads(args) as { threads: { id: string }[] }).threads.map((t) => t.id);
-    expect(ids({ accountIds: [], labelId: "ALL" })).toEqual(fixtureThreadsIn("ALL").map((t) => t.id));
-    const inbox = ids({ accountIds: [], labelId: "INBOX" });
-    const primary = ids({ accountIds: [], labelId: "INBOX", alsoLabelId: "CATEGORY_PERSONAL" });
-    const updates = ids({ accountIds: [], labelId: "INBOX", alsoLabelId: "CATEGORY_UPDATES" });
-    expect(updates.length).toBeGreaterThan(0);
+    const ids = (args: Record<string, unknown>) => (handlers.list_threads(args) as Page).threads.map((t) => t.id);
+    const all = ids({ accountIds: [], labelId: "ALL" });
+    expect(all).toContain("p-15");
+    expect(all).not.toContain("p-16");
+    expect(all).not.toContain("p-17");
+    const inbox = ids({ accountIds: ["acc-personal"], labelId: "INBOX" });
+    const primary = ids({ accountIds: ["acc-personal"], labelId: "INBOX", alsoLabelId: "CATEGORY_PERSONAL" });
     expect(primary.length).toBeGreaterThan(0);
-    expect(primary.some((id) => updates.includes(id))).toBe(false);
+    for (const category of ["SOCIAL", "PROMOTIONS", "UPDATES", "FORUMS"]) {
+      const inCategory = ids({ accountIds: ["acc-personal"], labelId: "INBOX", alsoLabelId: `CATEGORY_${category}` });
+      expect(inCategory.length).toBeGreaterThan(0);
+      expect(inCategory.some((id) => primary.includes(id))).toBe(false);
+    }
     expect(inbox.length).toBeGreaterThan(primary.length);
   });
 
-  test("label_counts reports unread and total per label", () => {
-    const counts = createPreviewHandlers().label_counts({ accountId: "acc-personal" }) as { labelId: string; unread: number; total: number }[];
-    expect(counts).toContainEqual({ labelId: "Label_3", unread: 2, total: 2 });
-    expect(counts.find((c) => c.labelId === "STARRED")).toMatchObject({ total: fixtureThreadsIn("STARRED").length });
+  test("both accounts have unread mail in every category, starred threads and drafts", () => {
+    const handlers = createPreviewHandlers();
+    for (const accountId of ["acc-personal", "acc-work"]) {
+      const counts = Object.fromEntries((handlers.mailbox_counts({ accountIds: [accountId] }) as Counts).map((c) => [c.labelId, c.unread]));
+      for (const category of CATEGORIES) expect(counts[category], `${accountId} ${category}`).toBeGreaterThan(0);
+      const labels = handlers.label_counts({ accountId }) as { labelId: string; total: number }[];
+      expect(labels.find((c) => c.labelId === "STARRED")?.total, accountId).toBeGreaterThan(0);
+      expect(labels.find((c) => c.labelId === "DRAFT")?.total, accountId).toBeGreaterThan(0);
+    }
   });
 
-  test("labels and counts are per account", () => {
+  test("labels come per account, with and without colors", () => {
     const handlers = createPreviewHandlers();
     const userLabels = (accountId: string) =>
-      (handlers.list_labels({ accountId }) as { name: string; type: string }[]).filter((l) => l.type === "user").map((l) => l.name);
-    expect(userLabels("acc-personal")).toContain("Travel");
-    expect(userLabels("acc-work")).toEqual(["Customers", "Invoices"]);
-    const counts = (accountIds: string[]) =>
-      Object.fromEntries((handlers.mailbox_counts({ accountIds }) as { labelId: string; unread: number }[]).map((c) => [c.labelId, c.unread]));
-    const work = counts(["acc-work"]);
-    expect(work).toMatchObject({ INBOX: 2, CATEGORY_PERSONAL: 1, CATEGORY_FORUMS: 1, CATEGORY_SOCIAL: 0 });
-    expect(counts(["acc-personal", "acc-work"]).INBOX).toBe(counts(["acc-personal"]).INBOX + work.INBOX);
+      (handlers.list_labels({ accountId }) as { name: string; type: string; colorBackground: string | null }[]).filter((l) => l.type === "user");
+    expect(userLabels("acc-personal").map((l) => l.name)).toEqual(["Receipts", "Travel", "Pheeme"]);
+    expect(userLabels("acc-work").map((l) => l.name)).toEqual(["Customers", "Invoices"]);
+    expect(userLabels("acc-personal").some((l) => l.colorBackground)).toBe(true);
+    expect(userLabels("acc-personal").some((l) => !l.colorBackground)).toBe(true);
+  });
+
+  test("threads cover the long, HTML, remote-image, dark-mode, plain-URL and PDF cases", () => {
+    const handlers = createPreviewHandlers();
+    const detail = (threadId: string, accountId = "acc-personal") => handlers.get_thread({ accountId, threadId }) as ThreadDetail;
+    expect(detail("p-01").messages).toHaveLength(4);
+    expect(detail("p-03").messages.length).toBeGreaterThanOrEqual(10);
+    const ci = detail("p-02").messages[0];
+    expect(ci.bodyHtml).toContain("https://");
+    expect(ci.bodyHtml).toContain("data:image");
+    expect(ci.hasRemoteContent).toBe(true);
+    expect(detail("p-08").messages[0].declaresDarkMode).toBe(true);
+    expect(detail("p-05").messages[1]).toMatchObject({ bodyHtml: null, bodyText: expect.stringContaining("https://") });
+    expect(detail("p-01").messages[2].attachments[0]).toMatchObject({ mimeType: "application/pdf", isInline: false });
+  });
+
+  test("a missing or foreign thread is not_found", () => {
+    const handlers = createPreviewHandlers();
+    expect(() => handlers.get_thread({ accountId: "acc-work", threadId: "p-01" })).toThrow();
+  });
+
+  test("archive in preview removes the thread from INBOX and fires messages_updated", async () => {
+    installPreview();
+    const events: SyncMessagesUpdated[] = [];
+    const stop = await listen<SyncMessagesUpdated>(SYNC_EVENTS.messagesUpdated, (e) => events.push(e.payload));
+    const inbox = async () => ((await invoke("list_threads", { accountIds: ["acc-personal"], labelId: "INBOX" })) as Page).threads.map((t) => t.id);
+    const before = await inbox();
+    expect(before).toContain("p-05");
+
+    await invoke("modify_threads", { accountId: "acc-personal", threadIds: ["p-05"], add: [], remove: ["INBOX"] });
+
+    expect(await inbox()).toEqual(before.filter((id) => id !== "p-05"));
+    const all = (await invoke("list_threads", { accountIds: ["acc-personal"], labelId: "ALL" })) as Page;
+    expect(all.threads.map((t) => t.id)).toContain("p-05");
+    await vi.waitFor(() =>
+      expect(events).toEqual([{ accountId: "acc-personal", added: [], removed: [], modified: ["p-05"] }]),
+    );
+    stop();
+  });
+
+  test("category counts move when threads are archived, read, starred and trashed", async () => {
+    installPreview();
+    const counts = async (accountId: string) =>
+      Object.fromEntries(((await invoke("mailbox_counts", { accountIds: [accountId] })) as Counts).map((c) => [c.labelId, c.unread]));
+    const totals = async (labelId: string) =>
+      ((await invoke("label_counts", { accountId: "acc-personal" })) as { labelId: string; total: number }[]).find((c) => c.labelId === labelId)?.total;
+    const before = await counts("acc-personal");
+    const workBefore = await counts("acc-work");
+
+    // p-05 is an unread Primary thread: reading it lowers Primary and the inbox by one.
+    await invoke("modify_threads", { accountId: "acc-personal", threadIds: ["p-05"], add: [], remove: ["UNREAD"] });
+    expect(await counts("acc-personal")).toMatchObject({ INBOX: before.INBOX - 1, CATEGORY_PERSONAL: before.CATEGORY_PERSONAL - 1 });
+
+    // p-10 is an unread Social thread: trashing it lowers Social and the inbox, and adds to Trash.
+    const trashed = await totals("TRASH");
+    await invoke("trash_threads", { accountId: "acc-personal", threadIds: ["p-10"] });
+    expect(await counts("acc-personal")).toMatchObject({ INBOX: before.INBOX - 2, CATEGORY_SOCIAL: before.CATEGORY_SOCIAL - 1 });
+    expect(await totals("TRASH")).toBe((trashed ?? 0) + 1);
+
+    // Starring adds to the Starred total; it doesn't touch the inbox counts.
+    const starred = await totals("STARRED");
+    await invoke("modify_threads", { accountId: "acc-personal", threadIds: ["p-09"], add: ["STARRED"], remove: [] });
+    expect(await totals("STARRED")).toBe((starred ?? 0) + 1);
+    expect((await counts("acc-personal")).INBOX).toBe(before.INBOX - 2);
+
+    // Marking unread brings a thread back to the unread counts, and nothing leaks into the other account.
+    await invoke("modify_threads", { accountId: "acc-personal", threadIds: ["p-05"], add: ["UNREAD"], remove: [] });
+    expect((await counts("acc-personal")).CATEGORY_PERSONAL).toBe(before.CATEGORY_PERSONAL);
+    expect(await counts("acc-work")).toEqual(workBefore);
+  });
+
+  test("modify_threads refuses Trash and Spam like the backend", () => {
+    const handlers = createPreviewHandlers();
+    expect(() => handlers.modify_threads({ accountId: "acc-personal", threadIds: ["p-05"], add: ["TRASH"], remove: [] })).toThrow();
   });
 
   test("the updater check reports no update", () => {
