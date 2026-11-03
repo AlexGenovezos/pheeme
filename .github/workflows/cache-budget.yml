@@ -1,0 +1,63 @@
+name: Cache budget
+
+# GitHub evicts Actions caches once a repo passes 10 GB, starting with the least recently used:
+# the release caches, which only releases and the twice-weekly refresh touch. This fails when the
+# caches main needs (the newest of each kind) no longer fit with room left for PR caches.
+# Superseded caches don't count: they age out on their own.
+
+on:
+  workflow_run:
+    workflows: [CI, Release, Performance]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "41 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+
+concurrency:
+  group: cache-budget
+  cancel-in-progress: true
+
+env:
+  # 8 of the 10 GiB, leaving 2 for caches saved on PR refs.
+  BUDGET_GIB: "8"
+
+jobs:
+  budget:
+    name: Main caches fit the budget
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Measure the caches main needs
+        run: |
+          gh api --paginate "repos/$GH_REPO/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | {key, ref, size_in_bytes, created_at}' > caches.jsonl
+          # A cache kind is its key without the trailing content hashes; keep the newest of each.
+          jq -s '[.[] | select(.ref == "refs/heads/main")
+                  | .kind = (.key | sub("([-_][0-9a-f]{8,})+$"; ""))]
+                 | group_by(.kind) | map(max_by(.created_at))
+                 | sort_by(-.size_in_bytes)' caches.jsonl > main.json
+          total=$(jq -s 'map(.size_in_bytes) | add // 0' caches.jsonl)
+          used=$(jq 'map(.size_in_bytes) | add // 0' main.json)
+          budget=$((BUDGET_GIB * 1073741824))
+          gib() { awk -v b="$1" 'BEGIN { printf "%.2f GiB", b / 1073741824 }'; }
+          {
+            echo "### Actions cache budget"
+            echo
+            echo "Main needs **$(gib "$used")** of a **${BUDGET_GIB} GiB** budget." \
+              "All caches, superseded and PR ones included: $(gib "$total") (GitHub's limit is 10 GiB)."
+            echo
+            echo "| Cache | Size |"
+            echo "| --- | ---: |"
+            jq -r '.[] | "| `\(.kind)` | \(.size_in_bytes / 1048576 | floor) MiB |"' main.json
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$used" -gt "$budget" ]; then
+            echo "::error::Main's caches need $(gib "$used"), over the ${BUDGET_GIB} GiB budget. GitHub will start evicting the release caches. Shrink a cache (see the job summary) before adding more."
+            exit 1
+          fi
+          echo "Main's caches need $(gib "$used") of ${BUDGET_GIB} GiB."
