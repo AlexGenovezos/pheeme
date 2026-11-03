@@ -70,54 +70,23 @@ jobs:
       contents: read
       issues: write
     steps:
+      # The label helpers are loaded from this checkout. This job never runs on
+      # pull_request_target, so the ref is the trusted push or dispatch ref.
+      - name: Checkout label helpers
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
       - name: Ensure PR size labels exist
         uses: actions/github-script@v8
         env:
           PR_SIZE_LABELS_JSON: ${{ needs.prepare-config.outputs.labels_json }}
         with:
           script: |
+            const { ensureLabels } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/labels.cjs`);
             const managedLabels = JSON.parse(process.env.PR_SIZE_LABELS_JSON ?? "[]");
 
-            for (const label of managedLabels) {
-              try {
-                const { data: existing } = await github.rest.issues.getLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: label.name,
-                });
-
-                if (
-                  existing.color !== label.color ||
-                  (existing.description ?? "") !== label.description
-                ) {
-                  await github.rest.issues.updateLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label.name,
-                    color: label.color,
-                    description: label.description,
-                  });
-                }
-              } catch (error) {
-                if (error.status !== 404) {
-                  throw error;
-                }
-
-                try {
-                  await github.rest.issues.createLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label.name,
-                    color: label.color,
-                    description: label.description,
-                  });
-                } catch (createError) {
-                  if (createError.status !== 422) {
-                    throw createError;
-                  }
-                }
-              }
-            }
+            await ensureLabels(github, context.repo, managedLabels);
   label:
     name: Label PR size
     needs: prepare-config
@@ -145,6 +114,8 @@ jobs:
         with:
           script: |
             const { execFileSync } = require("node:child_process");
+            // From the base checkout above; the PR head is only fetched as git data below.
+            const { setExclusiveLabel } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/labels.cjs`);
 
             const issueNumber = context.payload.pull_request.number;
             const baseSha = context.payload.pull_request.base.sha;
@@ -256,40 +227,7 @@ jobs:
             const changedLines = nonTestChangedLines === 0 ? testChangedLines : nonTestChangedLines;
             const nextLabelName = resolveSizeLabel(changedLines);
 
-            const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              per_page: 100,
-            });
-
-            for (const label of currentLabels) {
-              if (!managedLabelNames.has(label.name) || label.name === nextLabelName) {
-                continue;
-              }
-
-              try {
-                await github.rest.issues.removeLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issueNumber,
-                  name: label.name,
-                });
-              } catch (removeError) {
-                if (removeError.status !== 404) {
-                  throw removeError;
-                }
-              }
-            }
-
-            if (!currentLabels.some((label) => label.name === nextLabelName)) {
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                labels: [nextLabelName],
-              });
-            }
+            await setExclusiveLabel(github, context.repo, issueNumber, managedLabelNames, nextLabelName);
 
             const classification =
               nonTestChangedLines === 0

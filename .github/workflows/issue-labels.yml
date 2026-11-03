@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  contents: read
   issues: write
 
 jobs:
@@ -17,10 +18,17 @@ jobs:
     name: Sync issue labels
     runs-on: ubuntu-24.04
     steps:
+      # The label helpers are loaded from this checkout (the push or dispatch ref).
+      - name: Checkout label helpers
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
       - name: Ensure managed issue labels exist
         uses: actions/github-script@v8
         with:
           script: |
+            const { ensureLabels } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/labels.cjs`);
             const managedLabels = [
               {
                 name: "bug",
@@ -44,37 +52,4 @@ jobs:
               },
             ];
 
-            for (const label of managedLabels) {
-              try {
-                const { data: existing } = await github.rest.issues.getLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: label.name,
-                });
-
-                if (
-                  existing.color !== label.color ||
-                  (existing.description ?? "") !== label.description
-                ) {
-                  await github.rest.issues.updateLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label.name,
-                    color: label.color,
-                    description: label.description,
-                  });
-                }
-              } catch (error) {
-                if (error.status !== 404) {
-                  throw error;
-                }
-
-                await github.rest.issues.createLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: label.name,
-                  color: label.color,
-                  description: label.description,
-                });
-              }
-            }
+            await ensureLabels(github, context.repo, managedLabels);
