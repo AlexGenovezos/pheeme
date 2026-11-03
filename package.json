@@ -1,13 +1,13 @@
 {
   "name": "pheeme",
-  "private": true,
   "version": "0.5.0",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . && node scripts/check-tokens.mjs",
+    "lint": "oxlint && node scripts/check-tokens.mjs",
     "test": "vitest",
     "test:ci": "vitest run",
     "preview": "vite preview",
@@ -16,7 +16,9 @@
     "version:set": "node scripts/version.mjs set",
     "version:check": "node scripts/version.mjs check",
     "lint:tokens": "node scripts/check-tokens.mjs",
-    "icons": "tauri icon src-tauri/app-icon.svg && node -e \"for (const d of ['android','ios','64x64.png']) require('fs').rmSync('src-tauri/icons/'+d, {recursive: true, force: true})\""
+    "icons": "tauri icon src-tauri/app-icon.svg && node -e \"for (const d of ['android','ios','64x64.png']) require('fs').rmSync('src-tauri/icons/'+d, {recursive: true, force: true})\"",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.3.0",
@@ -33,7 +35,6 @@
     "zustand": "^4"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
     "@tauri-apps/cli": "^2",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
@@ -44,12 +45,10 @@
     "@vitejs/plugin-react": "^4",
     "@vitest/coverage-v8": "2.1.9",
     "cross-env": "^7",
-    "eslint": "^9.39.5",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^15.15.0",
     "jsdom": "^25.0.1",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
     "typescript": "~5.8.3",
-    "typescript-eslint": "^8.72.1",
     "vite": "^6",
     "vitest": "^2"
   }
