@@ -1,6 +1,7 @@
 import { ImageOff } from "lucide-react";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
+import { registry, type CommandRegistry } from "../keyboard/registry";
 import type { MessageDetail } from "../lib/tauri";
 import { useThemeStore } from "../theme/theme";
 import { linkify, openLink } from "./linkify";
@@ -99,35 +100,59 @@ function openableUrl(href: string | null): string | null {
   }
 }
 
-/** Identical growth this many times in a row means the content is sized by the frame itself (`100vh`). */
-const MAX_REPEATED_GROWTH = 2;
+/**
+ * Growth the frame caused itself (it got taller only because we made it taller: `100vh` boxes, percentage
+ * heights) is allowed this many times in a row before the frame stops following its content.
+ */
+const MAX_SELF_GROWTH = 3;
+/** Past this the frame stops growing however it got there; the rest of the body scrolls inside it. */
+export const MAX_FRAME_HEIGHT = 30_000;
+
+const LINK = "a[href], area[href]";
+
+/** `closest` on a node from the frame's realm, where `instanceof Element` would be false. */
+const closestLink = (target: EventTarget | null) => {
+  const el = target as Element | null;
+  return typeof el?.closest === "function" ? el.closest(LINK) : null;
+};
 
 /**
- * Follow a loaded frame document: size the iframe to its content and route link clicks to the OS. The
- * frame can't run scripts, so all of this runs in the parent against the same-origin document. Returns
- * a function that stops it.
+ * Follow a loaded frame document: size the iframe to its content, route link clicks to the OS and keys
+ * to the app's shortcuts. The frame can't run scripts, so all of this runs in the parent against the
+ * same-origin document. Returns a function that stops it.
  */
-function watchFrame(iframe: HTMLIFrameElement, wrapper: HTMLElement, doc: Document): () => void {
+function watchFrame(iframe: HTMLIFrameElement, wrapper: HTMLElement, doc: Document, commands: CommandRegistry = registry): () => void {
   const root = doc.documentElement;
   let applied = 0;
-  let lastGrowth = 0;
-  let repeats = 0;
-  let width = iframe.clientWidth;
+  // Growth since anything outside our own resizing (load, an image arriving, a new width) happened.
+  let selfGrowth = 0;
+  let external = true;
+  // Once the content is found chasing the frame, or is enormous, the frame keeps its height and scrolls.
+  let pinned = false;
 
-  const measure = () => {
-    const height = Math.ceil(root.scrollHeight);
-    const change = height - applied;
-    if (change === 0) return;
-    if (change > 0 && change === lastGrowth) {
-      // Each resize made the content taller by the same amount: it's chasing the frame. Stop following.
-      if (repeats >= MAX_REPEATED_GROWTH) return;
-      repeats += 1;
-    } else {
-      repeats = 0;
-    }
-    lastGrowth = change;
+  const setHeight = (height: number) => {
     applied = height;
     iframe.style.height = `${height}px`;
+  };
+
+  const measure = () => {
+    if (pinned) return;
+    const height = Math.ceil(root.scrollHeight);
+    const change = height - applied;
+    if (change === 0) {
+      // Settled at the height we set: whatever grew it, it wasn't feeding on the frame.
+      selfGrowth = 0;
+      external = false;
+      return;
+    }
+    selfGrowth = change > 0 && !external ? selfGrowth + 1 : 0;
+    external = false;
+    if (selfGrowth > MAX_SELF_GROWTH || height > MAX_FRAME_HEIGHT) {
+      pinned = true;
+      setHeight(height > MAX_FRAME_HEIGHT && selfGrowth <= MAX_SELF_GROWTH ? MAX_FRAME_HEIGHT : applied);
+      return;
+    }
+    setHeight(height);
   };
 
   // scrollHeight never reports less than the frame's own height, so to shrink (the pane got wider and the
@@ -137,13 +162,14 @@ function watchFrame(iframe: HTMLIFrameElement, wrapper: HTMLElement, doc: Docume
     wrapper.style.minHeight = `${wrapper.offsetHeight}px`;
     iframe.style.height = "0px";
     applied = 0;
-    lastGrowth = 0;
-    repeats = 0;
+    external = true;
     measure();
     wrapper.style.minHeight = "";
   };
 
+  let width = iframe.clientWidth;
   const onResize = () => {
+    if (pinned) return;
     if (iframe.clientWidth !== width) {
       width = iframe.clientWidth;
       remeasureFromZero();
@@ -152,10 +178,13 @@ function watchFrame(iframe: HTMLIFrameElement, wrapper: HTMLElement, doc: Docume
     }
   };
 
+  // Images don't bubble `load`, but capture sees them: their growth is the content's, not the frame's.
+  const onContentLoad = () => {
+    external = true;
+  };
+
   const onClick = (event: MouseEvent) => {
-    const target = event.target as Element | null;
-    // The target belongs to the frame's realm, so `instanceof Element` would be false here.
-    const link = typeof target?.closest === "function" ? target.closest("a[href], area[href]") : null;
+    const link = closestLink(event.target);
     if (!link) return;
     event.preventDefault();
     if (event.type !== "click" || event.button !== 0) return; // middle-click etc.: blocked, nothing opens
@@ -163,8 +192,19 @@ function watchFrame(iframe: HTMLIFrameElement, wrapper: HTMLElement, doc: Docume
     if (url) openLink(url);
   };
 
+  // Keys typed with focus in the frame never reach the parent window's shortcut handler, so hand them over.
+  // Enter/Space on a link stay native: they activate it, which arrives above as a click. Unbound keys
+  // (mod+c, arrows, Tab) aren't touched, so copying, selecting and tabbing keep working.
+  const onKeyDown = (event: KeyboardEvent) => {
+    if ((event.key === "Enter" || event.key === " ") && closestLink(event.target)) return;
+    commands.handleKeyDown(event);
+  };
+
   doc.addEventListener("click", onClick, true);
   doc.addEventListener("auxclick", onClick, true);
+  doc.addEventListener("keydown", onKeyDown);
+  doc.addEventListener("load", onContentLoad, true);
+  doc.addEventListener("error", onContentLoad, true);
 
   let observer: ResizeObserver | null = null;
   if (typeof ResizeObserver === "function") {
@@ -179,5 +219,8 @@ function watchFrame(iframe: HTMLIFrameElement, wrapper: HTMLElement, doc: Docume
     observer?.disconnect();
     doc.removeEventListener("click", onClick, true);
     doc.removeEventListener("auxclick", onClick, true);
+    doc.removeEventListener("keydown", onKeyDown);
+    doc.removeEventListener("load", onContentLoad, true);
+    doc.removeEventListener("error", onContentLoad, true);
   };
 }

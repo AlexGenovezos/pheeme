@@ -1,9 +1,10 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { registry } from "../keyboard/registry";
 import type { MessageDetail } from "../lib/tauri";
 import { useThemeStore } from "../theme/theme";
-import { EmailBody } from "./EmailBody";
+import { EmailBody, MAX_FRAME_HEIGHT } from "./EmailBody";
 
 const message = (over: Partial<MessageDetail> = {}): MessageDetail => ({
   id: "m1",
@@ -138,6 +139,8 @@ test("clicking a link inside the frame calls open_mail_link and does not navigat
   const aux = new doc.defaultView!.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 });
   doc.querySelector("#web")!.dispatchEvent(aux);
   expect(aux.defaultPrevented).toBe(true);
+  await act(async () => {});
+  expect(opened).toEqual(["https://example.com/x?y=1", "mailto:a@b.c"]);
 });
 
 test("sizes the iframe to its content height", () => {
@@ -154,16 +157,110 @@ test("sizes the iframe to its content height", () => {
   expect(frame().style.height).toBe("900px");
 });
 
-test("stops chasing content that grows with its own frame", () => {
+const frameHeight = () => parseInt(frame().style.height, 10) || 0;
+
+test("stops chasing content that grows with its own frame, and lets it scroll instead", () => {
   render(<EmailBody message={message()} />);
-  // A 100vh element plus a footer: every resize makes the content taller by the same amount.
-  loadFrame("<div style='height:100vh'></div><p>Footer</p>", () => (parseInt(frame().style.height, 10) || 300) + 40);
-  const first = parseInt(frame().style.height, 10);
+  // `height:200vh` plus a 40px footer: every resize makes the content twice as tall again.
+  loadFrame("<div style='height:200vh'></div><p>Footer</p>", () => 2 * frameHeight() + 40);
+  for (let i = 0; i < 50; i++) FakeResizeObserver.fireAll();
+  const settled = frameHeight();
+  // 40 on load, then at most MAX_SELF_GROWTH self-induced steps (120, 280, 600) before it pins.
+  expect(settled).toBeLessThanOrEqual(600);
+  for (let i = 0; i < 10; i++) FakeResizeObserver.fireAll();
+  expect(frameHeight()).toBe(settled);
+});
+
+test("stops chasing constant growth too", () => {
+  render(<EmailBody message={message()} />);
+  loadFrame("<div style='height:100vh'></div><p>Footer</p>", () => (frameHeight() || 300) + 40);
+  const first = frameHeight();
+  for (let i = 0; i < 50; i++) FakeResizeObserver.fireAll();
+  expect(frameHeight() - first).toBeLessThanOrEqual(40 * 3);
+});
+
+test("a tall email that settles after one resize renders at full height", () => {
+  render(<EmailBody message={message()} />);
+  // 8,000px of fixed-height content; scrollHeight is never less than the frame itself.
+  let content = 8_000;
+  loadFrame("<div style='height:8000px'></div>", () => Math.max(content, frameHeight()));
   for (let i = 0; i < 20; i++) FakeResizeObserver.fireAll();
-  const settled = parseInt(frame().style.height, 10);
-  expect(settled - first).toBeLessThanOrEqual(40 * 3);
-  FakeResizeObserver.fireAll();
-  expect(parseInt(frame().style.height, 10)).toBe(settled);
+  expect(frameHeight()).toBe(8_000);
+
+  // Several separate content changes later (each settling) keep being followed: they aren't a loop.
+  for (const next of [8_400, 8_900, 9_300, 9_800, 10_200]) {
+    content = next;
+    FakeResizeObserver.fireAll(); // the content grew
+    FakeResizeObserver.fireAll(); // our resize settles
+  }
+  expect(frameHeight()).toBe(10_200);
+
+  // An image arriving in the frame is the content's growth, even right after another growth.
+  const doc = frame().contentDocument!;
+  for (const next of [10_600, 11_000, 11_400, 11_800, 12_200]) {
+    content = next;
+    doc.body.dispatchEvent(new doc.defaultView!.Event("load"));
+    FakeResizeObserver.fireAll();
+  }
+  expect(frameHeight()).toBe(12_200);
+});
+
+test("caps enormous bodies at MAX_FRAME_HEIGHT and lets them scroll", () => {
+  render(<EmailBody message={message()} />);
+  loadFrame("<div style='height:90000px'></div>", () => Math.max(90_000, frameHeight()));
+  expect(frameHeight()).toBe(MAX_FRAME_HEIGHT);
+  for (let i = 0; i < 5; i++) FakeResizeObserver.fireAll();
+  expect(frameHeight()).toBe(MAX_FRAME_HEIGHT);
+});
+
+/** A keydown as the frame's document would deliver it. */
+function press(doc: Document, target: Element, key: string, init: KeyboardEventInit = {}) {
+  const event = new doc.defaultView!.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
+  target.dispatchEvent(event);
+  return event;
+}
+
+test("shortcuts typed inside the frame reach the app's commands", () => {
+  const next = vi.fn();
+  const copy = vi.fn();
+  const offs = [
+    registry.register({ id: "test.next", title: "Next", shortcut: "j", run: next }),
+    registry.register({ id: "test.open", title: "Open", shortcut: "enter", run: copy }),
+  ];
+  try {
+    render(<EmailBody message={message()} />);
+    const doc = loadFrame('<p id="text">Some text</p><a id="web" href="https://example.com/">go</a>');
+
+    expect(press(doc, doc.querySelector("#text")!, "j").defaultPrevented).toBe(true);
+    expect(next).toHaveBeenCalledTimes(1);
+
+    // Copy isn't a command, so it stays native (not prevented).
+    expect(press(doc, doc.querySelector("#text")!, "c", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(press(doc, doc.querySelector("#text")!, "c", { metaKey: true }).defaultPrevented).toBe(false);
+  } finally {
+    offs.forEach((off) => off());
+  }
+});
+
+test("Enter on a focused link inside the frame activates it through the link interception", async () => {
+  const enter = vi.fn();
+  const off = registry.register({ id: "test.enter", title: "Open", shortcut: "enter", run: enter });
+  try {
+    render(<EmailBody message={message()} />);
+    const doc = loadFrame('<a id="web" href="https://example.com/x">go</a>');
+    const link = doc.querySelector<HTMLAnchorElement>("#web")!;
+    link.focus();
+
+    // The app doesn't take the key, so the browser's activation runs...
+    expect(press(doc, link, "Enter").defaultPrevented).toBe(false);
+    expect(enter).not.toHaveBeenCalled();
+    // ...and that activation is a click, which goes to open_mail_link, not a navigation.
+    expect(click(doc, "#web").defaultPrevented).toBe(true);
+    await act(async () => {});
+    expect(opened).toEqual(["https://example.com/x"]);
+  } finally {
+    off();
+  }
 });
 
 test("theme changes re-render the srcdoc", () => {
@@ -183,6 +280,13 @@ test("lets go of the old frame document when the srcdoc is rebuilt or the body u
   await act(async () => {});
   expect(opened).toEqual(["https://example.com/"]);
   expect(FakeResizeObserver.instances.filter((o) => o.targets.size > 0)).toHaveLength(1);
+
+  // Same for keys: one listener, so the command runs once.
+  const next = vi.fn();
+  const off = registry.register({ id: "test.next", title: "Next", shortcut: "j", run: next });
+  press(doc, doc.querySelector("#web")!, "j");
+  off();
+  expect(next).toHaveBeenCalledTimes(1);
 
   unmount();
   expect(FakeResizeObserver.instances.every((o) => o.targets.size === 0)).toBe(true);
