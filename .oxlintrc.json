@@ -42,6 +42,14 @@
         "no-redeclare": "error",
         "no-undef": "error"
       }
+    },
+    {
+      "files": [".github/scripts/**/*.cjs"],
+      "env": { "browser": false, "node": true },
+      "rules": {
+        "no-undef": "error",
+        "typescript/no-require-imports": "off"
+      }
     }
   ]
 }

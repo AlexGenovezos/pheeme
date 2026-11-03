@@ -79,6 +79,15 @@ jobs:
       matrix:
         target: ${{ fromJson(needs.collect-targets.outputs.targets) }}
     steps:
+      # The label helpers are loaded from this checkout, so it must stay on a trusted ref:
+      # the default ref is the base branch (pull_request_target), the default branch
+      # (issue_comment) or main (push). Never check out the PR head here.
+      - name: Checkout label helpers
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
       - id: vouch
         name: Check PR author trust
         uses: mitchellh/vouch/action/check-user@v1
@@ -95,6 +104,7 @@ jobs:
           VOUCH_STATUS: ${{ steps.vouch.outputs.status }}
         with:
           script: |
+            const { ensureLabels, setExclusiveLabel } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/labels.cjs`);
             const issueNumber = Number(process.env.PR_NUMBER);
             const status = process.env.VOUCH_STATUS;
             const managedLabels = [
@@ -117,46 +127,7 @@ jobs:
 
             const managedLabelNames = new Set(managedLabels.map((label) => label.name));
 
-            for (const label of managedLabels) {
-              try {
-                const { data: existing } = await github.rest.issues.getLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: label.name,
-                });
-
-                if (
-                  existing.color !== label.color ||
-                  (existing.description ?? "") !== label.description
-                ) {
-                  await github.rest.issues.updateLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label.name,
-                    color: label.color,
-                    description: label.description,
-                  });
-                }
-              } catch (error) {
-                if (error.status !== 404) {
-                  throw error;
-                }
-
-                try {
-                  await github.rest.issues.createLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label.name,
-                    color: label.color,
-                    description: label.description,
-                  });
-                } catch (createError) {
-                  if (createError.status !== 422) {
-                    throw createError;
-                  }
-                }
-              }
-            }
+            await ensureLabels(github, context.repo, managedLabels);
 
             const nextLabelName =
               status === "denounced"
@@ -165,39 +136,6 @@ jobs:
                   ? "vouch:trusted"
                   : "vouch:unvouched";
 
-            const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              per_page: 100,
-            });
-
-            for (const label of currentLabels) {
-              if (!managedLabelNames.has(label.name) || label.name === nextLabelName) {
-                continue;
-              }
-
-              try {
-                await github.rest.issues.removeLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issueNumber,
-                  name: label.name,
-                });
-              } catch (removeError) {
-                if (removeError.status !== 404) {
-                  throw removeError;
-                }
-              }
-            }
-
-            if (!currentLabels.some((label) => label.name === nextLabelName)) {
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                labels: [nextLabelName],
-              });
-            }
+            await setExclusiveLabel(github, context.repo, issueNumber, managedLabelNames, nextLabelName);
 
             core.info(`PR #${issueNumber}: ${status} -> ${nextLabelName}`);

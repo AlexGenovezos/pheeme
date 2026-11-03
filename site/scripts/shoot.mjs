@@ -1,15 +1,11 @@
 // Dev helper: screenshot a page at several scroll positions via Chrome DevTools Protocol.
 // Usage: node scripts/shoot.mjs <url> <outPrefix> <width> <height> <scrollY,...> [waitMs]
 import { spawn } from "node:child_process";
-import { writeFileSync, readdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { writeFileSync } from "node:fs";
+import { findChrome } from "./chrome.mjs";
 
 const [url, out, w, h, ys, wait = "1200"] = process.argv.slice(2);
-const root = join(homedir(), ".cache/ms-playwright");
-const dir = readdirSync(root).filter((d) => d.startsWith("chromium_headless_shell-")).sort().reverse()[0];
-const chrome = process.env.CHROME || join(root, dir, "chrome-headless-shell-linux64", "chrome-headless-shell");
-if (!existsSync(chrome)) throw new Error("no chrome");
+const chrome = findChrome();
 const port = 9300 + Math.floor(Math.random() * 500);
 const proc = spawn(chrome, ["--headless", "--no-sandbox", "--hide-scrollbars", `--remote-debugging-port=${port}`, `--window-size=${w},${h}`, "about:blank"], { stdio: "ignore" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

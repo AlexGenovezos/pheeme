@@ -1,0 +1,51 @@
+name: Set up build environment
+description: >-
+  Node 22 (npm cache), the Linux system libraries Tauri needs, the Rust toolchain from
+  rust-toolchain.toml, and the src-tauri Rust cache. Run actions/checkout first.
+
+inputs:
+  node:
+    description: Set up Node 22 with the npm cache ("true" or "false").
+    default: "true"
+  rust-targets:
+    description: Space-separated extra rustup targets to add. Empty adds none.
+    default: ""
+  rust-components:
+    description: Space-separated extra rustup components to add. Empty adds none.
+    default: ""
+  cache-key:
+    description: shared-key for Swatinem/rust-cache. Jobs with the same key share a cache.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - if: inputs.node == 'true'
+      uses: actions/setup-node@v7
+      with:
+        node-version: 22
+        cache: npm
+    - name: Install Ubuntu dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
+    - shell: bash
+      run: rustup toolchain install
+    - if: inputs.rust-targets != ''
+      shell: bash
+      env:
+        TARGETS: ${{ inputs.rust-targets }}
+      # Word-split on purpose: the input is a space-separated list.
+      run: rustup target add $TARGETS
+    - if: inputs.rust-components != ''
+      shell: bash
+      env:
+        COMPONENTS: ${{ inputs.rust-components }}
+      run: rustup component add $COMPONENTS
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+        shared-key: ${{ inputs.cache-key }}
+        save-if: ${{ github.ref == 'refs/heads/main' }}
