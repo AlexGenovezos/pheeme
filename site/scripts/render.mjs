@@ -2,27 +2,15 @@
 // Usage: node scripts/render.mjs <in.svg|in.html> <out.png> <width> [height] [bg]
 //   bg: CSS color for the page background (default transparent)
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
+import { findChrome } from "./chrome.mjs";
 
 const [input, output, w, h = w, bg = "transparent"] = process.argv.slice(2);
 if (!input || !output || !w) {
   console.error("usage: render.mjs <in> <out.png> <width> [height] [bg]");
   process.exit(1);
-}
-
-function findChrome() {
-  if (process.env.CHROME) return process.env.CHROME;
-  const root = join(homedir(), ".cache/ms-playwright");
-  const dirs = existsSync(root)
-    ? readdirSync(root).filter((d) => d.startsWith("chromium_headless_shell-")).sort().reverse()
-    : [];
-  for (const d of dirs) {
-    const p = join(root, d, "chrome-headless-shell-linux64", "chrome-headless-shell");
-    if (existsSync(p)) return p;
-  }
-  throw new Error("chrome-headless-shell not found; set CHROME=/path/to/chrome");
 }
 
 const abs = resolve(input);
