@@ -333,7 +333,10 @@ function CopyField({ label, value }: { label: string; value: string }) {
     <div className="copy-field">
       <span className="copy-field__label">{label}</span>
       <code className="copy-field__value">{value}</code>
-      <Button size="sm" onClick={() => void navigator.clipboard.writeText(value).then(flash, () => {})}>
+      <Button
+        size="sm"
+        onClick={() => void navigator.clipboard.writeText(value).then(flash, () => {})}
+      >
         {copied ? "Copied" : "Copy"}
       </Button>
     </div>
@@ -517,7 +520,11 @@ function Waiting({
         Pheeme opened Google's sign-in page. When it says you can close the tab, come back here.
       </p>
       <div className="button-row">
-        <Button size="lg" disabled={!authUrl} onClick={() => void openExternal(authUrl).catch(() => {})}>
+        <Button
+          size="lg"
+          disabled={!authUrl}
+          onClick={() => void openExternal(authUrl).catch(() => {})}
+        >
           Open the browser again
         </Button>
         <Button

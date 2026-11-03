@@ -15,7 +15,14 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function T
   ref,
 ) {
   return (
-    <span className={cx("ui-input", size === "lg" && "ui-input--lg", invalid && "ui-input--invalid", className)}>
+    <span
+      className={cx(
+        "ui-input",
+        size === "lg" && "ui-input--lg",
+        invalid && "ui-input--invalid",
+        className,
+      )}
+    >
       {leading && <span className="ui-input__adornment">{leading}</span>}
       <input
         ref={ref}
