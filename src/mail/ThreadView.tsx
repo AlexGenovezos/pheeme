@@ -4,11 +4,11 @@ import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
 import { toast } from "../components/ui/Toast";
 import type { LabelInfo, ThreadDetail } from "../lib/tauri";
-import { notYet } from "../shell/ListPane";
 import { useLabelStore } from "../store/labelStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { MessageCard } from "./MessageCard";
+import { toggleLabel } from "./actions";
 import { parseThreadKey } from "./mailboxes";
 import "./mail.css";
 
@@ -108,8 +108,7 @@ export function ThreadView() {
     content = (
       <div className="thread-view">
         <h2 className="thread-view__subject selectable">{subject}</h2>
-        {/* Task 11 swaps notYet for toggleLabel. */}
-        <LabelChips labels={chips} onRemove={() => notYet("Removing a label")} />
+        <LabelChips labels={chips} onRemove={(label) => void toggleLabel(accountId, label.id, [openKey])} />
         <div className="thread-view__messages">
           {detail.messages.map((m) => (
             <MessageCard

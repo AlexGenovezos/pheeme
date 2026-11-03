@@ -353,3 +353,42 @@ describe("states", () => {
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 });
+
+describe("keyboard and menu wiring", () => {
+  test("mod+a in the list checks every loaded row; in the registry it is left to the page", () => {
+    useMailStore.setState({ threads: many(5) });
+    render(<ThreadList {...props()} />);
+    const list = screen.getByRole("listbox");
+    const event = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true });
+    act(() => void list.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(useUiStore.getState().checked).toEqual([key(0), key(1), key(2), key(3), key(4)]);
+  });
+
+  test("enter opens the first row when none is open, and a click marks an unread row read", () => {
+    const calls: string[] = [];
+    mockIPC((cmd) => void calls.push(cmd), { shouldMockEvents: true });
+    useMailStore.setState({ threads: many(4) });
+    render(<ThreadList {...props()} />);
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Enter" });
+    expect(useUiStore.getState().openThread).toBe(key(0));
+    expect(useMailStore.getState().threads[0].unread).toBe(false);
+
+    fireEvent.click(row(2)); // t2 is unread
+    expect(useUiStore.getState().openThread).toBe(key(2));
+    expect(useMailStore.getState().threads[2].unread).toBe(false);
+    expect(calls.filter((c) => c === "modify_threads")).toHaveLength(2);
+  });
+
+  test("a context menu on a row outside the selection drops the selection; inside it keeps it", () => {
+    useMailStore.setState({ threads: many(5) });
+    const rowMenu = vi.fn(() => []);
+    render(<ThreadList {...props({ rowMenu })} />);
+    act(() => useUiStore.getState().checkAll([key(1), key(2)]));
+    fireEvent.contextMenu(row(2), { clientX: 1, clientY: 1 });
+    expect(useUiStore.getState().checked).toEqual([key(1), key(2)]);
+    fireEvent.contextMenu(row(4), { clientX: 1, clientY: 1 });
+    expect(useUiStore.getState().checked).toEqual([]);
+    expect(useUiStore.getState().openThread).toBe(key(4));
+  });
+});

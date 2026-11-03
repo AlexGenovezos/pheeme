@@ -109,6 +109,8 @@ interface UiState extends PaneLayout, NavPrefs {
   toggleChecked(key: ThreadKey): void;
   /** Check every row from the anchor to `to` inclusive; `keys` is the list in display order. */
   checkRange(keys: ThreadKey[], to: ThreadKey): void;
+  /** Check every row in `keys` (select all loaded rows). */
+  checkAll(keys: ThreadKey[]): void;
   clearChecked(): void;
   toggleAccountCollapsed(accountId: string): void;
 }
@@ -163,6 +165,7 @@ export const useUiStore = create<UiState>((set, get) => {
         const checked = [...s.checked, ...span.filter((k) => !s.checked.includes(k))];
         return { checked, anchor: start === -1 ? to : s.anchor };
       }),
+    checkAll: (keys) => set({ checked: [...keys], anchor: keys[keys.length - 1] ?? null }),
     clearChecked: () => set({ checked: [], anchor: null }),
     toggleAccountCollapsed: (id) => {
       const { collapsedAccounts } = get();

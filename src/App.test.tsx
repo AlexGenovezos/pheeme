@@ -142,11 +142,15 @@ test("right-clicking a conversation opens the menu (DOM fallback in preview)", a
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
   const [first] = await within(screen.getByRole("listbox", { name: "Primary conversations" })).findAllByRole("option");
+  const archivedId = first.id;
   fireEvent.contextMenu(first, { clientX: 100, clientY: 100 });
   expect(screen.getByRole("menu")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  expect(screen.getByText("Archive isn't wired up yet")).toBeInTheDocument();
+  // The row leaves at once and the toast offers Undo.
+  expect(await screen.findByText("Archived")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
+  expect(document.getElementById(archivedId)).toBeNull();
 });
 
 test("the updater never starts outside the desktop app, even in production builds", async () => {

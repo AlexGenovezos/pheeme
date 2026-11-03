@@ -10,6 +10,7 @@ import { useCommands } from "../keyboard/useCommands";
 import { useAccountStore } from "../store/accountStore";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
+import { moveSelection, openAndMarkRead, openFocused } from "./actions";
 import { accountColorIndex, type MailboxRef, threadKey } from "./mailboxes";
 import { type RowAction, rowId, ThreadRow } from "./ThreadRow";
 import "./mail.css";
@@ -140,14 +141,22 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openIndex]);
 
+  const checkAll = () => useUiStore.getState().checkAll(keys);
+
   // Focus stays on the listbox and points at the open row, so rows can unmount while it scrolls.
   const onKeyDown = (e: KeyboardEvent) => {
-    const delta = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
-    if (!delta || e.target !== e.currentTarget) return;
-    e.preventDefault();
-    if (!threads.length) return;
-    const to = openIndex < 0 ? (delta === 1 ? 0 : threads.length - 1) : Math.min(Math.max(openIndex + delta, 0), threads.length - 1);
-    useUiStore.getState().setOpenThread(keys[to]);
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      moveSelection(e.key === "ArrowDown" ? 1 : -1);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      openFocused();
+    } else if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "a") {
+      // Not a registry shortcut: inside an email body the same keys must still select text.
+      e.preventDefault();
+      checkAll();
+    }
   };
 
   useCommands([
@@ -161,6 +170,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
         if (key !== null) useUiStore.getState().toggleChecked(key);
       },
     },
+    { id: "list.check-all", title: "Select all conversations", group: "Conversation", run: checkAll },
   ]);
 
   const select = useCallback(
@@ -169,7 +179,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
       const ui = useUiStore.getState();
       if (e.metaKey || e.ctrlKey) ui.toggleChecked(key);
       else if (e.shiftKey) ui.checkRange(keys, key);
-      else ui.setOpenThread(key);
+      else openAndMarkRead(key);
     },
     [keys],
   );
@@ -184,7 +194,11 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   );
   const contextMenu = useCallback(
     (e: MouseEvent, thread: ThreadSummary) => {
-      useUiStore.getState().setOpenThread(threadKey(thread.accountId, thread.id));
+      // A menu on a row outside the selection acts on that row alone.
+      const key = threadKey(thread.accountId, thread.id);
+      const ui = useUiStore.getState();
+      if (!ui.checked.includes(key)) ui.clearChecked();
+      ui.setOpenThread(key);
       openContextMenuFromEvent(e, rowMenu(thread));
     },
     [rowMenu],

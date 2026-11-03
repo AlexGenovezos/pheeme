@@ -6,6 +6,7 @@ import { TextInput } from "../components/ui/TextInput";
 import { toast } from "../components/ui/Toast";
 import { useCommands } from "../keyboard/useCommands";
 import type { ThreadSummary } from "../lib/tauri";
+import { archive, moveSelection, setRead, setStarred, trash } from "../mail/actions";
 import { mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
 import { ThreadList } from "../mail/ThreadList";
 import { senderOf } from "../mail/ThreadRow";
@@ -23,23 +24,27 @@ export const notYet = (action: string) => toast({ title: `${action} isn't wired 
 
 export { senderOf };
 
-const ROW_ACTION_NAMES: Record<RowAction, string> = { archive: "Archive", delete: "Delete", read: "Mark as read" };
-const onRowAction = (action: RowAction) => notYet(ROW_ACTION_NAMES[action]);
+const onRowAction = (action: RowAction, t: ThreadSummary) => {
+  const keys = [threadKey(t.accountId, t.id)];
+  if (action === "archive") void archive(keys);
+  else if (action === "delete") void trash(keys);
+  else void setRead(t.unread, keys);
+};
 
 const NO_LABELS: { id: string; name: string }[] = [];
 
+/** The row's menu. Actions apply to the checked set when the row is part of it (the list checks that before opening), else to the row. */
 const rowMenu = (t: ThreadSummary) => [
-  { id: "archive", label: "Archive", shortcut: "e", onSelect: () => notYet("Archive") },
-  { id: "read", label: t.unread ? "Mark as read" : "Mark as unread", shortcut: "shift+u", onSelect: () => notYet("Mark as read") },
-  { id: "star", label: t.starred ? "Remove star" : "Add star", shortcut: "s", onSelect: () => notYet("Star") },
+  { id: "archive", label: "Archive", shortcut: "e", onSelect: () => void archive() },
+  { id: "read", label: t.unread ? "Mark as read" : "Mark as unread", shortcut: t.unread ? "shift+i" : "shift+u", onSelect: () => void setRead(t.unread) },
+  { id: "star", label: t.starred ? "Remove star" : "Add star", shortcut: "s", onSelect: () => void setStarred(!t.starred) },
   { type: "separator" as const },
-  { id: "delete", label: "Delete", shortcut: "#", danger: true, onSelect: () => notYet("Delete") },
+  { id: "delete", label: "Delete", shortcut: "#", danger: true, onSelect: () => void trash() },
 ];
 
 export function ListPane() {
   const { accountId, labelId, category } = useUiStore((s) => s.mailbox);
-  const selected = useUiStore((s) => s.openThread);
-  const select = useUiStore((s) => s.setOpenThread);
+  const anyChecked = useUiStore((s) => s.checked.length > 0);
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
 
@@ -57,17 +62,10 @@ export function ListPane() {
   const userLabels = useLabelStore((s) => (accountId ? s.userLabels(accountId) : NO_LABELS));
   const title = mailboxTitle({ accountId, labelId, category }, userLabels);
   const unread = threads.filter((t) => t.unread).length;
-  const index = threads.findIndex((t) => threadKey(t.accountId, t.id) === selected);
-
-  const move = (delta: 1 | -1) => {
-    if (!threads.length) return;
-    const next = index < 0 ? (delta === 1 ? 0 : threads.length - 1) : Math.min(Math.max(index + delta, 0), threads.length - 1);
-    select(threadKey(threads[next].accountId, threads[next].id));
-  };
 
   useCommands([
-    { id: "list.next", title: "Next conversation", group: "Conversation", shortcut: "j", run: () => move(1) },
-    { id: "list.previous", title: "Previous conversation", group: "Conversation", shortcut: "k", run: () => move(-1) },
+    { id: "list.next", title: "Next conversation", group: "Conversation", shortcut: "j", run: () => moveSelection(1) },
+    { id: "list.previous", title: "Previous conversation", group: "Conversation", shortcut: "k", run: () => moveSelection(-1) },
     {
       id: "search.focus",
       title: "Search mail",
@@ -76,6 +74,19 @@ export function ListPane() {
       keywords: ["find"],
       run: () => document.getElementById(SEARCH_INPUT_ID)?.focus(),
     },
+    // Registered only while something is checked, so Escape stays free for everything else.
+    ...(anyChecked
+      ? [
+          {
+            id: "list.clear-checks",
+            title: "Clear selection",
+            group: "Conversation",
+            shortcut: "escape",
+            hidden: true,
+            run: () => useUiStore.getState().clearChecked(),
+          },
+        ]
+      : []),
   ]);
 
   return (
