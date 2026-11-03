@@ -83,6 +83,26 @@ test("not_found keeps a per-key error and no detail", async () => {
   expect(store().errors["a:t2"]).toBeUndefined();
 });
 
+test("a load that joins a prefetch in flight reports its failure", async () => {
+  let fail: (e: unknown) => void = () => {};
+  mockIPC((cmd) => (cmd === "get_thread" ? new Promise((_, reject) => (fail = reject)) : undefined));
+  store().prefetch(["a:t1"]);
+  const loading = store().load("a:t1");
+  fail({ code: "not_found", message: "That conversation isn't on this device." });
+  await loading;
+  expect(store().details.has("a:t1")).toBe(false);
+  expect(store().errors["a:t1"]?.code).toBe("not_found");
+});
+
+test("a prefetch nobody joined still fails quietly", async () => {
+  let fail: (e: unknown) => void = () => {};
+  mockIPC((cmd) => (cmd === "get_thread" ? new Promise((_, reject) => (fail = reject)) : undefined));
+  store().prefetch(["a:t1"]);
+  fail({ code: "not_found", message: "gone" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(store().errors).toEqual({});
+});
+
 test("a successful load clears an earlier error", async () => {
   const threads: Record<string, ThreadDetail> = {};
   backend(threads);

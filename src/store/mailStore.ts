@@ -16,7 +16,10 @@ import {
 interface MailState {
   threads: ThreadSummary[];
   next: ThreadCursor | null;
+  /** The query most recently asked for; its first page may still be loading or have failed. */
   query: ThreadQuery | null;
+  /** The query `threads` and `next` belong to. Paging only ever continues this one. */
+  loadedQuery: ThreadQuery | null;
   loading: boolean;
   error: CommandError | null;
   /** Load the first page for `query`, replacing the list. `limit` asks for more than one page. */
@@ -44,7 +47,15 @@ const MAX_RELOAD = 500;
 const reloadDepth = (loaded: number) => Math.min(Math.max(loaded, PAGE), MAX_RELOAD);
 const keyOf = (t: ThreadSummary) => threadKey(t.accountId, t.id);
 
-const EMPTY = { threads: [], next: null, loading: false, error: null };
+const sameQuery = (a: ThreadQuery | null, b: ThreadQuery | null) =>
+  a !== null &&
+  b !== null &&
+  a.labelId === b.labelId &&
+  (a.alsoLabelId ?? null) === (b.alsoLabelId ?? null) &&
+  a.accountIds.length === b.accountIds.length &&
+  a.accountIds.every((id, i) => id === b.accountIds[i]);
+
+const EMPTY = { threads: [], next: null, loadedQuery: null, loading: false, error: null };
 
 export const useMailStore = create<MailState>((set, get) => ({
   ...EMPTY,
@@ -60,15 +71,17 @@ export const useMailStore = create<MailState>((set, get) => ({
         ...(limit ? { limit } : {}),
       });
       if (ticket !== latest) return;
-      set({ threads: page?.threads ?? [], next: page?.next ?? null, loading: false, error: null });
+      set({ threads: page?.threads ?? [], next: page?.next ?? null, loadedQuery: query, loading: false, error: null });
     } catch (error) {
       if (ticket !== latest) return;
-      set({ loading: false, error: toCommandError(error) });
+      // The previous mailbox's rows and cursor mustn't masquerade as this one's; a failed reload of the same query keeps its rows.
+      const stale = sameQuery(get().loadedQuery, query) ? {} : { threads: [], next: null, loadedQuery: null };
+      set({ ...stale, loading: false, error: toCommandError(error) });
     }
   },
   loadMore: async () => {
-    const { query, next, loading } = get();
-    if (!query || !next || loading) return;
+    const { query, loadedQuery, next, loading } = get();
+    if (!query || !next || loading || !sameQuery(loadedQuery, query)) return;
     const ticket = ++latest;
     set({ loading: true });
     try {

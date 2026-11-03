@@ -152,6 +152,61 @@ test("a reload during loadMore wins; the late page is dropped", async () => {
   expect(useMailStore.getState().next).toEqual(cursorAfter("t1"));
 });
 
+test("a failed first page for a new mailbox shows its error, not the old mailbox's rows, and paging stays off", async () => {
+  const calls: Record<string, unknown>[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") return undefined;
+    const a = args as Record<string, unknown>;
+    calls.push(a);
+    if (a.labelId === "SENT") throw { code: "internal", message: "Sent is unavailable" };
+    return { threads: rows(0, 50), next: cursorAfter("t49") };
+  });
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "SENT" });
+  expect(useMailStore.getState().error).toEqual({ code: "internal", message: "Sent is unavailable" });
+  expect(useMailStore.getState().query?.labelId).toBe("SENT");
+  expect(useMailStore.getState().threads).toEqual([]);
+  expect(useMailStore.getState().next).toBeNull();
+
+  const before = calls.length;
+  await useMailStore.getState().loadMore();
+  expect(calls).toHaveLength(before);
+  expect(useMailStore.getState().threads).toEqual([]);
+  expect(useMailStore.getState().error?.message).toBe("Sent is unavailable");
+});
+
+test("switching mailboxes keeps the old rows until the new first page arrives", async () => {
+  let release: (p: ThreadPage) => void = () => {};
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") return undefined;
+    if ((args as { labelId: string }).labelId === "SENT") return new Promise<ThreadPage>((resolve) => (release = resolve));
+    return { threads: rows(0, 2), next: cursorAfter("t1") };
+  });
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
+  const switching = useMailStore.getState().load({ accountIds: ["a"], labelId: "SENT" });
+  expect(ids()).toEqual(["t0", "t1"]);
+  // Paging is off while the switch is in flight.
+  await useMailStore.getState().loadMore();
+  release({ threads: rows(10, 1), next: null });
+  await switching;
+  expect(ids()).toEqual(["t10"]);
+});
+
+test("a failed reload of the same mailbox keeps its rows and cursor", async () => {
+  let fail = false;
+  mockIPC((cmd) => {
+    if (cmd !== "list_threads") return undefined;
+    if (fail) throw { code: "internal", message: "Database busy" };
+    return { threads: rows(0, 2), next: cursorAfter("t1") };
+  });
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
+  fail = true;
+  await useMailStore.getState().reload();
+  expect(useMailStore.getState().error?.code).toBe("internal");
+  expect(ids()).toEqual(["t0", "t1"]);
+  expect(useMailStore.getState().next).toEqual(cursorAfter("t1"));
+});
+
 test("patch rewrites only the rows named by key", async () => {
   mockIPC((cmd) => (cmd === "list_threads" ? { threads: [summary("t1", "a"), summary("t1", "b"), summary("t2", "a")], next: null } : undefined));
   await useMailStore.getState().load({ accountIds: ["a", "b"], labelId: "INBOX" });

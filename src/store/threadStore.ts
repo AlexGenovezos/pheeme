@@ -31,7 +31,8 @@ interface ThreadState {
 }
 
 // A request is current while it is the entry here; evicting or re-requesting a key supersedes it.
-const inflight = new Map<ThreadKey, { ticket: number; promise: Promise<void> }>();
+// `quiet` requests (prefetch) swallow failures; a foreground `load` that joins one makes it loud.
+const inflight = new Map<ThreadKey, { ticket: number; promise: Promise<void>; quiet: boolean }>();
 let tickets = 0;
 
 export const useThreadStore = create<ThreadState>((set, get) => {
@@ -53,7 +54,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
           return { details, errors };
         });
       } catch (error) {
-        if (!current() || quiet) return;
+        if (!current() || inflight.get(key)?.quiet) return;
         const failure = toCommandError(error);
         set((s) => {
           const errors = { ...s.errors, [key]: failure };
@@ -67,7 +68,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         if (current()) inflight.delete(key);
       }
     })();
-    inflight.set(key, { ticket, promise });
+    inflight.set(key, { ticket, promise, quiet });
     return promise;
   };
 
@@ -85,7 +86,10 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         });
         return Promise.resolve();
       }
-      return inflight.get(key)?.promise ?? fetchDetail(key);
+      const joined = inflight.get(key);
+      if (!joined) return fetchDetail(key);
+      joined.quiet = false;
+      return joined.promise;
     },
     prefetch: (keys) => {
       for (const key of keys) {
