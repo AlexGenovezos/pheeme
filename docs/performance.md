@@ -79,18 +79,21 @@ If a change legitimately needs more memory, measure the new peak and raise the b
 [`e2e/memory.spec.ts`](../e2e/memory.spec.ts) drives the preview build (mocked IPC and
 fixtures, `?threads=10000` for ten thousand more Inbox conversations) in Chromium with
 Playwright. After a warm-up round it runs four rounds of a heavy session: scroll the list
-end to end, open 50 conversations with `j` (200 in all), switch mailboxes, cycle the three
-themes, go to Manage accounts and back, and fire `sync:*` events. It forces garbage
+end to end, open the next 50 conversations with `j` (200 different ones in all), switch
+mailboxes, cycle the three themes, go to Manage accounts and back, and fire `sync:*` events. It forces garbage
 collection through the DevTools protocol, then compares the JS heap, DOM nodes and event
 listeners with where they started:
 
 | Measure | Healthy run | Fails above |
 |---------|-------------|-------------|
-| JS heap growth | about +0.5 MiB (V8's optimized code, Chrome's performance timeline) | 1 MiB |
-| DOM nodes | +0 to +5 | 100 |
+| JS heap growth | about +0.8 MiB (V8's optimized code, Chrome's performance timeline) | 2 MiB |
+| DOM nodes | +0 | 100 |
 | Event listeners | +0 | 20 |
 
 Keeping a copy of every loaded thread list, for example, adds over 100 MiB and fails it.
+Small leaks stay below its noise: the generated conversations are tiny, so even a detail
+cache that never evicts adds only about 0.1 MiB over the run. Unit tests cover bounds like
+that one (`threadStore.test.ts` checks the cache keeps 30).
 Chromium stands in for the real webviews (WebKitGTK, WKWebView, WebView2): it catches JS
 leaks (stores, listeners, detached DOM), not engine-specific ones.
 

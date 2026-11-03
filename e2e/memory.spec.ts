@@ -6,15 +6,15 @@ import { expect, test, type CDPSession, type Page } from "@playwright/test";
 
 const THREADS = 10_000;
 const ROUNDS = 4;
-/** Threads opened per round (each replaces the last in the reading pane): 200 in all. */
+/** Conversations opened per round, different ones each round: 200 measured in all. */
 const OPENED = 50;
 const SYNC_EVENTS = 10;
 /**
- * Growth allowed after GC, end vs. start, about twice the worst healthy run (+0.5 MiB: V8's
+ * Growth allowed after GC, end vs. start, about 2.5 times a healthy run (+0.8 MiB: V8's
  * optimized code and Chrome's performance timeline, not app state). Keeping one 10k-thread
- * list per load would add megabytes.
+ * list per load adds over 100 MiB.
  */
-const MAX_HEAP_GROWTH = 1024 * 1024;
+const MAX_HEAP_GROWTH = 2 * 1024 * 1024;
 const MAX_NODE_GROWTH = 100;
 const MAX_LISTENER_GROWTH = 20;
 
@@ -59,18 +59,40 @@ async function goTo(page: Page, mailbox: string) {
 }
 
 /** One round of a heavy session: scroll, read, switch mailboxes, themes and screens, sync. */
-async function round(page: Page) {
+async function round(page: Page, n: number) {
   const rows = list(page);
   for (const at of [0.25, 0.5, 0.75, 1, 0]) {
     await rows.evaluate((el, at) => (el.scrollTop = el.scrollHeight * at), at);
     await page.waitForTimeout(50);
   }
 
-  await rows.getByRole("option").first().click();
+  // Open the next OPENED generated conversations: each round reads new ones, so a detail
+  // cache that never evicts keeps growing instead of filling up during the warm-up.
+  const first = n * OPENED;
+  // Bring it into the virtualized list's rendered window: step toward it from whatever
+  // generated rows are rendered now.
+  await rows.evaluate(async (el, target) => {
+    const frame = () => new Promise((done) => requestAnimationFrame(() => done(null)));
+    const rowHeight = el.querySelector<HTMLElement>('[role="option"]')!.offsetHeight;
+    for (let step = 0; step < 30; step++) {
+      const rendered = [...el.querySelectorAll('[role="option"]')]
+        .map((row) => /Generated conversation (\d+)(?!\d)/.exec(row.textContent ?? ""))
+        .filter((m) => m !== null)
+        .map((m) => Number(m[1]));
+      if (rendered.includes(target)) return;
+      const middle = rendered.length ? rendered[rendered.length >> 1] : target - 50;
+      el.scrollTop += (target - middle) * rowHeight;
+      await frame();
+      await frame();
+    }
+    throw new Error(`couldn't bring conversation ${target} into view`);
+  }, first);
+  await rows
+    .getByRole("option", { name: new RegExp(`Generated conversation ${first} Body`) })
+    .click();
   for (let i = 0; i < OPENED; i++) await page.keyboard.press("j");
-  // Past the fixture conversations, into the generated ones.
   await expect(
-    page.getByRole("heading", { level: 2, name: /^Generated conversation \d+$/ }),
+    page.getByRole("heading", { level: 2, name: `Generated conversation ${first + OPENED}` }),
   ).toBeVisible();
 
   for (const mailbox of ["Primary", "Starred", "Sent", "All Mail", "All Inboxes"]) {
@@ -106,9 +128,9 @@ test("a long session doesn't grow the JS heap, DOM or listeners", async ({ page 
   await page.goto(`/?threads=${THREADS}`);
   await expect(list(page).getByRole("option").first()).toBeVisible();
 
-  await round(page); // warm up: lazy modules, caches, first-render work
+  await round(page, 0); // warm up: lazy modules, caches, first-render work
   const start = await snapshot(cdp);
-  for (let i = 0; i < ROUNDS; i++) await round(page);
+  for (let i = 1; i <= ROUNDS; i++) await round(page, i);
   const end = await snapshot(cdp);
 
   const mib = (n: number) => `${(n / 1024 / 1024).toFixed(2)} MiB`;
