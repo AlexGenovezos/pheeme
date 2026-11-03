@@ -2,6 +2,8 @@ pub mod accounts;
 pub mod attachments;
 pub mod labels;
 pub mod messages;
+pub mod outbox;
+pub mod sync_state;
 pub mod threads;
 
 use anyhow::Result;
@@ -28,7 +30,7 @@ pub async fn init_db(data_dir: &Path) -> Result<SqlitePool> {
     Ok(pool)
 }
 
-async fn run_migrations(pool: &SqlitePool) -> Result<()> {
+pub(crate) async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     sqlx::migrate!("src/db/migrations").run(pool).await?;
     info!("Database migrations applied");
     Ok(())
@@ -65,6 +67,9 @@ mod tests {
             "attachments",
             "labels",
             "messages",
+            "outbox",
+            "outbox_messages",
+            "sync_state",
             "thread_labels",
             "threads",
         ] {
@@ -107,6 +112,9 @@ mod tests {
             message_count: 1,
             unread_count: 0,
             has_attachment: 0,
+            from_name: None,
+            from_address: None,
+            is_starred: 0,
         }
     }
 
@@ -131,6 +139,7 @@ mod tests {
             is_starred: 0,
             raw_headers: None,
             fully_fetched: 0,
+            rfc822_message_id: None,
         }
     }
 
@@ -177,6 +186,8 @@ mod tests {
                 color_text: None,
                 messages_total: 0,
                 messages_unread: 0,
+                threads_total: 0,
+                threads_unread: 0,
             },
         )
         .await
@@ -368,5 +379,294 @@ mod tests {
                 "accounts must not store secrets, found column {name}"
             );
         }
+    }
+
+    fn msg_with(
+        account_id: &str,
+        id: &str,
+        thread_id: &str,
+        date: i64,
+        labels: &[&str],
+    ) -> messages::DbMessage {
+        let mut m = test_message(account_id, id, thread_id);
+        m.has_attachment = 0;
+        m.date = Some(date);
+        m.subject = Some(format!("subject {id}"));
+        m.from_name = Some(format!("from {id}"));
+        m.label_ids = Some(serde_json::to_string(labels).unwrap());
+        m.is_read = (!labels.contains(&"UNREAD")).into();
+        m.is_starred = labels.contains(&"STARRED").into();
+        m
+    }
+
+    async fn put(pool: &SqlitePool, m: &messages::DbMessage) {
+        messages::upsert_message(pool, m).await.unwrap();
+    }
+
+    async fn recompute(
+        pool: &SqlitePool,
+        account: &str,
+        threads: &[&str],
+    ) -> threads::RecomputeResult {
+        let mut conn = pool.acquire().await.unwrap();
+        threads::recompute_threads(&mut conn, account, &labels(threads))
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn migration_002_adds_sync_columns() {
+        let pool = fresh_pool().await;
+        let cols: Vec<(String,)> = sqlx::query_as("SELECT name FROM pragma_table_info('messages')")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert!(cols.iter().any(|(c,)| c == "rfc822_message_id"));
+    }
+
+    #[tokio::test]
+    async fn recompute_threads_derives_labels_and_deletes_empty() {
+        let pool = fresh_pool().await;
+        accounts::insert_account(&pool, &test_account("acct-1"))
+            .await
+            .unwrap();
+        put(
+            &pool,
+            &msg_with("acct-1", "m1", "t1", 100, &["INBOX", "UNREAD"]),
+        )
+        .await;
+        put(&pool, &msg_with("acct-1", "m2", "t1", 200, &["SENT"])).await;
+
+        let r = recompute(&pool, "acct-1", &["t1"]).await;
+        assert_eq!(r.created, labels(&["t1"]));
+        assert_eq!(
+            threads::get_thread_label_ids(&pool, "acct-1", "t1")
+                .await
+                .unwrap(),
+            labels(&["INBOX", "SENT", "UNREAD"])
+        );
+        let t = threads::get_thread(&pool, "acct-1", "t1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(t.unread_count, 1);
+        assert_eq!(t.message_count, 2);
+        assert_eq!(t.subject.as_deref(), Some("subject m1"));
+        assert_eq!(t.from_name.as_deref(), Some("from m2"));
+        assert_eq!(t.last_message_date, Some(200));
+
+        for m in ["m1", "m2"] {
+            messages::delete_message(&pool, "acct-1", m).await.unwrap();
+        }
+        let r = recompute(&pool, "acct-1", &["t1"]).await;
+        assert_eq!(r.removed, labels(&["t1"]));
+        assert!(threads::get_thread(&pool, "acct-1", "t1")
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(count(&pool, "thread_labels").await, 0);
+    }
+
+    #[tokio::test]
+    async fn trashed_message_only_contributes_trash() {
+        let pool = fresh_pool().await;
+        accounts::insert_account(&pool, &test_account("acct-1"))
+            .await
+            .unwrap();
+        put(&pool, &msg_with("acct-1", "m1", "t1", 100, &["INBOX"])).await;
+        put(
+            &pool,
+            &msg_with("acct-1", "m2", "t1", 200, &["INBOX", "TRASH", "UNREAD"]),
+        )
+        .await;
+        recompute(&pool, "acct-1", &["t1"]).await;
+        assert_eq!(
+            threads::get_thread_label_ids(&pool, "acct-1", "t1")
+                .await
+                .unwrap(),
+            labels(&["INBOX", "TRASH"])
+        );
+        let t = threads::get_thread(&pool, "acct-1", "t1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!((t.unread_count, t.message_count), (0, 1));
+
+        messages::delete_message(&pool, "acct-1", "m1")
+            .await
+            .unwrap();
+        recompute(&pool, "acct-1", &["t1"]).await;
+        assert_eq!(
+            threads::get_thread_label_ids(&pool, "acct-1", "t1")
+                .await
+                .unwrap(),
+            labels(&["TRASH"])
+        );
+    }
+
+    #[tokio::test]
+    async fn unread_counts_across_accounts() {
+        let pool = fresh_pool().await;
+        for a in ["acct-1", "acct-2"] {
+            accounts::insert_account(&pool, &test_account(a))
+                .await
+                .unwrap();
+        }
+        put(
+            &pool,
+            &msg_with(
+                "acct-1",
+                "m1",
+                "t1",
+                1,
+                &["INBOX", "CATEGORY_PERSONAL", "UNREAD"],
+            ),
+        )
+        .await;
+        put(
+            &pool,
+            &msg_with(
+                "acct-2",
+                "m2",
+                "t2",
+                2,
+                &["INBOX", "CATEGORY_SOCIAL", "UNREAD"],
+            ),
+        )
+        .await;
+        put(
+            &pool,
+            &msg_with("acct-2", "m3", "t3", 3, &["INBOX", "CATEGORY_SOCIAL"]),
+        )
+        .await;
+        put(
+            &pool,
+            &msg_with("acct-2", "m4", "t4", 4, &["CATEGORY_SOCIAL", "UNREAD"]),
+        )
+        .await;
+        recompute(&pool, "acct-1", &["t1"]).await;
+        recompute(&pool, "acct-2", &["t2", "t3", "t4"]).await;
+
+        let counts = threads::unread_counts(&pool, &labels(&["acct-1", "acct-2"]))
+            .await
+            .unwrap();
+        assert_eq!(
+            counts,
+            vec![
+                ("CATEGORY_PERSONAL".to_owned(), 1),
+                ("CATEGORY_SOCIAL".to_owned(), 1),
+                ("INBOX".to_owned(), 2),
+            ]
+        );
+        let one = threads::unread_counts(&pool, &labels(&["acct-1"]))
+            .await
+            .unwrap();
+        assert_eq!(
+            one,
+            vec![("CATEGORY_PERSONAL".to_owned(), 1), ("INBOX".to_owned(), 1)]
+        );
+    }
+
+    #[tokio::test]
+    async fn set_labels_updates_flags() {
+        let pool = fresh_pool().await;
+        accounts::insert_account(&pool, &test_account("acct-1"))
+            .await
+            .unwrap();
+        put(&pool, &msg_with("acct-1", "m1", "t1", 1, &["INBOX"])).await;
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(
+            messages::set_labels(&mut conn, "acct-1", "m1", &labels(&["STARRED"]))
+                .await
+                .unwrap()
+        );
+        let m = messages::get_message(&mut *conn, "acct-1", "m1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!((m.is_read, m.is_starred), (1, 1));
+        assert!(
+            messages::set_labels(&mut conn, "acct-1", "m1", &labels(&["UNREAD"]))
+                .await
+                .unwrap()
+        );
+        let m = messages::get_message(&mut *conn, "acct-1", "m1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!((m.is_read, m.is_starred), (0, 0));
+        assert!(
+            !messages::set_labels(&mut conn, "acct-1", "nope", &labels(&[]))
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn metadata_upsert_keeps_cached_body() {
+        let pool = fresh_pool().await;
+        accounts::insert_account(&pool, &test_account("acct-1"))
+            .await
+            .unwrap();
+        let mut full = msg_with("acct-1", "m1", "t1", 1, &["INBOX"]);
+        full.body_text = Some("hello".into());
+        full.fully_fetched = 1;
+        put(&pool, &full).await;
+        let mut meta = msg_with("acct-1", "m1", "t1", 1, &[]);
+        meta.fully_fetched = 0;
+        put(&pool, &meta).await;
+        let m = messages::get_message(&pool, "acct-1", "m1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (m.body_text.as_deref(), m.fully_fetched),
+            (Some("hello"), 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn outbox_cascades_messages_and_orders_by_seq() {
+        let pool = fresh_pool().await;
+        accounts::insert_account(&pool, &test_account("acct-1"))
+            .await
+            .unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        for id in ["op-b", "op-a"] {
+            let op = outbox::DbOp {
+                seq: 0,
+                id: id.into(),
+                account_id: "acct-1".into(),
+                kind: "modify".into(),
+                payload: "{}".into(),
+                status: "pending".into(),
+                attempts: 0,
+                next_attempt_at: 0,
+                checks_done: 0,
+                rfc822_message_id: None,
+                last_error: None,
+                created_at: 0,
+                updated_at: 0,
+            };
+            let target = outbox::DbOpMessage {
+                op_id: id.into(),
+                account_id: "acct-1".into(),
+                message_id: "m1".into(),
+                thread_id: "t1".into(),
+                prior_label_ids: "[]".into(),
+            };
+            outbox::insert(&mut conn, &op, &[target]).await.unwrap();
+        }
+        let ops = outbox::for_account(&mut *conn, "acct-1").await.unwrap();
+        assert_eq!(
+            ops.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+            ["op-b", "op-a"]
+        );
+        let touching = outbox::pending_touching_threads(&mut conn, "acct-1", &labels(&["t1"]))
+            .await
+            .unwrap();
+        assert_eq!(touching.len(), 2);
+        outbox::delete(&mut *conn, "op-b").await.unwrap();
+        assert_eq!(count(&pool, "outbox_messages").await, 1);
     }
 }

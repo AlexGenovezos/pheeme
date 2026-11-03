@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{SqliteConnection, SqlitePool};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct DbAttachment {
@@ -14,6 +14,11 @@ pub struct DbAttachment {
 }
 
 pub async fn insert_attachment(pool: &SqlitePool, att: &DbAttachment) -> Result<()> {
+    let mut conn = pool.acquire().await?;
+    insert_attachment_tx(&mut conn, att).await
+}
+
+async fn insert_attachment_tx(conn: &mut SqliteConnection, att: &DbAttachment) -> Result<()> {
     sqlx::query!(
         r#"
         INSERT INTO attachments (
@@ -33,7 +38,7 @@ pub async fn insert_attachment(pool: &SqlitePool, att: &DbAttachment) -> Result<
         att.size,
         att.attachment_id,
     )
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
     Ok(())
 }
@@ -71,5 +76,25 @@ pub async fn delete_attachments_for_message(
     )
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+/// Replace a message's attachment metadata (used when a full copy is fetched).
+pub async fn replace_for_message(
+    conn: &mut SqliteConnection,
+    account_id: &str,
+    message_id: &str,
+    attachments: &[DbAttachment],
+) -> Result<()> {
+    sqlx::query!(
+        "DELETE FROM attachments WHERE account_id = ? AND message_id = ?",
+        account_id,
+        message_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    for att in attachments {
+        insert_attachment_tx(conn, att).await?;
+    }
     Ok(())
 }

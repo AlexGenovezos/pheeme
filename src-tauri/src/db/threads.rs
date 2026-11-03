@@ -1,6 +1,8 @@
+use crate::db::messages::{self, DbMessage};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{SqliteConnection, SqlitePool};
+use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct DbThread {
@@ -13,6 +15,10 @@ pub struct DbThread {
     pub message_count: i64,
     pub unread_count: i64,
     pub has_attachment: i64,
+    /// Sender of the latest message.
+    pub from_name: Option<String>,
+    pub from_address: Option<String>,
+    pub is_starred: i64,
 }
 
 /// Upserts the thread row and replaces its label set (`thread_labels`) in one
@@ -24,13 +30,24 @@ pub async fn upsert_thread(
     label_ids: &[String],
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
+    upsert_thread_tx(&mut tx, thread, label_ids).await?;
+    tx.commit().await?;
+    Ok(())
+}
 
+/// [`upsert_thread`] inside the caller's transaction.
+pub async fn upsert_thread_tx(
+    conn: &mut SqliteConnection,
+    thread: &DbThread,
+    label_ids: &[String],
+) -> Result<()> {
     sqlx::query!(
         r#"
         INSERT INTO threads (
             id, account_id, subject, snippet, history_id,
-            last_message_date, message_count, unread_count, has_attachment
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            last_message_date, message_count, unread_count, has_attachment,
+            from_name, from_address, is_starred
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id, account_id) DO UPDATE SET
             subject = excluded.subject,
             snippet = excluded.snippet,
@@ -38,7 +55,10 @@ pub async fn upsert_thread(
             last_message_date = excluded.last_message_date,
             message_count = excluded.message_count,
             unread_count = excluded.unread_count,
-            has_attachment = excluded.has_attachment
+            has_attachment = excluded.has_attachment,
+            from_name = excluded.from_name,
+            from_address = excluded.from_address,
+            is_starred = excluded.is_starred
         "#,
         thread.id,
         thread.account_id,
@@ -49,21 +69,21 @@ pub async fn upsert_thread(
         thread.message_count,
         thread.unread_count,
         thread.has_attachment,
+        thread.from_name,
+        thread.from_address,
+        thread.is_starred,
     )
-    .execute(&mut *tx)
+    .execute(&mut *conn)
     .await?;
 
     replace_thread_labels(
-        &mut tx,
+        conn,
         &thread.account_id,
         &thread.id,
         thread.last_message_date,
         label_ids,
     )
-    .await?;
-
-    tx.commit().await?;
-    Ok(())
+    .await
 }
 
 /// Deletes and re-inserts the thread's label rows inside the caller's
@@ -110,7 +130,8 @@ pub async fn get_thread(
         DbThread,
         r#"
         SELECT id, account_id, subject, snippet, history_id,
-               last_message_date, message_count, unread_count, has_attachment
+               last_message_date, message_count, unread_count, has_attachment,
+               from_name, from_address, is_starred
         FROM threads WHERE account_id = ? AND id = ?
         "#,
         account_id,
@@ -219,6 +240,9 @@ struct ThreadRow {
     message_count: i64,
     unread_count: i64,
     has_attachment: i64,
+    from_name: Option<String>,
+    from_address: Option<String>,
+    is_starred: i64,
     cursor_date: i64,
 }
 
@@ -243,6 +267,7 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
         SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
                t.history_id, t.last_message_date, t.message_count AS "message_count!",
                t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               t.from_name, t.from_address, t.is_starred AS "is_starred!",
                tl.last_message_date AS "cursor_date!"
         FROM thread_labels tl
         JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
@@ -270,6 +295,7 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
         SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
                t.history_id, t.last_message_date, t.message_count AS "message_count!",
                t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               t.from_name, t.from_address, t.is_starred AS "is_starred!",
                tl.last_message_date AS "cursor_date!"
         FROM thread_labels tl
         JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
@@ -321,9 +347,164 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
             message_count: r.message_count,
             unread_count: r.unread_count,
             has_attachment: r.has_attachment,
+            from_name: r.from_name,
+            from_address: r.from_address,
+            is_starred: r.is_starred,
         })
         .collect();
     Ok(ThreadPage { threads, next })
+}
+
+/// Inbox category labels, in tab order. `CATEGORY_PERSONAL` is the Primary tab.
+pub const CATEGORY_LABELS: [&str; 5] = [
+    "CATEGORY_PERSONAL",
+    "CATEGORY_SOCIAL",
+    "CATEGORY_PROMOTIONS",
+    "CATEGORY_UPDATES",
+    "CATEGORY_FORUMS",
+];
+
+/// The thread row and label set implied by a thread's cached messages (sorted by date
+/// ascending), or `None` when it has none.
+///
+/// A trashed (or spam) message only puts the thread in Trash (or Spam): its other labels
+/// don't count, so trashing a message takes the thread out of the Inbox right away. Counts
+/// and the sender come from the messages that aren't trashed/spam, unless all of them are.
+pub fn derive_thread(
+    account_id: &str,
+    thread_id: &str,
+    messages: &[DbMessage],
+) -> Option<(DbThread, Vec<String>)> {
+    if messages.is_empty() {
+        return None;
+    }
+    let mut labels = BTreeSet::new();
+    let mut visible = Vec::new();
+    for msg in messages {
+        let own = msg.labels();
+        if own.iter().any(|l| l == "TRASH") {
+            labels.insert("TRASH".to_owned());
+        } else if own.iter().any(|l| l == "SPAM") {
+            labels.insert("SPAM".to_owned());
+        } else {
+            labels.extend(own);
+            visible.push(msg);
+        }
+    }
+    if visible.is_empty() {
+        visible = messages.iter().collect();
+    }
+    let latest = visible
+        .iter()
+        .max_by_key(|m| m.date.unwrap_or(i64::MIN))
+        .expect("non-empty");
+    let thread = DbThread {
+        id: thread_id.to_owned(),
+        account_id: account_id.to_owned(),
+        subject: visible.iter().find_map(|m| m.subject.clone()),
+        snippet: latest.snippet.clone(),
+        history_id: None,
+        last_message_date: visible.iter().filter_map(|m| m.date).max(),
+        message_count: visible.len() as i64,
+        unread_count: visible.iter().filter(|m| m.is_read == 0).count() as i64,
+        has_attachment: visible.iter().any(|m| m.has_attachment != 0).into(),
+        from_name: latest.from_name.clone(),
+        from_address: latest.from_address.clone(),
+        is_starred: visible.iter().any(|m| m.is_starred != 0).into(),
+    };
+    Some((thread, labels.into_iter().collect()))
+}
+
+/// Thread ids touched by a write, by what happened to them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RecomputeResult {
+    pub created: Vec<String>,
+    pub updated: Vec<String>,
+    pub removed: Vec<String>,
+}
+
+impl RecomputeResult {
+    pub fn is_empty(&self) -> bool {
+        self.created.is_empty() && self.updated.is_empty() && self.removed.is_empty()
+    }
+
+    pub fn merge(&mut self, other: RecomputeResult) {
+        self.created.extend(other.created);
+        self.updated.extend(other.updated);
+        self.removed.extend(other.removed);
+    }
+}
+
+/// Rebuild the thread rows and `thread_labels` of `thread_ids` from their cached messages,
+/// deleting threads that no longer have any.
+pub async fn recompute_threads(
+    conn: &mut SqliteConnection,
+    account_id: &str,
+    thread_ids: &[String],
+) -> Result<RecomputeResult> {
+    let mut result = RecomputeResult::default();
+    let unique: BTreeSet<&String> = thread_ids.iter().collect();
+    for thread_id in unique {
+        let existed = sqlx::query_scalar!(
+            r#"SELECT 1 AS "one!: i64" FROM threads WHERE account_id = ? AND id = ?"#,
+            account_id,
+            thread_id
+        )
+        .fetch_optional(&mut *conn)
+        .await?
+        .is_some();
+        let msgs = messages::get_messages_for_thread(&mut *conn, account_id, thread_id).await?;
+        match derive_thread(account_id, thread_id, &msgs) {
+            Some((thread, labels)) => {
+                upsert_thread_tx(conn, &thread, &labels).await?;
+                if existed {
+                    result.updated.push(thread_id.clone());
+                } else {
+                    result.created.push(thread_id.clone());
+                }
+            }
+            None if existed => {
+                sqlx::query!(
+                    "DELETE FROM threads WHERE account_id = ? AND id = ?",
+                    account_id,
+                    thread_id
+                )
+                .execute(&mut *conn)
+                .await?;
+                result.removed.push(thread_id.clone());
+            }
+            None => {}
+        }
+    }
+    Ok(result)
+}
+
+/// Unread thread counts across `account_ids` for `INBOX` and each inbox category tab
+/// (`INBOX ∩ CATEGORY_x`). Labels with no unread threads are omitted.
+pub async fn unread_counts(
+    pool: &SqlitePool,
+    account_ids: &[String],
+) -> Result<Vec<(String, i64)>> {
+    let accounts = serde_json::to_string(account_ids)?;
+    let rows = sqlx::query!(
+        r#"
+        SELECT x.label_id AS "label_id!", COUNT(*) AS "count!: i64"
+        FROM thread_labels i
+        JOIN thread_labels u
+          ON u.account_id = i.account_id AND u.thread_id = i.thread_id AND u.label_id = 'UNREAD'
+        JOIN thread_labels x
+          ON x.account_id = i.account_id AND x.thread_id = i.thread_id
+         AND x.label_id IN ('INBOX', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL',
+                            'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS')
+        WHERE i.label_id = 'INBOX' AND i.account_id IN (SELECT value FROM json_each(?))
+        GROUP BY x.label_id
+        ORDER BY x.label_id
+        "#,
+        accounts
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.label_id, r.count)).collect())
 }
 
 #[cfg(test)]
@@ -361,6 +542,9 @@ mod tests {
             message_count: 1,
             unread_count: 0,
             has_attachment: 0,
+            from_name: None,
+            from_address: None,
+            is_starred: 0,
         }
     }
 
@@ -402,6 +586,7 @@ mod tests {
         SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
                t.history_id, t.last_message_date, t.message_count AS "message_count!",
                t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               t.from_name, t.from_address, t.is_starred AS "is_starred!",
                tl.last_message_date AS "cursor_date!"
         FROM thread_labels tl
         JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
@@ -419,6 +604,7 @@ mod tests {
         SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
                t.history_id, t.last_message_date, t.message_count AS "message_count!",
                t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               t.from_name, t.from_address, t.is_starred AS "is_starred!",
                tl.last_message_date AS "cursor_date!"
         FROM thread_labels tl
         JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
