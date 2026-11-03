@@ -112,6 +112,16 @@ describe("text fields", () => {
         return child;
       },
     ],
+    [
+      "button inside a region that owns its keys (compose)",
+      () => {
+        const host = document.createElement("section");
+        host.setAttribute("data-owns-keys", "");
+        const child = document.createElement("button");
+        host.append(child);
+        return child;
+      },
+    ],
   ])("single keys and chords are ignored in a %s", (_, make) => {
     const target = make();
     const archive = vi.fn();

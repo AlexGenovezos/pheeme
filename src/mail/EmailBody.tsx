@@ -46,7 +46,7 @@ interface HtmlBodyProps {
   declaresDark: boolean;
 }
 
-function HtmlBody({ html, hasRemoteContent, declaresDark }: HtmlBodyProps) {
+export function HtmlBody({ html, hasRemoteContent, declaresDark }: HtmlBodyProps) {
   const [allowRemote, setAllowRemote] = useState(false);
   const dark = useThemeStore((s) => s.resolved === "dark");
   const wrapper = useRef<HTMLDivElement>(null);

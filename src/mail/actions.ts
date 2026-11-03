@@ -3,9 +3,11 @@
 // Mutations are optimistic in two layers (Builder's call 6): the list is patched or pruned synchronously, then
 // the command updates the cache and the resulting `sync:messages_updated` reload confirms it. A rejection toasts
 // the error and reloads from the cache, which still holds whatever Gmail refused.
+import { useComposeStore } from "../compose/composeStore";
 import { toast } from "../components/ui/Toast";
 import { type ContextMenuItem, showContextMenu } from "../lib/contextMenu";
 import {
+  type ComposeMode,
   getThread,
   modifyThreads,
   type ThreadDetail,
@@ -18,11 +20,37 @@ import { useLabelStore } from "../store/labelStore";
 import { newOp, useMailStore } from "../store/mailStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
-import { parseThreadKey, type ThreadKey, threadKey } from "./mailboxes";
+import { parseThreadKey, resolveActiveAccount, type ThreadKey, threadKey } from "./mailboxes";
 import { rowId } from "./ThreadRow";
 
-/** Reply, Reply all, Forward and Compose arrive with Phase 7. */
-export const composeLater = () => toast({ title: "Compose arrives with Phase 7" });
+/** The message a Reply, Reply all or Forward answers: the conversation's latest that isn't a draft. */
+export function replyTarget(detail: ThreadDetail | undefined): string | null {
+  const sent = detail?.messages.filter((m) => !m.labelIds.includes("DRAFT")) ?? [];
+  return sent[sent.length - 1]?.id ?? null;
+}
+
+/** Reply, Reply all or Forward the open conversation, from the account it's in. */
+export async function respond(mode: ComposeMode): Promise<void> {
+  const key = ui().openThread;
+  if (key === null) return;
+  const { accountId } = parseThreadKey(key);
+  const threads = useThreadStore.getState();
+  if (!threads.details.has(key)) await threads.load(key);
+  const messageId = replyTarget(useThreadStore.getState().details.get(key));
+  if (!messageId) return;
+  await useComposeStore.getState().respond(accountId, messageId, mode);
+}
+
+/** A new message, from the account the sidebar is showing (or the open conversation's). */
+export function composeNew(): void {
+  const { activeAccountId, mailbox, openThread } = ui();
+  const accounts = useAccountStore.getState().accounts;
+  const preferred =
+    mailbox.accountId ??
+    (openThread === null ? activeAccountId : parseThreadKey(openThread).accountId);
+  const accountId = resolveActiveAccount(preferred, accounts);
+  if (accountId) useComposeStore.getState().compose(accountId);
+}
 
 const mail = () => useMailStore.getState();
 const ui = () => useUiStore.getState();

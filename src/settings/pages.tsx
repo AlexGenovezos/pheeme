@@ -1,4 +1,9 @@
-import { Info, Keyboard, Palette, Users } from "lucide-react";
+import { Info, Keyboard, Palette, SquarePen, Users } from "lucide-react";
+import {
+  UNDO_SEND_CHOICES,
+  type UndoSendSeconds,
+  useComposeSettings,
+} from "../compose/composeSettings";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Switch } from "../components/ui/Switch";
 import { registry } from "../keyboard/registry";
@@ -29,6 +34,22 @@ function SidebarControl() {
   const toggle = useUiStore((s) => s.toggleSidebar);
   return (
     <Switch label="Show sidebar" checked={shown} onChange={(next) => next !== shown && toggle()} />
+  );
+}
+
+function UndoSendControl() {
+  const seconds = useComposeSettings((s) => s.undoSendSeconds);
+  const set = useComposeSettings((s) => s.setUndoSendSeconds);
+  return (
+    <SegmentedControl
+      label="Undo send"
+      value={String(seconds)}
+      options={UNDO_SEND_CHOICES.map((n) => ({
+        value: String(n),
+        label: n === 0 ? "Off" : `${n} s`,
+      }))}
+      onChange={(v) => set(Number(v) as UndoSendSeconds)}
+    />
   );
 }
 
@@ -86,6 +107,27 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     keywords: ["gmail", "google", "sign in", "sign out", "remove", "add"],
     Component: AccountsSettings,
     matches: accountsMatch,
+  },
+  {
+    id: "compose",
+    title: "Compose",
+    icon: SquarePen,
+    group: "Mail",
+    keywords: ["write", "send", "reply", "draft"],
+    sections: [
+      {
+        title: "Sending",
+        settings: [
+          {
+            id: "compose.undoSend",
+            title: "Undo send",
+            description: "How long a sent message waits, so you can take it back.",
+            keywords: ["delay", "cancel", "unsend"],
+            Control: UndoSendControl,
+          },
+        ],
+      },
+    ],
   },
   {
     id: "about",

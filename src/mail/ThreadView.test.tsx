@@ -1,7 +1,8 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
+import { __resetComposeStoreForTests, useComposeStore } from "../compose/composeStore";
 import { dismissToast, ToastProvider, useToastStore } from "../components/ui/Toast";
 import type { AttachmentInfo, LabelInfo, MessageDetail, ThreadDetail } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
@@ -94,6 +95,7 @@ beforeEach(() => {
     ],
   });
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
+  __resetComposeStoreForTests();
   mockIPC(() => undefined);
 });
 
@@ -345,9 +347,62 @@ test("attachments list hides inline images and downloads with a toast", async ()
   );
 });
 
-test("Reply, Reply all and Forward say compose is coming", () => {
-  open(detail([message(1)]));
+test("Reply all answers the latest message that isn't a draft", async () => {
+  const calls: Array<{ cmd: string; args: unknown }> = [];
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args });
+    return cmd === "compose_template"
+      ? {
+          to: [],
+          cc: [],
+          bcc: [],
+          subject: "Re: Quarterly plan",
+          bodyHtml: "",
+          attachments: [],
+          references: [],
+        }
+      : undefined;
+  });
+  open(detail([message(1), message(2), message(3, { labelIds: ["DRAFT"] })]));
   renderView();
   fireEvent.click(screen.getByRole("button", { name: "Reply all" }));
-  expect(screen.getByText("Compose arrives with Phase 7")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(calls.filter((c) => c.cmd === "compose_template").map((c) => c.args)).toEqual([
+      { accountId: "a1", messageId: "m2", mode: "replyAll" },
+    ]),
+  );
+  await vi.waitFor(() =>
+    expect(useComposeStore.getState().windows).toMatchObject([
+      { kind: "replyAll", loading: false, draft: { subject: "Re: Quarterly plan" } },
+    ]),
+  );
+});
+
+test("a draft in the conversation says so and opens in compose", async () => {
+  const calls: string[] = [];
+  mockIPC((cmd) => {
+    calls.push(cmd);
+    return cmd === "open_draft"
+      ? {
+          to: [],
+          cc: [],
+          bcc: [],
+          subject: "",
+          bodyHtml: "<p>x</p>",
+          attachments: [],
+          references: [],
+          draftId: "d1",
+        }
+      : undefined;
+  });
+  open(detail([message(1), message(2, { labelIds: ["DRAFT"] })]));
+  renderView();
+  const draft = screen.getByRole("article", { name: "Message from Draft" });
+  fireEvent.click(within(draft).getByRole("button", { name: "Edit draft" }));
+  await vi.waitFor(() =>
+    expect(useComposeStore.getState().windows).toMatchObject([
+      { kind: "draft", loading: false, draft: { draftId: "d1" } },
+    ]),
+  );
+  expect(calls).toContain("open_draft");
 });

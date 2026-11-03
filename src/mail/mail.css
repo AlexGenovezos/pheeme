@@ -219,6 +219,15 @@
 .message-card__sender[data-unread] {
   font-weight: var(--font-weight-semibold);
 }
+.message-card__sender[data-draft],
+.message-card__name[data-draft] {
+  color: var(--color-danger);
+}
+
+.message-card__draft-actions {
+  display: flex;
+  padding: var(--space-0) var(--space-4) var(--space-3);
+}
 
 .message-card__snippet {
   flex: 1;

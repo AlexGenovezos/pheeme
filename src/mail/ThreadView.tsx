@@ -8,7 +8,7 @@ import { useLabelStore } from "../store/labelStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { MessageCard } from "./MessageCard";
-import { composeLater, toggleLabel } from "./actions";
+import { respond, toggleLabel } from "./actions";
 import { parseThreadKey } from "./mailboxes";
 import "./mail.css";
 
@@ -139,13 +139,13 @@ export function ThreadView() {
           ))}
         </div>
         <div className="thread-view__replies">
-          <Button icon={<Reply />} onClick={composeLater}>
+          <Button icon={<Reply />} onClick={() => void respond("reply")}>
             Reply
           </Button>
-          <Button icon={<ReplyAll />} onClick={composeLater}>
+          <Button icon={<ReplyAll />} onClick={() => void respond("replyAll")}>
             Reply all
           </Button>
-          <Button icon={<Forward />} onClick={composeLater}>
+          <Button icon={<Forward />} onClick={() => void respond("forward")}>
             Forward
           </Button>
         </div>
