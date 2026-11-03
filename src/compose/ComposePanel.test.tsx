@@ -136,3 +136,16 @@ test("autosave runs every 30 s while typing goes on", async () => {
 });
 
 afterEach(() => vi.useRealTimers());
+
+test("opening a saved draft and closing it untouched doesn't ask", async () => {
+  renderHost();
+  act(() => {
+    const id = useComposeStore.getState().compose("a1", { subject: "Saved", draftId: "d1" });
+    useComposeStore.setState((s) => ({
+      windows: s.windows.map((w) => (w.id === id ? { ...w, kind: "draft" as const } : w)),
+    }));
+  });
+  const panel = await screen.findByRole("region", { name: "Draft" });
+  fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("region", { name: "Draft" })).not.toBeInTheDocument();
+});

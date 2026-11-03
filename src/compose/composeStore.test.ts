@@ -154,8 +154,8 @@ test("saving keeps the draft id, and a send waits for a save in flight", async (
     });
   const id = written();
   const saving = store().save(id);
-  const sending = store().send(id);
   await vi.waitFor(() => expect(called("save_draft")).toHaveLength(1));
+  const sending = store().send(id);
   expect(called("send_email")).toEqual([]);
   release();
   await saving;
@@ -322,4 +322,29 @@ test("while sending, edits and closing are ignored", async () => {
   queue();
   await sending;
   expect(store().windows).toEqual([]);
+});
+
+test("Save draft on close of a message emptied meanwhile just closes", async () => {
+  const id = written({ bodyHtml: "", to: [] });
+  store().update(id, { subject: "x" });
+  store().requestClose(id);
+  store().update(id, { subject: "" });
+  await store().saveAndClose(id);
+  expect(store().windows).toEqual([]);
+  expect(called("save_draft")).toEqual([]);
+});
+
+test("no autosave once a send is queued", async () => {
+  let queue: () => void = () => {};
+  handlers.send_email = () =>
+    new Promise((resolve) => {
+      queue = () => resolve({ opId: "op1", sendAt: Date.now() + 5000 });
+    });
+  const id = written();
+  const sending = store().send(id);
+  await vi.waitFor(() => expect(called("send_email")).toHaveLength(1));
+  expect(await store().save(id, { quiet: true })).toBe(false);
+  queue();
+  await sending;
+  expect(called("save_draft")).toEqual([]);
 });

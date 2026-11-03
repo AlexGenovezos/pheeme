@@ -348,10 +348,14 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     save(id, opts) {
       const run = async (): Promise<boolean> => {
         const win = find(id);
-        if (!win || win.loading) return false;
+        // A queued send owns the message (and its draft id) now.
+        if (!win || win.loading || win.sending) return false;
         // Nothing new since the last save, or nothing worth keeping yet.
         if (win.version === win.savedVersion) return true;
-        if (isBlank(win.draft) && !win.draft.draftId) return true;
+        if (isBlank(win.draft) && !win.draft.draftId) {
+          patch(id, { savedVersion: win.version });
+          return true;
+        }
         const version = win.version;
         const accountId = win.accountId;
         patch(id, { saving: true });

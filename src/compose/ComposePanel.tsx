@@ -160,7 +160,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   const { draft } = win;
   const editor = useComposeEditor(draft.bodyHtml, (bodyHtml) => store.update(win.id, { bodyHtml }));
   useEffect(() => {
-    editor?.setEditable(!win.sending);
+    editor?.setEditable(!win.sending, false); // no update event: not an edit
   }, [editor, win.sending]);
 
   // Focus: replies start in the body, new messages in To.
