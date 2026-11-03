@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO attachments (\n            id, message_id, account_id, filename, mime_type, size, attachment_id,\n            content_id, is_inline\n        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\n        ON CONFLICT(id, message_id, account_id) DO UPDATE SET\n            filename = excluded.filename,\n            mime_type = excluded.mime_type,\n            size = excluded.size,\n            attachment_id = excluded.attachment_id,\n            content_id = excluded.content_id,\n            is_inline = excluded.is_inline\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "ae974c8e795da858c4651abe976a55dfe6e8e69d84d9cc5c1dd31e98438777d4"
+}

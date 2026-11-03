@@ -45,6 +45,12 @@ pub trait MailApi: Send + Sync {
     async fn trash_message(&self, id: &str) -> Result<(), GmailError>;
     /// Send a base64url RFC 2822 message; returns the Gmail message id.
     async fn send_message(&self, raw: &str) -> Result<String, GmailError>;
+    /// Download an attachment's bytes (`attachment_id` is Gmail's, not the row id).
+    async fn get_attachment(
+        &self,
+        message_id: &str,
+        attachment_id: &str,
+    ) -> Result<Vec<u8>, GmailError>;
 }
 
 #[async_trait::async_trait]
@@ -117,5 +123,13 @@ impl MailApi for GmailClient {
 
     async fn send_message(&self, raw: &str) -> Result<String, GmailError> {
         Ok(GmailClient::send_message(self, raw).await?.id)
+    }
+
+    async fn get_attachment(
+        &self,
+        message_id: &str,
+        attachment_id: &str,
+    ) -> Result<Vec<u8>, GmailError> {
+        GmailClient::get_attachment(self, message_id, attachment_id).await
     }
 }

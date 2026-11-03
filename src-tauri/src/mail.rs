@@ -2,6 +2,7 @@
 //! the SQLite cache; changes go through the outbox. Tauri-free; commands are thin
 //! adapters over [`MailService`].
 
+use crate::db::attachments::{self, DbAttachment};
 use crate::db::messages::{parse_labels, DbMessage};
 use crate::db::threads::{self, DbThread, ThreadCursor, ThreadQuery};
 use crate::db::{labels, messages};
@@ -110,6 +111,31 @@ pub struct MessageDetailDto {
     pub starred: bool,
     pub label_ids: Vec<String>,
     pub has_attachment: bool,
+    pub attachments: Vec<AttachmentDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentDto {
+    pub id: String,
+    pub filename: Option<String>,
+    pub mime_type: Option<String>,
+    pub size: Option<i64>,
+    pub is_inline: bool,
+    pub content_id: Option<String>,
+}
+
+impl From<DbAttachment> for AttachmentDto {
+    fn from(a: DbAttachment) -> Self {
+        Self {
+            id: a.id,
+            filename: a.filename,
+            mime_type: a.mime_type,
+            size: a.size,
+            is_inline: a.is_inline != 0,
+            content_id: a.content_id,
+        }
+    }
 }
 
 impl From<DbMessage> for MessageDetailDto {
@@ -134,6 +160,7 @@ impl From<DbMessage> for MessageDetailDto {
             unread: m.is_read == 0,
             starred: m.is_starred != 0,
             has_attachment: m.has_attachment != 0,
+            attachments: Vec::new(),
         }
     }
 }
@@ -233,9 +260,17 @@ impl MailService {
             .await?
             .ok_or(MailError::NotFound)?;
         let messages = messages::get_messages_for_thread(&self.db, account_id, thread_id).await?;
+        let mut details = Vec::with_capacity(messages.len());
+        for m in messages {
+            let atts =
+                attachments::get_attachments_for_message(&self.db, account_id, &m.id).await?;
+            let mut dto = MessageDetailDto::from(m);
+            dto.attachments = atts.into_iter().map(Into::into).collect();
+            details.push(dto);
+        }
         Ok(ThreadDetailDto {
             thread: thread.into(),
-            messages: messages.into_iter().map(Into::into).collect(),
+            messages: details,
         })
     }
 
@@ -439,5 +474,54 @@ mod tests {
             mail.modify_threads("a1", &[], &[], &["INBOX".into()]).await,
             Err(MailError::Invalid(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn get_thread_includes_attachments() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::init_db(dir.path()).await.unwrap();
+        accounts::insert_account(
+            &pool,
+            &DbAccount {
+                id: "a1".into(),
+                email: "me@example.com".into(),
+                display_name: None,
+                profile_photo_url: None,
+                client_id: "c".into(),
+                history_id: None,
+                created_at: 0,
+                updated_at: 0,
+            },
+        )
+        .await
+        .unwrap();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment(
+            "a.pdf",
+            "application/pdf",
+            "g1",
+        ));
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            Arc::new(RecordingEvents::default()),
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(pool.clone(), sync.clone());
+
+        let detail = mail.get_thread("a1", "t1").await.unwrap();
+
+        assert_eq!(
+            detail.messages[0].attachments,
+            [AttachmentDto {
+                id: "0".into(),
+                filename: Some("a.pdf".into()),
+                mime_type: Some("application/pdf".into()),
+                size: Some(1),
+                is_inline: false,
+                content_id: None,
+            }]
+        );
     }
 }

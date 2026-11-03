@@ -87,6 +87,15 @@ export interface EmailAddress {
   address: string;
 }
 
+export interface AttachmentInfo {
+  id: string;
+  filename: string | null;
+  mimeType: string | null;
+  size: number | null;
+  isInline: boolean;
+  contentId: string | null;
+}
+
 export interface MessageDetail {
   id: string;
   threadId: string;
@@ -103,6 +112,7 @@ export interface MessageDetail {
   starred: boolean;
   labelIds: string[];
   hasAttachment: boolean;
+  attachments: AttachmentInfo[];
 }
 
 export interface ThreadDetail {

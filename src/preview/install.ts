@@ -16,7 +16,7 @@ function threadDetail(t: FixtureThread): ThreadDetail {
     messages: [{
       id: `${t.id}-m1`, threadId: t.id, fromName: t.fromName, fromAddress: t.fromAddress, to: [], cc: [],
       subject: t.subject, snippet: t.snippet, date: t.date, bodyHtml: null, bodyText: t.body,
-      unread: t.unread, starred: t.starred, labelIds: [t.mailbox], hasAttachment: t.hasAttachment,
+      unread: t.unread, starred: t.starred, labelIds: [t.mailbox], hasAttachment: t.hasAttachment, attachments: [],
     }],
   };
 }

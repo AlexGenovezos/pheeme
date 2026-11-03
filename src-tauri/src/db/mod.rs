@@ -158,11 +158,55 @@ mod tests {
             mime_type: Some("text/plain".into()),
             size: Some(1),
             attachment_id: None,
+            content_id: None,
+            is_inline: 0,
         }
     }
 
     fn labels(ids: &[&str]) -> Vec<String> {
         ids.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[tokio::test]
+    async fn attachments_are_found_by_content_id_and_row_id() {
+        let pool = fresh_pool().await;
+        accounts::insert_account(&pool, &test_account("acct-1"))
+            .await
+            .unwrap();
+        threads::upsert_thread(&pool, &test_thread("acct-1", "t1", 100), &labels(&[]))
+            .await
+            .unwrap();
+        messages::upsert_message(&pool, &test_message("acct-1", "m1", "t1"))
+            .await
+            .unwrap();
+        let mut logo = test_attachment("acct-1", "m1", "0");
+        logo.content_id = Some("logo@x".into());
+        logo.is_inline = 1;
+        attachments::insert_attachment(&pool, &logo).await.unwrap();
+        attachments::insert_attachment(&pool, &test_attachment("acct-1", "m1", "1"))
+            .await
+            .unwrap();
+
+        let by_cid = attachments::get_by_content_id(&pool, "acct-1", "m1", "logo@x")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!((by_cid.id.as_str(), by_cid.is_inline), ("0", 1));
+        assert!(
+            attachments::get_by_content_id(&pool, "acct-1", "m1", "nope")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let one = attachments::get_one(&pool, "acct-1", "m1", "1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(one.content_id, None);
+        assert!(attachments::get_one(&pool, "acct-2", "m1", "1")
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
