@@ -64,6 +64,7 @@
     </a>
     <nav aria-label="Main">
       <a href="#roadmap">Roadmap</a>
+      <a href="/changelog">Changelog</a>
       <a href="/logos">Logos</a>
       <a class="btn btn-ghost btn-sm" href="https://github.com/AlexGenovezos/pheeme">
         <svg class="gh" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -199,21 +200,37 @@
       <h2 id="roadmap-title" data-reveal>Built in public</h2>
       <p class="section-lede" data-reveal style="--d:.08s">Here's the plan, in order. Each one gets stamped when it ships.</p>
       <ol class="steps">
-        <li class="done" data-reveal style="--d:.1s">
+        <li class="done" data-reveal style="--d:.10s">
           <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">DONE</text></svg>
           <h3>Name, logo, and this site</h3><p>You're looking at it.</p>
         </li>
-        <li class="next" data-reveal style="--d:.22s">
+        <li class="done" data-reveal style="--d:.22s">
+          <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">DONE</text></svg>
+          <h3>Gmail sync</h3><p>Your Gmail accounts synced to a local cache, so mail opens instantly and works offline.</p>
+        </li>
+        <li class="done" data-reveal style="--d:.34s">
+          <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">DONE</text></svg>
+          <h3>The keyboard inbox</h3><p>The demo above, for real: categories, threads, and actions that land before Gmail answers.</p>
+        </li>
+        <li class="next" data-reveal style="--d:.46s">
           <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">NEXT</text></svg>
-          <h3>Sync engine</h3><p>IMAP and a local cache that keeps your mail on your machine.</p>
+          <h3>Compose</h3><p>Write, reply and forward, with drafts saved to Gmail and undo send.</p>
+        </li>
+        <li data-reveal style="--d:.10s">
+          <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">LATER</text></svg>
+          <h3>Search</h3><p>Instant search over the mail on your machine, with Gmail's results merged in.</p>
+        </li>
+        <li data-reveal style="--d:.22s">
+          <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">LATER</text></svg>
+          <h3>Labels and notifications</h3><p>Manage labels, and hear about new mail from the tray.</p>
         </li>
         <li data-reveal style="--d:.34s">
           <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">LATER</text></svg>
-          <h3>The keyboard inbox</h3><p>The demo above, for real, with your own mail.</p>
+          <h3>Version 1.0</h3><p>Signed builds and the polish to make pheeme your only mail client.</p>
         </li>
         <li data-reveal style="--d:.46s">
           <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">LATER</text></svg>
-          <h3>Public alpha</h3><p>First builds anyone can download and break.</p>
+          <h3>Calendar</h3><p>Google Calendar, after 1.0.</p>
         </li>
       </ol>
     </section>
@@ -221,7 +238,7 @@
     <section class="closer wrap">
       <img src="/brand/pheeme-mark-color.svg" alt="" width="96" height="96" data-reveal>
       <h2 data-reveal style="--d:.08s">Watch it get built.</h2>
-      <p data-reveal style="--d:.16s">Star the repo and you'll see every commit from the first line of the sync engine to the alpha.</p>
+      <p data-reveal style="--d:.16s">Star the repo to follow every commit on the way to 1.0. The <a href="/changelog">changelog</a> has what's in each release.</p>
       <a class="btn btn-gold" href="https://github.com/AlexGenovezos/pheeme" data-reveal style="--d:.24s">Star on GitHub</a>
     </section>
   </main>
@@ -231,6 +248,7 @@
     <p>Open source, built in public. © 2026</p>
     <nav aria-label="Footer">
       <a href="https://github.com/AlexGenovezos/pheeme">GitHub</a>
+      <a href="/changelog">Changelog</a>
       <a href="/logos">Logos</a>
       <a href="/privacy">Privacy</a>
       <a href="/terms">Terms</a>

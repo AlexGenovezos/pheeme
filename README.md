@@ -64,14 +64,20 @@ SQLX_OFFLINE=true cargo test -- --ignored keyring_store_round_trip_on_this_os
 
 Versions are two-part (`v0.2`): 0.x is beta, and 1.0 is when Pheeme leaves beta.
 
-1. `npm run version:set 0.2` (files store `0.2.0`; Cargo needs three parts)
-2. Commit as `release: v0.2` and merge it through a PR.
-3. After the merge: `git tag v0.2 && git push origin v0.2`
-4. The Release workflow creates a draft release, builds macOS (Apple Silicon
-   and Intel in parallel), Windows and Linux, checks `latest.json`, then
-   publishes. Release builds restore a Rust cache that the workflow's dry run
+1. `npm run release:prepare -- 0.2` sets the version (files store `0.2.0`;
+   Cargo needs three parts) and drafts `docs/releases/v0.2.md` from the PRs
+   merged since the last tag.
+2. Write the notes, until `npm run release:check -- 0.2` passes.
+3. Commit as `release: v0.2` and merge it through a PR.
+4. After the merge: `git tag v0.2 && git push origin v0.2`
+5. The Release workflow checks the version and notes, creates a draft release,
+   builds macOS (Apple Silicon and Intel in parallel), Windows and Linux,
+   checks `latest.json`, then publishes with the notes as the release text. Release builds restore a Rust cache that the workflow's dry run
    saves on `main` (when dependencies or the toolchain change, and twice a
    week); without it a release compiles every crate from scratch.
+
+The full runbook, including the website and what to do when a step fails, is
+`.claude/skills/release/SKILL.md`.
 
 Signing setup:
 

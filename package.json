@@ -16,6 +16,8 @@
     "test:coverage": "vitest run --coverage",
     "version:set": "node scripts/version.mjs set",
     "version:check": "node scripts/version.mjs check",
+    "release:prepare": "node scripts/release.mjs prepare",
+    "release:check": "node scripts/release.mjs check",
     "lint:tokens": "node scripts/check-tokens.mjs",
     "icons": "tauri icon src-tauri/app-icon.svg && node -e \"for (const d of ['android','ios','64x64.png']) require('fs').rmSync('src-tauri/icons/'+d, {recursive: true, force: true})\"",
     "format": "oxfmt",
