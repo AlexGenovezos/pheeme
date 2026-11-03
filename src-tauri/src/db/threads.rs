@@ -24,6 +24,9 @@ pub struct DbThread {
 /// Upserts the thread row and replaces its label set (`thread_labels`) in one
 /// transaction. Never use `INSERT OR REPLACE` on `threads`: the implicit delete
 /// would cascade away the thread's `thread_labels` rows.
+///
+/// Test-only: production derives thread rows from messages via [`recompute_threads`].
+#[cfg(test)]
 pub async fn upsert_thread(
     pool: &SqlitePool,
     thread: &DbThread,
@@ -35,8 +38,8 @@ pub async fn upsert_thread(
     Ok(())
 }
 
-/// [`upsert_thread`] inside the caller's transaction.
-pub async fn upsert_thread_tx(
+/// Upsert the thread row and replace its label set inside the caller's transaction.
+async fn upsert_thread_tx(
     conn: &mut SqliteConnection,
     thread: &DbThread,
     label_ids: &[String],
@@ -142,19 +145,11 @@ pub async fn get_thread(
     Ok(thread)
 }
 
-pub async fn delete_thread(pool: &SqlitePool, account_id: &str, thread_id: &str) -> Result<()> {
-    sqlx::query!(
-        "DELETE FROM threads WHERE account_id = ? AND id = ?",
-        account_id,
-        thread_id
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 /// Replaces the thread's label set, keeping each row's `last_message_date`
 /// in step with the thread. A no-op for a thread that doesn't exist.
+///
+/// Test-only: production derives labels from messages via [`recompute_threads`].
+#[cfg(test)]
 pub async fn update_thread_labels(
     pool: &SqlitePool,
     account_id: &str,
@@ -426,12 +421,6 @@ pub struct RecomputeResult {
 impl RecomputeResult {
     pub fn is_empty(&self) -> bool {
         self.created.is_empty() && self.updated.is_empty() && self.removed.is_empty()
-    }
-
-    pub fn merge(&mut self, other: RecomputeResult) {
-        self.created.extend(other.created);
-        self.updated.extend(other.updated);
-        self.removed.extend(other.removed);
     }
 }
 
@@ -886,7 +875,7 @@ mod tests {
         // list_threads (query_as! needs literals); the row checks below fail
         // if they drift apart.
         let production = include_str!("threads.rs")
-            .split("#[cfg(test)]")
+            .split("#[cfg(test)]\nmod tests")
             .next()
             .unwrap();
         let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
