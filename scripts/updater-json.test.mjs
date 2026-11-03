@@ -66,10 +66,42 @@ describe("buildUpdaterJson", () => {
     expect(json.platforms["darwin-x86_64"].url).toBe(url(1));
   });
 
-  it("uses the msi and the AppImage as the primary Windows and Linux updaters", () => {
+  it("uses the msi, when there is one, and the AppImage as the primary Windows and Linux updaters", () => {
     expect(json.platforms["windows-x86_64"].url).toBe(url(6));
     expect(json.platforms["windows-x86_64-nsis"].url).toBe(url(4));
     expect(json.platforms["linux-x86_64"].url).toBe(url(8));
+  });
+
+  it("serves each mac arch its own bundle and Windows the NSIS exe (v0.8 on)", () => {
+    const split = [
+      asset("Pheeme_0.8.0_aarch64.app.tar.gz", 1),
+      asset("Pheeme_0.8.0_aarch64.app.tar.gz.sig", 2),
+      asset("Pheeme_0.8.0_x64.app.tar.gz", 3),
+      asset("Pheeme_0.8.0_x64.app.tar.gz.sig", 4),
+      asset("Pheeme_0.8.0_aarch64.dmg", 5),
+      asset("Pheeme_0.8.0_x64.dmg", 6),
+      asset("Pheeme_0.8.0_x64-setup.exe", 7),
+      asset("Pheeme_0.8.0_x64-setup.exe.sig", 8),
+      asset("Pheeme_0.8.0_amd64.AppImage", 9),
+      asset("Pheeme_0.8.0_amd64.AppImage.sig", 10),
+    ];
+    const sigs = Object.fromEntries(
+      split.filter((a) => a.name.endsWith(".sig")).map((a) => [a.name.slice(0, -4), "s"]),
+    );
+    const { platforms } = buildUpdaterJson({
+      version: "0.8.0",
+      assets: split,
+      signatures: sigs,
+      pubDate: "now",
+    });
+    expect(platforms["darwin-aarch64"].url).toBe(url(1));
+    expect(platforms["darwin-aarch64-app"].url).toBe(url(1));
+    expect(platforms["darwin-x86_64"].url).toBe(url(3));
+    expect(platforms["darwin-x86_64-app"].url).toBe(url(3));
+    expect(platforms["darwin-universal"]).toBeUndefined();
+    expect(platforms["windows-x86_64"].url).toBe(url(7));
+    expect(platforms["windows-x86_64-nsis"].url).toBe(url(7));
+    expect(platforms["windows-x86_64-msi"]).toBeUndefined();
   });
 
   it("fails on a signed asset it has no platform for", () => {

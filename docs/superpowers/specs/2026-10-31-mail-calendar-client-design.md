@@ -114,8 +114,8 @@ Treat a regression in any of these as a bug.
 - **License:** MIT. Public GitHub repo.
 - **PR checks (GitHub Actions):** Rust tests, `cargo clippy`, frontend type-check, lint, and tests, on macOS, Windows, and Ubuntu runners. This lands **early** (with the next phase of work), not at the end.
 - **Release on tag:** pushing `vX.Y` builds all platforms (via `tauri-action`) and publishes a GitHub Release:
-  - macOS: universal (Apple Silicon + Intel) `.dmg`, **signed and notarized** with Alex's existing Apple Developer account.
-  - Windows: `.msi` and NSIS `.exe`, **unsigned**. The README documents the SmartScreen "More info → Run anyway" step.
+  - macOS: a `.dmg` each for Apple Silicon and Intel (universal until v0.7; split so they build in parallel), **signed and notarized** with Alex's existing Apple Developer account.
+  - Windows: NSIS `.exe` (`.msi` until v0.7; the NSIS installer removes an msi install), **unsigned**. The README documents the SmartScreen "More info → Run anyway" step.
   - Linux: `.AppImage` and `.deb`.
 - **Versions** are two-part (`vX.Y`); 0.x is beta, and 1.0 marks leaving beta.
 - **Auto-update:** `tauri-plugin-updater` (plugin init, `updater:default` capability, updater public key and endpoint in `tauri.conf.json`, `createUpdaterArtifacts` enabled) pointed at GitHub Releases (`latest.json`), with update artifacts signed by a Tauri updater key stored as a GitHub secret. The app checks on launch and periodically, and installs on restart. This directly addresses slow update cycles.

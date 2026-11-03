@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // Builds the updater's latest.json from a release's assets, once, after every platform has
 // uploaded. tauri-action would otherwise have each build read-modify-write it, which races when
-// the builds run in parallel. Keys and URLs match what tauri-action v1 writes (msi and AppImage
-// are the primary Windows and Linux updaters, a universal macOS bundle serves both arches).
+// the builds run in parallel. Keys and URLs match what tauri-action v1 writes: the NSIS exe (or
+// the msi, when a release has one) and the AppImage are the primary Windows and Linux updaters,
+// and a universal macOS bundle serves both arches. Since v0.8 macOS ships one bundle per arch and
+// Windows ships no msi; the older shapes stay supported. The NSIS installer removes an earlier
+// msi install, so msi users update through it.
 //
 // usage: node scripts/updater-json.mjs <version> <assets.json> <sig-dir>
 //   assets.json  `gh api repos/{owner}/{repo}/releases/{id}/assets` output
@@ -29,7 +32,7 @@ function platformKeys(name) {
   m = name.match(/_(x64)(?:_[\w-]+)?\.msi$/);
   if (m) return [`windows-${ARCH[m[1]]}-msi`, `windows-${ARCH[m[1]]}`];
   m = name.match(/_(x64)-setup\.exe$/);
-  if (m) return [`windows-${ARCH[m[1]]}-nsis`];
+  if (m) return [`windows-${ARCH[m[1]]}-nsis`, `windows-${ARCH[m[1]]}`];
   m = name.match(/_(amd64)\.AppImage$/);
   if (m) return [`linux-${ARCH[m[1]]}-appimage`, `linux-${ARCH[m[1]]}`];
   m = name.match(/_(amd64)\.deb$/);
@@ -44,7 +47,7 @@ function platformKeys(name) {
  */
 export function buildUpdaterJson({ version, assets, signatures, pubDate }) {
   const platforms = {};
-  // msi before nsis so `windows-x86_64` ends up on the msi, as tauri-action does.
+  // msi after nsis so `windows-x86_64` ends up on the msi when there is one, as tauri-action does.
   const signed = assets
     .filter((a) => signatures[a.name] !== undefined)
     .sort((a, b) => Number(a.name.endsWith(".msi")) - Number(b.name.endsWith(".msi")));
