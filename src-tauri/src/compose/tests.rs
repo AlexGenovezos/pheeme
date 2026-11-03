@@ -284,6 +284,13 @@ async fn draft_round_trip_then_send_replaces_it() {
 
     h.compose.send(ACCT, &opened, 0).await.unwrap();
     wait_for_sends(&h.fake, 1).await;
+    // The draft is removed right after the send lands.
+    for _ in 0..100 {
+        if h.fake.drafts().is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     assert!(h.fake.drafts().is_empty(), "the draft is gone once sent");
 }
 
