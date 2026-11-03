@@ -230,6 +230,8 @@ struct State {
     history_page: usize,
     /// Runs (once) at the start of the next `batch_get_messages`.
     before_batch_get: Option<Box<dyn FnOnce() + Send>>,
+    /// While set, every `batch_get_messages` waits for a permit (see [`FakeGmail::hold_batch_gets`]).
+    batch_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     list_page: Option<usize>,
     next_sent: u64,
     /// `(message id, attachment id)` → bytes.
@@ -309,6 +311,14 @@ impl FakeGmail {
     /// Run `hook` at the start of the next `batch_get_messages` call.
     pub fn before_next_batch_get(&self, hook: impl FnOnce() + Send + 'static) {
         self.lock().before_batch_get = Some(Box::new(hook));
+    }
+
+    /// Make every later `batch_get_messages` wait until the returned semaphore gets a
+    /// permit (an unreachable Gmail that never answers).
+    pub fn hold_batch_gets(&self) -> std::sync::Arc<tokio::sync::Semaphore> {
+        let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+        self.lock().batch_gate = Some(gate.clone());
+        gate
     }
 
     /// The next send is delivered, then answered with `error` (an ambiguous failure).
@@ -628,6 +638,10 @@ impl MailApi for FakeGmail {
         ids: &[String],
         format: MessageFormat,
     ) -> Vec<(String, Result<Message, GmailError>)> {
+        let gate = self.lock().batch_gate.clone();
+        if let Some(gate) = gate {
+            let _permit = gate.acquire().await.expect("gate open");
+        }
         let hook = self.lock().before_batch_get.take();
         if let Some(hook) = hook {
             hook();

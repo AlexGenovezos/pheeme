@@ -545,6 +545,11 @@ impl SyncEngine {
                 Err(e) => return Err(e.into()),
             }
         }
+        // Nothing changed (the messages are gone from Gmail; sync removes them): no event,
+        // so an open view that refreshes on `messages_updated` doesn't ask again in a loop.
+        if fetched.is_empty() {
+            return Ok(());
+        }
         let guard = self.write_lock.lock().await;
         let mut tx = db::begin_write(&self.db).await?;
         for msg in &fetched {

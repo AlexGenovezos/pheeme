@@ -355,25 +355,40 @@ impl MailService {
         })
     }
 
-    /// A thread with its messages. Bodies not cached yet are fetched first when Gmail is
-    /// reachable; otherwise the cached copy is returned as is.
+    /// A thread with its messages. A message with no cached body is fetched first when
+    /// Gmail is reachable (otherwise the cached copy is returned as is). Messages that
+    /// have a body but are not fully fetched (attachment metadata cached before
+    /// migration 003) are returned at once and refreshed in the background; that refresh
+    /// emits `sync:messages_updated` for the thread.
     pub async fn get_thread(
         &self,
         account_id: &str,
         thread_id: &str,
     ) -> Result<ThreadDetailDto, MailError> {
-        if let Err(e) = self
-            .sync
-            .engine(account_id)
-            .load_thread_bodies(thread_id)
-            .await
-        {
-            tracing::info!(thread = thread_id, error = %e, "showing cached thread without bodies");
+        let mut messages =
+            messages::get_messages_for_thread(&self.db, account_id, thread_id).await?;
+        if messages.iter().any(|m| !has_body(m)) {
+            if let Err(e) = self
+                .sync
+                .engine(account_id)
+                .load_thread_bodies(thread_id)
+                .await
+            {
+                tracing::info!(thread = thread_id, error = %e, "showing cached thread without bodies");
+            }
+            messages = messages::get_messages_for_thread(&self.db, account_id, thread_id).await?;
+        } else if messages.iter().any(|m| m.fully_fetched == 0) {
+            let engine = self.sync.engine(account_id);
+            let thread = thread_id.to_owned();
+            tokio::spawn(async move {
+                if let Err(e) = engine.load_thread_bodies(&thread).await {
+                    tracing::info!(thread, error = %e, "couldn't refresh cached messages");
+                }
+            });
         }
         let thread = threads::get_thread(&self.db, account_id, thread_id)
             .await?
             .ok_or(MailError::NotFound)?;
-        let messages = messages::get_messages_for_thread(&self.db, account_id, thread_id).await?;
         let mut details = Vec::with_capacity(messages.len());
         for m in messages {
             let atts =
@@ -636,6 +651,11 @@ async fn embedded_bytes(api: &dyn MailApi, row: &DbAttachment) -> Result<Vec<u8>
         .and_then(|a| a.data)
         .filter(|bytes| !bytes.is_empty())
         .ok_or(MailError::NotFound)
+}
+
+/// The message's body is cached: a full copy (possibly genuinely empty) or any body text.
+fn has_body(m: &DbMessage) -> bool {
+    m.fully_fetched != 0 || m.body_html.is_some() || m.body_text.is_some()
 }
 
 /// Printable ASCII only: nothing that could end a header line or fail response building.
@@ -905,6 +925,131 @@ mod tests {
                 content_id: None,
             }]
         );
+    }
+
+    /// A synced account with one message in `t1`, and the events it emits.
+    async fn events_fixture(
+        msg: FakeMsg,
+    ) -> (
+        tempfile::TempDir,
+        Arc<FakeGmail>,
+        Arc<RecordingEvents>,
+        MailService,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::init_db(dir.path()).await.unwrap();
+        accounts::insert_account(
+            &pool,
+            &DbAccount {
+                id: "a1".into(),
+                email: "me@example.com".into(),
+                display_name: None,
+                profile_photo_url: None,
+                client_id: "c".into(),
+                history_id: None,
+                created_at: 0,
+                updated_at: 0,
+            },
+        )
+        .await
+        .unwrap();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(msg);
+        let events = Arc::new(RecordingEvents::default());
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            events.clone(),
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(pool, sync, dir.path().join("cache"));
+        (dir, fake, events, mail)
+    }
+
+    async fn fully_fetched(mail: &MailService, id: &str) -> i64 {
+        sqlx::query_scalar::<_, i64>("SELECT fully_fetched FROM messages WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mail.db)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn get_thread_serves_cached_bodies_while_gmail_hangs_and_refreshes_later() {
+        let (_dir, fake, events, mail) = events_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
+        )
+        .await;
+        // What migration 003 does to messages with attachments: the body stays cached.
+        sqlx::query("UPDATE messages SET fully_fetched = 0")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        let gate = fake.hold_batch_gets();
+        events.take();
+
+        let detail = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            mail.get_thread("a1", "t1"),
+        )
+        .await
+        .expect("cached bodies don't wait for Gmail")
+        .unwrap();
+
+        assert_eq!(detail.messages[0].body_text.as_deref(), Some("Body of m1"));
+        assert_eq!(fully_fetched(&mail, "m1").await, 0, "refresh still pending");
+
+        // Gmail answers: the refresh lands in the background and the open view hears of it.
+        gate.add_permits(100);
+        for _ in 0..100 {
+            if fully_fetched(&mail, "m1").await == 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_eq!(fully_fetched(&mail, "m1").await, 1);
+        assert!(events.take().iter().any(|e| matches!(
+            e,
+            SyncEvent::MessagesUpdated { modified, .. } if modified == &["t1".to_owned()]
+        )));
+    }
+
+    #[tokio::test]
+    async fn a_background_refresh_that_fetches_nothing_emits_nothing() {
+        let (_dir, fake, events, mail) = events_fixture(FakeMsg::new("m1", "t1", &["INBOX"])).await;
+        sqlx::query("UPDATE messages SET fully_fetched = 0")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        fake.delete("m1");
+        events.take();
+
+        mail.sync
+            .engine("a1")
+            .load_thread_bodies("t1")
+            .await
+            .unwrap();
+
+        assert!(
+            events.take().is_empty(),
+            "an open view would refresh, refetch and loop"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_thread_still_waits_for_a_missing_body() {
+        let (_dir, _fake, _events, mail) =
+            events_fixture(FakeMsg::new("m1", "t1", &["INBOX"])).await;
+        sqlx::query("UPDATE messages SET fully_fetched = 0, body_text = NULL, body_html = NULL")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+
+        let detail = mail.get_thread("a1", "t1").await.unwrap();
+
+        assert_eq!(detail.messages[0].body_text.as_deref(), Some("Body of m1"));
+        assert_eq!(fully_fetched(&mail, "m1").await, 1);
     }
 
     #[tokio::test]
