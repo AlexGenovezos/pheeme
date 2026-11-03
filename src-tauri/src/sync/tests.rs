@@ -985,7 +985,9 @@ async fn offline_send_stays_pending_and_retries() {
 async fn queue_send_keeps_a_folded_message_id() {
     let h = harness().await;
     let raw = b"From: me@example.com\r\nMessage-ID:\r\n <existing@example.com>\r\nSubject: Hi\r\n\r\nHello";
-    let id = outbox::queue_send(&h.pool, ACCT, raw, &outbox::SendOptions::default()).await.unwrap();
+    let id = outbox::queue_send(&h.pool, ACCT, raw, &outbox::SendOptions::default())
+        .await
+        .unwrap();
     let op = store::get(&h.pool, &id).await.unwrap().unwrap();
     assert_eq!(
         op.rfc822_message_id.as_deref(),
@@ -1004,7 +1006,9 @@ async fn queue_send_keeps_a_folded_message_id() {
 async fn queue_send_ignores_a_message_id_line_in_the_body() {
     let h = harness().await;
     let raw = b"From: me@example.com\r\nSubject: Hi\r\n\r\nMessage-ID: <body@example.com>\r\n";
-    let id = outbox::queue_send(&h.pool, ACCT, raw, &outbox::SendOptions::default()).await.unwrap();
+    let id = outbox::queue_send(&h.pool, ACCT, raw, &outbox::SendOptions::default())
+        .await
+        .unwrap();
     let op = store::get(&h.pool, &id).await.unwrap().unwrap();
     let mid = op.rfc822_message_id.unwrap();
     assert!(mid.ends_with("@pheeme.app>"), "{mid}");
