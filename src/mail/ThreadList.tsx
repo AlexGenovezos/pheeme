@@ -1,5 +1,5 @@
 // The conversation list: virtualized rows, multi-select, infinite scroll, and the first-sync, empty and error states.
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { type KeyboardEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef } from "react";
 import { Button } from "../components/ui/Button";
 import { ListRow } from "../components/ui/ListRow";
@@ -104,6 +104,17 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const anyChecked = checked.length > 0;
   const accountEmail = useMemo(() => new Map(accounts.map((a) => [a.id, a.email])), [accounts]);
 
+  const openIndex = open === null ? -1 : keys.indexOf(open);
+  // The active option must stay in the DOM wherever the user scrolls, or aria-activedescendant would name a missing element.
+  const rangeExtractor = useCallback(
+    (range: Parameters<typeof defaultRangeExtractor>[0]) => {
+      const indexes = defaultRangeExtractor(range);
+      if (openIndex < 0 || openIndex >= range.count || indexes.includes(openIndex)) return indexes;
+      return [...indexes, openIndex].sort((a, b) => a - b);
+    },
+    [openIndex],
+  );
+
   // The compiler skips this component because the virtualizer's functions aren't memoizable; that is expected.
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
@@ -111,6 +122,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
     getScrollElement: () => scrollRef.current,
     estimateSize: rowHeightEstimate,
     overscan: 8,
+    rangeExtractor,
     getItemKey: (i) => keys[i],
   });
   const items = virtualizer.getVirtualItems();
@@ -122,7 +134,6 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   }, [lastRendered, threads.length, next]);
 
   // j/k and arrow keys move the open thread; keep it in view.
-  const openIndex = open === null ? -1 : keys.indexOf(open);
   useEffect(() => {
     if (openIndex >= 0) virtualizer.scrollToIndex(openIndex, { align: "auto" });
     // `virtualizer` is stable for the component's life.

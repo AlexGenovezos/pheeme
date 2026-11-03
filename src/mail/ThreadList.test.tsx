@@ -51,16 +51,18 @@ const pressKey = (k: string) => act(() => void registry.handleKeyDown(new Keyboa
 const options = () => screen.queryAllByRole("option");
 const row = (n: number) => screen.getByText(`Subject ${n}`).closest('[role="option"]') as HTMLElement;
 
+let restoreLayout: () => void;
+
 beforeEach(() => {
   localStorage.clear();
   __resetUiStoreForTests();
   __resetMailStoreForTests();
   useAccountStore.setState({ accounts: [account("a1"), account("a2")] });
   mockIPC(() => undefined, { shouldMockEvents: true });
-  stubLayout();
+  restoreLayout = stubLayout();
 });
 afterEach(() => {
-  vi.unstubAllGlobals();
+  restoreLayout();
   registry.clear();
 });
 
@@ -196,6 +198,27 @@ describe("focus and selection semantics", () => {
     fireEvent.keyDown(list, { key: "ArrowUp" });
     expect(useUiStore.getState().openThread).toBe(key(149));
     expect(list).toHaveFocus();
+  });
+
+  test("the active option stays mounted when the user scrolls it out of the window", () => {
+    useMailStore.setState({ threads: many(200) });
+    render(<ThreadList {...props()} />);
+    const list = screen.getByRole("listbox");
+    act(() => useUiStore.getState().setOpenThread(key(0)));
+    act(() => {
+      list.scrollTop = 76 * 100;
+      fireEvent.scroll(list);
+    });
+    // Rows near the top are gone from the window...
+    expect(screen.queryByText("Subject 5")).not.toBeInTheDocument();
+    expect(screen.getByText("Subject 100")).toBeInTheDocument();
+    // ...but the row the listbox points at is still there.
+    const target = list.getAttribute("aria-activedescendant")!;
+    expect(target).toBe(rowId(key(0)));
+    expect(document.getElementById(target)).toBe(row(0));
+    // Once another row is active the old one can unmount again.
+    act(() => useUiStore.getState().setOpenThread(key(110)));
+    expect(screen.queryByText("Subject 0")).not.toBeInTheDocument();
   });
 
   test("arrows start at the ends and stop there", () => {

@@ -21,6 +21,8 @@ const backend = (cmd: string, args?: unknown) =>
       ? fixtureBackend.list_threads({ ...(args as object), accountIds: [] })
       : undefined;
 
+let restoreLayout: () => void;
+
 beforeEach(() => {
   localStorage.clear();
   __resetUiStoreForTests();
@@ -28,10 +30,10 @@ beforeEach(() => {
   mockIPC(backend);
   __resetMailStoreForTests();
   useAccountStore.setState({ accounts: [], loaded: false, error: null, syncErrors: {} });
-  stubLayout(); // jsdom has no layout, so the virtualized list would render no rows
+  restoreLayout = stubLayout(); // jsdom has no layout, so the virtualized list would render no rows
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => restoreLayout());
 
 test("renders nothing until accounts load", () => {
   mockIPC(() => new Promise(() => {}));

@@ -8,8 +8,8 @@ export interface LayoutStub {
   width?: number;
 }
 
-/** Stub element sizes and ResizeObserver. Undone by `vi.restoreAllMocks()` / `vi.unstubAllGlobals()`. */
-export function stubLayout({ viewport = 600, row = 76, width = 380 }: LayoutStub = {}) {
+/** Stub element sizes, scrolling and ResizeObserver. Returns the function that undoes all of it; call it in `afterEach`. */
+export function stubLayout({ viewport = 600, row = 76, width = 380 }: LayoutStub = {}): () => void {
   const isRow = (el: Element) => el.hasAttribute("data-index");
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
     return isRow(this) ? row : viewport;
@@ -29,6 +29,8 @@ export function stubLayout({ viewport = 600, row = 76, width = 380 }: LayoutStub
     return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: height, width, height, toJSON: () => ({}) };
   });
   // jsdom's elements don't scroll programmatically; browsers move scrollTop and fire `scroll`.
+  const hadScrollTo = Object.prototype.hasOwnProperty.call(Element.prototype, "scrollTo");
+  const originalScrollTo = Element.prototype.scrollTo;
   Element.prototype.scrollTo = function (this: Element, arg?: ScrollToOptions | number) {
     this.scrollTop = typeof arg === "object" ? (arg.top ?? this.scrollTop) : this.scrollTop;
     this.dispatchEvent(new Event("scroll"));
@@ -41,4 +43,10 @@ export function stubLayout({ viewport = 600, row = 76, width = 380 }: LayoutStub
       disconnect() {}
     },
   );
+
+  return () => {
+    vi.unstubAllGlobals();
+    if (hadScrollTo) Element.prototype.scrollTo = originalScrollTo;
+    else delete (Element.prototype as { scrollTo?: unknown }).scrollTo;
+  };
 }
