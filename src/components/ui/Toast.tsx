@@ -49,10 +49,6 @@ export function toast(options: ToastOptions): number {
   return id;
 }
 
-export function useToast() {
-  return { toast, dismiss: dismissToast };
-}
-
 function ToastViewport({ pinned }: { pinned?: ReactNode }) {
   const toasts = useToastStore((s) => s.toasts);
   return (

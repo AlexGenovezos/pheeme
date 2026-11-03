@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Button } from "../components/ui/Button";
+import { TextInput } from "../components/ui/TextInput";
 import {
   type AccountInfo,
   type ClientChoice,
@@ -188,9 +190,9 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
           )}
         </div>
         {onClose && view !== "done" && (
-          <button type="button" className="btn btn--quiet onboarding-close" onClick={onClose}>
+          <Button variant="ghost" size="lg" className="onboarding-close" onClick={onClose}>
             Cancel
-          </button>
+          </Button>
         )}
       </main>
     </div>
@@ -292,20 +294,21 @@ function Footer({
   return (
     <div className="onboarding-footer">
       {onBack ? (
-        <button type="button" className="btn btn--quiet" onClick={onBack}>
+        <Button variant="ghost" size="lg" onClick={onBack}>
           Back
-        </button>
+        </Button>
       ) : (
         <span />
       )}
-      <button
+      <Button
         type={primary.submit ? "submit" : "button"}
-        className="btn btn--primary"
+        variant="primary"
+        size="lg"
         disabled={primary.disabled}
         onClick={primary.submit ? undefined : primary.onClick}
       >
         {primary.label}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -330,13 +333,12 @@ function CopyField({ label, value }: { label: string; value: string }) {
     <div className="copy-field">
       <span className="copy-field__label">{label}</span>
       <code className="copy-field__value">{value}</code>
-      <button
-        type="button"
-        className="btn btn--small"
+      <Button
+        size="sm"
         onClick={() => void navigator.clipboard.writeText(value).then(flash, () => {})}
       >
         {copied ? "Copied" : "Copy"}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -352,9 +354,10 @@ function ExternalButton({
 }) {
   const [failed, flash] = useFlash();
   return (
-    <button
-      type="button"
-      className={`btn ${primary ? "btn--accent" : "btn--small"} external`}
+    <Button
+      variant={primary ? "primary" : "secondary"}
+      size={primary ? "lg" : "sm"}
+      className="external"
       onClick={() =>
         void openExternal(url).catch(() => {
           // No browser could be opened: hand the user the link instead.
@@ -364,7 +367,7 @@ function ExternalButton({
       }
     >
       {failed ? "Link copied: paste it in your browser" : `${label} ↗`}
-    </button>
+    </Button>
   );
 }
 
@@ -416,15 +419,14 @@ function Credentials({
       </p>
       <div className="field">
         <label htmlFor="client-id">Client ID</label>
-        <input
+        <TextInput
           id="client-id"
+          size="lg"
           value={clientId}
           onChange={(event) => onIdInput(event.target.value)}
           placeholder={`1234-abcd${CLIENT_ID_SUFFIX}`}
-          spellCheck={false}
-          autoComplete="off"
           autoFocus
-          aria-invalid={Boolean(idProblem || jsonError)}
+          invalid={Boolean(idProblem || jsonError)}
         />
         {(jsonError || idProblem) && (
           <small className="field__error">{jsonError || idProblem}</small>
@@ -432,13 +434,12 @@ function Credentials({
       </div>
       <div className="field">
         <label htmlFor="client-secret">Client secret</label>
-        <input
+        <TextInput
           id="client-secret"
+          size="lg"
           type="password"
           value={clientSecret}
           onChange={(event) => onChange(clientId, event.target.value)}
-          spellCheck={false}
-          autoComplete="off"
         />
         <small className="field__hint">
           Stored in your system keychain, never in Pheeme's database.
@@ -519,25 +520,23 @@ function Waiting({
         Pheeme opened Google's sign-in page. When it says you can close the tab, come back here.
       </p>
       <div className="button-row">
-        <button
-          type="button"
-          className="btn"
+        <Button
+          size="lg"
           disabled={!authUrl}
           onClick={() => void openExternal(authUrl).catch(() => {})}
         >
           Open the browser again
-        </button>
-        <button
-          type="button"
-          className="btn"
+        </Button>
+        <Button
+          size="lg"
           disabled={!authUrl}
           onClick={() => void navigator.clipboard.writeText(authUrl).then(flash, () => {})}
         >
           {copied ? "Copied" : "Copy sign-in link"}
-        </button>
-        <button type="button" className="btn btn--quiet" onClick={onCancel}>
+        </Button>
+        <Button variant="ghost" size="lg" onClick={onCancel}>
           Cancel
-        </button>
+        </Button>
       </div>
       <details className="problems">
         <summary>Seeing an error from Google in the browser?</summary>
@@ -551,9 +550,9 @@ function Waiting({
                   <ExternalButton label={problem.link.label} url={problem.link.url} />
                 )}
                 {problem.action === "credentials" && onFixCredentials && (
-                  <button type="button" className="btn btn--small" onClick={onFixCredentials}>
+                  <Button size="sm" onClick={onFixCredentials}>
                     Change client ID or secret
-                  </button>
+                  </Button>
                 )}
               </div>
             </li>
@@ -582,29 +581,29 @@ function SignInError({
         {credentialsFirst ? (
           <>
             {onRetry ? (
-              <button type="button" className="btn btn--quiet" onClick={onRetry}>
+              <Button variant="ghost" size="lg" onClick={onRetry}>
                 Try again
-              </button>
+              </Button>
             ) : (
               <span />
             )}
-            <button type="button" className="btn btn--primary" onClick={onFixCredentials}>
+            <Button variant="primary" size="lg" onClick={onFixCredentials}>
               Change client ID or secret
-            </button>
+            </Button>
           </>
         ) : (
           <>
             {onFixCredentials ? (
-              <button type="button" className="btn btn--quiet" onClick={onFixCredentials}>
+              <Button variant="ghost" size="lg" onClick={onFixCredentials}>
                 Change client ID or secret
-              </button>
+              </Button>
             ) : (
               <span />
             )}
             {onRetry && (
-              <button type="button" className="btn btn--primary" onClick={onRetry}>
+              <Button variant="primary" size="lg" onClick={onRetry}>
                 Try again
-              </button>
+              </Button>
             )}
           </>
         )}

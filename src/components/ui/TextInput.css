@@ -12,6 +12,11 @@
   transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
+.ui-input--lg {
+  height: var(--control-height-lg);
+  padding: var(--space-0) var(--space-3);
+}
+
 /* The ring sits on the wrapper so adornments are inside it. Inputs show focus
    for mouse clicks too: a caret alone is easy to lose. */
 .ui-input:focus-within {
@@ -19,7 +24,10 @@
   box-shadow: 0 0 0 var(--border-width) var(--color-focus-border);
 }
 
-.ui-input--invalid,
+/* Invalid keeps its red border; the ring still marks focus, so tabbing back is visible. */
+.ui-input--invalid {
+  border-color: var(--color-danger);
+}
 .ui-input--invalid:focus-within {
   border-color: var(--color-danger);
   box-shadow: 0 0 0 var(--border-width) var(--color-danger);

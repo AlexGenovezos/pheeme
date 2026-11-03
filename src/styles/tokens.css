@@ -10,6 +10,7 @@
   /* Type. One bundled family so the app looks the same on every OS. */
   --font-family-ui:
     "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-family-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --font-size-xs: 11px;
   --font-size-sm: 12px;
   --font-size-md: 13px;
@@ -61,6 +62,7 @@
   --titlebar-height: 44px;
   --control-height-sm: 24px;
   --control-height-md: 28px;
+  --control-height-lg: 32px;
   --row-height-compact: 28px;
   --icon-size-sm: 14px;
   --icon-size-md: 16px;
@@ -83,12 +85,20 @@
   --toast-width: 340px;
   --chord-hint-offset: 12px;
   --brand-mark-size: 48px;
+  /* Onboarding and account screens. */
+  --onboarding-rail-width: 220px;
+  --onboarding-content-width: 560px;
+  --step-dot-size: 20px;
+  --copy-field-label-width: 140px;
+  --waiting-mark-size: 12px;
+  --done-mark-size: 36px;
 
   /* Motion: short and calm; zeroed under prefers-reduced-motion. */
   --duration-fast: 100ms;
   --duration-base: 140ms;
   --duration-slow: 200ms;
   --duration-shimmer: 1400ms;
+  --duration-pulse: 1400ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --enter-offset: 4px;
@@ -110,28 +120,4 @@
     --enter-offset: 0;
     --enter-scale: 1;
   }
-}
-
-/*
- * Legacy aliases for the Phase 2 onboarding screens (src/onboarding/onboarding.css,
- * src/components/AccountsHome.tsx), which predate this design system. They map the
- * old names onto the tokens above so onboarding follows the theme. Delete this block
- * when onboarding is restyled on the design system (issue #13).
- */
-:root {
-  --font-ui: var(--font-family-ui);
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --text-sm: var(--font-size-sm);
-  --text-md: var(--font-size-md);
-  --text-lg: var(--font-size-lg);
-  --text-xl: var(--font-size-2xl);
-  --space-7: var(--space-12);
-  --motion-fast: var(--duration-fast);
-  --color-bg: var(--color-app-bg);
-  --color-bg-subtle: var(--color-pane-bg);
-  --color-bg-hover: var(--color-control-hover-bg);
-  --color-text: var(--color-foreground);
-  --color-text-muted: var(--color-foreground-muted);
-  --color-accent-text: var(--color-accent-foreground);
-  --color-focus: var(--color-focus-border);
 }
