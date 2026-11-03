@@ -102,6 +102,13 @@
   .onboarding-content { animation: none; }
 }
 
+.onboarding-mark {
+  display: block;
+  width: var(--brand-mark-size);
+  height: var(--brand-mark-size);
+  margin-bottom: var(--space-4);
+}
+
 .onboarding h1 {
   font-size: var(--text-xl);
   font-weight: 600;

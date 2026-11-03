@@ -223,6 +223,7 @@ function GuidePage({
   const numbered = step.id !== "welcome" && step.id !== "unverified";
   return (
     <>
+      {step.id === "welcome" && <img className="onboarding-mark" src="/pheeme-mark.svg" alt="" />}
       <h1>{step.title}</h1>
       {numbered ? (
         <ol className="guide-actions">

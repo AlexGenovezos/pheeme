@@ -164,6 +164,14 @@ write("pheeme-app-icon.svg", appIcon());
 write("pheeme-app-icon-square.svg", appIcon({ rounded: false })); // for iOS/Android, which mask it themselves
 write("pheeme-app-icon-maskable.svg", appIcon({ rounded: false, scale: 0.58 })); // safe zone for Android adaptive icons
 
+// Desktop app icon for the Tauri app (../src-tauri/app-icon.svg). macOS draws Dock icons
+// as an 824 px squircle on a 1024 canvas, so pad the squircle to that grid (512 / (824/1024)
+// = 636). `npm run icons` in the repo root turns it into every platform size.
+writeFileSync(
+  join(ROOT, "../src-tauri/app-icon.svg"),
+  appIcon().replace('viewBox="0 0 512 512"', 'viewBox="-62 -62 636 636"'),
+);
+
 // ---------- rasterize ----------
 const render = (input, output, w, h = w, bg) =>
   execFileSync("node", [join(ROOT, "scripts/render.mjs"), input, output, String(w), String(h), ...(bg ? [bg] : [])], { stdio: "ignore" });
@@ -185,6 +193,9 @@ const icon = join(OUT, "pheeme-app-icon.svg");
 const fav = join(OUT, "favicon.svg");
 writeFileSync(fav, appIcon({ scale: 0.9, radius: 96 }));
 writeFileSync(join(PUB, "favicon.svg"), readFileSync(fav));
+// The desktop app (repo root) uses the same favicon and the color mark.
+writeFileSync(join(ROOT, "../public/favicon.svg"), readFileSync(fav));
+writeFileSync(join(ROOT, "../public/pheeme-mark.svg"), readFileSync(join(OUT, "pheeme-mark-color.svg")));
 for (const s of [16, 32, 48]) render(fav, join(OUT, `favicon-${s}.png`), s);
 execFileSync("magick", [16, 32, 48].map((s) => join(OUT, `favicon-${s}.png`)).concat(join(PUB, "favicon.ico")));
 render(join(OUT, "pheeme-app-icon-square.svg"), join(PUB, "apple-touch-icon.png"), 180);
