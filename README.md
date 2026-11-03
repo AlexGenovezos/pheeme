@@ -83,3 +83,8 @@ Signing setup:
 ## License
 
 MIT
+
+The desktop app icon is a line engraving of the Fama statue in Dresden, adapted from
+["Gold (82911013)"](https://commons.wikimedia.org/wiki/File:Gold_(82911013).jpeg) by Etrick,
+licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). We cropped it, cut it
+out and redrew it as vector lines (`site/scripts/build-fama-icon.sh`).

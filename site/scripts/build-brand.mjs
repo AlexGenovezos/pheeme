@@ -164,13 +164,8 @@ write("pheeme-app-icon.svg", appIcon());
 write("pheeme-app-icon-square.svg", appIcon({ rounded: false })); // for iOS/Android, which mask it themselves
 write("pheeme-app-icon-maskable.svg", appIcon({ rounded: false, scale: 0.58 })); // safe zone for Android adaptive icons
 
-// Desktop app icon for the Tauri app (../src-tauri/app-icon.svg). macOS draws Dock icons
-// as an 824 px squircle on a 1024 canvas, so pad the squircle to that grid (512 / (824/1024)
-// = 636). `npm run icons` in the repo root turns it into every platform size.
-writeFileSync(
-  join(ROOT, "../src-tauri/app-icon.svg"),
-  appIcon().replace('viewBox="0 0 512 512"', 'viewBox="-62 -62 636 636"'),
-);
+// The desktop app icon (../src-tauri/app-icon.svg) is the engraved statue from
+// scripts/build-fama-icon.sh, not this logo, so it isn't written here.
 
 // ---------- rasterize ----------
 const render = (input, output, w, h = w, bg) =>

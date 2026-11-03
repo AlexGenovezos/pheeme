@@ -39,7 +39,8 @@ wrangler dev          # or: python3 -m http.server -d public 8787
 | `public/brand/` | Generated logo set: SVG + PNG, plus `pheeme-brand.zip` |
 | `public/art/` | Line-engraved Pheme statue for the stamp (built by `scripts/build-fama.sh`) |
 | `brand-src/` | Logo sources: outlined wordmark, social card template, statue source photo |
-| `scripts/build-brand.mjs` | Regenerates `public/brand`, favicons, app icons and `og.png` |
+| `scripts/build-brand.mjs` | Regenerates `public/brand`, favicons, web app icons and `og.png` |
+| `scripts/build-fama-icon.sh` | Engraves the desktop app icon (`../src-tauri/app-icon.svg`) from `brand-src/fama-icon-source.jpg` |
 
 ## Logos
 
@@ -49,10 +50,12 @@ Edit the geometry or colors at the top of `scripts/build-brand.mjs`, then run:
 node scripts/build-brand.mjs
 ```
 
-It also writes the desktop app's icon source (`../src-tauri/app-icon.svg`), favicon and mark (`../public/`). After changing the logo, run `npm run icons` from the repo root to regenerate the app's platform icons.
+It also writes the desktop app's favicon and mark (`../public/`). The desktop app icon is separate: `scripts/build-fama-icon.sh` (ImageMagick and python3) engraves it into `../src-tauri/app-icon.svg`, then `npm run icons` from the repo root regenerates the platform icons.
 
 It needs `magick` (ImageMagick), `zip`, and a Playwright `chrome-headless-shell` (or set `CHROME=/path/to/chrome`). The wordmark is Poppins SemiBold outlined to a path by `scripts/wordmark.py`, so it doesn't depend on the font. Site type is Instrument Sans and Martian Mono (both SIL OFL), self-hosted in `public/fonts`.
 
 ## Statue art and license
 
-The hero statue is Fama (the Roman name for Pheme) by Robert Henze, on the Dresden Academy of Fine Arts. The source photo is [Dresden Fama (2005).jpg](https://commons.wikimedia.org/wiki/File:Dresden_Fama_(2005).jpg) by Brunswyk, licensed [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). `scripts/build-fama.sh` cuts it out and redraws it as a line engraving. The edited images in `public/art/` and the stamp in `public/og.png` are shared under CC BY-SA 3.0 as well, and the site footer carries the credit. Keep the statue out of the logo, since that would put the logo under the same license.
+The hero statue is Fama (the Roman name for Pheme) by Robert Henze, on the Dresden Academy of Fine Arts. The source photo is [Dresden Fama (2005).jpg](https://commons.wikimedia.org/wiki/File:Dresden_Fama_(2005).jpg) by Brunswyk, licensed [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). `scripts/build-fama.sh` cuts it out and redraws it as a line engraving. The edited images in `public/art/` and the stamp in `public/og.png` are shared under CC BY-SA 3.0 as well, and the site footer carries the credit. Keep this photo out of the logo and the app icon, since that would put them under the same license.
+
+The desktop app icon uses a different photo of the same statue, [Gold (82911013).jpeg](https://commons.wikimedia.org/wiki/File:Gold_(82911013).jpeg) by Etrick, licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) (credit only, no share-alike). `scripts/build-fama-icon.sh` crops it to the head and trumpet and engraves it as vector lines. The credit sits in the site footer and the repo README.
