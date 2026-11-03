@@ -186,6 +186,15 @@ pub struct Draft {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DraftListResponse {
+    #[serde(default)]
+    pub drafts: Vec<Draft>,
+    pub next_page_token: Option<String>,
+    pub result_size_estimate: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HistoryMessage {
     pub message: Message,
 }

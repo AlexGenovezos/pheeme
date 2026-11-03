@@ -179,6 +179,80 @@ export const revealDownload = (path: string) => invoke<void>("reveal_download", 
 /** Opens an http, https or mailto link from an email; anything else is rejected. */
 export const openMailLink = (url: string) => invoke<void>("open_mail_link", { url });
 /** Sync one account now, or every account when omitted. */
+// Compose (src-tauri/src/commands/compose.rs)
+
+/** An attachment held for the compose panel; `id` is a handle, not a path. */
+export interface StagedAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  /** Set for images the quoted HTML shows via `cid:`; sent inline. */
+  contentId?: string | null;
+}
+
+/** A message being written: new, reply, forward or an opened draft. */
+export interface ComposeDraft {
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  bcc: EmailAddress[];
+  subject: string;
+  /** The editor's HTML. */
+  bodyHtml: string;
+  /** Reply/forward: the quoted original, sent below the body (show it collapsed). */
+  quoteHtml?: string | null;
+  attachments: StagedAttachment[];
+  inReplyTo?: string | null;
+  references: string[];
+  threadId?: string | null;
+  /** The saved Gmail draft this updates; set it from `saveDraft`'s result. */
+  draftId?: string | null;
+}
+
+export type ComposeMode = "reply" | "replyAll" | "forward";
+
+export interface SavedDraft {
+  draftId: string;
+  messageId: string;
+  threadId: string;
+}
+
+export interface DraftSummary {
+  draftId: string;
+  messageId: string;
+  threadId: string;
+  subject: string | null;
+  to: EmailAddress[];
+  snippet: string | null;
+  date: number;
+}
+
+export interface QueuedSend {
+  /** Outbox op: pass to `cancelSend`; progress arrives as `outbox:send_status`. */
+  opId: string;
+  /** Unix ms when it leaves; undo works until then. */
+  sendAt: number;
+}
+
+export const composeTemplate = (accountId: string, messageId: string, mode: ComposeMode) =>
+  invoke<ComposeDraft>("compose_template", { accountId, messageId, mode });
+export const stageAttachment = (path: string) => invoke<StagedAttachment>("stage_attachment", { path });
+/** Call when a compose panel closes (sent, saved or discarded). */
+export const discardAttachments = (ids: string[]) => invoke<void>("discard_attachments", { ids });
+export const saveDraft = (accountId: string, message: ComposeDraft) =>
+  invoke<SavedDraft>("save_draft", { accountId, message });
+export const getDrafts = (accountId: string) => invoke<DraftSummary[]>("get_drafts", { accountId });
+/** Open the draft behind a message in Drafts. */
+export const openDraft = (accountId: string, messageId: string) =>
+  invoke<ComposeDraft>("open_draft", { accountId, messageId });
+export const deleteDraft = (accountId: string, draftId: string) =>
+  invoke<void>("delete_draft", { accountId, draftId });
+/** Queue a send; with `undoMs` it waits that long (max 60 s) so `cancelSend` can stop it. */
+export const sendEmail = (accountId: string, message: ComposeDraft, undoMs?: number) =>
+  invoke<QueuedSend>("send_email", { accountId, message, undoMs: undoMs ?? null });
+/** Undo send: true if stopped before it left. */
+export const cancelSend = (opId: string) => invoke<boolean>("cancel_send", { opId });
+
 export const syncNow = (accountId?: string | null) =>
   invoke<void>("sync_now", { accountId: accountId ?? null });
 

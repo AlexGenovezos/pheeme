@@ -205,6 +205,16 @@ impl SyncManager {
         });
     }
 
+    /// Sync one account once `delay` has passed (a send waiting out its undo window).
+    pub fn trigger_after(self: &Arc<Self>, account_id: &str, delay: Duration) {
+        let this = self.clone();
+        let id = account_id.to_owned();
+        self.runtime.spawn(async move {
+            tokio::time::sleep(delay).await;
+            this.run_coalesced(&id).await;
+        });
+    }
+
     /// The window gained focus.
     pub fn trigger_focus(self: &Arc<Self>) {
         {

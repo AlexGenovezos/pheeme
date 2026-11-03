@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE outbox SET status = ?, attempts = ?, next_attempt_at = ?, checks_done = ?,\n                             last_error = ?, updated_at = ?\n           WHERE id = ? AND kind = 'send' AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "8e0a21b5948dd41889c4f1000b8635a98eb7ab4ef14b94b11fb608112828dc4e"
+}

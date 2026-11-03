@@ -151,11 +151,20 @@ impl GmailClient {
             .await
     }
 
-    /// Send an RFC 2822 message, base64url-encoded (see `mime::encode_base64url`).
-    pub async fn send_message(&self, raw: &str) -> Result<Message, GmailError> {
+    /// Send an RFC 2822 message. A reply passes its `thread_id` so Gmail files it in the
+    /// conversation (its `In-Reply-To`/`References` and subject must match too).
+    pub async fn send_message(
+        &self,
+        rfc822: &[u8],
+        thread_id: Option<&str>,
+    ) -> Result<Message, GmailError> {
+        let metadata = match thread_id {
+            Some(t) => json!({ "threadId": t }),
+            None => json!({}),
+        };
         self.send_json(
             ApiRequest::post(&["messages", "send"])
-                .json(json!({ "raw": raw }))
+                .upload_message(metadata, rfc822)
                 .non_idempotent(),
         )
         .await
@@ -184,7 +193,9 @@ mod tests {
     use super::*;
     use crate::gmail::client::test_support::client_for;
     use serde_json::Value;
-    use wiremock::matchers::{body_json, method, path, query_param};
+    use wiremock::matchers::{
+        body_json, body_string_contains, header_regex, method, path, query_param,
+    };
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn fixture(s: &str) -> Value {
@@ -264,13 +275,13 @@ mod tests {
         // Gmail may have delivered the message before failing; never re-send automatically.
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/messages/send"))
+            .and(path("/upload/messages/send"))
             .respond_with(ResponseTemplate::new(503))
             .expect(1)
             .mount(&server)
             .await;
         let (client, _) = client_for(&server);
-        let err = client.send_message("cmF3").await.unwrap_err();
+        let err = client.send_message(b"raw", None).await.unwrap_err();
         assert!(matches!(err, GmailError::Api { status: 503, .. }));
     }
 
@@ -279,13 +290,13 @@ mod tests {
         // 429 means Gmail did not act, so retrying cannot duplicate the send.
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/messages/send"))
+            .and(path("/upload/messages/send"))
             .respond_with(ResponseTemplate::new(429))
             .up_to_n_times(1)
             .mount(&server)
             .await;
         Mock::given(method("POST"))
-            .and(path("/messages/send"))
+            .and(path("/upload/messages/send"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(serde_json::json!({"id": "m1", "threadId": "t1"})),
@@ -294,7 +305,7 @@ mod tests {
             .mount(&server)
             .await;
         let (client, _) = client_for(&server);
-        assert_eq!(client.send_message("cmF3").await.unwrap().id, "m1");
+        assert_eq!(client.send_message(b"raw", None).await.unwrap().id, "m1");
     }
 
     #[tokio::test]
@@ -376,8 +387,16 @@ mod tests {
             .mount(&server)
             .await;
         Mock::given(method("POST"))
-            .and(path("/messages/send"))
-            .and(body_json(json!({"raw": "UmF3"})))
+            .and(path("/upload/messages/send"))
+            .and(query_param("uploadType", "multipart"))
+            .and(header_regex(
+                "content-type",
+                "^multipart/related; boundary=pheeme-",
+            ))
+            .and(body_string_contains("{\"threadId\":\"t1\"}"))
+            .and(body_string_contains(
+                "Content-Type: message/rfc822\r\n\r\nSubject: Hi\r\n\r\nBody\r\n--pheeme-",
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(minimal))
             .expect(1)
             .mount(&server)
@@ -390,7 +409,14 @@ mod tests {
             .unwrap();
         client.trash_message("m1").await.unwrap();
         client.delete_message("m1").await.unwrap();
-        assert_eq!(client.send_message("UmF3").await.unwrap().id, "m1");
+        assert_eq!(
+            client
+                .send_message(b"Subject: Hi\r\n\r\nBody", Some("t1"))
+                .await
+                .unwrap()
+                .id,
+            "m1"
+        );
     }
 
     #[tokio::test]
