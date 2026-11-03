@@ -1,7 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { describe, expect, test, vi } from "vitest";
 import { listen } from "@tauri-apps/api/event";
-import { type ThreadDetail, SYNC_EVENTS, type SyncMessagesUpdated } from "../lib/tauri";
+import {
+  type ThreadDetail,
+  type ThreadPage,
+  SYNC_EVENTS,
+  type SyncMessagesUpdated,
+} from "../lib/tauri";
 import { fixtureAccounts } from "./fixtures";
 import { createPreviewHandlers, handlePreviewCommand, installPreview } from "./install";
 import { detectTauri, isPreview, isTauri } from "./runtime";
@@ -351,4 +356,18 @@ test("preview sign-in preserves failure simulation", async () => {
   const flow = handlers.begin_oauth(undefined) as { flowId: string };
   await expect(handlers.complete_oauth(flow)).rejects.toMatchObject({ code: "invalid_grant" });
   expect(handlers.list_accounts(undefined)).toEqual([]);
+});
+
+test("?threads=N adds that many Inbox conversations that open", () => {
+  const plain = createPreviewHandlers();
+  const handlers = createPreviewHandlers("?threads=3");
+  const ids = (h: typeof handlers, labelId: string) =>
+    (h.list_threads({ accountIds: ["acc-personal"], labelId }) as ThreadPage).threads.map(
+      (t) => t.id,
+    );
+  expect(ids(handlers, "INBOX")).toEqual([...ids(plain, "INBOX"), "gen-0", "gen-1", "gen-2"]);
+  expect(ids(handlers, "SENT")).toEqual(ids(plain, "SENT"));
+  expect(handlers.get_thread({ accountId: "acc-personal", threadId: "gen-2" })).toMatchObject({
+    thread: { id: "gen-2" },
+  });
 });

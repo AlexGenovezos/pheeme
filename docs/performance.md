@@ -73,3 +73,30 @@ SOAK=long cargo test --release --features test-support --test soak -- --nocaptur
 
 If a change legitimately needs more memory, measure the new peak and raise the budget in
 `soak.rs` to about 20% above it.
+
+## Frontend memory (every PR)
+
+[`e2e/memory.spec.ts`](../e2e/memory.spec.ts) drives the preview build (mocked IPC and
+fixtures, `?threads=10000` for ten thousand more Inbox conversations) in Chromium with
+Playwright. After a warm-up round it runs four rounds of a heavy session: scroll the list
+end to end, open 50 conversations with `j` (200 in all), switch mailboxes, cycle the three
+themes, go to Manage accounts and back, and fire `sync:*` events. It forces garbage
+collection through the DevTools protocol, then compares the JS heap, DOM nodes and event
+listeners with where they started:
+
+| Measure | Healthy run | Fails above |
+|---------|-------------|-------------|
+| JS heap growth | about +0.5 MiB (V8's optimized code, Chrome's performance timeline) | 1 MiB |
+| DOM nodes | +0 to +5 | 100 |
+| Event listeners | +0 | 20 |
+
+Keeping a copy of every loaded thread list, for example, adds over 100 MiB and fails it.
+Chromium stands in for the real webviews (WebKitGTK, WKWebView, WebView2): it catches JS
+leaks (stores, listeners, detached DOM), not engine-specific ones.
+
+```bash
+npx playwright install chromium   # once
+npm run test:memory
+```
+
+It builds the preview with `vite build` and serves it on port 4173 for the run.
