@@ -50,7 +50,9 @@ Versions are `MAJOR.MINOR` (files store `X.Y.0`). Betas go up by one minor: v0.7
 - **Verify fails on the tag** (notes unfinished or versions off): delete the tag
   (`git push --delete origin vX.Y && git tag -d vX.Y`), fix it on main through a PR, tag again.
   A re-run reuses the existing draft release.
-- **A build fails after the draft exists:** fix on main, move the tag to the new commit
-  (`git tag -f`, `git push -f origin vX.Y`), and re-run the workflow. Nothing was published.
+- **A build fails after the draft exists:** fix on main, then move the tag to the new commit
+  (`git tag -f vX.Y <sha> && git push -f origin vX.Y`). That push starts a fresh Release run on
+  the new commit, which reuses the draft; watch that run. Re-running the failed run would rebuild
+  the old commit. Nothing was published.
 - **Notes need a fix after publishing:** edit `docs/releases/vX.Y.md` through a PR, then
   `gh release edit vX.Y --notes-file <(node scripts/release.mjs notes X.Y)`.
