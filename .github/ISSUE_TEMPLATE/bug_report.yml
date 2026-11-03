@@ -1,0 +1,113 @@
+name: Bug report
+description: Report broken behavior, regressions, crashes, or reliability issues.
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for broken behavior, regressions, crashes, or reliability problems.
+        Feature requests belong in [Discussions](https://github.com/AlexGenovezos/pheeme/discussions/categories/ideas).
+        Search existing issues first and keep the report focused on one problem.
+
+        **Redact before posting:** email addresses, message subjects and content, OAuth client secrets, and tokens.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I included enough detail to reproduce or investigate the problem.
+          required: true
+        - label: I removed personal mail data, client secrets, and tokens from this report.
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Pheeme is affected?
+      options:
+        - Mail (list, thread view, compose, send)
+        - Sync and offline cache
+        - Accounts, sign-in, or Google Cloud setup
+        - App shell, keyboard shortcuts, or command palette
+        - Install, updates, or packaging
+        - Build, CI, or release tooling
+        - Docs
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal, deterministic repro.
+      placeholder: |
+        1. Sign in with a second account
+        2. Archive a thread in the first account
+        3. Go offline, then reconnect
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: The archived thread stays out of the inbox.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: The thread reappears in the inbox after the next sync.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Pheeme version
+      description: The release you installed (its GitHub release tag), or the commit if you built from source.
+      placeholder: 0.4.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: macOS 15.3, Windows 11 24H2, Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or errors
+      description: The most relevant log lines or error messages only. Redacted.
+      render: shell
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: Anything that makes the problem go away, if you found one.
