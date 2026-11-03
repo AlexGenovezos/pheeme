@@ -5,14 +5,17 @@
 // the error and reloads from the cache, which still holds whatever Gmail refused.
 import { toast } from "../components/ui/Toast";
 import { type ContextMenuItem, showContextMenu } from "../lib/contextMenu";
-import { modifyThreads, type ThreadSummary, toCommandError, trashThreads } from "../lib/tauri";
+import { getThread, modifyThreads, type ThreadDetail, type ThreadSummary, toCommandError, trashThreads } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
-import { useMailStore } from "../store/mailStore";
+import { newOp, useMailStore } from "../store/mailStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { parseThreadKey, type ThreadKey, threadKey } from "./mailboxes";
 import { rowId } from "./ThreadRow";
+
+/** Reply, Reply all, Forward and Compose arrive with Phase 7. */
+export const composeLater = () => toast({ title: "Compose arrives with Phase 7" });
 
 const mail = () => useMailStore.getState();
 const ui = () => useUiStore.getState();
@@ -24,14 +27,16 @@ interface Change {
   patch?: (thread: ThreadSummary) => ThreadSummary;
   /** The change takes the rows out of the mailbox being shown. */
   leavesList: boolean;
+  /** Rewrites the cached conversation (its label chips) immediately. */
+  detail?: (detail: ThreadDetail) => ThreadDetail;
   send(accountId: string, threadIds: string[]): Promise<void>;
 }
 
 const modify = (
   add: string[],
   remove: string[],
-  { patch, leavesList = false }: { patch?: Change["patch"]; leavesList?: boolean } = {},
-): Change => ({ patch, leavesList, send: (accountId, ids) => modifyThreads(accountId, ids, add, remove) });
+  { patch, leavesList = false, detail }: { patch?: Change["patch"]; leavesList?: boolean; detail?: Change["detail"] } = {},
+): Change => ({ patch, leavesList, detail, send: (accountId, ids) => modifyThreads(accountId, ids, add, remove) });
 
 /** The checked conversations, else the open one. Keys may have left the list since; mutating actions skip those. */
 export function targets(): ThreadKey[] {
@@ -72,22 +77,38 @@ function reloadLists() {
   void useLabelStore.getState().load(useAccountStore.getState().accounts.map((a) => a.id));
 }
 
+/** Forget cached details that an optimistic change touched, and refetch the open one so its pane isn't left blank. */
+function refreshDetails(groups: Map<string, string[]>) {
+  const threads = useThreadStore.getState();
+  for (const [accountId, ids] of groups) threads.evict(accountId, ids);
+  const open = ui().openThread;
+  if (open !== null && keysOf(groups).includes(open)) void threads.load(open);
+}
+
 /**
- * Send `change`, one call per account. A rejection toasts its message and reloads, which puts back the rows of
- * the accounts whose change never reached the cache and leaves the others as they are.
+ * Send `change`, one call per account, then settle `op` so the list stops holding the optimistic state back from
+ * reloads. A rejection toasts its message and reloads (after the settle), which puts back the rows of the accounts
+ * whose change never reached the cache and leaves the others as they are.
  * Resolves to the groups that went through.
  */
-async function send(groups: Map<string, string[]>, change: Change): Promise<Map<string, string[]>> {
+async function send(groups: Map<string, string[]>, change: Change, op: number): Promise<Map<string, string[]>> {
   const accountIds = [...groups.keys()];
   const results = await Promise.allSettled(accountIds.map((id) => change.send(id, groups.get(id) as string[])));
   const done = new Map<string, string[]>();
+  const refused = new Map<string, string[]>();
   const failures: unknown[] = [];
   results.forEach((result, i) => {
-    if (result.status === "fulfilled") done.set(accountIds[i], groups.get(accountIds[i]) as string[]);
-    else failures.push(result.reason);
+    const group = groups.get(accountIds[i]) as string[];
+    if (result.status === "fulfilled") done.set(accountIds[i], group);
+    else {
+      refused.set(accountIds[i], group);
+      failures.push(result.reason);
+    }
   });
+  mail().settle(op);
   if (failures.length > 0) {
     toast({ title: toCommandError(failures[0]).message, tone: "danger" });
+    if (change.detail) refreshDetails(refused);
     reloadLists();
   }
   return done;
@@ -116,19 +137,22 @@ function apply(keys: ThreadKey[] | undefined, change: Change, { announce, keepCh
   if (rows.length === 0) return Promise.resolve();
   const rowKeys = rows.map((r) => r.key);
   const groups = byAccount(rowKeys);
+  const op = newOp();
 
   // Everything up to the command runs before the first await, so the list answers at once.
   if (change.leavesList) {
     const next = nextOpenAfter(new Set(rowKeys));
-    mail().remove(rowKeys);
+    mail().remove(rowKeys, op);
     if (next === null) ui().setOpenThread(null);
     else if (next !== undefined) openAndMarkRead(next);
   } else if (change.patch) {
-    mail().patch(rowKeys, change.patch);
+    mail().patch(rowKeys, change.patch, op);
   }
+  const patchDetail = change.detail;
+  if (patchDetail) for (const key of rowKeys) useThreadStore.getState().patchDetail(key, patchDetail);
   if (!keepChecked) ui().clearChecked();
 
-  return send(groups, change).then((done) => {
+  return send(groups, change, op).then((done) => {
     if (!announce || done.size === 0) return;
     const count = keysOf(done).length;
     const { undo } = announce;
@@ -142,8 +166,11 @@ function apply(keys: ThreadKey[] | undefined, change: Change, { announce, keepCh
 }
 
 async function revert(done: Map<string, string[]>, original: Change, inverse: Change) {
-  if (inverse.patch) mail().patch(keysOf(done), inverse.patch);
-  await send(done, inverse);
+  const op = newOp();
+  const keys = keysOf(done);
+  if (inverse.leavesList) mail().remove(keys, op);
+  else if (inverse.patch) mail().patch(keys, inverse.patch, op);
+  await send(done, inverse, op);
   // Rows the change had taken out of the list can only come back from the cache.
   if (original.leavesList) await mail().reload();
 }
@@ -171,8 +198,12 @@ export function trash(keys?: ThreadKey[]): Promise<void> {
 }
 
 export function setStarred(starred: boolean, keys?: ThreadKey[]): Promise<void> {
+  // Unstarring in Starred takes the row out of the mailbox, like archiving in the inbox.
   const to = (value: boolean): Change =>
-    modify(value ? ["STARRED"] : [], value ? [] : ["STARRED"], { patch: (t) => ({ ...t, starred: value }) });
+    modify(value ? ["STARRED"] : [], value ? [] : ["STARRED"], {
+      patch: (t) => ({ ...t, starred: value }),
+      leavesList: !value && ui().mailbox.labelId === "STARRED",
+    });
   return apply(keys, to(starred), { announce: { title: starred ? "Starred" : "Removed star", undo: to(!starred) } });
 }
 
@@ -191,13 +222,42 @@ export function setRead(read: boolean, keys?: ThreadKey[]): Promise<void> {
 const readChange = (read: boolean): Change =>
   modify(read ? [] : ["UNREAD"], read ? ["UNREAD"] : [], { patch: (t) => ({ ...t, unread: !read }) });
 
-/** Whether every one of `keys` carries `labelId`, from the cached details (fetched first if missing). */
-async function allHave(keys: ThreadKey[], labelId: string): Promise<boolean> {
-  const { load } = useThreadStore.getState();
-  await Promise.all(keys.map((key) => load(key)));
-  const { details } = useThreadStore.getState();
-  return keys.every((key) => details.get(key)?.messages.some((m) => m.labelIds.includes(labelId)));
+/**
+ * The labels each of `keys` carries, from the cached detail or else straight from the backend. Read once per action
+ * and kept out of the detail cache, whose 30 entries a larger selection would push each other out of.
+ */
+async function labelsOf(keys: ThreadKey[]): Promise<Map<ThreadKey, Set<string>>> {
+  const cached = useThreadStore.getState().details;
+  const entries = await Promise.all(
+    keys.map(async (key): Promise<[ThreadKey, Set<string>]> => {
+      let detail = cached.get(key);
+      if (!detail) {
+        const { accountId, threadId } = parseThreadKey(key);
+        detail = await getThread(accountId, threadId).catch(() => undefined);
+      }
+      return [key, new Set(detail?.messages.flatMap((m) => m.labelIds))];
+    }),
+  );
+  return new Map(entries);
 }
+
+const allHave = (membership: Map<ThreadKey, Set<string>>, labelId: string) =>
+  [...membership.values()].every((labels) => labels.has(labelId));
+
+/** The conversation as it will be once `labelId` is added to, or removed from, every message. */
+const withLabel =
+  (labelId: string, add: boolean) =>
+  (detail: ThreadDetail): ThreadDetail => ({
+    ...detail,
+    messages: detail.messages.map((m) => ({
+      ...m,
+      labelIds: add
+        ? m.labelIds.includes(labelId)
+          ? m.labelIds
+          : [...m.labelIds, labelId]
+        : m.labelIds.filter((id) => id !== labelId),
+    })),
+  });
 
 /** Adds `labelId` to the targets of `accountId`, or removes it if they all have it already. */
 export async function toggleLabel(accountId: string, labelId: string, keys?: ThreadKey[]): Promise<void> {
@@ -205,9 +265,10 @@ export async function toggleLabel(accountId: string, labelId: string, keys?: Thr
     .map((r) => r.key)
     .filter((k) => parseThreadKey(k).accountId === accountId);
   if (rowKeys.length === 0) return;
-  const add = !(await allHave(rowKeys, labelId));
+  const add = !allHave(await labelsOf(rowKeys), labelId);
+  // Removing a label in that label's own mailbox takes the row out of it.
   const leavesList = !add && ui().mailbox.labelId === labelId;
-  await apply(rowKeys, modify(add ? [labelId] : [], add ? [] : [labelId], { leavesList }));
+  await apply(rowKeys, modify(add ? [labelId] : [], add ? [] : [labelId], { leavesList, detail: withLabel(labelId, add) }));
 }
 
 /** Where the labels menu opens for the keyboard: under the open row, else near the top of the window. */
@@ -229,14 +290,13 @@ export async function openLabelMenu(at: { x: number; y: number }): Promise<void>
     toast({ title: "No labels yet", description: "Labels you create in Gmail show up here." });
     return;
   }
-  const items: ContextMenuItem[] = await Promise.all(
-    labels.map(async (label) => ({
-      id: label.id,
-      label: label.name,
-      checked: await allHave(keys, label.id),
-      onSelect: () => void toggleLabel(accountId, label.id, keys),
-    })),
-  );
+  const membership = await labelsOf(keys);
+  const items: ContextMenuItem[] = labels.map((label) => ({
+    id: label.id,
+    label: label.name,
+    checked: allHave(membership, label.id),
+    onSelect: () => void toggleLabel(accountId, label.id, keys),
+  }));
   await showContextMenu(items, at);
 }
 

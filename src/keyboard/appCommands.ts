@@ -1,5 +1,4 @@
-import { toast } from "../components/ui/Toast";
-import { archive, labelMenuAnchor, openFocused, openLabelMenu, setRead, toggleStar, trash } from "../mail/actions";
+import { archive, composeLater, labelMenuAnchor, openFocused, openLabelMenu, setRead, toggleStar, trash } from "../mail/actions";
 import { CATEGORIES, categoryMailbox, FAVORITES, homeMailbox, resolveActiveAccount } from "../mail/mailboxes";
 import { usePaletteStore } from "../palette/paletteStore";
 import { useAccountStore } from "../store/accountStore";
@@ -7,8 +6,6 @@ import { useUiStore } from "../store/uiStore";
 import { useThemeStore } from "../theme/theme";
 import type { Command } from "./registry";
 import { useCommands } from "./useCommands";
-
-const composeLater = () => toast({ title: "Compose arrives with Phase 7" });
 
 /** App-wide commands. Pane-specific ones (j/k, search, selection) register in their panes. */
 export function appCommands(): Command[] {

@@ -33,14 +33,26 @@ const onRowAction = (action: RowAction, t: ThreadSummary) => {
 
 const NO_LABELS: { id: string; name: string }[] = [];
 
-/** The row's menu. Actions apply to the checked set when the row is part of it (the list checks that before opening), else to the row. */
-const rowMenu = (t: ThreadSummary) => [
-  { id: "archive", label: "Archive", shortcut: "e", onSelect: () => void archive() },
-  { id: "read", label: t.unread ? "Mark as read" : "Mark as unread", shortcut: t.unread ? "shift+i" : "shift+u", onSelect: () => void setRead(t.unread) },
-  { id: "star", label: t.starred ? "Remove star" : "Add star", shortcut: "s", onSelect: () => void setStarred(!t.starred) },
-  { type: "separator" as const },
-  { id: "delete", label: "Delete", shortcut: "#", danger: true, onSelect: () => void trash() },
-];
+/**
+ * The row's menu. It acts on the checked set when the row is part of it, else on the row alone: right-clicking
+ * doesn't open the row, so the open conversation isn't its target.
+ */
+export const rowMenu = (t: ThreadSummary) => {
+  const key = threadKey(t.accountId, t.id);
+  const keys = useUiStore.getState().checked.includes(key) ? undefined : [key];
+  return [
+    { id: "archive", label: "Archive", shortcut: "e", onSelect: () => void archive(keys) },
+    {
+      id: "read",
+      label: t.unread ? "Mark as read" : "Mark as unread",
+      shortcut: t.unread ? "shift+i" : "shift+u",
+      onSelect: () => void setRead(t.unread, keys),
+    },
+    { id: "star", label: t.starred ? "Remove star" : "Add star", shortcut: "s", onSelect: () => void setStarred(!t.starred, keys) },
+    { type: "separator" as const },
+    { id: "delete", label: "Delete", shortcut: "#", danger: true, onSelect: () => void trash(keys) },
+  ];
+};
 
 export function ListPane() {
   const { accountId, labelId, category } = useUiStore((s) => s.mailbox);

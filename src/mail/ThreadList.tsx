@@ -194,11 +194,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   );
   const contextMenu = useCallback(
     (e: MouseEvent, thread: ThreadSummary) => {
-      // A menu on a row outside the selection acts on that row alone.
-      const key = threadKey(thread.accountId, thread.id);
-      const ui = useUiStore.getState();
-      if (!ui.checked.includes(key)) ui.clearChecked();
-      ui.setOpenThread(key);
+      // Right-clicking neither opens the row nor touches the selection; the menu knows its own target.
       openContextMenuFromEvent(e, rowMenu(thread));
     },
     [rowMenu],

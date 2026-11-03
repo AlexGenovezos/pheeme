@@ -153,6 +153,23 @@ test("right-clicking a conversation opens the menu (DOM fallback in preview)", a
   expect(document.getElementById(archivedId)).toBeNull();
 });
 
+test("the row menu acts on the checked set when the row is in it, else on the row alone", async () => {
+  render(<App />);
+  await screen.findByRole("navigation", { name: "Mailboxes" });
+  const list = () => screen.getByRole("listbox", { name: "Primary conversations" });
+  const options = await within(list()).findAllByRole("option");
+  const [a, , c] = options.map((o) => o.id);
+  fireEvent.click(options[0], { metaKey: true });
+  fireEvent.click(options[1], { metaKey: true });
+
+  // A row outside the selection: only that row is archived, and nothing is opened.
+  fireEvent.contextMenu(options[2], { clientX: 1, clientY: 1 });
+  fireEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
+  expect(document.getElementById(c)).toBeNull();
+  expect(document.getElementById(a)).not.toBeNull();
+  expect(useUiStore.getState().openThread).toBeNull();
+});
+
 test("the updater never starts outside the desktop app, even in production builds", async () => {
   vi.stubEnv("PROD", true);
   const start = vi.spyOn(updater, "startUpdateChecks");

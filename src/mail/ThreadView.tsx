@@ -2,17 +2,14 @@ import { Forward, Reply, ReplyAll, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
-import { toast } from "../components/ui/Toast";
 import type { LabelInfo, ThreadDetail } from "../lib/tauri";
 import { useLabelStore } from "../store/labelStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { MessageCard } from "./MessageCard";
-import { toggleLabel } from "./actions";
+import { composeLater, toggleLabel } from "./actions";
 import { parseThreadKey } from "./mailboxes";
 import "./mail.css";
-
-const composeLater = () => toast({ title: "Compose arrives with Phase 7" });
 
 /** Which messages are open. `seen` is every message already given its starting state. */
 interface Expansion {

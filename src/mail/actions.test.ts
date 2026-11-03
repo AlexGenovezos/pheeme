@@ -46,12 +46,34 @@ interface Call {
 let calls: Call[] = [];
 /** Accounts whose commands the fake backend rejects. */
 let rejecting: Set<string>;
+/** What `list_threads` answers: the cache as the server side sees it. */
+let listPage: ThreadSummary[];
+/** What `get_thread` answers, by thread key. */
+let details: Record<string, ThreadDetail>;
+/** While set, `modify_threads` and `trash_threads` wait for it: a command the cache hasn't applied yet. */
+let gate: Promise<void> | null;
+const hold = () => {
+  let release!: () => void;
+  gate = new Promise<void>((resolve) => (release = resolve));
+  return () => {
+    gate = null;
+    release();
+  };
+};
 
 const modifyCalls = () => calls.filter((c) => c.cmd === "modify_threads").map((c) => c.args);
 const toasts = () => useToastStore.getState().toasts;
 const last = <T>(items: T[]): T => items[items.length - 1];
 
-const realReload = useMailStore.getState().reload;
+const realReloadFn = useMailStore.getState().reload;
+/** Use the store's real reload, answered by `listPage`, instead of the mock the other tests count calls on. */
+const useRealReload = (accountIds = ["a1"]) =>
+  useMailStore.setState({ reload: realReloadFn, query: { accountIds, labelId: "INBOX" } });
+/** Reload for real, with the server side saying `rows`. */
+const reloadWith = async (rows: ThreadSummary[]) => {
+  listPage = rows;
+  await realReloadFn();
+};
 const realPrefetch = useThreadStore.getState().prefetch;
 let reload: ReturnType<typeof vi.fn>;
 
@@ -69,19 +91,25 @@ beforeEach(() => {
   calls = [];
   rejecting = new Set();
   reload = vi.fn(async () => {});
-  useMailStore.setState({ reload });
+  useMailStore.setState({ reload, query: null });
+  listPage = [];
+  details = {};
+  gate = null;
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: a });
-    if ((cmd === "modify_threads" || cmd === "trash_threads") && rejecting.has(a.accountId as string)) {
-      throw { code: "gmail", message: `Gmail refused ${a.accountId}` };
-    }
-    return undefined;
+    if (cmd === "list_threads") return { threads: listPage, next: null };
+    if (cmd === "get_thread") return details[threadKey(a.accountId as string, a.threadId as string)];
+    if (cmd !== "modify_threads" && cmd !== "trash_threads") return undefined;
+    return (async () => {
+      await gate;
+      if (rejecting.has(a.accountId as string)) throw { code: "gmail", message: `Gmail refused ${a.accountId}` };
+    })();
   });
 });
 afterEach(() => {
   clearMocks();
-  useMailStore.setState({ reload: realReload });
+  useMailStore.setState({ reload: realReloadFn });
   useThreadStore.setState({ prefetch: realPrefetch });
   vi.mocked(showContextMenu).mockClear();
 });
@@ -166,6 +194,96 @@ describe("archive", () => {
   });
 });
 
+describe("pending changes and reloads", () => {
+  const starredOf = () => useMailStore.getState().threads.map((t) => t.starred);
+
+  test("a reload answered before the command commits doesn't bring archived rows back; settling releases them", async () => {
+    useRealReload(["a1", "a2"]);
+    const rows = [thread(1), thread(2), thread(3, "a2")];
+    setList(rows);
+    useUiStore.setState({ checked: [key(1), key(3, "a2")] });
+    const release = hold();
+
+    const done = archive();
+    await reloadWith(rows); // the cache hasn't heard yet, so this still has all three
+    expect(listKeys()).toEqual([key(2)]);
+    await reloadWith(rows); // another account's event does the same
+    expect(listKeys()).toEqual([key(2)]);
+
+    release();
+    await done;
+    // Settled: the server side is the authority again.
+    await reloadWith([thread(2)]);
+    expect(listKeys()).toEqual([key(2)]);
+    await reloadWith(rows);
+    expect(listKeys()).toEqual(rows.map((t) => threadKey(t.accountId, t.id)));
+  });
+
+  test("a second s reads the optimistic star and unstars", async () => {
+    useRealReload();
+    setList([thread(1)]);
+    useUiStore.setState({ openThread: key(1) });
+    const release = hold();
+
+    const first = toggleStar();
+    await reloadWith([thread(1)]);
+    expect(starredOf()).toEqual([true]);
+    const second = toggleStar();
+    await flush();
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: ["STARRED"], remove: [] },
+      { accountId: "a1", threadIds: ["t1"], add: [], remove: ["STARRED"] },
+    ]);
+    release();
+    await Promise.all([first, second]);
+    expect(starredOf()).toEqual([false]);
+  });
+
+  test("opening an unread thread marks it read once even when a reload says it is still unread", async () => {
+    useRealReload();
+    setList([thread(1, "a1", { unread: true })]);
+    const release = hold();
+
+    openAndMarkRead(key(1));
+    await reloadWith([thread(1, "a1", { unread: true })]);
+    expect(useMailStore.getState().threads[0].unread).toBe(false);
+    openAndMarkRead(key(1));
+    release();
+    await flush();
+    expect(modifyCalls()).toHaveLength(1);
+  });
+
+  test("Undo is held the same way: a reload before it commits keeps the undone state, settling releases it", async () => {
+    useRealReload();
+    setList([thread(1)]);
+    useUiStore.setState({ openThread: key(1) });
+    await setStarred(true);
+    expect(starredOf()).toEqual([true]);
+
+    const release = hold();
+    toasts()[0].action!.run();
+    expect(starredOf()).toEqual([false]);
+    await reloadWith([thread(1, "a1", { starred: true })]); // the server side still has the star
+    expect(starredOf()).toEqual([false]);
+
+    release();
+    await flush();
+    await reloadWith([thread(1, "a1", { starred: true })]);
+    expect(starredOf()).toEqual([true]);
+  });
+
+  test("a refusal releases the changes before it reloads, so the refused rows come back", async () => {
+    useRealReload(["a1", "a2"]);
+    listPage = [thread(2, "a2")]; // a1's thread is archived in the cache, a2's is not
+    setList([thread(1), thread(2, "a2")]);
+    useUiStore.setState({ checked: [key(1), key(2, "a2")] });
+    rejecting.add("a2");
+    await archive();
+    await flush();
+    expect(listKeys()).toEqual([key(2, "a2")]);
+  });
+});
+
 describe("trash", () => {
   test("calls trash_threads and toasts without undo", async () => {
     setList([thread(1), thread(2)]);
@@ -220,6 +338,31 @@ describe("star and read", () => {
     expect(last(toasts())?.title).toBe("Marked as read");
     last(toasts())!.action!.run();
     expect(useMailStore.getState().threads[0].unread).toBe(true);
+  });
+});
+
+describe("unstarring in Starred", () => {
+  test("takes the row out, opens the next one, and Undo brings it back", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "STARRED" }, openThread: key(1) });
+    setList([thread(1, "a1", { starred: true }), thread(2, "a1", { starred: true })]);
+    const done = setStarred(false);
+    expect(listKeys()).toEqual([key(2)]);
+    expect(useUiStore.getState().openThread).toBe(key(2));
+    await done;
+    expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1"], add: [], remove: ["STARRED"] }]);
+
+    toasts()[0].action!.run();
+    await flush();
+    expect(modifyCalls()[1]).toMatchObject({ add: ["STARRED"], remove: [] });
+    expect(reload).toHaveBeenCalled();
+  });
+
+  test("starring there keeps the row, and elsewhere unstarring keeps it too", async () => {
+    setList([thread(1, "a1", { starred: true })]);
+    useUiStore.setState({ openThread: key(1) });
+    await setStarred(false);
+    expect(listKeys()).toEqual([key(1)]);
+    expect(useMailStore.getState().threads[0].starred).toBe(false);
   });
 });
 
@@ -352,6 +495,64 @@ describe("labels", () => {
     cache(detail(1, []));
     await toggleLabel("a1", "Label_1", [key(1), key(2, "a2")]);
     expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1"], add: ["Label_1"], remove: [] }]);
+  });
+
+  test("removing a label from more conversations than the detail cache holds still removes it", async () => {
+    const count = 35;
+    const rows = Array.from({ length: count }, (_, i) => thread(i));
+    setList(rows);
+    for (const row of rows) details[key(Number(row.id.slice(1)))] = detail(Number(row.id.slice(1)), ["INBOX", "Label_1"]);
+    useUiStore.setState({ checked: rows.map((t) => threadKey(t.accountId, t.id)) });
+    await toggleLabel("a1", "Label_1");
+    expect(modifyCalls()).toHaveLength(1);
+    expect(modifyCalls()[0]).toMatchObject({ add: [], remove: ["Label_1"] });
+    expect(modifyCalls()[0].threadIds).toHaveLength(count);
+  });
+
+  test("the menu marks a label checked across a selection larger than the cache", async () => {
+    const rows = Array.from({ length: 32 }, (_, i) => thread(i));
+    setList(rows);
+    for (let i = 0; i < 32; i++) details[key(i)] = detail(i, ["Label_1"]);
+    useUiStore.setState({ checked: rows.map((t) => threadKey(t.accountId, t.id)) });
+    await openLabelMenu({ x: 0, y: 0 });
+    const [items] = vi.mocked(showContextMenu).mock.calls[0];
+    expect(items.map((i) => (i.type === "separator" ? null : [i.label, i.checked]))).toEqual([
+      ["Home", false],
+      ["Work", true],
+    ]);
+  });
+
+  test("the chip goes at once, stays gone across a second toggle, and a refusal puts it back", async () => {
+    const original = detail(1, ["INBOX", "Label_1"]);
+    details[key(1)] = original;
+    setList([thread(1)]);
+    cache(original);
+    useUiStore.setState({ openThread: key(1) });
+    const labelsNow = () => useThreadStore.getState().details.get(key(1))?.messages.flatMap((m) => m.labelIds);
+    const release = hold();
+
+    const removing = toggleLabel("a1", "Label_1");
+    await flush();
+    expect(labelsNow()).toEqual(["INBOX"]); // before the command has been applied
+    // A second toggle sees the optimistic state, so it adds the label back.
+    const adding = toggleLabel("a1", "Label_1");
+    await flush();
+    expect(modifyCalls().map((c) => [c.add, c.remove])).toEqual([[[], ["Label_1"]], [["Label_1"], []]]);
+    expect(labelsNow()).toEqual(["INBOX", "Label_1"]);
+    release();
+    await Promise.all([removing, adding]);
+
+    // A refusal: the cached conversation is refetched from the cache the backend still has.
+    rejecting.add("a1");
+    const releaseRefused = hold();
+    const refused = toggleLabel("a1", "Label_1");
+    await flush();
+    expect(labelsNow()).toEqual(["INBOX"]); // optimistic remove
+    releaseRefused();
+    await refused;
+    await flush();
+    expect(calls.filter((c) => c.cmd === "get_thread").length).toBeGreaterThan(0);
+    expect(labelsNow()).toEqual(["INBOX", "Label_1"]);
   });
 
   test("the menu lists the account's labels, checked where every target has them", async () => {

@@ -2,7 +2,7 @@ import { Archive, Forward, Mail, MailOpen, MoreHorizontal, Reply, Star, Trash2 }
 import type { MouseEvent } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { showContextMenu } from "../lib/contextMenu";
-import { archive, openLabelMenu, setRead, setStarred, trash } from "../mail/actions";
+import { archive, composeLater, openLabelMenu, setRead, setStarred, trash } from "../mail/actions";
 import { threadKey } from "../mail/mailboxes";
 import { ThreadView } from "../mail/ThreadView";
 import { useMailStore } from "../store/mailStore";
@@ -50,8 +50,8 @@ export function ViewPane() {
           onClick={() => void setStarred(!summary?.starred)}
         />
         <span className="toolbar__separator" />
-        <IconButton label="Reply" shortcut="r" icon={<Reply />} disabled={off} onClick={() => notYet("Reply")} />
-        <IconButton label="Forward" shortcut="f" icon={<Forward />} disabled={off} onClick={() => notYet("Forward")} />
+        <IconButton label="Reply" shortcut="r" icon={<Reply />} disabled={off} onClick={composeLater} />
+        <IconButton label="Forward" shortcut="f" icon={<Forward />} disabled={off} onClick={composeLater} />
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton label="More actions" icon={<MoreHorizontal />} disabled={off} onClick={openMore} />
       </div>

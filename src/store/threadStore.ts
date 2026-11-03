@@ -24,6 +24,8 @@ interface ThreadState {
   load(key: ThreadKey): Promise<void>;
   /** Warm the cache for neighbours of the open thread. Failures are ignored. */
   prefetch(keys: ThreadKey[]): void;
+  /** Rewrite a cached detail in place (optimistic label changes). Does nothing if it isn't cached. */
+  patchDetail(key: ThreadKey, fn: (detail: ThreadDetail) => ThreadDetail): void;
   /** Forget threads of one account (their messages changed), including any response still in flight. */
   evict(accountId: string, threadIds: string[]): void;
   /** Evict on `sync:messages_updated`, and refresh the open thread if it changed. Resolves to the unsubscribe function. */
@@ -96,6 +98,14 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         if (!get().details.has(key) && !inflight.has(key)) void fetchDetail(key, true);
       }
     },
+    patchDetail: (key, fn) =>
+      set((s) => {
+        const current = s.details.get(key);
+        if (!current) return {};
+        const details = new Map(s.details);
+        details.set(key, fn(current)); // an existing key keeps its place in the LRU order
+        return { details };
+      }),
     evict: (accountId, threadIds) => {
       const keys = threadIds.map((id) => threadKey(accountId, id));
       keys.forEach((key) => inflight.delete(key));

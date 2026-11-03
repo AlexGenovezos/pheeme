@@ -3,7 +3,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { ThreadPage, ThreadSummary } from "../lib/tauri";
 import { threadKey } from "../mail/mailboxes";
-import { __resetMailStoreForTests, useMailStore } from "./mailStore";
+import { __resetMailStoreForTests, newOp, useMailStore } from "./mailStore";
 
 const summary = (id: string, accountId = "a"): ThreadSummary => ({
   id,
@@ -223,6 +223,58 @@ test("remove drops rows by key across accounts", async () => {
   await useMailStore.getState().load({ accountIds: ["a", "b"], labelId: "INBOX" });
   useMailStore.getState().remove(["b:t1", "a:t9"]);
   expect(useMailStore.getState().threads.map(key)).toEqual(["a:t1", "b:t2"]);
+});
+
+test("pending changes survive loads, reloads and pages until settled", async () => {
+  const old = (): ThreadPage => ({ threads: [summary("t1"), summary("t2"), summary("t3", "b")], next: null });
+  mockIPC((cmd) => (cmd === "list_threads" ? old() : undefined));
+  const store = useMailStore.getState();
+  await store.load({ accountIds: ["a", "b"], labelId: "INBOX" });
+
+  const archive = newOp();
+  const star = newOp();
+  useMailStore.getState().remove(["a:t1", "b:t3"], archive);
+  useMailStore.getState().patch(["a:t2"], (t) => ({ ...t, starred: true }), star);
+  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([["a:t2", true]]);
+
+  // The server hasn't heard yet, so these answers still say the old thing.
+  await useMailStore.getState().reload();
+  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([["a:t2", true]]);
+  await useMailStore.getState().load({ accountIds: ["a", "b"], labelId: "INBOX" });
+  expect(useMailStore.getState().threads.map(key)).toEqual(["a:t2"]);
+
+  // One command settling releases only its own changes.
+  useMailStore.getState().settle(archive);
+  await useMailStore.getState().reload();
+  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([
+    ["a:t1", false],
+    ["a:t2", true],
+    ["b:t3", false],
+  ]);
+  useMailStore.getState().settle(star);
+  await useMailStore.getState().reload();
+  expect(useMailStore.getState().threads.every((t) => !t.starred)).toBe(true);
+});
+
+test("pending changes also cover rows that arrive on a later page, and apply in the order made", async () => {
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") return undefined;
+    return (args as { before?: unknown }).before ? page("t2") : { threads: [summary("t1")], next: cursorAfter("t1") };
+  });
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
+  useMailStore.getState().patch(["a:t2"], (t) => ({ ...t, starred: true }), newOp());
+  useMailStore.getState().patch(["a:t2"], (t) => ({ ...t, starred: false }), newOp());
+  useMailStore.getState().remove(["a:t1"], newOp());
+  await useMailStore.getState().loadMore();
+  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([["a:t2", false]]);
+});
+
+test("changes without an op are not held across reloads", async () => {
+  mockIPC((cmd) => (cmd === "list_threads" ? page("t1") : undefined));
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
+  useMailStore.getState().remove(["a:t1"]);
+  await useMailStore.getState().reload();
+  expect(ids()).toEqual(["t1"]);
 });
 
 test("ignores a stale response", async () => {

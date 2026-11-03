@@ -212,3 +212,13 @@ test("threads added by sync, or in another account, are left alone", async () =>
   expect(cached()).toEqual(["a:t1"]);
   stop();
 });
+
+test("patchDetail rewrites a cached detail in place and ignores one that isn't cached", async () => {
+  backend({ "a:t1": detail("t1"), "a:t2": detail("t2") });
+  await store().load("a:t1");
+  await store().load("a:t2");
+  store().patchDetail("a:t1", (d) => ({ ...d, thread: { ...d.thread, subject: "Patched" } }));
+  store().patchDetail("a:t9", (d) => d);
+  expect(store().details.get("a:t1")?.thread.subject).toBe("Patched");
+  expect(cached()).toEqual(["a:t1", "a:t2"]); // recency order is untouched
+});

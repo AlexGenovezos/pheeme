@@ -380,15 +380,18 @@ describe("keyboard and menu wiring", () => {
     expect(calls.filter((c) => c === "modify_threads")).toHaveLength(2);
   });
 
-  test("a context menu on a row outside the selection drops the selection; inside it keeps it", () => {
+  test("right-clicking a row builds its menu without opening it, marking it read or touching the selection", () => {
+    const calls: string[] = [];
+    mockIPC((cmd) => void calls.push(cmd), { shouldMockEvents: true });
     useMailStore.setState({ threads: many(5) });
     const rowMenu = vi.fn(() => []);
     render(<ThreadList {...props({ rowMenu })} />);
     act(() => useUiStore.getState().checkAll([key(1), key(2)]));
-    fireEvent.contextMenu(row(2), { clientX: 1, clientY: 1 });
+    fireEvent.contextMenu(row(4), { clientX: 1, clientY: 1 }); // t4 is unread
+    expect(rowMenu).toHaveBeenCalledWith(expect.objectContaining({ id: "t4" }));
     expect(useUiStore.getState().checked).toEqual([key(1), key(2)]);
-    fireEvent.contextMenu(row(4), { clientX: 1, clientY: 1 });
-    expect(useUiStore.getState().checked).toEqual([]);
-    expect(useUiStore.getState().openThread).toBe(key(4));
+    expect(useUiStore.getState().openThread).toBeNull();
+    expect(useMailStore.getState().threads[4].unread).toBe(true);
+    expect(calls).not.toContain("modify_threads");
   });
 });
