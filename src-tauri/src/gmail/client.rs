@@ -79,9 +79,10 @@ fn jittered(delay: Duration) -> Duration {
 ///
 /// Each request reserves a send time on a schedule advancing `units / rate` seconds per call,
 /// allowing up to [`QUOTA_BURST`] of backlog to go at once (a GCRA). A rate-limit answer halves
-/// the rate and pauses the schedule; the rate then climbs back linearly to the full rate over
-/// [`QUOTA_RECOVERY`]. Gmail enforces its limit per minute, so a fixed rate either wastes
-/// quota or keeps tripping it, and recovering much faster than a minute trips it again.
+/// the rate and pauses the schedule; the rate then climbs back linearly, regaining the full
+/// rate's worth per [`QUOTA_RECOVERY`] (so 30 s from half speed). Gmail enforces its limit per
+/// minute, so a fixed rate either wastes quota or keeps tripping it, and recovering much faster
+/// trips it again.
 struct QuotaLimiter {
     max_rate: f64,
     state: std::sync::Mutex<Pace>,
