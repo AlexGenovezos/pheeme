@@ -431,14 +431,30 @@ mod tests {
     #[ignore]
     fn keyring_store_round_trip_on_this_os() {
         // Shares the real vault with an installed Pheeme; it only adds and removes its
-        // own test account.
-        let account_id = format!("test-{}", std::process::id());
-        let expected = secrets();
-        KeyringStore::new().put(&account_id, &expected).unwrap();
+        // own test accounts. Enough of them to pass Windows' 2560-byte limit, so the
+        // vault is split there.
+        let ids: Vec<_> = (0..8)
+            .map(|n| format!("test-{}-{n}", std::process::id()))
+            .collect();
+        let secrets = |n: usize| AccountSecrets {
+            client_secret: format!("client-secret-{n}"),
+            refresh_token: format!("{n}-{}", "r".repeat(200)),
+        };
+        let store = KeyringStore::new();
+        for (n, id) in ids.iter().enumerate() {
+            store.put(id, &secrets(n)).unwrap();
+        }
         let reopened = KeyringStore::new();
-        assert_eq!(reopened.get(&account_id).unwrap(), Some(expected));
-        reopened.delete(&account_id).unwrap();
-        assert_eq!(KeyringStore::new().get(&account_id).unwrap(), None);
+        for (n, id) in ids.iter().enumerate() {
+            assert_eq!(reopened.get(id).unwrap(), Some(secrets(n)));
+        }
+        for id in &ids {
+            reopened.delete(id).unwrap();
+        }
+        let reopened = KeyringStore::new();
+        for id in &ids {
+            assert_eq!(reopened.get(id).unwrap(), None);
+        }
     }
 
     /// An in-memory keychain that counts reads and can fail its next call.
