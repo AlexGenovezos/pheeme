@@ -1,8 +1,25 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import type { AccountInfo } from "../lib/tauri";
-import { fixtureAccounts, fixtureLabels, fixtureMailboxes, fixtureThreadsIn } from "./fixtures";
+import type { AccountInfo, ThreadDetail, ThreadPage, ThreadSummary } from "../lib/tauri";
+import { fixtureAccounts, fixtureLabels, fixtureMailboxes, fixtureThreads, fixtureThreadsIn, type FixtureThread } from "./fixtures";
 
 type Args = Record<string, unknown> | undefined;
+
+/** A fixture thread as `list_threads` returns it (no mailbox or body). */
+export function toSummary(t: FixtureThread): ThreadSummary {
+  const { id, accountId, subject, snippet, fromName, fromAddress, date, unread, starred, hasAttachment, messageCount } = t;
+  return { id, accountId, subject, snippet, fromName, fromAddress, date, unread, starred, hasAttachment, messageCount };
+}
+
+function threadDetail(t: FixtureThread): ThreadDetail {
+  return {
+    thread: toSummary(t),
+    messages: [{
+      id: `${t.id}-m1`, threadId: t.id, fromName: t.fromName, fromAddress: t.fromAddress, to: [], cc: [],
+      subject: t.subject, snippet: t.snippet, date: t.date, bodyHtml: null, bodyText: t.body,
+      unread: t.unread, starred: t.starred, labelIds: [t.mailbox], hasAttachment: t.hasAttachment,
+    }],
+  };
+}
 
 /** One stateful backend for both onboarding and the shell in browser preview. */
 export function createPreviewHandlers(search = ""): Record<string, (args: Args) => unknown> {
@@ -15,7 +32,16 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
     list_labels: () => [...fixtureMailboxes, ...fixtureLabels],
-    list_threads: (args) => fixtureThreadsIn(String(args?.labelId ?? "INBOX")),
+    list_threads: (args): ThreadPage => ({ threads: fixtureThreadsIn(String(args?.labelId ?? "INBOX")).map(toSummary), next: null }),
+    get_thread: (args) => {
+      const t = fixtureThreads.find((f) => f.id === args?.threadId);
+      if (!t) throw { code: "not_found", message: "That conversation isn't on this device." };
+      return threadDetail(t);
+    },
+    mailbox_counts: () => fixtureMailboxes.map((m) => ({ labelId: m.id, unread: m.unread })),
+    sync_now: () => undefined,
+    modify_threads: () => undefined,
+    trash_threads: () => undefined,
     begin_oauth: () => {
       const flowId = crypto.randomUUID();
       flows.add(flowId);
