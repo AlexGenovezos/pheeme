@@ -1,10 +1,15 @@
+import { emit } from "@tauri-apps/api/event";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  CHECK_FOR_UPDATES_EVENT,
   CHECK_INTERVAL_MS,
   __resetForTests,
+  checkForUpdatesNow,
   displayVersion,
+  listenForManualChecks,
   startUpdateChecks,
   useUpdateStore,
   type PendingUpdate,
@@ -152,4 +157,71 @@ test.each([
   ["0.2", "0.2"],
 ])("displayVersion(%s) is %s", (input, expected) => {
   expect(displayVersion(input)).toBe(expected);
+});
+
+describe("manual check", () => {
+  test("reports checking, then up to date", async () => {
+    let resolve!: (u: PendingUpdate | null) => void;
+    stop = startUpdateChecks(fakeDeps(() => new Promise((r) => (resolve = r))));
+    const done = checkForUpdatesNow();
+    expect(useUpdateStore.getState().manualCheck).toBe("checking");
+    resolve(null);
+    await done;
+    expect(useUpdateStore.getState().manualCheck).toBe("current");
+  });
+
+  test("shares an in-flight background check instead of starting another", async () => {
+    let resolve!: (u: PendingUpdate | null) => void;
+    const deps = fakeDeps(() => new Promise((r) => (resolve = r)));
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(0);
+    const done = checkForUpdatesNow();
+    resolve(fakeUpdate());
+    await done;
+    expect(deps.check).toHaveBeenCalledTimes(1);
+    expect(useUpdateStore.getState()).toMatchObject({ available: "0.2.0", manualCheck: "idle" });
+  });
+
+  test("reports a failed check", async () => {
+    const deps = fakeDeps(async () => {
+      throw new Error("offline");
+    });
+    stop = startUpdateChecks(deps, CHECK_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(0);
+    await checkForUpdatesNow();
+    expect(useUpdateStore.getState().manualCheck).toBe("failed");
+    expect(deps.check).toHaveBeenCalledTimes(2);
+  });
+
+  test("does nothing when an update is already waiting", async () => {
+    const deps = fakeDeps(async () => fakeUpdate());
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(0);
+    await checkForUpdatesNow();
+    expect(deps.check).toHaveBeenCalledTimes(1);
+    expect(useUpdateStore.getState().manualCheck).toBe("idle");
+  });
+
+  test("dismiss clears the result", async () => {
+    stop = startUpdateChecks(fakeDeps(async () => null));
+    await checkForUpdatesNow();
+    useUpdateStore.getState().dismissManualCheck();
+    expect(useUpdateStore.getState().manualCheck).toBe("idle");
+  });
+
+  test("the app menu event triggers a check", async () => {
+    mockIPC(() => {}, { shouldMockEvents: true });
+    const deps = fakeDeps(async () => null);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(0);
+    const unlisten = listenForManualChecks();
+    await vi.advanceTimersByTimeAsync(0);
+    await emit(CHECK_FOR_UPDATES_EVENT);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(deps.check).toHaveBeenCalledTimes(2);
+    expect(useUpdateStore.getState().manualCheck).toBe("current");
+    unlisten();
+    await vi.advanceTimersByTimeAsync(0);
+    clearMocks();
+  });
 });
