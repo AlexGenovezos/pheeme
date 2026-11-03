@@ -6,6 +6,7 @@ pub mod db;
 pub mod gmail;
 pub mod identity;
 pub mod mail;
+pub mod render;
 pub mod secrets;
 pub mod sync;
 

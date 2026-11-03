@@ -7,6 +7,7 @@ use crate::db::messages::{parse_labels, DbMessage};
 use crate::db::threads::{self, DbThread, ThreadCursor, ThreadQuery};
 use crate::db::{labels, messages};
 use crate::gmail::mime::EmailAddress;
+use crate::render;
 use crate::sync::engine::SyncError;
 use crate::sync::manager::SyncManager;
 use crate::sync::{outbox, SyncEvent};
@@ -105,7 +106,10 @@ pub struct MessageDetailDto {
     pub subject: Option<String>,
     pub snippet: Option<String>,
     pub date: i64,
+    /// Sanitized HTML fragment (see `render::sanitize_email_html`), never the raw body.
     pub body_html: Option<String>,
+    pub has_remote_content: bool,
+    pub declares_dark_mode: bool,
     pub body_text: Option<String>,
     pub unread: bool,
     pub starred: bool,
@@ -156,6 +160,8 @@ impl From<DbMessage> for MessageDetailDto {
             snippet: m.snippet,
             date: m.date.unwrap_or(0),
             body_html: m.body_html,
+            has_remote_content: false,
+            declares_dark_mode: false,
             body_text: m.body_text,
             unread: m.is_read == 0,
             starred: m.is_starred != 0,
@@ -266,6 +272,12 @@ impl MailService {
                 attachments::get_attachments_for_message(&self.db, account_id, &m.id).await?;
             let mut dto = MessageDetailDto::from(m);
             dto.attachments = atts.into_iter().map(Into::into).collect();
+            if let Some(raw) = dto.body_html.take() {
+                let body = render::sanitize_email_html(&raw, account_id, &dto.id);
+                dto.body_html = Some(body.html);
+                dto.has_remote_content = body.has_remote_content;
+                dto.declares_dark_mode = body.declares_dark_mode;
+            }
             details.push(dto);
         }
         Ok(ThreadDetailDto {
@@ -523,5 +535,59 @@ mod tests {
                 content_id: None,
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn get_thread_sanitizes_html_bodies() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::init_db(dir.path()).await.unwrap();
+        accounts::insert_account(
+            &pool,
+            &DbAccount {
+                id: "a1".into(),
+                email: "me@example.com".into(),
+                display_name: None,
+                profile_photo_url: None,
+                client_id: "c".into(),
+                history_id: None,
+                created_at: 0,
+                updated_at: 0,
+            },
+        )
+        .await
+        .unwrap();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+        fake.seed(FakeMsg::new("m2", "t1", &["INBOX"]));
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            Arc::new(RecordingEvents::default()),
+        );
+        sync.sync_account("a1").await.unwrap();
+        sqlx::query(
+            "UPDATE messages SET body_html = '<script>alert(1)</script><img src=\"cid:logo\"><img src=\"https://t.co/p.gif\">' WHERE id = 'm1'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE messages SET body_html = NULL WHERE id = 'm2'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mail = MailService::new(pool.clone(), sync.clone());
+
+        let detail = mail.get_thread("a1", "t1").await.unwrap();
+
+        let html = detail.messages.iter().find(|m| m.id == "m1").unwrap();
+        let body = html.body_html.as_deref().unwrap();
+        assert!(!body.contains("script"), "{body}");
+        assert!(body.contains("/a1/m1/logo"), "{body}");
+        assert!(html.has_remote_content);
+        assert!(!html.declares_dark_mode);
+        let plain = detail.messages.iter().find(|m| m.id == "m2").unwrap();
+        assert_eq!(plain.body_html, None);
+        assert!(!plain.has_remote_content && !plain.declares_dark_mode);
     }
 }

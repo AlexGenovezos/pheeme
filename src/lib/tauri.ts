@@ -106,7 +106,10 @@ export interface MessageDetail {
   subject: string | null;
   snippet: string | null;
   date: number;
+  /** Sanitized HTML fragment from the backend, never the raw email body. */
   bodyHtml: string | null;
+  hasRemoteContent: boolean;
+  declaresDarkMode: boolean;
   bodyText: string | null;
   unread: boolean;
   starred: boolean;
