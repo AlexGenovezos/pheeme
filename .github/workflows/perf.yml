@@ -108,6 +108,7 @@ jobs:
         with:
           name: dhat-heap
           path: src-tauri/target/tmp/soak/dhat-heap.json
+          retention-days: 14
 
   frontend-memory:
     name: Frontend memory
