@@ -1,0 +1,51 @@
+.ui-input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: var(--space-0);
+  height: var(--control-height-md);
+  padding: var(--space-0) var(--space-2);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+  color: var(--color-input-foreground);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+/* The ring sits on the wrapper so adornments are inside it. Inputs show focus
+   for mouse clicks too: a caret alone is easy to lose. */
+.ui-input:focus-within {
+  border-color: var(--color-focus-border);
+  box-shadow: 0 0 0 var(--border-width) var(--color-focus-border);
+}
+
+.ui-input--invalid,
+.ui-input--invalid:focus-within {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 var(--border-width) var(--color-danger);
+}
+
+.ui-input__field {
+  flex: 1;
+  min-width: var(--space-0);
+  height: 100%;
+  border: none;
+  background: transparent;
+  font-size: var(--font-size-md);
+}
+.ui-input__field:focus-visible {
+  outline: none;
+}
+.ui-input__field::placeholder {
+  color: var(--color-input-placeholder);
+}
+
+.ui-input__adornment {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-foreground-subtle);
+}
+.ui-input__adornment svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}

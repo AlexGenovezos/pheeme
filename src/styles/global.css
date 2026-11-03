@@ -1,97 +1,149 @@
-/* Minimal tokens for the onboarding screens. The full design system (and theme
-   files) arrives with the app shell (design doc §6, phase 5); these names are
-   meant to carry over. */
-:root {
-  color-scheme: light dark;
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --text-sm: 12px;
-  --text-md: 14px;
-  --text-lg: 15px;
-  --text-xl: 22px;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-7: 48px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --motion-fast: 120ms;
+/*
+ * App-native base styles. Chrome is not selectable text, focus rings appear
+ * for keyboard users only, cursors are the platform's (arrow on buttons, not a
+ * hand), and nothing scrolls the window itself.
+ */
 
-  --color-bg: #ffffff;
-  --color-bg-subtle: #f6f6f7;
-  --color-bg-hover: #ececef;
-  --color-border: #e3e3e8;
-  --color-text: #1b1b1f;
-  --color-text-muted: #6a6a73;
-  --color-accent: #3b5bdb;
-  --color-accent-hover: #3451c4;
-  --color-accent-text: #ffffff;
-  --color-danger: #c92a2a;
-  --color-success: #2b8a3e;
-  --color-focus: #3b5bdb66;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #18181b;
-    --color-bg-subtle: #1f1f23;
-    --color-bg-hover: #2a2a30;
-    --color-border: #303036;
-    --color-text: #ececf1;
-    --color-text-muted: #9a9aa5;
-    --color-accent: #6d8cff;
-    --color-accent-hover: #849dff;
-    --color-accent-text: #0e1020;
-    --color-danger: #ff8787;
-    --color-success: #69db7c;
-    --color-focus: #6d8cff66;
-  }
-}
-
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body, #root {
-  height: 100%;
+html,
+body,
+#root {
   width: 100%;
+  height: 100%;
   overflow: hidden;
 }
 
-body {
-  font-family: var(--font-ui);
-  font-size: var(--text-md);
-  line-height: 1.5;
-  background: var(--color-bg);
-  color: var(--color-text);
-  -webkit-font-smoothing: antialiased;
-  /* App chrome isn't selectable text; inputs and values opt back in. */
-  user-select: none;
-  -webkit-user-select: none;
-  cursor: default;
+html {
+  background: var(--color-app-bg);
+  color: var(--color-foreground);
+  -webkit-text-size-adjust: 100%;
 }
 
-input, textarea, code {
+body {
+  font-family: var(--font-family-ui);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  font-synthesis: none;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior: none;
+}
+
+/* Content people may want to copy opts back in. */
+.selectable,
+input,
+textarea,
+[contenteditable]:not([contenteditable="false"]) {
   user-select: text;
   -webkit-user-select: text;
 }
+.selectable {
+  cursor: text;
+}
 
-button, input {
+img,
+svg {
+  display: block;
+}
+img,
+a {
+  -webkit-user-drag: none;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+button,
+input,
+textarea,
+select {
   font: inherit;
   color: inherit;
 }
 
+a {
+  color: var(--color-link);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+::selection {
+  background: var(--color-selection-bg);
+}
+
+/* Icons (lucide) default to the UI icon size and a slightly lighter stroke. */
+svg.lucide {
+  flex-shrink: 0;
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  stroke-width: var(--icon-stroke);
+}
+
+/* Keyboard-only focus: no ring on click, a designed one on Tab. */
 :focus {
   outline: none;
 }
-
 :focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--color-focus);
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* While a pane divider is dragged: keep the resize cursor and skip animations. */
+body[data-resizing],
+body[data-resizing] * {
+  cursor: col-resize !important;
+  transition: none !important;
+}
+
+/*
+ * Scrollbars: macOS keeps its native overlay scrollbars untouched. Windows and
+ * Linux get thin themed bars instead of the bright default gutters.
+ */
+html[data-platform="windows"],
+html[data-platform="linux"] {
+  scrollbar-color: var(--color-scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+html[data-platform="windows"] ::-webkit-scrollbar,
+html[data-platform="linux"] ::-webkit-scrollbar {
+  width: var(--space-2-5);
+  height: var(--space-2-5);
+}
+html[data-platform="windows"] ::-webkit-scrollbar-thumb,
+html[data-platform="linux"] ::-webkit-scrollbar-thumb {
+  border: var(--space-0-5) solid transparent;
+  border-radius: var(--radius-full);
+  background: var(--color-scrollbar-thumb) padding-box;
+}
+html[data-platform="windows"] ::-webkit-scrollbar-thumb:hover,
+html[data-platform="linux"] ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-scrollbar-thumb-hover);
+}
+html[data-platform="windows"] ::-webkit-scrollbar-track,
+html[data-platform="linux"] ::-webkit-scrollbar-track {
+  background: transparent;
 }

@@ -1,0 +1,28 @@
+.ui-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.ui-kbd__step {
+  display: inline-flex;
+  gap: var(--space-0-5);
+}
+
+.ui-kbd__cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--kbd-min-width);
+  height: var(--kbd-min-width);
+  padding: var(--space-0) var(--space-1);
+  border: var(--border-width) solid var(--color-kbd-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-kbd-bg);
+  color: var(--color-kbd-foreground);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+}

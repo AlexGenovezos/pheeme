@@ -3,15 +3,16 @@ import { type AccountInfo, type CommandError, toCommandError } from "../lib/taur
 import { useAccountStore } from "../store/accountStore";
 import "../onboarding/onboarding.css";
 
-/** Placeholder home until the mail UI lands: connected accounts, add and remove. */
-export function AccountsHome({ onAdd }: { onAdd: () => void }) {
+/** Connected accounts, with add and remove actions shared with onboarding. */
+export function AccountsHome({ onAdd, onClose }: { onAdd: () => void; onClose?: () => void }) {
   const accounts = useAccountStore((state) => state.accounts);
   return (
     <div className="onboarding onboarding--single">
       <main className="onboarding-main">
         <div className="onboarding-content">
+          {onClose && <button type="button" className="btn btn--quiet" onClick={onClose}>Back to inbox</button>}
           <h1>Accounts</h1>
-          <p className="guide-lead">Your inbox shows up here once mail sync lands in an upcoming update.</p>
+          <p className="guide-lead">Manage the Google accounts connected to Pheeme.</p>
           <ul className="choice-list" aria-label="Connected accounts">
             {accounts.map((account) => (
               <AccountRow key={account.id} account={account} />

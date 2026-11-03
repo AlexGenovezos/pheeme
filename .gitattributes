@@ -1,0 +1,6 @@
+# Check out text files with LF on every OS. A CRLF after a script's shebang
+# breaks vitest's module parser on Windows (scripts/check-tokens.mjs).
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary

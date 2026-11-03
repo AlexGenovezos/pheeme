@@ -7,16 +7,18 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint . && node scripts/check-tokens.mjs",
     "test": "vitest",
     "test:ci": "vitest run",
     "preview": "vite preview",
     "tauri": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri",
     "test:coverage": "vitest run --coverage",
     "version:set": "node scripts/version.mjs set",
-    "version:check": "node scripts/version.mjs check"
+    "version:check": "node scripts/version.mjs check",
+    "lint:tokens": "node scripts/check-tokens.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-notification": "^2",
     "@tauri-apps/plugin-process": "^2",

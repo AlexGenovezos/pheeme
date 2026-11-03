@@ -1,0 +1,97 @@
+import type { ThemeDefinition } from "./schema";
+
+/**
+ * Pheeme Dark. Deep graphite with a green cast (not pure black), lifted
+ * verdigris accent. Keep --color-app-bg in sync with the critical style in
+ * index.html and the window backgroundColor in tauri.conf.json.
+ */
+export const darkTheme: ThemeDefinition = {
+  id: "pheeme-dark",
+  name: "Pheeme Dark",
+  kind: "dark",
+  tokens: {
+    "--color-app-bg": "#15191a",
+    "--color-pane-bg": "#15191a",
+    "--color-sidebar-bg": "#1b2021",
+    "--color-sidebar-foreground": "#cdd4d4",
+    "--color-titlebar-bg": "#15191a",
+    "--color-pane-border": "#262c2d",
+    "--color-border": "#353c3d",
+    "--color-border-subtle": "#222829",
+
+    "--color-foreground": "#e4e9e9",
+    "--color-foreground-muted": "#9ba6a6",
+    "--color-foreground-subtle": "#6b7676",
+    "--color-link": "#66d0c6",
+    "--color-selection-bg": "#24524d",
+
+    "--color-accent": "#4cc2b7",
+    "--color-accent-hover": "#66d0c6",
+    "--color-accent-foreground": "#0a1e1c",
+    "--color-focus-border": "#4cc2b7",
+    "--color-unread-indicator": "#4cc2b7",
+
+    "--color-button-secondary-bg": "#262d2e",
+    "--color-button-secondary-hover-bg": "#2f3738",
+    "--color-button-secondary-foreground": "#e4e9e9",
+    "--color-control-hover-bg": "#ffffff0f",
+    "--color-control-active-bg": "#ffffff1a",
+    "--color-input-bg": "#101414",
+    "--color-input-foreground": "#e4e9e9",
+    "--color-input-border": "#353c3d",
+    "--color-input-placeholder": "#6b7676",
+
+    "--color-list-hover-bg": "#1e2425",
+    "--color-list-active-bg": "#183a37",
+    "--color-list-active-foreground": "#e6f5f3",
+    "--color-list-inactive-bg": "#232a2b",
+    "--color-list-highlight-foreground": "#66d0c6",
+
+    "--color-badge-bg": "#2a3233",
+    "--color-badge-foreground": "#b9c3c3",
+    "--color-badge-accent-bg": "#4cc2b7",
+    "--color-badge-accent-foreground": "#0a1e1c",
+    "--color-kbd-bg": "#232a2b",
+    "--color-kbd-foreground": "#aeb8b8",
+    "--color-kbd-border": "#3a4243",
+
+    "--color-menu-bg": "#1f2526",
+    "--color-menu-foreground": "#e4e9e9",
+    "--color-menu-border": "#353c3d",
+    "--color-menu-selection-bg": "#1f6c65",
+    "--color-menu-selection-foreground": "#ffffff",
+    "--color-menu-separator": "#2c3334",
+    "--color-palette-bg": "#1c2122",
+    "--color-palette-foreground": "#e4e9e9",
+    "--color-palette-active-bg": "#1d3f3b",
+    "--color-palette-active-foreground": "#e6f5f3",
+    "--color-toast-bg": "#2a3132",
+    "--color-toast-foreground": "#e4e9e9",
+    "--color-toast-border": "#3a4243",
+    "--color-scrim": "#00000066",
+    "--color-shadow": "#00000099",
+
+    "--color-danger": "#f07a6e",
+    "--color-warning": "#e3a33b",
+    "--color-success": "#5cc48a",
+    "--color-info": "#6fa8e8",
+
+    "--color-scrollbar-thumb": "#ffffff24",
+    "--color-scrollbar-thumb-hover": "#ffffff3d",
+    "--color-skeleton-bg": "#212728",
+    "--color-skeleton-highlight": "#2a3132",
+
+    "--color-avatar-foreground": "#ffffff",
+    "--color-avatar-1": "#a65f3d",
+    "--color-avatar-2": "#5574bd",
+    "--color-avatar-3": "#8f63b0",
+    "--color-avatar-4": "#3d8a63",
+    "--color-avatar-5": "#987020",
+    "--color-avatar-6": "#b5506e",
+
+    "--shadow-popover":
+      "0 0 0 1px #ffffff0d, 0 2px 8px #00000066, 0 12px 32px -6px #00000099",
+    "--shadow-overlay":
+      "0 0 0 1px #ffffff12, 0 4px 14px #00000066, 0 28px 64px -12px #000000b3",
+  },
+};

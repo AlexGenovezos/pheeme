@@ -1,0 +1,237 @@
+import { platform } from "../lib/platform";
+
+/**
+ * The single list of things a user can do from the keyboard. The global
+ * keydown handler and the command palette both read from here, so a command
+ * registered once gets a shortcut, a palette entry and a shortcut label.
+ *
+ * Shortcut syntax: steps separated by spaces, keys within a step joined by
+ * `+`. `mod` is Cmd on macOS and Ctrl elsewhere. Examples: `"e"`, `"#"`,
+ * `"g i"`, `"mod+k"`, `"mod+shift+l"`.
+ */
+export interface Command {
+  id: string;
+  title: string;
+  /** Palette section, e.g. "Navigation". */
+  group?: string;
+  shortcut?: string;
+  /** Extra words the palette matches on. */
+  keywords?: string[];
+  /** Fire even while typing in a text field. Use only for modifier shortcuts. */
+  global?: boolean;
+  /** Keep out of the palette (still reachable by shortcut). */
+  hidden?: boolean;
+  run(): void;
+}
+
+interface Step {
+  key: string;
+  mod: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  meta: boolean;
+}
+
+interface Entry {
+  command: Command;
+  steps: Step[];
+}
+
+const KEY_ALIASES: Record<string, string> = {
+  esc: "escape",
+  return: "enter",
+  space: " ",
+  up: "arrowup",
+  down: "arrowdown",
+  left: "arrowleft",
+  right: "arrowright",
+  del: "delete",
+};
+
+const MODIFIER_KEYS = new Set(["shift", "control", "alt", "meta", "os", "altgraph", "capslock"]);
+
+export function parseShortcut(shortcut: string): Step[] {
+  return shortcut
+    .trim()
+    .split(/\s+/)
+    .map((token) => {
+      // "+" itself is a key ("shift++" or a bare "+"), so split on "+" only between parts.
+      const parts = token === "+" ? ["+"] : token.split(/\+(?!$)/);
+      const step: Step = { key: "", mod: false, ctrl: false, alt: false, shift: false, meta: false };
+      for (const raw of parts) {
+        const part = raw.toLowerCase();
+        if (part === "mod") step.mod = true;
+        else if (part === "ctrl" || part === "control") step.ctrl = true;
+        else if (part === "alt" || part === "option") step.alt = true;
+        else if (part === "shift") step.shift = true;
+        else if (part === "meta" || part === "cmd") step.meta = true;
+        else step.key = KEY_ALIASES[part] ?? part;
+      }
+      if (!step.key) throw new Error(`Shortcut "${shortcut}" has a step with no key`);
+      return step;
+    });
+}
+
+const stepId = (s: Step) =>
+  `${s.mod ? "mod+" : ""}${s.ctrl ? "ctrl+" : ""}${s.alt ? "alt+" : ""}${s.shift ? "shift+" : ""}${s.meta ? "meta+" : ""}${s.key}`;
+
+/** Keys whose shifted form is a different character ("?", "#") already encode Shift in `event.key`. */
+const shiftSignificant = (key: string) => key.length > 1 || /^[a-z0-9]$/.test(key);
+
+function stepMatches(step: Step, e: KeyboardEvent, isMac: boolean): boolean {
+  let key = e.key.toLowerCase();
+  // Option+letter on macOS produces a symbol in e.key; fall back to the physical key.
+  if (step.alt && /^Key[A-Z]$/.test(e.code)) key = e.code.slice(3).toLowerCase();
+  if (key !== step.key) return false;
+  const wantMeta = step.meta || (step.mod && isMac);
+  const wantCtrl = step.ctrl || (step.mod && !isMac);
+  if (e.metaKey !== wantMeta || e.ctrlKey !== wantCtrl || e.altKey !== step.alt) return false;
+  return !shiftSignificant(step.key) || e.shiftKey === step.shift;
+}
+
+/** Text fields own their keystrokes; only `global` commands fire inside them. */
+export function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  if (target.closest('[contenteditable]:not([contenteditable="false"])')) return true;
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+  if (target instanceof HTMLInputElement) {
+    return !["checkbox", "radio", "button", "submit", "reset", "range", "color", "file"].includes(
+      target.type,
+    );
+  }
+  return false;
+}
+
+export interface RegistryOptions {
+  isMac?: boolean;
+  chordTimeoutMs?: number;
+}
+
+export type CommandRegistry = ReturnType<typeof createRegistry>;
+
+export function createRegistry({
+  isMac = platform === "macos",
+  chordTimeoutMs = 1500,
+}: RegistryOptions = {}) {
+  const entries = new Map<string, Entry>();
+  const listeners = new Set<() => void>();
+  let snapshot: Command[] = [];
+  let pending: string[] = [];
+  let pendingTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const emit = () => listeners.forEach((l) => l());
+
+  function rebuild() {
+    snapshot = [...entries.values()].map((e) => e.command);
+    emit();
+  }
+
+  function setPending(next: string[]) {
+    clearTimeout(pendingTimer);
+    pending = next;
+    if (next.length) pendingTimer = setTimeout(() => setPending([]), chordTimeoutMs);
+    emit();
+  }
+
+  function startsWith(entry: Entry, prefix: string[]) {
+    return prefix.every((id, i) => entry.steps[i] && stepId(entry.steps[i]) === id);
+  }
+
+  return {
+    /** Add (or replace) a command. Returns a function that removes it. */
+    register(command: Command): () => void {
+      const entry: Entry = { command, steps: command.shortcut ? parseShortcut(command.shortcut) : [] };
+      if (import.meta.env.DEV && command.shortcut) {
+        const clash = [...entries.values()].find(
+          (e) => e.command.id !== command.id && e.command.shortcut === command.shortcut,
+        );
+        if (clash) console.warn(`Shortcut "${command.shortcut}" is bound to both ${clash.command.id} and ${command.id}`);
+      }
+      entries.set(command.id, entry);
+      rebuild();
+      return () => {
+        if (entries.get(command.id) !== entry) return;
+        entries.delete(command.id);
+        rebuild();
+      };
+    },
+
+    list: (): Command[] => snapshot,
+
+    get: (id: string): Command | undefined => entries.get(id)?.command,
+
+    run(id: string): boolean {
+      const command = entries.get(id)?.command;
+      command?.run();
+      return Boolean(command);
+    },
+
+    /** The chord prefix typed so far, e.g. `"g"`, or null. */
+    pendingChord: (): string | null => (pending.length ? pending.join(" ") : null),
+
+    /** Commands that would complete the pending chord, with the key each still needs. */
+    completions(): Array<{ command: Command; next: string }> {
+      if (!pending.length) return [];
+      return [...entries.values()]
+        .filter((en) => en.steps.length === pending.length + 1 && startsWith(en, pending))
+        .map((en) => ({ command: en.command, next: stepId(en.steps[pending.length]) }));
+    },
+
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+
+    /** Returns true when the event triggered (or continued) a shortcut. */
+    handleKeyDown(e: KeyboardEvent): boolean {
+      if (e.defaultPrevented || e.isComposing || MODIFIER_KEYS.has(e.key.toLowerCase())) return false;
+      const editable = isEditableTarget(e.target);
+      const live = [...entries.values()].filter((en) => en.steps.length && (!editable || en.command.global));
+
+      if (pending.length) {
+        const prefix = pending;
+        const next = live.filter(
+          (en) => en.steps.length > prefix.length && startsWith(en, prefix) && stepMatches(en.steps[prefix.length], e, isMac),
+        );
+        const done = next.find((en) => en.steps.length === prefix.length + 1);
+        if (done) {
+          setPending([]);
+          e.preventDefault();
+          done.command.run();
+          return true;
+        }
+        if (next.length) {
+          setPending([...prefix, stepId(next[0].steps[prefix.length])]);
+          e.preventDefault();
+          return true;
+        }
+        setPending([]); // not part of the chord: drop it and treat this key on its own
+      }
+
+      const chord = live.find((en) => en.steps.length > 1 && stepMatches(en.steps[0], e, isMac));
+      if (chord && !e.repeat) {
+        setPending([stepId(chord.steps[0])]);
+        e.preventDefault();
+        return true;
+      }
+
+      const single = live.find((en) => en.steps.length === 1 && stepMatches(en.steps[0], e, isMac));
+      if (!single) return false;
+      e.preventDefault();
+      single.command.run();
+      return true;
+    },
+
+    /** Test helper: drop all commands and chord state. */
+    clear() {
+      entries.clear();
+      setPending([]);
+      rebuild();
+    },
+  };
+}
+
+/** The app-wide registry. */
+export const registry = createRegistry();

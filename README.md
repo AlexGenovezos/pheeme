@@ -43,8 +43,9 @@ npm run tauri dev
 ```
 
 `npm run dev` alone serves the UI in a plain browser with a fake backend
-(`src/dev/mockBackend.ts`), for UI work without a native build. Query
-parameters shape it: `?accounts=1` starts with a connected account,
+(`src/preview/install.ts`), for UI work without a native build. Query
+parameters shape it: the default opens the shell with fixture mail;
+`?accounts=0` starts onboarding, `?accounts=1` starts with one connected account,
 `?fail=invalid_grant` makes sign-in fail with that code, `?delay=ms` sets how
 long sign-in takes.
 

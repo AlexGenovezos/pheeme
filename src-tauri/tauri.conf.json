@@ -12,12 +12,17 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Pheeme",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
         "minHeight": 600,
-        "decorations": true
+        "decorations": true,
+        "backgroundColor": "#15191a",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 16, "y": 20 }
       }
     ],
     "security": {

@@ -1,0 +1,88 @@
+.ui-toast-viewport {
+  position: fixed;
+  inset-block-end: var(--space-4);
+  inset-inline-end: var(--space-4);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: var(--toast-width);
+  pointer-events: none;
+}
+
+.ui-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2-5) var(--space-2) var(--space-2-5) var(--space-3);
+  border: var(--border-width) solid var(--color-toast-border);
+  border-radius: var(--radius-md);
+  background: var(--color-toast-bg);
+  color: var(--color-toast-foreground);
+  box-shadow: var(--shadow-popover);
+  pointer-events: auto;
+  animation: ui-toast-in var(--duration-base) var(--ease-out);
+}
+
+.ui-toast__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  flex: 1;
+  min-width: var(--space-0);
+}
+
+.ui-toast__title {
+  font-weight: var(--font-weight-medium);
+}
+
+.ui-toast__description {
+  font-size: var(--font-size-sm);
+  opacity: 0.8;
+}
+
+.ui-toast--danger .ui-toast__title {
+  color: var(--color-danger);
+}
+
+.ui-toast__action,
+.ui-toast__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: var(--control-height-sm);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: default;
+}
+
+.ui-toast__action {
+  padding: var(--space-0) var(--space-2);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ui-toast__close {
+  width: var(--control-height-sm);
+  opacity: 0.7;
+}
+.ui-toast__close svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.ui-toast__action:hover,
+.ui-toast__close:hover {
+  /* The toast is inverted against the app, so derive hover from its own text color. */
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  opacity: 1;
+}
+
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--enter-offset));
+  }
+}
