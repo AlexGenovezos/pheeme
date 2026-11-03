@@ -1,0 +1,49 @@
+name: Site
+
+# Deploys pheeme.app from site/. Only site changes trigger it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - .github/workflows/site.yml
+  pull_request:
+    paths:
+      - site/**
+      - .github/workflows/site.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # main -> production at pheeme.app
+      - name: Deploy to pheeme.app
+        if: github.event_name != 'pull_request'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: "4.149.0"
+          workingDirectory: site
+          command: deploy
+
+      # Pull requests -> a preview version; production untouched.
+      # Fork PRs get no secrets, so they skip this.
+      - name: Upload preview version
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: "4.149.0"
+          workingDirectory: site
+          command: versions upload --message "PR #${{ github.event.number }}"

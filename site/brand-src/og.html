@@ -1,0 +1,48 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@font-face{font-family:"Instrument Sans";src:url("../public/fonts/instrument-sans.woff2") format("woff2");font-weight:400 700;font-stretch:75% 100%}
+html,body{margin:0;width:1200px;height:630px;overflow:hidden}
+body{background:#071434;color:#EEF2FB;font-family:"Instrument Sans";position:relative}
+.copy{position:absolute;left:80px;top:72px;bottom:72px;width:640px;display:flex;flex-direction:column;justify-content:space-between}
+.copy img{height:92px;align-self:flex-start}
+h1{font-size:88px;line-height:.95;font-weight:650;font-stretch:78%;letter-spacing:-.02em;margin:0}
+p{margin:22px 0 0;font-size:28px;color:#9FB0D8}
+.stamp{position:absolute;left:775px;top:70px;width:330px;transform:rotate(-4deg);filter:drop-shadow(0 24px 40px rgba(0,0,0,.5))}
+.pm{position:absolute;left:960px;top:400px;width:520px;overflow:visible}
+.pm g{fill:none;stroke:#D9A847;stroke-width:4}
+.pm text{fill:#D9A847;stroke:none;font-family:"Instrument Sans"}
+</style></head>
+<body>
+<div class="copy">
+  <img src="../public/brand/pheeme-logo-horizontal-color-dark.svg" alt="">
+  <div><h1>Email at the speed of your keyboard.</h1><p>Open source, built for developers.</p></div>
+</div>
+<svg class="stamp" viewBox="0 0 600 792">
+  <defs>
+    <pattern id="ph" patternUnits="userSpaceOnUse" x="0" y="-12" width="24" height="24"><circle cx="12" cy="12" r="8.5"/></pattern>
+    <pattern id="pv" patternUnits="userSpaceOnUse" x="-12" y="0" width="24" height="24"><circle cx="12" cy="12" r="8.5"/></pattern>
+    <mask id="perf" maskUnits="userSpaceOnUse" x="0" y="0" width="600" height="792"><rect width="600" height="792" fill="#fff"/>
+      <rect y="-12" width="600" height="24" fill="url(#ph)"/><rect y="780" width="600" height="24" fill="url(#ph)"/>
+      <rect x="-12" width="24" height="792" fill="url(#pv)"/><rect x="588" width="24" height="792" fill="url(#pv)"/></mask>
+    <clipPath id="win"><rect x="46" y="96" width="508" height="572"/></clipPath>
+  </defs>
+  <rect width="600" height="792" fill="#F6F7FB" mask="url(#perf)"/>
+  <rect x="30" y="30" width="540" height="732" fill="none" stroke="#16388A" stroke-width="2.5"/>
+  <image href="../public/art/fama-engraved.webp" x="46" y="96" width="508" height="666" clip-path="url(#win)" preserveAspectRatio="xMidYMin slice"/>
+  <rect x="46" y="96" width="508" height="572" fill="none" stroke="#16388A" stroke-width="1.5"/>
+  <text x="300" y="76" text-anchor="middle" fill="#16388A" font-family="Instrument Sans" font-size="34" font-weight="600" font-stretch="80%" letter-spacing="10.5">PHEEME</text>
+  <text x="50" y="748" fill="#16388A" font-family="Instrument Sans" font-size="74" font-weight="650" font-stretch="80%">0</text>
+  <text x="96" y="716" fill="#16388A" font-family="Instrument Sans" font-size="22" font-weight="600">pheeme.app</text>
+  <text x="96" y="742" fill="#16388A" font-family="Instrument Sans" font-size="17">Free and open source</text>
+</svg>
+<svg class="pm" viewBox="0 0 680 200">
+  <defs><path id="ring" d="M100 100 m-73 0 a73 73 0 1 1 146 0 a73 73 0 1 1 -146 0"/></defs>
+  <g><circle cx="100" cy="100" r="92"/><circle cx="100" cy="100" r="56"/>
+    <path d="M196 52 q 30 -17 60 0 t 60 0 t 60 0 t 60 0"/><path d="M200 84 q 30 -17 60 0 t 60 0 t 60 0 t 60 0"/>
+    <path d="M200 116 q 30 -17 60 0 t 60 0 t 60 0 t 60 0"/><path d="M196 148 q 30 -17 60 0 t 60 0 t 60 0 t 60 0"/></g>
+  <text font-size="15" font-weight="600" letter-spacing="3"><textPath href="#ring">PHEEME.APP • BUILT IN PUBLIC •</textPath></text>
+  <text x="100" y="97" text-anchor="middle" font-size="22" font-weight="650" font-stretch="80%">OCT 31</text>
+  <text x="100" y="121" text-anchor="middle" font-size="17" font-weight="500">2026</text>
+</svg>
+</body></html>
