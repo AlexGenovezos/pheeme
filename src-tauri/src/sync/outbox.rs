@@ -174,26 +174,50 @@ async fn enqueue(
 
 /// Re-apply pending label/trash ops (oldest first) to their messages in `thread_ids`.
 /// Runs inside every sync write, before threads are recomputed.
+///
+/// An op covers the messages of its threads cached when it was queued, plus any older
+/// message cached since (backfill), which is recorded as a target now; mail that arrived
+/// after the user acted is left alone. `restored` (after a rollback put these messages back
+/// to a base state) re-takes each op's rollback labels for them just before replaying it.
 pub async fn rebase_threads(
     conn: &mut SqliteConnection,
     account_id: &str,
     thread_ids: &[String],
+    restored: &BTreeSet<String>,
 ) -> Result<(), SyncError> {
     if thread_ids.is_empty() {
         return Ok(());
     }
+    let wanted: BTreeSet<&String> = thread_ids.iter().collect();
     for op in store::pending_touching_threads(conn, account_id, thread_ids).await? {
         let payload = Payload::of(&op)?;
-        let ids: Vec<String> = store::messages_of(&mut *conn, &op.id)
+        let recorded: BTreeSet<String> = store::messages_of(&mut *conn, &op.id)
             .await?
             .into_iter()
             .map(|t| t.message_id)
             .collect();
-        let current = messages::label_map(conn, account_id, &ids).await?;
-        for (id, (_, labels)) in current {
-            let next = payload.apply(&op.kind, &labels);
-            if next != labels {
-                messages::set_labels(conn, account_id, &id, &next).await?;
+        for thread_id in payload.thread_ids.iter().filter(|t| wanted.contains(t)) {
+            for msg in messages::get_messages_for_thread(&mut *conn, account_id, thread_id).await? {
+                let labels = msg.labels();
+                let target = DbOpMessage {
+                    op_id: op.id.clone(),
+                    account_id: account_id.to_owned(),
+                    message_id: msg.id.clone(),
+                    thread_id: thread_id.clone(),
+                    prior_label_ids: serde_json::to_string(&labels).expect("strings serialize"),
+                };
+                if !recorded.contains(&msg.id) {
+                    if !msg.date.is_some_and(|d| d <= op.created_at) {
+                        continue;
+                    }
+                    store::add_target(&mut *conn, &target).await?;
+                } else if restored.contains(&msg.id) {
+                    store::set_prior(&mut *conn, &target).await?;
+                }
+                let next = payload.apply(&op.kind, &labels);
+                if next != labels {
+                    messages::set_labels(conn, account_id, &msg.id, &next).await?;
+                }
             }
         }
     }
@@ -466,7 +490,8 @@ async fn rollback(engine: &SyncEngine, op: &DbOp, error: &GmailError) -> Result<
         messages::set_labels(&mut tx, &engine.account_id, &t.message_id, &labels).await?;
         touched.push(t.thread_id.clone());
     }
-    rebase_threads(&mut tx, &engine.account_id, &touched).await?;
+    let restored: BTreeSet<String> = targets.iter().map(|t| t.message_id.clone()).collect();
+    rebase_threads(&mut tx, &engine.account_id, &touched, &restored).await?;
     let result = threads::recompute_threads(&mut tx, &engine.account_id, &touched).await?;
     tx.commit().await?;
 

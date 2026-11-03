@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT backfill_page_token, backfill_complete, backfill_bodies_done, last_synced_at\n           FROM sync_state WHERE account_id = ?",
+  "query": "SELECT backfill_page_token, backfill_complete, backfill_bodies_done,\n                  backfill_generation, last_synced_at\n           FROM sync_state WHERE account_id = ?",
   "describe": {
     "columns": [
       {
@@ -19,8 +19,13 @@
         "type_info": "Integer"
       },
       {
-        "name": "last_synced_at",
+        "name": "backfill_generation",
         "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "last_synced_at",
+        "ordinal": 4,
         "type_info": "Integer"
       }
     ],
@@ -31,8 +36,9 @@
       true,
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "96252f4bcc19ff829ed70a3df94c353fbfbe89ce0dd666c26eeaa75d5138e024"
+  "hash": "4ae4277031a4a24af91fca499e940336302092c96c2a11b1d2c13ebf09398811"
 }

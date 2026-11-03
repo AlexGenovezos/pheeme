@@ -9,13 +9,15 @@ pub struct DbSyncState {
     pub backfill_complete: bool,
     /// Backfill has passed the full-body window; later pages fetch metadata only.
     pub backfill_bodies_done: bool,
+    pub backfill_generation: i64,
     pub last_synced_at: Option<i64>,
 }
 
 /// The account's state; defaults (backfill not started) when there's no row yet.
 pub async fn get<'e>(ex: impl SqliteExecutor<'e>, account_id: &str) -> Result<DbSyncState> {
     let row = sqlx::query!(
-        r#"SELECT backfill_page_token, backfill_complete, backfill_bodies_done, last_synced_at
+        r#"SELECT backfill_page_token, backfill_complete, backfill_bodies_done,
+                  backfill_generation, last_synced_at
            FROM sync_state WHERE account_id = ?"#,
         account_id
     )
@@ -26,6 +28,7 @@ pub async fn get<'e>(ex: impl SqliteExecutor<'e>, account_id: &str) -> Result<Db
             backfill_page_token: r.backfill_page_token,
             backfill_complete: r.backfill_complete != 0,
             backfill_bodies_done: r.backfill_bodies_done != 0,
+            backfill_generation: r.backfill_generation,
             last_synced_at: r.last_synced_at,
         })
         .unwrap_or_default())
@@ -36,7 +39,8 @@ pub async fn reset_backfill(conn: &mut SqliteConnection, account_id: &str) -> Re
     sqlx::query!(
         r#"INSERT INTO sync_state (account_id) VALUES (?)
            ON CONFLICT(account_id) DO UPDATE SET
-             backfill_page_token = NULL, backfill_complete = 0, backfill_bodies_done = 0"#,
+             backfill_page_token = NULL, backfill_complete = 0, backfill_bodies_done = 0,
+             backfill_generation = backfill_generation + 1"#,
         account_id
     )
     .execute(&mut *conn)

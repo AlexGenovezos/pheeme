@@ -665,6 +665,106 @@ async fn network_failure_keeps_op_pending_and_blocks_later_ops() {
     assert_eq!(server_labels(&h, "m2"), Vec::<String>::new());
 }
 
+#[tokio::test]
+async fn rebase_only_touches_requested_threads() {
+    let h = harness().await;
+    synced_inbox(
+        &h,
+        vec![
+            FakeMsg::new("m1", "t1", &["INBOX"]),
+            FakeMsg::new("m2", "t2", &["INBOX"]),
+        ],
+    )
+    .await;
+    outbox::enqueue_modify(&h.pool, ACCT, &s(&["t1", "t2"]), &s(&["STARRED"]), &[])
+        .await
+        .unwrap();
+    outbox::enqueue_modify(&h.pool, ACCT, &s(&["t2"]), &[], &s(&["STARRED"]))
+        .await
+        .unwrap();
+    // Only t1 changes on Gmail.
+    h.fake.relabel("m1", &["IMPORTANT"], &[]);
+    h.engine.run_incremental_sync().await.unwrap();
+    assert_eq!(
+        cached_labels(&h.pool, "m2").await,
+        Some(s(&["INBOX"])),
+        "the later unstar stands"
+    );
+    assert_eq!(listed(&h.pool, "STARRED").await, s(&["t1"]));
+}
+
+#[tokio::test]
+async fn backfilled_older_message_joins_pending_archive() {
+    let h = harness().await;
+    let mut msgs: Vec<FakeMsg> = (0..super::engine::INITIAL_THREADS as i64)
+        .map(|n| FakeMsg::new(&format!("n{n}"), &format!("tn{n}"), &["INBOX"]).days_ago(n))
+        .collect();
+    msgs.push(FakeMsg::new("old", "t1", &["INBOX"]).days_ago(100));
+    synced_inbox(&h, msgs).await;
+    h.fake.add(FakeMsg::new("reply", "t1", &["INBOX"]));
+    h.engine.run_incremental_sync().await.unwrap();
+    archive(&h, "t1").await;
+
+    while h.engine.backfill_step().await.unwrap() == BackfillProgress::More {}
+
+    assert!(cached_labels(&h.pool, "old").await.is_some());
+    assert!(
+        !listed(&h.pool, "INBOX").await.contains(&"t1".to_string()),
+        "still archived"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn backfill_page_from_before_a_reset_is_discarded() {
+    let h = harness().await;
+    h.fake.seed(FakeMsg::new("m1", "t1", &["SENT"]));
+    h.engine.run_initial_sync().await.unwrap();
+    // A reconcile resets the backfill while this page is being fetched.
+    let pool = h.pool.clone();
+    h.fake.before_next_batch_get(move || {
+        let handle = tokio::runtime::Handle::current();
+        std::thread::spawn(move || {
+            handle.block_on(async {
+                let mut conn = pool.acquire().await.unwrap();
+                crate::db::sync_state::reset_backfill(&mut conn, ACCT)
+                    .await
+                    .unwrap();
+            })
+        })
+        .join()
+        .unwrap();
+    });
+    assert_eq!(
+        h.engine.backfill_step().await.unwrap(),
+        BackfillProgress::More
+    );
+    assert!(
+        cached_labels(&h.pool, "m1").await.is_none(),
+        "stale page not written"
+    );
+    let state = crate::db::sync_state::get(&h.pool, ACCT).await.unwrap();
+    assert!(!state.backfill_complete, "reset not overwritten");
+    while h.engine.backfill_step().await.unwrap() == BackfillProgress::More {}
+    assert!(cached_labels(&h.pool, "m1").await.is_some());
+}
+
+#[tokio::test]
+async fn second_rejection_does_not_resurrect_the_first() {
+    let h = harness().await;
+    synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX"])]).await;
+    star(&h, "t1").await;
+    archive(&h, "t1").await;
+    h.fake.fail_next("batch_modify", rejected());
+    h.fake.fail_next("batch_modify", rejected());
+    // The first rollback reads Gmail's labels; the second can't.
+    h.fake.fail_after("get_message", 1, network());
+
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+
+    assert_eq!(cached_labels(&h.pool, "m1").await, Some(s(&["INBOX"])));
+    assert!(ops(&h).await.is_empty());
+}
+
 // ---- sends --------------------------------------------------------------------------
 
 const RAW: &[u8] = b"From: me@example.com\r\nTo: you@example.com\r\nSubject: Hi\r\n\r\nHello";

@@ -468,6 +468,11 @@ impl SyncEngine {
 
         let mut guard = self.write_lock.lock().await;
         let mut tx = db::begin_write(&self.db).await?;
+        // A reset (initial sync or reconcile) while this page was in flight makes it stale.
+        let now_state = sync_state::get(&mut *tx, &self.account_id).await?;
+        if now_state.backfill_generation != state.backfill_generation {
+            return Ok(BackfillProgress::More);
+        }
         let mut touched = Vec::new();
         let mut oldest = messages::oldest_date(&mut tx, &self.account_id, &ids).await?;
         for msg in &fetched {
@@ -619,7 +624,7 @@ impl SyncEngine {
         conn: &mut SqliteConnection,
         touched: &[String],
     ) -> Result<(RecomputeResult, Vec<String>), SyncError> {
-        outbox::rebase_threads(conn, &self.account_id, touched).await?;
+        outbox::rebase_threads(conn, &self.account_id, touched, &BTreeSet::new()).await?;
         let result = threads::recompute_threads(conn, &self.account_id, touched).await?;
         let confirmed = outbox::match_sends(conn, &self.account_id).await?;
         Ok((result, confirmed))

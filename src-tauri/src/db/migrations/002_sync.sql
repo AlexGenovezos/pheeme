@@ -16,6 +16,8 @@ CREATE TABLE sync_state (
   backfill_page_token TEXT,
   backfill_complete INTEGER NOT NULL DEFAULT 0,
   backfill_bodies_done INTEGER NOT NULL DEFAULT 0,
+  -- Bumped on every reset, so a page fetched before the reset is discarded.
+  backfill_generation INTEGER NOT NULL DEFAULT 0,
   last_synced_at INTEGER
 );
 

@@ -77,6 +77,35 @@ pub async fn insert(conn: &mut SqliteConnection, op: &DbOp, targets: &[DbOpMessa
     Ok(())
 }
 
+/// Record one more message as a target of an op (no-op if it already is).
+pub async fn add_target<'e>(ex: impl SqliteExecutor<'e>, t: &DbOpMessage) -> Result<()> {
+    sqlx::query!(
+        r#"INSERT INTO outbox_messages (op_id, account_id, message_id, thread_id, prior_label_ids)
+           VALUES (?, ?, ?, ?, ?) ON CONFLICT(op_id, message_id) DO NOTHING"#,
+        t.op_id,
+        t.account_id,
+        t.message_id,
+        t.thread_id,
+        t.prior_label_ids,
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
+/// Replace a target's rollback labels.
+pub async fn set_prior<'e>(ex: impl SqliteExecutor<'e>, t: &DbOpMessage) -> Result<()> {
+    sqlx::query!(
+        "UPDATE outbox_messages SET prior_label_ids = ? WHERE op_id = ? AND message_id = ?",
+        t.prior_label_ids,
+        t.op_id,
+        t.message_id,
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
 pub async fn get<'e>(ex: impl SqliteExecutor<'e>, op_id: &str) -> Result<Option<DbOp>> {
     Ok(sqlx::query_as!(
         DbOp,

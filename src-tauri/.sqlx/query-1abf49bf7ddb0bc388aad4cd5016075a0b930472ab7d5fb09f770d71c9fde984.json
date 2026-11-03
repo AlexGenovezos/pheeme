@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE outbox_messages SET prior_label_ids = ? WHERE op_id = ? AND message_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "1abf49bf7ddb0bc388aad4cd5016075a0b930472ab7d5fb09f770d71c9fde984"
+}

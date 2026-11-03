@@ -123,6 +123,8 @@ struct State {
     sent: Vec<String>,
     send_then_fail: Option<GmailError>,
     history_page: usize,
+    /// Runs (once) at the start of the next `batch_get_messages`.
+    before_batch_get: Option<Box<dyn FnOnce() + Send>>,
     list_page: Option<usize>,
     next_sent: u64,
 }
@@ -195,6 +197,11 @@ impl FakeGmail {
         self.lock()
             .delayed_failures
             .insert(method, (successes, error));
+    }
+
+    /// Run `hook` at the start of the next `batch_get_messages` call.
+    pub fn before_next_batch_get(&self, hook: impl FnOnce() + Send + 'static) {
+        self.lock().before_batch_get = Some(Box::new(hook));
     }
 
     /// The next send is delivered, then answered with `error` (an ambiguous failure).
@@ -501,6 +508,10 @@ impl MailApi for FakeGmail {
         ids: &[String],
         format: MessageFormat,
     ) -> Vec<(String, Result<Message, GmailError>)> {
+        let hook = self.lock().before_batch_get.take();
+        if let Some(hook) = hook {
+            hook();
+        }
         let mut out = Vec::new();
         for id in ids {
             let result = self.enter("get_message").and_then(|()| {
