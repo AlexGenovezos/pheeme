@@ -2,11 +2,13 @@
 
 # pheeme.app
 
-Marketing site for [pheeme](https://github.com/AlexGenovezos/pheeme), the open-source email client for developers.
+Marketing site for pheeme, the open-source email client for developers. It lives in `site/` of the app repo; run the commands below from this folder.
 
 Plain HTML and CSS, no build step. Everything in `public/` is served as-is by a Cloudflare Worker (static assets) at **pheeme.app** and **www.pheeme.app**.
 
 ## Deploys
+
+`.github/workflows/site.yml` runs only when something under `site/` (or the workflow itself) changes.
 
 - Push to `main` → GitHub Actions runs `wrangler deploy` → live on pheeme.app.
 - Open a pull request → a preview version is uploaded (production is untouched).

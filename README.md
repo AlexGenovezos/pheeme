@@ -9,7 +9,7 @@ A fast, open-source desktop client for Gmail, with Google Calendar coming next, 
 
 > **Status:** early development. Not usable yet.
 
-Website: [pheeme.app](https://pheeme.app)
+Website: [pheeme.app](https://pheeme.app) (source in [`site/`](site/))
 
 ## Install
 
