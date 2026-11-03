@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT x.label_id AS \"label_id!\", COUNT(*) AS \"count!: i64\"\n        FROM thread_labels i\n        JOIN thread_labels u\n          ON u.account_id = i.account_id AND u.thread_id = i.thread_id AND u.label_id = 'UNREAD'\n        JOIN thread_labels x\n          ON x.account_id = i.account_id AND x.thread_id = i.thread_id\n         AND x.label_id IN ('INBOX', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL',\n                            'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS')\n        WHERE i.label_id = 'INBOX' AND i.account_id IN (SELECT value FROM json_each(?))\n        GROUP BY x.label_id\n        ORDER BY x.label_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "label_id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "count!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "31905125b568ac16cf8cc818849bc6f02084bb9bbf369fe120b1b485459ea324"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM labels WHERE account_id = ? AND id NOT IN (SELECT value FROM json_each(?))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "bdc875b0ff9dc163abc471b97b589b22b551cfa6d4cbcc55802b623c7509be3b"
+}

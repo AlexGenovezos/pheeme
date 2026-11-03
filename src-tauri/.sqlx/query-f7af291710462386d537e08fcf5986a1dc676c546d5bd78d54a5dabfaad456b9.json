@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT op_id, account_id, message_id, thread_id, prior_label_ids\n           FROM outbox_messages WHERE op_id = ? ORDER BY message_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "op_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "message_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "thread_id",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "prior_label_ids",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f7af291710462386d537e08fcf5986a1dc676c546d5bd78d54a5dabfaad456b9"
+}

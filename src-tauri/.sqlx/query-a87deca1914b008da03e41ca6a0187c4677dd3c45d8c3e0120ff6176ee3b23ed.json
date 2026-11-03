@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sync_state (account_id, backfill_page_token, backfill_bodies_done, backfill_complete)\n           VALUES (?1, ?2, ?3, ?4)\n           ON CONFLICT(account_id) DO UPDATE SET\n             backfill_page_token = ?2, backfill_bodies_done = ?3, backfill_complete = ?4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "a87deca1914b008da03e41ca6a0187c4677dd3c45d8c3e0120ff6176ee3b23ed"
+}

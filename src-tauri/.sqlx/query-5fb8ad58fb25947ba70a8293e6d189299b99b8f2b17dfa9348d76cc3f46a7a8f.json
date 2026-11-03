@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT id, account_id, thread_id, label_ids,\n               from_address, from_name, to_addresses, cc_addresses,\n               subject, snippet, body_html, body_text,\n               date, size_estimate, has_attachment, is_read, is_starred,\n               raw_headers, fully_fetched\n        FROM messages WHERE account_id = ? AND id = ?\n        ",
+  "query": "\n        SELECT id, account_id, thread_id, label_ids,\n               from_address, from_name, to_addresses, cc_addresses,\n               subject, snippet, body_html, body_text,\n               date, size_estimate, has_attachment, is_read, is_starred,\n               raw_headers, fully_fetched, rfc822_message_id\n        FROM messages WHERE account_id = ? AND id = ?\n        ",
   "describe": {
     "columns": [
       {
@@ -97,6 +97,11 @@
         "name": "fully_fetched",
         "ordinal": 18,
         "type_info": "Integer"
+      },
+      {
+        "name": "rfc822_message_id",
+        "ordinal": 19,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -121,8 +126,9 @@
       false,
       false,
       true,
-      false
+      false,
+      true
     ]
   },
-  "hash": "79fcce3fb9beec5db8f4e96a2581de9f180f245ab35376307423db41efa45e38"
+  "hash": "5fb8ad58fb25947ba70a8293e6d189299b99b8f2b17dfa9348d76cc3f46a7a8f"
 }

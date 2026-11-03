@@ -6,6 +6,7 @@ pub mod engine;
 pub mod events;
 #[cfg(test)]
 pub mod fake;
+pub mod manager;
 pub mod outbox;
 #[cfg(test)]
 mod tests;

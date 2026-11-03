@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT id, account_id, subject, snippet, history_id,\n               last_message_date, message_count, unread_count, has_attachment\n        FROM threads WHERE account_id = ? AND id = ?\n        ",
+  "query": "\n        SELECT id, account_id, subject, snippet, history_id,\n               last_message_date, message_count, unread_count, has_attachment,\n               from_name, from_address, is_starred\n        FROM threads WHERE account_id = ? AND id = ?\n        ",
   "describe": {
     "columns": [
       {
@@ -47,6 +47,21 @@
         "name": "has_attachment",
         "ordinal": 8,
         "type_info": "Integer"
+      },
+      {
+        "name": "from_name",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "from_address",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_starred",
+        "ordinal": 11,
+        "type_info": "Integer"
       }
     ],
     "parameters": {
@@ -61,8 +76,11 @@
       true,
       false,
       false,
+      false,
+      true,
+      true,
       false
     ]
   },
-  "hash": "af609089e4aa9013478eaaa8e743da5e5c8fa065a1e2486a9107de083c52b63f"
+  "hash": "67b619a1cbffba90bd18be6b333da692ee7636d428660fb030c3f5272aa25c92"
 }

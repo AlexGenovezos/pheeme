@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sync_state (account_id, last_synced_at) VALUES (?1, ?2)\n           ON CONFLICT(account_id) DO UPDATE SET last_synced_at = ?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "d3aa5eaee8d6da8f5a7dfb30bdf6f3e5f0fd7f2863523392a0fcd7f36f4578b0"
+}

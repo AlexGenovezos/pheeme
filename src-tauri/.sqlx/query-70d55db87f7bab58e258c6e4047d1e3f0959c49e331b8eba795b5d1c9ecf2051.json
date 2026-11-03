@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT MIN(date) AS \"d?: i64\" FROM messages\n           WHERE account_id = ? AND id IN (SELECT value FROM json_each(?))",
+  "describe": {
+    "columns": [
+      {
+        "name": "d?: i64",
+        "ordinal": 0,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "70d55db87f7bab58e258c6e4047d1e3f0959c49e331b8eba795b5d1c9ecf2051"
+}

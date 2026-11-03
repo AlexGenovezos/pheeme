@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!\" FROM messages\n           WHERE account_id = ? AND thread_id = ? AND fully_fetched = 0",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fdc0659264368b08a4f07701d07be9d4a86e28c2a4df7f02ba9b08c746aea966"
+}
