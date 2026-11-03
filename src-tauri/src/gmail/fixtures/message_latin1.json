@@ -1,0 +1,45 @@
+{
+  "id": "18c2f0a1b2c3d500",
+  "threadId": "18c2f0a1b2c3d500",
+  "labelIds": [
+    "INBOX"
+  ],
+  "snippet": "Café crème brûlée",
+  "historyId": "1204600",
+  "sizeEstimate": 812,
+  "payload": {
+    "partId": "",
+    "mimeType": "text/plain",
+    "filename": "",
+    "headers": [
+      {
+        "name": "From",
+        "value": "old-school@example.com"
+      },
+      {
+        "name": "To",
+        "value": "alex@example.com"
+      },
+      {
+        "name": "Subject",
+        "value": "Dessert"
+      },
+      {
+        "name": "Date",
+        "value": "Sun, 27 Oct 2024 03:35:00 +0000"
+      },
+      {
+        "name": "Content-Type",
+        "value": "text/plain; charset=ISO-8859-1"
+      },
+      {
+        "name": "Content-Transfer-Encoding",
+        "value": "8bit"
+      }
+    ],
+    "body": {
+      "size": 17,
+      "data": "Q2Fm6SBjcuhtZSBicvts6WU"
+    }
+  }
+}

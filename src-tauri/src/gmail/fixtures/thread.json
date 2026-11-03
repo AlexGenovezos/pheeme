@@ -1,0 +1,83 @@
+{
+  "id": "18c3aa00bb11cc22",
+  "historyId": "1204800",
+  "snippet": "Sounds good, see you then",
+  "messages": [
+    {
+      "id": "18c3aa00bb11cc22",
+      "threadId": "18c3aa00bb11cc22",
+      "labelIds": [
+        "INBOX"
+      ],
+      "snippet": "Lunch tomorrow?",
+      "historyId": "1204800",
+      "internalDate": "1730200000000",
+      "sizeEstimate": 3100,
+      "payload": {
+        "partId": "",
+        "mimeType": "text/plain",
+        "filename": "",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Zoe <zoe@example.com>"
+          },
+          {
+            "name": "To",
+            "value": "alex@example.com"
+          },
+          {
+            "name": "Subject",
+            "value": "Lunch?"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<18c3aa00bb11cc22@mail.example.com>"
+          }
+        ],
+        "body": {
+          "size": 4,
+          "data": "bm9vbg"
+        }
+      }
+    },
+    {
+      "id": "18c3aa00bb11cc23",
+      "threadId": "18c3aa00bb11cc22",
+      "labelIds": [
+        "SENT"
+      ],
+      "snippet": "Sounds good, see you then",
+      "historyId": "1204800",
+      "internalDate": "1730200600000",
+      "sizeEstimate": 3100,
+      "payload": {
+        "partId": "",
+        "mimeType": "text/plain",
+        "filename": "",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Zoe <zoe@example.com>"
+          },
+          {
+            "name": "To",
+            "value": "alex@example.com"
+          },
+          {
+            "name": "Subject",
+            "value": "Lunch?"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<18c3aa00bb11cc23@mail.example.com>"
+          }
+        ],
+        "body": {
+          "size": 4,
+          "data": "bm9vbg"
+        }
+      }
+    }
+  ]
+}

@@ -449,6 +449,38 @@ impl AccountService {
     }
 }
 
+/// Supplies one account's access tokens to a [`GmailClient`](crate::gmail::GmailClient).
+pub struct AccountTokens {
+    service: Arc<AccountService>,
+    account_id: String,
+}
+
+impl AccountTokens {
+    pub fn new(service: Arc<AccountService>, account_id: impl Into<String>) -> Self {
+        Self {
+            service,
+            account_id: account_id.into(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::gmail::TokenProvider for AccountTokens {
+    async fn access_token(&self) -> Result<String, crate::gmail::GmailError> {
+        self.service
+            .access_token(&self.account_id)
+            .await
+            .map_err(|e| crate::gmail::GmailError::Auth(e.to_string()))
+    }
+
+    async fn refresh_access_token(&self) -> Result<String, crate::gmail::GmailError> {
+        self.service
+            .refresh_access_token(&self.account_id)
+            .await
+            .map_err(|e| crate::gmail::GmailError::Auth(e.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -819,6 +851,30 @@ mod tests {
         let error = h.service.access_token(&account.id).await.unwrap_err();
         assert_eq!(error.code(), "invalid_grant");
         assert!(error.to_string().contains("In production"));
+    }
+
+    #[tokio::test]
+    async fn account_tokens_feed_the_gmail_client() {
+        use crate::gmail::TokenProvider;
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+        let tokens = AccountTokens::new(Arc::new(h.service), account.id);
+
+        assert_eq!(tokens.access_token().await.unwrap(), "access-1");
+
+        h.server.reset().await;
+        Mock::given(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_json(serde_json::json!({"error": "invalid_grant"})),
+            )
+            .mount(&h.server)
+            .await;
+        let error = tokens.refresh_access_token().await.unwrap_err();
+        assert!(
+            matches!(error, crate::gmail::GmailError::Auth(ref m) if m.contains("In production"))
+        );
     }
 
     #[tokio::test]

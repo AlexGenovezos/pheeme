@@ -1,0 +1,14 @@
+{
+  "error": {
+    "code": 404,
+    "message": "Invalid startHistoryId: 12",
+    "errors": [
+      {
+        "message": "Invalid startHistoryId: 12",
+        "domain": "global",
+        "reason": "failedPrecondition"
+      }
+    ],
+    "status": "FAILED_PRECONDITION"
+  }
+}

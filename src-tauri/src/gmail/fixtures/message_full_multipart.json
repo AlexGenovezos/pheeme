@@ -1,0 +1,182 @@
+{
+  "id": "18c2f0a1b2c3d4e5",
+  "threadId": "18c2f0a1b2c3d4e5",
+  "labelIds": [
+    "UNREAD",
+    "STARRED",
+    "INBOX",
+    "IMPORTANT"
+  ],
+  "snippet": "Here&#39;s the plan &amp; the budget",
+  "historyId": "1204551",
+  "internalDate": "1730000000000",
+  "sizeEstimate": 51873,
+  "payload": {
+    "partId": "",
+    "mimeType": "multipart/mixed",
+    "filename": "",
+    "headers": [
+      {
+        "name": "Received",
+        "value": "by 2002:a05:6a20:1 with SMTP id x1csp123456pxb; Sun, 27 Oct 2024 03:33:20 +0000 (UTC)"
+      },
+      {
+        "name": "From",
+        "value": "=?UTF-8?B?Wm/DqyBOZw==?= <zoe@example.com>"
+      },
+      {
+        "name": "To",
+        "value": "\"Alex Genovezos\" <alex@example.com>, bob@example.org"
+      },
+      {
+        "name": "Cc",
+        "value": "carol@example.net"
+      },
+      {
+        "name": "Subject",
+        "value": "=?UTF-8?Q?Q3_plan:_caf=C3=A9_offsite?="
+      },
+      {
+        "name": "Date",
+        "value": "Sun, 27 Oct 2024 03:33:20 +0000"
+      },
+      {
+        "name": "Message-ID",
+        "value": "<CAF=abc123@mail.example.com>"
+      },
+      {
+        "name": "In-Reply-To",
+        "value": "<prev-1@mail.example.com>"
+      },
+      {
+        "name": "References",
+        "value": "<root@mail.example.com>\r\n <prev-1@mail.example.com>"
+      },
+      {
+        "name": "Content-Type",
+        "value": "multipart/mixed; boundary=\"000000000000aaaa\""
+      }
+    ],
+    "body": {
+      "size": 0
+    },
+    "parts": [
+      {
+        "partId": "0",
+        "mimeType": "multipart/related",
+        "filename": "",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "multipart/related; boundary=\"000000000000bbbb\""
+          }
+        ],
+        "body": {
+          "size": 0
+        },
+        "parts": [
+          {
+            "partId": "0.0",
+            "mimeType": "multipart/alternative",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "multipart/alternative; boundary=\"000000000000cccc\""
+              }
+            ],
+            "body": {
+              "size": 0
+            },
+            "parts": [
+              {
+                "partId": "0.0.0",
+                "mimeType": "text/plain",
+                "filename": "",
+                "headers": [
+                  {
+                    "name": "Content-Type",
+                    "value": "text/plain; charset=\"UTF-8\""
+                  }
+                ],
+                "body": {
+                  "size": 31,
+                  "data": "SGkgQWxleCwNCg0KSGVyZSBpcyB0aGUgcGxhbi4NCg"
+                }
+              },
+              {
+                "partId": "0.0.1",
+                "mimeType": "text/html",
+                "filename": "",
+                "headers": [
+                  {
+                    "name": "Content-Type",
+                    "value": "text/html; charset=\"UTF-8\""
+                  },
+                  {
+                    "name": "Content-Transfer-Encoding",
+                    "value": "quoted-printable"
+                  }
+                ],
+                "body": {
+                  "size": 99,
+                  "data": "PGRpdiBkaXI9Imx0ciI-SGkgQWxleCw8YnI-PGJyPkhlcmUgaXMgdGhlIDxiPnBsYW48L2I-Ljxicj48aW1nIHNyYz0iY2lkOmxvZ29AZXhhbXBsZS5jb20iPjwvZGl2Pg0K"
+                }
+              }
+            ]
+          },
+          {
+            "partId": "0.1",
+            "mimeType": "image/png",
+            "filename": "logo.png",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "image/png; name=\"logo.png\""
+              },
+              {
+                "name": "Content-Disposition",
+                "value": "inline; filename=\"logo.png\""
+              },
+              {
+                "name": "Content-ID",
+                "value": "<logo@example.com>"
+              },
+              {
+                "name": "Content-Transfer-Encoding",
+                "value": "base64"
+              }
+            ],
+            "body": {
+              "attachmentId": "ANGjdJ9inlinelogo",
+              "size": 2048
+            }
+          }
+        ]
+      },
+      {
+        "partId": "1",
+        "mimeType": "application/pdf",
+        "filename": "budget.pdf",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/pdf; name=\"budget.pdf\""
+          },
+          {
+            "name": "Content-Disposition",
+            "value": "attachment; filename=\"budget.pdf\""
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": "base64"
+          }
+        ],
+        "body": {
+          "attachmentId": "ANGjdJ8attachmentid",
+          "size": 48210
+        }
+      }
+    ]
+  }
+}

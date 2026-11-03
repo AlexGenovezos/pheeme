@@ -1,0 +1,94 @@
+{
+  "history": [
+    {
+      "id": "1204801",
+      "messages": [
+        {
+          "id": "18c3aa00bb11cc40",
+          "threadId": "18c3aa00bb11cc40"
+        }
+      ],
+      "messagesAdded": [
+        {
+          "message": {
+            "id": "18c3aa00bb11cc40",
+            "threadId": "18c3aa00bb11cc40",
+            "labelIds": [
+              "UNREAD",
+              "INBOX"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "1204805",
+      "messages": [
+        {
+          "id": "18c3aa00bb11cc23",
+          "threadId": "18c3aa00bb11cc22"
+        }
+      ],
+      "labelsAdded": [
+        {
+          "message": {
+            "id": "18c3aa00bb11cc23",
+            "threadId": "18c3aa00bb11cc22",
+            "labelIds": [
+              "INBOX",
+              "STARRED"
+            ]
+          },
+          "labelIds": [
+            "STARRED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1204809",
+      "messages": [
+        {
+          "id": "18c3aa00bb11cc23",
+          "threadId": "18c3aa00bb11cc22"
+        }
+      ],
+      "labelsRemoved": [
+        {
+          "message": {
+            "id": "18c3aa00bb11cc23",
+            "threadId": "18c3aa00bb11cc22",
+            "labelIds": [
+              "STARRED"
+            ]
+          },
+          "labelIds": [
+            "INBOX"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1204812",
+      "messages": [
+        {
+          "id": "18c3aa00bb11cc31",
+          "threadId": "18c3aa00bb11cc30"
+        }
+      ],
+      "messagesDeleted": [
+        {
+          "message": {
+            "id": "18c3aa00bb11cc31",
+            "threadId": "18c3aa00bb11cc30",
+            "labelIds": [
+              "TRASH"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "nextPageToken": "history-page-2",
+  "historyId": "1204850"
+}
