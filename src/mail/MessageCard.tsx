@@ -4,7 +4,7 @@ import { formatFullDate, formatListDate } from "../lib/dates";
 import type { EmailAddress, MessageDetail } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { AttachmentList } from "./AttachmentList";
-import { linkify } from "./linkify";
+import { EmailBody } from "./EmailBody";
 import "./mail.css";
 
 export interface MessageCardProps {
@@ -21,23 +21,6 @@ function recipientLine(prefix: string, people: EmailAddress[], myAddress: string
   if (people.length === 0) return null;
   const names = people.map((p) => (myAddress && p.address.toLowerCase() === myAddress ? "me" : p.name || p.address));
   return `${prefix} ${names.join(", ")}`;
-}
-
-/**
- * The seam for Task 10: HTML bodies get `EmailBody` (sandboxed iframe) here. Until then they show their
- * plain-text alternative. Plain-text messages render in the main DOM, escaped, with URLs linkified.
- */
-function MessageBody({ message }: { message: MessageDetail }) {
-  if (message.bodyHtml) {
-    // TODO(Task 10): replace this temporary fallback with <EmailBody message={message} />.
-    return message.bodyText ? (
-      <pre className="message-card__text selectable">{message.bodyText}</pre>
-    ) : (
-      <p className="message-card__empty">This message has no readable text.</p>
-    );
-  }
-  if (message.bodyText) return <div className="message-card__text selectable">{linkify(message.bodyText)}</div>;
-  return <p className="message-card__empty">This message is empty.</p>;
 }
 
 export function MessageCard({ message, accountId, expanded, onToggle }: MessageCardProps) {
@@ -87,7 +70,7 @@ export function MessageCard({ message, accountId, expanded, onToggle }: MessageC
           <ChevronUp aria-hidden="true" />
         </button>
       </header>
-      <MessageBody message={message} />
+      <EmailBody message={message} />
       <AttachmentList accountId={accountId} messageId={message.id} attachments={message.attachments} />
     </article>
   );

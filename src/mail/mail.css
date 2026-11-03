@@ -336,3 +336,39 @@
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- HTML bodies (sandboxed iframe, sized by EmailBody) ------------------ */
+
+.email-body {
+  padding: var(--space-2) var(--space-4) var(--space-4);
+}
+
+/* Starts collapsed so short bodies measure their own height, not a default frame's. */
+.email-body__frame {
+  display: block;
+  width: 100%;
+  height: var(--space-0);
+  border: var(--space-0);
+}
+
+.email-body__images {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2-5);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+
+.email-body__images-icon {
+  flex-shrink: 0;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.email-body__images-text {
+  flex: 1;
+}

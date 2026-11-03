@@ -24,7 +24,8 @@ function trimUrl(raw: string): string {
   }
 }
 
-function open(url: string) {
+/** Open a link from a message through the backend, which only opens http(s) and mailto. */
+export function openLink(url: string) {
   openMailLink(url).catch((error) => toast({ title: "Couldn't open the link", description: toCommandError(error).message, tone: "danger" }));
 }
 
@@ -39,7 +40,7 @@ export function linkify(text: string): ReactNode[] {
     const url = trimUrl(match[0]);
     if (match.index > from) nodes.push(text.slice(from, match.index));
     nodes.push(
-      <button key={match.index} type="button" className="link-button" title={url} onClick={() => open(url)}>
+      <button key={match.index} type="button" className="link-button" title={url} onClick={() => openLink(url)}>
         {url}
       </button>,
     );

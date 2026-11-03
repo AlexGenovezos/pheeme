@@ -159,7 +159,7 @@ test("not_found shows \"This conversation isn't available any more.\"", async ()
   expect(await screen.findByText("This conversation isn't available any more.")).toBeInTheDocument();
 });
 
-test("plain text renders escaped with link buttons; HTML bodies fall back to their text", () => {
+test("plain text renders escaped with link buttons; HTML bodies render in the sandboxed frame", () => {
   open(detail([message(1, { bodyText: "See <b>this</b> https://example.com now" })]));
   const { container, unmount } = renderView();
   expect(container.querySelector(".message-card__text b")).toBeNull();
@@ -168,7 +168,8 @@ test("plain text renders escaped with link buttons; HTML bodies fall back to the
 
   act(() => open(detail([message(1, { bodyHtml: "<p>hi</p>", bodyText: "plain alt" })])));
   renderView();
-  expect(screen.getByText("plain alt").tagName).toBe("PRE");
+  expect(screen.queryByText("plain alt")).toBeNull();
+  expect(screen.getByTitle("Message body").getAttribute("srcdoc")).toContain("<body><p>hi</p></body>");
 });
 
 test("attachments list hides inline images and downloads with a toast", async () => {
