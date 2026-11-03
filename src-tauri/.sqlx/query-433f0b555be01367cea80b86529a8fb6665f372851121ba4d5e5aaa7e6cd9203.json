@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               COALESCE(t.last_message_date, 0) AS \"cursor_date!: i64\"\n        FROM threads t\n        WHERE t.account_id IN (SELECT value FROM json_each(?1))\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = t.account_id AND e.thread_id = t.id\n                  AND e.label_id IN ('SPAM', 'TRASH'))\n        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC\n        LIMIT ?2\n        ",
+  "query": "\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               COALESCE(t.last_message_date, 0) AS \"cursor_date!: i64\"\n        FROM threads t INDEXED BY idx_threads_all_date\n        WHERE t.account_id IN (SELECT value FROM json_each(?1))\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = t.account_id AND e.thread_id = t.id\n                  AND e.label_id IN ('SPAM', 'TRASH'))\n        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC\n        LIMIT ?2\n        ",
   "describe": {
     "columns": [
       {
@@ -85,8 +85,8 @@
       true,
       true,
       false,
-      null
+      true
     ]
   },
-  "hash": "d90118c96ffa6530f7947c25cce2290caf601dc6d1451608850b930a12cd2b9c"
+  "hash": "433f0b555be01367cea80b86529a8fb6665f372851121ba4d5e5aaa7e6cd9203"
 }

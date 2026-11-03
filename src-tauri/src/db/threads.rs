@@ -339,6 +339,14 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
 
 /// Every thread not labelled `SPAM` or `TRASH` (the All Mail view), newest first with the
 /// same ordering and cursor as [`list_threads`]. Undated threads sort as date 0.
+///
+/// Served by the expression indexes `idx_threads_account_date` (one account, by account
+/// equality) and `idx_threads_all_date` (several accounts, ordered across accounts), which
+/// are on the same `COALESCE(last_message_date, 0)` the queries order and compare by: no
+/// sort, and the cursor seeks. Each query names its index (`INDEXED BY`): without
+/// `ANALYZE` statistics the planner would otherwise pick the per-account index and sort for
+/// the multi-account pages. The scalar `<= date` bound repeats the first term of the
+/// tuple comparison because SQLite only seeks on the scalar form.
 pub async fn list_all_mail(
     pool: &SqlitePool,
     account_ids: &[String],
@@ -348,21 +356,28 @@ pub async fn list_all_mail(
     if limit <= 0 {
         anyhow::bail!("thread list limit must be positive");
     }
+    if account_ids.is_empty() {
+        // `IN ()` would walk the whole global index to find nothing.
+        return Ok(ThreadPage {
+            threads: Vec::new(),
+            next: None,
+        });
+    }
     let fetch_limit = limit.saturating_add(1);
-    let accounts = serde_json::to_string(account_ids)?;
 
-    let rows = match before {
-        None => {
-            sqlx::query_as!(
-                ThreadRow,
-                r#"
+    let rows = if let [one] = account_ids {
+        match before {
+            None => {
+                sqlx::query_as!(
+                    ThreadRow,
+                    r#"
         SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
                t.history_id, t.last_message_date, t.message_count AS "message_count!",
                t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
                t.from_name, t.from_address, t.is_starred AS "is_starred!",
                COALESCE(t.last_message_date, 0) AS "cursor_date!: i64"
-        FROM threads t
-        WHERE t.account_id IN (SELECT value FROM json_each(?1))
+        FROM threads t INDEXED BY idx_threads_account_date
+        WHERE t.account_id = ?1
           AND NOT EXISTS (
                 SELECT 1 FROM thread_labels e
                 WHERE e.account_id = t.account_id AND e.thread_id = t.id
@@ -370,23 +385,24 @@ pub async fn list_all_mail(
         ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC
         LIMIT ?2
         "#,
-                accounts,
-                fetch_limit,
-            )
-            .fetch_all(pool)
-            .await?
-        }
-        Some(c) => {
-            sqlx::query_as!(
-                ThreadRow,
-                r#"
+                    one,
+                    fetch_limit,
+                )
+                .fetch_all(pool)
+                .await?
+            }
+            Some(c) => {
+                sqlx::query_as!(
+                    ThreadRow,
+                    r#"
         SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
                t.history_id, t.last_message_date, t.message_count AS "message_count!",
                t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
                t.from_name, t.from_address, t.is_starred AS "is_starred!",
                COALESCE(t.last_message_date, 0) AS "cursor_date!: i64"
-        FROM threads t
-        WHERE t.account_id IN (SELECT value FROM json_each(?1))
+        FROM threads t INDEXED BY idx_threads_account_date
+        WHERE t.account_id = ?1
+          AND COALESCE(t.last_message_date, 0) <= ?2
           AND (COALESCE(t.last_message_date, 0), t.account_id, t.id) < (?2, ?3, ?4)
           AND NOT EXISTS (
                 SELECT 1 FROM thread_labels e
@@ -395,14 +411,72 @@ pub async fn list_all_mail(
         ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC
         LIMIT ?5
         "#,
-                accounts,
-                c.last_message_date,
-                c.account_id,
-                c.thread_id,
-                fetch_limit,
-            )
-            .fetch_all(pool)
-            .await?
+                    one,
+                    c.last_message_date,
+                    c.account_id,
+                    c.thread_id,
+                    fetch_limit,
+                )
+                .fetch_all(pool)
+                .await?
+            }
+        }
+    } else {
+        let accounts = serde_json::to_string(account_ids)?;
+        match before {
+            None => {
+                sqlx::query_as!(
+                    ThreadRow,
+                    r#"
+        SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count AS "message_count!",
+               t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               t.from_name, t.from_address, t.is_starred AS "is_starred!",
+               COALESCE(t.last_message_date, 0) AS "cursor_date!: i64"
+        FROM threads t INDEXED BY idx_threads_all_date
+        WHERE t.account_id IN (SELECT value FROM json_each(?1))
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = t.account_id AND e.thread_id = t.id
+                  AND e.label_id IN ('SPAM', 'TRASH'))
+        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC
+        LIMIT ?2
+        "#,
+                    accounts,
+                    fetch_limit,
+                )
+                .fetch_all(pool)
+                .await?
+            }
+            Some(c) => {
+                sqlx::query_as!(
+                    ThreadRow,
+                    r#"
+        SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count AS "message_count!",
+               t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               t.from_name, t.from_address, t.is_starred AS "is_starred!",
+               COALESCE(t.last_message_date, 0) AS "cursor_date!: i64"
+        FROM threads t INDEXED BY idx_threads_all_date
+        WHERE t.account_id IN (SELECT value FROM json_each(?1))
+          AND COALESCE(t.last_message_date, 0) <= ?2
+          AND (COALESCE(t.last_message_date, 0), t.account_id, t.id) < (?2, ?3, ?4)
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = t.account_id AND e.thread_id = t.id
+                  AND e.label_id IN ('SPAM', 'TRASH'))
+        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC
+        LIMIT ?5
+        "#,
+                    accounts,
+                    c.last_message_date,
+                    c.account_id,
+                    c.thread_id,
+                    fetch_limit,
+                )
+                .fetch_all(pool)
+                .await?
+            }
         }
     };
     Ok(page_from_rows(rows, limit as usize))
@@ -1466,5 +1540,117 @@ mod tests {
         assert_eq!(count("STARRED"), Some((1, 2)));
         assert_eq!(count("INBOX"), Some((1, 1)));
         assert_eq!(count("Label_2"), None);
+    }
+
+    #[tokio::test]
+    async fn all_mail_single_account_pages_and_empty_account_list() {
+        let pool = seeded_pool().await;
+        for i in 1..=3 {
+            seed(&pool, "a1", &format!("t{i}"), Some(500), &["INBOX"]).await;
+        }
+        seed(&pool, "a1", "undated", None, &[]).await;
+        seed(&pool, "a1", "old", Some(10), &["SENT"]).await;
+        seed(&pool, "a2", "other", Some(900), &["INBOX"]).await;
+
+        let accounts = labels(&["a1"]);
+        let mut got = vec![];
+        let mut cursor: Option<ThreadCursor> = None;
+        loop {
+            let page = list_all_mail(&pool, &accounts, cursor.as_ref(), 2)
+                .await
+                .unwrap();
+            got.extend(page.threads.into_iter().map(|t| t.id));
+            match page.next {
+                Some(next) => cursor = Some(next),
+                None => break,
+            }
+        }
+        assert_eq!(got, vec!["t3", "t2", "t1", "old", "undated"]);
+
+        let none = list_all_mail(&pool, &[], None, 10).await.unwrap();
+        assert!(none.threads.is_empty() && none.next.is_none());
+    }
+
+    /// The four SQL texts of `list_all_mail` (single/multi account x first/cursor page),
+    /// read from this file so the plan test runs exactly what production runs.
+    fn all_mail_sql() -> Vec<String> {
+        let production = include_str!("threads.rs")
+            .split("#[cfg(test)]\nmod tests")
+            .next()
+            .unwrap();
+        let start = production.find("pub async fn list_all_mail").unwrap();
+        let end = production.find("fn page_from_rows").unwrap();
+        let sqls: Vec<String> = production[start..end]
+            .split("r#\"")
+            .skip(1)
+            .map(|chunk| chunk.split("\"#").next().unwrap().to_owned())
+            .collect();
+        assert_eq!(sqls.len(), 4, "expected four All Mail queries");
+        sqls
+    }
+
+    #[tokio::test]
+    async fn all_mail_pages_use_expression_indexes_without_sort() {
+        let pool = seeded_pool().await;
+        for (a, t, d) in [("a1", "t1", 300), ("a2", "t2", 200), ("a1", "t3", 100)] {
+            seed(&pool, a, t, Some(d), &["INBOX"]).await;
+        }
+        let both = serde_json::to_string(&labels(&["a1", "a2"])).unwrap();
+        let sqls = all_mail_sql();
+
+        // (name, sql, expected index, binds), in the order the queries appear.
+        enum B<'a> {
+            S(&'a str),
+            I(i64),
+        }
+        use B::{I, S};
+        let cases: [(&str, &str, &str, Vec<B>); 4] = [
+            (
+                "single first",
+                &sqls[0],
+                "idx_threads_account_date",
+                vec![S("a1"), I(10)],
+            ),
+            (
+                "single cursor",
+                &sqls[1],
+                "idx_threads_account_date",
+                vec![S("a1"), I(250), S("zz"), S("zz"), I(10)],
+            ),
+            (
+                "multi first",
+                &sqls[2],
+                "idx_threads_all_date",
+                vec![S(&both), I(10)],
+            ),
+            (
+                "multi cursor",
+                &sqls[3],
+                "idx_threads_all_date",
+                vec![S(&both), I(250), S("zz"), S("zz"), I(10)],
+            ),
+        ];
+        for (name, sql, index, binds) in cases {
+            let mut query = sqlx::query(Box::leak(
+                format!("EXPLAIN QUERY PLAN {sql}").into_boxed_str(),
+            ));
+            for b in &binds {
+                query = match b {
+                    S(v) => query.bind(*v),
+                    I(v) => query.bind(*v),
+                };
+            }
+            let rows = query.fetch_all(&pool).await.unwrap();
+            let plan = column(&rows, "detail").join("\n");
+            println!("{name} plan:\n{plan}");
+            assert!(plan.contains(index), "{name} should use {index}:\n{plan}");
+            assert!(!plan.contains("TEMP B-TREE"), "{name} sorts:\n{plan}");
+            if name.ends_with("cursor") {
+                assert!(
+                    plan.contains("<expr><?"),
+                    "{name} should seek at the cursor:\n{plan}"
+                );
+            }
+        }
     }
 }

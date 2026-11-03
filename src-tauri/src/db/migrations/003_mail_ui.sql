@@ -15,4 +15,11 @@ WHERE EXISTS (
   WHERE a.account_id = messages.account_id AND a.message_id = messages.id
 );
 
-CREATE INDEX idx_threads_account_date ON threads(account_id, last_message_date DESC, id DESC);
+-- All Mail pages order by the normalized date `COALESCE(last_message_date, 0)` (the same
+-- value `thread_labels.last_message_date` holds), so the indexes are on that expression:
+-- one account (account equality), and every account (ordered across accounts) for the
+-- multi-account views. `list_all_mail` must spell the expression exactly like this.
+CREATE INDEX idx_threads_account_date
+  ON threads(account_id, COALESCE(last_message_date, 0) DESC, id DESC);
+CREATE INDEX idx_threads_all_date
+  ON threads(COALESCE(last_message_date, 0) DESC, account_id DESC, id DESC);

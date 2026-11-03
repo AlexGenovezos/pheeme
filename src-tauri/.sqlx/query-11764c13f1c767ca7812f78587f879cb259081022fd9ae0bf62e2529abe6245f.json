@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               COALESCE(t.last_message_date, 0) AS \"cursor_date!: i64\"\n        FROM threads t\n        WHERE t.account_id IN (SELECT value FROM json_each(?1))\n          AND (COALESCE(t.last_message_date, 0), t.account_id, t.id) < (?2, ?3, ?4)\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = t.account_id AND e.thread_id = t.id\n                  AND e.label_id IN ('SPAM', 'TRASH'))\n        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC\n        LIMIT ?5\n        ",
+  "query": "\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               COALESCE(t.last_message_date, 0) AS \"cursor_date!: i64\"\n        FROM threads t INDEXED BY idx_threads_all_date\n        WHERE t.account_id IN (SELECT value FROM json_each(?1))\n          AND COALESCE(t.last_message_date, 0) <= ?2\n          AND (COALESCE(t.last_message_date, 0), t.account_id, t.id) < (?2, ?3, ?4)\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = t.account_id AND e.thread_id = t.id\n                  AND e.label_id IN ('SPAM', 'TRASH'))\n        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC\n        LIMIT ?5\n        ",
   "describe": {
     "columns": [
       {
@@ -88,5 +88,5 @@
       null
     ]
   },
-  "hash": "85f5b3d3e900685fd30b927cba647def48700b74c5014e0045804490304e8272"
+  "hash": "11764c13f1c767ca7812f78587f879cb259081022fd9ae0bf62e2529abe6245f"
 }
