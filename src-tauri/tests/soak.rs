@@ -35,7 +35,7 @@ const MAX_GROWTH_PER_CYCLE: f64 = 256.0;
 struct Scale {
     messages: usize,
     cycles: usize,
-    /// Peak live heap budget, about 20% above the measured peak (11.9 MiB long, 3.3 MiB
+    /// Peak live heap budget, about 20% above the measured peak (11.9 MiB long, 3.5 MiB
     /// short, on 2026-11-03).
     max_peak_bytes: usize,
 }
