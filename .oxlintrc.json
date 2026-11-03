@@ -17,6 +17,7 @@
     "no-prototype-builtins": "error",
     "no-regex-spaces": "error",
     "no-unexpected-multiline": "error",
+    "no-unused-vars": ["error", { "reportVarsOnlyUsedAsTypes": true }],
     "no-var": "error",
     "prefer-const": "error",
     "prefer-rest-params": "error",
