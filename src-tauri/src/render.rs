@@ -41,7 +41,11 @@ fn token_key() -> &'static [u8; 32] {
 
 fn token_mac(account_id: &str, message_id: &str, content_id: &str) -> HmacSha256 {
     let mut mac = HmacSha256::new_from_slice(token_key()).expect("HMAC takes any key length");
-    mac.update(format!("{account_id}\n{message_id}\n{content_id}").as_bytes());
+    // Length-prefix every field so no two distinct triples share the same signed bytes.
+    for field in [account_id, message_id, content_id] {
+        mac.update(&(field.len() as u64).to_be_bytes());
+        mac.update(field.as_bytes());
+    }
     mac
 }
 
@@ -499,6 +503,24 @@ mod tests {
         ] {
             assert!(!verify_attachment_token("a1", "m1", "logo@x", bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn tokens_do_not_confuse_delimiter_containing_fields() {
+        let (a, b) = (("a1", "m1\nextra", "logo@x"), ("a1", "m1", "extra\nlogo@x"));
+        let token = |t: (&str, &str, &str)| {
+            attachment_url(t.0, t.1, t.2)
+                .rsplit_once("?t=")
+                .unwrap()
+                .1
+                .to_owned()
+        };
+        let (ta, tb) = (token(a), token(b));
+        assert_ne!(ta, tb);
+        assert!(verify_attachment_token(a.0, a.1, a.2, &ta));
+        assert!(verify_attachment_token(b.0, b.1, b.2, &tb));
+        assert!(!verify_attachment_token(a.0, a.1, a.2, &tb));
+        assert!(!verify_attachment_token(b.0, b.1, b.2, &ta));
     }
 
     #[test]
