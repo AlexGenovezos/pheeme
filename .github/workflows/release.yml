@@ -41,23 +41,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/setup-build
         with:
-          node-version: 22
-          cache: npm
-      - name: Install Ubuntu dependencies
-        if: matrix.os == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
-      - run: rustup toolchain install
-      - if: matrix.os == 'macos-latest'
-        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          shared-key: release-${{ matrix.os }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          rust-targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin x86_64-apple-darwin' || '' }}
+          cache-key: release-${{ matrix.os }}
       - run: npm ci
       - if: matrix.os == 'ubuntu-22.04'
         run: bash scripts/resolve-apple-env.test.sh
@@ -130,23 +117,10 @@ jobs:
             args: ""
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/setup-build
         with:
-          node-version: 22
-          cache: npm
-      - name: Install Ubuntu dependencies
-        if: matrix.os == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
-      - run: rustup toolchain install
-      - if: matrix.os == 'macos-latest'
-        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          shared-key: release-${{ matrix.os }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          rust-targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin x86_64-apple-darwin' || '' }}
+          cache-key: release-${{ matrix.os }}
       - run: npm ci
       - name: apple-env
         if: matrix.os == 'macos-latest'

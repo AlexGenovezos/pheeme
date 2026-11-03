@@ -123,21 +123,6 @@ pub async fn get_one(
     Ok(row)
 }
 
-pub async fn delete_attachments_for_message(
-    pool: &SqlitePool,
-    account_id: &str,
-    message_id: &str,
-) -> Result<()> {
-    sqlx::query!(
-        "DELETE FROM attachments WHERE account_id = ? AND message_id = ?",
-        account_id,
-        message_id
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 /// Replace a message's attachment metadata (used when a full copy is fetched).
 pub async fn replace_for_message(
     conn: &mut SqliteConnection,

@@ -4,7 +4,8 @@ use super::engine::{now_ms, BackfillProgress, SyncEngine, FULL_BODY_DAYS};
 use super::events::{RecordingEvents, SyncEvent};
 use super::fake::{FakeGmail, FakeMsg};
 use super::outbox;
-use crate::db::accounts::{self, DbAccount};
+use crate::db::accounts;
+use crate::db::test_support::TestDb;
 use crate::db::threads::{self, ThreadQuery};
 use crate::db::{labels, messages, outbox as store};
 use crate::gmail::GmailError;
@@ -14,7 +15,7 @@ use std::sync::Arc;
 const ACCT: &str = "a1";
 
 struct H {
-    _dir: tempfile::TempDir,
+    db: TestDb,
     pool: SqlitePool,
     fake: Arc<FakeGmail>,
     events: Arc<RecordingEvents>,
@@ -22,23 +23,8 @@ struct H {
 }
 
 async fn harness() -> H {
-    let dir = tempfile::tempdir().unwrap();
-    let pool = crate::db::init_db(dir.path()).await.unwrap();
-    accounts::insert_account(
-        &pool,
-        &DbAccount {
-            id: ACCT.into(),
-            email: "me@example.com".into(),
-            display_name: None,
-            profile_photo_url: None,
-            client_id: "c".into(),
-            history_id: None,
-            created_at: 0,
-            updated_at: 0,
-        },
-    )
-    .await
-    .unwrap();
+    let db = TestDb::with_account(ACCT).await;
+    let pool = db.pool.clone();
     let fake = Arc::new(FakeGmail::new());
     let events = Arc::new(RecordingEvents::default());
     let engine = SyncEngine::new(
@@ -49,7 +35,7 @@ async fn harness() -> H {
         Default::default(),
     );
     H {
-        _dir: dir,
+        db,
         pool,
         fake,
         events,
@@ -548,7 +534,7 @@ async fn ops_survive_restart_and_replay_in_order() {
     archive(&h, "t1").await;
 
     // Restart: a fresh pool on the same file.
-    let pool = crate::db::init_db(h._dir.path()).await.unwrap();
+    let pool = crate::db::init_db(h.db.dir()).await.unwrap();
     let engine = SyncEngine::new(
         pool,
         h.fake.clone(),
@@ -991,4 +977,41 @@ async fn offline_send_stays_pending_and_retries() {
     outbox::process(&h.engine, t + 60_000).await.unwrap();
     assert!(op_status(&h, &op.id).await.is_none());
     assert_eq!(h.fake.sent().len(), 1);
+}
+
+#[tokio::test]
+async fn queue_send_keeps_a_folded_message_id() {
+    let h = harness().await;
+    let raw = b"From: me@example.com\r\nMessage-ID:\r\n <existing@example.com>\r\nSubject: Hi\r\n\r\nHello";
+    let id = outbox::queue_send(&h.pool, ACCT, raw).await.unwrap();
+    let op = store::get(&h.pool, &id).await.unwrap().unwrap();
+    assert_eq!(
+        op.rfc822_message_id.as_deref(),
+        Some("<existing@example.com>")
+    );
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    let sent = crate::gmail::mime::decode_base64url(&h.fake.sent()[0]).unwrap();
+    assert_eq!(sent, raw, "no second Message-ID is added");
+    assert_eq!(
+        h.fake.message("sent-1").unwrap().message_id,
+        "<existing@example.com>"
+    );
+}
+
+#[tokio::test]
+async fn queue_send_ignores_a_message_id_line_in_the_body() {
+    let h = harness().await;
+    let raw = b"From: me@example.com\r\nSubject: Hi\r\n\r\nMessage-ID: <body@example.com>\r\n";
+    let id = outbox::queue_send(&h.pool, ACCT, raw).await.unwrap();
+    let op = store::get(&h.pool, &id).await.unwrap().unwrap();
+    let mid = op.rfc822_message_id.unwrap();
+    assert!(mid.ends_with("@pheeme.app>"), "{mid}");
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    let sent = crate::gmail::mime::decode_base64url(&h.fake.sent()[0]).unwrap();
+    assert!(String::from_utf8(sent)
+        .unwrap()
+        .starts_with(&format!("Message-ID: {mid}\r\n")));
+    // The fake read the header, not the body line, so the send shows up in Sent.
+    let sent_msg = h.fake.message("sent-1").unwrap();
+    assert_eq!(sent_msg.message_id, mid);
 }

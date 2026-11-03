@@ -265,33 +265,19 @@ impl SyncManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_support::TestDb;
     use crate::sync::events::RecordingEvents;
     use crate::sync::fake::{FakeGmail, FakeMsg};
 
     async fn setup() -> (
-        tempfile::TempDir,
+        TestDb,
         SqlitePool,
         Arc<FakeGmail>,
         Arc<RecordingEvents>,
         Arc<SyncManager>,
     ) {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = crate::db::init_db(dir.path()).await.unwrap();
-        accounts::insert_account(
-            &pool,
-            &accounts::DbAccount {
-                id: "a1".into(),
-                email: "me@example.com".into(),
-                display_name: None,
-                profile_photo_url: None,
-                client_id: "c".into(),
-                history_id: None,
-                created_at: 0,
-                updated_at: 0,
-            },
-        )
-        .await
-        .unwrap();
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
         let fake = Arc::new(FakeGmail::new());
         let events = Arc::new(RecordingEvents::default());
         let api = fake.clone();
@@ -300,7 +286,7 @@ mod tests {
             Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
             events.clone(),
         );
-        (dir, pool, fake, events, manager)
+        (db, pool, fake, events, manager)
     }
 
     #[tokio::test]

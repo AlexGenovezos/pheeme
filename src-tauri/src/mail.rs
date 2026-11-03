@@ -687,7 +687,7 @@ async fn write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::accounts::{self, DbAccount};
+    use crate::db::test_support::TestDb;
     use crate::gmail::GmailError;
     use crate::sync::events::RecordingEvents;
     use crate::sync::fake::{FakeGmail, FakeMsg};
@@ -742,23 +742,8 @@ mod tests {
 
     #[tokio::test]
     async fn modify_threads_applies_now_emits_and_reaches_gmail() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = crate::db::init_db(dir.path()).await.unwrap();
-        accounts::insert_account(
-            &pool,
-            &DbAccount {
-                id: "a1".into(),
-                email: "me@example.com".into(),
-                display_name: None,
-                profile_photo_url: None,
-                client_id: "c".into(),
-                history_id: None,
-                created_at: 0,
-                updated_at: 0,
-            },
-        )
-        .await
-        .unwrap();
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
         let fake = Arc::new(FakeGmail::new());
         fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"]));
         let events = Arc::new(RecordingEvents::default());
@@ -769,7 +754,7 @@ mod tests {
             events.clone(),
         );
         sync.sync_account("a1").await.unwrap();
-        let mail = MailService::new(pool.clone(), sync.clone(), dir.path().join("cache"));
+        let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
         events.take();
 
         mail.modify_threads("a1", &["t1".into()], &[], &["UNREAD".into()])
@@ -809,23 +794,8 @@ mod tests {
 
     #[tokio::test]
     async fn list_threads_dispatches_all_mail_and_primary_and_counts_labels() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = crate::db::init_db(dir.path()).await.unwrap();
-        accounts::insert_account(
-            &pool,
-            &DbAccount {
-                id: "a1".into(),
-                email: "me@example.com".into(),
-                display_name: None,
-                profile_photo_url: None,
-                client_id: "c".into(),
-                history_id: None,
-                created_at: 0,
-                updated_at: 0,
-            },
-        )
-        .await
-        .unwrap();
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
         let fake = Arc::new(FakeGmail::new());
         fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"]));
         fake.seed(FakeMsg::new(
@@ -848,7 +818,7 @@ mod tests {
             events,
         );
         sync.sync_account("a1").await.unwrap();
-        let mail = MailService::new(pool, sync, dir.path().join("cache"));
+        let mail = MailService::new(pool, sync, db.dir().join("cache"));
         let accounts = ["a1".to_owned()];
         let ids = |page: ThreadPageDto| {
             let mut ids: Vec<String> = page.threads.into_iter().map(|t| t.id).collect();
@@ -886,23 +856,8 @@ mod tests {
 
     #[tokio::test]
     async fn get_thread_includes_attachments() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = crate::db::init_db(dir.path()).await.unwrap();
-        accounts::insert_account(
-            &pool,
-            &DbAccount {
-                id: "a1".into(),
-                email: "me@example.com".into(),
-                display_name: None,
-                profile_photo_url: None,
-                client_id: "c".into(),
-                history_id: None,
-                created_at: 0,
-                updated_at: 0,
-            },
-        )
-        .await
-        .unwrap();
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
         let fake = Arc::new(FakeGmail::new());
         fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment(
             "a.pdf",
@@ -916,7 +871,7 @@ mod tests {
             Arc::new(RecordingEvents::default()),
         );
         sync.sync_account("a1").await.unwrap();
-        let mail = MailService::new(pool.clone(), sync.clone(), dir.path().join("cache"));
+        let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
 
         let detail = mail.get_thread("a1", "t1").await.unwrap();
 
@@ -936,29 +891,9 @@ mod tests {
     /// A synced account with one message in `t1`, and the events it emits.
     async fn events_fixture(
         msg: FakeMsg,
-    ) -> (
-        tempfile::TempDir,
-        Arc<FakeGmail>,
-        Arc<RecordingEvents>,
-        MailService,
-    ) {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = crate::db::init_db(dir.path()).await.unwrap();
-        accounts::insert_account(
-            &pool,
-            &DbAccount {
-                id: "a1".into(),
-                email: "me@example.com".into(),
-                display_name: None,
-                profile_photo_url: None,
-                client_id: "c".into(),
-                history_id: None,
-                created_at: 0,
-                updated_at: 0,
-            },
-        )
-        .await
-        .unwrap();
+    ) -> (TestDb, Arc<FakeGmail>, Arc<RecordingEvents>, MailService) {
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
         let fake = Arc::new(FakeGmail::new());
         fake.seed(msg);
         let events = Arc::new(RecordingEvents::default());
@@ -969,8 +904,8 @@ mod tests {
             events.clone(),
         );
         sync.sync_account("a1").await.unwrap();
-        let mail = MailService::new(pool, sync, dir.path().join("cache"));
-        (dir, fake, events, mail)
+        let mail = MailService::new(pool, sync, db.dir().join("cache"));
+        (db, fake, events, mail)
     }
 
     async fn fully_fetched(mail: &MailService, id: &str) -> i64 {
@@ -1080,23 +1015,8 @@ mod tests {
 
     #[tokio::test]
     async fn get_thread_sanitizes_html_bodies() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = crate::db::init_db(dir.path()).await.unwrap();
-        accounts::insert_account(
-            &pool,
-            &DbAccount {
-                id: "a1".into(),
-                email: "me@example.com".into(),
-                display_name: None,
-                profile_photo_url: None,
-                client_id: "c".into(),
-                history_id: None,
-                created_at: 0,
-                updated_at: 0,
-            },
-        )
-        .await
-        .unwrap();
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
         let fake = Arc::new(FakeGmail::new());
         fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
         fake.seed(FakeMsg::new("m2", "t1", &["INBOX"]));
@@ -1117,7 +1037,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        let mail = MailService::new(pool.clone(), sync.clone(), dir.path().join("cache"));
+        let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
 
         let detail = mail.get_thread("a1", "t1").await.unwrap();
 
@@ -1136,24 +1056,9 @@ mod tests {
     async fn attachment_fixture(
         msg: FakeMsg,
         seed: &[(&str, &[u8])],
-    ) -> (tempfile::TempDir, Arc<FakeGmail>, MailService) {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = crate::db::init_db(dir.path()).await.unwrap();
-        accounts::insert_account(
-            &pool,
-            &DbAccount {
-                id: "a1".into(),
-                email: "me@example.com".into(),
-                display_name: None,
-                profile_photo_url: None,
-                client_id: "c".into(),
-                history_id: None,
-                created_at: 0,
-                updated_at: 0,
-            },
-        )
-        .await
-        .unwrap();
+    ) -> (TestDb, Arc<FakeGmail>, MailService) {
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
         let fake = Arc::new(FakeGmail::new());
         fake.seed(msg);
         for (id, bytes) in seed {
@@ -1166,8 +1071,8 @@ mod tests {
             Arc::new(RecordingEvents::default()),
         );
         sync.sync_account("a1").await.unwrap();
-        let mail = MailService::new(pool, sync, dir.path().join("cache"));
-        (dir, fake, mail)
+        let mail = MailService::new(pool, sync, db.dir().join("cache"));
+        (db, fake, mail)
     }
 
     #[tokio::test]
@@ -1186,7 +1091,7 @@ mod tests {
         assert_eq!(first.mime_type, "application/pdf");
         assert_eq!(first.filename.as_deref(), Some("a.pdf"));
         assert_eq!(fake.attachment_fetches(), 1);
-        assert!(dir.path().join("cache/attachments/a1/m1/0").is_file());
+        assert!(dir.dir().join("cache/attachments/a1/m1/0").is_file());
         assert!(matches!(
             mail.attachment("a1", "m1", "9").await,
             Err(MailError::NotFound)
@@ -1251,7 +1156,7 @@ mod tests {
             .execute(&mail.db)
             .await
             .unwrap();
-        let target = dir.path().join("Downloads");
+        let target = dir.dir().join("Downloads");
 
         let one = mail
             .save_attachment("a1", "m1", "0", &target)
@@ -1266,7 +1171,7 @@ mod tests {
         assert_eq!(two, target.join("a (1).pdf"));
         assert_eq!(std::fs::read(&one).unwrap(), b"%PDF");
         assert_eq!(std::fs::read(&two).unwrap(), b"%PDF");
-        assert!(!dir.path().join("evil").exists());
+        assert!(!dir.dir().join("evil").exists());
     }
 
     #[test]
@@ -1333,7 +1238,7 @@ mod tests {
         // The regular download is the second row (rows follow parse order).
         let note = rows.iter().find(|r| r.content_id.is_none()).unwrap();
         let saved = mail
-            .save_attachment("a1", "m1", &note.id, &dir.path().join("Downloads"))
+            .save_attachment("a1", "m1", &note.id, &dir.dir().join("Downloads"))
             .await
             .unwrap();
         assert_eq!(saved.file_name().unwrap(), "note.txt");
@@ -1343,7 +1248,7 @@ mod tests {
         let reads = fake.calls("get_message");
         mail.inline_image("a1", "m1", "logo").await.unwrap();
         assert_eq!(fake.calls("get_message"), reads);
-        assert!(dir.path().join("cache/attachments/a1/m1").is_dir());
+        assert!(dir.dir().join("cache/attachments/a1/m1").is_dir());
     }
 
     #[tokio::test]
@@ -1389,9 +1294,9 @@ mod tests {
             &[("g1", b"%PDF")],
         )
         .await;
-        let target = dir.path().join("Downloads");
+        let target = dir.dir().join("Downloads");
         std::fs::create_dir(&target).unwrap();
-        std::os::unix::fs::symlink(dir.path().join("nowhere"), target.join("a.pdf")).unwrap();
+        std::os::unix::fs::symlink(dir.dir().join("nowhere"), target.join("a.pdf")).unwrap();
 
         let saved = tokio::time::timeout(
             std::time::Duration::from_secs(5),
@@ -1403,7 +1308,7 @@ mod tests {
 
         assert_eq!(saved, target.join("a (1).pdf"));
         assert!(
-            !dir.path().join("nowhere").exists(),
+            !dir.dir().join("nowhere").exists(),
             "the link was not followed"
         );
     }
