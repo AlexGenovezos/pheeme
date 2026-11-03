@@ -92,6 +92,25 @@ export const lightTheme: ThemeDefinition = {
     "--color-avatar-5": "#8c6410",
     "--color-avatar-6": "#a13e5b",
 
+    "--color-account-1": "#2f6fd0",
+    "--color-account-2": "#2f8a4f",
+    "--color-account-3": "#c26a1a",
+    "--color-account-4": "#8050c8",
+    "--color-account-5": "#c8403a",
+    "--color-account-6": "#9a7a08",
+
+    "--color-mailbox-primary": "#1a5bbf",
+    "--color-mailbox-social": "#076a77",
+    "--color-mailbox-promotions": "#1f7038",
+    "--color-mailbox-updates": "#a24a06",
+    "--color-mailbox-forums": "#6f3db5",
+    "--color-mailbox-starred": "#7d5c00",
+    "--color-mailbox-drafts": "#15659b",
+    "--color-mailbox-sent": "#237046",
+    "--color-mailbox-allmail": "#a32f74",
+    "--color-mailbox-spam": "#b23a0a",
+    "--color-mailbox-trash": "#b42a26",
+
     "--shadow-popover":
       "0 0 0 1px #0e14140f, 0 2px 6px #0e141414, 0 10px 28px -6px #0e14142e",
     "--shadow-overlay":

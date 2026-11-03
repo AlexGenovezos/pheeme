@@ -65,7 +65,7 @@ function useLabelsAndCounts() {
   }, [accountIds]);
 }
 
-function MailScreen({ onManageAccounts }: { onManageAccounts: () => void }) {
+function MailScreen({ onManageAccounts, onAddAccount }: { onManageAccounts: () => void; onAddAccount: () => void }) {
   useGlobalShortcuts();
   useAppCommands();
   useNativeContextMenuOnly();
@@ -74,7 +74,7 @@ function MailScreen({ onManageAccounts }: { onManageAccounts: () => void }) {
 
   return (
     <>
-      <AppShell onManageAccounts={onManageAccounts} />
+      <AppShell onManageAccounts={onManageAccounts} onAddAccount={onAddAccount} />
       <CommandPalette />
       <ContextMenuHost />
     </>
@@ -115,7 +115,7 @@ function App() {
   } else if (loaded && managing) {
     screen = <AccountsHome onAdd={() => setAdding(true)} onClose={() => setManaging(false)} />;
   } else if (loaded) {
-    screen = <MailScreen onManageAccounts={() => setManaging(true)} />;
+    screen = <MailScreen onManageAccounts={() => setManaging(true)} onAddAccount={() => setAdding(true)} />;
   }
   return <ToastProvider pinned={<UpdateBanner />}>{screen}</ToastProvider>;
 }

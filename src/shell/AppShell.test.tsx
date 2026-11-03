@@ -1,3 +1,4 @@
+import { mockIPC } from "@tauri-apps/api/mocks";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { __resetUiStoreForTests, clampList, LAYOUT_KEY, PANE, readLayout, useUiStore } from "../store/uiStore";
@@ -20,6 +21,7 @@ beforeAll(() => {
 beforeEach(() => {
   localStorage.clear();
   __resetUiStoreForTests();
+  mockIPC(() => undefined, { shouldMockEvents: true });
 });
 
 const stored = () => JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "null");

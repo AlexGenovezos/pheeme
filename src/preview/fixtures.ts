@@ -22,8 +22,11 @@ export interface FixtureMailbox {
 
 export interface FixtureLabel {
   id: string;
+  accountId: string;
   name: string;
   unread: number;
+  /** Gmail's label color, shown as a dot in the sidebar. */
+  color?: string;
 }
 
 export interface FixtureThread {
@@ -63,9 +66,11 @@ export const fixtureMailboxes: FixtureMailbox[] = [
 ];
 
 export const fixtureLabels: FixtureLabel[] = [
-  { id: "Label_1", name: "Receipts", unread: 0 },
-  { id: "Label_2", name: "Travel", unread: 1 },
-  { id: "Label_3", name: "Pheeme", unread: 2 },
+  { id: "Label_1", accountId: "acc-personal", name: "Receipts", unread: 0 },
+  { id: "Label_2", accountId: "acc-personal", name: "Travel", unread: 1, color: "#16a766" },
+  { id: "Label_3", accountId: "acc-personal", name: "Pheeme", unread: 2, color: "#4a86e8" },
+  { id: "Label_10", accountId: "acc-work", name: "Customers", unread: 1, color: "#ffad47" },
+  { id: "Label_11", accountId: "acc-work", name: "Invoices", unread: 0 },
 ];
 
 const thread = (t: Omit<FixtureThread, "accountId" | "mailbox" | "messageCount"> & Partial<FixtureThread>): FixtureThread => ({
@@ -218,13 +223,42 @@ export const fixtureThreads: FixtureThread[] = [
     starred: false,
     hasAttachment: false,
   }),
+  thread({
+    id: "t-12",
+    accountId: "acc-work",
+    fromName: "Dana Whitfield",
+    fromAddress: "dana@lumen.example",
+    subject: "Pilot for the support team",
+    snippet: "We'd like ten seats for a month. Does the BYOC setup work with our Workspace admin policy?",
+    body: "Hi Alex,\n\nWe'd like ten seats for a month. Does the BYOC setup work with our Workspace admin policy, or do we need an internal OAuth client?\n\nDana",
+    date: minutesAgo(25),
+    unread: true,
+    starred: false,
+    hasAttachment: false,
+  }),
+  thread({
+    id: "t-13",
+    accountId: "acc-work",
+    category: "CATEGORY_FORUMS",
+    fromName: "tauri-apps discussions",
+    fromAddress: "noreply@github.com",
+    subject: "[tauri] WKWebView sandboxed iframe click events",
+    snippet: "Parent-registered listeners do reach a script-less sandboxed frame on macOS 14.",
+    body: "Parent-registered listeners do reach a script-less sandboxed frame on macOS 14, as long as allow-same-origin is set.",
+    date: minutesAgo(200),
+    unread: true,
+    starred: false,
+    hasAttachment: false,
+  }),
 ];
 
-export const fixtureThreadsIn = (mailbox: string, category?: string | null): FixtureThread[] => {
+export const fixtureThreadsIn = (mailbox: string, category?: string | null, accountIds?: string[]): FixtureThread[] => {
   let threads: FixtureThread[];
   if (mailbox === "ALL") threads = fixtureThreads;
   else if (mailbox === "STARRED") threads = fixtureThreads.filter((t) => t.starred);
   else threads = fixtureThreads.filter((t) => t.mailbox === mailbox);
+  // No account ids (older callers) means every account.
+  if (accountIds?.length) threads = threads.filter((t) => accountIds.includes(t.accountId));
   // Primary (CATEGORY_PERSONAL) is the mailbox minus the other categories, as in the backend.
   if (category === "CATEGORY_PERSONAL") return threads.filter((t) => !t.category);
   if (category) return threads.filter((t) => t.category === category);

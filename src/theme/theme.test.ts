@@ -116,6 +116,39 @@ describe("theme files", () => {
     expect(Object.keys(lightTheme.tokens).sort()).toEqual(schema);
     expect(Object.keys(darkTheme.tokens).sort()).toEqual(schema);
   });
+
+  // WCAG relative luminance and contrast of #rrggbb colors.
+  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const luminance = (c: number[]) => {
+    const [r, g, b] = c.map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (a: number[], b: number[]) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  // --sidebar-selected-tint in tokens.css (vitest doesn't load CSS, so it is repeated here).
+  const tint = 0.12;
+
+  test.each([lightTheme, darkTheme])("$name mailbox colors read as text on the sidebar, selected or not", (theme) => {
+    const bg = rgb(theme.tokens["--color-sidebar-bg"]);
+    const tokens = Object.keys(THEME_TOKENS).filter((t): t is keyof typeof theme.tokens => t.startsWith("--color-mailbox-"));
+    expect(tokens).toHaveLength(11);
+    for (const token of tokens) {
+      const color = rgb(theme.tokens[token]);
+      const selected = color.map((v, i) => v * tint + bg[i] * (1 - tint));
+      expect(contrast(color, bg), token).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(color, selected), `${token} selected`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  test.each([lightTheme, darkTheme])("$name account dots stand out from the sidebar", (theme) => {
+    const bg = rgb(theme.tokens["--color-sidebar-bg"]);
+    for (let i = 1; i <= 6; i++) {
+      const token = `--color-account-${i}` as keyof typeof theme.tokens;
+      expect(contrast(rgb(theme.tokens[token]), bg), token).toBeGreaterThanOrEqual(3);
+    }
+  });
 });
 
 describe("no white flash", () => {

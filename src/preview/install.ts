@@ -1,8 +1,23 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import type { AccountInfo, ThreadDetail, ThreadPage, ThreadSummary } from "../lib/tauri";
+import type { AccountInfo, LabelInfo, ThreadDetail, ThreadPage, ThreadSummary } from "../lib/tauri";
 import { fixtureAccounts, fixtureLabels, fixtureMailboxes, fixtureThreads, fixtureThreadsIn, type FixtureThread } from "./fixtures";
 
 type Args = Record<string, unknown> | undefined;
+
+const CATEGORY_IDS = ["CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS"];
+
+const accountIdsOf = (args: Args): string[] => (Array.isArray(args?.accountIds) ? args.accountIds.map(String) : []);
+
+/** The account's system mailboxes and user labels, shaped like `list_labels`. */
+function labelsFor(accountId: string): LabelInfo[] {
+  const base = { accountId, messagesTotal: 0, messagesUnread: 0, threadsTotal: 0, threadsUnread: 0, colorText: null };
+  return [
+    ...fixtureMailboxes.map((m) => ({ ...base, id: m.id, name: m.name, type: "system", colorBackground: null })),
+    ...fixtureLabels
+      .filter((l) => l.accountId === accountId)
+      .map((l) => ({ ...base, id: l.id, name: l.name, type: "user", colorBackground: l.color ?? null })),
+  ];
+}
 
 /** A fixture thread as `list_threads` returns it (no mailbox or body). */
 export function toSummary(t: FixtureThread): ThreadSummary {
@@ -31,9 +46,13 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
-    list_labels: () => [...fixtureMailboxes, ...fixtureLabels],
+    list_labels: (args) => labelsFor(String(args?.accountId)),
     list_threads: (args): ThreadPage => ({
-      threads: fixtureThreadsIn(String(args?.labelId ?? "INBOX"), args?.alsoLabelId ? String(args.alsoLabelId) : null).map(toSummary),
+      threads: fixtureThreadsIn(
+        String(args?.labelId ?? "INBOX"),
+        args?.alsoLabelId ? String(args.alsoLabelId) : null,
+        accountIdsOf(args),
+      ).map(toSummary),
       next: null,
     }),
     get_thread: (args) => {
@@ -41,10 +60,24 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       if (!t) throw { code: "not_found", message: "That conversation isn't on this device." };
       return threadDetail(t);
     },
-    mailbox_counts: () => fixtureMailboxes.map((m) => ({ labelId: m.id, unread: m.unread })),
-    label_counts: () => [...fixtureMailboxes, ...fixtureLabels]
-      .map((l) => ({ labelId: l.id, unread: l.unread, total: Math.max(l.unread, fixtureThreadsIn(l.id).length) }))
-      .filter((c) => c.total > 0),
+    // Unread inbox conversations, overall and per category, for the accounts asked about.
+    mailbox_counts: (args) => {
+      const ids = accountIdsOf(args);
+      const unread = (category: string | null) => fixtureThreadsIn("INBOX", category, ids).filter((t) => t.unread).length;
+      return [{ labelId: "INBOX", unread: unread(null) }, ...CATEGORY_IDS.map((c) => ({ labelId: c, unread: unread(c) }))];
+    },
+    label_counts: (args) => {
+      const accountId = String(args?.accountId);
+      return [
+        ...fixtureMailboxes.map((m) => {
+          const threads = fixtureThreadsIn(m.id, null, [accountId]);
+          return { labelId: m.id, unread: threads.filter((t) => t.unread).length, total: threads.length };
+        }),
+        ...fixtureLabels
+          .filter((l) => l.accountId === accountId)
+          .map((l) => ({ labelId: l.id, unread: l.unread, total: l.unread })),
+      ].filter((c) => c.total > 0);
+    },
     sync_now: () => undefined,
     modify_threads: () => undefined,
     trash_threads: () => undefined,

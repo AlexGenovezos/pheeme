@@ -94,3 +94,24 @@ export function accountColorIndex(accountId: string, accounts: { id: string }[])
   const index = accounts.findIndex((a) => a.id === accountId);
   return (Math.max(index, 0) % 6) + 1;
 }
+
+/** All Inboxes: every account's INBOX, categories mixed in. */
+export const ALL_INBOXES: MailboxRef = { accountId: null, labelId: "INBOX" };
+
+/** An account's category inbox (INBOX ∩ `category`). */
+export const categoryMailbox = (accountId: string, category: string): MailboxRef => ({
+  accountId,
+  labelId: "INBOX",
+  category,
+});
+
+/** Where "inbox" goes: All Inboxes, or the only account's Primary (there is no All Inboxes row then). */
+export function homeMailbox(accounts: { id: string }[]): MailboxRef {
+  return accounts.length === 1 ? categoryMailbox(accounts[0].id, CATEGORIES[0].labelId) : ALL_INBOXES;
+}
+
+/** The account Favorites and labels follow: the stored one while it is still connected, else the first. */
+export function resolveActiveAccount(activeAccountId: string | null, accounts: { id: string }[]): string | null {
+  if (activeAccountId !== null && accounts.some((a) => a.id === activeAccountId)) return activeAccountId;
+  return accounts[0]?.id ?? null;
+}

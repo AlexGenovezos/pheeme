@@ -1,43 +1,48 @@
+import { listen } from "@tauri-apps/api/event";
 import {
-  AlertOctagon,
-  Archive,
-  File,
-  Inbox,
+  ChevronRight,
+  type LucideIcon,
+  Mails,
   Monitor,
-  Settings,
   Moon,
   PanelLeftClose,
-  Send,
-  Star,
+  Settings,
   Sun,
   Tag,
-  Trash2,
+  TriangleAlert,
+  UserPlus,
 } from "lucide-react";
-import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import { type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { Avatar } from "../components/ui/Avatar";
-import { Badge } from "../components/ui/Badge";
 import { IconButton } from "../components/ui/IconButton";
 import { ListRow } from "../components/ui/ListRow";
 import { showContextMenu } from "../lib/contextMenu";
-import type { MailboxRef } from "../mail/mailboxes";
-import { fixtureLabels, fixtureMailboxes, type FixtureMailbox } from "../preview/fixtures";
+import { type AccountInfo, stopQuietly, SYNC_EVENTS, type SyncAccountEvent, type SyncErrorEvent } from "../lib/tauri";
+import { cx } from "../lib/utils";
+import {
+  accountColorIndex,
+  ALL_INBOXES,
+  CATEGORIES,
+  categoryMailbox,
+  FAVORITES,
+  formatCount,
+  homeMailbox,
+  type MailboxRef,
+  resolveActiveAccount,
+} from "../mail/mailboxes";
 import { useAccountStore } from "../store/accountStore";
+import { useLabelStore } from "../store/labelStore";
 import { useUiStore } from "../store/uiStore";
 import { useThemeStore, type ThemeMode } from "../theme/theme";
 import { dragRegion } from "./chrome";
 
-const ICONS: Record<FixtureMailbox["icon"], typeof Inbox> = {
-  inbox: Inbox,
-  star: Star,
-  send: Send,
-  file: File,
-  archive: Archive,
-  alert: AlertOctagon,
-  trash: Trash2,
-};
-
 const MODE_ICON: Record<ThemeMode, typeof Sun> = { system: Monitor, light: Sun, dark: Moon };
 const MODE_LABEL: Record<ThemeMode, string> = { system: "Match system", light: "Light", dark: "Dark" };
+
+const NO_COUNTS: Record<string, never> = {};
+
+const sameMailbox = (a: MailboxRef, b: MailboxRef) =>
+  a.accountId === b.accountId && a.labelId === b.labelId && (a.category ?? null) === (b.category ?? null);
 
 function activateOnKey(e: KeyboardEvent, run: () => void) {
   if (e.key === "Enter" || e.key === " ") {
@@ -46,14 +51,203 @@ function activateOnKey(e: KeyboardEvent, run: () => void) {
   }
 }
 
-export function Sidebar({ onManageAccounts }: { onManageAccounts?: () => void }) {
-  const mailbox = useUiStore((s) => s.mailbox);
-  const setMailbox = useUiStore((s) => s.setMailbox);
+/** The latest sync failure per account, cleared when that account next completes a sync. */
+function useSyncErrors(): Record<string, string> {
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let stopped = false;
+    const stops: (() => void)[] = [];
+    const keep = (stop: () => void) => (stopped ? stopQuietly(stop) : stops.push(stop));
+    const log = (err: unknown) => console.warn("sync event listener failed", err);
+    listen<SyncErrorEvent>(SYNC_EVENTS.error, ({ payload }) =>
+      setErrors((e) => ({ ...e, [payload.accountId]: payload.message })),
+    ).then(keep, log);
+    listen<SyncAccountEvent>(SYNC_EVENTS.completed, ({ payload }) =>
+      setErrors((e) => {
+        if (!(payload.accountId in e)) return e;
+        const rest = { ...e };
+        delete rest[payload.accountId];
+        return rest;
+      }),
+    ).then(keep, log);
+    return () => {
+      stopped = true;
+      stops.forEach(stopQuietly);
+    };
+  }, []);
+  return errors;
+}
+
+interface MailboxRowProps {
+  name: string;
+  icon: LucideIcon;
+  /** CSS custom property for the icon, selected tint and selected label. */
+  colorToken: string;
+  count: number;
+  /** Screen reader word for the count ("unread", "conversations"). */
+  unit: string;
+  target: MailboxRef;
+  /** A user label: neutral icon, optional Gmail color dot. */
+  labelColor?: string | null;
+  neutral?: boolean;
+}
+
+function MailboxRow({ name, icon: Icon, colorToken, count, unit, target, labelColor, neutral }: MailboxRowProps) {
+  const selected = useUiStore((s) => sameMailbox(s.mailbox, target));
+  const go = () => useUiStore.getState().setMailbox(target);
+  const text = formatCount(count);
+  return (
+    <ListRow
+      role="link"
+      tabIndex={0}
+      density="compact"
+      aria-label={name}
+      aria-description={text ? `${text} ${unit}` : undefined}
+      selected={selected}
+      className={cx("sidebar__row", neutral && "sidebar__row--neutral")}
+      style={{ "--row-color": `var(${colorToken})` } as CSSProperties}
+      leading={
+        <>
+          <Icon aria-hidden="true" />
+          {labelColor && (
+            <span className="sidebar__label-dot" style={{ backgroundColor: labelColor }} aria-hidden="true" />
+          )}
+        </>
+      }
+      title={name}
+      meta={text || undefined}
+      onClick={go}
+      onKeyDown={(e) => activateOnKey(e, go)}
+    />
+  );
+}
+
+function CategoryRows({ accountId }: { accountId: string }) {
+  const counts = useLabelStore((s) => s.categoryCounts[accountId] ?? NO_COUNTS);
+  return (
+    <>
+      {CATEGORIES.map((c) => (
+        <MailboxRow
+          key={c.labelId}
+          name={c.name}
+          icon={c.icon}
+          colorToken={c.colorToken}
+          count={counts[c.labelId] ?? 0}
+          unit="unread"
+          target={categoryMailbox(accountId, c.labelId)}
+        />
+      ))}
+    </>
+  );
+}
+
+function AccountSection({ account, accounts, error }: { account: AccountInfo; accounts: AccountInfo[]; error?: string }) {
+  const collapsed = useUiStore((s) => s.collapsedAccounts.includes(account.id));
+  const inboxUnread = useLabelStore((s) => s.categoryCounts[account.id]?.INBOX ?? 0);
+  const rowsId = useId();
+  const color = accountColorIndex(account.id, accounts);
+  const collapsedCount = collapsed ? formatCount(inboxUnread) : "";
+  return (
+    <div className="sidebar__group" role="group" aria-label={account.email}>
+      <button
+        type="button"
+        className="sidebar__account-header"
+        aria-expanded={!collapsed}
+        aria-controls={rowsId}
+        aria-description={error ? `Sync failed: ${error}` : undefined}
+        title={error ? `${account.email}\nSync failed: ${error}` : account.email}
+        onClick={() => useUiStore.getState().toggleAccountCollapsed(account.id)}
+      >
+        <span
+          className="sidebar__account-dot"
+          style={{ background: `var(--color-account-${color})` }}
+          aria-hidden="true"
+        />
+        <span className="sidebar__account-email">{account.email}</span>
+        {error && <TriangleAlert className="sidebar__account-warning" aria-hidden="true" />}
+        {collapsedCount && <span className="sidebar__account-count">{collapsedCount}</span>}
+        <ChevronRight className="sidebar__chevron" aria-hidden="true" />
+      </button>
+      <div id={rowsId} className="sidebar__group-rows" hidden={collapsed}>
+        {!collapsed && <CategoryRows accountId={account.id} />}
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  const id = useId();
+  return (
+    <section className="sidebar__section" aria-labelledby={id}>
+      <h2 id={id} className="sidebar__heading">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function Favorites({ accountId }: { accountId: string }) {
+  const counts = useLabelStore((s) => s.counts[accountId] ?? NO_COUNTS);
+  return (
+    <Section title="Favorites">
+      {FAVORITES.map((f) => (
+        <MailboxRow
+          key={f.labelId}
+          name={f.name}
+          icon={f.icon}
+          colorToken={f.colorToken}
+          count={counts[f.labelId]?.[f.count] ?? 0}
+          unit={f.count === "total" ? "conversations" : "unread"}
+          target={{ accountId, labelId: f.labelId }}
+        />
+      ))}
+    </Section>
+  );
+}
+
+function GmailLabels({ accountId }: { accountId: string }) {
+  const labels = useLabelStore((s) => s.userLabels(accountId));
+  const counts = useLabelStore((s) => s.counts[accountId] ?? NO_COUNTS);
+  if (labels.length === 0) return null;
+  return (
+    <Section title="Gmail">
+      {labels.map((l) => (
+        <MailboxRow
+          key={l.id}
+          name={l.name}
+          icon={Tag}
+          colorToken="--color-foreground"
+          neutral
+          labelColor={l.colorBackground}
+          count={counts[l.id]?.unread ?? 0}
+          unit="unread"
+          target={{ accountId, labelId: l.id }}
+        />
+      ))}
+    </Section>
+  );
+}
+
+export function Sidebar({ onManageAccounts, onAddAccount }: { onManageAccounts?: () => void; onAddAccount?: () => void }) {
+  const accounts = useAccountStore((s) => s.accounts);
+  const storedActive = useUiStore((s) => s.activeAccountId);
+  const allInboxes = useUiStore((s) => sameMailbox(s.mailbox, ALL_INBOXES));
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const allInboxUnread = useLabelStore((s) => s.allInboxUnread);
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
-  const account = useAccountStore((s) => s.accounts[0]);
+  const errors = useSyncErrors();
   const ModeIcon = MODE_ICON[mode];
+
+  const activeId = resolveActiveAccount(storedActive, accounts);
+  const active = accounts.find((a) => a.id === activeId);
+  const single = accounts.length === 1 ? accounts[0] : null;
+
+  // With one account there is no All Inboxes row, so its Primary stands in for it.
+  useEffect(() => {
+    if (single && allInboxes) useUiStore.getState().setMailbox(homeMailbox([single]));
+  }, [single, allInboxes]);
 
   const openThemeMenu = (e: MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -68,26 +262,6 @@ export function Sidebar({ onManageAccounts }: { onManageAccounts?: () => void })
     );
   };
 
-  // Interim rows (the stacked sidebar replaces them): each is one label across every account.
-  const row = (id: string, label: string, icon: ReactNode, unread: number) => {
-    const ref: MailboxRef = { accountId: null, labelId: id };
-    const active = mailbox.accountId === null && !mailbox.category && mailbox.labelId === id;
-    return (
-      <ListRow
-        key={id}
-        role="link"
-        tabIndex={0}
-        density="compact"
-        selected={active}
-        leading={icon}
-        title={label}
-        meta={unread > 0 ? <Badge count={unread} tone={active ? "accent" : "neutral"} /> : undefined}
-        onClick={() => setMailbox(ref)}
-        onKeyDown={(e) => activateOnKey(e, () => setMailbox(ref))}
-      />
-    );
-  };
-
   return (
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
@@ -96,23 +270,43 @@ export function Sidebar({ onManageAccounts }: { onManageAccounts?: () => void })
       </div>
 
       <nav className="sidebar__scroll" aria-label="Mailboxes">
-        <div className="sidebar__section">
-          {fixtureMailboxes.map((m) => {
-            const Icon = ICONS[m.icon];
-            return row(m.id, m.name, <Icon />, m.unread);
-          })}
-        </div>
-        <div className="sidebar__section">
-          <div className="sidebar__heading">Labels</div>
-          {fixtureLabels.map((l) => row(l.id, l.name, <Tag />, l.unread))}
-        </div>
+        <Section title="Inboxes">
+          {single ? (
+            <>
+              {errors[single.id] && (
+                <div className="sidebar__sync-error" role="status" title={errors[single.id]}>
+                  <TriangleAlert aria-hidden="true" />
+                  <span>Sync failed: {errors[single.id]}</span>
+                </div>
+              )}
+              <CategoryRows accountId={single.id} />
+            </>
+          ) : (
+            <>
+              <MailboxRow
+                name="All Inboxes"
+                icon={Mails}
+                colorToken="--color-accent"
+                count={allInboxUnread}
+                unit="unread"
+                target={ALL_INBOXES}
+              />
+              {accounts.map((a) => (
+                <AccountSection key={a.id} account={a} accounts={accounts} error={errors[a.id]} />
+              ))}
+            </>
+          )}
+        </Section>
+        {active && <Favorites accountId={active.id} />}
+        {active && <GmailLabels accountId={active.id} />}
       </nav>
 
       <div className="sidebar__footer">
-        <Avatar name={account?.displayName ?? account?.email ?? "Account"} email={account?.email} size="sm" />
-        <span className="sidebar__account" title={account?.email}>
-          {account?.email}
+        {active && <Avatar name={active.displayName ?? active.email} email={active.email} size="sm" />}
+        <span className="sidebar__account" title={active?.email}>
+          {active?.email}
         </span>
+        {onAddAccount && <IconButton label="Add account" icon={<UserPlus />} onClick={onAddAccount} />}
         {onManageAccounts && <IconButton label="Manage accounts" icon={<Settings />} onClick={onManageAccounts} />}
         <IconButton label={`Appearance: ${MODE_LABEL[mode]}`} icon={<ModeIcon />} onClick={openThemeMenu} />
       </div>

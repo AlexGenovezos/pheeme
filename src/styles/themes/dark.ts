@@ -89,6 +89,25 @@ export const darkTheme: ThemeDefinition = {
     "--color-avatar-5": "#987020",
     "--color-avatar-6": "#b5506e",
 
+    "--color-account-1": "#6ea6ee",
+    "--color-account-2": "#6cc98a",
+    "--color-account-3": "#eda05c",
+    "--color-account-4": "#b88ff0",
+    "--color-account-5": "#ee7b74",
+    "--color-account-6": "#e3c050",
+
+    "--color-mailbox-primary": "#7fb2f5",
+    "--color-mailbox-social": "#5fcfdd",
+    "--color-mailbox-promotions": "#7ed39b",
+    "--color-mailbox-updates": "#f3a96a",
+    "--color-mailbox-forums": "#c49cf2",
+    "--color-mailbox-starred": "#ecc95a",
+    "--color-mailbox-drafts": "#86c8f5",
+    "--color-mailbox-sent": "#9ee0a6",
+    "--color-mailbox-allmail": "#f09fd5",
+    "--color-mailbox-spam": "#f28c62",
+    "--color-mailbox-trash": "#f2827d",
+
     "--shadow-popover":
       "0 0 0 1px #ffffff0d, 0 2px 8px #00000066, 0 12px 32px -6px #00000099",
     "--shadow-overlay":

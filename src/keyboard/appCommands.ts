@@ -1,5 +1,6 @@
+import { CATEGORIES, categoryMailbox, FAVORITES, homeMailbox, resolveActiveAccount } from "../mail/mailboxes";
 import { usePaletteStore } from "../palette/paletteStore";
-import { fixtureMailboxes } from "../preview/fixtures";
+import { useAccountStore } from "../store/accountStore";
 import { useUiStore } from "../store/uiStore";
 import { useThemeStore } from "../theme/theme";
 import type { Command } from "./registry";
@@ -9,6 +10,9 @@ import { useCommands } from "./useCommands";
 export function appCommands(): Command[] {
   const theme = () => useThemeStore.getState();
   const ui = () => useUiStore.getState();
+  const accounts = () => useAccountStore.getState().accounts;
+  // Favorites and categories open in the account the sidebar is showing them for.
+  const activeAccount = () => resolveActiveAccount(ui().activeAccountId, accounts());
   return [
     {
       id: "palette.toggle",
@@ -19,15 +23,34 @@ export function appCommands(): Command[] {
       hidden: true,
       run: () => usePaletteStore.getState().toggle(),
     },
-    ...fixtureMailboxes
-      .filter((m) => m.goKey)
-      .map<Command>((m) => ({
-        id: `go.${m.id.toLowerCase()}`,
-        title: `Go to ${m.name}`,
-        group: "Navigation",
-        shortcut: `g ${m.goKey}`,
-        run: () => ui().setMailbox({ accountId: null, labelId: m.id }),
-      })),
+    {
+      id: "go.inbox",
+      title: "Go to Inbox",
+      group: "Navigation",
+      shortcut: "g i",
+      keywords: ["all inboxes"],
+      run: () => ui().setMailbox(homeMailbox(accounts())),
+    },
+    ...CATEGORIES.map<Command>((c) => ({
+      id: `go.category.${c.name.toLowerCase()}`,
+      title: `Go to ${c.name}`,
+      group: "Navigation",
+      keywords: ["inbox", "category"],
+      run: () => {
+        const id = activeAccount();
+        if (id) ui().setMailbox(categoryMailbox(id, c.labelId));
+      },
+    })),
+    ...FAVORITES.map<Command>((f) => ({
+      id: `go.${f.labelId.toLowerCase()}`,
+      title: `Go to ${f.name}`,
+      group: "Navigation",
+      shortcut: f.goKey ? `g ${f.goKey}` : undefined,
+      run: () => {
+        const id = activeAccount();
+        if (id) ui().setMailbox({ accountId: id, labelId: f.labelId });
+      },
+    })),
     {
       id: "view.toggleSidebar",
       title: "Toggle sidebar",

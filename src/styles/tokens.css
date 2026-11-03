@@ -56,6 +56,8 @@
   --focus-ring-offset: 1px;
   --focus-ring-inset: -2px;
   --selection-bar-width: 2px;
+  /* How much of a sidebar row's color tints its background when selected. */
+  --sidebar-selected-tint: 12%;
 
   /* Control and chrome sizes. */
   --titlebar-height: 44px;
@@ -68,6 +70,8 @@
   --avatar-size-sm: 20px;
   --avatar-size-md: 32px;
   --unread-dot-size: 7px;
+  --account-dot-size: 8px;
+  --label-dot-size: 6px;
   --badge-min-width: 18px;
   --kbd-min-width: 18px;
   --divider-hit-area: 7px;

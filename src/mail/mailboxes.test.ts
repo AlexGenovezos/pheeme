@@ -4,10 +4,12 @@ import {
   CATEGORIES,
   FAVORITES,
   formatCount,
+  homeMailbox,
   type MailboxRef,
   mailboxTitle,
   parseThreadKey,
   queryFor,
+  resolveActiveAccount,
   threadKey,
 } from "./mailboxes";
 
@@ -85,4 +87,17 @@ test("account colors follow list order, cycling through six", () => {
   expect(accountColorIndex("a6", accounts)).toBe(1);
   expect(accountColorIndex("a7", accounts)).toBe(2);
   expect(accountColorIndex("gone", accounts)).toBe(1);
+});
+
+test("the active account falls back to the first when unset or no longer connected", () => {
+  const accounts = [{ id: "a1" }, { id: "a2" }];
+  expect(resolveActiveAccount("a2", accounts)).toBe("a2");
+  expect(resolveActiveAccount(null, accounts)).toBe("a1");
+  expect(resolveActiveAccount("removed", accounts)).toBe("a1");
+  expect(resolveActiveAccount("a1", [])).toBeNull();
+});
+
+test("home is All Inboxes, or the only account's Primary", () => {
+  expect(homeMailbox([{ id: "a1" }, { id: "a2" }])).toEqual({ accountId: null, labelId: "INBOX" });
+  expect(homeMailbox([{ id: "a1" }])).toEqual({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" });
 });

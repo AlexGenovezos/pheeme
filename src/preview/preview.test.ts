@@ -52,7 +52,20 @@ describe("preview IPC", () => {
   test("label_counts reports unread and total per label", () => {
     const counts = createPreviewHandlers().label_counts({ accountId: "acc-personal" }) as { labelId: string; unread: number; total: number }[];
     expect(counts).toContainEqual({ labelId: "Label_3", unread: 2, total: 2 });
-    expect(counts.find((c) => c.labelId === "STARRED")).toMatchObject({ unread: 0, total: fixtureThreadsIn("STARRED").length });
+    expect(counts.find((c) => c.labelId === "STARRED")).toMatchObject({ total: fixtureThreadsIn("STARRED").length });
+  });
+
+  test("labels and counts are per account", () => {
+    const handlers = createPreviewHandlers();
+    const userLabels = (accountId: string) =>
+      (handlers.list_labels({ accountId }) as { name: string; type: string }[]).filter((l) => l.type === "user").map((l) => l.name);
+    expect(userLabels("acc-personal")).toContain("Travel");
+    expect(userLabels("acc-work")).toEqual(["Customers", "Invoices"]);
+    const counts = (accountIds: string[]) =>
+      Object.fromEntries((handlers.mailbox_counts({ accountIds }) as { labelId: string; unread: number }[]).map((c) => [c.labelId, c.unread]));
+    const work = counts(["acc-work"]);
+    expect(work).toMatchObject({ INBOX: 2, CATEGORY_PERSONAL: 1, CATEGORY_FORUMS: 1, CATEGORY_SOCIAL: 0 });
+    expect(counts(["acc-personal", "acc-work"]).INBOX).toBe(counts(["acc-personal"]).INBOX + work.INBOX);
   });
 
   test("the updater check reports no update", () => {

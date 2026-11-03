@@ -12,9 +12,13 @@ import { __resetMailStoreForTests } from "./store/mailStore";
 
 const account = { id: "a1", email: "me@example.com", displayName: "Me", clientId: "c.apps.googleusercontent.com" };
 const fixtureBackend = createPreviewHandlers();
-/** One account; threads come from the preview fixtures. */
+/** One account; threads come from the preview fixtures, whichever fixture account they belong to. */
 const backend = (cmd: string, args?: unknown) =>
-  cmd === "list_accounts" ? [account] : cmd === "list_threads" ? fixtureBackend.list_threads(args as never) : undefined;
+  cmd === "list_accounts"
+    ? [account]
+    : cmd === "list_threads"
+      ? fixtureBackend.list_threads({ ...(args as object), accountIds: [] })
+      : undefined;
 
 beforeEach(() => {
   localStorage.clear();
@@ -89,14 +93,14 @@ test("renders the three-pane shell with fixture mail", async () => {
   expect(screen.getByText("No conversation selected")).toBeInTheDocument();
 });
 
-test("g then i goes to the inbox; j selects the first conversation", async () => {
+test("g then i goes to the inbox (Primary, with one account); j selects the first conversation", async () => {
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
-  useUiStore.getState().setMailbox({ accountId: null, labelId: "SENT" });
+  act(() => useUiStore.getState().setMailbox({ accountId: "a1", labelId: "SENT" }));
   fireEvent.keyDown(window, { key: "g" });
   expect(screen.getByRole("status")).toHaveTextContent("Go to Inbox");
   fireEvent.keyDown(window, { key: "i" });
-  expect(useUiStore.getState().mailbox).toEqual({ accountId: null, labelId: "INBOX" });
+  expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" });
 
   const list = screen.getByRole("listbox", { name: "Inbox conversations" });
   await within(list).findAllByRole("option");
