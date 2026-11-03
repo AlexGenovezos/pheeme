@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint && node scripts/check-tokens.mjs",
+    "lint": "oxlint --deny-warnings && node scripts/check-tokens.mjs",
     "test": "vitest",
     "test:ci": "vitest run",
     "preview": "vite preview",
