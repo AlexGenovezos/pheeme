@@ -176,6 +176,7 @@ pub fn run() {
             commands::threads::trash_threads,
             commands::labels::list_labels,
             commands::labels::mailbox_counts,
+            commands::labels::label_counts,
             commands::sync::sync_now,
         ])
         .run(tauri::generate_context!())

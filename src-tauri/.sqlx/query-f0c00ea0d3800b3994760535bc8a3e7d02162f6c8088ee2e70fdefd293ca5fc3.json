@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT tl.label_id AS \"label_id!\", COUNT(*) AS \"count!: i64\"\n        FROM thread_labels tl\n        JOIN thread_labels u\n          ON u.account_id = tl.account_id AND u.thread_id = tl.thread_id AND u.label_id = 'UNREAD'\n        WHERE tl.account_id = ?\n        GROUP BY tl.label_id\n        ORDER BY tl.label_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "label_id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "count!: i64",
+        "ordinal": 1,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "f0c00ea0d3800b3994760535bc8a3e7d02162f6c8088ee2e70fdefd293ca5fc3"
+}

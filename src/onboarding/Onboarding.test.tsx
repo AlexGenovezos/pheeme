@@ -6,7 +6,7 @@ import { Onboarding } from "./Onboarding";
 import { loadProgress, saveProgress } from "./progress";
 
 const CLIENT_ID = "123-abc.apps.googleusercontent.com";
-const account: AccountInfo = { id: "a1", email: "me@example.com", displayName: null, clientId: CLIENT_ID };
+const account: AccountInfo = { id: "a1", email: "me@example.com", displayName: null, clientId: CLIENT_ID, synced: true };
 
 type Handler = (args: Record<string, unknown>) => unknown;
 

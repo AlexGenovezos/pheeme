@@ -216,10 +216,13 @@ pub struct ThreadCursor {
 pub struct ThreadQuery<'a> {
     /// One id is a per-account view; all ids is All Inboxes.
     pub account_ids: &'a [String],
-    /// Drives the index, e.g. "INBOX" or "CATEGORY_PRIMARY".
+    /// Drives the index, e.g. "INBOX" or "CATEGORY_SOCIAL".
     pub label_id: &'a str,
-    /// Intersection, e.g. Primary tab = CATEGORY_PRIMARY + INBOX.
+    /// Intersection, e.g. Social tab = INBOX + CATEGORY_SOCIAL.
     pub also_label_id: Option<&'a str>,
+    /// Threads carrying any of these labels are skipped (Primary = INBOX minus the other
+    /// categories). Empty = no filter.
+    pub exclude_label_ids: &'a [String],
     pub before: Option<&'a ThreadCursor>,
     pub limit: i64,
 }
@@ -252,10 +255,10 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
     if q.limit <= 0 {
         anyhow::bail!("thread list limit must be positive");
     }
-    let page_limit = q.limit as usize;
     let fetch_limit = q.limit.saturating_add(1);
 
     let account_ids = serde_json::to_string(q.account_ids)?;
+    let exclude = serde_json::to_string(q.exclude_label_ids)?;
 
     // Two queries rather than `?3 IS NULL OR (...) < (...)`: the plain row-value
     // comparison lets SQLite seek into `idx_thread_labels_listing` at the cursor.
@@ -277,12 +280,17 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
                 SELECT 1 FROM thread_labels x
                 WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id
                   AND x.label_id = ?3))
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = tl.account_id AND e.thread_id = tl.thread_id
+                  AND e.label_id IN (SELECT value FROM json_each(?4)))
         ORDER BY tl.last_message_date DESC, tl.account_id DESC, tl.thread_id DESC
-        LIMIT ?4
+        LIMIT ?5
         "#,
                 q.label_id,
                 account_ids,
                 q.also_label_id,
+                exclude,
                 fetch_limit,
             )
             .fetch_all(pool)
@@ -306,8 +314,12 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
                 SELECT 1 FROM thread_labels x
                 WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id
                   AND x.label_id = ?6))
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = tl.account_id AND e.thread_id = tl.thread_id
+                  AND e.label_id IN (SELECT value FROM json_each(?7)))
         ORDER BY tl.last_message_date DESC, tl.account_id DESC, tl.thread_id DESC
-        LIMIT ?7
+        LIMIT ?8
         "#,
                 q.label_id,
                 account_ids,
@@ -315,15 +327,90 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
                 c.account_id,
                 c.thread_id,
                 q.also_label_id,
+                exclude,
                 fetch_limit,
             )
             .fetch_all(pool)
             .await?
         }
     };
+    Ok(page_from_rows(rows, q.limit as usize))
+}
 
+/// Every thread not labelled `SPAM` or `TRASH` (the All Mail view), newest first with the
+/// same ordering and cursor as [`list_threads`]. Undated threads sort as date 0.
+pub async fn list_all_mail(
+    pool: &SqlitePool,
+    account_ids: &[String],
+    before: Option<&ThreadCursor>,
+    limit: i64,
+) -> Result<ThreadPage> {
+    if limit <= 0 {
+        anyhow::bail!("thread list limit must be positive");
+    }
+    let fetch_limit = limit.saturating_add(1);
+    let accounts = serde_json::to_string(account_ids)?;
+
+    let rows = match before {
+        None => {
+            sqlx::query_as!(
+                ThreadRow,
+                r#"
+        SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count AS "message_count!",
+               t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               t.from_name, t.from_address, t.is_starred AS "is_starred!",
+               COALESCE(t.last_message_date, 0) AS "cursor_date!: i64"
+        FROM threads t
+        WHERE t.account_id IN (SELECT value FROM json_each(?1))
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = t.account_id AND e.thread_id = t.id
+                  AND e.label_id IN ('SPAM', 'TRASH'))
+        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC
+        LIMIT ?2
+        "#,
+                accounts,
+                fetch_limit,
+            )
+            .fetch_all(pool)
+            .await?
+        }
+        Some(c) => {
+            sqlx::query_as!(
+                ThreadRow,
+                r#"
+        SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count AS "message_count!",
+               t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               t.from_name, t.from_address, t.is_starred AS "is_starred!",
+               COALESCE(t.last_message_date, 0) AS "cursor_date!: i64"
+        FROM threads t
+        WHERE t.account_id IN (SELECT value FROM json_each(?1))
+          AND (COALESCE(t.last_message_date, 0), t.account_id, t.id) < (?2, ?3, ?4)
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = t.account_id AND e.thread_id = t.id
+                  AND e.label_id IN ('SPAM', 'TRASH'))
+        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC
+        LIMIT ?5
+        "#,
+                accounts,
+                c.last_message_date,
+                c.account_id,
+                c.thread_id,
+                fetch_limit,
+            )
+            .fetch_all(pool)
+            .await?
+        }
+    };
+    Ok(page_from_rows(rows, limit as usize))
+}
+
+/// Trims the extra look-ahead row off `rows` and turns it into the next cursor.
+fn page_from_rows(mut rows: Vec<ThreadRow>, page_limit: usize) -> ThreadPage {
     let has_more = rows.len() > page_limit;
-    let mut rows = rows;
     rows.truncate(page_limit);
 
     let next = if has_more {
@@ -352,7 +439,7 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
             is_starred: r.is_starred,
         })
         .collect();
-    Ok(ThreadPage { threads, next })
+    ThreadPage { threads, next }
 }
 
 /// Inbox category labels, in tab order. `CATEGORY_PERSONAL` is the Primary tab.
@@ -479,8 +566,10 @@ pub async fn recompute_threads(
     Ok(result)
 }
 
-/// Unread thread counts across `account_ids` for `INBOX` and each inbox category tab
-/// (`INBOX ∩ CATEGORY_x`). Labels with no unread threads are omitted.
+/// Unread thread counts across `account_ids` for `INBOX` and each inbox category tab.
+/// A category is `INBOX ∩ CATEGORY_x`; `CATEGORY_PERSONAL` (Primary) is the unread inbox
+/// minus the other four categories, so an account without category labels still has its
+/// whole inbox under Primary. Labels with no unread threads are omitted.
 pub async fn unread_counts(
     pool: &SqlitePool,
     account_ids: &[String],
@@ -488,19 +577,56 @@ pub async fn unread_counts(
     let accounts = serde_json::to_string(account_ids)?;
     let rows = sqlx::query!(
         r#"
-        SELECT x.label_id AS "label_id!", COUNT(*) AS "count!: i64"
-        FROM thread_labels i
-        JOIN thread_labels u
-          ON u.account_id = i.account_id AND u.thread_id = i.thread_id AND u.label_id = 'UNREAD'
-        JOIN thread_labels x
-          ON x.account_id = i.account_id AND x.thread_id = i.thread_id
-         AND x.label_id IN ('INBOX', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL',
-                            'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS')
-        WHERE i.label_id = 'INBOX' AND i.account_id IN (SELECT value FROM json_each(?))
-        GROUP BY x.label_id
-        ORDER BY x.label_id
+        SELECT label_id AS "label_id!", COUNT(*) AS "count!: i64"
+        FROM (
+            SELECT x.label_id AS label_id
+            FROM thread_labels i
+            JOIN thread_labels u
+              ON u.account_id = i.account_id AND u.thread_id = i.thread_id AND u.label_id = 'UNREAD'
+            JOIN thread_labels x
+              ON x.account_id = i.account_id AND x.thread_id = i.thread_id
+             AND x.label_id IN ('INBOX', 'CATEGORY_SOCIAL',
+                                'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS')
+            WHERE i.label_id = 'INBOX' AND i.account_id IN (SELECT value FROM json_each(?1))
+            UNION ALL
+            SELECT 'CATEGORY_PERSONAL' AS label_id
+            FROM thread_labels i
+            JOIN thread_labels u
+              ON u.account_id = i.account_id AND u.thread_id = i.thread_id AND u.label_id = 'UNREAD'
+            WHERE i.label_id = 'INBOX' AND i.account_id IN (SELECT value FROM json_each(?1))
+              AND NOT EXISTS (
+                    SELECT 1 FROM thread_labels c
+                    WHERE c.account_id = i.account_id AND c.thread_id = i.thread_id
+                      AND c.label_id IN ('CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS',
+                                         'CATEGORY_UPDATES', 'CATEGORY_FORUMS'))
+        )
+        GROUP BY label_id
+        ORDER BY label_id
         "#,
         accounts
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.label_id, r.count)).collect())
+}
+
+/// Unread thread count per label id for one account, counted from the cached threads
+/// (not Gmail's own counters). Labels with no unread threads are omitted.
+pub async fn label_unread_counts(
+    pool: &SqlitePool,
+    account_id: &str,
+) -> Result<Vec<(String, i64)>> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT tl.label_id AS "label_id!", COUNT(*) AS "count!: i64"
+        FROM thread_labels tl
+        JOIN thread_labels u
+          ON u.account_id = tl.account_id AND u.thread_id = tl.thread_id AND u.label_id = 'UNREAD'
+        WHERE tl.account_id = ?
+        GROUP BY tl.label_id
+        ORDER BY tl.label_id
+        "#,
+        account_id
     )
     .fetch_all(pool)
     .await?;
@@ -577,6 +703,7 @@ mod tests {
             account_ids,
             label_id: "INBOX",
             also_label_id: None,
+            exclude_label_ids: &[],
             before,
             limit,
         }
@@ -596,8 +723,12 @@ mod tests {
                 SELECT 1 FROM thread_labels x
                 WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id
                   AND x.label_id = ?3))
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = tl.account_id AND e.thread_id = tl.thread_id
+                  AND e.label_id IN (SELECT value FROM json_each(?4)))
         ORDER BY tl.last_message_date DESC, tl.account_id DESC, tl.thread_id DESC
-        LIMIT ?4
+        LIMIT ?5
         "#;
 
     const CURSOR_PAGE_SQL: &str = r#"
@@ -615,8 +746,12 @@ mod tests {
                 SELECT 1 FROM thread_labels x
                 WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id
                   AND x.label_id = ?6))
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = tl.account_id AND e.thread_id = tl.thread_id
+                  AND e.label_id IN (SELECT value FROM json_each(?7)))
         ORDER BY tl.last_message_date DESC, tl.account_id DESC, tl.thread_id DESC
-        LIMIT ?7
+        LIMIT ?8
         "#;
 
     /// Pages through the whole listing, returning `(account_id, id)` pairs.
@@ -817,6 +952,7 @@ mod tests {
                 account_ids: &accounts,
                 label_id: "CATEGORY_PRIMARY",
                 also_label_id: Some("INBOX"),
+                exclude_label_ids: &[],
                 before: None,
                 limit: 50,
             },
@@ -852,6 +988,7 @@ mod tests {
             .bind("INBOX")
             .bind(account_ids)
             .bind(None::<&str>)
+            .bind("[]")
             .bind(10_i64)
             .fetch_all(pool)
             .await
@@ -870,6 +1007,7 @@ mod tests {
             .bind("zz")
             .bind("zz")
             .bind(None::<&str>)
+            .bind("[]")
             .bind(10_i64)
             .fetch_all(pool)
             .await
@@ -980,6 +1118,7 @@ mod tests {
             account_ids: &accounts,
             label_id: "CATEGORY_PRIMARY",
             also_label_id: Some("INBOX"),
+            exclude_label_ids: &[],
             before: None,
             limit,
         };
@@ -1013,6 +1152,7 @@ mod tests {
                 account_ids: &accounts,
                 label_id: "CATEGORY_PRIMARY",
                 also_label_id: Some("INBOX"),
+                exclude_label_ids: &[],
                 before: None,
                 limit: 1,
             },
@@ -1099,5 +1239,204 @@ mod tests {
 
         assert!(page.threads.is_empty());
         assert_eq!(page.next, None);
+    }
+
+    const OTHERS: [&str; 4] = [
+        "CATEGORY_SOCIAL",
+        "CATEGORY_PROMOTIONS",
+        "CATEGORY_UPDATES",
+        "CATEGORY_FORUMS",
+    ];
+
+    /// Pages through INBOX with `exclude`, returning the thread ids.
+    async fn inbox_excluding(pool: &SqlitePool, exclude: &[String], limit: i64) -> Vec<String> {
+        let accounts = labels(&["a1"]);
+        let mut out = vec![];
+        let mut cursor: Option<ThreadCursor> = None;
+        loop {
+            let page = list_threads(
+                pool,
+                &ThreadQuery {
+                    account_ids: &accounts,
+                    label_id: "INBOX",
+                    also_label_id: None,
+                    exclude_label_ids: exclude,
+                    before: cursor.as_ref(),
+                    limit,
+                },
+            )
+            .await
+            .unwrap();
+            out.extend(page.threads.into_iter().map(|t| t.id));
+            match page.next {
+                Some(next) => cursor = Some(next),
+                None => return out,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn primary_excludes_other_categories() {
+        let pool = seeded_pool().await;
+        seed(&pool, "a1", "plain", Some(300), &["INBOX"]).await;
+        seed(
+            &pool,
+            "a1",
+            "personal",
+            Some(200),
+            &["INBOX", "CATEGORY_PERSONAL"],
+        )
+        .await;
+        seed(
+            &pool,
+            "a1",
+            "social",
+            Some(100),
+            &["INBOX", "CATEGORY_SOCIAL"],
+        )
+        .await;
+
+        let exclude = labels(&OTHERS);
+        assert_eq!(
+            inbox_excluding(&pool, &exclude, 50).await,
+            vec!["plain", "personal"]
+        );
+        // One row per page exercises the cursor variant of the query.
+        assert_eq!(
+            inbox_excluding(&pool, &exclude, 1).await,
+            vec!["plain", "personal"]
+        );
+        assert_eq!(
+            inbox_excluding(&pool, &[], 50).await,
+            vec!["plain", "personal", "social"]
+        );
+    }
+
+    #[tokio::test]
+    async fn primary_count_matches_inbox_without_categories() {
+        let pool = seeded_pool().await;
+        seed(&pool, "a1", "t1", Some(200), &["INBOX", "UNREAD"]).await;
+        seed(&pool, "a1", "t2", Some(100), &["INBOX", "UNREAD"]).await;
+        seed(&pool, "a1", "t3", Some(50), &["INBOX"]).await;
+        seed(
+            &pool,
+            "a1",
+            "t4",
+            Some(40),
+            &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"],
+        )
+        .await;
+
+        let counts = unread_counts(&pool, &labels(&["a1"])).await.unwrap();
+        let count = |id: &str| counts.iter().find(|(l, _)| l == id).map(|(_, n)| *n);
+        assert_eq!(count("CATEGORY_PERSONAL"), Some(2));
+        assert_eq!(count("INBOX"), Some(3));
+        assert_eq!(count("CATEGORY_PROMOTIONS"), Some(1));
+
+        // Without any category labels Primary is the whole inbox.
+        let pool = seeded_pool().await;
+        seed(&pool, "a1", "t1", Some(200), &["INBOX", "UNREAD"]).await;
+        seed(&pool, "a1", "t2", Some(100), &["INBOX", "UNREAD"]).await;
+        let counts = unread_counts(&pool, &labels(&["a1"])).await.unwrap();
+        assert_eq!(
+            counts,
+            vec![("CATEGORY_PERSONAL".to_owned(), 2), ("INBOX".to_owned(), 2)]
+        );
+    }
+
+    #[tokio::test]
+    async fn all_mail_skips_spam_and_trash_and_pages() {
+        let pool = seeded_pool().await;
+        seed(&pool, "a1", "t1", Some(500), &["INBOX"]).await;
+        seed(&pool, "a2", "t2", Some(400), &["CATEGORY_PROMOTIONS"]).await;
+        seed(&pool, "a1", "spam", Some(450), &["SPAM"]).await;
+        seed(&pool, "a2", "trash", Some(350), &["TRASH"]).await;
+        seed(&pool, "a1", "t3", Some(300), &[]).await;
+        seed(&pool, "a1", "t4", Some(200), &["SENT"]).await;
+
+        let accounts = labels(&["a1", "a2"]);
+        let first = list_all_mail(&pool, &accounts, None, 2).await.unwrap();
+        let ids = |p: &ThreadPage| -> Vec<(String, String)> {
+            p.threads
+                .iter()
+                .map(|t| (t.account_id.clone(), t.id.clone()))
+                .collect()
+        };
+        assert_eq!(ids(&first), vec![pair("a1", "t1"), pair("a2", "t2")]);
+        let cursor = first.next.clone().expect("more rows");
+        let second = list_all_mail(&pool, &accounts, Some(&cursor), 2)
+            .await
+            .unwrap();
+        assert_eq!(ids(&second), vec![pair("a1", "t3"), pair("a1", "t4")]);
+        assert_eq!(second.next, None);
+
+        // One account only.
+        let only = list_all_mail(&pool, &labels(&["a2"]), None, 10)
+            .await
+            .unwrap();
+        assert_eq!(ids(&only), vec![pair("a2", "t2")]);
+
+        assert!(list_all_mail(&pool, &accounts, None, 0).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn all_mail_cursor_is_stable_across_accounts_and_ties() {
+        let pool = seeded_pool().await;
+        for a in ["a1", "a2"] {
+            for i in 1..=3 {
+                seed(&pool, a, &format!("t{i}"), Some(500), &["INBOX"]).await;
+            }
+        }
+        seed(&pool, "a1", "undated", None, &[]).await;
+
+        let accounts = labels(&["a1", "a2"]);
+        let mut got = vec![];
+        let mut cursor: Option<ThreadCursor> = None;
+        loop {
+            let page = list_all_mail(&pool, &accounts, cursor.as_ref(), 2)
+                .await
+                .unwrap();
+            got.extend(page.threads.into_iter().map(|t| (t.account_id, t.id)));
+            match page.next {
+                Some(next) => cursor = Some(next),
+                None => break,
+            }
+        }
+        assert_eq!(
+            got,
+            vec![
+                pair("a2", "t3"),
+                pair("a2", "t2"),
+                pair("a2", "t1"),
+                pair("a1", "t3"),
+                pair("a1", "t2"),
+                pair("a1", "t1"),
+                pair("a1", "undated"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn label_unread_counts_per_label() {
+        let pool = seeded_pool().await;
+        seed(&pool, "a1", "t1", Some(300), &["Label_1", "UNREAD"]).await;
+        seed(&pool, "a1", "t2", Some(200), &["Label_1"]).await;
+        seed(
+            &pool,
+            "a1",
+            "t3",
+            Some(100),
+            &["INBOX", "Label_2", "UNREAD"],
+        )
+        .await;
+        // Another account's unread mail doesn't leak in.
+        seed(&pool, "a2", "t4", Some(100), &["Label_1", "UNREAD"]).await;
+
+        let counts = label_unread_counts(&pool, "a1").await.unwrap();
+        let count = |id: &str| counts.iter().find(|(l, _)| l == id).map(|(_, n)| *n);
+        assert_eq!(count("Label_1"), Some(1));
+        assert_eq!(count("Label_2"), Some(1));
+        assert_eq!(count("INBOX"), Some(1));
+        assert!(counts.contains(&("Label_1".to_owned(), 1)));
     }
 }

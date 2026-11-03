@@ -36,6 +36,23 @@ describe("preview IPC", () => {
     await expect(invoke("greet", { name: "Alex" })).resolves.toContain("Alex");
   });
 
+  test("list_threads honours All Mail and the category tabs", () => {
+    const handlers = createPreviewHandlers();
+    const ids = (args: Record<string, unknown>) => (handlers.list_threads(args) as { threads: { id: string }[] }).threads.map((t) => t.id);
+    expect(ids({ accountIds: [], labelId: "ALL" })).toEqual(fixtureThreadsIn("ALL").map((t) => t.id));
+    const inbox = ids({ accountIds: [], labelId: "INBOX" });
+    const primary = ids({ accountIds: [], labelId: "INBOX", alsoLabelId: "CATEGORY_PERSONAL" });
+    const updates = ids({ accountIds: [], labelId: "INBOX", alsoLabelId: "CATEGORY_UPDATES" });
+    expect(updates.length).toBeGreaterThan(0);
+    expect(primary.length).toBeGreaterThan(0);
+    expect(primary.some((id) => updates.includes(id))).toBe(false);
+    expect(inbox.length).toBeGreaterThan(primary.length);
+  });
+
+  test("label_counts reports unread labels", () => {
+    expect(createPreviewHandlers().label_counts({ accountId: "acc-personal" })).toContainEqual({ labelId: "Label_3", unread: 2 });
+  });
+
   test("the updater check reports no update", () => {
     expect(handlePreviewCommand("plugin:updater|check")).toBeNull();
   });

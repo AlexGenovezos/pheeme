@@ -19,6 +19,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub const DEFAULT_PAGE: i64 = 50;
+
+/// `label_id` that lists every thread not in Spam or Trash.
+pub const ALL_MAIL: &str = "ALL";
+/// The Primary tab is `INBOX` minus these (Gmail's own id for Primary is `CATEGORY_PERSONAL`).
+pub const OTHER_CATEGORIES: [&str; 4] = [
+    "CATEGORY_SOCIAL",
+    "CATEGORY_PROMOTIONS",
+    "CATEGORY_UPDATES",
+    "CATEGORY_FORUMS",
+];
+const PRIMARY_CATEGORY: &str = "CATEGORY_PERSONAL";
 pub const MAX_PAGE: i64 = 500;
 
 #[derive(Debug, thiserror::Error)]
@@ -286,7 +297,9 @@ impl MailService {
     }
 
     /// Threads under `label_id` (and `also_label_id`, for a category tab) across
-    /// `account_ids`, newest first.
+    /// `account_ids`, newest first. `label_id == ALL_MAIL` lists everything outside
+    /// Spam and Trash; `also_label_id == CATEGORY_PERSONAL` lists `label_id` minus the
+    /// other categories, so accounts without category labels still show their inbox.
     pub async fn list_threads(
         &self,
         account_ids: &[String],
@@ -300,17 +313,29 @@ impl MailService {
             account_id: c.account_id,
             thread_id: c.thread_id,
         });
-        let page = threads::list_threads(
-            &self.db,
-            &ThreadQuery {
-                account_ids,
-                label_id,
-                also_label_id,
-                before: before.as_ref(),
-                limit: limit.unwrap_or(DEFAULT_PAGE).clamp(1, MAX_PAGE),
-            },
-        )
-        .await?;
+        let limit = limit.unwrap_or(DEFAULT_PAGE).clamp(1, MAX_PAGE);
+        let page = if label_id == ALL_MAIL {
+            threads::list_all_mail(&self.db, account_ids, before.as_ref(), limit).await?
+        } else {
+            let primary = also_label_id == Some(PRIMARY_CATEGORY);
+            let exclude: Vec<String> = if primary {
+                OTHER_CATEGORIES.iter().map(|l| (*l).to_owned()).collect()
+            } else {
+                Vec::new()
+            };
+            threads::list_threads(
+                &self.db,
+                &ThreadQuery {
+                    account_ids,
+                    label_id,
+                    also_label_id: if primary { None } else { also_label_id },
+                    exclude_label_ids: &exclude,
+                    before: before.as_ref(),
+                    limit,
+                },
+            )
+            .await?
+        };
         Ok(ThreadPageDto {
             threads: page.threads.into_iter().map(Into::into).collect(),
             next: page.next.map(|c| ThreadCursorDto {
@@ -382,6 +407,15 @@ impl MailService {
     /// Unread conversations in Inbox and each category tab, across `account_ids`.
     pub async fn mailbox_counts(&self, account_ids: &[String]) -> Result<Vec<CountDto>, MailError> {
         Ok(threads::unread_counts(&self.db, account_ids)
+            .await?
+            .into_iter()
+            .map(|(label_id, unread)| CountDto { label_id, unread })
+            .collect())
+    }
+
+    /// Unread conversations per label of one account, counted from the cache.
+    pub async fn label_counts(&self, account_id: &str) -> Result<Vec<CountDto>, MailError> {
+        Ok(threads::label_unread_counts(&self.db, account_id)
             .await?
             .into_iter()
             .map(|(label_id, unread)| CountDto { label_id, unread })
@@ -732,6 +766,78 @@ mod tests {
             mail.modify_threads("a1", &[], &[], &["INBOX".into()]).await,
             Err(MailError::Invalid(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn list_threads_dispatches_all_mail_and_primary_and_counts_labels() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::init_db(dir.path()).await.unwrap();
+        accounts::insert_account(
+            &pool,
+            &DbAccount {
+                id: "a1".into(),
+                email: "me@example.com".into(),
+                display_name: None,
+                profile_photo_url: None,
+                client_id: "c".into(),
+                history_id: None,
+                created_at: 0,
+                updated_at: 0,
+            },
+        )
+        .await
+        .unwrap();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"]));
+        fake.seed(FakeMsg::new(
+            "m2",
+            "t2",
+            &["INBOX", "CATEGORY_PERSONAL", "UNREAD"],
+        ));
+        fake.seed(FakeMsg::new("m3", "t3", &["INBOX", "CATEGORY_SOCIAL"]));
+        fake.seed(FakeMsg::new("m4", "t4", &["SPAM", "UNREAD"]));
+        fake.seed(FakeMsg::new(
+            "m5",
+            "t5",
+            &["INBOX", "CATEGORY_UPDATES", "Label_1", "UNREAD"],
+        ));
+        let events = Arc::new(RecordingEvents::default());
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            events,
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(pool, sync, dir.path().join("cache"));
+        let accounts = ["a1".to_owned()];
+        let ids = |page: ThreadPageDto| {
+            let mut ids: Vec<String> = page.threads.into_iter().map(|t| t.id).collect();
+            ids.sort();
+            ids
+        };
+
+        let primary = mail
+            .list_threads(&accounts, "INBOX", Some("CATEGORY_PERSONAL"), None, None)
+            .await
+            .unwrap();
+        assert_eq!(ids(primary), ["t1", "t2"]);
+        let social = mail
+            .list_threads(&accounts, "INBOX", Some("CATEGORY_SOCIAL"), None, None)
+            .await
+            .unwrap();
+        assert_eq!(ids(social), ["t3"]);
+        let all = mail
+            .list_threads(&accounts, ALL_MAIL, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(ids(all), ["t1", "t2", "t3", "t5"]);
+
+        let counts = mail.label_counts("a1").await.unwrap();
+        let count = |id: &str| counts.iter().find(|c| c.label_id == id).map(|c| c.unread);
+        assert_eq!(count("INBOX"), Some(3));
+        assert_eq!(count("Label_1"), Some(1));
+        assert_eq!(count("CATEGORY_SOCIAL"), None);
     }
 
     #[tokio::test]

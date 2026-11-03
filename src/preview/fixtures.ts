@@ -30,6 +30,8 @@ export interface FixtureThread {
   id: string;
   accountId: string;
   mailbox: string;
+  /** Inbox category label; none means Primary. */
+  category?: "CATEGORY_SOCIAL" | "CATEGORY_PROMOTIONS" | "CATEGORY_UPDATES" | "CATEGORY_FORUMS";
   fromName: string;
   fromAddress: string;
   subject: string;
@@ -89,6 +91,7 @@ export const fixtureThreads: FixtureThread[] = [
   }),
   thread({
     id: "t-02",
+    category: "CATEGORY_UPDATES",
     fromName: "GitHub",
     fromAddress: "notifications@github.com",
     subject: "[pheeme] CI passed on feat/app-shell",
@@ -114,6 +117,7 @@ export const fixtureThreads: FixtureThread[] = [
   }),
   thread({
     id: "t-04",
+    category: "CATEGORY_UPDATES",
     fromName: "Tessellate Bank",
     fromAddress: "statements@tessellate.example",
     subject: "Your October statement is ready",
@@ -139,6 +143,7 @@ export const fixtureThreads: FixtureThread[] = [
   }),
   thread({
     id: "t-06",
+    category: "CATEGORY_UPDATES",
     fromName: "Hetzner Online",
     fromAddress: "billing@hetzner.example",
     subject: "Invoice R0042817",
@@ -163,6 +168,7 @@ export const fixtureThreads: FixtureThread[] = [
   }),
   thread({
     id: "t-08",
+    category: "CATEGORY_PROMOTIONS",
     fromName: "Google Cloud",
     fromAddress: "cloud-noreply@google.com",
     subject: "OAuth consent screen verification",
@@ -175,6 +181,7 @@ export const fixtureThreads: FixtureThread[] = [
   }),
   thread({
     id: "t-09",
+    category: "CATEGORY_SOCIAL",
     fromName: "Ana Ribeiro",
     fromAddress: "ana@ribeiro.pt",
     subject: "Dinner list",
@@ -213,8 +220,13 @@ export const fixtureThreads: FixtureThread[] = [
   }),
 ];
 
-export const fixtureThreadsIn = (mailbox: string): FixtureThread[] => {
-  if (mailbox === "ALL") return fixtureThreads;
-  if (mailbox === "STARRED") return fixtureThreads.filter((t) => t.starred);
-  return fixtureThreads.filter((t) => t.mailbox === mailbox);
+export const fixtureThreadsIn = (mailbox: string, category?: string | null): FixtureThread[] => {
+  let threads: FixtureThread[];
+  if (mailbox === "ALL") threads = fixtureThreads;
+  else if (mailbox === "STARRED") threads = fixtureThreads.filter((t) => t.starred);
+  else threads = fixtureThreads.filter((t) => t.mailbox === mailbox);
+  // Primary (CATEGORY_PERSONAL) is the mailbox minus the other categories, as in the backend.
+  if (category === "CATEGORY_PERSONAL") return threads.filter((t) => !t.category);
+  if (category) return threads.filter((t) => t.category === category);
+  return threads;
 };

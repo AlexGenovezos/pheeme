@@ -90,11 +90,14 @@ pub struct AccountInfo {
     pub email: String,
     pub display_name: Option<String>,
     pub client_id: String,
+    /// The first sync has finished (Gmail's history id is known), so the cache is usable.
+    pub synced: bool,
 }
 
 impl From<DbAccount> for AccountInfo {
     fn from(account: DbAccount) -> Self {
         Self {
+            synced: account.history_id.is_some(),
             id: account.id,
             email: account.email,
             display_name: account.display_name,
@@ -627,6 +630,27 @@ mod tests {
         assert_eq!(
             h.secrets.get(&second.id).unwrap().unwrap().refresh_token,
             "refresh-2"
+        );
+    }
+
+    #[tokio::test]
+    async fn account_info_reports_synced() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+        assert!(
+            !account.synced,
+            "a new account hasn't finished its first sync"
+        );
+
+        db_accounts::update_history_id(&h.service.db, &account.id, "42", 1)
+            .await
+            .unwrap();
+        let listed = h.service.list_accounts().await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert!(
+            listed[0].synced,
+            "a history id means the first sync is done"
         );
     }
 

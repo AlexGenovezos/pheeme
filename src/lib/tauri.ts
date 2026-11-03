@@ -8,6 +8,8 @@ export interface AccountInfo {
   email: string;
   displayName: string | null;
   clientId: string;
+  /** The first sync has finished, so the cache is usable; false shows skeletons. */
+  synced: boolean;
 }
 
 export type ClientChoice =
@@ -78,7 +80,10 @@ export interface ThreadPage {
 export interface ThreadQuery {
   accountIds: string[];
   labelId: string;
-  /** Second label the thread must also carry (e.g. INBOX ∩ CATEGORY_SOCIAL). */
+  /**
+   * Second label the thread must also carry (e.g. INBOX ∩ CATEGORY_SOCIAL). `CATEGORY_PERSONAL`
+   * (Primary) means the label minus the other four categories. `labelId: "ALL"` is All Mail.
+   */
   alsoLabelId?: string | null;
 }
 
@@ -147,6 +152,8 @@ export const getThread = (accountId: string, threadId: string) =>
   invoke<ThreadDetail>("get_thread", { accountId, threadId });
 export const listLabels = (accountId: string) => invoke<LabelInfo[]>("list_labels", { accountId });
 export const mailboxCounts = (accountIds: string[]) => invoke<MailboxCount[]>("mailbox_counts", { accountIds });
+/** Unread conversations per label of one account, counted from the local cache. */
+export const labelCounts = (accountId: string) => invoke<MailboxCount[]>("label_counts", { accountId });
 export const modifyThreads = (accountId: string, threadIds: string[], add: string[], remove: string[]) =>
   invoke<void>("modify_threads", { accountId, threadIds, add, remove });
 export const trashThreads = (accountId: string, threadIds: string[]) =>

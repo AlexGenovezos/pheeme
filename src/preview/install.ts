@@ -26,19 +26,23 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   const params = new URLSearchParams(search);
   const accounts: AccountInfo[] = params.get("accounts") === "0" ? [] : fixtureAccounts
     .slice(0, params.get("accounts") === "1" ? 1 : undefined)
-    .map((account) => ({ ...account, clientId: "1.apps.googleusercontent.com" }));
+    .map((account) => ({ ...account, clientId: "1.apps.googleusercontent.com", synced: true }));
   const flows = new Set<string>();
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
     list_labels: () => [...fixtureMailboxes, ...fixtureLabels],
-    list_threads: (args): ThreadPage => ({ threads: fixtureThreadsIn(String(args?.labelId ?? "INBOX")).map(toSummary), next: null }),
+    list_threads: (args): ThreadPage => ({
+      threads: fixtureThreadsIn(String(args?.labelId ?? "INBOX"), args?.alsoLabelId ? String(args.alsoLabelId) : null).map(toSummary),
+      next: null,
+    }),
     get_thread: (args) => {
       const t = fixtureThreads.find((f) => f.id === args?.threadId);
       if (!t) throw { code: "not_found", message: "That conversation isn't on this device." };
       return threadDetail(t);
     },
     mailbox_counts: () => fixtureMailboxes.map((m) => ({ labelId: m.id, unread: m.unread })),
+    label_counts: () => [...fixtureMailboxes, ...fixtureLabels].filter((l) => l.unread > 0).map((l) => ({ labelId: l.id, unread: l.unread })),
     sync_now: () => undefined,
     modify_threads: () => undefined,
     trash_threads: () => undefined,
@@ -54,7 +58,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       const fail = params.get("fail");
       if (fail) throw { code: fail, message: `Mock failure: ${fail}.` };
       const account = accounts.find((a) => a.email === "you@example.com") ?? {
-        id: crypto.randomUUID(), email: "you@example.com", displayName: "You", clientId: "1.apps.googleusercontent.com",
+        id: crypto.randomUUID(), email: "you@example.com", displayName: "You", clientId: "1.apps.googleusercontent.com", synced: true,
       };
       if (!accounts.includes(account)) accounts.push(account);
       return account;
