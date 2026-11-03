@@ -81,6 +81,7 @@
   --palette-offset-top: 14vh;
   --toast-width: 340px;
   --chord-hint-offset: 12px;
+  --brand-mark-size: 48px;
 
   /* Motion: short and calm; zeroed under prefers-reduced-motion. */
   --duration-fast: 100ms;

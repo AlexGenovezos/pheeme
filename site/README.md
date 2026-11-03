@@ -49,6 +49,8 @@ Edit the geometry or colors at the top of `scripts/build-brand.mjs`, then run:
 node scripts/build-brand.mjs
 ```
 
+It also writes the desktop app's icon source (`../src-tauri/app-icon.svg`), favicon and mark (`../public/`). After changing the logo, run `npm run icons` from the repo root to regenerate the app's platform icons.
+
 It needs `magick` (ImageMagick), `zip`, and a Playwright `chrome-headless-shell` (or set `CHROME=/path/to/chrome`). The wordmark is Poppins SemiBold outlined to a path by `scripts/wordmark.py`, so it doesn't depend on the font. Site type is Instrument Sans and Martian Mono (both SIL OFL), self-hosted in `public/fonts`.
 
 ## Statue art and license
