@@ -1,30 +1,58 @@
-import { Archive, Forward, MailOpen, MoreHorizontal, Reply, Star, Trash2 } from "lucide-react";
-import type { MouseEvent } from "react";
-import { Avatar } from "../components/ui/Avatar";
+import {
+  Archive,
+  Forward,
+  Mail,
+  MailOpen,
+  MoreHorizontal,
+  Reply,
+  Star,
+  Trash2,
+} from "lucide-react";
+import { type MouseEvent, useMemo } from "react";
 import { IconButton } from "../components/ui/IconButton";
-import { Kbd } from "../components/ui/Kbd";
 import { showContextMenu } from "../lib/contextMenu";
-import { formatFullDate } from "../lib/dates";
-import { fixtureThreads } from "../preview/fixtures";
-import { isPreview } from "../preview/runtime";
+import {
+  archive,
+  composeLater,
+  openLabelMenu,
+  setRead,
+  targetsOf,
+  toggleStar,
+  trash,
+} from "../mail/actions";
+import { threadKey } from "../mail/mailboxes";
+import { ThreadView } from "../mail/ThreadView";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
-import { notYet, senderOf } from "./ListPane";
+import { notYet } from "./ListPane";
 
 export function ViewPane() {
-  const selectedId = useUiStore((s) => s.selectedThreadId);
-  const summary = useMailStore((s) => s.threads.find((t) => t.id === selectedId));
-  // Preview mode has full fixture bodies; real threads show their summary until the Phase 6 thread view.
-  const fixture = isPreview() ? fixtureThreads.find((t) => t.id === selectedId) : undefined;
-  const thread = fixture ?? summary;
-  const off = !thread;
+  const openKey = useUiStore((s) => s.openThread);
+  const checked = useUiStore((s) => s.checked);
+  const threads = useMailStore((s) => s.threads);
+  const off = !openKey; // Reply and Forward need an open conversation
+  // What the mutations act on (the checked rows, else the open one) that is still in the list. Rows that have
+  // left it (archived elsewhere) are skipped by the actions, so with none left the buttons stay off.
+  // In target order, so the first is the one `toggleStar` (and `s`) decides from.
+  const rows = useMemo(() => {
+    const byKey = new Map(threads.map((t) => [threadKey(t.accountId, t.id), t]));
+    return [...new Set(targetsOf(checked, openKey))].flatMap((k) => byKey.get(k) ?? []);
+  }, [checked, openKey, threads]);
+  const stale = rows.length === 0;
+  const anyUnread = rows.some((t) => t.unread);
+  const starred = rows[0]?.starred ?? false;
 
   const openMore = (e: MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     void showContextMenu(
       [
-        { id: "label", label: "Label as…", shortcut: "l", onSelect: () => notYet("Labels") },
+        {
+          id: "label",
+          label: "Label as…",
+          shortcut: "l",
+          onSelect: () => void openLabelMenu({ x: r.left, y: r.bottom }),
+        },
         { id: "move", label: "Move to…", shortcut: "v", onSelect: () => notYet("Move") },
         { type: "separator" },
         { id: "original", label: "Show original", onSelect: () => notYet("Show original") },
@@ -40,29 +68,29 @@ export function ViewPane() {
           label="Archive"
           shortcut="e"
           icon={<Archive />}
-          disabled={off}
-          onClick={() => notYet("Archive")}
+          disabled={stale}
+          onClick={() => void archive()}
         />
         <IconButton
           label="Delete"
           shortcut="#"
           icon={<Trash2 />}
-          disabled={off}
-          onClick={() => notYet("Delete")}
+          disabled={stale}
+          onClick={() => void trash()}
         />
         <IconButton
-          label="Mark as unread"
-          shortcut="shift+u"
-          icon={<MailOpen />}
-          disabled={off}
-          onClick={() => notYet("Mark as unread")}
+          label={anyUnread ? "Mark as read" : "Mark as unread"}
+          shortcut={anyUnread ? "shift+i" : "shift+u"}
+          icon={anyUnread ? <Mail /> : <MailOpen />}
+          disabled={stale}
+          onClick={() => void setRead(anyUnread)}
         />
         <IconButton
-          label="Star"
+          label={starred ? "Remove star" : "Star"}
           shortcut="s"
           icon={<Star />}
-          disabled={off}
-          onClick={() => notYet("Star")}
+          disabled={stale}
+          onClick={() => void toggleStar()}
         />
         <span className="toolbar__separator" />
         <IconButton
@@ -70,54 +98,25 @@ export function ViewPane() {
           shortcut="r"
           icon={<Reply />}
           disabled={off}
-          onClick={() => notYet("Reply")}
+          onClick={composeLater}
         />
         <IconButton
           label="Forward"
           shortcut="f"
           icon={<Forward />}
           disabled={off}
-          onClick={() => notYet("Forward")}
+          onClick={composeLater}
         />
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton
           label="More actions"
           icon={<MoreHorizontal />}
-          disabled={off}
+          disabled={stale}
           onClick={openMore}
         />
       </div>
 
-      <div className="view-pane__scroll">
-        {thread ? (
-          <article className="message" aria-label={thread.subject ?? "(no subject)"}>
-            <h2 className="message__subject selectable">{thread.subject ?? "(no subject)"}</h2>
-            <header className="message__header">
-              <Avatar name={senderOf(thread)} email={thread.fromAddress ?? undefined} />
-              <div className="message__from">
-                <span className="message__name selectable">{senderOf(thread)}</span>
-                {thread.fromAddress && (
-                  <span className="message__address selectable">{thread.fromAddress}</span>
-                )}
-              </div>
-              {thread.date > 0 && (
-                <time className="message__date" dateTime={new Date(thread.date).toISOString()}>
-                  {formatFullDate(thread.date)}
-                </time>
-              )}
-            </header>
-            <div className="message__body selectable">{fixture?.body ?? thread.snippet}</div>
-          </article>
-        ) : (
-          <div className="pane-empty">
-            <p className="pane-empty__title">No conversation selected</p>
-            <p className="pane-empty__hint">
-              <Kbd shortcut="j" /> and <Kbd shortcut="k" /> move through the list.{" "}
-              <Kbd shortcut="mod+k" /> shows every command.
-            </p>
-          </div>
-        )}
-      </div>
+      <ThreadView />
     </div>
   );
 }

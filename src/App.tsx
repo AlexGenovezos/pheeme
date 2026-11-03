@@ -14,7 +14,9 @@ import { CommandPalette } from "./palette/CommandPalette";
 import { isTauri } from "./preview/runtime";
 import { AppShell } from "./shell/AppShell";
 import { ContextMenuHost } from "./shell/ContextMenuHost";
+import { useLabelStore } from "./store/labelStore";
 import { useMailStore } from "./store/mailStore";
+import { useThreadStore } from "./store/threadStore";
 
 /** Hide the webview's own menu (Reload, Inspect…) outside text; dev builds keep it for devtools. */
 function useNativeContextMenuOnly() {
@@ -30,7 +32,7 @@ function useNativeContextMenuOnly() {
   }, []);
 }
 
-/** Keep the thread list fresh on sync, and say when Gmail refuses a queued change. */
+/** Keep the thread list, labels and counts fresh on sync, and say when Gmail refuses a queued change. */
 function useSyncEvents() {
   useEffect(() => {
     let stopped = false;
@@ -38,6 +40,7 @@ function useSyncEvents() {
     const keep = (stop: () => void) => (stopped ? stopQuietly(stop) : stops.push(stop));
     const log = (err: unknown) => console.warn("sync event listener failed", err);
     useMailStore.getState().subscribe().then(keep, log);
+    useLabelStore.getState().subscribe().then(keep, log);
     listen<OutboxRejected>(SYNC_EVENTS.outboxRejected, ({ payload }) =>
       toast({
         title: `Couldn't ${payload.kind}`,
@@ -52,19 +55,54 @@ function useSyncEvents() {
   }, []);
 }
 
-function MailScreen({ onManageAccounts }: { onManageAccounts: () => void }) {
+/** Load labels and counts for the connected accounts, again whenever the set changes. */
+function useLabelsAndCounts() {
+  const accountIds = useAccountStore((s) => s.accounts.map((a) => a.id).join("\n"));
+  useEffect(() => {
+    void useLabelStore.getState().load(accountIds ? accountIds.split("\n") : []);
+  }, [accountIds]);
+}
+
+function MailScreen({
+  onManageAccounts,
+  onAddAccount,
+}: {
+  onManageAccounts: () => void;
+  onAddAccount: () => void;
+}) {
   useGlobalShortcuts();
   useAppCommands();
   useNativeContextMenuOnly();
   useSyncEvents();
+  useLabelsAndCounts();
 
   return (
     <>
-      <AppShell onManageAccounts={onManageAccounts} />
+      <AppShell onManageAccounts={onManageAccounts} onAddAccount={onAddAccount} />
       <CommandPalette />
       <ContextMenuHost />
     </>
   );
+}
+
+/**
+ * Account sync state (first sync done, last failure) and the cached conversation details, for the whole
+ * session. Subscribed above the screens, so opening Manage accounts or onboarding doesn't drop events,
+ * forget a failure, or leave the reading pane showing a conversation as it was before.
+ */
+function useSessionSyncEvents() {
+  useEffect(() => {
+    let stopped = false;
+    const stops: (() => void)[] = [];
+    const keep = (stop: () => void) => (stopped ? stopQuietly(stop) : stops.push(stop));
+    const log = (err: unknown) => console.warn("sync event listener failed", err);
+    useAccountStore.getState().subscribe().then(keep, log);
+    useThreadStore.getState().subscribe().then(keep, log);
+    return () => {
+      stopped = true;
+      stops.forEach(stopQuietly);
+    };
+  }, []);
 }
 
 function App() {
@@ -75,6 +113,7 @@ function App() {
   useEffect(() => {
     void load();
   }, [load]);
+  useSessionSyncEvents();
   useEffect(() => {
     if (import.meta.env.PROD && isTauri()) return startUpdateChecks();
   }, []);
@@ -109,7 +148,9 @@ function App() {
   } else if (loaded && managing) {
     screen = <AccountsHome onAdd={() => setAdding(true)} onClose={() => setManaging(false)} />;
   } else if (loaded) {
-    screen = <MailScreen onManageAccounts={() => setManaging(true)} />;
+    screen = (
+      <MailScreen onManageAccounts={() => setManaging(true)} onAddAccount={() => setAdding(true)} />
+    );
   }
   return <ToastProvider pinned={<UpdateBanner />}>{screen}</ToastProvider>;
 }

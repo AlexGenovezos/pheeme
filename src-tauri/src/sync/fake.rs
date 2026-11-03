@@ -28,6 +28,20 @@ pub struct FakeMsg {
     pub date_ms: i64,
     pub message_id: String,
     pub history_id: u64,
+    pub attachments: Vec<FakeAttachment>,
+}
+
+/// A file attached to a [`FakeMsg`]; its bytes are registered with
+/// [`FakeGmail::seed_attachment`].
+#[derive(Debug, Clone)]
+pub struct FakeAttachment {
+    pub filename: String,
+    pub mime_type: String,
+    pub attachment_id: String,
+    pub content_id: Option<String>,
+    pub size: u64,
+    /// Bytes carried in the message itself (`body.data`, no `attachmentId`).
+    pub embedded: Option<Vec<u8>>,
 }
 
 impl FakeMsg {
@@ -42,7 +56,59 @@ impl FakeMsg {
             date_ms: now_ms(),
             message_id: format!("<{id}@example.com>"),
             history_id: 0,
+            attachments: Vec::new(),
         }
+    }
+
+    /// Attach a file (a full-format copy becomes multipart/mixed).
+    pub fn with_attachment(mut self, filename: &str, mime_type: &str, attachment_id: &str) -> Self {
+        self.attachments.push(FakeAttachment {
+            filename: filename.into(),
+            mime_type: mime_type.into(),
+            attachment_id: attachment_id.into(),
+            content_id: None,
+            size: 1,
+            embedded: None,
+        });
+        self
+    }
+
+    /// Attach a small part whose bytes travel inside the message (no `attachmentId`).
+    pub fn with_embedded(
+        mut self,
+        filename: &str,
+        mime_type: &str,
+        content_id: Option<&str>,
+        bytes: &[u8],
+    ) -> Self {
+        self.attachments.push(FakeAttachment {
+            filename: filename.into(),
+            mime_type: mime_type.into(),
+            attachment_id: String::new(),
+            content_id: content_id.map(Into::into),
+            size: bytes.len() as u64,
+            embedded: Some(bytes.to_vec()),
+        });
+        self
+    }
+
+    /// Attach an inline image referenced as `cid:{content_id}`.
+    pub fn with_inline(
+        mut self,
+        filename: &str,
+        mime_type: &str,
+        attachment_id: &str,
+        content_id: &str,
+    ) -> Self {
+        self.attachments.push(FakeAttachment {
+            filename: filename.into(),
+            mime_type: mime_type.into(),
+            attachment_id: attachment_id.into(),
+            content_id: Some(content_id.into()),
+            size: 1,
+            embedded: None,
+        });
+        self
     }
 
     pub fn at(mut self, date_ms: i64) -> Self {
@@ -76,16 +142,55 @@ impl FakeMsg {
                 headers,
                 ..Default::default()
             }),
-            MessageFormat::Full | MessageFormat::Raw => Some(MessagePart {
-                mime_type: "text/plain".into(),
-                headers,
-                body: MessagePartBody {
-                    data: Some(encode_base64url(self.body.as_bytes())),
-                    size: self.body.len() as u64,
+            MessageFormat::Full | MessageFormat::Raw => {
+                let text = MessagePart {
+                    mime_type: "text/plain".into(),
+                    body: MessagePartBody {
+                        data: Some(encode_base64url(self.body.as_bytes())),
+                        size: self.body.len() as u64,
+                        ..Default::default()
+                    },
                     ..Default::default()
-                },
-                ..Default::default()
-            }),
+                };
+                if self.attachments.is_empty() {
+                    Some(MessagePart { headers, ..text })
+                } else {
+                    let mut parts = vec![text];
+                    parts.extend(self.attachments.iter().map(|a| {
+                        MessagePart {
+                            mime_type: a.mime_type.clone(),
+                            filename: a.filename.clone(),
+                            headers: a
+                                .content_id
+                                .iter()
+                                .map(|cid| Header {
+                                    name: "Content-ID".into(),
+                                    value: format!("<{cid}>"),
+                                })
+                                .collect(),
+                            body: match &a.embedded {
+                                Some(bytes) => MessagePartBody {
+                                    data: Some(encode_base64url(bytes)),
+                                    size: a.size,
+                                    ..Default::default()
+                                },
+                                None => MessagePartBody {
+                                    attachment_id: Some(a.attachment_id.clone()),
+                                    size: a.size,
+                                    ..Default::default()
+                                },
+                            },
+                            ..Default::default()
+                        }
+                    }));
+                    Some(MessagePart {
+                        mime_type: "multipart/mixed".into(),
+                        headers,
+                        parts,
+                        ..Default::default()
+                    })
+                }
+            }
         };
         Message {
             id: self.id.clone(),
@@ -125,8 +230,12 @@ struct State {
     history_page: usize,
     /// Runs (once) at the start of the next `batch_get_messages`.
     before_batch_get: Option<Box<dyn FnOnce() + Send>>,
+    /// While set, every `batch_get_messages` waits for a permit (see [`FakeGmail::hold_batch_gets`]).
+    batch_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     list_page: Option<usize>,
     next_sent: u64,
+    /// `(message id, attachment id)` → bytes.
+    attachment_bytes: HashMap<(String, String), Vec<u8>>,
 }
 
 pub struct FakeGmail {
@@ -204,9 +313,30 @@ impl FakeGmail {
         self.lock().before_batch_get = Some(Box::new(hook));
     }
 
+    /// Make every later `batch_get_messages` wait until the returned semaphore gets a
+    /// permit (an unreachable Gmail that never answers).
+    pub fn hold_batch_gets(&self) -> std::sync::Arc<tokio::sync::Semaphore> {
+        let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+        self.lock().batch_gate = Some(gate.clone());
+        gate
+    }
+
     /// The next send is delivered, then answered with `error` (an ambiguous failure).
     pub fn deliver_then_fail(&self, error: GmailError) {
         self.lock().send_then_fail = Some(error);
+    }
+
+    /// Register the bytes `get_attachment` serves for this attachment.
+    pub fn seed_attachment(&self, message_id: &str, attachment_id: &str, bytes: &[u8]) {
+        self.lock().attachment_bytes.insert(
+            (message_id.to_owned(), attachment_id.to_owned()),
+            bytes.to_vec(),
+        );
+    }
+
+    /// `get_attachment` calls so far.
+    pub fn attachment_fetches(&self) -> usize {
+        self.calls("get_attachment")
     }
 
     pub fn sent(&self) -> Vec<String> {
@@ -502,6 +632,10 @@ impl MailApi for FakeGmail {
         ids: &[String],
         format: MessageFormat,
     ) -> Vec<(String, Result<Message, GmailError>)> {
+        let gate = self.lock().batch_gate.clone();
+        if let Some(gate) = gate {
+            let _permit = gate.acquire().await.expect("gate open");
+        }
         let hook = self.lock().before_batch_get.take();
         if let Some(hook) = hook {
             hook();
@@ -590,6 +724,19 @@ impl MailApi for FakeGmail {
             None => Ok(id),
         }
     }
+
+    async fn get_attachment(
+        &self,
+        message_id: &str,
+        attachment_id: &str,
+    ) -> Result<Vec<u8>, GmailError> {
+        self.enter("get_attachment")?;
+        self.lock()
+            .attachment_bytes
+            .get(&(message_id.to_owned(), attachment_id.to_owned()))
+            .cloned()
+            .ok_or_else(not_found)
+    }
 }
 
 #[cfg(test)]
@@ -611,5 +758,14 @@ mod tests {
         fake.expire_history();
         let err = fake.list_history(&start, None).await.unwrap_err();
         assert!(err.is_history_expired());
+    }
+
+    #[tokio::test]
+    async fn fake_serves_seeded_attachment_bytes_and_counts_fetches() {
+        let fake = FakeGmail::new();
+        fake.seed_attachment("m1", "g1", b"pdf");
+        assert_eq!(fake.get_attachment("m1", "g1").await.unwrap(), b"pdf");
+        assert!(fake.get_attachment("m1", "other").await.is_err());
+        assert_eq!(fake.attachment_fetches(), 2);
     }
 }

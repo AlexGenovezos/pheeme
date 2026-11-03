@@ -23,7 +23,7 @@ Alex's own daily use is the first bar: v1 is done when Alex can make Pheeme his 
 ## 3. Goals, non-goals, anti-goals
 
 ### Goals
-- Gmail-native (Gmail REST API, real labels and category tabs — not IMAP).
+- Gmail-native (Gmail REST API, real labels and inbox categories — not IMAP).
 - Feels instant on every common action (see [§5](#5-speed-principles)).
 - UI polish on par with the best native Mac mail and calendar apps, and with T3 Code.
 - Multiple Google accounts, with both a combined inbox and per-account views.
@@ -51,7 +51,12 @@ Alex's own daily use is the first bar: v1 is done when Alex can make Pheeme his 
    - Sidebar shows **All Inboxes** (combined) plus each account separately.
    - In the combined view each row shows a small per-account color dot.
    - Replying always sends from the account that received the message.
-3. **Inbox with category tabs** — Primary, Social, Promotions, Updates, Forums, each with an unread count. Tabs work in both combined and per-account views (Primary under All Inboxes = Primary from every account). Per-account toggle for which tabs show (existing plan, Phases 6 and 11).
+3. **Category inboxes in the sidebar** *(decided by Alex, 2026-11-02 — the main reason he wants this app; replaces the earlier tabs design, and there are no category tabs anywhere)*. The sidebar is stacked, top to bottom:
+   - **All Inboxes**: every account's Inbox with all categories mixed in; its count is the unread inbox total across accounts.
+   - **One collapsible section per account** (email address + account color dot) with **Primary, Social, Promotions, Updates, Forums**, each that account's Inbox ∩ that category. Primary is the Inbox minus the other four categories, so accounts without category labels still see everything. Unread count per row, blank at 0; a collapsed section shows the account's unread total; collapsed state persists.
+   - **Favorites**: Starred, Drafts, Sent, All Mail, Spam, Trash for the *active account* (the account whose category row was last clicked; defaults to the first).
+   - **Gmail**: the active account's user labels.
+   - Colored line icons per row from theme tokens, plain muted counts (Starred and Drafts show totals, the rest unread), and a selected row tinted with its own color. All five categories always show in v1; a per-account toggle for which ones show arrives with Settings (existing plan, Phase 11).
 4. **Reading** — threaded conversations, sandboxed HTML rendering, external images blocked by default, attachments.
 5. **Actions** — archive, delete, star, mark read/unread, apply/remove labels, all optimistic.
 6. **Compose** — new, reply, reply-all, forward, drafts synced to Gmail, undo-send.

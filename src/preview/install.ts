@@ -1,69 +1,108 @@
+import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import type { AccountInfo, ThreadDetail, ThreadPage, ThreadSummary } from "../lib/tauri";
 import {
+  type AccountInfo,
+  type LabelCount,
+  type LabelInfo,
+  type MailboxCount,
+  type MessageDetail,
+  SYNC_EVENTS,
+  type SyncMessagesUpdated,
+  type ThreadDetail,
+  type ThreadPage,
+  type ThreadSummary,
+} from "../lib/tauri";
+import {
+  CATEGORY_IDS,
+  createFixtureThreads,
   fixtureAccounts,
-  fixtureLabels,
-  fixtureMailboxes,
-  fixtureThreads,
-  fixtureThreadsIn,
+  fixtureUserLabels,
   type FixtureThread,
+  hasLabel,
+  lastMessage,
+  SYSTEM_LABELS,
+  threadDate,
+  threadsIn,
 } from "./fixtures";
 
 type Args = Record<string, unknown> | undefined;
 
-/** A fixture thread as `list_threads` returns it (no mailbox or body). */
+const accountIdsOf = (args: Args): string[] =>
+  Array.isArray(args?.accountIds) ? args.accountIds.map(String) : [];
+const stringsOf = (value: unknown): string[] => (Array.isArray(value) ? value.map(String) : []);
+
+/** The account's system labels and user labels, shaped like `list_labels`. */
+function labelsFor(accountId: string): LabelInfo[] {
+  const base = {
+    accountId,
+    messagesTotal: 0,
+    messagesUnread: 0,
+    threadsTotal: 0,
+    threadsUnread: 0,
+    colorText: null,
+  };
+  return [
+    ...SYSTEM_LABELS.map((l) => ({
+      ...base,
+      id: l.id,
+      name: l.name,
+      type: "system",
+      colorBackground: null,
+    })),
+    ...fixtureUserLabels
+      .filter((l) => l.accountId === accountId)
+      .map((l) => ({
+        ...base,
+        id: l.id,
+        name: l.name,
+        type: "user",
+        colorBackground: l.color ?? null,
+      })),
+  ];
+}
+
+/** A fixture thread as `list_threads` returns it. */
 export function toSummary(t: FixtureThread): ThreadSummary {
-  const {
-    id,
-    accountId,
-    subject,
-    snippet,
-    fromName,
-    fromAddress,
-    date,
-    unread,
-    starred,
-    hasAttachment,
-    messageCount,
-  } = t;
+  const last = lastMessage(t);
   return {
-    id,
-    accountId,
-    subject,
-    snippet,
-    fromName,
-    fromAddress,
-    date,
-    unread,
-    starred,
-    hasAttachment,
-    messageCount,
+    id: t.id,
+    accountId: t.accountId,
+    subject: t.subject,
+    snippet: last.bodyText?.replace(/\s+/g, " ").trim().slice(0, 140) ?? null,
+    fromName: last.fromName,
+    fromAddress: last.fromAddress,
+    date: threadDate(t),
+    unread: hasLabel(t, "UNREAD"),
+    starred: hasLabel(t, "STARRED"),
+    hasAttachment: t.messages.some((m) => m.attachments.some((a) => !a.isInline)),
+    messageCount: t.messages.length,
   };
 }
 
-function threadDetail(t: FixtureThread): ThreadDetail {
-  return {
-    thread: toSummary(t),
-    messages: [
-      {
-        id: `${t.id}-m1`,
-        threadId: t.id,
-        fromName: t.fromName,
-        fromAddress: t.fromAddress,
-        to: [],
-        cc: [],
-        subject: t.subject,
-        snippet: t.snippet,
-        date: t.date,
-        bodyHtml: null,
-        bodyText: t.body,
-        unread: t.unread,
-        starred: t.starred,
-        labelIds: [t.mailbox],
-        hasAttachment: t.hasAttachment,
-      },
-    ],
-  };
+/** A fixture thread as `get_thread` returns it: copies, so later fixture changes don't alias what a store holds. */
+function toDetail(t: FixtureThread): ThreadDetail {
+  const messages: MessageDetail[] = t.messages.map((m) => ({
+    id: m.id,
+    threadId: t.id,
+    fromName: m.fromName,
+    fromAddress: m.fromAddress,
+    to: [...m.to],
+    cc: [...m.cc],
+    subject: t.subject,
+    snippet: m.bodyText?.replace(/\s+/g, " ").trim().slice(0, 140) ?? null,
+    date: m.date,
+    bodyHtml: m.bodyHtml,
+    hasRemoteContent: m.hasRemoteContent,
+    declaresDarkMode: m.declaresDarkMode,
+    bodyText: m.bodyText,
+    bodyAvailable: true,
+    unread: m.unread,
+    starred: t.labelIds.includes("STARRED"),
+    labelIds: m.unread ? [...t.labelIds, "UNREAD"] : [...t.labelIds],
+    hasAttachment: m.attachments.length > 0,
+    attachments: m.attachments.map((a) => ({ ...a })),
+  }));
+  return { thread: toSummary(t), messages };
 }
 
 /** One stateful backend for both onboarding and the shell in browser preview. */
@@ -72,27 +111,105 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   const accounts: AccountInfo[] =
     params.get("accounts") === "0"
       ? []
-      : fixtureAccounts
-          .slice(0, params.get("accounts") === "1" ? 1 : undefined)
-          .map((account) => ({ ...account, clientId: "1.apps.googleusercontent.com" }));
+      : fixtureAccounts.slice(0, params.get("accounts") === "1" ? 1 : undefined).map((account) => ({
+          ...account,
+          clientId: "1.apps.googleusercontent.com",
+          synced: true,
+        }));
   const flows = new Set<string>();
+  const threads = createFixtureThreads();
+
+  /** Apply `change` to the named threads, then tell the stores, as the backend does after a cache write. */
+  const changeThreads = (args: Args, change: (t: FixtureThread) => void): void => {
+    const accountId = String(args?.accountId);
+    const changed = threads.filter(
+      (t) => t.accountId === accountId && stringsOf(args?.threadIds).includes(t.id),
+    );
+    changed.forEach(change);
+    const payload: SyncMessagesUpdated = {
+      accountId,
+      added: [],
+      removed: [],
+      modified: changed.map((t) => t.id),
+    };
+    // Fire and forget: the IPC mock isn't there when a test calls a handler directly.
+    void emit(SYNC_EVENTS.messagesUpdated, payload).catch(() => {});
+  };
+
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
-    list_labels: () => [...fixtureMailboxes, ...fixtureLabels],
+    list_labels: (args) => labelsFor(String(args?.accountId)),
     list_threads: (args): ThreadPage => ({
-      threads: fixtureThreadsIn(String(args?.labelId ?? "INBOX")).map(toSummary),
+      threads: threadsIn(
+        threads,
+        String(args?.labelId ?? "INBOX"),
+        args?.alsoLabelId ? String(args.alsoLabelId) : null,
+        accountIdsOf(args),
+      ).map(toSummary),
       next: null,
     }),
     get_thread: (args) => {
-      const t = fixtureThreads.find((f) => f.id === args?.threadId);
+      const t = threads.find((f) => f.id === args?.threadId && f.accountId === args?.accountId);
       if (!t) throw { code: "not_found", message: "That conversation isn't on this device." };
-      return threadDetail(t);
+      return toDetail(t);
     },
-    mailbox_counts: () => fixtureMailboxes.map((m) => ({ labelId: m.id, unread: m.unread })),
+    // Unread inbox conversations, overall and per category, for the accounts asked about.
+    mailbox_counts: (args): MailboxCount[] => {
+      const ids = accountIdsOf(args);
+      const unread = (category: string | null) =>
+        threadsIn(threads, "INBOX", category, ids).filter((t) => hasLabel(t, "UNREAD")).length;
+      return [
+        { labelId: "INBOX", unread: unread(null) },
+        ...CATEGORY_IDS.map((c) => ({ labelId: c, unread: unread(c) })),
+      ];
+    },
+    // Like the backend: counts thread-label rows (so no ALL, and Primary has no row of its own).
+    label_counts: (args): LabelCount[] => {
+      const mine = threads.filter((t) => t.accountId === args?.accountId);
+      // UNREAD is a row of its own in the backend; here it follows the messages.
+      const labelIds = new Set([
+        ...mine.flatMap((t) => t.labelIds),
+        ...(mine.some((t) => hasLabel(t, "UNREAD")) ? ["UNREAD"] : []),
+      ]);
+      const countOf = (labelId: string, members: FixtureThread[]): LabelCount => ({
+        labelId,
+        unread: members.filter((t) => hasLabel(t, "UNREAD")).length,
+        total: members.length,
+      });
+      const rows = [...labelIds].sort().map((labelId) =>
+        countOf(
+          labelId,
+          mine.filter((t) => hasLabel(t, labelId)),
+        ),
+      );
+      // All Mail, like the backend: everything outside Spam and Trash.
+      const allMail = mine.filter((t) => !hasLabel(t, "SPAM") && !hasLabel(t, "TRASH"));
+      return allMail.length > 0 ? [...rows, countOf("ALL", allMail)] : rows;
+    },
     sync_now: () => undefined,
-    modify_threads: () => undefined,
-    trash_threads: () => undefined,
+    modify_threads: (args) => {
+      const add = stringsOf(args?.add);
+      const remove = stringsOf(args?.remove);
+      if ([...add, ...remove].some((l) => l === "TRASH" || l === "SPAM")) {
+        throw { code: "invalid", message: "Use trash for Trash." };
+      }
+      return changeThreads(args, (t) => {
+        for (const label of remove) {
+          if (label === "UNREAD") t.messages.forEach((m) => (m.unread = false));
+          else t.labelIds = t.labelIds.filter((l) => l !== label);
+        }
+        for (const label of add) {
+          // Like the backend, an added label lands on every message of the thread.
+          if (label === "UNREAD") t.messages.forEach((m) => (m.unread = true));
+          else if (!t.labelIds.includes(label)) t.labelIds.push(label);
+        }
+      });
+    },
+    trash_threads: (args) =>
+      changeThreads(args, (t) => {
+        t.labelIds = [...t.labelIds.filter((l) => l !== "INBOX"), "TRASH"];
+      }),
     begin_oauth: () => {
       const flowId = crypto.randomUUID();
       flows.add(flowId);
@@ -109,6 +226,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
         email: "you@example.com",
         displayName: "You",
         clientId: "1.apps.googleusercontent.com",
+        synced: true,
       };
       if (!accounts.includes(account)) accounts.push(account);
       return account;
@@ -121,6 +239,9 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       if (index !== -1) accounts.splice(index, 1);
     },
     open_external: () => undefined,
+    open_mail_link: () => undefined,
+    save_attachment: () => "/Users/you/Downloads/attachment.pdf",
+    reveal_download: () => undefined,
     "plugin:updater|check": () => null,
   };
 }

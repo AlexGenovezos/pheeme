@@ -26,7 +26,13 @@ function useWidth(ref: RefObject<HTMLElement | null>): number {
  * Widths live in the UI store (persisted) and reach CSS as variables; the grid
  * itself guarantees the minimums, so a narrow window never overlaps panes.
  */
-export function AppShell({ onManageAccounts }: { onManageAccounts?: () => void }) {
+export function AppShell({
+  onManageAccounts,
+  onAddAccount,
+}: {
+  onManageAccounts?: () => void;
+  onAddAccount?: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const { sidebarWidth, listWidth, sidebarCollapsed } = useUiStore();
   const { setSidebarWidth, setListWidth, resetSidebarWidth, resetListWidth } =
@@ -62,7 +68,7 @@ export function AppShell({ onManageAccounts }: { onManageAccounts?: () => void }
         aria-label="Sidebar"
         aria-hidden={sidebarCollapsed || undefined}
       >
-        <Sidebar onManageAccounts={onManageAccounts} />
+        <Sidebar onManageAccounts={onManageAccounts} onAddAccount={onAddAccount} />
       </aside>
       {!sidebarCollapsed && (
         <Divider

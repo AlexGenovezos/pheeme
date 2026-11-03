@@ -47,6 +47,8 @@ pub fn to_db_message(
                 mime_type: Some(a.mime_type.clone()),
                 size: Some(a.size as i64),
                 attachment_id: a.attachment_id.clone(),
+                content_id: a.content_id.clone(),
+                is_inline: a.is_inline.into(),
             })
             .collect()
     } else {
@@ -143,5 +145,43 @@ mod tests {
         assert!(m.raw_headers.is_none());
         assert!(atts.is_empty());
         assert_eq!(m.subject.as_deref(), Some("Hello"));
+    }
+
+    #[test]
+    fn row_keeps_inline_content_id() {
+        use crate::gmail::mime::ParsedAttachment;
+        let mut parsed = message_with_attachments();
+        parsed.attachments = vec![
+            ParsedAttachment {
+                filename: Some("logo.png".into()),
+                mime_type: "image/png".into(),
+                size: 10,
+                attachment_id: Some("g0".into()),
+                content_id: Some("logo@x".into()),
+                is_inline: true,
+                data: None,
+            },
+            ParsedAttachment {
+                filename: Some("a.pdf".into()),
+                mime_type: "application/pdf".into(),
+                size: 20,
+                attachment_id: Some("g1".into()),
+                content_id: None,
+                is_inline: false,
+                data: None,
+            },
+        ];
+
+        let (_, atts) = to_db_message("a", &parsed, true);
+
+        assert_eq!(atts.len(), 2);
+        assert_eq!(atts[0].content_id.as_deref(), Some("logo@x"));
+        assert_eq!(atts[0].is_inline, 1);
+        assert_eq!(atts[1].content_id, None);
+        assert_eq!(atts[1].is_inline, 0);
+    }
+
+    fn message_with_attachments() -> ParsedMessage {
+        message(true).parse().unwrap()
     }
 }

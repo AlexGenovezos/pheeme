@@ -6,6 +6,8 @@ export interface AccountInfo {
   email: string;
   displayName: string | null;
   clientId: string;
+  /** The first sync has finished, so the cache is usable; false shows skeletons. */
+  synced: boolean;
 }
 
 export type ClientChoice =
@@ -76,13 +78,25 @@ export interface ThreadPage {
 export interface ThreadQuery {
   accountIds: string[];
   labelId: string;
-  /** Second label the thread must also carry (e.g. INBOX ∩ CATEGORY_SOCIAL). */
+  /**
+   * Second label the thread must also carry (e.g. INBOX ∩ CATEGORY_SOCIAL). `CATEGORY_PERSONAL`
+   * (Primary) means the label minus the other four categories. `labelId: "ALL"` is All Mail.
+   */
   alsoLabelId?: string | null;
 }
 
 export interface EmailAddress {
   name: string | null;
   address: string;
+}
+
+export interface AttachmentInfo {
+  id: string;
+  filename: string | null;
+  mimeType: string | null;
+  size: number | null;
+  isInline: boolean;
+  contentId: string | null;
 }
 
 export interface MessageDetail {
@@ -95,12 +109,18 @@ export interface MessageDetail {
   subject: string | null;
   snippet: string | null;
   date: number;
+  /** Sanitized HTML fragment from the backend, never the raw email body. */
   bodyHtml: string | null;
+  hasRemoteContent: boolean;
+  declaresDarkMode: boolean;
   bodyText: string | null;
+  /** False when only metadata is cached (the body couldn't be fetched, e.g. offline): offer to try again. */
+  bodyAvailable: boolean;
   unread: boolean;
   starred: boolean;
   labelIds: string[];
   hasAttachment: boolean;
+  attachments: AttachmentInfo[];
 }
 
 export interface ThreadDetail {
@@ -121,6 +141,12 @@ export interface LabelInfo {
   colorText: string | null;
 }
 
+export interface LabelCount {
+  labelId: string;
+  unread: number;
+  total: number;
+}
+
 export interface MailboxCount {
   labelId: string;
   unread: number;
@@ -134,6 +160,9 @@ export const getThread = (accountId: string, threadId: string) =>
 export const listLabels = (accountId: string) => invoke<LabelInfo[]>("list_labels", { accountId });
 export const mailboxCounts = (accountIds: string[]) =>
   invoke<MailboxCount[]>("mailbox_counts", { accountIds });
+/** Unread and total conversations per label of one account, counted from the local cache. */
+export const labelCounts = (accountId: string) =>
+  invoke<LabelCount[]>("label_counts", { accountId });
 export const modifyThreads = (
   accountId: string,
   threadIds: string[],
@@ -142,6 +171,13 @@ export const modifyThreads = (
 ) => invoke<void>("modify_threads", { accountId, threadIds, add, remove });
 export const trashThreads = (accountId: string, threadIds: string[]) =>
   invoke<void>("trash_threads", { accountId, threadIds });
+/** Saves an attachment into the Downloads folder and resolves to the file's absolute path. */
+export const saveAttachment = (accountId: string, messageId: string, attachmentId: string) =>
+  invoke<string>("save_attachment", { accountId, messageId, attachmentId });
+/** Shows a file saved by `saveAttachment` in the system file manager. */
+export const revealDownload = (path: string) => invoke<void>("reveal_download", { path });
+/** Opens an http, https or mailto link from an email; anything else is rejected. */
+export const openMailLink = (url: string) => invoke<void>("open_mail_link", { url });
 /** Sync one account now, or every account when omitted. */
 export const syncNow = (accountId?: string | null) =>
   invoke<void>("sync_now", { accountId: accountId ?? null });

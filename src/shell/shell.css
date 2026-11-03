@@ -184,11 +184,148 @@ body[data-resizing] .shell__divider:active::after {
   padding: var(--space-1) var(--space-2);
   color: var(--color-foreground-subtle);
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
 }
 
 .sidebar .ui-row:not([data-selected]):hover {
   background: var(--color-control-hover-bg);
+}
+
+/*
+ * Mailbox rows. Each row sets --row-color (a theme token) inline; this one rule
+ * turns it into the icon color, and on the selected row the tint and the label.
+ */
+.sidebar__row .ui-row__leading {
+  position: relative;
+  color: var(--row-color);
+}
+.sidebar__row--neutral .ui-row__leading {
+  color: var(--color-foreground-muted);
+}
+.sidebar .sidebar__row[data-selected] {
+  color: var(--row-color);
+}
+@supports (background: color-mix(in srgb, red 50%, transparent)) {
+  .sidebar .sidebar__row[data-selected] {
+    background: color-mix(in srgb, var(--row-color) var(--sidebar-selected-tint), transparent);
+  }
+}
+.sidebar .sidebar__row[data-selected] .ui-row__title {
+  font-weight: var(--font-weight-medium);
+}
+.sidebar .sidebar__row .ui-row__meta,
+.sidebar .sidebar__row[data-selected] .ui-row__meta {
+  color: var(--color-foreground-muted);
+  opacity: 1;
+}
+
+/* A user label's Gmail color, tucked into the corner of its tag icon. */
+.sidebar__label-dot {
+  position: absolute;
+  inset-inline-end: calc(var(--space-0-5) * -1);
+  inset-block-end: calc(var(--space-px) * -1);
+  width: var(--label-dot-size);
+  height: var(--label-dot-size);
+  border-radius: var(--radius-full);
+  box-shadow: var(--space-0) var(--space-0) var(--space-0) var(--border-width)
+    var(--color-sidebar-bg);
+}
+
+/* One collapsible section per account inside Inboxes. */
+.sidebar__group,
+.sidebar__group-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-px);
+}
+.sidebar__group {
+  margin-top: var(--space-1-5);
+}
+
+.sidebar__account-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: 100%;
+  height: var(--row-height-compact);
+  padding: var(--space-0) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-align: start;
+  cursor: default;
+}
+.sidebar__account-header:hover {
+  background: var(--color-control-hover-bg);
+  color: var(--color-foreground);
+}
+.sidebar__account-header:focus-visible {
+  outline-offset: var(--focus-ring-inset);
+}
+
+.sidebar__account-dot {
+  flex-shrink: 0;
+  width: var(--account-dot-size);
+  height: var(--account-dot-size);
+  border-radius: var(--radius-full);
+}
+
+.sidebar__account-email {
+  flex: 1;
+  min-width: var(--space-0);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sidebar__account-count {
+  flex-shrink: 0;
+  color: var(--color-foreground-muted);
+  font-weight: var(--font-weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar__account-header .lucide {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+.sidebar__account-header .sidebar__account-warning {
+  color: var(--color-warning);
+}
+.sidebar__chevron {
+  color: var(--color-foreground-subtle);
+  transform: rotate(90deg);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+.sidebar__account-header[aria-expanded="false"] .sidebar__chevron {
+  transform: none;
+}
+
+/* Category rows start where the account's email does, so the section reads as a tree. */
+.sidebar__group-rows .ui-row--compact {
+  padding-inline-start: calc(var(--space-2) + var(--account-dot-size) + var(--space-1-5));
+}
+
+.sidebar__sync-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-0-5) var(--space-2) var(--space-1);
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
+}
+.sidebar__sync-error .lucide {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+.sidebar__sync-error span {
+  min-width: var(--space-0);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .sidebar__footer {
@@ -254,56 +391,6 @@ body[data-resizing] .shell__divider:active::after {
   flex: 1;
   min-height: var(--space-0);
   overflow-y: auto;
-}
-
-.message {
-  max-width: calc(var(--measure-reading) + var(--space-8) * 2);
-  padding: var(--space-6) var(--space-8) var(--space-10);
-}
-
-.message__subject {
-  margin-bottom: var(--space-5);
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--line-height-tight);
-  letter-spacing: var(--letter-spacing-tight);
-}
-
-.message__header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-5);
-  padding-bottom: var(--space-4);
-  border-bottom: var(--border-width) solid var(--color-border-subtle);
-}
-
-.message__from {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: var(--space-0);
-}
-
-.message__name {
-  font-weight: var(--font-weight-semibold);
-}
-
-.message__address,
-.message__date {
-  color: var(--color-foreground-muted);
-  font-size: var(--font-size-sm);
-}
-
-.message__date {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.message__body {
-  font-size: var(--font-size-reading);
-  line-height: var(--line-height-reading);
-  white-space: pre-wrap;
 }
 
 /* ---- Empty states and the chord hint ------------------------------------ */

@@ -1,0 +1,92 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               COALESCE(t.last_message_date, 0) AS \"cursor_date!: i64\"\n        FROM threads t INDEXED BY idx_threads_account_date\n        WHERE t.account_id = ?1\n          AND COALESCE(t.last_message_date, 0) <= ?2\n          AND (COALESCE(t.last_message_date, 0), t.account_id, t.id) < (?2, ?3, ?4)\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = t.account_id AND e.thread_id = t.id\n                  AND e.label_id IN ('SPAM', 'TRASH'))\n        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC\n        LIMIT ?5\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_id!",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "subject",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "snippet",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "history_id",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_message_date",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "message_count!",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "unread_count!",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "has_attachment!",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "from_name",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "from_address",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_starred!",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "cursor_date!: i64",
+        "ordinal": 12,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "d3aca07d78fe2bc6678a60cffb955d609e66bc249b6eb4efadf4adf4d08d393e"
+}

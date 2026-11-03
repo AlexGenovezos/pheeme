@@ -6,7 +6,8 @@
 //! - `format=raw`: parse the base64url RFC 2822 `raw` field with `mailparse` ([`parse_raw`]).
 //!
 //! [`parse_message`] picks whichever the message carries. Attachment content is never read;
-//! only metadata is collected (fetch content with `GmailClient::get_attachment`).
+//! only metadata is collected (fetch content with `GmailClient::get_attachment`), except that
+//! parts embedded in the message keep their decoded bytes in memory (`ParsedAttachment::data`).
 
 use super::error::GmailError;
 use super::types::{Header, Message, MessagePart};
@@ -54,7 +55,8 @@ pub struct EmailAddress {
     pub address: String,
 }
 
-/// Attachment metadata, never content.
+/// Attachment metadata. Content is not stored; it is only kept here, in memory, when the
+/// message itself carried it (see `data`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParsedAttachment {
     pub filename: Option<String>,
@@ -66,6 +68,10 @@ pub struct ParsedAttachment {
     pub content_id: Option<String>,
     /// Embedded in the body (has a Content-ID and is not marked `attachment`); not a paperclip.
     pub is_inline: bool,
+    /// Decoded content when the part carried it in the message (small parts have `body.data`
+    /// and no `attachment_id`). Never serialized or stored; re-parse the message to get it.
+    #[serde(skip)]
+    pub data: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -347,6 +353,10 @@ fn walk_payload(part: &MessagePart, out: &mut Body) -> Result<(), GmailError> {
             attachment_id: part.body.attachment_id.clone(),
             content_id,
             is_inline: inline,
+            data: match (&part.body.attachment_id, part.body.data.as_deref()) {
+                (None, Some(data)) => decode_base64url(data).ok(),
+                _ => None,
+            },
         }),
         PartKind::Skip => {}
     }
@@ -404,6 +414,7 @@ fn walk_raw(mail: &ParsedMail, out: &mut Body) -> Result<(), GmailError> {
             attachment_id: None,
             content_id,
             is_inline: inline,
+            data: Some(raw_body),
         }),
         PartKind::Skip => {}
     }

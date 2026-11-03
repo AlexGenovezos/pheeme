@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod attachments;
 pub mod auth;
 pub mod labels;
 pub mod messages;
@@ -76,6 +77,32 @@ pub fn open_external(url: String) -> Result<(), CommandError> {
     })
 }
 
+/// Links in an email may open in the default app: web pages and mail composers only.
+pub fn is_allowed_mail_link(url: &str) -> bool {
+    parse_mail_link(url).is_some()
+}
+
+fn parse_mail_link(url: &str) -> Option<Url> {
+    Url::parse(url)
+        .ok()
+        .filter(|url| matches!(url.scheme(), "http" | "https" | "mailto"))
+}
+
+/// Opens a link from an email body in the default browser or mail app.
+#[tauri::command]
+pub fn open_mail_link(url: String) -> Result<(), CommandError> {
+    let Some(url) = parse_mail_link(&url) else {
+        return Err(CommandError {
+            code: "invalid_input".into(),
+            message: "Pheeme only opens web and email links.".into(),
+        });
+    };
+    open::that_detached(url.as_str()).map_err(|error| CommandError {
+        code: "open_failed".into(),
+        message: format!("Couldn't open that link ({error}). Copy it instead."),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,6 +127,29 @@ mod tests {
             "not a url",
         ] {
             assert!(!is_allowed_external_url(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn mail_link_allow_list() {
+        for ok in [
+            "https://x",
+            "http://x",
+            "mailto:a@b",
+            "HTTPS://Example.com/a?b=c",
+        ] {
+            assert!(is_allowed_mail_link(ok), "{ok}");
+        }
+        for bad in [
+            "javascript:x",
+            "file:///etc/passwd",
+            "pheeme-att://x",
+            "data:text/html,hi",
+            "tel:123",
+            "not a url",
+            "",
+        ] {
+            assert!(!is_allowed_mail_link(bad), "{bad}");
         }
     }
 

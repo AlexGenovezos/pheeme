@@ -11,6 +11,7 @@ const account: AccountInfo = {
   email: "me@example.com",
   displayName: null,
   clientId: CLIENT_ID,
+  synced: true,
 };
 
 type Handler = (args: Record<string, unknown>) => unknown;

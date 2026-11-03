@@ -97,6 +97,28 @@ export const THEME_TOKENS = {
   "--color-avatar-5": "charts.yellow",
   "--color-avatar-6": "charts.orange",
 
+  // Accounts: the dot beside each account in the sidebar and in All Inboxes.
+  "--color-account-1": "charts.blue",
+  "--color-account-2": "charts.green",
+  "--color-account-3": "charts.orange",
+  "--color-account-4": "charts.purple",
+  "--color-account-5": "charts.red",
+  "--color-account-6": "charts.yellow",
+
+  // Sidebar mailbox rows: icon color, and the tint and label color when selected.
+  // Used as text on the selected row, so each needs 4.5:1 on the tinted sidebar.
+  "--color-mailbox-primary": "charts.blue",
+  "--color-mailbox-social": "terminal.ansiCyan",
+  "--color-mailbox-promotions": "charts.green",
+  "--color-mailbox-updates": "charts.orange",
+  "--color-mailbox-forums": "charts.purple",
+  "--color-mailbox-starred": "charts.yellow",
+  "--color-mailbox-drafts": "terminal.ansiBrightBlue",
+  "--color-mailbox-sent": "terminal.ansiBrightGreen",
+  "--color-mailbox-allmail": "terminal.ansiBrightMagenta",
+  "--color-mailbox-spam": "terminal.ansiBrightRed",
+  "--color-mailbox-trash": "terminal.ansiRed",
+
   // Elevation (full box-shadow values; built from --color-shadow-like colors)
   "--shadow-popover": null,
   "--shadow-overlay": null,

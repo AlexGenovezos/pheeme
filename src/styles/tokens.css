@@ -57,6 +57,8 @@
   --focus-ring-offset: 1px;
   --focus-ring-inset: -2px;
   --selection-bar-width: 2px;
+  /* How much of a sidebar row's color tints its background when selected. */
+  --sidebar-selected-tint: 12%;
 
   /* Control and chrome sizes. */
   --titlebar-height: 44px;
@@ -64,12 +66,16 @@
   --control-height-md: 28px;
   --control-height-lg: 32px;
   --row-height-compact: 28px;
+  /* A three-line conversation row; the list's first guess before it measures. */
+  --row-height-comfortable: 76px;
   --icon-size-sm: 14px;
   --icon-size-md: 16px;
   --icon-stroke: 1.75;
   --avatar-size-sm: 20px;
   --avatar-size-md: 32px;
   --unread-dot-size: 7px;
+  --account-dot-size: 8px;
+  --label-dot-size: 6px;
   --badge-min-width: 18px;
   --kbd-min-width: 18px;
   --divider-hit-area: 7px;

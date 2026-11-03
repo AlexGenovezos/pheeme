@@ -2,18 +2,34 @@
 //! the SQLite cache; changes go through the outbox. Tauri-free; commands are thin
 //! adapters over [`MailService`].
 
+use crate::db::attachments::{self, DbAttachment};
 use crate::db::messages::{parse_labels, DbMessage};
 use crate::db::threads::{self, DbThread, ThreadCursor, ThreadQuery};
 use crate::db::{labels, messages};
 use crate::gmail::mime::EmailAddress;
+use crate::gmail::MessageFormat;
+use crate::render;
 use crate::sync::engine::SyncError;
 use crate::sync::manager::SyncManager;
+use crate::sync::MailApi;
 use crate::sync::{outbox, SyncEvent};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub const DEFAULT_PAGE: i64 = 50;
+
+/// `label_id` that lists every thread not in Spam or Trash (and its `label_counts` row).
+pub const ALL_MAIL: &str = threads::ALL_MAIL;
+/// The Primary tab is `INBOX` minus these (Gmail's own id for Primary is `CATEGORY_PERSONAL`).
+pub const OTHER_CATEGORIES: [&str; 4] = [
+    "CATEGORY_SOCIAL",
+    "CATEGORY_PROMOTIONS",
+    "CATEGORY_UPDATES",
+    "CATEGORY_FORUMS",
+];
+const PRIMARY_CATEGORY: &str = "CATEGORY_PERSONAL";
 pub const MAX_PAGE: i64 = 500;
 
 #[derive(Debug, thiserror::Error)]
@@ -104,12 +120,43 @@ pub struct MessageDetailDto {
     pub subject: Option<String>,
     pub snippet: Option<String>,
     pub date: i64,
+    /// Sanitized HTML fragment (see `render::sanitize_email_html`), never the raw body.
     pub body_html: Option<String>,
+    pub has_remote_content: bool,
+    pub declares_dark_mode: bool,
     pub body_text: Option<String>,
+    /// False when only the message's metadata is cached (its body couldn't be fetched,
+    /// e.g. offline): the UI offers to try again instead of showing an empty message.
+    pub body_available: bool,
     pub unread: bool,
     pub starred: bool,
     pub label_ids: Vec<String>,
     pub has_attachment: bool,
+    pub attachments: Vec<AttachmentDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentDto {
+    pub id: String,
+    pub filename: Option<String>,
+    pub mime_type: Option<String>,
+    pub size: Option<i64>,
+    pub is_inline: bool,
+    pub content_id: Option<String>,
+}
+
+impl From<DbAttachment> for AttachmentDto {
+    fn from(a: DbAttachment) -> Self {
+        Self {
+            id: a.id,
+            filename: a.filename,
+            mime_type: a.mime_type,
+            size: a.size,
+            is_inline: a.is_inline != 0,
+            content_id: a.content_id,
+        }
+    }
 }
 
 impl From<DbMessage> for MessageDetailDto {
@@ -118,7 +165,9 @@ impl From<DbMessage> for MessageDetailDto {
             json.and_then(|j| serde_json::from_str(j).ok())
                 .unwrap_or_default()
         };
+        let body_available = has_body(&m);
         Self {
+            body_available,
             to: addrs(m.to_addresses.as_deref()),
             cc: addrs(m.cc_addresses.as_deref()),
             label_ids: parse_labels(m.label_ids.as_deref()),
@@ -130,10 +179,13 @@ impl From<DbMessage> for MessageDetailDto {
             snippet: m.snippet,
             date: m.date.unwrap_or(0),
             body_html: m.body_html,
+            has_remote_content: false,
+            declares_dark_mode: false,
             body_text: m.body_text,
             unread: m.is_read == 0,
             starred: m.is_starred != 0,
             has_attachment: m.has_attachment != 0,
+            attachments: Vec::new(),
         }
     }
 }
@@ -168,18 +220,100 @@ pub struct CountDto {
     pub unread: i64,
 }
 
+/// Unread and total conversations under one label of an account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelCountDto {
+    pub label_id: String,
+    pub unread: i64,
+    pub total: i64,
+}
+
+/// An attachment's content with what is needed to serve or save it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentBytes {
+    pub filename: Option<String>,
+    pub mime_type: String,
+    pub bytes: Vec<u8>,
+}
+
+/// What the `pheeme-att` protocol answers with; the Tauri adapter only converts it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineResponse {
+    pub status: u16,
+    pub content_type: Option<String>,
+    pub body: Vec<u8>,
+}
+
+impl InlineResponse {
+    pub fn not_found() -> Self {
+        Self {
+            status: 404,
+            content_type: None,
+            body: Vec::new(),
+        }
+    }
+}
+
+/// A file name that is safe to create in a directory: only the last path component,
+/// without `:` or control characters, no leading/trailing dots or spaces.
+pub fn safe_file_name(name: Option<&str>) -> String {
+    let last = name
+        .unwrap_or_default()
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default();
+    let cleaned: String = last
+        .chars()
+        .filter(|c| *c != ':' && !c.is_control())
+        .collect();
+    let cleaned = cleaned.trim_matches(|c: char| c == '.' || c.is_whitespace());
+    if cleaned.is_empty() {
+        "attachment".to_owned()
+    } else {
+        cleaned.to_owned()
+    }
+}
+
+/// `dir/name`, or `dir/name (1).ext`, `dir/name (2).ext`, … if that already exists.
+pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
+    // `symlink_metadata` (not `exists`) so a dangling symlink counts as occupied.
+    let taken = |p: &Path| std::fs::symlink_metadata(p).is_ok();
+    let first = dir.join(name);
+    if !taken(&first) {
+        return first;
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => name.split_at(i),
+        _ => (name, ""),
+    };
+    (1..)
+        .map(|n| dir.join(format!("{stem} ({n}){ext}")))
+        .find(|p| !taken(p))
+        .expect("an unused name exists")
+}
+
+#[derive(Clone)]
 pub struct MailService {
     db: SqlitePool,
     sync: Arc<SyncManager>,
+    /// Attachment bytes live under `cache_dir/attachments/{account}/{message}/{row id}`.
+    cache_dir: PathBuf,
 }
 
 impl MailService {
-    pub fn new(db: SqlitePool, sync: Arc<SyncManager>) -> Self {
-        Self { db, sync }
+    pub fn new(db: SqlitePool, sync: Arc<SyncManager>, cache_dir: PathBuf) -> Self {
+        Self {
+            db,
+            sync,
+            cache_dir,
+        }
     }
 
     /// Threads under `label_id` (and `also_label_id`, for a category tab) across
-    /// `account_ids`, newest first.
+    /// `account_ids`, newest first. `label_id == ALL_MAIL` lists everything outside
+    /// Spam and Trash; `also_label_id == CATEGORY_PERSONAL` lists `label_id` minus the
+    /// other categories, so accounts without category labels still show their inbox.
     pub async fn list_threads(
         &self,
         account_ids: &[String],
@@ -193,17 +327,29 @@ impl MailService {
             account_id: c.account_id,
             thread_id: c.thread_id,
         });
-        let page = threads::list_threads(
-            &self.db,
-            &ThreadQuery {
-                account_ids,
-                label_id,
-                also_label_id,
-                before: before.as_ref(),
-                limit: limit.unwrap_or(DEFAULT_PAGE).clamp(1, MAX_PAGE),
-            },
-        )
-        .await?;
+        let limit = limit.unwrap_or(DEFAULT_PAGE).clamp(1, MAX_PAGE);
+        let page = if label_id == ALL_MAIL {
+            threads::list_all_mail(&self.db, account_ids, before.as_ref(), limit).await?
+        } else {
+            let primary = also_label_id == Some(PRIMARY_CATEGORY);
+            let exclude: Vec<String> = if primary {
+                OTHER_CATEGORIES.iter().map(|l| (*l).to_owned()).collect()
+            } else {
+                Vec::new()
+            };
+            threads::list_threads(
+                &self.db,
+                &ThreadQuery {
+                    account_ids,
+                    label_id,
+                    also_label_id: if primary { None } else { also_label_id },
+                    exclude_label_ids: &exclude,
+                    before: before.as_ref(),
+                    limit,
+                },
+            )
+            .await?
+        };
         Ok(ThreadPageDto {
             threads: page.threads.into_iter().map(Into::into).collect(),
             next: page.next.map(|c| ThreadCursorDto {
@@ -214,28 +360,57 @@ impl MailService {
         })
     }
 
-    /// A thread with its messages. Bodies not cached yet are fetched first when Gmail is
-    /// reachable; otherwise the cached copy is returned as is.
+    /// A thread with its messages. A message with no cached body is fetched first when
+    /// Gmail is reachable (otherwise the cached copy is returned as is). Messages that
+    /// have a body but are not fully fetched (attachment metadata cached before
+    /// migration 003) are returned at once and refreshed in the background; that refresh
+    /// emits `sync:messages_updated` for the thread.
     pub async fn get_thread(
         &self,
         account_id: &str,
         thread_id: &str,
     ) -> Result<ThreadDetailDto, MailError> {
-        if let Err(e) = self
-            .sync
-            .engine(account_id)
-            .load_thread_bodies(thread_id)
-            .await
-        {
-            tracing::info!(thread = thread_id, error = %e, "showing cached thread without bodies");
+        let mut messages =
+            messages::get_messages_for_thread(&self.db, account_id, thread_id).await?;
+        if messages.iter().any(|m| !has_body(m)) {
+            if let Err(e) = self
+                .sync
+                .engine(account_id)
+                .load_thread_bodies(thread_id)
+                .await
+            {
+                tracing::info!(thread = thread_id, error = %e, "showing cached thread without bodies");
+            }
+            messages = messages::get_messages_for_thread(&self.db, account_id, thread_id).await?;
+        } else if messages.iter().any(|m| m.fully_fetched == 0) {
+            let engine = self.sync.engine(account_id);
+            let thread = thread_id.to_owned();
+            tokio::spawn(async move {
+                if let Err(e) = engine.load_thread_bodies(&thread).await {
+                    tracing::info!(thread, error = %e, "couldn't refresh cached messages");
+                }
+            });
         }
         let thread = threads::get_thread(&self.db, account_id, thread_id)
             .await?
             .ok_or(MailError::NotFound)?;
-        let messages = messages::get_messages_for_thread(&self.db, account_id, thread_id).await?;
+        let mut details = Vec::with_capacity(messages.len());
+        for m in messages {
+            let atts =
+                attachments::get_attachments_for_message(&self.db, account_id, &m.id).await?;
+            let mut dto = MessageDetailDto::from(m);
+            dto.attachments = atts.into_iter().map(Into::into).collect();
+            if let Some(raw) = dto.body_html.take() {
+                let body = render::sanitize_email_html(&raw, account_id, &dto.id);
+                dto.body_html = Some(body.html);
+                dto.has_remote_content = body.has_remote_content;
+                dto.declares_dark_mode = body.declares_dark_mode;
+            }
+            details.push(dto);
+        }
         Ok(ThreadDetailDto {
             thread: thread.into(),
-            messages: messages.into_iter().map(Into::into).collect(),
+            messages: details,
         })
     }
 
@@ -264,6 +439,19 @@ impl MailService {
             .await?
             .into_iter()
             .map(|(label_id, unread)| CountDto { label_id, unread })
+            .collect())
+    }
+
+    /// Unread and total conversations per label of one account, counted from the cache.
+    pub async fn label_counts(&self, account_id: &str) -> Result<Vec<LabelCountDto>, MailError> {
+        Ok(threads::label_counts(&self.db, account_id)
+            .await?
+            .into_iter()
+            .map(|c| LabelCountDto {
+                label_id: c.label_id,
+                unread: c.unread,
+                total: c.total,
+            })
             .collect())
     }
 
@@ -313,16 +501,194 @@ impl MailService {
         }
     }
 
+    /// An attachment's bytes: from the disk cache, else downloaded from Gmail once.
+    pub async fn attachment(
+        &self,
+        account_id: &str,
+        message_id: &str,
+        attachment_row_id: &str,
+    ) -> Result<AttachmentBytes, MailError> {
+        let row = attachments::get_one(&self.db, account_id, message_id, attachment_row_id)
+            .await?
+            .ok_or(MailError::NotFound)?;
+        self.bytes_of(row).await
+    }
+
+    /// The image behind a `cid:` reference; anything that isn't an `image/*` is `NotFound`.
+    pub async fn inline_image(
+        &self,
+        account_id: &str,
+        message_id: &str,
+        content_id: &str,
+    ) -> Result<AttachmentBytes, MailError> {
+        let row = attachments::get_by_content_id(&self.db, account_id, message_id, content_id)
+            .await?
+            .filter(|r| {
+                r.mime_type
+                    .as_deref()
+                    .is_some_and(|m| m.trim().to_ascii_lowercase().starts_with("image/"))
+            })
+            .ok_or(MailError::NotFound)?;
+        self.bytes_of(row).await
+    }
+
+    /// Answers a `pheeme-att` request. The URI is parsed and its signature verified before
+    /// anything else is touched; every failure is a bare 404.
+    pub async fn serve_inline_image(&self, uri: &str) -> InlineResponse {
+        let Some((account, message, cid)) = render::parse_attachment_request(uri) else {
+            return InlineResponse::not_found();
+        };
+        match self.inline_image(&account, &message, &cid).await {
+            // The type comes from the sender's MIME headers; it must be a valid header value.
+            Ok(image) if !is_header_safe(&image.mime_type) => InlineResponse::not_found(),
+            Ok(image) => InlineResponse {
+                status: 200,
+                content_type: Some(image.mime_type),
+                body: image.bytes,
+            },
+            Err(e) => {
+                tracing::debug!(error = %e, "inline image not served");
+                InlineResponse::not_found()
+            }
+        }
+    }
+
+    /// Writes an attachment into `dir` under a sanitized, collision-free name and returns
+    /// the path.
+    pub async fn save_attachment(
+        &self,
+        account_id: &str,
+        message_id: &str,
+        attachment_row_id: &str,
+        dir: &Path,
+    ) -> Result<PathBuf, MailError> {
+        use tokio::io::AsyncWriteExt;
+        let att = self
+            .attachment(account_id, message_id, attachment_row_id)
+            .await?;
+        let name = safe_file_name(att.filename.as_deref());
+        tokio::fs::create_dir_all(dir).await.map_err(io_error)?;
+        // Each collision re-scans, and every occupied entry (even a dangling symlink) is
+        // skipped, so this makes progress; the cap only guards against a runaway.
+        for _ in 0..1000 {
+            let path = unique_path(dir, &name);
+            // `create_new` so a file that appears after the check is never overwritten.
+            match tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .await
+            {
+                Ok(mut file) => {
+                    file.write_all(&att.bytes).await.map_err(io_error)?;
+                    file.flush().await.map_err(io_error)?;
+                    return Ok(path);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(io_error(e)),
+            }
+        }
+        Err(MailError::Invalid(
+            "Couldn't find a free file name in Downloads.".into(),
+        ))
+    }
+
+    async fn bytes_of(&self, row: DbAttachment) -> Result<AttachmentBytes, MailError> {
+        let mime_type = row
+            .mime_type
+            .clone()
+            .unwrap_or_else(|| "application/octet-stream".to_owned());
+        let cached = self
+            .cache_dir
+            .join("attachments")
+            .join(&row.account_id)
+            .join(&row.message_id)
+            .join(&row.id);
+        let bytes = match tokio::fs::read(&cached).await {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                let api = self.sync.engine(&row.account_id).api;
+                let bytes = match row.attachment_id.as_deref() {
+                    Some(gmail_id) => api
+                        .get_attachment(&row.message_id, gmail_id)
+                        .await
+                        .map_err(SyncError::from)?,
+                    // Small parts travel inside the message: re-read it and take the part
+                    // at this row's index (rows are numbered in parse order).
+                    None => embedded_bytes(api.as_ref(), &row).await?,
+                };
+                if let Err(e) = write_cache(&cached, &bytes).await {
+                    tracing::warn!(error = %e, "couldn't cache an attachment");
+                }
+                bytes
+            }
+        };
+        Ok(AttachmentBytes {
+            filename: row.filename,
+            mime_type,
+            bytes,
+        })
+    }
+
     /// Manual refresh: one account, or all.
     pub fn sync_now(&self, account_id: Option<String>) {
         self.sync.trigger(account_id);
     }
 }
 
+/// Bytes of an attachment that has no Gmail attachment id, from the full message.
+async fn embedded_bytes(api: &dyn MailApi, row: &DbAttachment) -> Result<Vec<u8>, MailError> {
+    let index: usize = row.id.parse().map_err(|_| MailError::NotFound)?;
+    let (_, fetched) = api
+        .batch_get_messages(std::slice::from_ref(&row.message_id), MessageFormat::Full)
+        .await
+        .into_iter()
+        .next()
+        .ok_or(MailError::NotFound)?;
+    let parsed = fetched
+        .map_err(SyncError::from)?
+        .parse()
+        .map_err(SyncError::from)?;
+    parsed
+        .attachments
+        .into_iter()
+        .nth(index)
+        .and_then(|a| a.data)
+        .filter(|bytes| !bytes.is_empty())
+        .ok_or(MailError::NotFound)
+}
+
+/// The message's body is cached: a full copy (possibly genuinely empty) or any body text.
+fn has_body(m: &DbMessage) -> bool {
+    m.fully_fetched != 0 || m.body_html.is_some() || m.body_text.is_some()
+}
+
+/// Printable ASCII only: nothing that could end a header line or fail response building.
+fn is_header_safe(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|b| (0x20..0x7f).contains(&b))
+}
+
+fn io_error(e: std::io::Error) -> MailError {
+    MailError::Sync(SyncError::Db(anyhow::Error::new(e)))
+}
+
+/// Atomic: a half-written file is never read back as the attachment.
+async fn write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let mut tmp_name = path.file_name().unwrap_or_default().to_owned();
+    tmp_name.push(format!(".tmp-{}", uuid::Uuid::new_v4()));
+    let tmp = path.with_file_name(tmp_name);
+    tokio::fs::write(&tmp, bytes).await?;
+    tokio::fs::rename(&tmp, path).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::test_support::TestDb;
+    use crate::gmail::GmailError;
     use crate::sync::events::RecordingEvents;
     use crate::sync::fake::{FakeGmail, FakeMsg};
     use crate::sync::MailApi;
@@ -388,7 +754,7 @@ mod tests {
             events.clone(),
         );
         sync.sync_account("a1").await.unwrap();
-        let mail = MailService::new(pool.clone(), sync.clone());
+        let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
         events.take();
 
         mail.modify_threads("a1", &["t1".into()], &[], &["UNREAD".into()])
@@ -424,5 +790,526 @@ mod tests {
             mail.modify_threads("a1", &[], &[], &["INBOX".into()]).await,
             Err(MailError::Invalid(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn list_threads_dispatches_all_mail_and_primary_and_counts_labels() {
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"]));
+        fake.seed(FakeMsg::new(
+            "m2",
+            "t2",
+            &["INBOX", "CATEGORY_PERSONAL", "UNREAD"],
+        ));
+        fake.seed(FakeMsg::new("m3", "t3", &["INBOX", "CATEGORY_SOCIAL"]));
+        fake.seed(FakeMsg::new("m4", "t4", &["SPAM", "UNREAD"]));
+        fake.seed(FakeMsg::new(
+            "m5",
+            "t5",
+            &["INBOX", "CATEGORY_UPDATES", "Label_1", "UNREAD"],
+        ));
+        let events = Arc::new(RecordingEvents::default());
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            events,
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(pool, sync, db.dir().join("cache"));
+        let accounts = ["a1".to_owned()];
+        let ids = |page: ThreadPageDto| {
+            let mut ids: Vec<String> = page.threads.into_iter().map(|t| t.id).collect();
+            ids.sort();
+            ids
+        };
+
+        let primary = mail
+            .list_threads(&accounts, "INBOX", Some("CATEGORY_PERSONAL"), None, None)
+            .await
+            .unwrap();
+        assert_eq!(ids(primary), ["t1", "t2"]);
+        let social = mail
+            .list_threads(&accounts, "INBOX", Some("CATEGORY_SOCIAL"), None, None)
+            .await
+            .unwrap();
+        assert_eq!(ids(social), ["t3"]);
+        let all = mail
+            .list_threads(&accounts, ALL_MAIL, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(ids(all), ["t1", "t2", "t3", "t5"]);
+
+        let counts = mail.label_counts("a1").await.unwrap();
+        let count = |id: &str| {
+            counts
+                .iter()
+                .find(|c| c.label_id == id)
+                .map(|c| (c.unread, c.total))
+        };
+        assert_eq!(count("INBOX"), Some((3, 4)));
+        assert_eq!(count("Label_1"), Some((1, 1)));
+        assert_eq!(count("CATEGORY_SOCIAL"), Some((0, 1)));
+    }
+
+    #[tokio::test]
+    async fn get_thread_includes_attachments() {
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment(
+            "a.pdf",
+            "application/pdf",
+            "g1",
+        ));
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            Arc::new(RecordingEvents::default()),
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
+
+        let detail = mail.get_thread("a1", "t1").await.unwrap();
+
+        assert_eq!(
+            detail.messages[0].attachments,
+            [AttachmentDto {
+                id: "0".into(),
+                filename: Some("a.pdf".into()),
+                mime_type: Some("application/pdf".into()),
+                size: Some(1),
+                is_inline: false,
+                content_id: None,
+            }]
+        );
+    }
+
+    /// A synced account with one message in `t1`, and the events it emits.
+    async fn events_fixture(
+        msg: FakeMsg,
+    ) -> (TestDb, Arc<FakeGmail>, Arc<RecordingEvents>, MailService) {
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(msg);
+        let events = Arc::new(RecordingEvents::default());
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            events.clone(),
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(pool, sync, db.dir().join("cache"));
+        (db, fake, events, mail)
+    }
+
+    async fn fully_fetched(mail: &MailService, id: &str) -> i64 {
+        sqlx::query_scalar::<_, i64>("SELECT fully_fetched FROM messages WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mail.db)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn get_thread_serves_cached_bodies_while_gmail_hangs_and_refreshes_later() {
+        let (_dir, fake, events, mail) = events_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
+        )
+        .await;
+        // What migration 003 does to messages with attachments: the body stays cached.
+        sqlx::query("UPDATE messages SET fully_fetched = 0")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        let gate = fake.hold_batch_gets();
+        events.take();
+
+        let detail = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            mail.get_thread("a1", "t1"),
+        )
+        .await
+        .expect("cached bodies don't wait for Gmail")
+        .unwrap();
+
+        assert_eq!(detail.messages[0].body_text.as_deref(), Some("Body of m1"));
+        assert!(detail.messages[0].body_available);
+        assert_eq!(fully_fetched(&mail, "m1").await, 0, "refresh still pending");
+
+        // Gmail answers: the refresh lands in the background and the open view hears of it.
+        gate.add_permits(100);
+        for _ in 0..100 {
+            if fully_fetched(&mail, "m1").await == 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_eq!(fully_fetched(&mail, "m1").await, 1);
+        assert!(events.take().iter().any(|e| matches!(
+            e,
+            SyncEvent::MessagesUpdated { modified, .. } if modified == &["t1".to_owned()]
+        )));
+    }
+
+    #[tokio::test]
+    async fn a_background_refresh_that_fetches_nothing_emits_nothing() {
+        let (_dir, fake, events, mail) = events_fixture(FakeMsg::new("m1", "t1", &["INBOX"])).await;
+        sqlx::query("UPDATE messages SET fully_fetched = 0")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        fake.delete("m1");
+        events.take();
+
+        mail.sync
+            .engine("a1")
+            .load_thread_bodies("t1")
+            .await
+            .unwrap();
+
+        assert!(
+            events.take().is_empty(),
+            "an open view would refresh, refetch and loop"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_body_gmail_couldnt_send_is_reported_unavailable() {
+        let (_dir, fake, _events, mail) =
+            events_fixture(FakeMsg::new("m1", "t1", &["INBOX"])).await;
+        sqlx::query("UPDATE messages SET fully_fetched = 0, body_text = NULL, body_html = NULL")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        fake.fail_next("get_message", GmailError::Offline("no route".into()));
+
+        let offline = mail.get_thread("a1", "t1").await.unwrap();
+        assert_eq!(offline.messages[0].body_text, None);
+        assert!(!offline.messages[0].body_available, "not an empty message");
+
+        let online = mail.get_thread("a1", "t1").await.unwrap();
+        assert!(online.messages[0].body_available);
+        assert_eq!(online.messages[0].body_text.as_deref(), Some("Body of m1"));
+    }
+
+    #[tokio::test]
+    async fn get_thread_still_waits_for_a_missing_body() {
+        let (_dir, _fake, _events, mail) =
+            events_fixture(FakeMsg::new("m1", "t1", &["INBOX"])).await;
+        sqlx::query("UPDATE messages SET fully_fetched = 0, body_text = NULL, body_html = NULL")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+
+        let detail = mail.get_thread("a1", "t1").await.unwrap();
+
+        assert_eq!(detail.messages[0].body_text.as_deref(), Some("Body of m1"));
+        assert_eq!(fully_fetched(&mail, "m1").await, 1);
+    }
+
+    #[tokio::test]
+    async fn get_thread_sanitizes_html_bodies() {
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+        fake.seed(FakeMsg::new("m2", "t1", &["INBOX"]));
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            Arc::new(RecordingEvents::default()),
+        );
+        sync.sync_account("a1").await.unwrap();
+        sqlx::query(
+            "UPDATE messages SET body_html = '<script>alert(1)</script><img src=\"cid:logo\"><img src=\"https://t.co/p.gif\">' WHERE id = 'm1'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE messages SET body_html = NULL WHERE id = 'm2'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
+
+        let detail = mail.get_thread("a1", "t1").await.unwrap();
+
+        let html = detail.messages.iter().find(|m| m.id == "m1").unwrap();
+        let body = html.body_html.as_deref().unwrap();
+        assert!(!body.contains("script"), "{body}");
+        assert!(body.contains("/a1/m1/logo"), "{body}");
+        assert!(html.has_remote_content);
+        assert!(!html.declares_dark_mode);
+        let plain = detail.messages.iter().find(|m| m.id == "m2").unwrap();
+        assert_eq!(plain.body_html, None);
+        assert!(!plain.has_remote_content && !plain.declares_dark_mode);
+    }
+
+    /// A synced account whose single message carries the given attachments.
+    async fn attachment_fixture(
+        msg: FakeMsg,
+        seed: &[(&str, &[u8])],
+    ) -> (TestDb, Arc<FakeGmail>, MailService) {
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(msg);
+        for (id, bytes) in seed {
+            fake.seed_attachment("m1", id, bytes);
+        }
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            Arc::new(RecordingEvents::default()),
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(pool, sync, db.dir().join("cache"));
+        (db, fake, mail)
+    }
+
+    #[tokio::test]
+    async fn attachment_bytes_are_fetched_once_then_cached() {
+        let (dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
+            &[("g1", b"%PDF-bytes")],
+        )
+        .await;
+
+        let first = mail.attachment("a1", "m1", "0").await.unwrap();
+        let second = mail.attachment("a1", "m1", "0").await.unwrap();
+
+        assert_eq!(first.bytes, b"%PDF-bytes");
+        assert_eq!(second, first);
+        assert_eq!(first.mime_type, "application/pdf");
+        assert_eq!(first.filename.as_deref(), Some("a.pdf"));
+        assert_eq!(fake.attachment_fetches(), 1);
+        assert!(dir.dir().join("cache/attachments/a1/m1/0").is_file());
+        assert!(matches!(
+            mail.attachment("a1", "m1", "9").await,
+            Err(MailError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn inline_image_rejects_non_images() {
+        let (_dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"])
+                .with_inline("logo.png", "image/png", "g1", "logo")
+                .with_inline("doc.pdf", "application/pdf", "g2", "doc"),
+            &[("g1", b"png"), ("g2", b"pdf")],
+        )
+        .await;
+
+        assert!(matches!(
+            mail.inline_image("a1", "m1", "doc").await,
+            Err(MailError::NotFound)
+        ));
+        assert_eq!(fake.attachment_fetches(), 0, "not even downloaded");
+        assert!(matches!(
+            mail.inline_image("a1", "m1", "missing").await,
+            Err(MailError::NotFound)
+        ));
+        assert_eq!(
+            mail.inline_image("a1", "m1", "logo").await.unwrap().bytes,
+            b"png"
+        );
+    }
+
+    #[tokio::test]
+    async fn protocol_serves_signed_urls_only() {
+        let (_dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_inline("logo.png", "image/png", "g1", "logo"),
+            &[("g1", b"png")],
+        )
+        .await;
+        let url = render::attachment_url("a1", "m1", "logo");
+        let unsigned = url.split_once('?').unwrap().0;
+
+        assert_eq!(mail.serve_inline_image(unsigned).await.status, 404);
+        assert_eq!(fake.attachment_fetches(), 0, "unsigned never reaches Gmail");
+
+        let ok = mail.serve_inline_image(&url).await;
+        assert_eq!(ok.status, 200);
+        assert_eq!(ok.content_type.as_deref(), Some("image/png"));
+        assert_eq!(ok.body, b"png");
+
+        let other = render::attachment_url("a1", "m1", "nope");
+        assert_eq!(mail.serve_inline_image(&other).await.status, 404);
+    }
+
+    #[tokio::test]
+    async fn save_attachment_sanitizes_and_dedupes() {
+        let (dir, _fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
+            &[("g1", b"%PDF")],
+        )
+        .await;
+        sqlx::query("UPDATE attachments SET filename = '../evil/a.pdf'")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        let target = dir.dir().join("Downloads");
+
+        let one = mail
+            .save_attachment("a1", "m1", "0", &target)
+            .await
+            .unwrap();
+        let two = mail
+            .save_attachment("a1", "m1", "0", &target)
+            .await
+            .unwrap();
+
+        assert_eq!(one, target.join("a.pdf"));
+        assert_eq!(two, target.join("a (1).pdf"));
+        assert_eq!(std::fs::read(&one).unwrap(), b"%PDF");
+        assert_eq!(std::fs::read(&two).unwrap(), b"%PDF");
+        assert!(!dir.dir().join("evil").exists());
+    }
+
+    #[test]
+    fn safe_file_name_cases() {
+        assert_eq!(safe_file_name(None), "attachment");
+        assert_eq!(safe_file_name(Some("...")), "attachment");
+        assert_eq!(safe_file_name(Some("  . ")), "attachment");
+        assert_eq!(safe_file_name(Some("a\u{0}b.txt")), "ab.txt");
+        assert_eq!(safe_file_name(Some("../evil/a.pdf")), "a.pdf");
+        assert_eq!(safe_file_name(Some("C:\\Temp\\a:b.pdf")), "ab.pdf");
+        assert_eq!(safe_file_name(Some("dir/")), "attachment");
+        assert_eq!(safe_file_name(Some(".hidden")), "hidden");
+        assert_eq!(safe_file_name(Some("ok name.txt ")), "ok name.txt");
+    }
+
+    #[test]
+    fn unique_path_counts_up_before_the_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            unique_path(dir.path(), "a.tar.gz"),
+            dir.path().join("a.tar.gz")
+        );
+        std::fs::write(dir.path().join("a.tar.gz"), "").unwrap();
+        std::fs::write(dir.path().join("a.tar (1).gz"), "").unwrap();
+        assert_eq!(
+            unique_path(dir.path(), "a.tar.gz"),
+            dir.path().join("a.tar (2).gz")
+        );
+        std::fs::write(dir.path().join("README"), "").unwrap();
+        assert_eq!(
+            unique_path(dir.path(), "README"),
+            dir.path().join("README (1)")
+        );
+    }
+
+    #[tokio::test]
+    async fn embedded_parts_without_an_attachment_id_are_served_and_saved() {
+        let (dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"])
+                .with_embedded("logo.png", "image/png", Some("logo"), b"tiny-png")
+                .with_embedded("note.txt", "text/plain", None, b"hello"),
+            &[],
+        )
+        .await;
+        // The rows keep no bytes and no Gmail attachment id.
+        let rows = attachments::get_attachments_for_message(&mail.db, "a1", "m1")
+            .await
+            .unwrap();
+        assert!(rows.iter().all(|r| r.attachment_id.is_none()));
+        assert_eq!(rows.len(), 2);
+
+        let url = render::attachment_url("a1", "m1", "logo");
+        let served = mail.serve_inline_image(&url).await;
+        assert_eq!(
+            (served.status, served.body.as_slice()),
+            (200, &b"tiny-png"[..])
+        );
+        assert_eq!(
+            fake.attachment_fetches(),
+            0,
+            "nothing to download from Gmail"
+        );
+
+        // The regular download is the second row (rows follow parse order).
+        let note = rows.iter().find(|r| r.content_id.is_none()).unwrap();
+        let saved = mail
+            .save_attachment("a1", "m1", &note.id, &dir.dir().join("Downloads"))
+            .await
+            .unwrap();
+        assert_eq!(saved.file_name().unwrap(), "note.txt");
+        assert_eq!(std::fs::read(saved).unwrap(), b"hello");
+
+        // Later reads come from the disk cache, not another message fetch.
+        let reads = fake.calls("get_message");
+        mail.inline_image("a1", "m1", "logo").await.unwrap();
+        assert_eq!(fake.calls("get_message"), reads);
+        assert!(dir.dir().join("cache/attachments/a1/m1").is_dir());
+    }
+
+    #[tokio::test]
+    async fn a_part_with_no_bytes_anywhere_is_not_found() {
+        let (_dir, _fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_embedded(
+                "e.png",
+                "image/png",
+                Some("e"),
+                b"",
+            ),
+            &[],
+        )
+        .await;
+        assert!(matches!(
+            mail.inline_image("a1", "m1", "e").await,
+            Err(MailError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_header_unsafe_mime_type_is_a_404() {
+        let (_dir, _fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_inline("l.png", "image/png", "g1", "logo"),
+            &[("g1", b"png")],
+        )
+        .await;
+        sqlx::query("UPDATE attachments SET mime_type = 'image/png\nX-Evil: 1'")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        let served = mail
+            .serve_inline_image(&render::attachment_url("a1", "m1", "logo"))
+            .await;
+        assert_eq!(served, InlineResponse::not_found());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn save_attachment_skips_a_dangling_symlink() {
+        let (dir, _fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
+            &[("g1", b"%PDF")],
+        )
+        .await;
+        let target = dir.dir().join("Downloads");
+        std::fs::create_dir(&target).unwrap();
+        std::os::unix::fs::symlink(dir.dir().join("nowhere"), target.join("a.pdf")).unwrap();
+
+        let saved = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            mail.save_attachment("a1", "m1", "0", &target),
+        )
+        .await
+        .expect("must not retry forever")
+        .unwrap();
+
+        assert_eq!(saved, target.join("a (1).pdf"));
+        assert!(
+            !dir.dir().join("nowhere").exists(),
+            "the link was not followed"
+        );
     }
 }
