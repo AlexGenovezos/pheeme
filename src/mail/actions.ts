@@ -39,10 +39,14 @@ const modify = (
 ): Change => ({ patch, leavesList, detail, send: (accountId, ids) => modifyThreads(accountId, ids, add, remove) });
 
 /** The checked conversations, else the open one. Keys may have left the list since; mutating actions skip those. */
-export function targets(): ThreadKey[] {
-  const { checked, openThread } = ui();
+export function targetsOf(checked: ThreadKey[], openThread: ThreadKey | null): ThreadKey[] {
   if (checked.length > 0) return checked;
   return openThread === null ? [] : [openThread];
+}
+
+export function targets(): ThreadKey[] {
+  const { checked, openThread } = ui();
+  return targetsOf(checked, openThread);
 }
 
 /** `keys` (default: the targets) that are still in the list, once each, with their rows. */
