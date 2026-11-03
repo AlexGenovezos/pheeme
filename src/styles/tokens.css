@@ -72,7 +72,8 @@
   --kbd-min-width: 18px;
   --divider-hit-area: 7px;
   --divider-hit-offset: -3px;
-  /* Space the macOS traffic lights occupy (trafficLightPosition x = 16 in tauri.conf.json). */
+  /* Space the macOS traffic lights occupy (trafficLightPosition x = 16 in tauri.conf.json;
+     its y = 24 centres the lights on --titlebar-height, so change them together). */
   --traffic-light-inset: 76px;
   --menu-min-width: 200px;
   --menu-max-width: 320px;
