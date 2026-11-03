@@ -1,16 +1,18 @@
-//! HTTP plumbing for the Gmail REST API: bearer injection, retry with exponential backoff,
-//! one token refresh on 401, and a per-client concurrency cap.
+//! HTTP plumbing for the Gmail REST API: bearer injection, retry with jittered exponential
+//! backoff, one token refresh on 401, a per-client concurrency cap, and pacing under Gmail's
+//! per-user quota.
 //!
 //! The per-area API methods (`messages.rs`, `threads.rs`, ...) are `impl GmailClient` blocks that
 //! build an [`ApiRequest`] and hand it to [`GmailClient::send_json`] or
 //! [`GmailClient::send_empty`]. Nothing here depends on Tauri.
 
 use super::error::GmailError;
+use rand::Rng;
 use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Semaphore;
 use tracing::warn;
 
@@ -19,6 +21,12 @@ pub const DEFAULT_BASE_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/
 
 /// Requests in flight per client (one client per account).
 pub const MAX_CONCURRENT_REQUESTS: usize = 10;
+
+/// Quota units per second each client may spend. Gmail's per-user limit is 6,000 units per
+/// minute for current projects (it was 15,000), enforced per minute; beyond it Gmail answers
+/// 403 `rateLimitExceeded`. 80/s (4,800 a minute) leaves headroom for the user's other
+/// clients, and the limiter backs off further if Gmail still objects.
+pub const QUOTA_UNITS_PER_SEC: u32 = 80;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -58,6 +66,99 @@ impl RetryPolicy {
         self.base_delay
             .saturating_mul(self.multiplier.saturating_pow(attempt))
             .min(self.max_delay)
+    }
+}
+
+/// A random delay in `[delay / 2, delay]`, so requests throttled together don't all retry in
+/// the same instant and get throttled together again.
+fn jittered(delay: Duration) -> Duration {
+    delay.mul_f64(rand::thread_rng().gen_range(0.5..=1.0))
+}
+
+/// Paces requests by Gmail quota units, adapting to the limit Gmail actually enforces.
+///
+/// Each request reserves a send time on a schedule advancing `units / rate` seconds per call,
+/// allowing up to [`QUOTA_BURST`] of backlog to go at once (a GCRA). A rate-limit answer halves
+/// the rate and pauses the schedule; the rate then climbs back linearly, regaining the full
+/// rate's worth per [`QUOTA_RECOVERY`] (so 30 s from half speed). Gmail enforces its limit per
+/// minute, so a fixed rate either wastes quota or keeps tripping it, and recovering much faster
+/// trips it again.
+struct QuotaLimiter {
+    max_rate: f64,
+    state: std::sync::Mutex<Pace>,
+}
+
+struct Pace {
+    /// When the schedule is next free.
+    next: Instant,
+    /// The rate set by the last cut, and when it was made.
+    cut: Option<(f64, Instant)>,
+}
+
+const QUOTA_BURST: Duration = Duration::from_secs(1);
+const QUOTA_RECOVERY: Duration = Duration::from_secs(60);
+
+impl QuotaLimiter {
+    fn new(units_per_sec: u32) -> Self {
+        Self {
+            max_rate: f64::from(units_per_sec.max(1)),
+            state: std::sync::Mutex::new(Pace {
+                next: Instant::now(),
+                cut: None,
+            }),
+        }
+    }
+
+    fn pace(&self) -> std::sync::MutexGuard<'_, Pace> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Units per second allowed at `now`.
+    fn rate_at(&self, pace: &Pace, now: Instant) -> f64 {
+        match pace.cut {
+            None => self.max_rate,
+            Some((rate, at)) => {
+                let regained = self.max_rate * now.duration_since(at).as_secs_f64()
+                    / QUOTA_RECOVERY.as_secs_f64();
+                (rate + regained).min(self.max_rate)
+            }
+        }
+    }
+
+    /// Wait for this request's turn to spend `units`.
+    async fn take(&self, units: u32) {
+        let send_at = {
+            let mut pace = self.pace();
+            let now = Instant::now();
+            let rate = self.rate_at(&pace, now);
+            let start = pace.next.max(now);
+            pace.next = start + Duration::from_secs_f64(f64::from(units) / rate);
+            start.checked_sub(QUOTA_BURST).unwrap_or(now)
+        };
+        tokio::time::sleep_until(send_at.into()).await;
+    }
+
+    /// Gmail said slow down: halve the rate (once per burst of rejections) and let the
+    /// window drain before anything else goes.
+    fn rate_limited(&self) {
+        let mut pace = self.pace();
+        let now = Instant::now();
+        if pace
+            .cut
+            .is_some_and(|(_, at)| now.duration_since(at) < QUOTA_BURST)
+        {
+            return;
+        }
+        let rate = (self.rate_at(&pace, now) / 2.0).max(self.max_rate / 20.0);
+        pace.cut = Some((rate, now));
+        pace.next = pace.next.max(now) + QUOTA_BURST;
+    }
+
+    #[cfg(test)]
+    fn rate(&self) -> f64 {
+        self.rate_at(&self.pace(), Instant::now())
     }
 }
 
@@ -110,6 +211,22 @@ impl ApiRequest {
         self
     }
 
+    /// Quota units Gmail charges for this call
+    /// (<https://developers.google.com/workspace/gmail/api/reference/quota>).
+    fn quota_units(&self) -> u32 {
+        let segments: Vec<&str> = self.segments.iter().map(String::as_str).collect();
+        match (self.method.as_str(), segments.as_slice()) {
+            (_, ["profile"]) | ("GET", ["labels", ..]) => 1,
+            ("GET", ["history"]) => 2,
+            (_, [_, "send"]) => 100,
+            ("POST", ["messages", "batchModify"]) => 50,
+            ("PUT", ["drafts", _]) => 15,
+            ("GET", ["threads", ..]) | (_, ["threads", _, _]) => 10,
+            ("DELETE", ["messages", _]) | ("POST", ["drafts"]) => 10,
+            _ => 5,
+        }
+    }
+
     /// Mark the call non-idempotent: never retry when the outcome is unknown (timeout, dropped
     /// connection, 5xx). Retries still happen when Gmail clearly did not act (connect failure,
     /// 429, 401 refresh). The design forbids automatic re-sends (design doc §5).
@@ -126,6 +243,7 @@ pub struct GmailClient {
     base_url: String,
     retry: RetryPolicy,
     permits: Arc<Semaphore>,
+    quota: Arc<QuotaLimiter>,
 }
 
 impl GmailClient {
@@ -141,6 +259,7 @@ impl GmailClient {
             base_url: DEFAULT_BASE_URL.to_owned(),
             retry: RetryPolicy::default(),
             permits: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
+            quota: Arc::new(QuotaLimiter::new(QUOTA_UNITS_PER_SEC)),
         }
     }
 
@@ -152,6 +271,12 @@ impl GmailClient {
 
     pub fn with_retry_policy(mut self, p: RetryPolicy) -> Self {
         self.retry = p;
+        self
+    }
+
+    /// Change the quota pacing (tests use a low rate to observe it).
+    pub fn with_quota(mut self, units_per_sec: u32) -> Self {
+        self.quota = Arc::new(QuotaLimiter::new(units_per_sec));
         self
     }
 
@@ -195,8 +320,11 @@ impl GmailClient {
         let mut token = self.tokens.access_token().await?;
         let mut refreshed = false;
         let mut attempt = 0;
+        let units = req.quota_units();
 
         loop {
+            // Every attempt spends quota, retries included.
+            self.quota.take(units).await;
             let mut builder = self
                 .http
                 .request(req.method.clone(), url.clone())
@@ -214,7 +342,7 @@ impl GmailClient {
                     // A connect failure means the request never left; anything later is ambiguous.
                     let safe_to_retry = req.retry_ambiguous || e.is_connect();
                     if safe_to_retry && attempt < self.retry.max_retries {
-                        let delay = self.retry.backoff(attempt);
+                        let delay = jittered(self.retry.backoff(attempt));
                         warn!(attempt, ?delay, error = %e, "Gmail request failed, retrying");
                         tokio::time::sleep(delay).await;
                         attempt += 1;
@@ -250,15 +378,20 @@ impl GmailClient {
                         reason.as_deref(),
                         Some("rateLimitExceeded" | "userRateLimitExceeded")
                     ));
+            if rate_limited {
+                self.quota.rate_limited();
+            }
             let retryable = rate_limited || (status.is_server_error() && req.retry_ambiguous);
             // A server asking for longer than our cap gets the error back (with `retry_after`)
             // instead of an early retry; the caller decides when to try again.
             let wait_too_long = retry_after.is_some_and(|d| d > self.retry.max_delay);
             if retryable && !wait_too_long && attempt < self.retry.max_retries {
-                let delay = retry_after.unwrap_or_else(|| self.retry.backoff(attempt));
+                let delay = retry_after.unwrap_or_else(|| jittered(self.retry.backoff(attempt)));
                 warn!(
                     attempt,
                     status = status.as_u16(),
+                    reason = reason.as_deref().unwrap_or(""),
+                    message = %message,
                     ?delay,
                     "Gmail request throttled or failed, retrying"
                 );
@@ -721,5 +854,67 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err.code(), "decode");
+    }
+
+    #[test]
+    fn quota_units_follow_gmail_costs() {
+        let units = |req: ApiRequest| req.quota_units();
+        assert_eq!(units(ApiRequest::get(&["profile"])), 1);
+        assert_eq!(units(ApiRequest::get(&["labels", "INBOX"])), 1);
+        assert_eq!(units(ApiRequest::get(&["history"])), 2);
+        assert_eq!(units(ApiRequest::get(&["messages", "m1"])), 5);
+        assert_eq!(units(ApiRequest::get(&["messages"])), 5);
+        assert_eq!(units(ApiRequest::get(&["threads", "t1"])), 10);
+        assert_eq!(units(ApiRequest::post(&["threads", "t1", "modify"])), 10);
+        assert_eq!(units(ApiRequest::post(&["messages", "batchModify"])), 50);
+        assert_eq!(units(ApiRequest::post(&["messages", "send"])), 100);
+        assert_eq!(units(ApiRequest::post(&["drafts", "send"])), 100);
+    }
+
+    #[test]
+    fn jitter_stays_within_half_to_full_delay() {
+        for _ in 0..200 {
+            let d = jittered(Duration::from_millis(1000));
+            assert!(d >= Duration::from_millis(500) && d <= Duration::from_millis(1000));
+        }
+    }
+
+    #[test]
+    fn rate_limits_halve_the_pace_and_time_restores_it() {
+        let limiter = QuotaLimiter::new(200);
+        limiter.rate_limited();
+        assert!((limiter.rate() - 100.0).abs() < 1.0);
+        limiter.rate_limited(); // same burst of rejections: no second cut
+        assert!((limiter.rate() - 100.0).abs() < 1.0);
+
+        // Half a recovery period after a cut to half rate, it's back to full.
+        let mut pace = limiter.pace();
+        pace.cut = Some((100.0, Instant::now() - QUOTA_RECOVERY / 2));
+        drop(pace);
+        assert_eq!(limiter.rate(), 200.0);
+    }
+
+    #[tokio::test]
+    async fn requests_are_paced_under_the_quota() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        // 10 units a second with a 1 s burst: three 5-unit gets go at once, the fourth waits
+        // ~0.5 s.
+        let client = client_for(&server).0.with_quota(10);
+        let started = Instant::now();
+        for _ in 0..4 {
+            let _: Value = client
+                .send_json(ApiRequest::get(&["messages", "m1"]))
+                .await
+                .unwrap();
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= Duration::from_millis(450),
+            "waited only {elapsed:?}"
+        );
     }
 }

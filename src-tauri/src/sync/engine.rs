@@ -458,11 +458,16 @@ impl SyncEngine {
             MessageFormat::Metadata
         };
         let mut fetched = Vec::new();
+        // One failed fetch (usually a rate limit) mustn't throw away the rest of the page:
+        // what arrived is saved, the page stays current, and the retry skips cached ids.
+        let mut failure = None;
         for (_, result) in self.api.batch_get_messages(&wanted, format).await {
             match result {
                 Ok(msg) => fetched.push(msg),
                 Err(e) if e.is_not_found() => {}
-                Err(e) => return Err(e.into()),
+                Err(e) => {
+                    failure.get_or_insert(e);
+                }
             }
         }
 
@@ -492,6 +497,13 @@ impl SyncEngine {
             }
         }
         let (result, confirmed) = self.finish_write(&mut tx, &touched).await?;
+        if let Some(e) = failure {
+            // Keep the page token and flags: the page isn't done.
+            tx.commit().await?;
+            drop(guard);
+            self.emit_write(result, confirmed);
+            return Err(e.into());
+        }
         let cutoff = now_ms() - FULL_BODY_DAYS * DAY_MS;
         let bodies_done = state.backfill_bodies_done || oldest.is_some_and(|d| d < cutoff);
         let next = page.next_page_token;
