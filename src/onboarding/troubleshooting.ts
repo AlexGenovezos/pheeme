@@ -64,6 +64,7 @@ const TITLES: Record<string, string> = {
   timeout: "Sign-in timed out",
   network: "Couldn't reach Google",
   keychain_unavailable: "No system keychain",
+  keychain_locked: "Keychain locked",
   invalid_input: "Check the client ID and secret",
 };
 

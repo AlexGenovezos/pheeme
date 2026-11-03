@@ -43,6 +43,7 @@ impl AccountError {
         match self {
             Self::OAuth(error) => error.code(),
             Self::Secrets(SecretsError::Unavailable(_)) => "keychain_unavailable",
+            Self::Secrets(SecretsError::Locked(_)) => "keychain_locked",
             Self::Secrets(SecretsError::Corrupt) => "keychain_corrupt",
             Self::Secrets(SecretsError::Other(_)) => "keychain_error",
             Self::Invalid(_) => "invalid_input",
@@ -931,6 +932,10 @@ mod tests {
 
     #[test]
     fn error_codes_are_stable() {
+        assert_eq!(
+            AccountError::Secrets(SecretsError::Locked(keyring::Error::NoEntry)).code(),
+            "keychain_locked"
+        );
         assert_eq!(
             AccountError::Secrets(SecretsError::Corrupt).code(),
             "keychain_corrupt"
