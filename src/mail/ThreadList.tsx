@@ -11,7 +11,7 @@ import { useAccountStore } from "../store/accountStore";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
 import { accountColorIndex, type MailboxRef, threadKey } from "./mailboxes";
-import { type RowAction, ThreadRow } from "./ThreadRow";
+import { type RowAction, rowId, ThreadRow } from "./ThreadRow";
 import "./mail.css";
 
 /** Ask for the next page when the last rendered row is this close to the end. */
@@ -30,7 +30,6 @@ export interface ThreadListProps {
   title: string;
   onRowAction(action: RowAction, thread: ThreadSummary): void;
   rowMenu(thread: ThreadSummary): ContextMenuItem[];
-  onKeyDown?(e: KeyboardEvent): void;
 }
 
 /** What to say when a mailbox has nothing in it. */
@@ -52,6 +51,17 @@ export function ThreadList(props: ThreadListProps) {
   const queried = mailbox.accountId === null ? accounts : accounts.filter((a) => a.id === mailbox.accountId);
   const firstSync = queried.some((a) => !a.synced);
 
+  // A failed first query is worth more than a skeleton that would never go away.
+  if (error) {
+    return (
+      <div className="list-pane__scroll">
+        <div className="thread-state" role="alert">
+          <p className="thread-state__message">{error.message}</p>
+          <Button onClick={() => void useMailStore.getState().reload()}>Try again</Button>
+        </div>
+      </div>
+    );
+  }
   if (firstSync) {
     return (
       <div className="list-pane__scroll" aria-busy="true" aria-label={`${props.title} conversations loading`}>
@@ -68,16 +78,6 @@ export function ThreadList(props: ThreadListProps) {
       </div>
     );
   }
-  if (error) {
-    return (
-      <div className="list-pane__scroll">
-        <div className="thread-state" role="alert">
-          <p className="thread-state__message">{error.message}</p>
-          <Button onClick={() => void useMailStore.getState().reload()}>Try again</Button>
-        </div>
-      </div>
-    );
-  }
   // The first page is still on its way: show nothing rather than flash "Inbox zero".
   if (loading) return <div className="list-pane__scroll" aria-busy="true" />;
   return (
@@ -89,7 +89,7 @@ export function ThreadList(props: ThreadListProps) {
   );
 }
 
-function Rows({ title, onRowAction, rowMenu, onKeyDown }: ThreadListProps) {
+function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const mailbox = useUiStore((s) => s.mailbox);
   const open = useUiStore((s) => s.openThread);
   const checked = useUiStore((s) => s.checked);
@@ -128,6 +128,16 @@ function Rows({ title, onRowAction, rowMenu, onKeyDown }: ThreadListProps) {
     // `virtualizer` is stable for the component's life.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openIndex]);
+
+  // Focus stays on the listbox and points at the open row, so rows can unmount while it scrolls.
+  const onKeyDown = (e: KeyboardEvent) => {
+    const delta = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+    if (!delta || e.target !== e.currentTarget) return;
+    e.preventDefault();
+    if (!threads.length) return;
+    const to = openIndex < 0 ? (delta === 1 ? 0 : threads.length - 1) : Math.min(Math.max(openIndex + delta, 0), threads.length - 1);
+    useUiStore.getState().setOpenThread(keys[to]);
+  };
 
   useCommands([
     {
@@ -171,45 +181,53 @@ function Rows({ title, onRowAction, rowMenu, onKeyDown }: ThreadListProps) {
 
   const showAccountDot = mailbox.accountId === null;
 
+  // Logical set size; -1 while more pages exist.
+  const setSize = next ? -1 : threads.length;
+
   return (
-    <div
-      ref={scrollRef}
-      className="list-pane__scroll"
-      role="listbox"
-      aria-multiselectable="true"
-      aria-label={`${title} conversations`}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-    >
-      <div className="thread-list" style={{ height: virtualizer.getTotalSize() }}>
-        {items.map((item) => {
-          const thread = threads[item.index];
-          const key = keys[item.index];
-          return (
-            <div
-              key={item.key}
-              ref={virtualizer.measureElement}
-              data-index={item.index}
-              role="presentation"
-              className="thread-list__item"
-              style={{ transform: `translateY(${item.start}px)` }}
-            >
-              <ThreadRow
-                thread={thread}
-                open={key === open}
-                checked={checkedSet.has(key)}
-                anyChecked={anyChecked}
-                showAccountDot={showAccountDot}
-                accountColor={accountColorIndex(thread.accountId, accounts)}
-                accountEmail={accountEmail.get(thread.accountId) ?? thread.accountId}
-                onSelect={select}
-                onCheck={check}
-                onAction={onRowAction}
-                onContextMenu={contextMenu}
-              />
-            </div>
-          );
-        })}
+    <div className="thread-body">
+      <div
+        ref={scrollRef}
+        className="list-pane__scroll"
+        role="listbox"
+        aria-multiselectable="true"
+        aria-label={`${title} conversations`}
+        aria-activedescendant={openIndex >= 0 ? rowId(keys[openIndex]) : undefined}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+      >
+        <div className="thread-list" style={{ height: virtualizer.getTotalSize() }}>
+          {items.map((item) => {
+            const thread = threads[item.index];
+            const key = keys[item.index];
+            return (
+              <div
+                key={item.key}
+                ref={virtualizer.measureElement}
+                data-index={item.index}
+                role="presentation"
+                className="thread-list__item"
+                style={{ transform: `translateY(${item.start}px)` }}
+              >
+                <ThreadRow
+                  thread={thread}
+                  position={item.index + 1}
+                  setSize={setSize}
+                  open={key === open}
+                  checked={checkedSet.has(key)}
+                  anyChecked={anyChecked}
+                  showAccountDot={showAccountDot}
+                  accountColor={accountColorIndex(thread.accountId, accounts)}
+                  accountEmail={accountEmail.get(thread.accountId) ?? thread.accountId}
+                  onSelect={select}
+                  onCheck={check}
+                  onAction={onRowAction}
+                  onContextMenu={contextMenu}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
       {error && (
         <div className="thread-list__error" role="alert">

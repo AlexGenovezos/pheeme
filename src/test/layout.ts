@@ -18,11 +18,21 @@ export function stubLayout({ viewport = 600, row = 76, width = 380 }: LayoutStub
   vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(function (this: Element) {
     return isRow(this) ? row : viewport;
   });
+  // A scroller's content height is its virtual canvas, which is how far it can scroll.
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockImplementation(function (this: Element) {
+    const canvas = this.querySelector<HTMLElement>(".thread-list");
+    return canvas ? parseFloat(canvas.style.height) || viewport : viewport;
+  });
   vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(width);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
     const height = isRow(this) ? row : viewport;
     return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: height, width, height, toJSON: () => ({}) };
   });
+  // jsdom's elements don't scroll programmatically; browsers move scrollTop and fire `scroll`.
+  Element.prototype.scrollTo = function (this: Element, arg?: ScrollToOptions | number) {
+    this.scrollTop = typeof arg === "object" ? (arg.top ?? this.scrollTop) : this.scrollTop;
+    this.dispatchEvent(new Event("scroll"));
+  } as typeof Element.prototype.scrollTo;
   vi.stubGlobal(
     "ResizeObserver",
     class {

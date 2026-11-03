@@ -7,14 +7,21 @@ import { ListRow } from "../components/ui/ListRow";
 import { cx } from "../lib/utils";
 import { formatListDate } from "../lib/dates";
 import type { ThreadSummary } from "../lib/tauri";
+import { threadKey } from "./mailboxes";
 import "./mail.css";
 
 export type RowAction = "archive" | "delete" | "read";
 
 export const senderOf = (t: Pick<ThreadSummary, "fromName" | "fromAddress">) => t.fromName ?? t.fromAddress ?? "Unknown sender";
 
+/** The row's DOM id, for the listbox's `aria-activedescendant`. Injective: every character outside [A-Za-z0-9-] becomes `_hex_`. */
+export const rowId = (key: string) => `thread-${key.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.codePointAt(0)!.toString(16)}_`)}`;
+
 export interface ThreadRowProps {
   thread: ThreadSummary;
+  /** One-based place in the list, and the list's size (-1 while more pages exist). */
+  position: number;
+  setSize: number;
   /** The conversation shown in the reading pane. */
   open: boolean;
   /** Part of the multi-selection. */
@@ -34,6 +41,8 @@ export interface ThreadRowProps {
 
 export const ThreadRow = memo(function ThreadRow({
   thread,
+  position,
+  setSize,
   open,
   checked,
   anyChecked,
@@ -56,9 +65,12 @@ export const ThreadRow = memo(function ThreadRow({
   return (
     <ListRow
       className={cx("thread-row", checked && "thread-row--checked")}
+      id={rowId(threadKey(thread.accountId, thread.id))}
+      // `selected` only draws the open row (data-selected); aria-selected is the checked set. The open row is the listbox's active descendant.
       selected={open}
-      // In a multiselectable listbox aria-selected means checked; the open row counts as selected too.
-      aria-selected={open || checked}
+      aria-selected={checked}
+      aria-posinset={position}
+      aria-setsize={setSize}
       unread={thread.unread}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -73,6 +85,9 @@ export const ThreadRow = memo(function ThreadRow({
               aria-label={`Select conversation from ${sender}`}
               checked={checked}
               readOnly
+              // Mouse target only: focus stays on the listbox, and `x` is the keyboard path.
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
                 e.stopPropagation();
                 onCheck(e, thread);
@@ -107,11 +122,12 @@ export const ThreadRow = memo(function ThreadRow({
             {thread.date > 0 && <time dateTime={new Date(thread.date).toISOString()}>{formatListDate(thread.date)}</time>}
           </span>
           {hovered && (
-            <span className="thread-row__actions">
-              <IconButton size="sm" label="Archive" shortcut="e" icon={<Archive />} onClick={act("archive")} />
-              <IconButton size="sm" label="Delete" shortcut="#" icon={<Trash2 />} onClick={act("delete")} />
+            <span className="thread-row__actions" onMouseDown={(e) => e.preventDefault()}>
+              <IconButton size="sm" tabIndex={-1} label="Archive" shortcut="e" icon={<Archive />} onClick={act("archive")} />
+              <IconButton size="sm" tabIndex={-1} label="Delete" shortcut="#" icon={<Trash2 />} onClick={act("delete")} />
               <IconButton
                 size="sm"
+                tabIndex={-1}
                 label={thread.unread ? "Mark as read" : "Mark as unread"}
                 shortcut="shift+u"
                 icon={thread.unread ? <MailOpen /> : <Mail />}

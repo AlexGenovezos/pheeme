@@ -1,5 +1,5 @@
 import { PanelLeftOpen, Search } from "lucide-react";
-import { useEffect, type KeyboardEvent } from "react";
+import { useEffect } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
 import { TextInput } from "../components/ui/TextInput";
@@ -78,13 +78,6 @@ export function ListPane() {
     },
   ]);
 
-  const onListKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "ArrowDown") move(1);
-    else if (e.key === "ArrowUp") move(-1);
-    else return;
-    e.preventDefault();
-  };
-
   return (
     <div className="list-pane">
       <div className="toolbar toolbar--list" data-sidebar-collapsed={collapsed || undefined} {...dragRegion}>
@@ -111,7 +104,7 @@ export function ListPane() {
         />
       </div>
 
-      <ThreadList title={title} onRowAction={onRowAction} rowMenu={rowMenu} onKeyDown={onListKeyDown} />
+      <ThreadList title={title} onRowAction={onRowAction} rowMenu={rowMenu} />
     </div>
   );
 }

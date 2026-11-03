@@ -1,7 +1,16 @@
 /* ---- Conversation list --------------------------------------------------- */
 
+.thread-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: var(--space-0);
+}
+
+/* Its rows are absolutely positioned, so only this height gives the scroller its full extent. */
 .thread-list {
   position: relative;
+  flex: none;
   width: 100%;
 }
 

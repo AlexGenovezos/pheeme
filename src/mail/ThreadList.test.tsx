@@ -9,6 +9,7 @@ import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { stubLayout } from "../test/layout";
 import { ALL_INBOXES, categoryMailbox, threadKey } from "./mailboxes";
 import { ThreadList, type ThreadListProps } from "./ThreadList";
+import { rowId } from "./ThreadRow";
 
 const account = (id: string, synced = true): AccountInfo => ({
   id,
@@ -70,6 +71,21 @@ describe("virtualization and paging", () => {
     expect(options().length).toBeGreaterThan(0);
     expect(options().length).toBeLessThan(60);
     expect(screen.getByRole("listbox")).toHaveAttribute("aria-multiselectable", "true");
+    // The canvas declares the whole dataset's height, so the scroll extent is the full list.
+    expect(document.querySelector<HTMLElement>(".thread-list")!.style.height).toBe(`${1000 * 76}px`);
+  });
+
+  test("rows know their place in the set; the size is -1 while more pages exist", () => {
+    useMailStore.setState({ threads: many(30), next: cursor, loadMore: vi.fn(async () => {}) });
+    const { unmount } = render(<ThreadList {...props()} />);
+    expect(row(0)).toHaveAttribute("aria-posinset", "1");
+    expect(row(4)).toHaveAttribute("aria-posinset", "5");
+    expect(row(4)).toHaveAttribute("aria-setsize", "-1");
+    unmount();
+
+    useMailStore.setState({ threads: many(30), next: null });
+    render(<ThreadList {...props()} />);
+    expect(row(4)).toHaveAttribute("aria-setsize", "30");
   });
 
   test("scrolling near the end calls loadMore once", () => {
@@ -155,6 +171,68 @@ describe("selection", () => {
   });
 });
 
+describe("focus and selection semantics", () => {
+  test("focus stays on the listbox across the virtual window; activedescendant follows the open row", () => {
+    useMailStore.setState({ threads: many(200) });
+    render(<ThreadList {...props()} />);
+    const list = screen.getByRole("listbox");
+    list.focus();
+    act(() => useUiStore.getState().setOpenThread(key(0)));
+    expect(list).toHaveAttribute("aria-activedescendant", rowId(key(0)));
+    expect(document.getElementById(rowId(key(0)))).toBe(row(0));
+
+    // j/k set the open thread; jump far past what is mounted, then step with the arrows.
+    act(() => useUiStore.getState().setOpenThread(key(150)));
+    expect(list).toHaveFocus();
+    expect(list).toHaveAttribute("aria-activedescendant", rowId(key(150)));
+    expect(document.getElementById(rowId(key(150)))).not.toBeNull();
+    expect(screen.queryByText("Subject 0")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(useUiStore.getState().openThread).toBe(key(151));
+    expect(list).toHaveFocus();
+    expect(list).toHaveAttribute("aria-activedescendant", rowId(key(151)));
+    fireEvent.keyDown(list, { key: "ArrowUp" });
+    fireEvent.keyDown(list, { key: "ArrowUp" });
+    expect(useUiStore.getState().openThread).toBe(key(149));
+    expect(list).toHaveFocus();
+  });
+
+  test("arrows start at the ends and stop there", () => {
+    useMailStore.setState({ threads: many(3) });
+    render(<ThreadList {...props()} />);
+    const list = screen.getByRole("listbox");
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(useUiStore.getState().openThread).toBe(key(0));
+    fireEvent.keyDown(list, { key: "ArrowUp" });
+    expect(useUiStore.getState().openThread).toBe(key(0));
+  });
+
+  test("nothing inside a row takes keyboard focus, and x acts on the active row", () => {
+    useMailStore.setState({ threads: many(10) });
+    render(<ThreadList {...props()} />);
+    fireEvent.click(row(1), { metaKey: true });
+    fireEvent.mouseEnter(row(2));
+    expect(within(row(2)).getByRole("checkbox")).toHaveAttribute("tabindex", "-1");
+    for (const button of within(row(2)).getAllByRole("button")) expect(button).toHaveAttribute("tabindex", "-1");
+    act(() => useUiStore.getState().setOpenThread(key(4)));
+    pressKey("x");
+    expect(useUiStore.getState().checked).toEqual([key(1), key(4)]);
+  });
+
+  test("aria-selected is the checked set; the open row is drawn separately", () => {
+    useMailStore.setState({ threads: many(10) });
+    render(<ThreadList {...props()} />);
+    fireEvent.click(row(2)); // open A
+    fireEvent.click(row(5), { metaKey: true }); // check B
+    expect(row(2)).toHaveAttribute("aria-selected", "false");
+    expect(row(2)).toHaveAttribute("data-selected", "true");
+    expect(row(5)).toHaveAttribute("aria-selected", "true");
+    expect(row(5)).not.toHaveAttribute("data-selected");
+    expect(screen.getByRole("listbox")).toHaveAttribute("aria-activedescendant", rowId(key(2)));
+  });
+});
+
 describe("account dot", () => {
   test("account dot only under All Inboxes", () => {
     useMailStore.setState({ threads: [thread(1, "a1"), thread(2, "a2")] });
@@ -212,6 +290,18 @@ describe("states", () => {
     expect(screen.getByText(copy)).toBeInTheDocument();
   });
 
+  test("a failed first query beats the skeletons", () => {
+    useAccountStore.setState({ accounts: [account("a1", false)] });
+    useUiStore.setState({ mailbox: categoryMailbox("a1", "CATEGORY_PERSONAL") });
+    const reload = vi.fn(async () => {});
+    useMailStore.setState({ threads: [], error: { code: "internal", message: "Couldn't read the cache" }, reload });
+    const { container } = render(<ThreadList {...props()} />);
+    expect(container.querySelectorAll(".ui-skeleton")).toHaveLength(0);
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't read the cache");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   test("error state retries", () => {
     const reload = vi.fn(async () => {});
     useMailStore.setState({ threads: [], error: { code: "internal", message: "Couldn't read the cache" }, reload });
@@ -226,6 +316,9 @@ describe("states", () => {
     useMailStore.setState({ threads: many(5), error: { code: "internal", message: "Couldn't load more" }, reload });
     render(<ThreadList {...props()} />);
     expect(options()).toHaveLength(5);
+    // The retry sits beside the listbox, not inside it.
+    expect(within(screen.getByRole("listbox")).queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't load more");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(reload).toHaveBeenCalledTimes(1);
   });

@@ -109,7 +109,9 @@ test("g then i goes to the inbox (Primary, with one account); j selects the firs
   const list = screen.getByRole("listbox", { name: "Primary conversations" });
   await within(list).findAllByRole("option");
   fireEvent.keyDown(window, { key: "j" });
-  expect(within(list).getAllByRole("option")[0]).toHaveAttribute("aria-selected", "true");
+  const first = within(list).getAllByRole("option")[0];
+  expect(first).toHaveAttribute("data-selected", "true");
+  expect(list).toHaveAttribute("aria-activedescendant", first.id);
   expect(screen.getByRole("article")).toBeInTheDocument();
 });
 
