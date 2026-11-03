@@ -13,7 +13,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::Semaphore;
 use tracing::warn;
 
 /// Production API root. `me` resolves to the account the access token belongs to.
@@ -74,36 +74,86 @@ fn jittered(delay: Duration) -> Duration {
     delay.mul_f64(rand::thread_rng().gen_range(0.5..=1.0))
 }
 
-/// Token bucket over Gmail quota units: refills at `rate` units per second, holds at most one
-/// second's worth. Callers wait in FIFO order (the tokio mutex is fair).
+/// Paces requests by Gmail quota units, adapting to the limit Gmail actually enforces.
+///
+/// Each request reserves a send time on a schedule advancing `units / rate` seconds per call,
+/// allowing up to [`QUOTA_BURST`] of backlog to go at once (a GCRA). A rate-limit answer halves
+/// the rate and pauses the schedule; every success wins a little back. The published limit is
+/// 15,000 units per user per minute, but projects can be capped lower, and the limit is
+/// enforced per minute, so a fixed rate either wastes quota or keeps tripping it.
 struct QuotaLimiter {
-    rate: f64,
-    state: Mutex<(f64, Instant)>,
+    max_rate: f64,
+    state: std::sync::Mutex<Pace>,
 }
+
+struct Pace {
+    /// Units per second.
+    rate: f64,
+    /// When the schedule is next free.
+    next: Instant,
+    last_cut: Option<Instant>,
+}
+
+const QUOTA_BURST: Duration = Duration::from_secs(1);
 
 impl QuotaLimiter {
     fn new(units_per_sec: u32) -> Self {
-        let rate = f64::from(units_per_sec.max(1));
+        let max_rate = f64::from(units_per_sec.max(1));
         Self {
-            rate,
-            state: Mutex::new((rate, Instant::now())),
+            max_rate,
+            state: std::sync::Mutex::new(Pace {
+                rate: max_rate,
+                next: Instant::now(),
+                last_cut: None,
+            }),
         }
     }
 
-    /// Wait until `units` are available, then spend them.
+    fn pace(&self) -> std::sync::MutexGuard<'_, Pace> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Wait for this request's turn to spend `units`.
     async fn take(&self, units: u32) {
-        let mut state = self.state.lock().await;
-        let (tokens, last) = &mut *state;
+        let send_at = {
+            let mut pace = self.pace();
+            let now = Instant::now();
+            let start = pace.next.max(now);
+            pace.next = start + Duration::from_secs_f64(f64::from(units) / pace.rate);
+            start.checked_sub(QUOTA_BURST).unwrap_or(now)
+        };
+        tokio::time::sleep_until(send_at.into()).await;
+    }
+
+    /// Gmail accepted a request: creep back towards the full rate.
+    fn succeeded(&self, units: u32) {
+        let mut pace = self.pace();
+        // Slow on purpose: Gmail enforces its limit per minute, so climbing back within
+        // seconds just trips it again. ~50 s from half rate to full at a steady pace.
+        pace.rate = (pace.rate + f64::from(units) * 0.02).min(self.max_rate);
+    }
+
+    /// Gmail said slow down: halve the rate (once per burst of rejections) and let the
+    /// window drain before anything else goes.
+    fn rate_limited(&self) {
+        let mut pace = self.pace();
         let now = Instant::now();
-        *tokens = (*tokens + now.duration_since(*last).as_secs_f64() * self.rate).min(self.rate);
-        *last = now;
-        let units = f64::from(units).min(self.rate);
-        if *tokens < units {
-            tokio::time::sleep(Duration::from_secs_f64((units - *tokens) / self.rate)).await;
-            *tokens = units;
-            *last = Instant::now();
+        if pace
+            .last_cut
+            .is_some_and(|at| now.duration_since(at) < QUOTA_BURST)
+        {
+            return;
         }
-        *tokens -= units;
+        pace.last_cut = Some(now);
+        pace.rate = (pace.rate / 2.0).max(self.max_rate / 20.0);
+        pace.next = pace.next.max(now) + QUOTA_BURST;
+    }
+
+    #[cfg(test)]
+    fn rate(&self) -> f64 {
+        self.pace().rate
     }
 }
 
@@ -301,6 +351,7 @@ impl GmailClient {
             };
 
             if status.is_success() {
+                self.quota.succeeded(units);
                 return Ok(body);
             }
 
@@ -323,6 +374,9 @@ impl GmailClient {
                         reason.as_deref(),
                         Some("rateLimitExceeded" | "userRateLimitExceeded")
                     ));
+            if rate_limited {
+                self.quota.rate_limited();
+            }
             let retryable = rate_limited || (status.is_server_error() && req.retry_ambiguous);
             // A server asking for longer than our cap gets the error back (with `retry_after`)
             // instead of an early retry; the caller decides when to try again.
@@ -332,6 +386,8 @@ impl GmailClient {
                 warn!(
                     attempt,
                     status = status.as_u16(),
+                    reason = reason.as_deref().unwrap_or(""),
+                    message = %message,
                     ?delay,
                     "Gmail request throttled or failed, retrying"
                 );
@@ -819,6 +875,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn rate_limits_halve_the_pace_and_successes_restore_it() {
+        let limiter = QuotaLimiter::new(200);
+        limiter.rate_limited();
+        assert_eq!(limiter.rate(), 100.0);
+        limiter.rate_limited(); // same burst of rejections: no second cut
+        assert_eq!(limiter.rate(), 100.0);
+        for _ in 0..2000 {
+            limiter.succeeded(5);
+        }
+        assert_eq!(limiter.rate(), 200.0, "capped at the configured rate");
+    }
+
     #[tokio::test]
     async fn requests_are_paced_under_the_quota() {
         let server = MockServer::start().await;
@@ -826,10 +895,11 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
             .mount(&server)
             .await;
-        // 10 units a second: two 5-unit gets use the burst, the third waits ~0.5 s.
+        // 10 units a second with a 1 s burst: three 5-unit gets go at once, the fourth waits
+        // ~0.5 s.
         let client = client_for(&server).0.with_quota(10);
         let started = Instant::now();
-        for _ in 0..3 {
+        for _ in 0..4 {
             let _: Value = client
                 .send_json(ApiRequest::get(&["messages", "m1"]))
                 .await

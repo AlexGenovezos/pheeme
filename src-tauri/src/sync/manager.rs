@@ -7,6 +7,7 @@ use super::engine::{now_ms, BackfillProgress, SyncEngine, SyncError, WriteLock};
 use super::events::{SyncEvent, SyncEvents};
 use super::outbox;
 use crate::db::accounts;
+use crate::gmail::GmailError;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +20,11 @@ pub const SYNC_INTERVAL: Duration = Duration::from_secs(90);
 pub const FOCUS_MIN_INTERVAL: Duration = Duration::from_secs(15);
 /// Pause between backfill pages, to stay well inside Gmail's per-user quota.
 pub const BACKFILL_PAUSE: Duration = Duration::from_secs(1);
+
+/// Pause after Gmail rate-limits the backfill, unless it says how long to wait. The page's
+/// progress is kept, so trying again soon costs nothing; waiting for the next sync (up to
+/// 90 s) left the backfill idle most of the time.
+pub const BACKFILL_RATE_LIMIT_PAUSE: Duration = Duration::from_secs(15);
 
 /// Builds the Gmail API for an account (production: a `GmailClient` on the keychain).
 pub type ApiFactory = Arc<dyn Fn(&str) -> Arc<dyn MailApi> + Send + Sync>;
@@ -40,6 +46,7 @@ pub struct SyncManager {
     accounts: Mutex<HashMap<String, Arc<AccountSync>>>,
     last_focus: Mutex<Option<Instant>>,
     backfill_pause: Duration,
+    rate_limit_pause: Duration,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -49,6 +56,22 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 impl SyncManager {
     /// Must be called inside a tokio runtime; background work is spawned on it.
     pub fn new(db: SqlitePool, api_for: ApiFactory, events: Arc<dyn SyncEvents>) -> Arc<Self> {
+        Self::with_pauses(
+            db,
+            api_for,
+            events,
+            BACKFILL_PAUSE,
+            BACKFILL_RATE_LIMIT_PAUSE,
+        )
+    }
+
+    fn with_pauses(
+        db: SqlitePool,
+        api_for: ApiFactory,
+        events: Arc<dyn SyncEvents>,
+        backfill_pause: Duration,
+        rate_limit_pause: Duration,
+    ) -> Arc<Self> {
         Arc::new(Self {
             db,
             api_for,
@@ -56,7 +79,8 @@ impl SyncManager {
             runtime: Handle::current(),
             accounts: Mutex::new(HashMap::new()),
             last_focus: Mutex::new(None),
-            backfill_pause: BACKFILL_PAUSE,
+            backfill_pause,
+            rate_limit_pause,
         })
     }
 
@@ -221,6 +245,11 @@ impl SyncManager {
                 match engine.backfill_step().await {
                     Ok(BackfillProgress::More) => tokio::time::sleep(this.backfill_pause).await,
                     Ok(BackfillProgress::Done) => break,
+                    Err(SyncError::Gmail(GmailError::RateLimit { retry_after })) => {
+                        let wait = retry_after.unwrap_or(this.rate_limit_pause);
+                        tracing::info!(account = %id, ?wait, "backfill rate limited, pausing");
+                        tokio::time::sleep(wait).await;
+                    }
                     Err(e) => {
                         // Picked up again after the next successful sync.
                         tracing::info!(account = %id, error = %e, "backfill paused");
@@ -305,6 +334,37 @@ mod tests {
             e,
             SyncEvent::Error { code, .. } if code == "network"
         )));
+    }
+
+    #[tokio::test]
+    async fn rate_limited_backfill_resumes_without_waiting_for_a_sync() {
+        let (_dir, pool, fake, events, _) = setup().await;
+        let api = fake.clone();
+        let manager = SyncManager::with_pauses(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            events,
+            Duration::ZERO,
+            Duration::from_millis(10),
+        );
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+        fake.seed(FakeMsg::new("old", "t2", &["SENT"]).days_ago(3));
+        fake.fail_next(
+            "get_message",
+            crate::gmail::GmailError::RateLimit { retry_after: None },
+        );
+        manager.sync_account("a1").await.unwrap();
+
+        // Only the backfill fetches "old"; no further sync is triggered.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while crate::db::messages::get_message(&pool, "a1", "old")
+            .await
+            .unwrap()
+            .is_none()
+        {
+            assert!(Instant::now() < deadline, "backfill never resumed");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 
     #[tokio::test]
