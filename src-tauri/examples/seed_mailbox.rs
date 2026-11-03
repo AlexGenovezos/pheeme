@@ -114,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
                 id,
                 account_id: ACCT.into(),
                 thread_id: thread.clone(),
-                to_addresses: Some(r#"["perf@example.com"]"#.into()),
+                to_addresses: Some(r#"[{"name":null,"address":"perf@example.com"}]"#.into()),
                 cc_addresses: None,
                 date: Some(now - (i as i64 + 1) * 7 * MINUTE_MS),
                 size_estimate: Some(2_000),

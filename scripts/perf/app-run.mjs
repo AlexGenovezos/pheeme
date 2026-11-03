@@ -28,11 +28,12 @@ const app = resolve(opts.app);
 
 /** About 20% above the first measured baseline (docs/performance.md). */
 const BUDGETS = {
-  // Measured on ubuntu-22.04 runners (Xvfb, software rendering) on 2026-11-03: 1590 ms and
-  // 239 MiB idle, over the issue's starting targets of 1.5 s and 150 MiB.
+  // Measured on ubuntu-22.04 runners (Xvfb, software rendering) on 2026-11-03: cold start
+  // 913-1590 ms, 236-239 MiB idle, 300 MiB after the session. Idle is over the issue's
+  // starting target of 150 MiB.
   "Cold start to first list paint": { unit: "ms", max: 2000 },
   "Idle memory (app + WebKit, PSS)": { unit: "MiB", max: 290 },
-  "Memory after the session (app + WebKit, PSS)": { unit: "MiB", max: 350 },
+  "Memory after the session (app + WebKit, PSS)": { unit: "MiB", max: 360 },
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -116,6 +117,19 @@ function memory() {
 
 const LINKS = 'nav[aria-label="Mailboxes"] [role="link"]';
 
+/** Wait (up to `ms`) for the list to show a row. */
+async function waitForRow(session, ms = 15_000) {
+  const until = performance.now() + ms;
+  for (;;) {
+    try {
+      return await find(session, '[role="listbox"] [role="option"]');
+    } catch (e) {
+      if (e.code !== "no such element" || performance.now() > until) throw e;
+      await sleep(20);
+    }
+  }
+}
+
 /** One pass of a reading session: every mailbox, a scroll, twenty conversations. */
 async function sessionPass(session) {
   const links = await run(
@@ -129,12 +143,21 @@ async function sessionPass(session) {
     ]);
     await sleep(150);
   }
+  // Back to the first mailbox (All Inboxes), and wait for its rows before reading.
+  await run(session, `document.querySelector(arguments[0])?.click()`, [LINKS]);
+  await waitForRow(session);
+  // Separate commands, so the list sees the bottom before it is sent back to the top.
+  await run(
+    session,
+    `const l = document.querySelector('[role="listbox"]'); l.scrollTop = l.scrollHeight;`,
+  );
+  await sleep(500);
+  await run(session, `document.querySelector('[role="listbox"]').scrollTop = 0;`);
+  await waitForRow(session);
   await run(
     session,
     `const l = document.querySelector('[role="listbox"]');
-     l.scrollTop = l.scrollHeight;
-     l.scrollTop = 0;
-     l.querySelector('[role="option"]')?.click();
+     l.querySelector('[role="option"]').click();
      l.focus();`,
   );
   for (let i = 0; i < 20; i++) {
@@ -181,16 +204,7 @@ try {
   ({ sessionId: session } = await wd("POST", "/session", {
     capabilities: { alwaysMatch: { "tauri:options": { application: app }, browserName: "wry" } },
   }));
-  for (;;) {
-    try {
-      await find(session, '[role="listbox"] [role="option"]');
-      break;
-    } catch (e) {
-      if (e.code !== "no such element") throw e;
-      if (performance.now() - started > 60_000) throw new Error("the list never painted");
-      await sleep(20);
-    }
-  }
+  await waitForRow(session, 60_000);
   const coldStart = performance.now() - started;
   console.log(`cold start to first list paint: ${coldStart.toFixed(0)} ms`);
 
