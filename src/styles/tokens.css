@@ -64,6 +64,8 @@
   --control-height-sm: 24px;
   --control-height-md: 28px;
   --row-height-compact: 28px;
+  /* A three-line conversation row; the list's first guess before it measures. */
+  --row-height-comfortable: 76px;
   --icon-size-sm: 14px;
   --icon-size-md: 16px;
   --icon-stroke: 1.75;

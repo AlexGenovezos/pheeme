@@ -1,0 +1,89 @@
+/* ---- Conversation list --------------------------------------------------- */
+
+.thread-list {
+  position: relative;
+  width: 100%;
+}
+
+.thread-list__item {
+  position: absolute;
+  inset-block-start: var(--space-0);
+  inset-inline: var(--space-0);
+}
+
+.thread-row--checked:not([data-selected]) {
+  background: var(--color-list-active-bg);
+}
+
+.thread-row__lead {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--avatar-size-md);
+  height: var(--avatar-size-md);
+}
+
+.thread-row__check {
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  margin: var(--space-0);
+  accent-color: var(--color-accent);
+  cursor: default;
+}
+
+.thread-row__account {
+  display: inline-block;
+  width: var(--account-dot-size);
+  height: var(--account-dot-size);
+  margin-inline-end: var(--space-1-5);
+  border-radius: var(--radius-full);
+  vertical-align: baseline;
+}
+
+.thread-row__stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.thread-row__stamp[data-hidden] {
+  visibility: hidden;
+}
+
+/* Over the date, so the row keeps its height while hovered. */
+.thread-row__actions {
+  position: absolute;
+  inset-block-start: var(--space-1-5);
+  inset-inline-end: var(--space-2);
+  display: inline-flex;
+  gap: var(--space-0-5);
+  border-radius: var(--radius-sm);
+  background: var(--color-pane-bg);
+}
+
+/* ---- States: skeletons, empty, error ------------------------------------- */
+
+.thread-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  height: 100%;
+  padding: var(--space-8);
+  text-align: center;
+}
+
+.thread-state__message {
+  color: var(--color-foreground-muted);
+  font-weight: var(--font-weight-medium);
+}
+
+.thread-list__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}

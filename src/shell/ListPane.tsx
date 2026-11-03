@@ -1,18 +1,17 @@
-import { PanelLeftOpen, Paperclip, Search, Star } from "lucide-react";
-import { useEffect, useRef, type KeyboardEvent } from "react";
-import { Avatar } from "../components/ui/Avatar";
+import { PanelLeftOpen, Search } from "lucide-react";
+import { useEffect, type KeyboardEvent } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
-import { ListRow } from "../components/ui/ListRow";
 import { TextInput } from "../components/ui/TextInput";
 import { toast } from "../components/ui/Toast";
 import { useCommands } from "../keyboard/useCommands";
-import { openContextMenuFromEvent } from "../lib/contextMenu";
-import { formatListDate } from "../lib/dates";
 import type { ThreadSummary } from "../lib/tauri";
-import { queryFor, threadKey } from "../mail/mailboxes";
-import { fixtureMailboxes, fixtureLabels } from "../preview/fixtures";
+import { mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
+import { ThreadList } from "../mail/ThreadList";
+import { senderOf } from "../mail/ThreadRow";
+import type { RowAction } from "../mail/ThreadRow";
 import { useAccountStore } from "../store/accountStore";
+import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
@@ -22,7 +21,12 @@ export const SEARCH_INPUT_ID = "mail-search";
 /** Placeholder until the mail UI (Phase 6) wires real actions. */
 export const notYet = (action: string) => toast({ title: `${action} isn't wired up yet`, description: "It arrives with the mail UI." });
 
-export const senderOf = (t: Pick<ThreadSummary, "fromName" | "fromAddress">) => t.fromName ?? t.fromAddress ?? "Unknown sender";
+export { senderOf };
+
+const ROW_ACTION_NAMES: Record<RowAction, string> = { archive: "Archive", delete: "Delete", read: "Mark as read" };
+const onRowAction = (action: RowAction) => notYet(ROW_ACTION_NAMES[action]);
+
+const NO_LABELS: { id: string; name: string }[] = [];
 
 const rowMenu = (t: ThreadSummary) => [
   { id: "archive", label: "Archive", shortcut: "e", onSelect: () => notYet("Archive") },
@@ -38,7 +42,6 @@ export function ListPane() {
   const select = useUiStore((s) => s.setOpenThread);
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
-  const listRef = useRef<HTMLDivElement>(null);
 
   const accountIds = useAccountStore((s) => s.accounts.map((a) => a.id).join("\n"));
   const threads = useMailStore((s) => s.threads);
@@ -51,7 +54,8 @@ export function ListPane() {
     else void load(queryFor({ accountId, labelId, category }, ids));
   }, [accountId, labelId, category, accountIds]);
 
-  const box = fixtureMailboxes.find((m) => m.id === labelId) ?? fixtureLabels.find((l) => l.id === labelId);
+  const userLabels = useLabelStore((s) => (accountId ? s.userLabels(accountId) : NO_LABELS));
+  const title = mailboxTitle({ accountId, labelId, category }, userLabels);
   const unread = threads.filter((t) => t.unread).length;
   const index = threads.findIndex((t) => threadKey(t.accountId, t.id) === selected);
 
@@ -74,12 +78,6 @@ export function ListPane() {
     },
   ]);
 
-  useEffect(() => {
-    listRef.current
-      ?.querySelector<HTMLElement>('[aria-selected="true"]')
-      ?.scrollIntoView?.({ block: "nearest" });
-  }, [selected]);
-
   const onListKeyDown = (e: KeyboardEvent) => {
     if (e.key === "ArrowDown") move(1);
     else if (e.key === "ArrowUp") move(-1);
@@ -92,7 +90,7 @@ export function ListPane() {
       <div className="toolbar toolbar--list" data-sidebar-collapsed={collapsed || undefined} {...dragRegion}>
         {collapsed && <IconButton label="Show sidebar" shortcut="mod+b" icon={<PanelLeftOpen />} onClick={toggleSidebar} />}
         <h1 className="toolbar__title" {...dragRegion}>
-          {box?.name ?? "Mail"}
+          {title}
         </h1>
         {unread > 0 && (
           <span className="toolbar__subtitle" {...dragRegion}>
@@ -113,48 +111,7 @@ export function ListPane() {
         />
       </div>
 
-      <div
-        ref={listRef}
-        className="list-pane__scroll"
-        role="listbox"
-        aria-label={`${box?.name ?? "Mail"} conversations`}
-        tabIndex={0}
-        onKeyDown={onListKeyDown}
-      >
-        {threads.length === 0 ? (
-          <div className="pane-empty">
-            <p className="pane-empty__title">No conversations in {box?.name ?? "this mailbox"}</p>
-          </div>
-        ) : (
-          threads.map((t) => {
-            const sender = senderOf(t);
-            const key = threadKey(t.accountId, t.id);
-            return (
-              <ListRow
-                key={key}
-                selected={key === selected}
-                unread={t.unread}
-                leading={<Avatar name={sender} email={t.fromAddress ?? undefined} />}
-                title={t.messageCount > 1 ? `${sender} (${t.messageCount})` : sender}
-                meta={
-                  <>
-                    {t.hasAttachment && <Paperclip aria-label="Has attachment" className="list-pane__glyph" />}
-                    {t.starred && <Star aria-label="Starred" className="list-pane__glyph list-pane__glyph--star" />}
-                    {t.date > 0 && <time dateTime={new Date(t.date).toISOString()}>{formatListDate(t.date)}</time>}
-                  </>
-                }
-                subtitle={t.subject ?? "(no subject)"}
-                description={t.snippet}
-                onClick={() => select(key)}
-                onContextMenu={(e) => {
-                  select(key);
-                  openContextMenuFromEvent(e, rowMenu(t));
-                }}
-              />
-            );
-          })
-        )}
-      </div>
+      <ThreadList title={title} onRowAction={onRowAction} rowMenu={rowMenu} onKeyDown={onListKeyDown} />
     </div>
   );
 }

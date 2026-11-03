@@ -1,7 +1,7 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import App from "./App";
 import * as updater from "./lib/updater";
 import { createPreviewHandlers } from "./preview/install";
@@ -9,6 +9,7 @@ import { usePaletteStore } from "./palette/paletteStore";
 import { __resetUiStoreForTests, useUiStore } from "./store/uiStore";
 import { useAccountStore } from "./store/accountStore";
 import { __resetMailStoreForTests } from "./store/mailStore";
+import { stubLayout } from "./test/layout";
 
 const account = { id: "a1", email: "me@example.com", displayName: "Me", clientId: "c.apps.googleusercontent.com" };
 const fixtureBackend = createPreviewHandlers();
@@ -27,7 +28,10 @@ beforeEach(() => {
   mockIPC(backend);
   __resetMailStoreForTests();
   useAccountStore.setState({ accounts: [], loaded: false, error: null, syncErrors: {} });
+  stubLayout(); // jsdom has no layout, so the virtualized list would render no rows
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 test("renders nothing until accounts load", () => {
   mockIPC(() => new Promise(() => {}));
@@ -89,7 +93,7 @@ test("renders the three-pane shell with fixture mail", async () => {
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
   expect(screen.getByRole("navigation", { name: "Mailboxes" })).toBeInTheDocument();
-  expect(screen.getByRole("listbox", { name: "Inbox conversations" })).toBeInTheDocument();
+  expect(screen.getByRole("listbox", { name: "Primary conversations" })).toBeInTheDocument();
   expect(screen.getByText("No conversation selected")).toBeInTheDocument();
 });
 
@@ -102,7 +106,7 @@ test("g then i goes to the inbox (Primary, with one account); j selects the firs
   fireEvent.keyDown(window, { key: "i" });
   expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" });
 
-  const list = screen.getByRole("listbox", { name: "Inbox conversations" });
+  const list = screen.getByRole("listbox", { name: "Primary conversations" });
   await within(list).findAllByRole("option");
   fireEvent.keyDown(window, { key: "j" });
   expect(within(list).getAllByRole("option")[0]).toHaveAttribute("aria-selected", "true");
@@ -131,7 +135,7 @@ test("shortcuts typed into search don't fire commands", async () => {
 test("right-clicking a conversation opens the menu (DOM fallback in preview)", async () => {
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
-  const [first] = await within(screen.getByRole("listbox", { name: "Inbox conversations" })).findAllByRole("option");
+  const [first] = await within(screen.getByRole("listbox", { name: "Primary conversations" })).findAllByRole("option");
   fireEvent.contextMenu(first, { clientX: 100, clientY: 100 });
   expect(screen.getByRole("menu")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
@@ -173,7 +177,7 @@ test("the shell lists threads for every connected account", async () => {
     return backend(cmd, args);
   });
   render(<App />);
-  const list = await screen.findByRole("listbox", { name: "Inbox conversations" });
+  const list = await screen.findByRole("listbox", { name: "Primary conversations" });
   await vi.waitFor(() => expect(within(list).getAllByRole("option").length).toBeGreaterThan(0));
   expect(queries).toContainEqual({ accountIds: ["a1"], labelId: "INBOX" });
 });
