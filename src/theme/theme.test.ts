@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import indexHtml from "../../index.html?raw";
 import tauriConf from "../../src-tauri/tauri.conf.json";
+import tauriMacConf from "../../src-tauri/tauri.macos.conf.json";
 import { darkTheme, lightTheme, THEME_TOKENS } from "../styles/themes";
 import { initTheme, readThemeMode, resolveTheme, THEME_MODE_KEY, useThemeStore } from "./theme";
 
@@ -183,5 +184,22 @@ describe("no white flash", () => {
 
   test("the native window background matches the dark theme", () => {
     expect(tauriConf.app.windows[0].backgroundColor).toBe(darkTheme.tokens["--color-app-bg"]);
+  });
+
+  test("the macOS window is the main window made transparent over sidebar vibrancy", () => {
+    // Platform config replaces the windows array whole, so the two copies must not drift.
+    const main: Record<string, unknown> = { ...tauriConf.app.windows[0] };
+    delete main.backgroundColor; // opaque would cover the vibrancy
+    expect(tauriMacConf.app.windows).toEqual([
+      {
+        ...main,
+        transparent: true,
+        windowEffects: { effects: ["sidebar"], state: "followsWindowActiveState" },
+      },
+    ]);
+  });
+
+  test("the window stays hidden until the frontend has painted", () => {
+    expect(tauriConf.app.windows[0].visible).toBe(false);
   });
 });

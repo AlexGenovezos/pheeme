@@ -87,8 +87,41 @@ test("activeAccountId persists", () => {
   expect(stored()).toMatchObject({ activeAccountId: "a2" });
   __resetUiStoreForTests();
   expect(ui().activeAccountId).toBe("a2");
-  // Navigation itself is not restored.
-  expect(ui().mailbox).toEqual({ accountId: null, labelId: "INBOX" });
+});
+
+test("the last mailbox reopens on launch, without its open thread or selection", () => {
+  ui().setMailbox({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_SOCIAL" });
+  ui().setOpenThread("a1:t1");
+  ui().toggleChecked("a1:t2");
+  __resetUiStoreForTests();
+  expect(ui().mailbox).toEqual({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_SOCIAL" });
+  expect(ui().openThread).toBeNull();
+  expect(ui().checked).toEqual([]);
+});
+
+test("a malformed stored mailbox falls back to All Inboxes", () => {
+  for (const mailbox of [
+    "INBOX",
+    { accountId: 7, labelId: "INBOX" },
+    { accountId: "a1" },
+    { accountId: "a1", labelId: "" },
+    { accountId: "a1", labelId: "INBOX", category: 3 },
+  ]) {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ mailbox }));
+    __resetUiStoreForTests();
+    expect(ui().mailbox).toEqual({ accountId: null, labelId: "INBOX" });
+  }
+});
+
+test("removing the account of the open mailbox stores the new mailbox", () => {
+  ui().setMailbox({ accountId: "a2", labelId: "SENT" });
+  ui().forgetAccount("a2", [{ id: "a1" }]);
+  __resetUiStoreForTests();
+  expect(ui().mailbox).toEqual({
+    accountId: "a1",
+    labelId: "INBOX",
+    category: "CATEGORY_PERSONAL",
+  });
 });
 
 test("navigation preferences tolerate corrupt storage", () => {

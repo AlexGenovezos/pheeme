@@ -173,6 +173,25 @@ export function homeMailbox(accounts: { id: string }[]): MailboxRef {
     : ALL_INBOXES;
 }
 
+/**
+ * Whether a mailbox restored from the last launch still exists: its account is connected and, for a user label once
+ * that account's labels are known, the label is one of them. All Inboxes always exists.
+ */
+export function mailboxExists(
+  ref: MailboxRef,
+  accounts: { id: string }[],
+  labels: Record<string, { id: string }[]>,
+): boolean {
+  if (ref.accountId === null) return true;
+  if (!accounts.some((a) => a.id === ref.accountId)) return false;
+  // Inbox, its categories and the Favorites are Gmail system labels, which every account has.
+  if (ref.labelId === "INBOX" || FAVORITES.some((f) => f.labelId === ref.labelId)) return true;
+  const known = labels[ref.accountId];
+  // Not loaded yet, or a new account before its first sync: nothing to check against.
+  if (!known?.length) return true;
+  return known.some((l) => l.id === ref.labelId);
+}
+
 /** The account Favorites and labels follow: the stored one while it is still connected, else the first. */
 export function resolveActiveAccount(
   activeAccountId: string | null,

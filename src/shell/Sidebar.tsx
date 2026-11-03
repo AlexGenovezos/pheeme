@@ -33,6 +33,7 @@ import {
   FAVORITES,
   formatCount,
   homeMailbox,
+  mailboxExists,
   type MailboxRef,
   resolveActiveAccount,
 } from "../mail/mailboxes";
@@ -260,6 +261,15 @@ export function Sidebar({
   useEffect(() => {
     if (single && allInboxes) useUiStore.getState().setMailbox(homeMailbox([single]));
   }, [single, allInboxes]);
+
+  // The mailbox restored from the last launch may belong to an account or label that is gone since.
+  const mailbox = useUiStore((s) => s.mailbox);
+  const labels = useLabelStore((s) => s.labels);
+  useEffect(() => {
+    const home = homeMailbox(accounts);
+    if (!mailboxExists(mailbox, accounts, labels) && !sameMailbox(mailbox, home))
+      useUiStore.getState().setMailbox(home);
+  }, [mailbox, accounts, labels]);
 
   const openThemeMenu = (e: MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect();

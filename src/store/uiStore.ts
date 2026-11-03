@@ -44,7 +44,7 @@ export const clampSidebar = (w: number) => Math.round(clamp(w, PANE.sidebarMin, 
 export const clampList = (w: number, available = 0) =>
   Math.round(clamp(w, PANE.listMin, available > 0 ? available - PANE.viewMin : Infinity));
 
-type Stored = Partial<Record<keyof PaneLayout | keyof NavPrefs, unknown>>;
+type Stored = Partial<Record<keyof PaneLayout | keyof NavPrefs | "mailbox", unknown>>;
 
 function readStored(storage: Pick<Storage, "getItem"> | undefined): Stored | null {
   try {
@@ -83,7 +83,20 @@ export function readNavPrefs(
   };
 }
 
-function writeStored(stored: PaneLayout & NavPrefs) {
+/** The mailbox showing when the app last closed, so launch reopens it from the cache; All Inboxes if none or malformed. */
+export function readLastMailbox(
+  storage: Pick<Storage, "getItem"> | undefined = safeStorage(),
+): MailboxRef {
+  const raw = readStored(storage)?.mailbox;
+  if (!raw || typeof raw !== "object") return DEFAULT_MAILBOX;
+  const { accountId, labelId, category } = raw as Record<string, unknown>;
+  if (accountId !== null && typeof accountId !== "string") return DEFAULT_MAILBOX;
+  if (typeof labelId !== "string" || labelId === "") return DEFAULT_MAILBOX;
+  if (category !== undefined && typeof category !== "string") return DEFAULT_MAILBOX;
+  return category === undefined ? { accountId, labelId } : { accountId, labelId, category };
+}
+
+function writeStored(stored: Persisted) {
   try {
     safeStorage()?.setItem(LAYOUT_KEY, JSON.stringify(stored));
   } catch {
@@ -129,7 +142,10 @@ interface UiState extends PaneLayout, NavPrefs {
   forgetAccount(accountId: string, remaining: { id: string }[]): void;
 }
 
-const persistedOf = (s: PaneLayout & NavPrefs): PaneLayout & NavPrefs => ({
+type Persisted = PaneLayout & NavPrefs & Pick<UiState, "mailbox">;
+
+const persistedOf = (s: Persisted): Persisted => ({
+  mailbox: s.mailbox,
   sidebarWidth: s.sidebarWidth,
   listWidth: s.listWidth,
   sidebarCollapsed: s.sidebarCollapsed,
@@ -146,7 +162,7 @@ const navReset = (): Pick<UiState, "mailbox" | "openThread" | "checked" | "ancho
 
 export const useUiStore = create<UiState>((set, get) => {
   /** Apply a change to persisted state and write it all back. */
-  const persist = (patch: Partial<PaneLayout & NavPrefs>) => {
+  const persist = (patch: Partial<Persisted>) => {
     set(patch);
     writeStored(persistedOf(get()));
   };
@@ -154,15 +170,18 @@ export const useUiStore = create<UiState>((set, get) => {
     ...readLayout(),
     ...readNavPrefs(),
     ...navReset(),
+    mailbox: readLastMailbox(),
     setSidebarWidth: (w) => persist({ sidebarWidth: clampSidebar(w) }),
     setListWidth: (w, available) => persist({ listWidth: clampList(w, available) }),
     resetSidebarWidth: () => persist({ sidebarWidth: PANE.sidebarDefault }),
     resetListWidth: () => persist({ listWidth: PANE.listDefault }),
     toggleSidebar: () => persist({ sidebarCollapsed: !get().sidebarCollapsed }),
     setMailbox: (ref) => {
-      set({ mailbox: ref, openThread: null, checked: [], anchor: null });
-      if (ref.accountId !== null && ref.accountId !== get().activeAccountId)
-        persist({ activeAccountId: ref.accountId });
+      set({ openThread: null, checked: [], anchor: null });
+      persist({
+        mailbox: ref,
+        ...(ref.accountId !== null && { activeAccountId: ref.accountId }),
+      });
     },
     setOpenThread: (key) => set({ openThread: key }),
     toggleChecked: (key) =>
@@ -212,5 +231,10 @@ export const useUiStore = create<UiState>((set, get) => {
 
 /** Test helper: reload persisted state from storage and reset navigation. */
 export function __resetUiStoreForTests() {
-  useUiStore.setState({ ...readLayout(), ...readNavPrefs(), ...navReset() });
+  useUiStore.setState({
+    ...readLayout(),
+    ...readNavPrefs(),
+    ...navReset(),
+    mailbox: readLastMailbox(),
+  });
 }

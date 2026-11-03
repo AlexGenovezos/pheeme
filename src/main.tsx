@@ -6,12 +6,13 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { platform } from "./lib/platform";
 import { isPreview, isTauri } from "./preview/runtime";
-import { syncNativeWindow } from "./theme/nativeWindow";
+import { syncNativeWindow, vibrancy } from "./theme/nativeWindow";
 import { initTheme } from "./theme/theme";
 
 const root = document.documentElement;
 root.dataset.platform = platform;
 root.dataset.runtime = isTauri() ? "tauri" : "browser";
+if (vibrancy) root.dataset.vibrancy = "";
 
 // Theme tokens land on :root before the first React render, so nothing paints unthemed.
 initTheme(isTauri() ? syncNativeWindow : undefined);

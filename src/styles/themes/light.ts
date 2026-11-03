@@ -16,6 +16,7 @@ export const lightTheme: ThemeDefinition = {
     "--color-app-bg": "#ffffff",
     "--color-pane-bg": "#ffffff",
     "--color-sidebar-bg": "#f2f4f4",
+    "--color-sidebar-vibrant-bg": "#f2f4f466",
     "--color-sidebar-foreground": "#2e3535",
     "--color-titlebar-bg": "#ffffff",
     "--color-pane-border": "#e2e6e6",
