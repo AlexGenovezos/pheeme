@@ -49,8 +49,10 @@ describe("preview IPC", () => {
     expect(inbox.length).toBeGreaterThan(primary.length);
   });
 
-  test("label_counts reports unread labels", () => {
-    expect(createPreviewHandlers().label_counts({ accountId: "acc-personal" })).toContainEqual({ labelId: "Label_3", unread: 2 });
+  test("label_counts reports unread and total per label", () => {
+    const counts = createPreviewHandlers().label_counts({ accountId: "acc-personal" }) as { labelId: string; unread: number; total: number }[];
+    expect(counts).toContainEqual({ labelId: "Label_3", unread: 2, total: 2 });
+    expect(counts.find((c) => c.labelId === "STARRED")).toMatchObject({ unread: 0, total: fixtureThreadsIn("STARRED").length });
   });
 
   test("the updater check reports no update", () => {

@@ -141,6 +141,12 @@ export interface LabelInfo {
   colorText: string | null;
 }
 
+export interface LabelCount {
+  labelId: string;
+  unread: number;
+  total: number;
+}
+
 export interface MailboxCount {
   labelId: string;
   unread: number;
@@ -152,8 +158,8 @@ export const getThread = (accountId: string, threadId: string) =>
   invoke<ThreadDetail>("get_thread", { accountId, threadId });
 export const listLabels = (accountId: string) => invoke<LabelInfo[]>("list_labels", { accountId });
 export const mailboxCounts = (accountIds: string[]) => invoke<MailboxCount[]>("mailbox_counts", { accountIds });
-/** Unread conversations per label of one account, counted from the local cache. */
-export const labelCounts = (accountId: string) => invoke<MailboxCount[]>("label_counts", { accountId });
+/** Unread and total conversations per label of one account, counted from the local cache. */
+export const labelCounts = (accountId: string) => invoke<LabelCount[]>("label_counts", { accountId });
 export const modifyThreads = (accountId: string, threadIds: string[], add: string[], remove: string[]) =>
   invoke<void>("modify_threads", { accountId, threadIds, add, remove });
 export const trashThreads = (accountId: string, threadIds: string[]) =>

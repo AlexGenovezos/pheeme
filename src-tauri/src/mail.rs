@@ -215,6 +215,15 @@ pub struct CountDto {
     pub unread: i64,
 }
 
+/// Unread and total conversations under one label of an account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelCountDto {
+    pub label_id: String,
+    pub unread: i64,
+    pub total: i64,
+}
+
 /// An attachment's content with what is needed to serve or save it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachmentBytes {
@@ -413,12 +422,16 @@ impl MailService {
             .collect())
     }
 
-    /// Unread conversations per label of one account, counted from the cache.
-    pub async fn label_counts(&self, account_id: &str) -> Result<Vec<CountDto>, MailError> {
-        Ok(threads::label_unread_counts(&self.db, account_id)
+    /// Unread and total conversations per label of one account, counted from the cache.
+    pub async fn label_counts(&self, account_id: &str) -> Result<Vec<LabelCountDto>, MailError> {
+        Ok(threads::label_counts(&self.db, account_id)
             .await?
             .into_iter()
-            .map(|(label_id, unread)| CountDto { label_id, unread })
+            .map(|c| LabelCountDto {
+                label_id: c.label_id,
+                unread: c.unread,
+                total: c.total,
+            })
             .collect())
     }
 
@@ -834,10 +847,15 @@ mod tests {
         assert_eq!(ids(all), ["t1", "t2", "t3", "t5"]);
 
         let counts = mail.label_counts("a1").await.unwrap();
-        let count = |id: &str| counts.iter().find(|c| c.label_id == id).map(|c| c.unread);
-        assert_eq!(count("INBOX"), Some(3));
-        assert_eq!(count("Label_1"), Some(1));
-        assert_eq!(count("CATEGORY_SOCIAL"), None);
+        let count = |id: &str| {
+            counts
+                .iter()
+                .find(|c| c.label_id == id)
+                .map(|c| (c.unread, c.total))
+        };
+        assert_eq!(count("INBOX"), Some((3, 4)));
+        assert_eq!(count("Label_1"), Some((1, 1)));
+        assert_eq!(count("CATEGORY_SOCIAL"), Some((0, 1)));
     }
 
     #[tokio::test]

@@ -1,7 +1,7 @@
 //! Label commands: thin adapters over [`crate::mail::MailService`].
 
 use super::CommandError;
-use crate::mail::{CountDto, LabelDto};
+use crate::mail::{CountDto, LabelCountDto, LabelDto};
 use crate::AppState;
 use tauri::State;
 
@@ -22,11 +22,11 @@ pub async fn mailbox_counts(
     Ok(state.mail.mailbox_counts(&account_ids).await?)
 }
 
-/// Unread conversations per label of one account, counted from the local cache.
+/// Unread and total conversations per label of one account, counted from the local cache.
 #[tauri::command]
 pub async fn label_counts(
     state: State<'_, AppState>,
     account_id: String,
-) -> Result<Vec<CountDto>, CommandError> {
+) -> Result<Vec<LabelCountDto>, CommandError> {
     Ok(state.mail.label_counts(&account_id).await?)
 }

@@ -42,7 +42,9 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       return threadDetail(t);
     },
     mailbox_counts: () => fixtureMailboxes.map((m) => ({ labelId: m.id, unread: m.unread })),
-    label_counts: () => [...fixtureMailboxes, ...fixtureLabels].filter((l) => l.unread > 0).map((l) => ({ labelId: l.id, unread: l.unread })),
+    label_counts: () => [...fixtureMailboxes, ...fixtureLabels]
+      .map((l) => ({ labelId: l.id, unread: l.unread, total: Math.max(l.unread, fixtureThreadsIn(l.id).length) }))
+      .filter((c) => c.total > 0),
     sync_now: () => undefined,
     modify_threads: () => undefined,
     trash_threads: () => undefined,

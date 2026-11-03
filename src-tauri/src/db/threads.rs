@@ -610,17 +610,25 @@ pub async fn unread_counts(
     Ok(rows.into_iter().map(|r| (r.label_id, r.count)).collect())
 }
 
-/// Unread thread count per label id for one account, counted from the cached threads
-/// (not Gmail's own counters). Labels with no unread threads are omitted.
-pub async fn label_unread_counts(
-    pool: &SqlitePool,
-    account_id: &str,
-) -> Result<Vec<(String, i64)>> {
+/// Unread and total thread counts for one label of one account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LabelCount {
+    pub label_id: String,
+    pub unread: i64,
+    pub total: i64,
+}
+
+/// Thread counts per label id for one account, counted from the cached threads (not
+/// Gmail's own counters) in a single pass over the account's `thread_labels`. Labels with
+/// no threads are omitted; labels with no unread threads report `unread: 0`.
+pub async fn label_counts(pool: &SqlitePool, account_id: &str) -> Result<Vec<LabelCount>> {
     let rows = sqlx::query!(
         r#"
-        SELECT tl.label_id AS "label_id!", COUNT(*) AS "count!: i64"
+        SELECT tl.label_id AS "label_id!",
+               COUNT(*) AS "total!: i64",
+               COUNT(u.label_id) AS "unread!: i64"
         FROM thread_labels tl
-        JOIN thread_labels u
+        LEFT JOIN thread_labels u
           ON u.account_id = tl.account_id AND u.thread_id = tl.thread_id AND u.label_id = 'UNREAD'
         WHERE tl.account_id = ?
         GROUP BY tl.label_id
@@ -630,7 +638,14 @@ pub async fn label_unread_counts(
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| (r.label_id, r.count)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| LabelCount {
+            label_id: r.label_id,
+            unread: r.unread,
+            total: r.total,
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -1417,7 +1432,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn label_unread_counts_per_label() {
+    async fn label_counts_per_label() {
         let pool = seeded_pool().await;
         seed(&pool, "a1", "t1", Some(300), &["Label_1", "UNREAD"]).await;
         seed(&pool, "a1", "t2", Some(200), &["Label_1"]).await;
@@ -1426,17 +1441,30 @@ mod tests {
             "a1",
             "t3",
             Some(100),
-            &["INBOX", "Label_2", "UNREAD"],
+            &["INBOX", "STARRED", "UNREAD"],
         )
         .await;
-        // Another account's unread mail doesn't leak in.
-        seed(&pool, "a2", "t4", Some(100), &["Label_1", "UNREAD"]).await;
+        seed(&pool, "a1", "t4", Some(90), &["STARRED"]).await;
+        // Another account's mail doesn't leak in.
+        seed(
+            &pool,
+            "a2",
+            "t5",
+            Some(100),
+            &["Label_1", "STARRED", "UNREAD"],
+        )
+        .await;
 
-        let counts = label_unread_counts(&pool, "a1").await.unwrap();
-        let count = |id: &str| counts.iter().find(|(l, _)| l == id).map(|(_, n)| *n);
-        assert_eq!(count("Label_1"), Some(1));
-        assert_eq!(count("Label_2"), Some(1));
-        assert_eq!(count("INBOX"), Some(1));
-        assert!(counts.contains(&("Label_1".to_owned(), 1)));
+        let counts = label_counts(&pool, "a1").await.unwrap();
+        let count = |id: &str| {
+            counts
+                .iter()
+                .find(|c| c.label_id == id)
+                .map(|c| (c.unread, c.total))
+        };
+        assert_eq!(count("Label_1"), Some((1, 2)));
+        assert_eq!(count("STARRED"), Some((1, 2)));
+        assert_eq!(count("INBOX"), Some((1, 1)));
+        assert_eq!(count("Label_2"), None);
     }
 }
