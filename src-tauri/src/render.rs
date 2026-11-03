@@ -6,9 +6,10 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use ammonia::{Builder, Url, UrlRelative};
+use hmac::{Hmac, Mac};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
 /// URI scheme the webview serves `cid:` images through.
@@ -30,7 +31,57 @@ pub struct SanitizedBody {
     pub declares_dark_mode: bool,
 }
 
-/// URL the webview resolves to an attachment's bytes.
+type HmacSha256 = Hmac<sha2::Sha256>;
+
+/// Process-wide random key, so only URLs minted by [`attachment_url`] in this run resolve.
+fn token_key() -> &'static [u8; 32] {
+    static KEY: OnceLock<[u8; 32]> = OnceLock::new();
+    KEY.get_or_init(rand::random)
+}
+
+fn token_mac(account_id: &str, message_id: &str, content_id: &str) -> HmacSha256 {
+    let mut mac = HmacSha256::new_from_slice(token_key()).expect("HMAC takes any key length");
+    mac.update(format!("{account_id}\n{message_id}\n{content_id}").as_bytes());
+    mac
+}
+
+fn attachment_token(account_id: &str, message_id: &str, content_id: &str) -> String {
+    token_mac(account_id, message_id, content_id)
+        .finalize()
+        .into_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Whether `token` was minted by [`attachment_url`] for exactly this attachment. The protocol
+/// handler refuses every request without a valid token, so an author-written `pheeme-att` URL
+/// (in an attribute, in CSS, escaped or not) can never resolve.
+pub fn verify_attachment_token(
+    account_id: &str,
+    message_id: &str,
+    content_id: &str,
+    token: &str,
+) -> bool {
+    let Some(bytes) = decode_hex(token) else {
+        return false;
+    };
+    token_mac(account_id, message_id, content_id)
+        .verify_slice(&bytes)
+        .is_ok()
+}
+
+fn decode_hex(s: &str) -> Option<Vec<u8>> {
+    if !s.len().is_multiple_of(2) || !s.is_ascii() {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
+}
+
+/// URL the webview resolves to an attachment's bytes, signed with `?t=<token>`.
 pub fn attachment_url(account_id: &str, message_id: &str, content_id: &str) -> String {
     let base = if cfg!(windows) {
         format!("http://{WINDOWS_ATTACHMENT_HOST}/")
@@ -38,10 +89,11 @@ pub fn attachment_url(account_id: &str, message_id: &str, content_id: &str) -> S
         format!("{ATTACHMENT_SCHEME}://localhost/")
     };
     format!(
-        "{base}{}/{}/{}",
+        "{base}{}/{}/{}?t={}",
         utf8_percent_encode(account_id, SEGMENT),
         utf8_percent_encode(message_id, SEGMENT),
         utf8_percent_encode(content_id, SEGMENT),
+        attachment_token(account_id, message_id, content_id),
     )
 }
 
@@ -340,7 +392,7 @@ mod tests {
     fn rewrites_cid_images() {
         let out = clean(r#"<img src="cid:logo@x">"#).html;
         assert!(
-            out.contains(r#"src="pheeme-att://localhost/a1/m1/logo%40x""#),
+            out.contains(r#"src="pheeme-att://localhost/a1/m1/logo%40x?t="#),
             "{out}"
         );
     }
@@ -350,7 +402,7 @@ mod tests {
     fn rewrites_cid_images() {
         let out = clean(r#"<img src="cid:logo@x">"#).html;
         assert!(
-            out.contains(r#"src="http://pheeme-att.localhost/a1/m1/logo%40x""#),
+            out.contains(r#"src="http://pheeme-att.localhost/a1/m1/logo%40x?t="#),
             "{out}"
         );
     }
@@ -358,13 +410,13 @@ mod tests {
     #[test]
     fn cid_rewrite_does_not_double_encode() {
         let out = clean(r#"<img src="CID:logo%40x">"#).html;
-        assert!(out.contains("/a1/m1/logo%40x\""), "{out}");
+        assert!(out.contains("/a1/m1/logo%40x?t="), "{out}");
     }
 
     #[test]
     fn attachment_url_encodes_each_segment() {
         let url = attachment_url("a/b", "m 1", "x@y/z");
-        assert!(url.ends_with("/a%2Fb/m%201/x%40y%2Fz"), "{url}");
+        assert!(url.contains("/a%2Fb/m%201/x%40y%2Fz?t="), "{url}");
     }
 
     #[test]
@@ -398,6 +450,81 @@ mod tests {
         )
         .html;
         assert!(!out.contains("data:"), "{out}");
+    }
+
+    /// Every `pheeme-att` URL in `html`, as (segments, token) checked with `verify_attachment_token`.
+    fn internal_urls_in(html: &str) -> Vec<bool> {
+        let base = attachment_url("", "", "");
+        let base = &base[..base
+            .find("///")
+            .map_or(base.find("//").unwrap() + 2, |i| i + 2)];
+        let base = base.trim_end_matches('/');
+        let mut results = Vec::new();
+        let mut rest = html;
+        while let Some(i) = rest.find(base) {
+            let url = &rest[i + base.len()..];
+            let end = url.find([')', '"', '\'', ' ', '<']).unwrap_or(url.len());
+            let (path, token) = url[..end].split_once("?t=").unwrap_or((&url[..end], ""));
+            let segments: Vec<String> = path
+                .trim_start_matches('/')
+                .split('/')
+                .map(|s| percent_decode_str(s).decode_utf8_lossy().into_owned())
+                .collect();
+            results.push(match segments.as_slice() {
+                [a, m, c] => verify_attachment_token(a, m, c, token),
+                _ => false,
+            });
+            rest = &url[end..];
+        }
+        results
+    }
+
+    #[test]
+    fn attachment_tokens_are_bound_to_one_attachment() {
+        let url = attachment_url("a1", "m1", "logo@x");
+        let token = url.rsplit_once("?t=").unwrap().1;
+        assert!(verify_attachment_token("a1", "m1", "logo@x", token));
+        assert!(!verify_attachment_token("a1", "m2", "logo@x", token));
+        assert!(!verify_attachment_token("a2", "m1", "logo@x", token));
+        assert!(!verify_attachment_token("a1", "m1", "other", token));
+        let mut tampered = token.to_owned();
+        tampered.replace_range(..1, if token.starts_with('0') { "1" } else { "0" });
+        assert!(!verify_attachment_token("a1", "m1", "logo@x", &tampered));
+        for bad in [
+            "",
+            "zz",
+            &token[..token.len() - 2],
+            "é",
+            &format!("{token}00"),
+        ] {
+            assert!(!verify_attachment_token("a1", "m1", "logo@x", bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn rewritten_cid_urls_verify() {
+        let out = clean(r#"<img src="cid:logo@x">"#).html;
+        assert_eq!(internal_urls_in(&out), [true], "{out}");
+    }
+
+    #[test]
+    fn author_written_internal_urls_in_css_never_verify() {
+        for hostile in [
+            "<style>p{background:url(pheeme-att://localhost/b/c/d)}</style><p>x</p>",
+            "<style>p{background:url(http://pheeme-att.localhost/b/c/d)}</style><p>x</p>",
+            r#"<style>p{background:url("pheeme-att://localhost/b/c/d?t=00")}</style><p>x</p>"#,
+            r#"<p style="background:url(pheeme\2d att://localhost/b/c/d)">x</p>"#,
+            r#"<p style="background:url(pheeme-att://localhost/b/c/d)">x</p>"#,
+        ] {
+            let out = clean(hostile).html;
+            assert!(
+                internal_urls_in(&out).iter().all(|ok| !ok),
+                "{hostile} -> {out}"
+            );
+        }
+        // The helper does see a URL that the style block let through, so the test is not vacuous.
+        let out = clean("<style>p{background:url(pheeme-att://localhost/b/c/d)}</style>").html;
+        assert_eq!(internal_urls_in(&out), [false], "{out}");
     }
 
     #[test]

@@ -3146,6 +3146,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "futures",
+ "hmac",
  "keyring",
  "mailparse",
  "open",
