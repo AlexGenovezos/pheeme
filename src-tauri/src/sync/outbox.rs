@@ -206,10 +206,11 @@ pub async fn rebase_threads(
                     thread_id: thread_id.clone(),
                     prior_label_ids: serde_json::to_string(&labels).expect("strings serialize"),
                 };
-                if !recorded.contains(&msg.id) {
-                    if !msg.date.is_some_and(|d| d <= op.created_at) {
-                        continue;
-                    }
+                let is_recorded = recorded.contains(&msg.id);
+                if !covers(&op, is_recorded, msg.date) {
+                    continue;
+                }
+                if !is_recorded {
                     store::add_target(&mut *conn, &target).await?;
                 } else if restored.contains(&msg.id) {
                     store::set_prior(&mut *conn, &target).await?;
@@ -222,6 +223,13 @@ pub async fn rebase_threads(
         }
     }
     Ok(())
+}
+
+/// Whether a label/trash op applies to a message: one it recorded as a target, or one
+/// dated no later than the op (older mail cached or found since). Mail that arrived after
+/// the user acted is left alone. Used for both the cache and the Gmail request.
+fn covers(op: &DbOp, recorded: bool, date_ms: Option<i64>) -> bool {
+    recorded || date_ms.is_some_and(|d| d <= op.created_at)
 }
 
 /// Confirm sends whose message is now cached in Sent. Returns the confirmed op ids.
@@ -403,10 +411,7 @@ async fn apply_op(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, Sync
                     thread
                         .messages
                         .iter()
-                        .filter(|m| {
-                            recorded.contains(&m.id)
-                                || m.internal_date_ms().is_some_and(|d| d <= op.created_at)
-                        })
+                        .filter(|m| covers(op, recorded.contains(&m.id), m.internal_date_ms()))
                         .map(|m| m.id.clone()),
                 ),
                 Err(e) if e.is_not_found() => {}
