@@ -1,8 +1,6 @@
 // Typed wrappers around invoke(). Rust commands live in src-tauri/src/commands/.
 import { invoke } from "@tauri-apps/api/core";
 
-export { invoke };
-
 export interface AccountInfo {
   id: string;
   email: string;
