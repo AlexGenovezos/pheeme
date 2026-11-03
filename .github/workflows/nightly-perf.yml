@@ -7,6 +7,12 @@ on:
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
+  # A PR that changes the harness itself runs it before it lands.
+  pull_request:
+    paths:
+      - .github/workflows/nightly-perf.yml
+      - scripts/perf/**
+      - src-tauri/examples/seed_mailbox.rs
 
 permissions:
   contents: read
@@ -44,9 +50,79 @@ jobs:
           path: src-tauri/target/tmp/soak/dhat-heap.json
           retention-days: 14
 
+  app:
+    name: Real app on Linux (startup and memory)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+        with:
+          cache-key: ubuntu-22.04-release
+      - name: Install the WebDriver and a virtual display
+        run: sudo apt-get install -y webkit2gtk-driver xvfb dbus
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-driver
+      - run: npm ci
+      - name: Build the release app
+        run: npx tauri build --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Seed a 20,000-conversation mailbox
+        working-directory: src-tauri
+        run: |
+          echo "PERF_HOME=$RUNNER_TEMP/perf-home" >> "$GITHUB_ENV"
+          cargo run --locked --release --example seed_mailbox -- "$RUNNER_TEMP/perf-home/.local/share/app.pheeme.desktop" 20000
+      - name: Launch, idle, and run a scripted session
+        run: |
+          xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- \
+            node scripts/perf/app-run.mjs --app src-tauri/target/release/pheeme \
+              --home "$PERF_HOME" --out perf.json --idle-seconds 60 --session-minutes 10
+      # History of earlier nightly runs, kept in the Actions cache (only nightly runs save it).
+      - uses: actions/cache/restore@v6
+        if: always()
+        with:
+          path: perf-history
+          key: app-perf-${{ github.run_id }}
+          restore-keys: app-perf-
+      - name: Compare memory with earlier runs
+        if: always() && hashFiles('perf.json') != ''
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Real app on Linux
+          tool: customSmallerIsBetter
+          output-file-path: perf.json
+          external-data-json-path: perf-history/app-perf.json
+          alert-threshold: "120%"
+          fail-on-alert: true
+          summary-always: true
+      # Start time is tracked, not gated on: one start varies by 2x on shared runners.
+      - name: Track start time
+        if: always() && hashFiles('startup.json') != ''
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Real app on Linux, start time
+          tool: customSmallerIsBetter
+          output-file-path: startup.json
+          external-data-json-path: perf-history/app-startup.json
+          fail-on-alert: false
+          summary-always: true
+      - uses: actions/cache/save@v6
+        if: always() && github.event_name == 'schedule' && hashFiles('perf.json', 'startup.json') != ''
+        with:
+          path: perf-history
+          key: app-perf-${{ github.run_id }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: app-perf
+          path: |
+            perf.json
+            startup.json
+          if-no-files-found: ignore
+
   report:
     name: Report failure
-    needs: [soak]
+    needs: [soak, app]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     permissions:
