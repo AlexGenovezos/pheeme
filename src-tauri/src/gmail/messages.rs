@@ -25,6 +25,19 @@ impl GmailClient {
         self.send_json(req.query_opt("pageToken", page_token)).await
     }
 
+    /// One page of every message id in the mailbox, spam and trash included, newest first.
+    pub async fn list_all_messages(
+        &self,
+        page_token: Option<&str>,
+        max_results: u32,
+    ) -> Result<MessageListResponse, GmailError> {
+        let req = ApiRequest::get(&["messages"])
+            .query("maxResults", max_results.to_string())
+            .query("includeSpamTrash", "true")
+            .query_opt("pageToken", page_token);
+        self.send_json(req).await
+    }
+
     /// One page of message ids matching a Gmail search (`q`), e.g. `rfc822msgid:<id@host>`.
     pub async fn search_messages(
         &self,
@@ -474,6 +487,21 @@ mod tests {
             .batch_modify_messages(&ids, &[], &["UNREAD".into()])
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_all_messages_includes_spam_and_trash() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/messages"))
+            .and(query_param("includeSpamTrash", "true"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let page = client.list_all_messages(None, 500).await.unwrap();
+        assert!(page.messages.is_empty());
     }
 
     #[tokio::test]

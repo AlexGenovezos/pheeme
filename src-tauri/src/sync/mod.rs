@@ -6,6 +6,9 @@ pub mod engine;
 pub mod events;
 #[cfg(test)]
 pub mod fake;
+pub mod outbox;
+#[cfg(test)]
+mod tests;
 
 pub use api::MailApi;
 pub use events::{NoopEvents, SyncEvent, SyncEvents};

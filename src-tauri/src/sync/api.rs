@@ -18,7 +18,7 @@ pub trait MailApi: Send + Sync {
         max: u32,
     ) -> Result<ThreadListResponse, GmailError>;
     async fn get_thread(&self, id: &str, format: MessageFormat) -> Result<Thread, GmailError>;
-    /// All mail except spam and trash, newest first.
+    /// Every message, spam and trash included, newest first.
     async fn list_messages(
         &self,
         page_token: Option<&str>,
@@ -79,7 +79,7 @@ impl MailApi for GmailClient {
         page_token: Option<&str>,
         max: u32,
     ) -> Result<MessageListResponse, GmailError> {
-        GmailClient::list_messages(self, &[], page_token, max).await
+        self.list_all_messages(page_token, max).await
     }
 
     async fn search_messages(&self, q: &str) -> Result<MessageListResponse, GmailError> {

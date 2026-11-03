@@ -107,10 +107,6 @@ impl FakeMsg {
             ..Default::default()
         }
     }
-
-    fn hidden(&self) -> bool {
-        self.labels.iter().any(|l| l == "TRASH" || l == "SPAM")
-    }
 }
 
 #[derive(Default)]
@@ -121,6 +117,8 @@ struct State {
     messages: BTreeMap<String, FakeMsg>,
     history: Vec<HistoryRecord>,
     failures: HashMap<&'static str, VecDeque<GmailError>>,
+    /// `(successful calls still to allow, then this error)`.
+    delayed_failures: HashMap<&'static str, (usize, GmailError)>,
     calls: HashMap<&'static str, usize>,
     sent: Vec<String>,
     send_then_fail: Option<GmailError>,
@@ -190,6 +188,13 @@ impl FakeGmail {
             .entry(method)
             .or_default()
             .push_back(error);
+    }
+
+    /// Let `successes` calls of `method` through, then fail the next one with `error`.
+    pub fn fail_after(&self, method: &'static str, successes: usize, error: GmailError) {
+        self.lock()
+            .delayed_failures
+            .insert(method, (successes, error));
     }
 
     /// The next send is delivered, then answered with `error` (an ambiguous failure).
@@ -313,6 +318,13 @@ impl FakeGmail {
     fn enter(&self, method: &'static str) -> Result<(), GmailError> {
         let mut s = self.lock();
         *s.calls.entry(method).or_default() += 1;
+        if let Some((left, _)) = s.delayed_failures.get_mut(method) {
+            if *left == 0 {
+                let (_, e) = s.delayed_failures.remove(method).unwrap();
+                return Err(e);
+            }
+            *left -= 1;
+        }
         match s.failures.get_mut(method).and_then(VecDeque::pop_front) {
             Some(e) => Err(e),
             None => Ok(()),
@@ -442,7 +454,7 @@ impl MailApi for FakeGmail {
     ) -> Result<MessageListResponse, GmailError> {
         self.enter("list_messages")?;
         let s = self.lock();
-        let mut msgs: Vec<&FakeMsg> = s.messages.values().filter(|m| !m.hidden()).collect();
+        let mut msgs: Vec<&FakeMsg> = s.messages.values().collect();
         msgs.sort_by(|a, b| b.date_ms.cmp(&a.date_ms).then(b.id.cmp(&a.id)));
         let refs: Vec<MessageRef> = msgs
             .into_iter()
@@ -462,15 +474,19 @@ impl MailApi for FakeGmail {
 
     async fn search_messages(&self, q: &str) -> Result<MessageListResponse, GmailError> {
         self.enter("search_messages")?;
-        let wanted = q
-            .strip_prefix("rfc822msgid:")
+        let mut terms = q.split_whitespace();
+        let wanted = terms
+            .next()
+            .and_then(|t| t.strip_prefix("rfc822msgid:"))
             .expect("fake only searches rfc822msgid:");
+        let sent_only = terms.any(|t| t == "in:sent");
         let s = self.lock();
         Ok(MessageListResponse {
             messages: s
                 .messages
                 .values()
                 .filter(|m| m.message_id == wanted)
+                .filter(|m| !sent_only || m.labels.iter().any(|l| l == "SENT"))
                 .map(|m| MessageRef {
                     id: m.id.clone(),
                     thread_id: m.thread_id.clone(),

@@ -210,18 +210,59 @@ pub async fn unfetched_in_thread<'e>(
     .await?)
 }
 
-pub async fn find_by_rfc822<'e>(
+/// A cached message in Sent with this `Message-ID` (drafts with the same id don't count).
+pub async fn find_sent_by_rfc822<'e>(
     ex: impl SqliteExecutor<'e>,
     account_id: &str,
     rfc822_message_id: &str,
 ) -> Result<Option<String>> {
     Ok(sqlx::query_scalar!(
-        r#"SELECT id AS "id!" FROM messages WHERE account_id = ? AND rfc822_message_id = ? LIMIT 1"#,
+        r#"SELECT id AS "id!" FROM messages
+           WHERE account_id = ? AND rfc822_message_id = ?
+             AND EXISTS (SELECT 1 FROM json_each(messages.label_ids) WHERE value = 'SENT')
+           LIMIT 1"#,
         account_id,
         rfc822_message_id
     )
     .fetch_optional(ex)
     .await?)
+}
+
+/// Oldest date (ms) among the cached messages in `ids`.
+pub async fn oldest_date(
+    conn: &mut SqliteConnection,
+    account_id: &str,
+    ids: &[String],
+) -> Result<Option<i64>> {
+    let ids_json = serde_json::to_string(ids)?;
+    Ok(sqlx::query_scalar!(
+        r#"SELECT MIN(date) AS "d?: i64" FROM messages
+           WHERE account_id = ? AND id IN (SELECT value FROM json_each(?))"#,
+        account_id,
+        ids_json
+    )
+    .fetch_one(&mut *conn)
+    .await?)
+}
+
+/// Store a freshly fetched body without touching labels or flags (which sync and the
+/// outbox own).
+pub async fn set_body(conn: &mut SqliteConnection, msg: &DbMessage) -> Result<()> {
+    sqlx::query!(
+        r#"UPDATE messages SET body_html = ?, body_text = ?, raw_headers = ?, has_attachment = ?,
+                  fully_fetched = 1, rfc822_message_id = COALESCE(?, rfc822_message_id)
+           WHERE account_id = ? AND id = ?"#,
+        msg.body_html,
+        msg.body_text,
+        msg.raw_headers,
+        msg.has_attachment,
+        msg.rfc822_message_id,
+        msg.account_id,
+        msg.id
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
 }
 
 pub async fn get_messages_for_thread<'e>(

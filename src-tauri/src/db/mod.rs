@@ -30,6 +30,12 @@ pub async fn init_db(data_dir: &Path) -> Result<SqlitePool> {
     Ok(pool)
 }
 
+/// A write transaction that takes SQLite's write lock up front (`BEGIN IMMEDIATE`), so it
+/// waits its turn behind other writers instead of failing when it upgrades from a read.
+pub async fn begin_write(pool: &SqlitePool) -> Result<sqlx::Transaction<'static, sqlx::Sqlite>> {
+    Ok(pool.begin_with("BEGIN IMMEDIATE").await?)
+}
+
 pub(crate) async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     sqlx::migrate!("src/db/migrations").run(pool).await?;
     info!("Database migrations applied");
