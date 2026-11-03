@@ -569,7 +569,13 @@ mod tests {
             );
         }
         // The helper does see a URL that the style block let through, so the test is not vacuous.
-        let out = clean("<style>p{background:url(pheeme-att://localhost/b/c/d)}</style>").html;
+        // Build the URL from the platform's attachment base (`pheeme-att://localhost/` or `http://pheeme-att.localhost/`).
+        let prefix = attachment_url("A", "B", "C");
+        let prefix = &prefix[..prefix.find("A/").unwrap()];
+        let out = clean(&format!(
+            "<style>p{{background:url({prefix}b/c/d)}}</style>"
+        ))
+        .html;
         assert_eq!(internal_urls_in(&out), [false], "{out}");
     }
 
