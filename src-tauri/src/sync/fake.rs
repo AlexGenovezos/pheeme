@@ -429,6 +429,15 @@ impl FakeGmail {
         s.history.clear();
     }
 
+    /// Drop history up to and including `history_id`, once it's been synced, so a long run
+    /// doesn't grow the fake's own log.
+    pub fn forget_history_through(&self, history_id: u64) {
+        let mut s = self.lock();
+        s.history
+            .retain(|r| r.id.parse::<u64>().unwrap() > history_id);
+        s.oldest_history = s.oldest_history.max(history_id);
+    }
+
     pub fn message(&self, id: &str) -> Option<FakeMsg> {
         self.lock().messages.get(id).cloned()
     }

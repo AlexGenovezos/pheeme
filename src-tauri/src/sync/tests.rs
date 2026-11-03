@@ -472,6 +472,21 @@ async fn backfill_skips_messages_deleted_by_sync() {
     );
 }
 
+#[tokio::test]
+async fn sync_keeps_no_tombstones_once_backfill_is_done() {
+    let h = harness().await;
+    h.fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+    h.engine.run_initial_sync().await.unwrap();
+    while h.engine.backfill_step().await.unwrap() == BackfillProgress::More {}
+    h.fake.delete("m1");
+    h.engine.run_incremental_sync().await.unwrap();
+    assert!(cached_labels(&h.pool, "m1").await.is_none());
+    assert!(
+        h.engine.write_lock.lock().await.is_empty(),
+        "no backfill left to resurrect it, so nothing to remember"
+    );
+}
+
 // ---- outbox -------------------------------------------------------------------------
 
 async fn synced_inbox(h: &H, msgs: Vec<FakeMsg>) {
