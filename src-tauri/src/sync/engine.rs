@@ -1,1 +1,1 @@
-// Phase 5: Sync orchestrator
+// Sync engine: see Task 4.
