@@ -46,9 +46,12 @@ export function ComposePanel({ win }: { win: ComposeWindow }) {
   // Autosave while there's something new (minimized too).
   useEffect(() => {
     if (win.loading) return;
-    const timer = setInterval(() => void store.save(win.id, { quiet: true }), AUTOSAVE_MS);
+    const timer = setInterval(
+      () => void useComposeStore.getState().save(win.id, { quiet: true }),
+      AUTOSAVE_MS,
+    );
     return () => clearInterval(timer);
-  }, [store, win.id, win.loading]);
+  }, [win.id, win.loading]);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -156,6 +159,9 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   const [editorFocus, setEditorFocus] = useState(0);
   const { draft } = win;
   const editor = useComposeEditor(draft.bodyHtml, (bodyHtml) => store.update(win.id, { bodyHtml }));
+  useEffect(() => {
+    editor?.setEditable(!win.sending);
+  }, [editor, win.sending]);
 
   // Focus: replies start in the body, new messages in To.
   useEffect(() => {

@@ -139,22 +139,25 @@ let focusSeq = 0;
 const pending = new Map<string, PendingSend>();
 /** Each window's save in flight, so a send or a second save waits for it. */
 const saves = new Map<number, Promise<boolean>>();
+/** The Gmail draft each window's last save made, read by a discard that raced it. */
+const savedDrafts = new Map<number, string>();
 
 export const useComposeStore = create<ComposeState>((set, get) => {
   const find = (id: number) => get().windows.find((w) => w.id === id);
   const patch = (id: number, change: Partial<ComposeWindow>) =>
     set((s) => ({ windows: s.windows.map((w) => (w.id === id ? { ...w, ...change } : w)) }));
   const remove = (id: number) => set((s) => ({ windows: s.windows.filter((w) => w.id !== id) }));
+  /** A user edit. Ignored while sending: the message already went to the outbox as it was. */
   const edit = (id: number, change: (w: ComposeWindow) => Partial<ComposeWindow>) =>
     set((s) => ({
       windows: s.windows.map((w) =>
-        w.id === id ? { ...w, ...change(w), version: w.version + 1, error: null } : w,
+        w.id === id && !w.sending ? { ...w, ...change(w), version: w.version + 1, error: null } : w,
       ),
     }));
 
   /** Make room and add a panel; returns its id, or `null` when the limit says no. */
-  const open = (win: Omit<ComposeWindow, "id">): number | null => {
-    if (get().windows.length >= MAX_WINDOWS) {
+  const open = (win: Omit<ComposeWindow, "id">, force = false): number | null => {
+    if (!force && get().windows.length >= MAX_WINDOWS) {
       toast({
         title: "Too many messages open",
         description: "Send or close one first.",
@@ -196,8 +199,8 @@ export const useComposeStore = create<ComposeState>((set, get) => {
 
   /** Put a message back into a panel (after Undo or a refused send). */
   const reopen = (win: ComposeWindow, error: string | null) => {
-    const id = open({ ...win, sending: false, saving: false, error, confirmingClose: false });
-    if (id === null) dropStaged(win.draft.attachments);
+    // Past the panel limit if need be: this message exists nowhere else.
+    open({ ...win, sending: false, saving: false, error, confirmingClose: false }, true);
   };
 
   const onSendStatus = (event: OutboxSendStatus) => {
@@ -304,7 +307,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     },
 
     async attachFiles(id, paths) {
-      if (paths.length === 0) return;
+      if (paths.length === 0 || find(id)?.sending) return;
       set((s) => ({
         windows: s.windows.map((w) =>
           w.id === id ? { ...w, attaching: w.attaching + paths.length } : w,
@@ -332,7 +335,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     removeAttachment(id, attachmentId) {
       const win = find(id);
       const att = win?.draft.attachments.find((a) => a.id === attachmentId);
-      if (!win || !att) return;
+      if (!win || !att || win.sending) return;
       edit(id, (w) => ({
         draft: {
           ...w.draft,
@@ -354,6 +357,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         patch(id, { saving: true });
         try {
           const saved = await saveDraft(accountId, win.draft);
+          savedDrafts.set(id, saved.draftId);
           set((s) => ({
             windows: s.windows.map((w) =>
               w.id === id && w.accountId === accountId
@@ -421,7 +425,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
 
     requestClose(id) {
       const win = find(id);
-      if (!win) return;
+      if (!win || win.sending) return;
       if (win.loading || win.version === win.savedVersion) {
         remove(id);
         dropStaged(win.draft.attachments);
@@ -443,8 +447,12 @@ export const useComposeStore = create<ComposeState>((set, get) => {
 
     async saveAndClose(id) {
       patch(id, { confirmingClose: false });
-      if (!(await get().save(id))) return;
-      const win = find(id);
+      // Edits made while a save is out need a save of their own before the panel can go.
+      let win = find(id);
+      while (win && win.version !== win.savedVersion) {
+        if (!(await get().save(id))) return;
+        win = find(id);
+      }
       if (!win) return;
       remove(id);
       dropStaged(win.draft.attachments);
@@ -453,12 +461,13 @@ export const useComposeStore = create<ComposeState>((set, get) => {
 
     async discard(id) {
       const win = find(id);
-      if (!win) return;
+      if (!win || win.sending) return;
       remove(id);
       dropStaged(win.draft.attachments);
       // Wait for a save in flight, which may be what creates the draft.
       await saves.get(id)?.catch(() => {});
-      const draftId = win.draft.draftId ?? null;
+      const draftId = savedDrafts.get(id) ?? win.draft.draftId ?? null;
+      savedDrafts.delete(id);
       if (draftId) {
         try {
           await deleteDraft(win.accountId, draftId);
@@ -494,6 +503,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
 export function __resetComposeStoreForTests() {
   pending.clear();
   saves.clear();
+  savedDrafts.clear();
   nextId = 1;
   useComposeStore.setState({ windows: [], focusRequest: null });
 }

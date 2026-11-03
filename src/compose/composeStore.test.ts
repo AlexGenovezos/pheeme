@@ -255,3 +255,71 @@ test(`at most ${MAX_WINDOWS} panels; opening one tucks the others away`, () => {
   expect(store().windows).toHaveLength(MAX_WINDOWS);
   expect(titles()).toContain("Too many messages open");
 });
+
+/** `save_draft` that waits for `release()`. */
+function heldSave(): () => void {
+  let release: () => void = () => {};
+  handlers.save_draft = () =>
+    new Promise((resolve) => {
+      release = () => resolve({ draftId: "d1", messageId: "m1", threadId: "t1" });
+    });
+  return () => release();
+}
+
+test("discarding during the first save deletes the draft that save made", async () => {
+  const release = heldSave();
+  const id = written();
+  const saving = store().save(id);
+  await vi.waitFor(() => expect(called("save_draft")).toHaveLength(1));
+  const discarding = store().discard(id);
+  release();
+  await saving;
+  await discarding;
+  expect(called("delete_draft")).toEqual([{ accountId: "a1", draftId: "d1" }]);
+});
+
+test("Undo brings the message back even with every panel slot taken", async () => {
+  await store().send(written());
+  for (let i = 0; i < MAX_WINDOWS; i++) store().compose("a1");
+  useToastStore
+    .getState()
+    .toasts.find((t) => t.title === "Sending…")!
+    .action!.run();
+  await vi.waitFor(() => expect(store().windows).toHaveLength(MAX_WINDOWS + 1));
+  expect(store().windows[MAX_WINDOWS].draft.to).toEqual([mira]);
+  expect(called("discard_attachments")).toEqual([]);
+});
+
+test("Save draft on close saves edits made during the save before closing", async () => {
+  const release = heldSave();
+  const id = written({ bodyHtml: "<p>before</p>" });
+  const closing = store().saveAndClose(id);
+  await vi.waitFor(() => expect(called("save_draft")).toHaveLength(1));
+  store().update(id, { bodyHtml: "<p>after</p>" });
+  handlers.save_draft = () => ({ draftId: "d1", messageId: "m2", threadId: "t1" });
+  release();
+  await closing;
+  expect(store().windows).toEqual([]);
+  expect(called("save_draft").map((a) => (a.message as ComposeDraft).bodyHtml)).toEqual([
+    "<p>before</p>",
+    "<p>after</p>",
+  ]);
+});
+
+test("while sending, edits and closing are ignored", async () => {
+  let queue: () => void = () => {};
+  handlers.send_email = () =>
+    new Promise((resolve) => {
+      queue = () => resolve({ opId: "op1", sendAt: Date.now() + 5000 });
+    });
+  const id = written();
+  const sending = store().send(id);
+  await vi.waitFor(() => expect(called("send_email")).toHaveLength(1));
+  store().update(id, { subject: "changed" });
+  await store().discard(id);
+  expect(win(id).draft.subject).toBe("");
+  expect(win(id).sending).toBe(true);
+  queue();
+  await sending;
+  expect(store().windows).toEqual([]);
+});

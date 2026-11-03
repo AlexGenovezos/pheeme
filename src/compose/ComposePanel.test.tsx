@@ -1,6 +1,6 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { dismissToast, ToastProvider, useToastStore } from "../components/ui/Toast";
 import { useAccountStore } from "../store/accountStore";
 import { ComposeHost } from "./ComposeHost";
@@ -117,3 +117,22 @@ test("minimized panels show the subject and open again on click", async () => {
   fireEvent.click(within(small).getByRole("button", { name: "Plans" }));
   expect(await screen.findByRole("textbox", { name: "Subject" })).toHaveValue("Plans");
 });
+
+test("autosave runs every 30 s while typing goes on", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const panel = await openNew();
+    const subject = within(panel).getByRole("textbox", { name: "Subject" });
+    for (let i = 1; i <= 6; i++) {
+      fireEvent.change(subject, { target: { value: `Plans ${i}` } });
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+    }
+  } finally {
+    vi.useRealTimers();
+  }
+  await waitFor(() =>
+    expect(calls.filter((c) => c.cmd === "save_draft").length).toBeGreaterThan(0),
+  );
+});
+
+afterEach(() => vi.useRealTimers());
