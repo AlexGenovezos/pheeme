@@ -564,6 +564,19 @@ export function createFixtureThreads(): FixtureThread[] {
   ];
 }
 
+/** `?threads=N` in preview: N more Inbox conversations, for the memory check (e2e/memory.spec.ts). */
+export function generatedThreads(n: number): FixtureThread[] {
+  const me = ME["acc-personal"];
+  return Array.from({ length: n }, (_, i) => {
+    const from: Person = [`Sender ${i % 97}`, `sender${i % 97}@example.net`];
+    const text = `Body of generated conversation ${i}.`;
+    const date = daysAgo(30) - i * 60_000;
+    return thread(`gen-${i}`, "acc-personal", ["INBOX"], `Generated conversation ${i}`, [
+      message(`gen-${i}-m1`, from, date, text, me, { unread: i % 3 === 0 }),
+    ]);
+  });
+}
+
 // ── Queries ──────────────────────────────────────────────────────────────────
 
 const isUnread = (t: FixtureThread) => t.messages.some((m) => m.unread);

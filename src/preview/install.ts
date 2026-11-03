@@ -18,6 +18,7 @@ import {
   fixtureAccounts,
   fixtureUserLabels,
   type FixtureThread,
+  generatedThreads,
   hasLabel,
   lastMessage,
   SYSTEM_LABELS,
@@ -117,7 +118,10 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
           synced: true,
         }));
   const flows = new Set<string>();
-  const threads = createFixtureThreads();
+  const threads = [
+    ...createFixtureThreads(),
+    ...generatedThreads(Number(params.get("threads")) || 0),
+  ];
 
   /** Apply `change` to the named threads, then tell the stores, as the backend does after a cache write. */
   const changeThreads = (args: Args, change: (t: FixtureThread) => void): void => {

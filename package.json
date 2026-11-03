@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
     "lint": "oxlint --deny-warnings && node scripts/check-tokens.mjs",
     "test": "vitest",
     "test:ci": "vitest run",
@@ -18,7 +18,8 @@
     "lint:tokens": "node scripts/check-tokens.mjs",
     "icons": "tauri icon src-tauri/app-icon.svg && node -e \"for (const d of ['android','ios','64x64.png']) require('fs').rmSync('src-tauri/icons/'+d, {recursive: true, force: true})\"",
     "format": "oxfmt",
-    "format:check": "oxfmt --check"
+    "format:check": "oxfmt --check",
+    "test:memory": "playwright test e2e/memory.spec.ts"
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.3.0",
@@ -36,6 +37,7 @@
     "zustand": "^4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@tauri-apps/cli": "^2",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
