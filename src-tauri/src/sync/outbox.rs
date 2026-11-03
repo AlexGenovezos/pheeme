@@ -480,6 +480,8 @@ async fn rollback(engine: &SyncEngine, op: &DbOp, error: &GmailError) -> Result<
 
     let _guard = engine.write_lock.lock().await;
     let mut tx = db::begin_write(&engine.db).await?;
+    // Re-read: backfill may have added targets while Gmail was being asked.
+    let targets = store::messages_of(&mut *tx, &op.id).await?;
     store::delete(&mut *tx, &op.id).await?;
     let mut touched = Vec::new();
     for t in &targets {

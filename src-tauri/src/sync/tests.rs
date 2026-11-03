@@ -765,6 +765,48 @@ async fn second_rejection_does_not_resurrect_the_first() {
     assert!(ops(&h).await.is_empty());
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rollback_restores_targets_added_during_its_refetch() {
+    let h = harness().await;
+    synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX"])]).await;
+    let op_id = archive(&h, "t1").await;
+    h.fake.fail_next("batch_modify", rejected());
+    // While rollback asks Gmail for m1, backfill caches an older message of t1 and the
+    // pending archive takes it as a target.
+    let pool = h.pool.clone();
+    h.fake.before_next_batch_get(move || {
+        let handle = tokio::runtime::Handle::current();
+        std::thread::spawn(move || {
+            handle.block_on(async {
+                let mut row = messages::get_message(&pool, ACCT, "m1")
+                    .await
+                    .unwrap()
+                    .unwrap();
+                row.id = "old".into();
+                row.date = Some(0);
+                row.label_ids = Some("[]".into());
+                messages::upsert_message(&pool, &row).await.unwrap();
+                let target = store::DbOpMessage {
+                    op_id,
+                    account_id: ACCT.into(),
+                    message_id: "old".into(),
+                    thread_id: "t1".into(),
+                    prior_label_ids: "[\"INBOX\"]".into(),
+                };
+                store::add_target(&pool, &target).await.unwrap();
+            })
+        })
+        .join()
+        .unwrap();
+    });
+
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+
+    assert_eq!(cached_labels(&h.pool, "old").await, Some(s(&["INBOX"])));
+    assert_eq!(cached_labels(&h.pool, "m1").await, Some(s(&["INBOX"])));
+    assert!(ops(&h).await.is_empty());
+}
+
 // ---- sends --------------------------------------------------------------------------
 
 const RAW: &[u8] = b"From: me@example.com\r\nTo: you@example.com\r\nSubject: Hi\r\n\r\nHello";
