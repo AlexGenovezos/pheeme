@@ -4,7 +4,8 @@ use super::engine::{now_ms, BackfillProgress, SyncEngine, FULL_BODY_DAYS};
 use super::events::{RecordingEvents, SyncEvent};
 use super::fake::{FakeGmail, FakeMsg};
 use super::outbox;
-use crate::db::accounts::{self, DbAccount};
+use crate::db::accounts;
+use crate::db::test_support::TestDb;
 use crate::db::threads::{self, ThreadQuery};
 use crate::db::{labels, messages, outbox as store};
 use crate::gmail::GmailError;
@@ -14,7 +15,7 @@ use std::sync::Arc;
 const ACCT: &str = "a1";
 
 struct H {
-    _dir: tempfile::TempDir,
+    db: TestDb,
     pool: SqlitePool,
     fake: Arc<FakeGmail>,
     events: Arc<RecordingEvents>,
@@ -22,23 +23,8 @@ struct H {
 }
 
 async fn harness() -> H {
-    let dir = tempfile::tempdir().unwrap();
-    let pool = crate::db::init_db(dir.path()).await.unwrap();
-    accounts::insert_account(
-        &pool,
-        &DbAccount {
-            id: ACCT.into(),
-            email: "me@example.com".into(),
-            display_name: None,
-            profile_photo_url: None,
-            client_id: "c".into(),
-            history_id: None,
-            created_at: 0,
-            updated_at: 0,
-        },
-    )
-    .await
-    .unwrap();
+    let db = TestDb::with_account(ACCT).await;
+    let pool = db.pool.clone();
     let fake = Arc::new(FakeGmail::new());
     let events = Arc::new(RecordingEvents::default());
     let engine = SyncEngine::new(
@@ -49,7 +35,7 @@ async fn harness() -> H {
         Default::default(),
     );
     H {
-        _dir: dir,
+        db,
         pool,
         fake,
         events,
@@ -547,7 +533,7 @@ async fn ops_survive_restart_and_replay_in_order() {
     archive(&h, "t1").await;
 
     // Restart: a fresh pool on the same file.
-    let pool = crate::db::init_db(h._dir.path()).await.unwrap();
+    let pool = crate::db::init_db(h.db.dir()).await.unwrap();
     let engine = SyncEngine::new(
         pool,
         h.fake.clone(),

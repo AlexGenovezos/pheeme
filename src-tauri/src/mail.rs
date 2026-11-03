@@ -322,7 +322,7 @@ impl MailService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::accounts::{self, DbAccount};
+    use crate::db::test_support::TestDb;
     use crate::sync::events::RecordingEvents;
     use crate::sync::fake::{FakeGmail, FakeMsg};
     use crate::sync::MailApi;
@@ -376,23 +376,8 @@ mod tests {
 
     #[tokio::test]
     async fn modify_threads_applies_now_emits_and_reaches_gmail() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = crate::db::init_db(dir.path()).await.unwrap();
-        accounts::insert_account(
-            &pool,
-            &DbAccount {
-                id: "a1".into(),
-                email: "me@example.com".into(),
-                display_name: None,
-                profile_photo_url: None,
-                client_id: "c".into(),
-                history_id: None,
-                created_at: 0,
-                updated_at: 0,
-            },
-        )
-        .await
-        .unwrap();
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
         let fake = Arc::new(FakeGmail::new());
         fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"]));
         let events = Arc::new(RecordingEvents::default());

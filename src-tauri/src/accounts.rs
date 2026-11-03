@@ -485,6 +485,7 @@ impl crate::gmail::TokenProvider for AccountTokens {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_support::TestDb;
     use crate::secrets::MemoryStore;
     use reqwest::Url;
     use wiremock::matchers::{body_string_contains, method, path};
@@ -494,15 +495,14 @@ mod tests {
     const CLIENT_B: &str = "b.apps.googleusercontent.com";
 
     struct Harness {
+        _db: TestDb,
         service: AccountService,
         secrets: Arc<MemoryStore>,
         server: MockServer,
     }
 
     async fn harness() -> Harness {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::init_db(dir.path()).await.unwrap();
-        std::mem::forget(dir);
+        let db = TestDb::new().await;
         let server = MockServer::start().await;
         let secrets = Arc::new(MemoryStore::new());
         let endpoints = Endpoints {
@@ -511,9 +511,14 @@ mod tests {
             userinfo: format!("{}/userinfo", server.uri()),
             revoke: format!("{}/revoke", server.uri()),
         };
-        let service =
-            AccountService::with_endpoints(db, secrets.clone(), endpoints, Duration::from_secs(10));
+        let service = AccountService::with_endpoints(
+            db.pool.clone(),
+            secrets.clone(),
+            endpoints,
+            Duration::from_secs(10),
+        );
         Harness {
+            _db: db,
             service,
             secrets,
             server,
