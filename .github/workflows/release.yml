@@ -8,6 +8,7 @@ on:
     paths:
       - .github/workflows/release.yml
       - scripts/version.mjs
+      - scripts/updater-json.mjs
       - scripts/resolve-apple-env.sh
       - src-tauri/tauri.conf.json
 
@@ -84,17 +85,41 @@ jobs:
           node-version: 22
       - run: node scripts/version.mjs check --tag "$GITHUB_REF_NAME"
 
+  # One job creates the draft so the parallel builds upload to it instead of each racing to
+  # create it. Reuses an existing release for the tag, so a re-run doesn't make a second one.
+  create-release:
+    name: Create draft release
+    if: github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      id: ${{ steps.draft.outputs.id }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_NAME: ${{ format('Pheeme {0}{1}', github.ref_name, startsWith(github.ref_name, 'v0.') && ' beta' || '') }}
+    steps:
+      - id: draft
+        run: |
+          id=$(gh api "repos/$GH_REPO/releases?per_page=100" \
+            --jq "[.[] | select(.tag_name == \"$GITHUB_REF_NAME\")][0].id // empty")
+          if [ -z "$id" ]; then
+            id=$(gh api -X POST "repos/$GH_REPO/releases" -f tag_name="$GITHUB_REF_NAME" \
+              -f target_commitish="$GITHUB_SHA" -f name="$RELEASE_NAME" -f body="" -F draft=true --jq .id)
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build (${{ matrix.os }})
     if: github.event_name == 'push'
-    needs: verify
+    needs: create-release
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
     strategy:
       fail-fast: false
-      # Serialized: tauri-action read-modify-writes latest.json and does list-then-create on the release.
-      max-parallel: 1
       matrix:
         include:
           - os: macos-latest
@@ -139,15 +164,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ format('Pheeme {0}{1}', github.ref_name, startsWith(github.ref_name, 'v0.') && ' beta' || '') }}
-          releaseDraft: true
-          uploadUpdaterJson: true
+          releaseId: ${{ needs.create-release.outputs.id }}
+          # The publish job writes latest.json once all builds are up; per-build writes race.
+          uploadUpdaterJson: false
           args: ${{ matrix.args }}
 
   publish:
     name: Publish release
-    needs: build
+    needs: [create-release, build]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -155,6 +179,23 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Write latest.json
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.id }}
+        run: |
+          dir="$RUNNER_TEMP/updater"
+          mkdir -p "$dir/sigs"
+          gh api "repos/$GH_REPO/releases/$RELEASE_ID/assets?per_page=100" > "$dir/assets.json"
+          gh release download "$GITHUB_REF_NAME" -p '*.sig' -D "$dir/sigs"
+          node scripts/updater-json.mjs "$(node -p 'require("./package.json").version')" \
+            "$dir/assets.json" "$dir/sigs" > "$dir/latest.json"
+          gh release upload "$GITHUB_REF_NAME" "$dir/latest.json" --clobber
       - name: Validate latest.json on the draft
         run: |
           gh release download "$GITHUB_REF_NAME" -p latest.json -D "$RUNNER_TEMP"
