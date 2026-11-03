@@ -51,13 +51,19 @@ test("creates a missing label", async () => {
   const fake = fakeGithub();
   await ensureLabels(fake.github, repo, [bug]);
   assert.deepEqual(fake.labels.bug, bug);
-  assert.deepEqual(fake.calls, [["getLabel", "bug"], ["createLabel", "bug"]]);
+  assert.deepEqual(fake.calls, [
+    ["getLabel", "bug"],
+    ["createLabel", "bug"],
+  ]);
 });
 
 test("tolerates a concurrent create (422 already_exists)", async () => {
   const fake = fakeGithub({ failCreate: httpError(422) });
   await ensureLabels(fake.github, repo, [bug]);
-  assert.deepEqual(fake.calls, [["getLabel", "bug"], ["createLabel", "bug"]]);
+  assert.deepEqual(fake.calls, [
+    ["getLabel", "bug"],
+    ["createLabel", "bug"],
+  ]);
 });
 
 test("rethrows other create errors", async () => {
@@ -66,11 +72,17 @@ test("rethrows other create errors", async () => {
 });
 
 test("updates a label whose color or description drifted", async () => {
-  for (const stale of [{ ...bug, color: "000000" }, { ...bug, description: null }]) {
+  for (const stale of [
+    { ...bug, color: "000000" },
+    { ...bug, description: null },
+  ]) {
     const fake = fakeGithub({ labels: { bug: stale } });
     await ensureLabels(fake.github, repo, [bug]);
     assert.deepEqual(fake.labels.bug, bug);
-    assert.deepEqual(fake.calls, [["getLabel", "bug"], ["updateLabel", "bug"]]);
+    assert.deepEqual(fake.calls, [
+      ["getLabel", "bug"],
+      ["updateLabel", "bug"],
+    ]);
   }
 });
 

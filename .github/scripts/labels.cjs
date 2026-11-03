@@ -53,7 +53,11 @@ async function setExclusiveLabel(github, repo, issueNumber, managedNames, nextNa
     }
 
     try {
-      await github.rest.issues.removeLabel({ ...repo, issue_number: issueNumber, name: label.name });
+      await github.rest.issues.removeLabel({
+        ...repo,
+        issue_number: issueNumber,
+        name: label.name,
+      });
     } catch (removeError) {
       if (removeError.status !== 404) {
         throw removeError;
