@@ -29,11 +29,15 @@ function useWidth(ref: RefObject<HTMLElement | null>): number {
 export function AppShell({ onManageAccounts }: { onManageAccounts?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const { sidebarWidth, listWidth, sidebarCollapsed } = useUiStore();
-  const { setSidebarWidth, setListWidth, resetSidebarWidth, resetListWidth } = useUiStore.getState();
+  const { setSidebarWidth, setListWidth, resetSidebarWidth, resetListWidth } =
+    useUiStore.getState();
 
   const width = useWidth(ref);
   const listSpace = width > 0 ? width - (sidebarCollapsed ? 0 : sidebarWidth) : 0;
-  const listMax = listSpace > 0 ? Math.max(PANE.listMin, listSpace - PANE.viewMin) : Math.max(listWidth, PANE.listMin);
+  const listMax =
+    listSpace > 0
+      ? Math.max(PANE.listMin, listSpace - PANE.viewMin)
+      : Math.max(listWidth, PANE.listMin);
 
   // The grid squeezes the list when the window shrinks; drags and arrow keys start from what's on screen.
   const renderedListWidth = Math.min(Math.max(listWidth, PANE.listMin), listMax);
@@ -53,7 +57,11 @@ export function AppShell({ onManageAccounts }: { onManageAccounts?: () => void }
       data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
       data-overlay-titlebar={overlayTitleBar || undefined}
     >
-      <aside className="shell__sidebar" aria-label="Sidebar" aria-hidden={sidebarCollapsed || undefined}>
+      <aside
+        className="shell__sidebar"
+        aria-label="Sidebar"
+        aria-hidden={sidebarCollapsed || undefined}
+      >
         <Sidebar onManageAccounts={onManageAccounts} />
       </aside>
       {!sidebarCollapsed && (

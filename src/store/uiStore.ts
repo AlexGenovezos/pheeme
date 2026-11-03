@@ -25,7 +25,8 @@ const DEFAULT_LAYOUT: PaneLayout = {
   sidebarCollapsed: false,
 };
 
-const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), Math.max(min, max));
+const clamp = (n: number, min: number, max: number) =>
+  Math.min(Math.max(n, min), Math.max(min, max));
 
 export const clampSidebar = (w: number) => Math.round(clamp(w, PANE.sidebarMin, PANE.sidebarMax));
 
@@ -33,13 +34,19 @@ export const clampSidebar = (w: number) => Math.round(clamp(w, PANE.sidebarMin, 
 export const clampList = (w: number, available = 0) =>
   Math.round(clamp(w, PANE.listMin, available > 0 ? available - PANE.viewMin : Infinity));
 
-export function readLayout(storage: Pick<Storage, "getItem"> | undefined = safeStorage()): PaneLayout {
+export function readLayout(
+  storage: Pick<Storage, "getItem"> | undefined = safeStorage(),
+): PaneLayout {
   try {
     const raw = JSON.parse(storage?.getItem(LAYOUT_KEY) ?? "null") as Partial<PaneLayout> | null;
     if (!raw || typeof raw !== "object") return DEFAULT_LAYOUT;
     return {
-      sidebarWidth: typeof raw.sidebarWidth === "number" ? clampSidebar(raw.sidebarWidth) : DEFAULT_LAYOUT.sidebarWidth,
-      listWidth: typeof raw.listWidth === "number" ? clampList(raw.listWidth) : DEFAULT_LAYOUT.listWidth,
+      sidebarWidth:
+        typeof raw.sidebarWidth === "number"
+          ? clampSidebar(raw.sidebarWidth)
+          : DEFAULT_LAYOUT.sidebarWidth,
+      listWidth:
+        typeof raw.listWidth === "number" ? clampList(raw.listWidth) : DEFAULT_LAYOUT.listWidth,
       sidebarCollapsed: raw.sidebarCollapsed === true,
     };
   } catch {

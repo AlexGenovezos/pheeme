@@ -68,10 +68,7 @@ export const STEPS: GuideStep[] = [
     id: "gmail-api",
     short: "Enable Gmail API",
     title: "Turn on the Gmail API",
-    actions: [
-      "Open the Gmail API page and check your new project is selected.",
-      "Click Enable.",
-    ],
+    actions: ["Open the Gmail API page and check your new project is selected.", "Click Enable."],
     why: "Pheeme reads, labels and sends your mail through the Gmail API.",
     link: {
       label: "Open Gmail API",
@@ -104,7 +101,10 @@ export const STEPS: GuideStep[] = [
       "Optional: under Data access, add the scopes below. Pheeme asks for them when you sign in either way.",
     ],
     why: "Google shows this screen when you sign in. The app is yours, so you're both its developer and its only user.",
-    link: { label: "Open Google Auth Platform", url: "https://console.cloud.google.com/auth/overview" },
+    link: {
+      label: "Open Google Auth Platform",
+      url: "https://console.cloud.google.com/auth/overview",
+    },
     copy: [
       { label: "App name", value: "Pheeme" },
       { label: "Scopes (optional)", value: GMAIL_SCOPES.join(",") },
@@ -152,7 +152,10 @@ export const STEPS: GuideStep[] = [
       "Click Create. Google shows the client ID and secret: keep that dialog open, or download the JSON, for the next step.",
     ],
     why: "A Desktop app client lets Pheeme sign you in through your browser and receive the result on this computer. Other client types fail with redirect_uri_mismatch.",
-    link: { label: "Open Create client", url: "https://console.cloud.google.com/auth/clients/create" },
+    link: {
+      label: "Open Create client",
+      url: "https://console.cloud.google.com/auth/clients/create",
+    },
     copy: [
       { label: "Application type", value: "Desktop app" },
       { label: "Name", value: "Pheeme desktop" },

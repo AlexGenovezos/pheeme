@@ -66,7 +66,9 @@ export const fixtureLabels: FixtureLabel[] = [
   { id: "Label_3", name: "Pheeme", unread: 2 },
 ];
 
-const thread = (t: Omit<FixtureThread, "accountId" | "mailbox" | "messageCount"> & Partial<FixtureThread>): FixtureThread => ({
+const thread = (
+  t: Omit<FixtureThread, "accountId" | "mailbox" | "messageCount"> & Partial<FixtureThread>,
+): FixtureThread => ({
   accountId: "acc-personal",
   mailbox: "INBOX",
   messageCount: 1,
@@ -79,7 +81,8 @@ export const fixtureThreads: FixtureThread[] = [
     fromName: "Mira Okafor",
     fromAddress: "mira@northlight.studio",
     subject: "Icon sketches for the dock",
-    snippet: "Three directions attached. The folded-letter one reads best at 16 px, the trumpet is fun but busy.",
+    snippet:
+      "Three directions attached. The folded-letter one reads best at 16 px, the trumpet is fun but busy.",
     body: "Hi Alex,\n\nThree directions attached. The folded-letter one reads best at 16 px; the trumpet is fun but gets busy below 32 px. The third is a plain monogram if you want something quieter.\n\nI can turn the favourite into a full macOS and Windows set by Friday.\n\nMira",
     date: minutesAgo(12),
     unread: true,
@@ -129,7 +132,8 @@ export const fixtureThreads: FixtureThread[] = [
     fromName: "Priya Raman",
     fromAddress: "priya@fieldnotes.io",
     subject: "Keyboard map feedback",
-    snippet: "j/k feels right. I kept reaching for e to archive in the thread view, so that should work there too.",
+    snippet:
+      "j/k feels right. I kept reaching for e to archive in the thread view, so that should work there too.",
     body: "j/k feels right. I kept reaching for e to archive while reading a thread, so that should work there too, not just in the list.\n\nAlso: g then i to jump to the inbox is muscle memory from Gmail. Please keep it.\n\nPriya",
     date: minutesAgo(60 * 9),
     unread: true,

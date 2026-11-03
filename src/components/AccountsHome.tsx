@@ -10,7 +10,11 @@ export function AccountsHome({ onAdd, onClose }: { onAdd: () => void; onClose?: 
     <div className="onboarding onboarding--single">
       <main className="onboarding-main">
         <div className="onboarding-content">
-          {onClose && <button type="button" className="btn btn--quiet" onClick={onClose}>Back to inbox</button>}
+          {onClose && (
+            <button type="button" className="btn btn--quiet" onClick={onClose}>
+              Back to inbox
+            </button>
+          )}
           <h1>Accounts</h1>
           <p className="guide-lead">Manage the Google accounts connected to Pheeme.</p>
           <ul className="choice-list" aria-label="Connected accounts">
@@ -54,19 +58,36 @@ function AccountRow({ account }: { account: AccountInfo }) {
           {account.displayName && <span>{account.email}</span>}
         </div>
         {!confirming && (
-          <button type="button" className="btn btn--small btn--quiet" onClick={() => setConfirming(true)}>
+          <button
+            type="button"
+            className="btn btn--small btn--quiet"
+            onClick={() => setConfirming(true)}
+          >
             Remove
           </button>
         )}
       </div>
       {confirming && (
         <div className="account-row__confirm">
-          <span>Remove {account.email} from Pheeme? This signs it out and deletes its cached mail. Nothing changes in Gmail.</span>
+          <span>
+            Remove {account.email} from Pheeme? This signs it out and deletes its cached mail.
+            Nothing changes in Gmail.
+          </span>
           <div className="button-row">
-            <button type="button" className="btn btn--small" disabled={busy} onClick={() => setConfirming(false)}>
+            <button
+              type="button"
+              className="btn btn--small"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
               Keep
             </button>
-            <button type="button" className="btn btn--small btn--danger" disabled={busy} onClick={() => void confirmRemove()}>
+            <button
+              type="button"
+              className="btn btn--small btn--danger"
+              disabled={busy}
+              onClick={() => void confirmRemove()}
+            >
               Remove
             </button>
           </div>

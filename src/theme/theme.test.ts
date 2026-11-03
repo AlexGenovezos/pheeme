@@ -2,13 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import indexHtml from "../../index.html?raw";
 import tauriConf from "../../src-tauri/tauri.conf.json";
 import { darkTheme, lightTheme, THEME_TOKENS } from "../styles/themes";
-import {
-  initTheme,
-  readThemeMode,
-  resolveTheme,
-  THEME_MODE_KEY,
-  useThemeStore,
-} from "./theme";
+import { initTheme, readThemeMode, resolveTheme, THEME_MODE_KEY, useThemeStore } from "./theme";
 
 /** A controllable prefers-color-scheme media query. */
 function mockSystemDark(initial: boolean) {
@@ -120,13 +114,17 @@ describe("theme files", () => {
 
 describe("no white flash", () => {
   const bootScript = indexHtml.match(/<script>([\s\S]*?)<\/script>/)![1];
-  const criticalStyle = indexHtml.match(/<style>([\s\S]*?)<\/style>/)![1];
+  // Whitespace-collapsed, so the check survives the formatter reflowing the rules.
+  const criticalStyle = indexHtml.match(/<style>([\s\S]*?)<\/style>/)![1].replace(/\s+/g, " ");
 
-  test.each(["light", "dark"] as const)("boot script applies a stored %s choice before React", (mode) => {
-    localStorage.setItem(THEME_MODE_KEY, mode);
-    new Function(bootScript)();
-    expect(root.getAttribute("data-theme")).toBe(mode);
-  });
+  test.each(["light", "dark"] as const)(
+    "boot script applies a stored %s choice before React",
+    (mode) => {
+      localStorage.setItem(THEME_MODE_KEY, mode);
+      new Function(bootScript)();
+      expect(root.getAttribute("data-theme")).toBe(mode);
+    },
+  );
 
   test("boot script leaves System to the media query", () => {
     localStorage.setItem(THEME_MODE_KEY, "system");
@@ -135,8 +133,12 @@ describe("no white flash", () => {
   });
 
   test("critical style colors match each theme's app background", () => {
-    expect(criticalStyle).toContain(`html[data-theme="light"] { background: ${lightTheme.tokens["--color-app-bg"]};`);
-    expect(criticalStyle).toContain(`html[data-theme="dark"] { background: ${darkTheme.tokens["--color-app-bg"]};`);
+    expect(criticalStyle).toContain(
+      `html[data-theme="light"] { background: ${lightTheme.tokens["--color-app-bg"]};`,
+    );
+    expect(criticalStyle).toContain(
+      `html[data-theme="dark"] { background: ${darkTheme.tokens["--color-app-bg"]};`,
+    );
   });
 
   test("the native window background matches the dark theme", () => {

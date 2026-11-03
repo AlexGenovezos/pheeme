@@ -17,7 +17,10 @@ const summary = (id: string, accountId = "a"): ThreadSummary => ({
   hasAttachment: false,
   messageCount: 1,
 });
-const page = (...ids: string[]): ThreadPage => ({ threads: ids.map((id) => summary(id)), next: null });
+const page = (...ids: string[]): ThreadPage => ({
+  threads: ids.map((id) => summary(id)),
+  next: null,
+});
 const ids = () => useMailStore.getState().threads.map((t) => t.id);
 
 beforeEach(() => __resetMailStoreForTests());
@@ -35,7 +38,9 @@ test("loads threads for the active mailbox across accounts", async () => {
 
 test("reloads on sync:messages_updated", async () => {
   let version = 0;
-  mockIPC((cmd) => (cmd === "list_threads" ? page(`t${++version}`) : undefined), { shouldMockEvents: true });
+  mockIPC((cmd) => (cmd === "list_threads" ? page(`t${++version}`) : undefined), {
+    shouldMockEvents: true,
+  });
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
   expect(ids()).toEqual(["t1"]);
   const stop = await useMailStore.getState().subscribe();

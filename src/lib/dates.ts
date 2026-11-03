@@ -6,8 +6,10 @@ export function formatListDate(ts: number, now: number = Date.now(), locale?: st
   const d = new Date(ts);
   const n = new Date(now);
   const startOfToday = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
-  if (ts >= startOfToday) return d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
-  if (ts >= startOfToday - 6 * 86_400_000) return d.toLocaleDateString(locale, { weekday: "short" });
+  if (ts >= startOfToday)
+    return d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+  if (ts >= startOfToday - 6 * 86_400_000)
+    return d.toLocaleDateString(locale, { weekday: "short" });
   if (d.getFullYear() === n.getFullYear())
     return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
   return d.toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });

@@ -32,8 +32,20 @@ beforeEach(() => {
     hidden: true,
     run: () => usePaletteStore.getState().toggle(),
   });
-  reg.register({ id: "go.inbox", title: "Go to Inbox", group: "Navigation", shortcut: "g i", run: goInbox });
-  reg.register({ id: "view.sidebar", title: "Toggle sidebar", group: "View", shortcut: "mod+b", run: toggleSidebar });
+  reg.register({
+    id: "go.inbox",
+    title: "Go to Inbox",
+    group: "Navigation",
+    shortcut: "g i",
+    run: goInbox,
+  });
+  reg.register({
+    id: "view.sidebar",
+    title: "Toggle sidebar",
+    group: "View",
+    shortcut: "mod+b",
+    run: toggleSidebar,
+  });
   reg.register({
     id: "theme.toggle",
     title: "Toggle light and dark theme",
@@ -62,14 +74,20 @@ describe("CommandPalette", () => {
     render(<Harness />);
     openWithKeyboard();
     const inbox = options().find((o) => o.textContent?.startsWith("Go to Inbox"))!;
-    expect(within(inbox).getAllByText(/^[GI]$/).map((k) => k.textContent)).toEqual(["G", "I"]);
+    expect(
+      within(inbox)
+        .getAllByText(/^[GI]$/)
+        .map((k) => k.textContent),
+    ).toEqual(["G", "I"]);
   });
 
   test("typing filters; keywords match too", () => {
     render(<Harness />);
     openWithKeyboard();
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "sidebar" } });
-    expect(options().map((o) => o.textContent)).toEqual([expect.stringContaining("Toggle sidebar")]);
+    expect(options().map((o) => o.textContent)).toEqual([
+      expect.stringContaining("Toggle sidebar"),
+    ]);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "dark mode" } });
     expect(options()[0]).toHaveTextContent("Toggle light and dark theme");
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "zzzz" } });
@@ -119,7 +137,9 @@ describe("CommandPalette", () => {
 
 describe("matching", () => {
   test("substring beats subsequence, word starts beat mid-word", () => {
-    expect(fuzzyMatch("theme", "Toggle theme")!.score).toBeGreaterThan(fuzzyMatch("tgth", "Toggle theme")!.score);
+    expect(fuzzyMatch("theme", "Toggle theme")!.score).toBeGreaterThan(
+      fuzzyMatch("tgth", "Toggle theme")!.score,
+    );
     expect(fuzzyMatch("in", "Go to Inbox")!.indices).toEqual([6, 7]);
     expect(fuzzyMatch("xyz", "Go to Inbox")).toBeNull();
   });

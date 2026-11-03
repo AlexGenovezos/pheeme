@@ -145,7 +145,8 @@ describe("formatting and table boundaries", () => {
 
   it("handles a commented [package] header and indented tables", () => {
     const root = fixture();
-    const toml = '[package] # app\nname = "pheeme"\nversion = "0.1.0"\n\n  [dependencies]\n  foo = "1"\n  version = "9.9.9"\n';
+    const toml =
+      '[package] # app\nname = "pheeme"\nversion = "0.1.0"\n\n  [dependencies]\n  foo = "1"\n  version = "9.9.9"\n';
     fs.writeFileSync(file(root, "src-tauri/Cargo.toml"), toml);
     setVersion(root, "1.2");
     expect(fs.readFileSync(file(root, "src-tauri/Cargo.toml"), "utf8")).toBe(

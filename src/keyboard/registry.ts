@@ -58,7 +58,14 @@ export function parseShortcut(shortcut: string): Step[] {
     .map((token) => {
       // "+" itself is a key ("shift++" or a bare "+"), so split on "+" only between parts.
       const parts = token === "+" ? ["+"] : token.split(/\+(?!$)/);
-      const step: Step = { key: "", mod: false, ctrl: false, alt: false, shift: false, meta: false };
+      const step: Step = {
+        key: "",
+        mod: false,
+        ctrl: false,
+        alt: false,
+        shift: false,
+        meta: false,
+      };
       for (const raw of parts) {
         const part = raw.toLowerCase();
         if (part === "mod") step.mod = true;
@@ -142,12 +149,18 @@ export function createRegistry({
   return {
     /** Add (or replace) a command. Returns a function that removes it. */
     register(command: Command): () => void {
-      const entry: Entry = { command, steps: command.shortcut ? parseShortcut(command.shortcut) : [] };
+      const entry: Entry = {
+        command,
+        steps: command.shortcut ? parseShortcut(command.shortcut) : [],
+      };
       if (import.meta.env.DEV && command.shortcut) {
         const clash = [...entries.values()].find(
           (e) => e.command.id !== command.id && e.command.shortcut === command.shortcut,
         );
-        if (clash) console.warn(`Shortcut "${command.shortcut}" is bound to both ${clash.command.id} and ${command.id}`);
+        if (clash)
+          console.warn(
+            `Shortcut "${command.shortcut}" is bound to both ${clash.command.id} and ${command.id}`,
+          );
       }
       entries.set(command.id, entry);
       rebuild();
@@ -186,14 +199,20 @@ export function createRegistry({
 
     /** Returns true when the event triggered (or continued) a shortcut. */
     handleKeyDown(e: KeyboardEvent): boolean {
-      if (e.defaultPrevented || e.isComposing || MODIFIER_KEYS.has(e.key.toLowerCase())) return false;
+      if (e.defaultPrevented || e.isComposing || MODIFIER_KEYS.has(e.key.toLowerCase()))
+        return false;
       const editable = isEditableTarget(e.target);
-      const live = [...entries.values()].filter((en) => en.steps.length && (!editable || en.command.global));
+      const live = [...entries.values()].filter(
+        (en) => en.steps.length && (!editable || en.command.global),
+      );
 
       if (pending.length) {
         const prefix = pending;
         const next = live.filter(
-          (en) => en.steps.length > prefix.length && startsWith(en, prefix) && stepMatches(en.steps[prefix.length], e, isMac),
+          (en) =>
+            en.steps.length > prefix.length &&
+            startsWith(en, prefix) &&
+            stepMatches(en.steps[prefix.length], e, isMac),
         );
         const done = next.find((en) => en.steps.length === prefix.length + 1);
         if (done) {

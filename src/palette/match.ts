@@ -38,7 +38,11 @@ export function fuzzyMatch(query: string, text: string): Match | null {
     if (ch === " ") continue;
     const i = t.indexOf(ch, from);
     if (i < 0) return null;
-    score += isBoundary(t, i) ? 10 : indices.length && indices[indices.length - 1] === i - 1 ? 5 : 1;
+    score += isBoundary(t, i)
+      ? 10
+      : indices.length && indices[indices.length - 1] === i - 1
+        ? 5
+        : 1;
     indices.push(i);
     from = i + 1;
   }
@@ -61,7 +65,10 @@ export function filterCommands(commands: Command[], query: string): CommandResul
     const extra = [command.group, ...(command.keywords ?? [])]
       .filter((s): s is string => Boolean(s))
       .map((s) => fuzzyMatch(query, s))
-      .reduce<number | null>((best, m) => (m && (best == null || m.score > best) ? m.score : best), null);
+      .reduce<number | null>(
+        (best, m) => (m && (best == null || m.score > best) ? m.score : best),
+        null,
+      );
     const extraScore = extra == null ? null : extra * 0.6;
     if (!title && extraScore == null) return;
     const titleScore = title?.score ?? -Infinity;

@@ -51,8 +51,18 @@ export function appCommands(): Command[] {
       keywords: ["auto", "os"],
       run: () => theme().setMode("system"),
     },
-    { id: "theme.light", title: "Theme: Light", group: "Appearance", run: () => theme().setMode("light") },
-    { id: "theme.dark", title: "Theme: Dark", group: "Appearance", run: () => theme().setMode("dark") },
+    {
+      id: "theme.light",
+      title: "Theme: Light",
+      group: "Appearance",
+      run: () => theme().setMode("light"),
+    },
+    {
+      id: "theme.dark",
+      title: "Theme: Dark",
+      group: "Appearance",
+      run: () => theme().setMode("dark"),
+    },
   ];
 }
 

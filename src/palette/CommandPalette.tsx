@@ -1,7 +1,11 @@
 import { Search } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Kbd } from "../components/ui/Kbd";
-import { registry as defaultRegistry, type Command, type CommandRegistry } from "../keyboard/registry";
+import {
+  registry as defaultRegistry,
+  type Command,
+  type CommandRegistry,
+} from "../keyboard/registry";
 import { useCommandList } from "../keyboard/useCommands";
 import { filterCommands } from "./match";
 import { usePaletteStore } from "./paletteStore";
@@ -110,10 +114,19 @@ function PaletteDialog({ reg, onClose }: { reg: CommandRegistry; onClose(): void
             onKeyDown={onKeyDown}
           />
         </div>
-        <div ref={listRef} id="palette-listbox" role="listbox" aria-label="Commands" className="palette__list">
-          {results.length === 0 && <div className="palette__empty">No commands match “{query.trim()}”</div>}
+        <div
+          ref={listRef}
+          id="palette-listbox"
+          role="listbox"
+          aria-label="Commands"
+          className="palette__list"
+        >
+          {results.length === 0 && (
+            <div className="palette__empty">No commands match “{query.trim()}”</div>
+          )}
           {results.map(({ command, indices }, i) => {
-            const showGroup = grouped && command.group && command.group !== results[i - 1]?.command.group;
+            const showGroup =
+              grouped && command.group && command.group !== results[i - 1]?.command.group;
             return (
               <Fragment key={command.id}>
                 {showGroup && (
@@ -133,7 +146,9 @@ function PaletteDialog({ reg, onClose }: { reg: CommandRegistry; onClose(): void
                   <span className="palette__title">
                     <Highlighted text={command.title} indices={indices} />
                   </span>
-                  {!grouped && command.group && <span className="palette__hint">{command.group}</span>}
+                  {!grouped && command.group && (
+                    <span className="palette__hint">{command.group}</span>
+                  )}
                   {command.shortcut && <Kbd shortcut={command.shortcut} />}
                 </div>
               </Fragment>
