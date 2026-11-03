@@ -7,6 +7,7 @@ import {
   getThread,
   stopQuietly,
   SYNC_EVENTS,
+  type SyncAccountEvent,
   type SyncMessagesUpdated,
   type ThreadDetail,
   toCommandError,
@@ -20,12 +21,18 @@ let pendingDetails = new Map<ThreadKey, Array<{ op: number; fn: (detail: ThreadD
 const withPending = (key: ThreadKey, detail: ThreadDetail) =>
   (pendingDetails.get(key) ?? []).reduce((d, change) => change.fn(d), detail);
 
+/** Every message has its body. An incomplete detail (fetched offline) is asked for again rather than served. */
+export const isComplete = (detail: ThreadDetail) => detail.messages.every((m) => m.bodyAvailable);
+
 interface ThreadState {
   /** Insertion order is recency: the last entry is the most recently used. */
   details: Map<ThreadKey, ThreadDetail>;
   /** The last failure to load each thread. A thread that isn't there any more is `not_found`. */
   errors: Record<ThreadKey, CommandError>;
-  /** Make the detail available: cached details are just touched, a request already in flight is joined. */
+  /**
+   * Make the detail available: complete cached details are just touched, a request already in flight is joined,
+   * and a cached detail missing a body is shown while it is requested again.
+   */
   load(key: ThreadKey): Promise<void>;
   /** Warm the cache for neighbours of the open thread. Failures are ignored. */
   prefetch(keys: ThreadKey[]): void;
@@ -39,7 +46,10 @@ interface ThreadState {
   settleDetails(op: number, keys: ThreadKey[]): void;
   /** Forget threads of one account (their messages changed), including any response still in flight. */
   evict(accountId: string, threadIds: string[]): void;
-  /** Evict on `sync:messages_updated`, and refresh the open thread if it changed. Resolves to the unsubscribe function. */
+  /**
+   * Evict on `sync:messages_updated` and refresh the open thread if it changed; on `sync:completed` re-request the
+   * open thread if it is missing a body. Resolves to the unsubscribe function.
+   */
   subscribe(): Promise<() => void>;
 }
 
@@ -89,12 +99,19 @@ export const useThreadStore = create<ThreadState>((set, get) => {
     details: new Map(),
     errors: {},
     load: (key) => {
-      if (get().details.has(key)) {
+      const cached = get().details.get(key);
+      if (cached && !isComplete(cached)) {
+        const joined = inflight.get(key);
+        if (!joined) return fetchDetail(key);
+        joined.quiet = false;
+        return joined.promise;
+      }
+      if (cached) {
         // Touch: move to the most recent position.
         set((s) => {
           const details = new Map(s.details);
           details.delete(key);
-          details.set(key, s.details.get(key) as ThreadDetail);
+          details.set(key, cached);
           return { details };
         });
         return Promise.resolve();
@@ -152,7 +169,17 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         get().evict(payload.accountId, refresh ? changed.filter((id) => id !== parsed?.threadId) : changed);
         if (refresh) void fetchDetail(refresh);
       });
-      return () => stopQuietly(stop);
+      // A body that couldn't be fetched offline may be reachable now that a sync got through.
+      const stopCompleted = await listen<SyncAccountEvent>(SYNC_EVENTS.completed, ({ payload }) => {
+        const open = useUiStore.getState().openThread;
+        if (!open || parseThreadKey(open).accountId !== payload.accountId) return;
+        const cached = get().details.get(open);
+        if (cached && !isComplete(cached)) void get().load(open);
+      });
+      return () => {
+        stopQuietly(stop);
+        stopQuietly(stopCompleted);
+      };
     },
   };
 });

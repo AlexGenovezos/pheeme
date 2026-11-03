@@ -125,6 +125,9 @@ pub struct MessageDetailDto {
     pub has_remote_content: bool,
     pub declares_dark_mode: bool,
     pub body_text: Option<String>,
+    /// False when only the message's metadata is cached (its body couldn't be fetched,
+    /// e.g. offline): the UI offers to try again instead of showing an empty message.
+    pub body_available: bool,
     pub unread: bool,
     pub starred: bool,
     pub label_ids: Vec<String>,
@@ -162,7 +165,9 @@ impl From<DbMessage> for MessageDetailDto {
             json.and_then(|j| serde_json::from_str(j).ok())
                 .unwrap_or_default()
         };
+        let body_available = has_body(&m);
         Self {
+            body_available,
             to: addrs(m.to_addresses.as_deref()),
             cc: addrs(m.cc_addresses.as_deref()),
             label_ids: parse_labels(m.label_ids.as_deref()),
@@ -683,6 +688,7 @@ async fn write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use crate::db::accounts::{self, DbAccount};
+    use crate::gmail::GmailError;
     use crate::sync::events::RecordingEvents;
     use crate::sync::fake::{FakeGmail, FakeMsg};
     use crate::sync::MailApi;
@@ -998,6 +1004,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(detail.messages[0].body_text.as_deref(), Some("Body of m1"));
+        assert!(detail.messages[0].body_available);
         assert_eq!(fully_fetched(&mail, "m1").await, 0, "refresh still pending");
 
         // Gmail answers: the refresh lands in the background and the open view hears of it.
@@ -1035,6 +1042,25 @@ mod tests {
             events.take().is_empty(),
             "an open view would refresh, refetch and loop"
         );
+    }
+
+    #[tokio::test]
+    async fn a_body_gmail_couldnt_send_is_reported_unavailable() {
+        let (_dir, fake, _events, mail) =
+            events_fixture(FakeMsg::new("m1", "t1", &["INBOX"])).await;
+        sqlx::query("UPDATE messages SET fully_fetched = 0, body_text = NULL, body_html = NULL")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        fake.fail_next("get_message", GmailError::Offline("no route".into()));
+
+        let offline = mail.get_thread("a1", "t1").await.unwrap();
+        assert_eq!(offline.messages[0].body_text, None);
+        assert!(!offline.messages[0].body_available, "not an empty message");
+
+        let online = mail.get_thread("a1", "t1").await.unwrap();
+        assert!(online.messages[0].body_available);
+        assert_eq!(online.messages[0].body_text.as_deref(), Some("Body of m1"));
     }
 
     #[tokio::test]

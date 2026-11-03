@@ -3,8 +3,10 @@ import { Avatar } from "../components/ui/Avatar";
 import { formatFullDate, formatListDate } from "../lib/dates";
 import type { EmailAddress, MessageDetail } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
+import { useThreadStore } from "../store/threadStore";
 import { AttachmentList } from "./AttachmentList";
 import { EmailBody } from "./EmailBody";
+import { threadKey } from "./mailboxes";
 import "./mail.css";
 
 export interface MessageCardProps {
@@ -70,7 +72,7 @@ export function MessageCard({ message, accountId, expanded, onToggle }: MessageC
           <ChevronUp aria-hidden="true" />
         </button>
       </header>
-      <EmailBody message={message} />
+      <EmailBody message={message} onRetry={() => void useThreadStore.getState().load(threadKey(accountId, message.threadId))} />
       <AttachmentList accountId={accountId} messageId={message.id} attachments={message.attachments} />
     </article>
   );

@@ -238,3 +238,68 @@ test("a pending detail patch is re-applied to every fetch until it settles", asy
   await store().load("a:t1");
   expect(store().details.get("a:t1")?.thread.subject).toBe("Subject t1");
 });
+
+/** A detail whose one message has (or lacks) its body. */
+const withBody = (id: string, bodyAvailable: boolean): ThreadDetail => ({
+  ...detail(id),
+  messages: [
+    {
+      id: `${id}-m1`,
+      threadId: id,
+      fromName: null,
+      fromAddress: null,
+      to: [],
+      cc: [],
+      subject: null,
+      snippet: "Hi",
+      date: 1,
+      bodyHtml: null,
+      hasRemoteContent: false,
+      declaresDarkMode: false,
+      bodyText: bodyAvailable ? "Hello" : null,
+      bodyAvailable,
+      unread: false,
+      starred: false,
+      labelIds: [],
+      hasAttachment: false,
+      attachments: [],
+    },
+  ],
+});
+
+test("a detail missing a body is re-requested on load instead of served from the cache", async () => {
+  const threads: Record<string, ThreadDetail> = { "a:t1": withBody("t1", false) };
+  const requests = backend(threads);
+  await store().load("a:t1");
+  threads["a:t1"] = withBody("t1", true);
+  await store().load("a:t1");
+  expect(requests).toEqual(["a:t1", "a:t1"]);
+  expect(store().details.get("a:t1")?.messages[0].bodyText).toBe("Hello");
+  // Complete now: served from the cache.
+  await store().load("a:t1");
+  expect(requests).toHaveLength(2);
+});
+
+test("sync:completed for the account re-requests the open detail if it is missing a body", async () => {
+  const threads: Record<string, ThreadDetail> = { "a:t1": withBody("t1", false), "a:t2": withBody("t2", true) };
+  const requests = backend(threads);
+  const stop = await store().subscribe();
+  await store().load("a:t1");
+  useUiStore.getState().setOpenThread("a:t1");
+  requests.length = 0;
+
+  threads["a:t1"] = withBody("t1", true);
+  await emit("sync:completed", { accountId: "b" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(requests).toEqual([]); // another account's sync says nothing about this one
+
+  await emit("sync:completed", { accountId: "a" });
+  await vi.waitFor(() => expect(store().details.get("a:t1")?.messages[0].bodyAvailable).toBe(true));
+  expect(requests).toEqual(["a:t1"]);
+
+  // Complete details aren't re-requested.
+  await emit("sync:completed", { accountId: "a" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(requests).toEqual(["a:t1"]);
+  stop();
+});

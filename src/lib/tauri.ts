@@ -116,6 +116,8 @@ export interface MessageDetail {
   hasRemoteContent: boolean;
   declaresDarkMode: boolean;
   bodyText: string | null;
+  /** False when only metadata is cached (the body couldn't be fetched, e.g. offline): offer to try again. */
+  bodyAvailable: boolean;
   unread: boolean;
   starred: boolean;
   labelIds: string[];

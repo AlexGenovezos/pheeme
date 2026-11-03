@@ -19,6 +19,7 @@ const message = (over: Partial<MessageDetail> = {}): MessageDetail => ({
   bodyHtml: "<p>Hello <b>there</b></p>",
   hasRemoteContent: false,
   declaresDarkMode: false,
+  bodyAvailable: true,
   bodyText: "Hello there",
   unread: false,
   starred: false,
@@ -318,4 +319,18 @@ test("lets go of the old frame document when the srcdoc is rebuilt or the body u
 
   unmount();
   expect(FakeResizeObserver.instances.every((o) => o.targets.size === 0)).toBe(true);
+});
+
+test("a body that couldn't be fetched offers to try again instead of claiming the message is empty", () => {
+  const retry = vi.fn();
+  render(<EmailBody message={message({ bodyHtml: null, bodyText: null, bodyAvailable: false })} onRetry={retry} />);
+  expect(screen.queryByText("This message is empty.")).toBeNull();
+  expect(screen.getByText("Couldn't load this message — you may be offline.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(retry).toHaveBeenCalledTimes(1);
+});
+
+test("a fetched message with no body is empty", () => {
+  render(<EmailBody message={message({ bodyHtml: null, bodyText: null })} />);
+  expect(screen.getByText("This message is empty.")).toBeInTheDocument();
 });

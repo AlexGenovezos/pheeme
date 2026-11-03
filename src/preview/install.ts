@@ -75,6 +75,7 @@ function toDetail(t: FixtureThread): ThreadDetail {
     hasRemoteContent: m.hasRemoteContent,
     declaresDarkMode: m.declaresDarkMode,
     bodyText: m.bodyText,
+    bodyAvailable: true,
     unread: m.unread,
     starred: t.labelIds.includes("STARRED"),
     labelIds: m.unread ? [...t.labelIds, "UNREAD"] : [...t.labelIds],

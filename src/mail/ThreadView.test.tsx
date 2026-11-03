@@ -25,6 +25,7 @@ const message = (n: number, over: Partial<MessageDetail> = {}): MessageDetail =>
   bodyHtml: null,
   hasRemoteContent: false,
   declaresDarkMode: false,
+  bodyAvailable: true,
   bodyText: `Body ${n}`,
   unread: false,
   starred: false,

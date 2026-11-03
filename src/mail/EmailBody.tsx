@@ -12,13 +12,25 @@ import "./mail.css";
  * A message body. Plain text renders in the main document (React-escaped, URLs linkified); HTML renders in
  * a script-less sandboxed iframe (Builder's calls 10–13) that the parent sizes and whose links it opens.
  */
-export function EmailBody({ message }: { message: MessageDetail }) {
+export function EmailBody({ message, onRetry }: { message: MessageDetail; onRetry?(): void }) {
   if (message.bodyHtml) {
     return (
       <HtmlBody key={message.id} html={message.bodyHtml} hasRemoteContent={message.hasRemoteContent} declaresDark={message.declaresDarkMode} />
     );
   }
   if (message.bodyText) return <div className="message-card__text selectable">{linkify(message.bodyText)}</div>;
+  if (!message.bodyAvailable) {
+    return (
+      <div className="message-card__unavailable">
+        <p className="message-card__empty">Couldn't load this message — you may be offline.</p>
+        {onRetry && (
+          <Button size="sm" onClick={onRetry}>
+            Try again
+          </Button>
+        )}
+      </div>
+    );
+  }
   return <p className="message-card__empty">This message is empty.</p>;
 }
 
