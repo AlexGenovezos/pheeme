@@ -1,0 +1,68 @@
+name: Nightly performance
+
+# The long versions of the performance checks (#47). A failure opens an issue (or comments
+# on the open one). See docs/performance.md.
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SQLX_OFFLINE: "true"
+
+jobs:
+  soak:
+    name: Rust heap soak (long)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: ubuntu-22.04-release
+          save-if: false
+      - name: Heap soak (long)
+        working-directory: src-tauri
+        env:
+          SOAK: long
+        run: cargo test --release --features test-support --test soak -- --nocapture
+      - name: Upload the heap profile
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dhat-heap
+          path: src-tauri/target/tmp/soak/dhat-heap.json
+          retention-days: 14
+
+  report:
+    name: Report failure
+    needs: [soak]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the nightly failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly performance check failed"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          body="The nightly performance run failed on $(date -u +%F) at ${GITHUB_SHA::7}: $RUN_URL"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body (see docs/performance.md)."
+          fi

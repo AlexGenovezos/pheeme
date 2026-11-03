@@ -19,17 +19,18 @@ concurrency:
 
 env:
   SQLX_OFFLINE: "true"
-  CARGO_TERM_COLOR: never
-  GUNGRAUN_COLOR: never
-  # One target dir for both checkouts, so the base build is reused and both runs write
-  # their baselines to the same target/gungraun.
-  CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
 jobs:
   benches:
     name: Rust benchmarks
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: never
+      GUNGRAUN_COLOR: never
+      # One target dir for both checkouts, so the base build is reused and both runs write
+      # their baselines to the same target/gungraun.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,7 +51,7 @@ jobs:
           tool: gungraun-runner@0.20.0
       - name: Lint the benchmarks
         working-directory: head/src-tauri
-        run: cargo clippy --features bench --benches -- -D warnings
+        run: cargo clippy --features bench --all-targets -- -D warnings
       - name: Check out the base branch
         if: github.event_name == 'pull_request'
         uses: actions/checkout@v7
@@ -81,3 +82,30 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+  soak:
+    name: Rust heap soak
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: ubuntu-22.04-release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Heap soak (short)
+        working-directory: src-tauri
+        run: cargo test --release --features test-support --test soak -- --nocapture
+      - name: Upload the heap profile
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dhat-heap
+          path: src-tauri/target/tmp/soak/dhat-heap.json
+          retention-days: 14

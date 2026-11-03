@@ -10,9 +10,10 @@ name = "pheeme_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-# The benchmarks (Linux, needs valgrind and libclang): exposes the in-memory Gmail
-# (`sync::fake`) and pulls in gungraun.
-bench = ["dep:gungraun"]
+# Exposes the in-memory Gmail (`sync::fake`) to the benchmarks and the heap soak test.
+test-support = []
+# The benchmarks (Linux, needs valgrind and libclang).
+bench = ["test-support", "dep:gungraun"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -59,6 +60,7 @@ gungraun = { version = "0.20.0", features = ["act"], optional = true }
 security-framework = "3"
 
 [dev-dependencies]
+dhat = "0.3.3"
 tempfile = "3"
 wiremock = "0.6"
 
@@ -68,3 +70,9 @@ wiremock = "0.6"
 name = "hot_paths"
 harness = false
 required-features = ["bench"]
+
+# Heap soak and leak check under dhat: `cargo test --release --features test-support --test soak`.
+# See docs/performance.md.
+[[test]]
+name = "soak"
+required-features = ["test-support"]

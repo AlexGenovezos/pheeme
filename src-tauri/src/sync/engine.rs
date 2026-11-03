@@ -201,17 +201,26 @@ impl SyncEngine {
 
         let mut guard = self.write_lock.lock().await;
         let mut tx = db::begin_write(&self.db).await?;
+        // Tombstones only matter while a backfill can still bring the message back; it
+        // clears them when it completes, so after that they would pile up for good.
+        let backfilling = !sync_state::get(&mut *tx, &self.account_id)
+            .await?
+            .backfill_complete;
         let mut touched: Vec<String> = Vec::new();
         for (id, intent) in &intents {
             match intent {
                 Intent::Delete { thread } => {
                     messages::delete_message(&mut *tx, &self.account_id, id).await?;
-                    guard.insert(id.clone());
+                    if backfilling {
+                        guard.insert(id.clone());
+                    }
                     touched.push(thread.clone());
                 }
                 Intent::Fetch { thread } if gone.contains(id) => {
                     messages::delete_message(&mut *tx, &self.account_id, id).await?;
-                    guard.insert(id.clone());
+                    if backfilling {
+                        guard.insert(id.clone());
+                    }
                     touched.push(thread.clone());
                 }
                 Intent::Labels {
