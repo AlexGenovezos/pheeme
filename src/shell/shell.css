@@ -392,56 +392,6 @@ body[data-resizing] .shell__divider:active::after {
   overflow-y: auto;
 }
 
-.message {
-  max-width: calc(var(--measure-reading) + var(--space-8) * 2);
-  padding: var(--space-6) var(--space-8) var(--space-10);
-}
-
-.message__subject {
-  margin-bottom: var(--space-5);
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--line-height-tight);
-  letter-spacing: var(--letter-spacing-tight);
-}
-
-.message__header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-5);
-  padding-bottom: var(--space-4);
-  border-bottom: var(--border-width) solid var(--color-border-subtle);
-}
-
-.message__from {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: var(--space-0);
-}
-
-.message__name {
-  font-weight: var(--font-weight-semibold);
-}
-
-.message__address,
-.message__date {
-  color: var(--color-foreground-muted);
-  font-size: var(--font-size-sm);
-}
-
-.message__date {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.message__body {
-  font-size: var(--font-size-reading);
-  line-height: var(--line-height-reading);
-  white-space: pre-wrap;
-}
-
 /* ---- Empty states and the chord hint ------------------------------------ */
 
 .pane-empty {

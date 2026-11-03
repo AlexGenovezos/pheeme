@@ -19,7 +19,9 @@ const backend = (cmd: string, args?: unknown) =>
     ? [account]
     : cmd === "list_threads"
       ? fixtureBackend.list_threads({ ...(args as object), accountIds: [] })
-      : undefined;
+      : cmd === "get_thread"
+        ? fixtureBackend.get_thread(args as Record<string, unknown>)
+        : undefined;
 
 let restoreLayout: () => void;
 
@@ -114,7 +116,7 @@ test("g then i goes to the inbox (Primary, with one account); j selects the firs
   const first = within(list).getAllByRole("option")[0];
   expect(first).toHaveAttribute("data-selected", "true");
   expect(list).toHaveAttribute("aria-activedescendant", first.id);
-  expect(screen.getByRole("article")).toBeInTheDocument();
+  expect(await screen.findByRole("article")).toBeInTheDocument();
 });
 
 test("Ctrl+B toggles the sidebar; Ctrl+K opens the palette", async () => {
