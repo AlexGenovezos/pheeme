@@ -30,6 +30,9 @@ pub const QUOTA_UNITS_PER_SEC: u32 = 80;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Uploads carry whole messages (attachments up to Gmail's 25 MB), so they get longer.
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
 /// Source of OAuth access tokens. The OAuth layer implements this on top of the keychain.
 #[async_trait::async_trait]
 pub trait TokenProvider: Send + Sync {
@@ -169,6 +172,8 @@ pub(crate) struct ApiRequest {
     segments: Vec<String>,
     query: Vec<(String, String)>,
     body: Option<Value>,
+    /// `multipart/related` upload of an RFC 2822 message (`/upload/...`, `uploadType=multipart`).
+    upload: Option<Upload>,
     /// Whether failures that leave the outcome unknown (timeouts, dropped connections, 5xx) may
     /// be retried. False for non-idempotent calls such as sends: Gmail may already have acted.
     retry_ambiguous: bool,
@@ -181,6 +186,7 @@ impl ApiRequest {
             segments: segments.iter().map(|s| (*s).to_owned()).collect(),
             query: Vec::new(),
             body: None,
+            upload: None,
             retry_ambiguous: true,
         }
     }
@@ -227,12 +233,46 @@ impl ApiRequest {
         }
     }
 
+    /// Send `metadata` and a raw RFC 2822 message through Gmail's media upload endpoint, which
+    /// takes messages far larger than a JSON `raw` field can.
+    pub fn upload_message(mut self, metadata: Value, rfc822: &[u8]) -> Self {
+        self.upload = Some(Upload::new(metadata, rfc822));
+        self.query("uploadType", "multipart")
+    }
+
     /// Mark the call non-idempotent: never retry when the outcome is unknown (timeout, dropped
     /// connection, 5xx). Retries still happen when Gmail clearly did not act (connect failure,
     /// 429, 401 refresh). The design forbids automatic re-sends (design doc §5).
     pub fn non_idempotent(mut self) -> Self {
         self.retry_ambiguous = false;
         self
+    }
+}
+
+/// A prepared `multipart/related` body: JSON metadata, then the message.
+#[derive(Debug, Clone)]
+struct Upload {
+    content_type: String,
+    body: bytes::Bytes,
+}
+
+impl Upload {
+    fn new(metadata: Value, rfc822: &[u8]) -> Self {
+        let boundary = format!("pheeme-{}", uuid::Uuid::new_v4().simple());
+        let mut body = Vec::with_capacity(rfc822.len() + 256);
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata}\r\n\
+                 --{boundary}\r\nContent-Type: message/rfc822\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(rfc822);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+        Self {
+            content_type: format!("multipart/related; boundary={boundary}"),
+            body: body.into(),
+        }
     }
 }
 
@@ -298,6 +338,11 @@ impl GmailClient {
     fn url_for(&self, req: &ApiRequest) -> Result<reqwest::Url, GmailError> {
         let mut url = reqwest::Url::parse(&self.base_url)
             .map_err(|e| GmailError::Decode(format!("invalid Gmail base URL: {e}")))?;
+        if req.upload.is_some() {
+            // `https://gmail.googleapis.com/gmail/v1/...` → `.../upload/gmail/v1/...`.
+            let path = format!("/upload{}", url.path().trim_end_matches('/'));
+            url.set_path(&path);
+        }
         url.path_segments_mut()
             .map_err(|_| GmailError::Decode("Gmail base URL cannot be a base".into()))?
             .pop_if_empty()
@@ -334,6 +379,12 @@ impl GmailClient {
             }
             if let Some(body) = &req.body {
                 builder = builder.json(body);
+            }
+            if let Some(upload) = &req.upload {
+                builder = builder
+                    .header(reqwest::header::CONTENT_TYPE, &upload.content_type)
+                    .body(upload.body.clone())
+                    .timeout(UPLOAD_TIMEOUT);
             }
 
             let (status, retry_after, body) = match send_and_read(builder).await {

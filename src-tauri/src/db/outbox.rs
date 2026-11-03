@@ -198,6 +198,42 @@ pub async fn update_progress<'e>(
     Ok(())
 }
 
+/// Move a send from `pending` to `p` (normally `checking`) as it leaves. False when it is no
+/// longer pending (cancelled by undo send meanwhile), in which case it must not be sent.
+pub async fn claim_send<'e>(
+    ex: impl SqliteExecutor<'e>,
+    op_id: &str,
+    p: &OpProgress<'_>,
+    now_ms: i64,
+) -> Result<bool> {
+    let done = sqlx::query!(
+        r#"UPDATE outbox SET status = ?, attempts = ?, next_attempt_at = ?, checks_done = ?,
+                             last_error = ?, updated_at = ?
+           WHERE id = ? AND kind = 'send' AND status = 'pending'"#,
+        p.status,
+        p.attempts,
+        p.next_attempt_at,
+        p.checks_done,
+        p.last_error,
+        now_ms,
+        op_id
+    )
+    .execute(ex)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Drop a send that certainly hasn't reached Gmail (`pending` or `failed`). False otherwise.
+pub async fn delete_unsent<'e>(ex: impl SqliteExecutor<'e>, op_id: &str) -> Result<bool> {
+    let done = sqlx::query!(
+        "DELETE FROM outbox WHERE id = ? AND kind = 'send' AND status IN ('pending', 'failed')",
+        op_id
+    )
+    .execute(ex)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
 /// Sends whose delivery isn't confirmed yet, matched against incoming mail by Message-ID.
 pub async fn sends_awaiting_confirmation<'e>(
     ex: impl SqliteExecutor<'e>,

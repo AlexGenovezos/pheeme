@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM outbox WHERE id = ? AND kind = 'send' AND status IN ('pending', 'failed')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "1381fc81025249fde6ea34248b29ed01c3ce3d3c52254fd54a20a51593f9be20"
+}

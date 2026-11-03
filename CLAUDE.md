@@ -57,6 +57,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `sync/` | `engine.rs` initial/incremental (`history.list`)/expiry-reconcile/backfill; `outbox.rs` optimistic ops + safe sends; `manager.rs` per-account scheduling and triggers; `api.rs` the `MailApi` trait (`fake.rs` is the in-memory Gmail for tests) |
 | `render.rs` | Email HTML sanitizer (`ammonia`) and signed `pheeme-att` URLs for inline `cid:` images |
 | `mail.rs` | Tauri-free mail service the commands call: cached list/thread/label reads, changes via the outbox |
+| `compose/` | Tauri-free compose service: MIME building (`lettre`), Reply/Reply All/Forward templates, staged attachments, Gmail drafts, sends (with undo window) via the outbox |
 | `accounts.rs` | Tauri-free account service: sign-in flow, list/remove, access tokens (cached in memory) |
 | `identity.rs` | App identifier and keychain service constants |
 | `secrets.rs` | OS keychain secret store: all accounts in one cached item (`accounts`), read once per launch; tokens never go in SQLite |
@@ -89,7 +90,7 @@ Nine tables.
 - **IPC pattern:** Add a Rust fn in `commands/<domain>.rs`, register it in `lib.rs`'s `Builder`, add a typed wrapper in `src/lib/tauri.ts`.
 - **DB queries:** Use `sqlx::query_as!` macros for compile-time checking. All queries go in `db/<entity>.rs`.
 - **Thread labels** live in the `thread_labels` table, derived from `messages.label_ids`: change message labels, then call `recompute_threads` in the same transaction.
-- **Mail changes** (archive, read, star, trash, send) go through `sync::outbox`, never straight to Gmail. Write transactions use `db::begin_write` (`BEGIN IMMEDIATE`).
+- **Mail changes** (archive, read, star, trash, send) go through `sync::outbox`, never straight to Gmail (drafts are the exception: saved straight to the drafts API). Write transactions use `db::begin_write` (`BEGIN IMMEDIATE`).
 - **Command errors** reject with `{ code, message }` (`CommandError` in `commands/mod.rs`): branch on `code`, show `message`.
 - **Onboarding guide text** lives in `src/onboarding/steps.ts` and is mirrored in `docs/google-cloud-setup.md`; change both together.
 - Tauri dev server runs on **port 1420** (HMR on 1421). Don't change these without updating `tauri.conf.json`.

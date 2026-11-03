@@ -8,14 +8,15 @@
 //!
 //! Sends are never retried automatically once Gmail may have received them: they're
 //! marked `checking` before the request goes out and then confirmed by finding the
-//! message in Sent (cache, search with backoff, or incoming sync).
+//! message in Sent (cache, search with backoff, or incoming sync). A send may wait for an
+//! undo window (`next_attempt_at`); until it's claimed it can be cancelled.
 
 use super::engine::{now_ms, SyncEngine, SyncError};
 use super::events::SyncEvent;
 use crate::db::outbox::{self as store, DbOp, DbOpMessage, OpProgress};
 use crate::db::threads::{self, RecomputeResult};
 use crate::db::{self, messages};
-use crate::gmail::mime::{encode_base64url, rfc822_message_id};
+use crate::gmail::mime::{decode_base64url, encode_base64url, rfc822_message_id};
 use crate::gmail::{GmailError, MessageFormat};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
@@ -51,6 +52,12 @@ struct Payload {
     /// Sends: base64url RFC 2822 message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     raw: Option<String>,
+    /// Sends: the conversation a reply belongs in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    thread_id: Option<String>,
+    /// Sends: the saved Gmail draft this message came from, deleted once it is sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    draft_id: Option<String>,
 }
 
 impl Payload {
@@ -98,7 +105,7 @@ pub async fn enqueue_modify(
         thread_ids: thread_ids.to_vec(),
         add: add.to_vec(),
         remove: remove.to_vec(),
-        raw: None,
+        ..Default::default()
     };
     enqueue(pool, account_id, KIND_MODIFY, payload).await
 }
@@ -253,12 +260,24 @@ pub async fn match_sends(
     Ok(done)
 }
 
+/// Where and when a queued message is sent.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SendOptions {
+    /// Reply: the Gmail thread it belongs in.
+    pub thread_id: Option<String>,
+    /// The saved draft this message replaces; deleted once the message is sent.
+    pub draft_id: Option<String>,
+    /// Not before this time (Unix ms): the undo-send window. 0 sends at once.
+    pub send_at: i64,
+}
+
 /// Queue an RFC 2822 message for sending. Keeps its `Message-ID` or adds one; the id is
 /// how delivery gets confirmed after an ambiguous failure. Returns the op id.
 pub async fn queue_send(
     pool: &SqlitePool,
     account_id: &str,
     raw: &[u8],
+    options: &SendOptions,
 ) -> Result<String, SyncError> {
     let (message_id, raw) = match rfc822_message_id(raw) {
         Some(id) => (id, raw.to_vec()),
@@ -277,12 +296,14 @@ pub async fn queue_send(
         kind: KIND_SEND.into(),
         payload: serde_json::to_string(&Payload {
             raw: Some(encode_base64url(&raw)),
+            thread_id: options.thread_id.clone(),
+            draft_id: options.draft_id.clone(),
             ..Default::default()
         })
         .map_err(anyhow::Error::from)?,
         status: PENDING.into(),
         attempts: 0,
-        next_attempt_at: 0,
+        next_attempt_at: options.send_at,
         checks_done: 0,
         rfc822_message_id: Some(message_id),
         last_error: None,
@@ -293,6 +314,12 @@ pub async fn queue_send(
     store::insert(&mut tx, &op, &[]).await?;
     tx.commit().await?;
     Ok(op.id)
+}
+
+/// Undo send: drop a send that hasn't left (still waiting, offline, or rejected). False
+/// once it may have reached Gmail, or if it's gone.
+pub async fn cancel_send(pool: &SqlitePool, op_id: &str) -> Result<bool, SyncError> {
+    Ok(store::delete_unsent(pool, op_id).await?)
 }
 
 /// "Send again" after the user confirmed: only for a send that's unconfirmed or failed.
@@ -348,6 +375,10 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
             (KIND_SEND, UNCONFIRMED | FAILED) => {}
             (_, PENDING) => {
                 if op.next_attempt_at > now {
+                    // A send waiting out its undo window holds nothing else up.
+                    if op.kind == KIND_SEND && op.attempts == 0 {
+                        continue;
+                    }
                     break;
                 }
                 let step = if op.kind == KIND_SEND {
@@ -509,11 +540,17 @@ fn send_status(engine: &SyncEngine, op: &DbOp, status: &str) {
 }
 
 async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncError> {
-    let raw = Payload::of(op)?
+    let payload = Payload::of(op)?;
+    let raw = payload
         .raw
-        .ok_or_else(|| SyncError::Db(anyhow::anyhow!("send {} has no message", op.id)))?;
+        .as_deref()
+        .ok_or_else(|| SyncError::Db(anyhow::anyhow!("send {} has no message", op.id)))
+        .and_then(|r| {
+            decode_base64url(r).map_err(|e| SyncError::Db(anyhow::anyhow!("send {}: {e}", op.id)))
+        })?;
     // Recorded before the request leaves: if the app dies mid-send, it's confirmed through
-    // Sent on the next run instead of being sent again.
+    // Sent on the next run instead of being sent again. Claimed atomically, so a send
+    // cancelled (undo) meanwhile never goes out.
     let checking = OpProgress {
         status: CHECKING,
         attempts: op.attempts + 1,
@@ -521,11 +558,17 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
         checks_done: 0,
         last_error: None,
     };
-    store::update_progress(&engine.db, &op.id, &checking, now).await?;
-
-    match engine.api.send_message(&raw).await {
+    if !store::claim_send(&engine.db, &op.id, &checking, now).await? {
+        return Ok(Step::Continue);
+    }
+    match engine
+        .api
+        .send_message(&raw, payload.thread_id.as_deref())
+        .await
+    {
         Ok(_) => {
             store::delete(&engine.db, &op.id).await?;
+            delete_source_draft(engine, op).await;
             send_status(engine, op, "sent");
             Ok(Step::Done)
         }
@@ -559,6 +602,19 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
             send_status(engine, op, CHECKING);
             Ok(Step::Continue)
         }
+    }
+}
+
+/// The message replaced a saved draft: remove it once the message is in Sent. Kept until
+/// then, so a send that never leaves (and is cancelled) loses nothing.
+async fn delete_source_draft(engine: &SyncEngine, op: &DbOp) {
+    let Ok(Some(draft)) = Payload::of(op).map(|p| p.draft_id) else {
+        return;
+    };
+    match engine.api.delete_draft(&draft).await {
+        Ok(()) => {}
+        Err(e) if e.is_not_found() => {}
+        Err(e) => tracing::warn!(op = %op.id, error = %e, "couldn't delete the sent draft"),
     }
 }
 
@@ -596,6 +652,7 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
     };
     if found {
         store::delete(&engine.db, &op.id).await?;
+        delete_source_draft(engine, op).await;
         send_status(engine, op, "sent");
         return Ok(true);
     }

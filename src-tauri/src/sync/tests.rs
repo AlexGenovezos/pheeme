@@ -840,7 +840,9 @@ async fn rollback_restores_targets_added_during_its_refetch() {
 const RAW: &[u8] = b"From: me@example.com\r\nTo: you@example.com\r\nSubject: Hi\r\n\r\nHello";
 
 async fn send_op(h: &H) -> store::DbOp {
-    let id = outbox::queue_send(&h.pool, ACCT, RAW).await.unwrap();
+    let id = outbox::queue_send(&h.pool, ACCT, RAW, &outbox::SendOptions::default())
+        .await
+        .unwrap();
     store::get(&h.pool, &id).await.unwrap().unwrap()
 }
 
@@ -983,7 +985,9 @@ async fn offline_send_stays_pending_and_retries() {
 async fn queue_send_keeps_a_folded_message_id() {
     let h = harness().await;
     let raw = b"From: me@example.com\r\nMessage-ID:\r\n <existing@example.com>\r\nSubject: Hi\r\n\r\nHello";
-    let id = outbox::queue_send(&h.pool, ACCT, raw).await.unwrap();
+    let id = outbox::queue_send(&h.pool, ACCT, raw, &outbox::SendOptions::default())
+        .await
+        .unwrap();
     let op = store::get(&h.pool, &id).await.unwrap().unwrap();
     assert_eq!(
         op.rfc822_message_id.as_deref(),
@@ -1002,7 +1006,9 @@ async fn queue_send_keeps_a_folded_message_id() {
 async fn queue_send_ignores_a_message_id_line_in_the_body() {
     let h = harness().await;
     let raw = b"From: me@example.com\r\nSubject: Hi\r\n\r\nMessage-ID: <body@example.com>\r\n";
-    let id = outbox::queue_send(&h.pool, ACCT, raw).await.unwrap();
+    let id = outbox::queue_send(&h.pool, ACCT, raw, &outbox::SendOptions::default())
+        .await
+        .unwrap();
     let op = store::get(&h.pool, &id).await.unwrap().unwrap();
     let mid = op.rfc822_message_id.unwrap();
     assert!(mid.ends_with("@pheeme.app>"), "{mid}");
@@ -1014,4 +1020,28 @@ async fn queue_send_ignores_a_message_id_line_in_the_body() {
     // The fake read the header, not the body line, so the send shows up in Sent.
     let sent_msg = h.fake.message("sent-1").unwrap();
     assert_eq!(sent_msg.message_id, mid);
+}
+
+#[tokio::test]
+async fn send_in_its_undo_window_does_not_hold_up_other_changes() {
+    let h = harness().await;
+    h.fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+    h.engine.run_initial_sync().await.unwrap();
+    let t = now_ms();
+    let options = outbox::SendOptions {
+        send_at: t + 10_000,
+        ..Default::default()
+    };
+    outbox::queue_send(&h.pool, ACCT, RAW, &options)
+        .await
+        .unwrap();
+    outbox::enqueue_modify(&h.pool, ACCT, &s(&["t1"]), &[], &s(&["INBOX"]))
+        .await
+        .unwrap();
+
+    outbox::process(&h.engine, t).await.unwrap();
+    assert!(h.fake.message("m1").unwrap().labels.is_empty(), "archived");
+    assert!(h.fake.sent().is_empty(), "still in its window");
+    outbox::process(&h.engine, t + 10_000).await.unwrap();
+    assert_eq!(h.fake.sent().len(), 1);
 }

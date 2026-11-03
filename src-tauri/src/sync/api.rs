@@ -2,7 +2,8 @@
 //! an in-memory mailbox ([`super::fake::FakeGmail`]).
 
 use crate::gmail::types::{
-    HistoryListResponse, Label, Message, MessageListResponse, Thread, ThreadListResponse,
+    Draft, DraftListResponse, HistoryListResponse, Label, Message, MessageListResponse, Thread,
+    ThreadListResponse,
 };
 use crate::gmail::{GmailClient, GmailError, MessageFormat};
 
@@ -43,14 +44,35 @@ pub trait MailApi: Send + Sync {
         remove: &[String],
     ) -> Result<(), GmailError>;
     async fn trash_message(&self, id: &str) -> Result<(), GmailError>;
-    /// Send a base64url RFC 2822 message; returns the Gmail message id.
-    async fn send_message(&self, raw: &str) -> Result<String, GmailError>;
+    /// Send an RFC 2822 message (in `thread_id` for a reply); returns the Gmail message id.
+    async fn send_message(
+        &self,
+        rfc822: &[u8],
+        thread_id: Option<&str>,
+    ) -> Result<String, GmailError>;
     /// Download an attachment's bytes (`attachment_id` is Gmail's, not the row id).
     async fn get_attachment(
         &self,
         message_id: &str,
         attachment_id: &str,
     ) -> Result<Vec<u8>, GmailError>;
+    async fn list_drafts(&self, page_token: Option<&str>) -> Result<DraftListResponse, GmailError>;
+    /// A draft with its message in `format=full`.
+    async fn get_draft(&self, id: &str) -> Result<Draft, GmailError>;
+    async fn create_draft(
+        &self,
+        rfc822: &[u8],
+        thread_id: Option<&str>,
+    ) -> Result<Draft, GmailError>;
+    async fn update_draft(
+        &self,
+        id: &str,
+        rfc822: &[u8],
+        thread_id: Option<&str>,
+    ) -> Result<Draft, GmailError>;
+    async fn delete_draft(&self, id: &str) -> Result<(), GmailError>;
+    /// Send a draft as saved; returns the sent message id.
+    async fn send_draft(&self, id: &str) -> Result<String, GmailError>;
 }
 
 #[async_trait::async_trait]
@@ -121,8 +143,12 @@ impl MailApi for GmailClient {
         GmailClient::trash_message(self, id).await.map(|_| ())
     }
 
-    async fn send_message(&self, raw: &str) -> Result<String, GmailError> {
-        Ok(GmailClient::send_message(self, raw).await?.id)
+    async fn send_message(
+        &self,
+        rfc822: &[u8],
+        thread_id: Option<&str>,
+    ) -> Result<String, GmailError> {
+        Ok(GmailClient::send_message(self, rfc822, thread_id).await?.id)
     }
 
     async fn get_attachment(
@@ -131,5 +157,38 @@ impl MailApi for GmailClient {
         attachment_id: &str,
     ) -> Result<Vec<u8>, GmailError> {
         GmailClient::get_attachment(self, message_id, attachment_id).await
+    }
+
+    async fn list_drafts(&self, page_token: Option<&str>) -> Result<DraftListResponse, GmailError> {
+        GmailClient::list_drafts(self, page_token, 500).await
+    }
+
+    async fn get_draft(&self, id: &str) -> Result<Draft, GmailError> {
+        GmailClient::get_draft(self, id, MessageFormat::Full).await
+    }
+
+    async fn create_draft(
+        &self,
+        rfc822: &[u8],
+        thread_id: Option<&str>,
+    ) -> Result<Draft, GmailError> {
+        GmailClient::create_draft(self, rfc822, thread_id).await
+    }
+
+    async fn update_draft(
+        &self,
+        id: &str,
+        rfc822: &[u8],
+        thread_id: Option<&str>,
+    ) -> Result<Draft, GmailError> {
+        GmailClient::update_draft(self, id, rfc822, thread_id).await
+    }
+
+    async fn delete_draft(&self, id: &str) -> Result<(), GmailError> {
+        GmailClient::delete_draft(self, id).await
+    }
+
+    async fn send_draft(&self, id: &str) -> Result<String, GmailError> {
+        Ok(GmailClient::send_draft(self, id).await?.id)
     }
 }

@@ -447,7 +447,7 @@ fn decode_charset(bytes: &[u8], charset: Option<&str>) -> String {
 }
 
 /// Decode RFC 2047 encoded words (and unfold) in a header value.
-fn decode_header_value(name: &str, value: &str) -> String {
+pub fn decode_header_value(name: &str, value: &str) -> String {
     let line = format!("{name}: {value}");
     parse_header(line.as_bytes())
         .map(|(h, _)| h.get_value().trim().to_owned())
@@ -455,7 +455,7 @@ fn decode_header_value(name: &str, value: &str) -> String {
 }
 
 /// Split an address header into `(name, address)` pairs; unparseable input yields nothing.
-fn parse_addresses(name: &str, value: &str) -> Vec<EmailAddress> {
+pub fn parse_addresses(name: &str, value: &str) -> Vec<EmailAddress> {
     let line = format!("{name}: {value}");
     let Ok((header, _)) = parse_header(line.as_bytes()) else {
         return Vec::new();

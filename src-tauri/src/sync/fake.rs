@@ -2,10 +2,11 @@
 //! expire, scripted failures, and call counters.
 
 use super::api::MailApi;
-use crate::gmail::mime::{decode_base64url, encode_base64url, rfc822_message_id};
+use crate::gmail::mime::encode_base64url;
 use crate::gmail::types::{
-    Header, HistoryLabelChange, HistoryListResponse, HistoryMessage, HistoryRecord, Label, Message,
-    MessageListResponse, MessagePart, MessagePartBody, MessageRef, Thread, ThreadListResponse,
+    Draft, DraftListResponse, Header, HistoryLabelChange, HistoryListResponse, HistoryMessage,
+    HistoryRecord, Label, Message, MessageListResponse, MessagePart, MessagePartBody, MessageRef,
+    Thread, ThreadListResponse,
 };
 use crate::gmail::{GmailError, MessageFormat};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -29,6 +30,9 @@ pub struct FakeMsg {
     pub message_id: String,
     pub history_id: u64,
     pub attachments: Vec<FakeAttachment>,
+    /// The whole RFC 2822 message (sent mail and drafts); served as `raw` in place of the
+    /// generated parts above.
+    pub raw: Option<Vec<u8>>,
 }
 
 /// A file attached to a [`FakeMsg`]; its bytes are registered with
@@ -57,6 +61,7 @@ impl FakeMsg {
             message_id: format!("<{id}@example.com>"),
             history_id: 0,
             attachments: Vec::new(),
+            raw: None,
         }
     }
 
@@ -120,7 +125,27 @@ impl FakeMsg {
         self.at(now_ms() - days * DAY_MS)
     }
 
+    /// A message Gmail stored from this RFC 2822 source (subject and Message-ID from it).
+    pub fn from_raw(id: &str, thread_id: &str, labels: &[&str], rfc822: &[u8]) -> Self {
+        let mut msg = Self::new(id, thread_id, labels);
+        if let Ok(parsed) = mailparse::parse_mail(rfc822) {
+            use mailparse::MailHeaderMap;
+            let h = &parsed.headers;
+            msg.subject = h.get_first_value("Subject").unwrap_or_default();
+            msg.message_id = crate::gmail::mime::rfc822_message_id(rfc822).unwrap_or_default();
+            msg.from = h.get_first_value("From").unwrap_or_default();
+        }
+        msg.raw = Some(rfc822.to_vec());
+        msg
+    }
+
     fn to_message(&self, format: MessageFormat) -> Message {
+        if let (Some(raw), false) = (&self.raw, format == MessageFormat::Minimal) {
+            return Message {
+                raw: Some(encode_base64url(raw)),
+                ..self.to_message(MessageFormat::Minimal)
+            };
+        }
         let headers = vec![
             Header {
                 name: "From".into(),
@@ -226,6 +251,11 @@ struct State {
     delayed_failures: HashMap<&'static str, (usize, GmailError)>,
     calls: HashMap<&'static str, usize>,
     sent: Vec<String>,
+    /// `threadId` passed with each send, in order.
+    sent_threads: Vec<Option<String>>,
+    /// Draft id → its current message id.
+    drafts: BTreeMap<String, String>,
+    next_draft: u64,
     send_then_fail: Option<GmailError>,
     history_page: usize,
     /// Runs (once) at the start of the next `batch_get_messages`.
@@ -341,6 +371,42 @@ impl FakeGmail {
 
     pub fn sent(&self) -> Vec<String> {
         self.lock().sent.clone()
+    }
+
+    pub fn sent_threads(&self) -> Vec<Option<String>> {
+        self.lock().sent_threads.clone()
+    }
+
+    /// Draft id → message id.
+    pub fn drafts(&self) -> BTreeMap<String, String> {
+        self.lock().drafts.clone()
+    }
+
+    fn store_draft(&self, draft_id: &str, rfc822: &[u8], thread_id: Option<&str>) -> Draft {
+        let message_id = {
+            let mut s = self.lock();
+            s.next_draft += 1;
+            format!("draft-msg-{}", s.next_draft)
+        };
+        let thread = thread_id.unwrap_or(&message_id).to_owned();
+        let msg = FakeMsg::from_raw(&message_id, &thread, &["DRAFT"], rfc822);
+        let envelope = msg.envelope();
+        self.add(msg);
+        self.lock()
+            .drafts
+            .insert(draft_id.to_owned(), message_id.clone());
+        Draft {
+            id: draft_id.to_owned(),
+            message: Some(envelope),
+        }
+    }
+
+    fn draft_message(&self, draft_id: &str) -> Result<String, GmailError> {
+        self.lock()
+            .drafts
+            .get(draft_id)
+            .cloned()
+            .ok_or_else(not_found)
     }
 
     pub fn history_id(&self) -> u64 {
@@ -473,10 +539,6 @@ impl FakeGmail {
         let end = (start + size).min(items.len());
         let next = (end < items.len()).then(|| end.to_string());
         (items[start.min(end)..end].to_vec(), next)
-    }
-
-    fn message_id_of(raw: &str) -> Option<String> {
-        rfc822_message_id(&decode_base64url(raw).ok()?)
     }
 }
 
@@ -707,21 +769,108 @@ impl MailApi for FakeGmail {
         Ok(())
     }
 
-    async fn send_message(&self, raw: &str) -> Result<String, GmailError> {
+    async fn send_message(
+        &self,
+        rfc822: &[u8],
+        thread_id: Option<&str>,
+    ) -> Result<String, GmailError> {
         self.enter("send_message")?;
-        let message_id = Self::message_id_of(raw).unwrap_or_default();
         let id = {
             let mut s = self.lock();
-            s.sent.push(raw.to_owned());
+            s.sent.push(encode_base64url(rfc822));
+            s.sent_threads.push(thread_id.map(str::to_owned));
             s.next_sent += 1;
             format!("sent-{}", s.next_sent)
         };
-        let mut msg = FakeMsg::new(&id, &id, &["SENT"]);
-        msg.message_id = message_id;
-        self.add(msg);
+        self.add(FakeMsg::from_raw(
+            &id,
+            thread_id.unwrap_or(&id),
+            &["SENT"],
+            rfc822,
+        ));
         match self.lock().send_then_fail.take() {
             Some(e) => Err(e),
             None => Ok(id),
+        }
+    }
+
+    async fn list_drafts(&self, page_token: Option<&str>) -> Result<DraftListResponse, GmailError> {
+        self.enter("list_drafts")?;
+        let s = self.lock();
+        let all: Vec<Draft> = s
+            .drafts
+            .iter()
+            .filter_map(|(id, msg)| {
+                Some(Draft {
+                    id: id.clone(),
+                    message: Some(s.messages.get(msg)?.envelope()),
+                })
+            })
+            .collect();
+        let (drafts, next_page_token) = Self::page(&all, page_token, 2);
+        Ok(DraftListResponse {
+            drafts,
+            next_page_token,
+            result_size_estimate: Some(all.len() as u32),
+        })
+    }
+
+    async fn get_draft(&self, id: &str) -> Result<Draft, GmailError> {
+        self.enter("get_draft")?;
+        let message_id = self.draft_message(id)?;
+        let msg = self.message(&message_id).ok_or_else(not_found)?;
+        Ok(Draft {
+            id: id.to_owned(),
+            message: Some(msg.to_message(MessageFormat::Full)),
+        })
+    }
+
+    async fn create_draft(
+        &self,
+        rfc822: &[u8],
+        thread_id: Option<&str>,
+    ) -> Result<Draft, GmailError> {
+        self.enter("create_draft")?;
+        let id = format!("r-{}", self.lock().next_draft + 1);
+        Ok(self.store_draft(&id, rfc822, thread_id))
+    }
+
+    async fn update_draft(
+        &self,
+        id: &str,
+        rfc822: &[u8],
+        thread_id: Option<&str>,
+    ) -> Result<Draft, GmailError> {
+        self.enter("update_draft")?;
+        let old = self.draft_message(id)?;
+        self.delete(&old);
+        Ok(self.store_draft(id, rfc822, thread_id))
+    }
+
+    async fn delete_draft(&self, id: &str) -> Result<(), GmailError> {
+        self.enter("delete_draft")?;
+        let message_id = self.draft_message(id)?;
+        self.lock().drafts.remove(id);
+        self.delete(&message_id);
+        Ok(())
+    }
+
+    async fn send_draft(&self, id: &str) -> Result<String, GmailError> {
+        self.enter("send_draft")?;
+        let message_id = self.draft_message(id)?;
+        let raw = self
+            .message(&message_id)
+            .and_then(|m| m.raw)
+            .unwrap_or_default();
+        {
+            let mut s = self.lock();
+            s.drafts.remove(id);
+            s.sent.push(encode_base64url(&raw));
+        }
+        self.relabel(&message_id, &["SENT"], &["DRAFT"]);
+        match self.lock().send_then_fail.take() {
+            Some(e) => Err(e),
+            None => Ok(message_id),
         }
     }
 

@@ -2,6 +2,7 @@ pub mod accounts;
 #[cfg(target_os = "macos")]
 mod app_menu;
 pub mod commands;
+pub mod compose;
 pub mod db;
 pub mod gmail;
 pub mod identity;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub db: SqlitePool,
     pub accounts: Arc<accounts::AccountService>,
     pub mail: mail::MailService,
+    pub compose: compose::ComposeService,
     pub sync: Arc<SyncManager>,
 }
 
@@ -48,10 +50,13 @@ pub async fn build_state(
     });
     let sync = SyncManager::new(db.clone(), api_for, events);
     let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
+    let compose = compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir);
+    compose.sweep_staging().await;
     Ok(AppState {
         db,
         accounts,
         mail,
+        compose,
         sync,
     })
 }
@@ -178,6 +183,15 @@ pub fn run() {
             commands::labels::mailbox_counts,
             commands::labels::label_counts,
             commands::sync::sync_now,
+            commands::compose::compose_template,
+            commands::compose::stage_attachment,
+            commands::compose::discard_attachments,
+            commands::compose::save_draft,
+            commands::compose::get_drafts,
+            commands::compose::open_draft,
+            commands::compose::delete_draft,
+            commands::compose::send_email,
+            commands::compose::cancel_send,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
