@@ -12,6 +12,7 @@ import { type OutboxRejected, stopQuietly, SYNC_EVENTS } from "./lib/tauri";
 import { listenForManualChecks, startUpdateChecks } from "./lib/updater";
 import { CommandPalette } from "./palette/CommandPalette";
 import { isTauri } from "./preview/runtime";
+import { revealWindow } from "./theme/nativeWindow";
 import { AppShell } from "./shell/AppShell";
 import { ContextMenuHost } from "./shell/ContextMenuHost";
 import { useLabelStore } from "./store/labelStore";
@@ -120,6 +121,9 @@ function App() {
   useEffect(() => {
     if (isTauri()) return listenForManualChecks();
   }, []);
+  useEffect(() => {
+    if (loaded && isTauri()) revealWindow();
+  }, [loaded]);
 
   let screen = null;
   if (loaded && error) {

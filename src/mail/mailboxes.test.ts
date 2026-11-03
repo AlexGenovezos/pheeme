@@ -2,9 +2,11 @@ import { expect, test } from "vitest";
 import {
   accountColorIndex,
   CATEGORIES,
+  categoryMailbox,
   FAVORITES,
   formatCount,
   homeMailbox,
+  mailboxExists,
   type MailboxRef,
   mailboxTitle,
   parseThreadKey,
@@ -116,4 +118,19 @@ test("home is All Inboxes, or the only account's Primary", () => {
     labelId: "INBOX",
     category: "CATEGORY_PERSONAL",
   });
+});
+
+test("mailboxExists: gone accounts and deleted user labels don't, system mailboxes always do", () => {
+  const accounts = [{ id: "a1" }];
+  const labels = { a1: [{ id: "INBOX" }, { id: "Label_1" }] };
+  expect(mailboxExists({ accountId: null, labelId: "INBOX" }, [], {})).toBe(true);
+  expect(mailboxExists({ accountId: "gone", labelId: "INBOX" }, accounts, labels)).toBe(false);
+  expect(mailboxExists({ accountId: "a1", labelId: "Label_1" }, accounts, labels)).toBe(true);
+  expect(mailboxExists({ accountId: "a1", labelId: "Label_2" }, accounts, labels)).toBe(false);
+  // System mailboxes need no label list; user labels wait for one.
+  expect(mailboxExists({ accountId: "a1", labelId: "SENT" }, accounts, labels)).toBe(true);
+  expect(
+    mailboxExists(categoryMailbox("a1", "CATEGORY_SOCIAL"), accounts, { a1: [{ id: "Label_1" }] }),
+  ).toBe(true);
+  expect(mailboxExists({ accountId: "a1", labelId: "Label_2" }, accounts, {})).toBe(true);
 });

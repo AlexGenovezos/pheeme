@@ -31,6 +31,10 @@
   transition: visibility 0s;
 }
 
+html[data-vibrancy] .shell__sidebar {
+  background: var(--color-sidebar-vibrant-bg);
+}
+
 /* Stay visible while the track animates closed, then leave the tab order. */
 .shell[data-sidebar="collapsed"] .shell__sidebar {
   visibility: hidden;

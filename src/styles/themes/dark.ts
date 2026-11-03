@@ -13,6 +13,7 @@ export const darkTheme: ThemeDefinition = {
     "--color-app-bg": "#15191a",
     "--color-pane-bg": "#15191a",
     "--color-sidebar-bg": "#1b2021",
+    "--color-sidebar-vibrant-bg": "#1b202166",
     "--color-sidebar-foreground": "#cdd4d4",
     "--color-titlebar-bg": "#15191a",
     "--color-pane-border": "#262c2d",

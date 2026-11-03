@@ -8,6 +8,7 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
     "core:window:allow-set-background-color",
+    "core:window:allow-show",
     "opener:default",
     "updater:default",
     "process:allow-restart"

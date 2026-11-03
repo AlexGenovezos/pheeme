@@ -26,6 +26,14 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/*
+ * macOS app: the window is transparent over sidebar vibrancy (tauri.macos.conf.json). Only the mail shell lets it
+ * through, behind the sidebar; every other screen keeps the solid background.
+ */
+html[data-vibrancy]:has(.shell) {
+  background: transparent;
+}
+
 body {
   font-family: var(--font-family-ui);
   font-size: var(--font-size-md);

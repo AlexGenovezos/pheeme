@@ -173,6 +173,30 @@ describe("stacked layout", () => {
     expect(link("Receipts", region("Gmail"))).toBeInTheDocument();
   });
 
+  test("a restored mailbox whose account or label is gone falls back to the home mailbox", () => {
+    for (const mailbox of [
+      { accountId: "gone", labelId: "INBOX" },
+      { accountId: "a1", labelId: "Label_deleted" },
+    ]) {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify({ mailbox }));
+      __resetUiStoreForTests();
+      seed([ONE, TWO]);
+      const { unmount } = render(<Sidebar />);
+      expect(useUiStore.getState().mailbox).toEqual({ accountId: null, labelId: "INBOX" });
+      unmount();
+    }
+  });
+
+  test("a restored mailbox that still exists stays open", () => {
+    const mailbox = { accountId: "a1", labelId: "Label_2" };
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ mailbox }));
+    __resetUiStoreForTests();
+    seed([ONE, TWO]);
+    render(<Sidebar />);
+    expect(useUiStore.getState().mailbox).toEqual(mailbox);
+    expect(link("Travel", region("Gmail"))).toHaveAttribute("aria-current", "true");
+  });
+
   test("Starred and Drafts show totals, Spam shows unread", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);

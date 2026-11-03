@@ -97,6 +97,24 @@ fn attachment_response(served: mail::InlineResponse) -> tauri::http::Response<Ve
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// The main window starts hidden and the frontend shows it after its first paint. If that never happens (a script
+/// error, a stuck first command), show it anyway so the app is never invisible.
+fn reveal_window_fallback(app: tauri::AppHandle) {
+    const AFTER: std::time::Duration = std::time::Duration::from_secs(3);
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(AFTER).await;
+        let Some(window) = app.get_webview_window("main") else {
+            return;
+        };
+        if !window.is_visible().unwrap_or(false) {
+            tracing::warn!("frontend didn't show the window within {AFTER:?}; showing it");
+            if let Err(err) = window.show() {
+                tracing::warn!("couldn't show the main window: {err}");
+            }
+        }
+    });
+}
+
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -154,6 +172,8 @@ pub fn run() {
             app.manage(state);
 
             info!("Database ready; sync started");
+
+            reveal_window_fallback(app.handle().clone());
 
             Ok(())
         })

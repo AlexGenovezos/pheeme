@@ -12,6 +12,8 @@ export const THEME_TOKENS = {
   "--color-app-bg": "editor.background",
   "--color-pane-bg": "editor.background",
   "--color-sidebar-bg": "sideBar.background",
+  // macOS: a tint over the window's sidebar vibrancy instead of the solid fill.
+  "--color-sidebar-vibrant-bg": null,
   "--color-sidebar-foreground": "sideBar.foreground",
   "--color-titlebar-bg": "titleBar.activeBackground",
   "--color-pane-border": "sideBar.border",
