@@ -1,0 +1,83 @@
+name: Performance
+
+# Catches slowdowns in the PR that causes them. Not a required check yet (#47 rollout:
+# learn the noise for a week first). See docs/performance.md.
+
+on:
+  pull_request:
+  # Keeps the build cache warm for PRs (caches are only shared from main).
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  SQLX_OFFLINE: "true"
+  CARGO_TERM_COLOR: never
+  GUNGRAUN_COLOR: never
+  # One target dir for both checkouts, so the base build is reused and both runs write
+  # their baselines to the same target/gungraun.
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+
+jobs:
+  benches:
+    name: Rust benchmarks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: head
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y valgrind libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libsoup-3.0-dev libdbus-1-dev libclang-dev
+      - run: rustup toolchain install
+        working-directory: head
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: head/src-tauri -> ../../target
+          shared-key: ubuntu-24.04-bench
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: gungraun-runner@0.20.0
+      - name: Lint the benchmarks
+        working-directory: head/src-tauri
+        run: cargo clippy --features bench --benches -- -D warnings
+      - name: Check out the base branch
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+      - name: Benchmark the base branch
+        if: github.event_name == 'pull_request'
+        working-directory: base/src-tauri
+        run: |
+          if [ -f benches/hot_paths.rs ]; then
+            cargo bench --features bench --bench hot_paths -- --save-baseline=base
+          else
+            echo "The base branch has no benchmarks yet; nothing to compare against."
+          fi
+      - name: Benchmark this branch
+        working-directory: head/src-tauri
+        shell: bash
+        run: |
+          set +e
+          cargo bench --features bench --bench hot_paths -- \
+            --baseline=base --callgrind-limits='ir=10%' | tee bench.txt
+          status=${PIPESTATUS[0]}
+          {
+            echo '### Rust benchmarks (instructions, vs. the base branch; fails above +10%)'
+            echo '```'
+            grep -vE '^\s*(Running|Compiling|Finished)' bench.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
