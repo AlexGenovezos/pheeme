@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature request
+    url: https://github.com/AlexGenovezos/pheeme/discussions/categories/ideas
+    about: Suggest an improvement or new capability in Discussions.
+  - name: Security vulnerability
+    url: https://github.com/AlexGenovezos/pheeme/security/advisories/new
+    about: Report security problems privately, not in a public issue.
