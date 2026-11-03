@@ -103,3 +103,37 @@ npm run test:memory
 ```
 
 It builds the preview with `vite build` and serves it on port 4173 for the run.
+
+## Real app on Linux (nightly)
+
+The `app` job of the `Nightly performance` workflow builds the release app and fills a
+throwaway home directory with a synced-looking 20,000-conversation mailbox
+([`src-tauri/examples/seed_mailbox.rs`](../src-tauri/examples/seed_mailbox.rs)). It then
+launches the app under `xvfb` through `tauri-driver` (WebDriver) with
+[`scripts/perf/app-run.mjs`](../scripts/perf/app-run.mjs), inside its own D-Bus session so
+it never touches a real keychain, and records:
+
+| Measure | Budget |
+|---------|--------|
+| Cold start (WebDriver session request to the first list row) | 1.5 s |
+| Memory after a minute idle: app plus its WebKit processes, PSS | 150 MiB |
+| The same after a scripted 10-minute session (mailboxes, scrolling, conversations) | 180 MiB |
+
+Memory is PSS (proportional set size), which splits shared pages between the processes
+using them, so the total isn't inflated by WebKit's shared libraries the way summed RSS is.
+A run fails when it exceeds a budget, or when a measure gets more than 20% worse than the
+previous nightly run. github-action-benchmark keeps that history in the Actions cache, and
+the job summary shows the comparison. A PR that changes the harness itself runs it too.
+
+Run it on a Linux machine without a virtual GPU. On a VM with a QXL display, WebKit's DRM
+probe hangs in the kernel.
+
+```bash
+sudo apt-get install webkit2gtk-driver xvfb
+cargo install tauri-driver --locked
+npx tauri build --no-bundle
+home=$(mktemp -d)
+(cd src-tauri && cargo run --release --example seed_mailbox -- "$home/.local/share/app.pheeme.desktop")
+xvfb-run -a dbus-run-session -- node scripts/perf/app-run.mjs \
+  --app src-tauri/target/release/pheeme --home "$home" --session-minutes 2
+```
