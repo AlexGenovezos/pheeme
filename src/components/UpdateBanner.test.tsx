@@ -29,3 +29,32 @@ test("button is disabled while applying", () => {
   render(<UpdateBanner />);
   expect(screen.getByRole("button", { name: "Updating…" })).toBeDisabled();
 });
+
+test.each([
+  ["checking", "Checking for updates…"],
+  ["current", "Pheeme is up to date"],
+  ["failed", "Couldn't check for updates. Try again later."],
+] as const)("shows the manual check result (%s)", (manualCheck, text) => {
+  useUpdateStore.setState({ manualCheck });
+  render(<UpdateBanner />);
+  expect(screen.getByRole("status")).toHaveTextContent(text);
+});
+
+test("no OK button while checking", () => {
+  useUpdateStore.setState({ manualCheck: "checking" });
+  render(<UpdateBanner />);
+  expect(screen.queryByRole("button")).toBeNull();
+});
+
+test("OK dismisses the manual check result", () => {
+  useUpdateStore.setState({ manualCheck: "current" });
+  render(<UpdateBanner />);
+  fireEvent.click(screen.getByRole("button", { name: "OK" }));
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+test("an available update takes precedence over the check result", () => {
+  useUpdateStore.setState({ available: "0.2.0", manualCheck: "current" });
+  render(<UpdateBanner />);
+  expect(screen.getByRole("status")).toHaveTextContent("Pheeme 0.2 is ready");
+});

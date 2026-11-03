@@ -7,7 +7,7 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { useAppCommands } from "./keyboard/appCommands";
 import { isEditableTarget } from "./keyboard/registry";
 import { useGlobalShortcuts } from "./keyboard/useCommands";
-import { startUpdateChecks } from "./lib/updater";
+import { listenForManualChecks, startUpdateChecks } from "./lib/updater";
 import { CommandPalette } from "./palette/CommandPalette";
 import { isTauri } from "./preview/runtime";
 import { AppShell } from "./shell/AppShell";
@@ -49,6 +49,9 @@ function App() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     if (import.meta.env.PROD && isTauri()) return startUpdateChecks();
+  }, []);
+  useEffect(() => {
+    if (isTauri()) return listenForManualChecks();
   }, []);
 
   let screen = null;

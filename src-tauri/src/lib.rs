@@ -1,4 +1,6 @@
 pub mod accounts;
+#[cfg(target_os = "macos")]
+mod app_menu;
 pub mod commands;
 pub mod db;
 pub mod gmail;
@@ -41,7 +43,11 @@ pub fn run() {
         )
         .init();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(app_menu::build).on_menu_event(app_menu::on_event);
+
+    builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
