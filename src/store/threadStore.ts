@@ -35,10 +35,11 @@ interface ThreadState {
    */
   load(key: ThreadKey): Promise<void>;
   /**
-   * Resolves once the detail is cached, or a request for it has failed. Unlike one `load`, it outlasts a request
-   * that ends without caching anything because a refresh superseded it or an eviction dropped it.
+   * Waits until the detail is cached, or a request for it has failed. Unlike one `load`, it outlasts a request that
+   * ends without caching anything because a refresh superseded it or an eviction dropped it, up to five of them.
+   * Resolves to whether the detail is cached.
    */
-  waitForDetail(key: ThreadKey): Promise<void>;
+  waitForDetail(key: ThreadKey): Promise<boolean>;
   /** Warm the cache for neighbours of the open thread. Failures are ignored. */
   prefetch(keys: ThreadKey[]): void;
   /**
@@ -133,8 +134,9 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         const before = get().errors[key];
         await get().load(key);
         const after = get().errors[key];
-        if (after !== undefined && after !== before) return;
+        if (after !== undefined && after !== before) break;
       }
+      return get().details.has(key);
     },
     prefetch: (keys) => {
       for (const key of keys) {

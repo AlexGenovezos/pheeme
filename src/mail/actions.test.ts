@@ -79,6 +79,7 @@ const reloadWith = async (rows: ThreadSummary[]) => {
   await realReloadFn();
 };
 const realPrefetch = useThreadStore.getState().prefetch;
+const realWaitForDetail = useThreadStore.getState().waitForDetail;
 let reload: ReturnType<typeof vi.fn>;
 
 const setList = (threads: ThreadSummary[]) => useMailStore.setState({ threads });
@@ -119,7 +120,7 @@ beforeEach(() => {
 afterEach(() => {
   clearMocks();
   useMailStore.setState({ reload: realReloadFn });
-  useThreadStore.setState({ prefetch: realPrefetch });
+  useThreadStore.setState({ prefetch: realPrefetch, waitForDetail: realWaitForDetail });
   vi.mocked(showContextMenu).mockClear();
 });
 
@@ -486,6 +487,17 @@ describe("opening", () => {
 
     // Only the explicit change reaches Gmail; the older automatic read never follows it.
     expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1"], ...sent }]);
+  });
+
+  test("an automatic read whose detail never got cached is dropped, and the list goes back to the cache", async () => {
+    useThreadStore.setState({ waitForDetail: async () => false }); // superseded or failed every time
+    setList([thread(1, "a1", { unread: true })]);
+    openAndMarkRead(key(1));
+    expect(useMailStore.getState().threads[0].unread).toBe(false);
+    await flush();
+    await flush();
+    expect(modifyCalls()).toEqual([]);
+    expect(reload).toHaveBeenCalled();
   });
 
   test("a mark-unread on another conversation leaves this one's automatic read alone", async () => {

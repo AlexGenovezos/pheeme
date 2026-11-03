@@ -308,22 +308,36 @@ test("waitForDetail outlasts a request evicted before it answers, and resolves o
   const answers: Array<(d: ThreadDetail) => void> = [];
   mockIPC((cmd) => (cmd === "get_thread" ? new Promise<ThreadDetail>((resolve) => answers.push(resolve)) : undefined));
   let done = false;
-  const waiting = store().waitForDetail("a:t1").then(() => (done = true));
+  const waiting = store().waitForDetail("a:t1").then((cached) => ((done = true), cached));
   await vi.waitFor(() => expect(answers).toHaveLength(1));
   store().evict("a", ["t1"]); // the first answer will be dropped
   answers[0](detail("t1", "a", "Dropped"));
   await vi.waitFor(() => expect(answers).toHaveLength(2)); // so it asks again
   expect(done).toBe(false);
   answers[1](detail("t1", "a", "Cached"));
-  await waiting;
+  expect(await waiting).toBe(true);
   expect(store().details.get("a:t1")?.thread.subject).toBe("Cached");
+});
+
+test("waitForDetail gives up after five dropped requests and reports nothing cached", async () => {
+  const answers: Array<(d: ThreadDetail) => void> = [];
+  mockIPC((cmd) => (cmd === "get_thread" ? new Promise<ThreadDetail>((resolve) => answers.push(resolve)) : undefined));
+  const waiting = store().waitForDetail("a:t1");
+  for (let i = 0; i < 5; i++) {
+    await vi.waitFor(() => expect(answers).toHaveLength(i + 1));
+    store().evict("a", ["t1"]);
+    answers[i](detail("t1"));
+  }
+  expect(await waiting).toBe(false);
+  expect(store().details.has("a:t1")).toBe(false);
+  expect(answers).toHaveLength(5);
 });
 
 test("waitForDetail resolves on a failure, and at once for a cached detail", async () => {
   const requests = backend({ "a:t2": detail("t2") });
-  await store().waitForDetail("a:missing");
+  expect(await store().waitForDetail("a:missing")).toBe(false);
   expect(store().errors["a:missing"]?.code).toBe("not_found");
   await store().load("a:t2");
-  await store().waitForDetail("a:t2");
+  expect(await store().waitForDetail("a:t2")).toBe(true);
   expect(requests).toEqual(["a:missing", "a:t2"]);
 });

@@ -135,7 +135,7 @@ interface ApplyOptions {
   announce?: { title: string; undo?: Change };
   /** Opening a thread marks it read without disturbing the selection. */
   keepChecked?: boolean;
-  /** Hold the command (not the list change) until this resolves; `false` drops it and lets the list go back. */
+  /** Hold the command (not the list change) until this resolves; `false` drops it and reloads the list. */
   after?: Promise<boolean>;
   /** An explicit read, unread, archive or delete: a pending automatic read of these conversations is dropped. */
   cancelsAutoRead?: boolean;
@@ -170,6 +170,7 @@ function apply(
   const drop = () => {
     mail().settle(op, rowKeys);
     useThreadStore.getState().settleDetails(op, rowKeys);
+    void mail().reload(); // the patched rows go back to what the cache says
     return new Map<string, string[]>();
   };
   return (after ? after.then((wanted) => (wanted ? go() : drop()), go) : go()).then((done) => {
@@ -337,8 +338,9 @@ const autoReads = new Map<ThreadKey, object>();
 /**
  * Show a conversation. Opening it marks it read (Builder's call 7), quietly and once. The row turns read at once, but
  * the command waits until the conversation's detail is cached: answered after the change, every message would
- * arrive read and the view couldn't tell which ones to expand. If the user marks it unread (or archives or deletes
- * it) in the meantime, the automatic read is dropped rather than sent after their change.
+ * arrive read and the view couldn't tell which ones to expand. If the detail can't be cached (the request failed,
+ * or kept being superseded), or the user marks it unread (or archives or deletes it) in the meantime, the automatic
+ * read is dropped rather than sent.
  */
 export function openAndMarkRead(key: ThreadKey): void {
   ui().setOpenThread(key);
@@ -349,10 +351,11 @@ export function openAndMarkRead(key: ThreadKey): void {
     const wanted = useThreadStore
       .getState()
       .waitForDetail(key)
-      .then(() => {
+      .then((cached) => {
         const current = autoReads.get(key) === ticket;
         if (current) autoReads.delete(key);
-        return current;
+        // Without the detail on screen there is nothing to protect the expansion with, so no automatic read.
+        return cached && current;
       });
     void apply([key], readChange(true), { keepChecked: true, after: wanted });
   }
