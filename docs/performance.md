@@ -115,7 +115,7 @@ it never touches a real keychain, and records:
 
 | Measure | First CI runs | Budget |
 |---------|---------------|--------|
-| Cold start (WebDriver session request to the first list row) | 0.9 to 1.6 s | 2 s |
+| Start (WebDriver session request to the first list row), median of 5 launches | single starts 0.9 to 2.1 s | 3 s |
 | Memory after a minute idle: app plus its WebKit processes, PSS | 236 to 239 MiB | 290 MiB |
 | The same after a scripted 10-minute session (mailboxes, scrolling, conversations) | 300 MiB | 360 MiB |
 
@@ -125,8 +125,9 @@ renders in software under Xvfb. Idle memory is well over the issue's starting ta
 
 Memory is PSS (proportional set size), which splits shared pages between the processes
 using them, so the total isn't inflated by WebKit's shared libraries the way summed RSS is.
-A run fails when it exceeds a budget, or when a measure gets more than 20% worse than the
-previous nightly run. github-action-benchmark keeps that history in the Actions cache, and
+A run fails when it exceeds a budget, or when a memory measure gets more than 20% worse than
+the previous nightly run. Start time is tracked over runs too, but a 20% swing isn't a
+failure: one start varies by a factor of two on shared runners. github-action-benchmark keeps that history in the Actions cache, and
 the job summary shows the comparison. A PR that changes the harness itself runs it too.
 
 Run it on a Linux machine without a virtual GPU. On a VM with a QXL display, WebKit's DRM

@@ -6,7 +6,7 @@
 // `cargo run --example seed_mailbox`. See docs/performance.md.
 //
 //   node scripts/perf/app-run.mjs --app src-tauri/target/release/pheeme --home <dir> \
-//     [--out perf.json] [--idle-seconds 60] [--session-minutes 10]
+//     [--out perf.json] [--startup-out startup.json] [--idle-seconds 60] [--session-minutes 10]
 
 import { spawn } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -18,6 +18,7 @@ const { values: opts } = parseArgs({
     app: { type: "string" },
     home: { type: "string" },
     out: { type: "string", default: "perf.json" },
+    "startup-out": { type: "string", default: "startup.json" },
     "idle-seconds": { type: "string", default: "60" },
     "session-minutes": { type: "string", default: "10" },
     port: { type: "string", default: "4444" },
@@ -28,14 +29,15 @@ const app = resolve(opts.app);
 
 /** About 20% above the first measured baseline (docs/performance.md). */
 const BUDGETS = {
-  // Measured on ubuntu-22.04 runners (Xvfb, software rendering) on 2026-11-03: cold start
-  // 913-1590 ms, 236-239 MiB idle, 300 MiB after the session. Idle is over the issue's
-  // starting target of 150 MiB.
-  "Cold start to first list paint": { unit: "ms", max: 2000 },
+  // Measured on ubuntu-22.04 runners (Xvfb, software rendering) on 2026-11-03: single starts
+  // of 913-2120 ms, 236-240 MiB idle, 300-310 MiB after the session. Idle is over the
+  // issue's starting target of 150 MiB.
+  "Start to first list paint (median of 5)": { unit: "ms", max: 3000 },
   "Idle memory (app + WebKit, PSS)": { unit: "MiB", max: 290 },
   "Memory after the session (app + WebKit, PSS)": { unit: "MiB", max: 360 },
 };
 
+const LAUNCHES = 5;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const base = `http://127.0.0.1:${opts.port}`;
 
@@ -200,13 +202,31 @@ try {
     }
   }
 
-  const started = performance.now();
-  ({ sessionId: session } = await wd("POST", "/session", {
-    capabilities: { alwaysMatch: { "tauri:options": { application: app }, browserName: "wry" } },
-  }));
-  await waitForRow(session, 60_000);
-  const coldStart = performance.now() - started;
-  console.log(`cold start to first list paint: ${coldStart.toFixed(0)} ms`);
+  // Launch it LAUNCHES times and keep the last session open. One start on a shared runner
+  // varied from 0.9 to 2.1 s, so the median is what's reported.
+  const starts = [];
+  for (let i = 0; i < LAUNCHES; i++) {
+    if (session) {
+      await wd("DELETE", `/session/${session}`);
+      session = undefined;
+      // The next launch (and the memory reading) must not overlap this instance.
+      for (let waited = 0; appProcesses().length > 0; waited += 100) {
+        if (waited > 15_000) throw new Error("the previous app instance didn't exit");
+        await sleep(100);
+      }
+      await sleep(500);
+    }
+    const started = performance.now();
+    ({ sessionId: session } = await wd("POST", "/session", {
+      capabilities: { alwaysMatch: { "tauri:options": { application: app }, browserName: "wry" } },
+    }));
+    await waitForRow(session, 60_000);
+    starts.push(performance.now() - started);
+  }
+  const coldStart = [...starts].sort((a, b) => a - b)[LAUNCHES >> 1];
+  console.log(
+    `start to first list paint: median ${coldStart.toFixed(0)} ms of ${starts.map((t) => t.toFixed(0)).join(", ")}`,
+  );
 
   await sleep(Number(opts["idle-seconds"]) * 1000);
   const idle = memory();
@@ -227,11 +247,14 @@ try {
   );
 
   const results = [
-    { name: "Cold start to first list paint", value: Math.round(coldStart) },
+    { name: "Start to first list paint (median of 5)", value: Math.round(coldStart) },
     { name: "Idle memory (app + WebKit, PSS)", value: +idle.pss.toFixed(1) },
     { name: "Memory after the session (app + WebKit, PSS)", value: +after.pss.toFixed(1) },
   ].map((r) => ({ ...r, unit: BUDGETS[r.name].unit }));
-  writeFileSync(opts.out, JSON.stringify(results, null, 2));
+  // Memory goes in one file (compared with earlier runs, failing on a regression), start
+  // time in another (tracked only: it's too noisy on shared runners for a 20% alert).
+  writeFileSync(opts.out, JSON.stringify(results.slice(1), null, 2));
+  writeFileSync(opts["startup-out"], JSON.stringify(results.slice(0, 1), null, 2));
 
   const over = results.filter((r) => r.value > BUDGETS[r.name].max);
   for (const r of over)
