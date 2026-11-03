@@ -35,6 +35,7 @@ wrangler dev          # or: python3 -m http.server -d public 8787
 | `public/index.html`, `styles.css` | Home page (the stamp hero is an inline SVG symbol) |
 | `public/motion.js` | Scroll scenes and reveal-on-enter animations |
 | `public/demo.js` | The keyboard inbox demo |
+| `public/download.js` | Points the hero download button at the latest release installer for the visitor's OS |
 | `public/logos.html` | Logo download page (pheeme.app/logos) |
 | `public/brand/` | Generated logo set: SVG + PNG, plus `pheeme-brand.zip` |
 | `public/art/` | Line-engraved Pheme statue for the stamp (built by `scripts/build-fama.sh`) |
