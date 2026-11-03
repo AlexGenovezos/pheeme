@@ -4,6 +4,7 @@ import {
   Mails,
   PanelLeftClose,
   Settings,
+  SquarePen,
   Tag,
   TriangleAlert,
   UserPlus,
@@ -26,6 +27,7 @@ import {
   type MailboxRef,
   resolveActiveAccount,
 } from "../mail/mailboxes";
+import { composeNew } from "../mail/actions";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useKeybinding } from "../keyboard/useCommands";
@@ -229,6 +231,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   const openSettings = useSettingsStore((s) => s.openSettings);
   const settingsShortcut = useKeybinding("settings.open");
   const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
+  const composeShortcut = useKeybinding("compose.new", "c");
 
   const activeId = resolveActiveAccount(storedActive, accounts);
   const active = accounts.find((a) => a.id === activeId);
@@ -252,6 +255,12 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
         <span className="toolbar__spacer" {...dragRegion} />
+        <IconButton
+          label="New message"
+          shortcut={composeShortcut}
+          icon={<SquarePen />}
+          onClick={composeNew}
+        />
         <IconButton
           label="Hide sidebar"
           shortcut={sidebarShortcut}

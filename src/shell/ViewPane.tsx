@@ -15,7 +15,7 @@ import { useKeybinding } from "../keyboard/useCommands";
 import { showContextMenu } from "../lib/contextMenu";
 import {
   archive,
-  composeLater,
+  respond,
   openLabelMenu,
   setRead,
   targetsOf,
@@ -109,14 +109,14 @@ export function ViewPane() {
           shortcut={keys.reply}
           icon={<Reply />}
           disabled={off}
-          onClick={composeLater}
+          onClick={() => void respond("reply")}
         />
         <IconButton
           label="Forward"
           shortcut={keys.forward}
           icon={<Forward />}
           disabled={off}
-          onClick={composeLater}
+          onClick={() => void respond("forward")}
         />
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton

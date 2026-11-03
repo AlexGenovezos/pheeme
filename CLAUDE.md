@@ -69,16 +69,17 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 
 ### Frontend State
 
-Five Zustand stores:
+Six Zustand stores:
 - `accountStore` — connected accounts (load, upsert, remove)
 - `mailStore` — the thread list for the active mailbox (paged, optimistic patches), reloaded on `sync:*` events
 - `labelStore` — per-account labels, label counts and category counts, plus the All Inboxes unread count
 - `threadStore` — thread-detail cache with prefetch; evicts on `sync:messages_updated`
 - `uiStore` — active mailbox, selected thread, multi-select, pane layout
+- `composeStore` (`src/compose/`) — open compose panels (autosave, close prompt) and sends waiting out undo or Gmail's confirmation; a refused or undone send reopens its panel
 
 Settings is a dialog over the app (`src/settings/`). Pages, sections and rows are declared as data in `src/settings/pages.tsx`: a new setting is one `SettingDef` there. Keyboard shortcuts come from the command registry; user rebindings are overrides stored by `src/keyboard/bindings.ts`, so label a button with `useKeybinding(commandId)` rather than a literal key.
 
-Mail actions (archive, trash, star, read, labels) live in `src/mail/actions.ts`, shared by buttons, menus and shortcuts. Browser preview (`npm run dev`) answers every command from `src/preview/` fixtures, which mutate and emit `sync:messages_updated` like the app.
+Compose panels dock at the bottom of the window (`src/compose/ComposeHost.tsx`); the TipTap editor is lazy-loaded with the panel. A panel is a `data-owns-keys` region, so single-key shortcuts don't fire inside it. Mail actions (archive, trash, star, read, labels, reply, new message) live in `src/mail/actions.ts`, shared by buttons, menus and shortcuts. Browser preview (`npm run dev`) answers every command from `src/preview/` fixtures, which mutate and emit `sync:messages_updated` like the app.
 
 ### Database Schema Summary
 

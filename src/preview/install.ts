@@ -25,6 +25,7 @@ import {
   threadDate,
   threadsIn,
 } from "./fixtures";
+import { createComposeHandlers } from "./compose";
 
 type Args = Record<string, unknown> | undefined;
 
@@ -247,6 +248,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     save_attachment: () => "/Users/you/Downloads/attachment.pdf",
     reveal_download: () => undefined,
     "plugin:updater|check": () => null,
+    ...createComposeHandlers(threads, () => accounts),
   };
 }
 

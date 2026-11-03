@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { toast, ToastProvider } from "./components/ui/Toast";
+import { ComposeHost, useComposeEvents } from "./compose/ComposeHost";
 import { Onboarding } from "./onboarding/Onboarding";
 import { useAccountStore } from "./store/accountStore";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -75,6 +76,7 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
   return (
     <>
       <AppShell onAddAccount={onAddAccount} />
+      <ComposeHost />
       <CommandPalette />
       <Settings onAddAccount={onAddAccount} />
       <ContextMenuHost />
@@ -115,6 +117,7 @@ function App() {
     void load();
   }, [load]);
   useSessionSyncEvents();
+  useComposeEvents();
   useEffect(() => {
     if (import.meta.env.PROD && isTauri()) return startUpdateChecks();
   }, []);

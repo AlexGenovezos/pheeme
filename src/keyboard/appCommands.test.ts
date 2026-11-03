@@ -1,10 +1,12 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { __resetComposeStoreForTests, useComposeStore } from "../compose/composeStore";
 import { useToastStore } from "../components/ui/Toast";
 import { threadKey } from "../mail/mailboxes";
 import type { ThreadSummary } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
+import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { appCommands } from "./appCommands";
 import { createRegistry } from "./registry";
@@ -35,6 +37,8 @@ beforeEach(() => {
   localStorage.clear();
   __resetUiStoreForTests();
   __resetMailStoreForTests();
+  __resetThreadStoreForTests();
+  __resetComposeStoreForTests();
   useToastStore.setState({ toasts: [] });
   useAccountStore.setState({
     accounts: [
@@ -49,6 +53,45 @@ beforeEach(() => {
   appCommands().forEach((c) => reg.register(c));
 });
 afterEach(() => clearMocks());
+
+const templates = () => calls.filter((c) => c.cmd === "compose_template").map((c) => c.args);
+
+/** The open conversation (t1) is cached with one message, m1. */
+function cacheOpenThread() {
+  useThreadStore.setState({
+    details: new Map([
+      [
+        threadKey("a1", "t1"),
+        {
+          thread: thread(1),
+          messages: [
+            {
+              id: "m1",
+              threadId: "t1",
+              fromName: null,
+              fromAddress: "x@example.com",
+              to: [],
+              cc: [],
+              subject: null,
+              snippet: null,
+              date: 1,
+              bodyHtml: null,
+              hasRemoteContent: false,
+              declaresDarkMode: false,
+              bodyText: "hi",
+              bodyAvailable: true,
+              unread: false,
+              starred: false,
+              labelIds: ["INBOX"],
+              hasAttachment: false,
+              attachments: [],
+            },
+          ],
+        },
+      ],
+    ]),
+  });
+}
 
 const modifies = () => calls.filter((c) => c.cmd === "modify_threads").map((c) => c.args);
 
@@ -67,9 +110,12 @@ test("plain s stars the open conversation, while g then s still goes to Starred"
   expect(reg.pendingChord()).toBeNull();
 });
 
-test("a, and g then a, are different commands", () => {
+test("a, and g then a, are different commands", async () => {
+  cacheOpenThread();
   press("a");
-  expect(useToastStore.getState().toasts[0].title).toBe("Compose arrives with Phase 7");
+  await vi.waitFor(() =>
+    expect(templates()).toEqual([{ accountId: "a1", messageId: "m1", mode: "replyAll" }]),
+  );
   press("g");
   press("a");
   expect(useUiStore.getState().mailbox).toMatchObject({ labelId: "ALL" });
@@ -97,13 +143,17 @@ test("e archives, # deletes, shift+i and shift+u set the read state, u closes", 
   expect(useUiStore.getState().openThread).toBeNull();
 });
 
-test("r and f stay a Phase 7 toast, and a lone u does not collide with shift+u", () => {
+test("r and f reply and forward the open conversation, and a lone u does not collide with shift+u", async () => {
+  cacheOpenThread();
   press("r");
   press("f");
-  expect(useToastStore.getState().toasts.map((t) => t.title)).toEqual([
-    "Compose arrives with Phase 7",
-    "Compose arrives with Phase 7",
-  ]);
+  await vi.waitFor(() => expect(templates().map((a) => a.mode)).toEqual(["reply", "forward"]));
+  expect(useComposeStore.getState().windows.map((w) => w.kind)).toEqual(["reply", "forward"]);
   press("u");
   expect(modifies()).toEqual([]);
+});
+
+test("c starts a new message from the account in view", () => {
+  press("c");
+  expect(useComposeStore.getState().windows).toMatchObject([{ kind: "new", accountId: "a1" }]);
 });
