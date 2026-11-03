@@ -1,3 +1,4 @@
+import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
@@ -5,8 +6,10 @@ import { dismissToast, ToastProvider, useToastStore } from "../components/ui/Toa
 import type { AttachmentInfo, LabelInfo, MessageDetail, ThreadDetail } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
+import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
+import { openAndMarkRead } from "./actions";
 import { threadKey } from "./mailboxes";
 import { ThreadView } from "./ThreadView";
 
@@ -84,6 +87,7 @@ beforeEach(() => {
   __resetUiStoreForTests();
   __resetThreadStoreForTests();
   __resetLabelStoreForTests();
+  __resetMailStoreForTests();
   useAccountStore.setState({
     accounts: [{ id: "a1", email: "Me@Example.com", displayName: null, clientId: "c", synced: true }],
   });
@@ -123,17 +127,52 @@ test("clicking a collapsed card expands it, and the chevron collapses it", () =>
 });
 
 test("a refresh that marks messages read doesn't fold the open cards, but a new message opens", () => {
-  open(detail([message(1), message(2, { unread: true })]));
+  // The unread message is not the last, so only its unread flag opens it.
+  open(detail([message(1), message(2, { unread: true }), message(3)]));
   renderView();
   expect(screen.getByText("Body 2")).toBeInTheDocument();
 
-  act(() => open(detail([message(1), message(2, { unread: false })])));
+  act(() => open(detail([message(1), message(2, { unread: false }), message(3)])));
   expect(screen.getByText("Body 2")).toBeInTheDocument();
 
-  act(() => open(detail([message(1), message(2), message(3, { unread: true })])));
+  act(() => open(detail([message(1), message(2), message(3), message(4, { unread: true })])));
+  expect(screen.getByText("Body 2")).toBeInTheDocument();
+  expect(screen.getByText("Body 3")).toBeInTheDocument();
+  expect(screen.getByText("Body 4")).toBeInTheDocument();
+  expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
+});
+
+test("opening an unread conversation keeps its unread messages expanded although opening marks them read", async () => {
+  // The cache as the backend sees it: marking the thread read clears every message's unread flag at once.
+  let read = false;
+  const order: string[] = [];
+  mockIPC(
+    (cmd) => {
+      order.push(cmd);
+      if (cmd === "get_thread") return detail([message(1), message(2, { unread: !read }), message(3)]);
+      if (cmd === "modify_threads") read = true;
+      return undefined;
+    },
+    { shouldMockEvents: true },
+  );
+  useMailStore.setState({ threads: [{ ...detail([]).thread, unread: true }] });
+  const stop = await useThreadStore.getState().subscribe();
+  renderView();
+
+  act(() => openAndMarkRead(KEY));
+  // The list answers at once.
+  expect(useMailStore.getState().threads[0].unread).toBe(false);
+  expect(await screen.findByText("Body 2")).toBeInTheDocument();
+  await waitFor(() => expect(read).toBe(true));
+  expect(order.indexOf("get_thread")).toBeLessThan(order.indexOf("modify_threads"));
+
+  // The change lands in the cache and the open thread refreshes with every message read.
+  await act(() => emit("sync:messages_updated", { accountId: "a1", added: [], removed: [], modified: ["t1"] }));
+  await waitFor(() => expect(useThreadStore.getState().details.get(KEY)?.messages[1].unread).toBe(false));
   expect(screen.getByText("Body 2")).toBeInTheDocument();
   expect(screen.getByText("Body 3")).toBeInTheDocument();
   expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
+  stop();
 });
 
 test("shows only user-label chips", () => {

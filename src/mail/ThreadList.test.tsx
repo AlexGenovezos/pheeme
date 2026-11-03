@@ -365,7 +365,7 @@ describe("keyboard and menu wiring", () => {
     expect(useUiStore.getState().checked).toEqual([key(0), key(1), key(2), key(3), key(4)]);
   });
 
-  test("enter opens the first row when none is open, and a click marks an unread row read", () => {
+  test("enter opens the first row when none is open, and a click marks an unread row read", async () => {
     const calls: string[] = [];
     mockIPC((cmd) => void calls.push(cmd), { shouldMockEvents: true });
     useMailStore.setState({ threads: many(4) });
@@ -377,7 +377,8 @@ describe("keyboard and menu wiring", () => {
     fireEvent.click(row(2)); // t2 is unread
     expect(useUiStore.getState().openThread).toBe(key(2));
     expect(useMailStore.getState().threads[2].unread).toBe(false);
-    expect(calls.filter((c) => c === "modify_threads")).toHaveLength(2);
+    // Sent once each conversation's detail has loaded.
+    await vi.waitFor(() => expect(calls.filter((c) => c === "modify_threads")).toHaveLength(2));
   });
 
   test("right-clicking a row builds its menu without opening it, marking it read or touching the selection", () => {

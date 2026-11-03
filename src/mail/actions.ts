@@ -135,9 +135,15 @@ interface ApplyOptions {
   announce?: { title: string; undo?: Change };
   /** Opening a thread marks it read without disturbing the selection. */
   keepChecked?: boolean;
+  /** Hold the command (not the list change) until this settles. */
+  after?: Promise<unknown>;
 }
 
-function apply(keys: ThreadKey[] | undefined, change: Change, { announce, keepChecked }: ApplyOptions = {}): Promise<void> {
+function apply(
+  keys: ThreadKey[] | undefined,
+  change: Change,
+  { announce, keepChecked, after }: ApplyOptions = {},
+): Promise<void> {
   const rows = present(keys);
   if (rows.length === 0) return Promise.resolve();
   const rowKeys = rows.map((r) => r.key);
@@ -157,7 +163,8 @@ function apply(keys: ThreadKey[] | undefined, change: Change, { announce, keepCh
   if (patchDetail) for (const key of rowKeys) useThreadStore.getState().patchDetail(key, patchDetail, op);
   if (!keepChecked) ui().clearChecked();
 
-  return send(groups, change, op).then((done) => {
+  const go = () => send(groups, change, op);
+  return (after ? after.then(go, go) : go()).then((done) => {
     if (!announce || done.size === 0) return;
     const count = keysOf(done).length;
     const { undo } = announce;
@@ -314,12 +321,17 @@ function prefetchAround(key: ThreadKey) {
   if (near.length > 0) useThreadStore.getState().prefetch(near);
 }
 
-/** Show a conversation. Opening it marks it read (Builder's call 7), quietly and once. */
+/**
+ * Show a conversation. Opening it marks it read (Builder's call 7), quietly and once. The row turns read at once, but
+ * the command waits for the conversation's detail: answered after the change, every message would arrive read and
+ * the view couldn't tell which ones to expand.
+ */
 export function openAndMarkRead(key: ThreadKey): void {
   ui().setOpenThread(key);
-  prefetchAround(key);
   const row = present([key])[0];
-  if (row?.thread.unread) void apply([key], readChange(true), { keepChecked: true });
+  const loaded = row?.thread.unread ? useThreadStore.getState().load(key) : undefined;
+  prefetchAround(key);
+  if (loaded) void apply([key], readChange(true), { keepChecked: true, after: loaded });
 }
 
 /** j / k and the arrow keys: open the next or previous row, or the first/last when none is open. */
