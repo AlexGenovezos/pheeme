@@ -177,6 +177,13 @@ async fn reply_is_sent_in_its_thread_from_the_account() {
         mail.headers.get_first_value("In-Reply-To").unwrap(),
         "<m2@example.com>"
     );
+    // The op is removed right after the send lands.
+    for _ in 0..100 {
+        if store::get(&h.pool, &queued.op_id).await.unwrap().is_none() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     assert!(store::get(&h.pool, &queued.op_id).await.unwrap().is_none());
 }
 
