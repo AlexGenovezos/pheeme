@@ -205,6 +205,19 @@ describe("keyboard shortcuts", () => {
     expect(within(dialog()).getByRole("button", { name: "Add a shortcut for Go to Inbox" }));
   });
 
+  test("resetting to a default another command took since asks first", () => {
+    render(<Harness />);
+    open("keyboard");
+    // Star took "e" from Archive.
+    act(() => registry.setOverrides({ "conversation.archive": null, "conversation.star": "e" }));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Reset Archive to E" }));
+    expect(within(dialog()).getByRole("alert")).toHaveTextContent("E is used by “Star or unstar”");
+    expect(registry.get("conversation.archive")?.shortcut).toBeUndefined();
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Replace" }));
+    expect(registry.get("conversation.archive")?.shortcut).toBe("e");
+    expect(registry.get("conversation.star")?.shortcut).toBeUndefined();
+  });
+
   test("reset puts one shortcut back; Reset all puts them all back", () => {
     render(<Harness />);
     open("keyboard");

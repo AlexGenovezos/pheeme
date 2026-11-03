@@ -119,6 +119,8 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   return false;
 }
 
+const hasModifier = (s: Step) => s.mod || s.ctrl || s.alt || s.meta;
+
 export interface RegistryOptions {
   isMac?: boolean;
   chordTimeoutMs?: number;
@@ -279,7 +281,8 @@ export function createRegistry({
         return false;
       const editable = isEditableTarget(e.target);
       const live = [...entries.values()].filter(
-        (en) => en.steps.length && (!editable || en.command.global),
+        // A `global` command rebound to a plain key must not eat that key while the user types.
+        (en) => en.steps.length && (!editable || (en.command.global && hasModifier(en.steps[0]))),
       );
 
       if (pending.length) {

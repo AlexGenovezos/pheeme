@@ -148,7 +148,12 @@ export function KeyboardSettings({ query }: { query: string }) {
                             : "no shortcut"
                         }`}
                         icon={<RotateCcw />}
-                        onClick={() => resetBinding(command.id)}
+                        onClick={() => {
+                          // Back to the default can clash with keys another command took since.
+                          const original = registry.defaultShortcut(command.id);
+                          if (original) commit(command.id, original);
+                          else resetBinding(command.id);
+                        }}
                       />
                     )}
                     {command.shortcut ? (

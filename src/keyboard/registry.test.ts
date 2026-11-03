@@ -218,3 +218,13 @@ describe("user bindings", () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 });
+
+test("a global command rebound to a plain key doesn't fire while typing", () => {
+  const run = vi.fn();
+  reg.register({ id: "settings", title: "Settings", shortcut: "mod+,", global: true, run });
+  reg.setOverrides({ settings: "q" });
+  const input = document.createElement("input");
+  expect(reg.handleKeyDown(press("q", { target: input }))).toBe(false);
+  expect(reg.handleKeyDown(press("q"))).toBe(true);
+  expect(run).toHaveBeenCalledTimes(1);
+});
