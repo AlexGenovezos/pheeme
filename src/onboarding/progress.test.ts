@@ -34,6 +34,7 @@ test("the guide covers the steps the design requires, in order", () => {
     "gmail-api",
     "calendar-api",
     "consent",
+    "branding",
     "publish",
     "client",
     "credentials",

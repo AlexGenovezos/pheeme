@@ -13,6 +13,7 @@ export type StepId =
   | "gmail-api"
   | "calendar-api"
   | "consent"
+  | "branding"
   | "publish"
   | "client"
   | "credentials"
@@ -110,13 +111,33 @@ export const STEPS: GuideStep[] = [
     ],
   },
   {
+    id: "branding",
+    short: "Add Pheeme's links",
+    title: "Add Pheeme's links to the branding",
+    actions: [
+      "Open the Branding page and check your project is selected.",
+      "Under App domain, paste the home page, privacy policy and terms of service links below.",
+      "Under Authorized domains, click Add domain and enter pheeme.app.",
+      "Click Save.",
+    ],
+    why: "Google keeps Publish app turned off until the app has a home page, privacy policy and terms of service. These are Pheeme's own pages, so you don't need a website. They give nobody access to your project or your mail.",
+    link: { label: "Open Branding", url: "https://console.cloud.google.com/auth/branding" },
+    copy: [
+      { label: "Application home page", value: "https://pheeme.app" },
+      { label: "Application privacy policy link", value: "https://pheeme.app/privacy" },
+      { label: "Application terms of service link", value: "https://pheeme.app/terms" },
+      { label: "Authorized domain", value: "pheeme.app" },
+    ],
+  },
+  {
     id: "publish",
     short: "Publish the app",
     title: "Publish the app",
     actions: [
       "Open the Audience page.",
       "Under Publishing status, click Publish app, then Confirm.",
-      "If you chose Internal in the last step, skip this one.",
+      "If Publish app is greyed out, go back to Branding, check all four values from the last step are there, click Save, then reload this page.",
+      "If you chose Internal when setting up the sign-in screen, skip this step.",
     ],
     why: "An app left in Testing signs you out of Gmail every 7 days. Publishing stops that. It doesn't submit anything for review or make the app public: only people you give the client ID to can use it.",
     link: { label: "Open Audience", url: "https://console.cloud.google.com/auth/audience" },

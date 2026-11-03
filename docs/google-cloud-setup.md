@@ -42,17 +42,35 @@ open the calendar.
    https://www.googleapis.com/auth/userinfo.profile
    ```
 
-## 5. Publish the app
+## 5. Add Pheeme's links to the branding
+
+1. Open [Branding](https://console.cloud.google.com/auth/branding) and check
+   your project is selected.
+2. Under **App domain**, paste:
+   - **Application home page:** `https://pheeme.app`
+   - **Application privacy policy link:** `https://pheeme.app/privacy`
+   - **Application terms of service link:** `https://pheeme.app/terms`
+3. Under **Authorized domains**, click **Add domain** and enter `pheeme.app`.
+4. Click **Save**.
+
+Google keeps **Publish app** turned off until the app has a home page, privacy
+policy and terms of service. These are Pheeme's own pages, so you don't need a
+website. They give nobody access to your project or your mail.
+
+## 6. Publish the app
 
 Open [Audience](https://console.cloud.google.com/auth/audience). Under
 **Publishing status**, click **Publish app**, then **Confirm**. (Internal apps
 skip this step.)
 
+If **Publish app** is greyed out, go back to **Branding**, check all four values
+from step 5 are there, click **Save**, then reload **Audience**.
+
 An app left in **Testing** signs you out of Gmail every 7 days. Publishing stops
 that. It doesn't submit anything for review or make the app public: only people
 you give the client ID to can use it.
 
-## 6. Create a desktop client
+## 7. Create a desktop client
 
 1. Open [Create client](https://console.cloud.google.com/auth/clients/create).
 2. **Application type:** Desktop app. **Name:** `Pheeme desktop`.
@@ -61,7 +79,7 @@ you give the client ID to can use it.
 
 Use the **Desktop app** type: other types fail with `redirect_uri_mismatch`.
 
-## 7. Connect Pheeme
+## 8. Connect Pheeme
 
 1. Paste the client ID and secret into Pheeme (or paste the downloaded JSON
    file's contents into the client ID box). The secret is stored in your system
@@ -88,5 +106,7 @@ its own.
 | `Error 403: org_internal` | The audience is Internal: only accounts in that Workspace organization can sign in. Use one, or switch the audience to External. |
 | `Error 403: access_denied` ("has not completed the Google verification process") | The app is in Testing and this account isn't a test user. Publish the app, or add the address under Test users. |
 | `Error 400: admin_policy_enforced` | Your Workspace administrator blocks unapproved apps. Ask them to trust your client ID (Admin console → Security → API controls). |
-| Signed out after 7 days | The app is still in Testing. Publish it (step 5), then sign in again. |
+| **Publish app** is greyed out ("complete your configuration on the Branding page") | The Branding page is missing Pheeme's links. Add the three links and the `pheeme.app` domain from step 5, then click **Save**. |
+| `Missing domain: pheeme.app` on the Branding page | Under **Authorized domains**, click **Add domain**, enter `pheeme.app`, then click **Save**. |
+| Signed out after 7 days | The app is still in Testing. Publish it (step 6), then sign in again. |
 | "No system keychain is available" (Linux) | Install and unlock a Secret Service provider such as GNOME Keyring or KWallet. |
