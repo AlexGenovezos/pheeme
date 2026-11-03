@@ -2,7 +2,7 @@
 //! expire, scripted failures, and call counters.
 
 use super::api::MailApi;
-use crate::gmail::mime::{decode_base64url, encode_base64url};
+use crate::gmail::mime::{decode_base64url, encode_base64url, rfc822_message_id};
 use crate::gmail::types::{
     Header, HistoryLabelChange, HistoryListResponse, HistoryMessage, HistoryRecord, Label, Message,
     MessageListResponse, MessagePart, MessagePartBody, MessageRef, Thread, ThreadListResponse,
@@ -346,13 +346,7 @@ impl FakeGmail {
     }
 
     fn message_id_of(raw: &str) -> Option<String> {
-        let bytes = decode_base64url(raw).ok()?;
-        let text = String::from_utf8_lossy(&bytes);
-        text.lines().find_map(|line| {
-            let (name, value) = line.split_once(':')?;
-            name.eq_ignore_ascii_case("Message-ID")
-                .then(|| value.trim().to_owned())
-        })
+        rfc822_message_id(&decode_base64url(raw).ok()?)
     }
 }
 

@@ -15,7 +15,7 @@ use super::events::SyncEvent;
 use crate::db::outbox::{self as store, DbOp, DbOpMessage, OpProgress};
 use crate::db::threads::{self, RecomputeResult};
 use crate::db::{self, messages};
-use crate::gmail::mime::encode_base64url;
+use crate::gmail::mime::{encode_base64url, rfc822_message_id};
 use crate::gmail::{GmailError, MessageFormat};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
@@ -206,10 +206,11 @@ pub async fn rebase_threads(
                     thread_id: thread_id.clone(),
                     prior_label_ids: serde_json::to_string(&labels).expect("strings serialize"),
                 };
-                if !recorded.contains(&msg.id) {
-                    if !msg.date.is_some_and(|d| d <= op.created_at) {
-                        continue;
-                    }
+                let is_recorded = recorded.contains(&msg.id);
+                if !covers(&op, is_recorded, msg.date) {
+                    continue;
+                }
+                if !is_recorded {
                     store::add_target(&mut *conn, &target).await?;
                 } else if restored.contains(&msg.id) {
                     store::set_prior(&mut *conn, &target).await?;
@@ -222,6 +223,13 @@ pub async fn rebase_threads(
         }
     }
     Ok(())
+}
+
+/// Whether a label/trash op applies to a message: one it recorded as a target, or one
+/// dated no later than the op (older mail cached or found since). Mail that arrived after
+/// the user acted is left alone. Used for both the cache and the Gmail request.
+fn covers(op: &DbOp, recorded: bool, date_ms: Option<i64>) -> bool {
+    recorded || date_ms.is_some_and(|d| d <= op.created_at)
 }
 
 /// Confirm sends whose message is now cached in Sent. Returns the confirmed op ids.
@@ -252,7 +260,7 @@ pub async fn queue_send(
     account_id: &str,
     raw: &[u8],
 ) -> Result<String, SyncError> {
-    let (message_id, raw) = match header_value(raw, "Message-ID") {
+    let (message_id, raw) = match rfc822_message_id(raw) {
         Some(id) => (id, raw.to_vec()),
         None => {
             let id = format!("<{}@pheeme.app>", uuid::Uuid::new_v4());
@@ -305,22 +313,6 @@ pub async fn resend(pool: &SqlitePool, op_id: &str) -> Result<bool, SyncError> {
     };
     store::update_progress(pool, op_id, &progress, now_ms()).await?;
     Ok(true)
-}
-
-/// Value of a top-level header in a raw message (unfolded lines only).
-fn header_value(raw: &[u8], name: &str) -> Option<String> {
-    let text = String::from_utf8_lossy(raw);
-    for line in text.split("\r\n").flat_map(|l| l.split('\n')) {
-        if line.is_empty() {
-            break;
-        }
-        if let Some((key, value)) = line.split_once(':') {
-            if key.trim().eq_ignore_ascii_case(name) && !value.trim().is_empty() {
-                return Some(value.trim().to_owned());
-            }
-        }
-    }
-    None
 }
 
 /// Gmail definitively refused (not a network, auth, rate-limit or server problem).
@@ -419,10 +411,7 @@ async fn apply_op(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, Sync
                     thread
                         .messages
                         .iter()
-                        .filter(|m| {
-                            recorded.contains(&m.id)
-                                || m.internal_date_ms().is_some_and(|d| d <= op.created_at)
-                        })
+                        .filter(|m| covers(op, recorded.contains(&m.id), m.internal_date_ms()))
                         .map(|m| m.id.clone()),
                 ),
                 Err(e) if e.is_not_found() => {}

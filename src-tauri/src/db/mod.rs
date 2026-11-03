@@ -6,6 +6,9 @@ pub mod outbox;
 pub mod sync_state;
 pub mod threads;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 use anyhow::Result;
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use std::path::Path;

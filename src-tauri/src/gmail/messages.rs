@@ -2,7 +2,7 @@
 
 use super::client::{ApiRequest, GmailClient, MAX_CONCURRENT_REQUESTS};
 use super::error::GmailError;
-use super::mime::{decode_base64url, encode_base64url};
+use super::mime::{decode_base64url, encode_base64url, is_body_part};
 use super::types::{AttachmentBody, Message, MessageFormat, MessageListResponse, MessagePart};
 use futures::stream::{self, StreamExt};
 use serde_json::json;
@@ -97,19 +97,11 @@ impl GmailClient {
             for child in &mut part.parts {
                 self.fill_external_bodies(message_id, child).await?;
             }
-            let mime = part.mime_type.to_ascii_lowercase();
-            // Same rule as `mime::classify`: unnamed, not marked as an attachment.
-            let is_attachment = part.header("Content-Disposition").is_some_and(|d| {
-                d.trim_start()
-                    .to_ascii_lowercase()
-                    .starts_with("attachment")
-            });
-            let is_body = (mime == "text/plain" || mime == "text/html")
-                && part.filename.is_empty()
-                && !is_attachment;
-            if let (true, None, Some(attachment_id)) =
-                (is_body, &part.body.data, &part.body.attachment_id)
-            {
+            if let (true, None, Some(attachment_id)) = (
+                is_body_part(part),
+                &part.body.data,
+                &part.body.attachment_id,
+            ) {
                 let bytes = self.get_attachment(message_id, attachment_id).await?;
                 part.body.data = Some(encode_base64url(&bytes));
             }
@@ -232,6 +224,39 @@ mod tests {
             .unwrap();
         assert_eq!(parsed.body_html.as_deref(), Some("<p>big body</p>"));
         assert!(!parsed.has_attachment);
+    }
+
+    #[tokio::test]
+    async fn external_body_download_agrees_with_the_parser() {
+        // `attachments` is not the `attachment` disposition, so the parser treats the part
+        // as the body; the download must make the same call or the body stays empty.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/messages/m1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "m1", "threadId": "t1", "labelIds": ["INBOX"],
+                "payload": {"mimeType": "text/plain", "filename": "",
+                    "headers": [{"name": "Content-Disposition", "value": "attachments"}],
+                    "body": {"attachmentId": "big", "size": 900000}}
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/messages/m1/attachments/big"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "size": 8, "data": encode_base64url(b"big body")
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let parsed = client
+            .get_message("m1", MessageFormat::Full)
+            .await
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(parsed.body_text.as_deref(), Some("big body"));
     }
 
     #[tokio::test]
