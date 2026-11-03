@@ -14,6 +14,9 @@ concurrency:
 
 env:
   SQLX_OFFLINE: "true"
+  # Line tables keep panic locations but drop most debug info: smaller caches (they were over
+  # GitHub's 10 GB repo limit), faster links, faster cache saves on Windows.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
   checks:
@@ -39,7 +42,9 @@ jobs:
       - name: Rust formatting
         working-directory: src-tauri
         run: cargo fmt --check
+      # Linux only: on macOS and Windows clippy compiled the crate a second time (~1 min each).
       - name: Rust clippy
+        if: matrix.os == 'ubuntu-22.04'
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
       - name: Rust tests
@@ -59,9 +64,16 @@ jobs:
         with:
           node: "false"
           cache-key: ubuntu-22.04-debug
-      - uses: taiki-e/install-action@v2
+      # sqlx-cli has no prebuilt binary, so it's built once and cached (the build took ~105s).
+      - id: sqlx-cli
+        uses: actions/cache@v6
         with:
-          tool: sqlx-cli@0.8.6
+          path: |
+            ~/.cargo/bin/sqlx
+            ~/.cargo/bin/cargo-sqlx
+          key: sqlx-cli-0.8.6-sqlite-${{ runner.os }}-${{ runner.arch }}
+      - if: steps.sqlx-cli.outputs.cache-hit != 'true'
+        run: cargo install sqlx-cli@0.8.6 --locked --no-default-features --features sqlite,rustls
       - name: Validate SQLx cache
         working-directory: src-tauri
         run: |
@@ -72,8 +84,8 @@ jobs:
 
   bundle:
     name: Bundle (${{ matrix.os }})
+    # Runs alongside `checks` rather than after it: waiting cost ~4 min per PR.
     if: github.event_name == 'pull_request'
-    needs: checks
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
