@@ -1,3 +1,5 @@
+<img src="public/pheeme-mark.svg" width="64" height="64" alt="">
+
 # Pheeme
 
 A fast, open-source desktop client for Gmail, with Google Calendar coming next, for macOS, Windows and Linux.
