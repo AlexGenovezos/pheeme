@@ -19,7 +19,7 @@ npm run dev          # Vite dev server only (frontend)
 npm run tauri dev    # Full app with hot reload (runs both Vite + Rust)
 npm run build        # TypeScript check + Vite production build
 npm run test         # Vitest test runner
-npm run lint         # oxlint (config: .oxlintrc.json) + design-token check
+npm run lint         # oxlint, warnings fail (config: .oxlintrc.json) + design-token check
 npm run format       # oxfmt formats TS/JS/CSS/JSON/YAML/HTML (.oxfmtrc.json); CI runs format:check
 ```
 
