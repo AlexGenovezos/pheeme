@@ -1,19 +1,27 @@
+import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import App from "./App";
 import * as updater from "./lib/updater";
+import { createPreviewHandlers } from "./preview/install";
 import { usePaletteStore } from "./palette/paletteStore";
 import { __resetUiStoreForTests, useUiStore } from "./store/uiStore";
 import { useAccountStore } from "./store/accountStore";
+import { __resetMailStoreForTests } from "./store/mailStore";
 
 const account = { id: "a1", email: "me@example.com", displayName: "Me", clientId: "c.apps.googleusercontent.com" };
+const fixtureBackend = createPreviewHandlers();
+/** One account; threads come from the preview fixtures. */
+const backend = (cmd: string, args?: unknown) =>
+  cmd === "list_accounts" ? [account] : cmd === "list_threads" ? fixtureBackend.list_threads(args as never) : undefined;
 
 beforeEach(() => {
   localStorage.clear();
   __resetUiStoreForTests();
   usePaletteStore.setState({ open: false });
-  mockIPC((cmd) => cmd === "list_accounts" ? [account] : undefined);
+  mockIPC(backend);
+  __resetMailStoreForTests();
   useAccountStore.setState({ accounts: [], loaded: false, error: null });
 });
 
@@ -90,8 +98,9 @@ test("g then i goes to the inbox; j selects the first conversation", async () =>
   fireEvent.keyDown(window, { key: "i" });
   expect(useUiStore.getState().activeMailbox).toBe("INBOX");
 
-  fireEvent.keyDown(window, { key: "j" });
   const list = screen.getByRole("listbox", { name: "Inbox conversations" });
+  await within(list).findAllByRole("option");
+  fireEvent.keyDown(window, { key: "j" });
   expect(within(list).getAllByRole("option")[0]).toHaveAttribute("aria-selected", "true");
   expect(screen.getByRole("article")).toBeInTheDocument();
 });
@@ -118,7 +127,7 @@ test("shortcuts typed into search don't fire commands", async () => {
 test("right-clicking a conversation opens the menu (DOM fallback in preview)", async () => {
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
-  const first = within(screen.getByRole("listbox", { name: "Inbox conversations" })).getAllByRole("option")[0];
+  const [first] = await within(screen.getByRole("listbox", { name: "Inbox conversations" })).findAllByRole("option");
   fireEvent.contextMenu(first, { clientX: 100, clientY: 100 });
   expect(screen.getByRole("menu")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
@@ -151,4 +160,42 @@ test("mail shortcuts do not run during onboarding", async () => {
   fireEvent.keyDown(window, { key: "k", ctrlKey: true });
   expect(useUiStore.getState().sidebarCollapsed).toBe(false);
   expect(usePaletteStore.getState().open).toBe(false);
+});
+
+test("the shell lists threads for every connected account", async () => {
+  const queries: unknown[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd === "list_threads") queries.push(args);
+    return backend(cmd, args);
+  });
+  render(<App />);
+  const list = await screen.findByRole("listbox", { name: "Inbox conversations" });
+  await vi.waitFor(() => expect(within(list).getAllByRole("option").length).toBeGreaterThan(0));
+  expect(queries).toContainEqual({ accountIds: ["a1"], labelId: "INBOX" });
+});
+
+test("All Mail has no backing label yet: nothing is requested and the list is empty", async () => {
+  const queries: unknown[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd === "list_threads") queries.push(args);
+    return backend(cmd, args);
+  });
+  render(<App />);
+  await screen.findByRole("navigation", { name: "Mailboxes" });
+  queries.length = 0;
+  act(() => useUiStore.getState().setActiveMailbox("ALL"));
+  expect(await screen.findByText("No conversations in All Mail")).toBeInTheDocument();
+  expect(queries).toEqual([]);
+});
+
+test("a change Gmail rejects shows a toast", async () => {
+  mockIPC(backend, { shouldMockEvents: true });
+  render(<App />);
+  await screen.findByRole("navigation", { name: "Mailboxes" });
+  // Listeners attach asynchronously after mount.
+  await vi.waitFor(async () => {
+    await emit("outbox:rejected", { accountId: "a1", opId: "op1", kind: "archive", message: "Not found" });
+    expect(screen.getByText("Couldn't archive")).toBeInTheDocument();
+  });
+  expect(screen.getByText("Gmail said: Not found. Your change was undone.")).toBeInTheDocument();
 });

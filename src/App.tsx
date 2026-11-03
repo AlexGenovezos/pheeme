@@ -1,5 +1,6 @@
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
-import { ToastProvider } from "./components/ui/Toast";
+import { toast, ToastProvider } from "./components/ui/Toast";
 import { AccountsHome } from "./components/AccountsHome";
 import { Onboarding } from "./onboarding/Onboarding";
 import { useAccountStore } from "./store/accountStore";
@@ -7,11 +8,13 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { useAppCommands } from "./keyboard/appCommands";
 import { isEditableTarget } from "./keyboard/registry";
 import { useGlobalShortcuts } from "./keyboard/useCommands";
+import { type OutboxRejected, stopQuietly, SYNC_EVENTS } from "./lib/tauri";
 import { listenForManualChecks, startUpdateChecks } from "./lib/updater";
 import { CommandPalette } from "./palette/CommandPalette";
 import { isTauri } from "./preview/runtime";
 import { AppShell } from "./shell/AppShell";
 import { ContextMenuHost } from "./shell/ContextMenuHost";
+import { useMailStore } from "./store/mailStore";
 
 /** Hide the webview's own menu (Reload, Inspect…) outside text; dev builds keep it for devtools. */
 function useNativeContextMenuOnly() {
@@ -27,10 +30,33 @@ function useNativeContextMenuOnly() {
   }, []);
 }
 
+/** Keep the thread list fresh on sync, and say when Gmail refuses a queued change. */
+function useSyncEvents() {
+  useEffect(() => {
+    let stopped = false;
+    const stops: (() => void)[] = [];
+    const keep = (stop: () => void) => (stopped ? stopQuietly(stop) : stops.push(stop));
+    const log = (err: unknown) => console.warn("sync event listener failed", err);
+    useMailStore.getState().subscribe().then(keep, log);
+    listen<OutboxRejected>(SYNC_EVENTS.outboxRejected, ({ payload }) =>
+      toast({
+        title: `Couldn't ${payload.kind}`,
+        description: `Gmail said: ${payload.message}. Your change was undone.`,
+        tone: "danger",
+      }),
+    ).then(keep, log);
+    return () => {
+      stopped = true;
+      stops.forEach(stopQuietly);
+    };
+  }, []);
+}
+
 function MailScreen({ onManageAccounts }: { onManageAccounts: () => void }) {
   useGlobalShortcuts();
   useAppCommands();
   useNativeContextMenuOnly();
+  useSyncEvents();
 
   return (
     <>

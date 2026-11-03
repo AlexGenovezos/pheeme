@@ -5,6 +5,7 @@ pub mod commands;
 pub mod db;
 pub mod gmail;
 pub mod identity;
+pub mod mail;
 pub mod secrets;
 pub mod sync;
 
@@ -13,25 +14,55 @@ use secrets::SecretStore;
 use sqlx::SqlitePool;
 use std::path::Path;
 use std::sync::Arc;
+use sync::manager::SyncManager;
+use sync::{SyncEvent, SyncEvents};
 use tauri::Manager;
 use tracing::info;
 
 pub struct AppState {
     pub db: SqlitePool,
-    pub accounts: accounts::AccountService,
+    pub accounts: Arc<accounts::AccountService>,
+    pub mail: mail::MailService,
+    pub sync: Arc<SyncManager>,
 }
 
-/// Build application state: open the database in `data_dir` and apply migrations.
-/// Tauri-independent so it can be tested without an app handle.
+/// Build application state: open the database in `data_dir`, apply migrations, and set up
+/// sync (not started). Tauri-independent so it can be tested without an app handle; must
+/// run inside a tokio runtime.
 pub async fn build_state(
     data_dir: &Path,
     secrets: Arc<dyn SecretStore>,
+    events: Arc<dyn SyncEvents>,
 ) -> anyhow::Result<AppState> {
     let db = db::init_db(data_dir)
         .await
         .with_context(|| format!("failed to initialize database in {}", data_dir.display()))?;
-    let accounts = accounts::AccountService::new(db.clone(), secrets);
-    Ok(AppState { db, accounts })
+    let accounts = Arc::new(accounts::AccountService::new(db.clone(), secrets));
+    let tokens = accounts.clone();
+    let api_for: sync::manager::ApiFactory = Arc::new(move |account_id: &str| {
+        let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
+        Arc::new(gmail::GmailClient::new(provider)) as Arc<dyn sync::MailApi>
+    });
+    let sync = SyncManager::new(db.clone(), api_for, events);
+    let mail = mail::MailService::new(db.clone(), sync.clone());
+    Ok(AppState {
+        db,
+        accounts,
+        mail,
+        sync,
+    })
+}
+
+/// Forwards sync events to the webview.
+struct TauriEvents(tauri::AppHandle);
+
+impl SyncEvents for TauriEvents {
+    fn emit(&self, event: SyncEvent) {
+        use tauri::Emitter;
+        if let Err(e) = self.0.emit(event.name(), &event) {
+            tracing::warn!(error = %e, "couldn't emit {}", event.name());
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -63,15 +94,25 @@ pub fn run() {
             info!("App data directory: {}", data_dir.display());
 
             // Block until the database is ready so commands never run without state.
+            let events = Arc::new(TauriEvents(app.handle().clone()));
             let state = tauri::async_runtime::block_on(build_state(
                 &data_dir,
                 Arc::new(secrets::KeyringStore),
+                events,
             ))?;
+            state.sync.start();
             app.manage(state);
 
-            info!("Database ready");
+            info!("Database ready; sync started");
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(true) = event {
+                if let Some(state) = window.try_state::<AppState>() {
+                    state.sync.trigger_focus();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::open_external,
@@ -81,6 +122,13 @@ pub fn run() {
             commands::auth::refresh_token,
             commands::accounts::list_accounts,
             commands::accounts::remove_account,
+            commands::threads::list_threads,
+            commands::threads::get_thread,
+            commands::threads::modify_threads,
+            commands::threads::trash_threads,
+            commands::labels::list_labels,
+            commands::labels::mailbox_counts,
+            commands::sync::sync_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -93,9 +141,13 @@ mod tests {
     #[tokio::test]
     async fn build_state_creates_db_and_migrates() {
         let dir = tempfile::tempdir().unwrap();
-        let state = build_state(dir.path(), Arc::new(secrets::MemoryStore::new()))
-            .await
-            .unwrap();
+        let state = build_state(
+            dir.path(),
+            Arc::new(secrets::MemoryStore::new()),
+            Arc::new(sync::NoopEvents),
+        )
+        .await
+        .unwrap();
         assert!(dir.path().join("db.sqlite").exists());
         let n: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM accounts")
             .fetch_one(&state.db)

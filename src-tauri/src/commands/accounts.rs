@@ -15,5 +15,7 @@ pub async fn remove_account(
     state: State<'_, AppState>,
     account_id: String,
 ) -> Result<(), CommandError> {
-    Ok(state.accounts.remove_account(&account_id).await?)
+    state.accounts.remove_account(&account_id).await?;
+    state.sync.forget(&account_id);
+    Ok(())
 }

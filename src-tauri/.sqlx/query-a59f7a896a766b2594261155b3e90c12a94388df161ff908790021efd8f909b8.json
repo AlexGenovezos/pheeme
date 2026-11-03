@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO outbox_messages (op_id, account_id, message_id, thread_id, prior_label_ids)\n           VALUES (?, ?, ?, ?, ?) ON CONFLICT(op_id, message_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "a59f7a896a766b2594261155b3e90c12a94388df161ff908790021efd8f909b8"
+}

@@ -1,3 +1,15 @@
-// Phase 5: Background sync engine
+//! Background sync: keeps each account's SQLite cache in step with Gmail and pushes
+//! local changes through a persisted outbox. Tauri-free.
+pub mod api;
+pub mod convert;
 pub mod engine;
-pub mod history;
+pub mod events;
+#[cfg(test)]
+pub mod fake;
+pub mod manager;
+pub mod outbox;
+#[cfg(test)]
+mod tests;
+
+pub use api::MailApi;
+pub use events::{NoopEvents, SyncEvent, SyncEvents};

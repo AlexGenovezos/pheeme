@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!\" FROM messages\n           WHERE account_id = ? AND rfc822_message_id = ?\n             AND EXISTS (SELECT 1 FROM json_each(messages.label_ids) WHERE value = 'SENT')\n           LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8c9b46b8a798c7330fa0de044e1dd5e4dcd968abc16586a3471101d1a6718736"
+}

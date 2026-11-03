@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { describe, expect, test, vi } from "vitest";
 import { fixtureAccounts, fixtureThreadsIn } from "./fixtures";
-import { createPreviewHandlers, handlePreviewCommand, installPreview } from "./install";
+import { createPreviewHandlers, handlePreviewCommand, installPreview, toSummary } from "./install";
 import { detectTauri, isPreview, isTauri } from "./runtime";
 
 describe("runtime detection", () => {
@@ -26,7 +26,13 @@ describe("preview IPC", () => {
   test("invoke answers from fixtures once installed", async () => {
     installPreview();
     await expect(invoke("list_accounts")).resolves.toMatchObject(fixtureAccounts);
-    await expect(invoke("list_threads", { labelId: "SENT" })).resolves.toEqual(fixtureThreadsIn("SENT"));
+    await expect(invoke("list_threads", { accountIds: ["acc-personal"], labelId: "SENT" })).resolves.toEqual({
+      threads: fixtureThreadsIn("SENT").map(toSummary),
+      next: null,
+    });
+    await expect(invoke("get_thread", { accountId: "acc-personal", threadId: "t-01" })).resolves.toMatchObject({
+      thread: { id: "t-01" },
+    });
     await expect(invoke("greet", { name: "Alex" })).resolves.toContain("Alex");
   });
 

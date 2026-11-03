@@ -80,8 +80,8 @@ pub async fn list_accounts(pool: &SqlitePool) -> Result<Vec<DbAccount>> {
     Ok(accounts)
 }
 
-pub async fn update_history_id(
-    pool: &SqlitePool,
+pub async fn update_history_id<'e>(
+    ex: impl sqlx::SqliteExecutor<'e>,
     account_id: &str,
     history_id: &str,
     updated_at: i64,
@@ -92,7 +92,7 @@ pub async fn update_history_id(
         updated_at,
         account_id
     )
-    .execute(pool)
+    .execute(ex)
     .await?;
     Ok(())
 }

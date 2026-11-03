@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE labels SET messages_total = ?, messages_unread = ?, threads_total = ?, threads_unread = ?\n           WHERE account_id = ? AND id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "6a14d67a7944a44afcd2826341a5cba3fd474b0d6336da1ce3541e7ef86e46f4"
+}

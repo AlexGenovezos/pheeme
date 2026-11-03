@@ -19,7 +19,9 @@ pub async fn complete_oauth(
     state: State<'_, AppState>,
     flow_id: String,
 ) -> Result<AccountInfo, CommandError> {
-    Ok(state.accounts.complete_sign_in(&flow_id).await?)
+    let account = state.accounts.complete_sign_in(&flow_id).await?;
+    state.sync.trigger(Some(account.id.clone()));
+    Ok(account)
 }
 
 #[tauri::command]

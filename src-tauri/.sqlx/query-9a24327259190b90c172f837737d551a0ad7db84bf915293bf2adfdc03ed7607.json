@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO threads (\n            id, account_id, subject, snippet, history_id,\n            last_message_date, message_count, unread_count, has_attachment,\n            from_name, from_address, is_starred\n        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n        ON CONFLICT(id, account_id) DO UPDATE SET\n            subject = excluded.subject,\n            snippet = excluded.snippet,\n            history_id = excluded.history_id,\n            last_message_date = excluded.last_message_date,\n            message_count = excluded.message_count,\n            unread_count = excluded.unread_count,\n            has_attachment = excluded.has_attachment,\n            from_name = excluded.from_name,\n            from_address = excluded.from_address,\n            is_starred = excluded.is_starred\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "9a24327259190b90c172f837737d551a0ad7db84bf915293bf2adfdc03ed7607"
+}

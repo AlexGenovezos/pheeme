@@ -4,9 +4,11 @@ pub mod labels;
 pub mod messages;
 pub mod search;
 pub mod settings;
+pub mod sync;
 pub mod threads;
 
 use crate::accounts::AccountError;
+use crate::mail::MailError;
 use reqwest::Url;
 use serde::Serialize;
 
@@ -20,6 +22,15 @@ pub struct CommandError {
 
 impl From<AccountError> for CommandError {
     fn from(error: AccountError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<MailError> for CommandError {
+    fn from(error: MailError) -> Self {
         Self {
             code: error.code().to_owned(),
             message: error.to_string(),

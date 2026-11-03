@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, account_id, name, type as label_type,\n           message_list_visibility, label_list_visibility,\n           color_background, color_text, messages_total, messages_unread\n           FROM labels WHERE account_id = ? AND id = ?",
+  "query": "SELECT id, account_id, name, type as label_type,\n           message_list_visibility, label_list_visibility,\n           color_background, color_text, messages_total, messages_unread,\n           threads_total, threads_unread\n           FROM labels WHERE account_id = ? ORDER BY name",
   "describe": {
     "columns": [
       {
@@ -52,10 +52,20 @@
         "name": "messages_unread",
         "ordinal": 9,
         "type_info": "Integer"
+      },
+      {
+        "name": "threads_total",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "threads_unread",
+        "ordinal": 11,
+        "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 1
     },
     "nullable": [
       false,
@@ -67,8 +77,10 @@
       true,
       true,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "0c9de0e0c636efb69857780292d4e527e0a03e9e9d991cea50ef48dd148783bb"
+  "hash": "301071ec6f969e20ac5592b826d25e193f058582e691fac6c17815a2c1dbeda6"
 }

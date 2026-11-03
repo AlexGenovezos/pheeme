@@ -1,5 +1,5 @@
 import { PanelLeftOpen, Paperclip, Search, Star } from "lucide-react";
-import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
@@ -9,7 +9,10 @@ import { toast } from "../components/ui/Toast";
 import { useCommands } from "../keyboard/useCommands";
 import { openContextMenuFromEvent } from "../lib/contextMenu";
 import { formatListDate } from "../lib/dates";
-import { fixtureMailboxes, fixtureLabels, fixtureThreadsIn, type FixtureThread } from "../preview/fixtures";
+import type { ThreadSummary } from "../lib/tauri";
+import { fixtureMailboxes, fixtureLabels } from "../preview/fixtures";
+import { useAccountStore } from "../store/accountStore";
+import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
 
@@ -18,7 +21,12 @@ export const SEARCH_INPUT_ID = "mail-search";
 /** Placeholder until the mail UI (Phase 6) wires real actions. */
 export const notYet = (action: string) => toast({ title: `${action} isn't wired up yet`, description: "It arrives with the mail UI." });
 
-const rowMenu = (t: FixtureThread) => [
+/** Mailboxes the sidebar shows that have no backing Gmail label yet (Phase 6). */
+const UNBACKED_MAILBOXES = new Set(["ALL"]);
+
+export const senderOf = (t: Pick<ThreadSummary, "fromName" | "fromAddress">) => t.fromName ?? t.fromAddress ?? "Unknown sender";
+
+const rowMenu = (t: ThreadSummary) => [
   { id: "archive", label: "Archive", shortcut: "e", onSelect: () => notYet("Archive") },
   { id: "read", label: t.unread ? "Mark as read" : "Mark as unread", shortcut: "shift+u", onSelect: () => notYet("Mark as read") },
   { id: "star", label: t.starred ? "Remove star" : "Add star", shortcut: "s", onSelect: () => notYet("Star") },
@@ -34,7 +42,17 @@ export function ListPane() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const threads = useMemo(() => fixtureThreadsIn(mailbox), [mailbox]);
+  const accountIds = useAccountStore((s) => s.accounts.map((a) => a.id).join("\n"));
+  const threads = useMailStore((s) => s.threads);
+
+  // All Inboxes: every connected account, refetched when the mailbox or the accounts change.
+  useEffect(() => {
+    const { load, clear } = useMailStore.getState();
+    const ids = accountIds ? accountIds.split("\n") : [];
+    if (UNBACKED_MAILBOXES.has(mailbox) || ids.length === 0) clear();
+    else void load({ accountIds: ids, labelId: mailbox });
+  }, [mailbox, accountIds]);
+
   const box = fixtureMailboxes.find((m) => m.id === mailbox) ?? fixtureLabels.find((l) => l.id === mailbox);
   const unread = threads.filter((t) => t.unread).length;
   const index = threads.findIndex((t) => t.id === selected);
@@ -110,29 +128,32 @@ export function ListPane() {
             <p className="pane-empty__title">No conversations in {box?.name ?? "this mailbox"}</p>
           </div>
         ) : (
-          threads.map((t) => (
-            <ListRow
-              key={t.id}
-              selected={t.id === selected}
-              unread={t.unread}
-              leading={<Avatar name={t.fromName} email={t.fromAddress} />}
-              title={t.messageCount > 1 ? `${t.fromName} (${t.messageCount})` : t.fromName}
-              meta={
-                <>
-                  {t.hasAttachment && <Paperclip aria-label="Has attachment" className="list-pane__glyph" />}
-                  {t.starred && <Star aria-label="Starred" className="list-pane__glyph list-pane__glyph--star" />}
-                  <time dateTime={new Date(t.date).toISOString()}>{formatListDate(t.date)}</time>
-                </>
-              }
-              subtitle={t.subject}
-              description={t.snippet}
-              onClick={() => select(t.id)}
-              onContextMenu={(e) => {
-                select(t.id);
-                openContextMenuFromEvent(e, rowMenu(t));
-              }}
-            />
-          ))
+          threads.map((t) => {
+            const sender = senderOf(t);
+            return (
+              <ListRow
+                key={t.id}
+                selected={t.id === selected}
+                unread={t.unread}
+                leading={<Avatar name={sender} email={t.fromAddress ?? undefined} />}
+                title={t.messageCount > 1 ? `${sender} (${t.messageCount})` : sender}
+                meta={
+                  <>
+                    {t.hasAttachment && <Paperclip aria-label="Has attachment" className="list-pane__glyph" />}
+                    {t.starred && <Star aria-label="Starred" className="list-pane__glyph list-pane__glyph--star" />}
+                    {t.date > 0 && <time dateTime={new Date(t.date).toISOString()}>{formatListDate(t.date)}</time>}
+                  </>
+                }
+                subtitle={t.subject ?? "(no subject)"}
+                description={t.snippet}
+                onClick={() => select(t.id)}
+                onContextMenu={(e) => {
+                  select(t.id);
+                  openContextMenuFromEvent(e, rowMenu(t));
+                }}
+              />
+            );
+          })
         )}
       </div>
     </div>

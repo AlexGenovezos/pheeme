@@ -6,13 +6,18 @@ import { Kbd } from "../components/ui/Kbd";
 import { showContextMenu } from "../lib/contextMenu";
 import { formatFullDate } from "../lib/dates";
 import { fixtureThreads } from "../preview/fixtures";
+import { isPreview } from "../preview/runtime";
+import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
-import { notYet } from "./ListPane";
+import { notYet, senderOf } from "./ListPane";
 
 export function ViewPane() {
   const selectedId = useUiStore((s) => s.selectedThreadId);
-  const thread = fixtureThreads.find((t) => t.id === selectedId);
+  const summary = useMailStore((s) => s.threads.find((t) => t.id === selectedId));
+  // Preview mode has full fixture bodies; real threads show their summary until the Phase 6 thread view.
+  const fixture = isPreview() ? fixtureThreads.find((t) => t.id === selectedId) : undefined;
+  const thread = fixture ?? summary;
   const off = !thread;
 
   const openMore = (e: MouseEvent<HTMLButtonElement>) => {
@@ -44,19 +49,21 @@ export function ViewPane() {
 
       <div className="view-pane__scroll">
         {thread ? (
-          <article className="message" aria-label={thread.subject}>
-            <h2 className="message__subject selectable">{thread.subject}</h2>
+          <article className="message" aria-label={thread.subject ?? "(no subject)"}>
+            <h2 className="message__subject selectable">{thread.subject ?? "(no subject)"}</h2>
             <header className="message__header">
-              <Avatar name={thread.fromName} email={thread.fromAddress} />
+              <Avatar name={senderOf(thread)} email={thread.fromAddress ?? undefined} />
               <div className="message__from">
-                <span className="message__name selectable">{thread.fromName}</span>
-                <span className="message__address selectable">{thread.fromAddress}</span>
+                <span className="message__name selectable">{senderOf(thread)}</span>
+                {thread.fromAddress && <span className="message__address selectable">{thread.fromAddress}</span>}
               </div>
-              <time className="message__date" dateTime={new Date(thread.date).toISOString()}>
-                {formatFullDate(thread.date)}
-              </time>
+              {thread.date > 0 && (
+                <time className="message__date" dateTime={new Date(thread.date).toISOString()}>
+                  {formatFullDate(thread.date)}
+                </time>
+              )}
             </header>
-            <div className="message__body selectable">{thread.body}</div>
+            <div className="message__body selectable">{fixture?.body ?? thread.snippet}</div>
           </article>
         ) : (
           <div className="pane-empty">
