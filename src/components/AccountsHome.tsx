@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "./ui/Button";
 import { type AccountInfo, type CommandError, toCommandError } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import "../onboarding/onboarding.css";
@@ -11,9 +12,9 @@ export function AccountsHome({ onAdd, onClose }: { onAdd: () => void; onClose?: 
       <main className="onboarding-main">
         <div className="onboarding-content">
           {onClose && (
-            <button type="button" className="btn btn--quiet" onClick={onClose}>
+            <Button variant="ghost" size="lg" onClick={onClose}>
               Back to inbox
-            </button>
+            </Button>
           )}
           <h1>Accounts</h1>
           <p className="guide-lead">Manage the Google accounts connected to Pheeme.</p>
@@ -23,9 +24,9 @@ export function AccountsHome({ onAdd, onClose }: { onAdd: () => void; onClose?: 
             ))}
           </ul>
           <div>
-            <button type="button" className="btn btn--primary" onClick={onAdd}>
+            <Button variant="primary" size="lg" onClick={onAdd}>
               Add account
-            </button>
+            </Button>
           </div>
         </div>
       </main>
@@ -58,13 +59,9 @@ function AccountRow({ account }: { account: AccountInfo }) {
           {account.displayName && <span>{account.email}</span>}
         </div>
         {!confirming && (
-          <button
-            type="button"
-            className="btn btn--small btn--quiet"
-            onClick={() => setConfirming(true)}
-          >
+          <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
             Remove
-          </button>
+          </Button>
         )}
       </div>
       {confirming && (
@@ -74,22 +71,12 @@ function AccountRow({ account }: { account: AccountInfo }) {
             Nothing changes in Gmail.
           </span>
           <div className="button-row">
-            <button
-              type="button"
-              className="btn btn--small"
-              disabled={busy}
-              onClick={() => setConfirming(false)}
-            >
+            <Button size="sm" disabled={busy} onClick={() => setConfirming(false)}>
               Keep
-            </button>
-            <button
-              type="button"
-              className="btn btn--small btn--danger"
-              disabled={busy}
-              onClick={() => void confirmRemove()}
-            >
+            </Button>
+            <Button variant="danger" size="sm" disabled={busy} onClick={() => void confirmRemove()}>
               Remove
-            </button>
+            </Button>
           </div>
         </div>
       )}

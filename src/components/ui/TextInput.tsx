@@ -6,14 +6,16 @@ export interface TextInputProps extends Omit<InputHTMLAttributes<HTMLInputElemen
   leading?: ReactNode;
   trailing?: ReactNode;
   invalid?: boolean;
+  /** `lg` matches `lg` buttons on full-page screens (onboarding, accounts). */
+  size?: "md" | "lg";
 }
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInput(
-  { leading, trailing, invalid, className, type = "text", ...rest },
+  { leading, trailing, invalid, size = "md", className, type = "text", ...rest },
   ref,
 ) {
   return (
-    <span className={cx("ui-input", invalid && "ui-input--invalid", className)}>
+    <span className={cx("ui-input", size === "lg" && "ui-input--lg", invalid && "ui-input--invalid", className)}>
       {leading && <span className="ui-input__adornment">{leading}</span>}
       <input
         ref={ref}

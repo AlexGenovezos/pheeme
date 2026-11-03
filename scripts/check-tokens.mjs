@@ -7,11 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const ALLOWED = new Set([
-  "src/styles/tokens.css",
-  // Phase 2 onboarding predates the design system; remove once it is restyled (issue #13).
-  "src/onboarding/onboarding.css",
-]);
+export const ALLOWED = new Set(["src/styles/tokens.css"]);
 
 const RULES = [
   { name: "hex color", re: /#[0-9a-f]{3,8}\b/gi },

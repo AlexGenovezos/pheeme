@@ -30,6 +30,11 @@
   font-size: var(--font-size-sm);
 }
 
+.ui-button--lg {
+  height: var(--control-height-lg);
+  padding: var(--space-0) var(--space-4);
+}
+
 .ui-button--primary {
   background: var(--color-accent);
   color: var(--color-accent-foreground);
