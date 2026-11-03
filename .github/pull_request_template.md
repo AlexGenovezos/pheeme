@@ -1,7 +1,7 @@
 <!--
-Read CONTRIBUTING.md before opening a PR. Review time is limited, and meeting the
-requirements does not guarantee review or merging. Solve one underlying problem.
-The same requirements apply to drafts.
+Thanks for contributing! Read CONTRIBUTING.md before opening a PR: following it is
+the fastest way to get a review. Solve one underlying problem per PR. The same
+requirements apply to drafts.
 Use a conventional commit title in plain language, such as "fix(sync): archived threads no longer reappear after reconnect".
 -->
 

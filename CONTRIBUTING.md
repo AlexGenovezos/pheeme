@@ -7,17 +7,18 @@ See [Develop on macOS](README.md#develop-on-macos) in the README and the command
 
 ## Read this first
 
-Pheeme is maintained by one person. Outside contributions are not actively sought, and review time is
-limited. Opening a PR does not create an obligation to review or merge it. A PR may be closed or deferred,
-you may be asked to cut it down, or the idea may be reimplemented later. Meeting this guide's
-requirements makes a PR eligible for review; it does not guarantee acceptance.
+Contributions are welcome. Pheeme is maintained by one person, so this guide exists to keep reviews quick:
+a PR that follows it is much easier to review and merge. Issues labeled
+[`good first issue`](https://github.com/AlexGenovezos/pheeme/labels/good%20first%20issue) or
+[`help wanted`](https://github.com/AlexGenovezos/pheeme/labels/help%20wanted) are good places to start.
 
-These requirements apply to every open PR, including drafts. Draft status does not postpone triage or
-excuse missing approval, unfocused scope or missing verification.
+Meeting these requirements makes a PR ready for review, not certain to be merged. You may be asked to cut a
+PR down or split it, and a PR may be closed if it doesn't fit the project. These requirements apply to
+drafts too.
 
-Focused bug fixes, reliability fixes, performance improvements and maintenance work are the most likely
-to be accepted. Unsolicited features, opinionated rewrites and unrelated cleanup are not. The scope and
-phase order are set by the
+Bug fixes, reliability fixes, performance improvements, docs and maintenance work can go straight to a PR
+under the rules below. For a new feature, start with a discussion so we can agree on the direction before
+you put in the work. The scope and phase order are set by the
 [design spec](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md); work outside it needs
 approval first.
 
