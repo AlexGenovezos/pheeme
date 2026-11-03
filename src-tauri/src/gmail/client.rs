@@ -22,10 +22,11 @@ pub const DEFAULT_BASE_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/
 /// Requests in flight per client (one client per account).
 pub const MAX_CONCURRENT_REQUESTS: usize = 10;
 
-/// Quota units per second each client may spend. Gmail allows 250 per user per second (a
-/// moving average) and answers 403 `rateLimitExceeded` beyond it; ten concurrent
-/// `messages.get` calls (5 units each) easily outrun that, so requests are paced below it.
-pub const QUOTA_UNITS_PER_SEC: u32 = 200;
+/// Quota units per second each client may spend. Gmail's per-user limit is 6,000 units per
+/// minute for current projects (it was 15,000), enforced per minute; beyond it Gmail answers
+/// 403 `rateLimitExceeded`. 80/s (4,800 a minute) leaves headroom for the user's other
+/// clients, and the limiter backs off further if Gmail still objects.
+pub const QUOTA_UNITS_PER_SEC: u32 = 80;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -79,7 +80,7 @@ fn jittered(delay: Duration) -> Duration {
 /// Each request reserves a send time on a schedule advancing `units / rate` seconds per call,
 /// allowing up to [`QUOTA_BURST`] of backlog to go at once (a GCRA). A rate-limit answer halves
 /// the rate and pauses the schedule; every success wins a little back. The published limit is
-/// 15,000 units per user per minute, but projects can be capped lower, and the limit is
+/// 6,000 units per user per minute, but projects can be capped lower, and the limit is
 /// enforced per minute, so a fixed rate either wastes quota or keeps tripping it.
 struct QuotaLimiter {
     max_rate: f64,
