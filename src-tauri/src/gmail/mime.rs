@@ -17,7 +17,7 @@ use base64::{
 };
 use mailparse::{
     addrparse_header, dateparse, parse_content_disposition, parse_content_type, parse_header,
-    parse_headers, parse_mail, MailAddr, MailHeaderMap, ParsedMail,
+    parse_headers, parse_mail, DispositionType, MailAddr, MailHeaderMap, ParsedMail,
 };
 use serde::{Deserialize, Serialize};
 
@@ -256,12 +256,32 @@ struct PartInfo<'a> {
     has_content: bool,
 }
 
+/// A leaf part is a text body (not an attachment) when it's text/plain or text/html
+/// (`mime` lowercased), unnamed and not marked `Content-Disposition: attachment`.
+fn is_body(mime: &str, filename: Option<&str>, disposition_attachment: bool) -> bool {
+    let named = filename.is_some_and(|f| !f.is_empty());
+    (mime == "text/plain" || mime == "text/html") && !named && !disposition_attachment
+}
+
+fn is_attachment_disposition(part: &MessagePart) -> bool {
+    part.header("Content-Disposition")
+        .is_some_and(|d| parse_content_disposition(d).disposition == DispositionType::Attachment)
+}
+
+/// Whether a `format=full` payload part is a text body. Gmail stores large bodies
+/// externally (`attachmentId`); `GmailClient::get_message` uses this to fetch them
+/// before parsing, so it must agree with [`classify`].
+pub(crate) fn is_body_part(part: &MessagePart) -> bool {
+    is_body(
+        &part.mime_type.to_ascii_lowercase(),
+        Some(&part.filename),
+        is_attachment_disposition(part),
+    )
+}
+
 fn classify(p: &PartInfo) -> PartKind {
     let named = p.filename.is_some_and(|f| !f.is_empty());
-    let is_body_type = p.mime == "text/plain" || p.mime == "text/html";
-    // Gmail stores large bodies externally (`attachmentId`); they are still bodies, and
-    // `GmailClient::get_message` fills their data in before parsing.
-    if is_body_type && !named && !p.disposition_attachment {
+    if is_body(p.mime, p.filename, p.disposition_attachment) {
         return if p.mime == "text/html" {
             PartKind::Html
         } else {
@@ -294,12 +314,7 @@ fn walk_payload(part: &MessagePart, out: &mut Body) -> Result<(), GmailError> {
         }
         return Ok(());
     }
-    let disposition = part
-        .header("Content-Disposition")
-        .map(parse_content_disposition);
-    let disposition_attachment = disposition
-        .as_ref()
-        .is_some_and(|d| d.disposition == mailparse::DispositionType::Attachment);
+    let disposition_attachment = is_attachment_disposition(part);
     let content_id = part.header("Content-ID").and_then(clean_content_id);
     let kind = classify(&PartInfo {
         mime: &mime,
@@ -358,7 +373,7 @@ fn walk_raw(mail: &ParsedMail, out: &mut Body) -> Result<(), GmailError> {
         .get_first_value("Content-ID")
         .as_deref()
         .and_then(clean_content_id);
-    let disposition_attachment = disposition.disposition == mailparse::DispositionType::Attachment;
+    let disposition_attachment = disposition.disposition == DispositionType::Attachment;
     let raw_body = mail
         .get_body_raw()
         .map_err(|e| GmailError::Decode(format!("could not decode MIME part body: {e}")))?;
