@@ -46,7 +46,9 @@ in-memory Gmail with [dhat](https://docs.rs/dhat) counting every allocation. It 
 mailbox, then runs sync cycles the way the app does: new mail, deletions and label changes
 from other devices, the user's own changes through the outbox, and list and thread reads.
 Each cycle leaves the mailbox the same size, so the live heap should level off once caches
-are warm. The test fails when:
+are warm. Like the benchmarks it uses a one-connection pool: the app's pool opens more
+connections at unpredictable moments, each with its own caches, which reads as a jump in the
+heap. The test fails when:
 
 - the live heap keeps growing (a least-squares slope over the last three quarters of the
   cycles above 256 bytes per cycle; a healthy run is around 40), or
@@ -55,7 +57,7 @@ are warm. The test fails when:
 | Size | Where | Mailbox | Cycles | Peak budget |
 |------|-------|---------|--------|-------------|
 | short | `Performance` workflow, every PR | 5,000 messages | 200 | 4 MiB |
-| long | `Nightly performance` workflow | 20,000 messages | 1,000 | 14 MiB |
+| long | `Nightly performance` workflow | 20,000 messages | 1,000 | 15 MiB |
 
 A nightly failure opens an issue (or comments on the open one). On a failure, the job
 uploads `dhat-heap.json`: open it in

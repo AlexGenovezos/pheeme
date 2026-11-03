@@ -13,7 +13,8 @@ use pheeme_lib::mail::MailService;
 use pheeme_lib::sync::engine::{BackfillProgress, SyncEngine};
 use pheeme_lib::sync::fake::{FakeGmail, FakeMsg};
 use pheeme_lib::sync::manager::SyncManager;
-use pheeme_lib::sync::{MailApi, NoopEvents};
+use pheeme_lib::sync::{outbox, MailApi, NoopEvents};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
@@ -34,7 +35,7 @@ const MAX_GROWTH_PER_CYCLE: f64 = 256.0;
 struct Scale {
     messages: usize,
     cycles: usize,
-    /// Peak live heap budget, about 20% above the measured peak (11.2 MiB long, 3.1 MiB
+    /// Peak live heap budget, about 20% above the measured peak (11.9 MiB long, 3.3 MiB
     /// short, on 2026-11-03).
     max_peak_bytes: usize,
 }
@@ -44,7 +45,7 @@ fn scale() -> Scale {
         Ok("long") => Scale {
             messages: 20_000,
             cycles: 1_000,
-            max_peak_bytes: 14 << 20,
+            max_peak_bytes: 15 << 20,
         },
         _ => Scale {
             messages: 5_000,
@@ -100,7 +101,20 @@ fn heap_levels_off_over_a_long_session() {
         .build()
         .unwrap();
     let samples = rt.block_on(async {
-        let pool = db::init_db(&out.join("db")).await.unwrap();
+        // One connection: the app's pool opens more at unpredictable moments, each with its own
+        // statement and page caches, which reads as a step in the live heap.
+        let db_dir = out.join("db");
+        db::init_db(&db_dir).await.unwrap().close().await;
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(db_dir.join("db.sqlite"))
+                    .foreign_keys(true)
+                    .journal_mode(SqliteJournalMode::Wal),
+            )
+            .await
+            .unwrap();
         accounts::insert_account(
             &pool,
             &accounts::DbAccount {
@@ -117,7 +131,8 @@ fn heap_levels_off_over_a_long_session() {
         .await
         .unwrap();
 
-        // A mailbox of `messages`, two to a thread, spread over the last two years.
+        // A mailbox of `messages`, two to a thread, spread over the last 170 days: inside the
+        // full-body window, so opening a thread never refreshes bodies in the background.
         let fake = Arc::new(FakeGmail::new());
         let threads = scale.messages / 2;
         for n in 0..scale.messages {
@@ -129,7 +144,7 @@ fn heap_levels_off_over_a_long_session() {
             };
             fake.seed(
                 FakeMsg::new(&format!("m{n}"), &format!("t{}", n % threads), labels)
-                    .days_ago((n * 730 / scale.messages) as i64),
+                    .days_ago((n * 170 / scale.messages) as i64),
             );
         }
 
@@ -150,7 +165,7 @@ fn heap_levels_off_over_a_long_session() {
             Arc::new(move |_| api.clone()),
             Arc::new(NoopEvents),
         );
-        let mail = MailService::new(pool.clone(), sync.clone());
+        let mail = MailService::new(pool.clone(), sync.clone(), out.join("cache"));
         let me = [ACCT.to_string()];
 
         let mut arrived: VecDeque<String> = VecDeque::new();
@@ -168,7 +183,8 @@ fn heap_levels_off_over_a_long_session() {
                 arrived.push_back(id);
                 // The same few messages each time: touching new ones would grow the fake.
                 let seeded = format!("m{}", (cycle * CHURN + k) % RELABELED);
-                if cycle % 2 == 0 {
+                // Flip direction each full pass over them, so every visit changes something.
+                if (cycle / (RELABELED / CHURN)).is_multiple_of(2) {
                     fake.relabel(&seeded, &["STARRED"], &["UNREAD"]);
                 } else {
                     fake.relabel(&seeded, &["UNREAD"], &["STARRED"]);
@@ -178,8 +194,9 @@ fn heap_levels_off_over_a_long_session() {
                 fake.delete(&arrived.pop_front().unwrap());
             }
 
-            // The user reads the Inbox, opens the newest thread and archives or restores
-            // one (through the outbox).
+            // The user reads the Inbox, opens the newest thread and archives or restores one.
+            // The change is queued straight on the outbox: `MailService::modify_threads` would
+            // also start a sync in the background, still running when the heap is sampled.
             let page = mail
                 .list_threads(&me, "INBOX", None, None, None)
                 .await
@@ -193,7 +210,7 @@ fn heap_levels_off_over_a_long_session() {
             } else {
                 (&inbox, &[])
             };
-            mail.modify_threads(ACCT, &[target], add, remove)
+            outbox::enqueue_modify(&pool, ACCT, &[target], add, remove)
                 .await
                 .unwrap();
 

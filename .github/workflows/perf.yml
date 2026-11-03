@@ -19,17 +19,18 @@ concurrency:
 
 env:
   SQLX_OFFLINE: "true"
-  CARGO_TERM_COLOR: never
-  GUNGRAUN_COLOR: never
-  # One target dir for both checkouts, so the base build is reused and both runs write
-  # their baselines to the same target/gungraun.
-  CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
 jobs:
   benches:
     name: Rust benchmarks
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: never
+      GUNGRAUN_COLOR: never
+      # One target dir for both checkouts, so the base build is reused and both runs write
+      # their baselines to the same target/gungraun.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@v7
         with:
