@@ -34,6 +34,8 @@ export function isNewer(a, b) {
 }
 
 export const notesPath = (root, tag) => path.join(root, NOTES_DIR, `${tag}.md`);
+/** `file` relative to the repo, with `/` on every OS (for messages). */
+const shown = (root, file) => path.relative(root, file).split(path.sep).join("/");
 
 /**
  * PR numbers from first-parent commit subjects, oldest first: squash merges end in "(#65)",
@@ -110,7 +112,7 @@ export function checkRelease(root, input) {
   const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
   return [
     ...checkVersions(root, tag),
-    ...checkNotes(text).map((e) => `${path.relative(root, file)}: ${e}`),
+    ...checkNotes(text).map((e) => `${shown(root, file)}: ${e}`),
   ];
 }
 
@@ -179,8 +181,7 @@ function prepare(root, input, { force = false } = {}) {
   if (!isNewer(`${version}.0`, current)) throw new Error(`${tag} isn't newer than ${current}`);
   if (sh(root, "git", ["status", "--porcelain"])) throw new Error("commit or stash changes first");
   const file = notesPath(root, tag);
-  if (fs.existsSync(file) && !force)
-    throw new Error(`${path.relative(root, file)} exists (--force)`);
+  if (fs.existsSync(file) && !force) throw new Error(`${shown(root, file)} exists (--force)`);
 
   const prevTag = lastTag(root);
   const prs = mergedPrs(root, prevTag);
@@ -189,7 +190,7 @@ function prepare(root, input, { force = false } = {}) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, draftNotes({ tag, prevTag, prs, migrations }));
 
-  const rel = path.relative(root, file);
+  const rel = shown(root, file);
   console.log(
     `Version set to ${version}.0 in package.json, package-lock.json, Cargo.toml, Cargo.lock, tauri.conf.json.`,
   );
