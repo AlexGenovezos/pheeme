@@ -79,33 +79,31 @@ fn jittered(delay: Duration) -> Duration {
 ///
 /// Each request reserves a send time on a schedule advancing `units / rate` seconds per call,
 /// allowing up to [`QUOTA_BURST`] of backlog to go at once (a GCRA). A rate-limit answer halves
-/// the rate and pauses the schedule; every success wins a little back. The published limit is
-/// 6,000 units per user per minute, but projects can be capped lower, and the limit is
-/// enforced per minute, so a fixed rate either wastes quota or keeps tripping it.
+/// the rate and pauses the schedule; the rate then climbs back linearly to the full rate over
+/// [`QUOTA_RECOVERY`]. Gmail enforces its limit per minute, so a fixed rate either wastes
+/// quota or keeps tripping it, and recovering much faster than a minute trips it again.
 struct QuotaLimiter {
     max_rate: f64,
     state: std::sync::Mutex<Pace>,
 }
 
 struct Pace {
-    /// Units per second.
-    rate: f64,
     /// When the schedule is next free.
     next: Instant,
-    last_cut: Option<Instant>,
+    /// The rate set by the last cut, and when it was made.
+    cut: Option<(f64, Instant)>,
 }
 
 const QUOTA_BURST: Duration = Duration::from_secs(1);
+const QUOTA_RECOVERY: Duration = Duration::from_secs(60);
 
 impl QuotaLimiter {
     fn new(units_per_sec: u32) -> Self {
-        let max_rate = f64::from(units_per_sec.max(1));
         Self {
-            max_rate,
+            max_rate: f64::from(units_per_sec.max(1)),
             state: std::sync::Mutex::new(Pace {
-                rate: max_rate,
                 next: Instant::now(),
-                last_cut: None,
+                cut: None,
             }),
         }
     }
@@ -116,24 +114,29 @@ impl QuotaLimiter {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// Units per second allowed at `now`.
+    fn rate_at(&self, pace: &Pace, now: Instant) -> f64 {
+        match pace.cut {
+            None => self.max_rate,
+            Some((rate, at)) => {
+                let regained = self.max_rate * now.duration_since(at).as_secs_f64()
+                    / QUOTA_RECOVERY.as_secs_f64();
+                (rate + regained).min(self.max_rate)
+            }
+        }
+    }
+
     /// Wait for this request's turn to spend `units`.
     async fn take(&self, units: u32) {
         let send_at = {
             let mut pace = self.pace();
             let now = Instant::now();
+            let rate = self.rate_at(&pace, now);
             let start = pace.next.max(now);
-            pace.next = start + Duration::from_secs_f64(f64::from(units) / pace.rate);
+            pace.next = start + Duration::from_secs_f64(f64::from(units) / rate);
             start.checked_sub(QUOTA_BURST).unwrap_or(now)
         };
         tokio::time::sleep_until(send_at.into()).await;
-    }
-
-    /// Gmail accepted a request: creep back towards the full rate.
-    fn succeeded(&self, units: u32) {
-        let mut pace = self.pace();
-        // Slow on purpose: Gmail enforces its limit per minute, so climbing back within
-        // seconds just trips it again. ~50 s from half rate to full at a steady pace.
-        pace.rate = (pace.rate + f64::from(units) * 0.02).min(self.max_rate);
     }
 
     /// Gmail said slow down: halve the rate (once per burst of rejections) and let the
@@ -142,19 +145,19 @@ impl QuotaLimiter {
         let mut pace = self.pace();
         let now = Instant::now();
         if pace
-            .last_cut
-            .is_some_and(|at| now.duration_since(at) < QUOTA_BURST)
+            .cut
+            .is_some_and(|(_, at)| now.duration_since(at) < QUOTA_BURST)
         {
             return;
         }
-        pace.last_cut = Some(now);
-        pace.rate = (pace.rate / 2.0).max(self.max_rate / 20.0);
+        let rate = (self.rate_at(&pace, now) / 2.0).max(self.max_rate / 20.0);
+        pace.cut = Some((rate, now));
         pace.next = pace.next.max(now) + QUOTA_BURST;
     }
 
     #[cfg(test)]
     fn rate(&self) -> f64 {
-        self.pace().rate
+        self.rate_at(&self.pace(), Instant::now())
     }
 }
 
@@ -352,7 +355,6 @@ impl GmailClient {
             };
 
             if status.is_success() {
-                self.quota.succeeded(units);
                 return Ok(body);
             }
 
@@ -877,16 +879,18 @@ mod tests {
     }
 
     #[test]
-    fn rate_limits_halve_the_pace_and_successes_restore_it() {
+    fn rate_limits_halve_the_pace_and_time_restores_it() {
         let limiter = QuotaLimiter::new(200);
         limiter.rate_limited();
-        assert_eq!(limiter.rate(), 100.0);
+        assert!((limiter.rate() - 100.0).abs() < 1.0);
         limiter.rate_limited(); // same burst of rejections: no second cut
-        assert_eq!(limiter.rate(), 100.0);
-        for _ in 0..2000 {
-            limiter.succeeded(5);
-        }
-        assert_eq!(limiter.rate(), 200.0, "capped at the configured rate");
+        assert!((limiter.rate() - 100.0).abs() < 1.0);
+
+        // Half a recovery period after a cut to half rate, it's back to full.
+        let mut pace = limiter.pace();
+        pace.cut = Some((100.0, Instant::now() - QUOTA_RECOVERY / 2));
+        drop(pace);
+        assert_eq!(limiter.rate(), 200.0);
     }
 
     #[tokio::test]
