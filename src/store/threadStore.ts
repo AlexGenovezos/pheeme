@@ -15,6 +15,11 @@ import { useUiStore } from "./uiStore";
 
 export const DETAIL_CACHE_SIZE = 30;
 
+/** Optimistic detail changes the cache hasn't caught up with, per thread, in the order they were made. */
+let pendingDetails = new Map<ThreadKey, Array<{ op: number; fn: (detail: ThreadDetail) => ThreadDetail }>>();
+const withPending = (key: ThreadKey, detail: ThreadDetail) =>
+  (pendingDetails.get(key) ?? []).reduce((d, change) => change.fn(d), detail);
+
 interface ThreadState {
   /** Insertion order is recency: the last entry is the most recently used. */
   details: Map<ThreadKey, ThreadDetail>;
@@ -24,8 +29,14 @@ interface ThreadState {
   load(key: ThreadKey): Promise<void>;
   /** Warm the cache for neighbours of the open thread. Failures are ignored. */
   prefetch(keys: ThreadKey[]): void;
-  /** Rewrite a cached detail in place (optimistic label changes). Does nothing if it isn't cached. */
-  patchDetail(key: ThreadKey, fn: (detail: ThreadDetail) => ThreadDetail): void;
+  /**
+   * Rewrite a cached detail in place (optimistic label changes). With an `op` (from `newOp`) the change is also
+   * pending: every fetch of this thread re-applies it until `settleDetails`, so a refresh that was answered before
+   * the cache changed can't bring the old chips back.
+   */
+  patchDetail(key: ThreadKey, fn: (detail: ThreadDetail) => ThreadDetail, op?: number): void;
+  /** The command for `op` has settled for these threads: stop re-applying its changes. */
+  settleDetails(op: number, keys: ThreadKey[]): void;
   /** Forget threads of one account (their messages changed), including any response still in flight. */
   evict(accountId: string, threadIds: string[]): void;
   /** Evict on `sync:messages_updated`, and refresh the open thread if it changed. Resolves to the unsubscribe function. */
@@ -49,7 +60,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         set((s) => {
           const details = new Map(s.details);
           details.delete(key); // re-insert as the most recent
-          details.set(key, detail);
+          details.set(key, withPending(key, detail));
           while (details.size > DETAIL_CACHE_SIZE) details.delete(details.keys().next().value as ThreadKey);
           const errors = { ...s.errors };
           delete errors[key];
@@ -98,14 +109,23 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         if (!get().details.has(key) && !inflight.has(key)) void fetchDetail(key, true);
       }
     },
-    patchDetail: (key, fn) =>
+    settleDetails: (op, keys) => {
+      for (const key of keys) {
+        const rest = (pendingDetails.get(key) ?? []).filter((c) => c.op !== op);
+        if (rest.length > 0) pendingDetails.set(key, rest);
+        else pendingDetails.delete(key);
+      }
+    },
+    patchDetail: (key, fn, op) => {
+      if (op !== undefined) pendingDetails.set(key, [...(pendingDetails.get(key) ?? []), { op, fn }]);
       set((s) => {
         const current = s.details.get(key);
         if (!current) return {};
         const details = new Map(s.details);
         details.set(key, fn(current)); // an existing key keeps its place in the LRU order
         return { details };
-      }),
+      });
+    },
     evict: (accountId, threadIds) => {
       const keys = threadIds.map((id) => threadKey(accountId, id));
       keys.forEach((key) => inflight.delete(key));
@@ -140,5 +160,6 @@ export const useThreadStore = create<ThreadState>((set, get) => {
 /** Test helper. */
 export function __resetThreadStoreForTests() {
   inflight.clear();
+  pendingDetails = new Map();
   useThreadStore.setState({ details: new Map(), errors: {} });
 }

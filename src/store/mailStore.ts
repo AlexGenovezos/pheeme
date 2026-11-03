@@ -31,13 +31,17 @@ interface MailState {
   /**
    * Rewrite the rows named by `keys` (optimistic changes). With an `op` (from `newOp`) the change is also pending:
    * every later load, reload and page re-applies it until `settle(op)`, so a reload that was answered before the
-   * command reached the cache can't bring the old state back.
+   * command reached the cache can't bring the old state back. A removal means "leaves the mailbox shown", so it is
+   * held only for results of that same query; other mailboxes still list the conversation.
    */
   patch(keys: ThreadKey[], fn: (thread: ThreadSummary) => ThreadSummary, op?: number): void;
   /** Drop the rows named by `keys` (optimistic archive, delete); pending like `patch` when given an `op`. */
   remove(keys: ThreadKey[], op?: number): void;
-  /** The command for `op` has settled: stop re-applying its changes (the cache now says the same, or a reload restores the truth). */
-  settle(op: number): void;
+  /**
+   * The command for `op` has settled: stop re-applying its changes (the cache now says the same, or a reload restores
+   * the truth). `keys` limits that to some rows, for an action whose accounts settle one at a time.
+   */
+  settle(op: number, keys?: ThreadKey[]): void;
   /** Clear the list without querying (mailboxes with no backing label yet). */
   clear(): void;
   /** Reload on sync events. Resolves to the unsubscribe function. */
@@ -53,10 +57,14 @@ const MAX_RELOAD = 500;
 const reloadDepth = (loaded: number) => Math.min(Math.max(loaded, PAGE), MAX_RELOAD);
 const keyOf = (t: ThreadSummary) => threadKey(t.accountId, t.id);
 
-/** A change not yet in the cache. `fn: null` removes the row. Entries for a key apply in the order they were made. */
+/**
+ * A change not yet in the cache. `fn: null` removes the row, from results of `query` only (`null`: of any query).
+ * Entries for a key apply in the order they were made.
+ */
 interface PendingChange {
   op: number;
   fn: ((thread: ThreadSummary) => ThreadSummary) | null;
+  query: ThreadQuery | null;
 }
 let pending = new Map<ThreadKey, PendingChange[]>();
 let ops = 0;
@@ -68,14 +76,15 @@ function register(keys: ThreadKey[], change: PendingChange) {
   for (const key of keys) pending.set(key, [...(pending.get(key) ?? []), change]);
 }
 
-/** Query results with the pending changes laid over them. */
-function overlay(threads: ThreadSummary[]): ThreadSummary[] {
+/** Query results for `query` with the pending changes laid over them. */
+function overlay(threads: ThreadSummary[], query: ThreadQuery): ThreadSummary[] {
   if (pending.size === 0) return threads;
   const out: ThreadSummary[] = [];
   for (const thread of threads) {
     let row: ThreadSummary | null = thread;
     for (const change of pending.get(keyOf(thread)) ?? []) {
       if (!change.fn) {
+        if (change.query !== null && !sameQuery(change.query, query)) continue;
         row = null;
         break;
       }
@@ -110,7 +119,7 @@ export const useMailStore = create<MailState>((set, get) => ({
         ...(limit ? { limit } : {}),
       });
       if (ticket !== latest) return;
-      set({ threads: overlay(page?.threads ?? []), next: page?.next ?? null, loadedQuery: query, loading: false, error: null });
+      set({ threads: overlay(page?.threads ?? [], query), next: page?.next ?? null, loadedQuery: query, loading: false, error: null });
     } catch (error) {
       if (ticket !== latest) return;
       // The previous mailbox's rows and cursor mustn't masquerade as this one's; a failed reload of the same query keeps its rows.
@@ -133,7 +142,7 @@ export const useMailStore = create<MailState>((set, get) => ({
       if (ticket !== latest) return;
       set((s) => {
         const have = new Set(s.threads.map(keyOf));
-        const fresh = overlay((page?.threads ?? []).filter((t) => !have.has(keyOf(t))));
+        const fresh = overlay((page?.threads ?? []).filter((t) => !have.has(keyOf(t))), query);
         return { threads: [...s.threads, ...fresh], next: page?.next ?? null, loading: false, error: null };
       });
     } catch (error) {
@@ -146,19 +155,21 @@ export const useMailStore = create<MailState>((set, get) => ({
     if (query) await get().load(query, reloadDepth(threads.length));
   },
   patch: (keys, fn, op) => {
-    if (op !== undefined) register(keys, { op, fn });
+    if (op !== undefined) register(keys, { op, fn, query: null });
     const wanted = new Set(keys);
     set((s) => ({ threads: s.threads.map((t) => (wanted.has(keyOf(t)) ? fn(t) : t)) }));
   },
   remove: (keys, op) => {
-    if (op !== undefined) register(keys, { op, fn: null });
+    // The rows being removed are in the list on screen, which is the loaded query (else the one asked for).
+    if (op !== undefined) register(keys, { op, fn: null, query: get().loadedQuery ?? get().query });
     const gone = new Set(keys);
     set((s) => ({ threads: s.threads.filter((t) => !gone.has(keyOf(t))) }));
   },
-  settle: (op) => {
+  settle: (op, keys) => {
+    const only = keys ? new Set(keys) : null;
     const next = new Map<ThreadKey, PendingChange[]>();
     for (const [key, changes] of pending) {
-      const rest = changes.filter((c) => c.op !== op);
+      const rest = only && !only.has(key) ? changes : changes.filter((c) => c.op !== op);
       if (rest.length > 0) next.set(key, rest);
     }
     pending = next;

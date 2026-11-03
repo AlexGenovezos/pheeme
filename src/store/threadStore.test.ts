@@ -222,3 +222,19 @@ test("patchDetail rewrites a cached detail in place and ignores one that isn't c
   expect(store().details.get("a:t1")?.thread.subject).toBe("Patched");
   expect(cached()).toEqual(["a:t1", "a:t2"]); // recency order is untouched
 });
+
+test("a pending detail patch is re-applied to every fetch until it settles", async () => {
+  backend({ "a:t1": detail("t1") });
+  const tag = (d: ThreadDetail): ThreadDetail => ({ ...d, thread: { ...d.thread, subject: "Optimistic" } });
+  store().patchDetail("a:t1", tag, 7); // not cached yet: held for the first fetch
+  await store().load("a:t1");
+  expect(store().details.get("a:t1")?.thread.subject).toBe("Optimistic");
+  store().evict("a", ["t1"]);
+  await store().load("a:t1");
+  expect(store().details.get("a:t1")?.thread.subject).toBe("Optimistic");
+
+  store().settleDetails(7, ["a:t1"]);
+  store().evict("a", ["t1"]);
+  await store().load("a:t1");
+  expect(store().details.get("a:t1")?.thread.subject).toBe("Subject t1");
+});

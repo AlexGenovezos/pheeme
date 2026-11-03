@@ -269,6 +269,27 @@ test("pending changes also cover rows that arrive on a later page, and apply in 
   expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([["a:t2", false]]);
 });
 
+test("a pending removal is held only for the query it was made in, and settling can be per row", async () => {
+  mockIPC((cmd) => (cmd === "list_threads" ? page("t1", "t2") : undefined));
+  const inbox = { accountIds: ["a"], labelId: "INBOX" };
+  await useMailStore.getState().load(inbox);
+  const archive = newOp();
+  useMailStore.getState().remove(["a:t1"], archive);
+  const flag = newOp();
+  useMailStore.getState().patch(["a:t1", "a:t2"], (t) => ({ ...t, starred: true }), flag);
+
+  // Another mailbox still lists it (flag changes follow it everywhere).
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "ALL" });
+  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([["a:t1", true], ["a:t2", true]]);
+  await useMailStore.getState().load(inbox);
+  expect(ids()).toEqual(["t2"]);
+
+  // Settling one row leaves the other's change held.
+  useMailStore.getState().settle(flag, ["a:t1"]);
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "ALL" });
+  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([["a:t1", false], ["a:t2", true]]);
+});
+
 test("changes without an op are not held across reloads", async () => {
   mockIPC((cmd) => (cmd === "list_threads" ? page("t1") : undefined));
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });

@@ -50,13 +50,15 @@ let rejecting: Set<string>;
 let listPage: ThreadSummary[];
 /** What `get_thread` answers, by thread key. */
 let details: Record<string, ThreadDetail>;
-/** While set, `modify_threads` and `trash_threads` wait for it: a command the cache hasn't applied yet. */
-let gate: Promise<void> | null;
-const hold = () => {
+/** Commands held back: `modify_threads` and `trash_threads` calls that match wait for their gate, as when the cache hasn't applied them yet. */
+let gates: Array<{ match: (args: Record<string, unknown>) => boolean; open: Promise<void> }>;
+/** Hold the matching commands (all of them by default); returns the release. */
+const hold = (match: (args: Record<string, unknown>) => boolean = () => true) => {
   let release!: () => void;
-  gate = new Promise<void>((resolve) => (release = resolve));
+  const gate = { match, open: new Promise<void>((resolve) => (release = resolve)) };
+  gates.push(gate);
   return () => {
-    gate = null;
+    gates = gates.filter((g) => g !== gate);
     release();
   };
 };
@@ -94,7 +96,7 @@ beforeEach(() => {
   useMailStore.setState({ reload, query: null });
   listPage = [];
   details = {};
-  gate = null;
+  gates = [];
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: a });
@@ -102,7 +104,7 @@ beforeEach(() => {
     if (cmd === "get_thread") return details[threadKey(a.accountId as string, a.threadId as string)];
     if (cmd !== "modify_threads" && cmd !== "trash_threads") return undefined;
     return (async () => {
-      await gate;
+      await Promise.all(gates.filter((g) => g.match(a)).map((g) => g.open));
       if (rejecting.has(a.accountId as string)) throw { code: "gmail", message: `Gmail refused ${a.accountId}` };
     })();
   });
@@ -270,6 +272,59 @@ describe("pending changes and reloads", () => {
     await flush();
     await reloadWith([thread(1, "a1", { starred: true })]);
     expect(starredOf()).toEqual([true]);
+  });
+
+  test("each account is released when its own command settles, not when the slowest does", async () => {
+    useRealReload(["a1", "a2"]);
+    const rows = [thread(1), thread(2, "a2")];
+    setList(rows);
+    useUiStore.setState({ checked: [key(1), key(2, "a2")] });
+    const releaseB = hold((a) => a.accountId === "a2");
+
+    const starring = setStarred(true);
+    await flush(); // A's command has settled; B's is still pending
+    await reloadWith(rows); // the server side has neither star
+    expect(starredOf()).toEqual([false, true]); // A is released and shows it; B's star is still held
+
+    // Unstar A while B is still pending: a reload must not bring A's older star back.
+    useUiStore.setState({ openThread: key(1) });
+    await setStarred(false);
+    await reloadWith([thread(1, "a1", { starred: false }), thread(2, "a2")]);
+    expect(useMailStore.getState().threads.map((t) => [threadKey(t.accountId, t.id), t.starred])).toEqual([
+      [key(1), false],
+      [key(2, "a2"), true], // B is held
+    ]);
+
+    releaseB();
+    await starring;
+    await reloadWith(rows);
+    expect(starredOf()).toEqual([false, false]); // nothing held any more
+  });
+
+  test("archiving in the inbox doesn't hide the conversation in All Mail while the command is pending", async () => {
+    useRealReload();
+    const rows = [thread(1), thread(2)];
+    setList(rows);
+    useUiStore.setState({ openThread: key(1) });
+    const release = hold();
+
+    const done = archive();
+    expect(listKeys()).toEqual([key(2)]);
+    // Switch to All Mail: the cache still lists the thread there (it is only losing INBOX).
+    useMailStore.setState({ query: { accountIds: ["a1"], labelId: "ALL" } });
+    listPage = rows;
+    await useMailStore.getState().load({ accountIds: ["a1"], labelId: "ALL" });
+    expect(listKeys()).toEqual([key(1), key(2)]);
+    await reloadWith(rows); // an event reload of All Mail
+    expect(listKeys()).toEqual([key(1), key(2)]);
+
+    // Back in the inbox the removal is still held until the command settles.
+    await useMailStore.getState().load({ accountIds: ["a1"], labelId: "INBOX" });
+    expect(listKeys()).toEqual([key(2)]);
+    release();
+    await done;
+    await useMailStore.getState().load({ accountIds: ["a1"], labelId: "INBOX" });
+    expect(listKeys()).toEqual([key(1), key(2)]);
   });
 
   test("a refusal releases the changes before it reloads, so the refused rows come back", async () => {
@@ -553,6 +608,39 @@ describe("labels", () => {
     await flush();
     expect(calls.filter((c) => c.cmd === "get_thread").length).toBeGreaterThan(0);
     expect(labelsNow()).toEqual(["INBOX", "Label_1"]);
+  });
+
+  test("a refresh after one label action completes keeps the chip of a second, still pending, action", async () => {
+    const withLabels = (ids: string[]) => detail(1, ids);
+    details[key(1)] = withLabels(["INBOX", "Label_1", "Label_2"]);
+    setList([thread(1)]);
+    cache(details[key(1)]);
+    useUiStore.setState({ openThread: key(1) });
+    const labelsNow = () => useThreadStore.getState().details.get(key(1))?.messages.flatMap((m) => m.labelIds);
+    const releaseSecond = hold((a) => (a.remove as string[]).includes("Label_2") || (a.add as string[]).includes("Label_2"));
+
+    // Action 1 goes through; the cache now has Label_1 gone but not yet Label_2.
+    await toggleLabel("a1", "Label_1");
+    details[key(1)] = withLabels(["INBOX", "Label_2"]);
+    const second = toggleLabel("a1", "Label_2"); // pending
+    await flush();
+    expect(labelsNow()).toEqual(["INBOX"]);
+
+    // The refresh that action 1's event triggers lands now, still showing Label_2.
+    useThreadStore.getState().evict("a1", ["t1"]);
+    await useThreadStore.getState().load(key(1));
+    expect(labelsNow()).toEqual(["INBOX"]);
+
+    // So a second toggle of Label_2 sees it gone and sends an add.
+    const third = toggleLabel("a1", "Label_2");
+    await flush();
+    expect(modifyCalls().map((c) => [c.add, c.remove])).toEqual([
+      [[], ["Label_1"]],
+      [[], ["Label_2"]],
+      [["Label_2"], []],
+    ]);
+    releaseSecond();
+    await Promise.all([second, third]);
   });
 
   test("the menu lists the account's labels, checked where every target has them", async () => {

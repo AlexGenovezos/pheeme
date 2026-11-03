@@ -86,31 +86,32 @@ function refreshDetails(groups: Map<string, string[]>) {
 }
 
 /**
- * Send `change`, one call per account, then settle `op` so the list stops holding the optimistic state back from
- * reloads. A rejection toasts its message and reloads (after the settle), which puts back the rows of the accounts
- * whose change never reached the cache and leaves the others as they are.
- * Resolves to the groups that went through.
+ * Send `change`, one call per account. Each account's pending changes are released as soon as its own command
+ * settles, so one slow account can't hold back (or resurrect) the optimistic state of another. A rejection toasts its
+ * message and reloads, which puts back the rows of the account whose change never reached the cache and leaves the
+ * others as they are. Resolves to the groups that went through.
  */
 async function send(groups: Map<string, string[]>, change: Change, op: number): Promise<Map<string, string[]>> {
-  const accountIds = [...groups.keys()];
-  const results = await Promise.allSettled(accountIds.map((id) => change.send(id, groups.get(id) as string[])));
   const done = new Map<string, string[]>();
-  const refused = new Map<string, string[]>();
-  const failures: unknown[] = [];
-  results.forEach((result, i) => {
-    const group = groups.get(accountIds[i]) as string[];
-    if (result.status === "fulfilled") done.set(accountIds[i], group);
-    else {
-      refused.set(accountIds[i], group);
-      failures.push(result.reason);
-    }
-  });
-  mail().settle(op);
-  if (failures.length > 0) {
-    toast({ title: toCommandError(failures[0]).message, tone: "danger" });
-    if (change.detail) refreshDetails(refused);
-    reloadLists();
-  }
+  await Promise.all(
+    [...groups].map(async ([accountId, ids]) => {
+      let failure: { reason: unknown } | null = null;
+      try {
+        await change.send(accountId, ids);
+        done.set(accountId, ids);
+      } catch (reason) {
+        failure = { reason };
+      }
+      const keys = ids.map((id) => threadKey(accountId, id));
+      mail().settle(op, keys);
+      useThreadStore.getState().settleDetails(op, keys);
+      if (failure) {
+        toast({ title: toCommandError(failure.reason).message, tone: "danger" });
+        if (change.detail) refreshDetails(new Map([[accountId, ids]]));
+        reloadLists();
+      }
+    }),
+  );
   return done;
 }
 
@@ -149,7 +150,7 @@ function apply(keys: ThreadKey[] | undefined, change: Change, { announce, keepCh
     mail().patch(rowKeys, change.patch, op);
   }
   const patchDetail = change.detail;
-  if (patchDetail) for (const key of rowKeys) useThreadStore.getState().patchDetail(key, patchDetail);
+  if (patchDetail) for (const key of rowKeys) useThreadStore.getState().patchDetail(key, patchDetail, op);
   if (!keepChecked) ui().clearChecked();
 
   return send(groups, change, op).then((done) => {
