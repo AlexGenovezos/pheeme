@@ -24,7 +24,10 @@
   box-shadow: 0 0 0 var(--border-width) var(--color-focus-border);
 }
 
-.ui-input--invalid,
+/* Invalid keeps its red border; the ring still marks focus, so tabbing back is visible. */
+.ui-input--invalid {
+  border-color: var(--color-danger);
+}
 .ui-input--invalid:focus-within {
   border-color: var(--color-danger);
   box-shadow: 0 0 0 var(--border-width) var(--color-danger);
