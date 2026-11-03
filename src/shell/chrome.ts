@@ -5,4 +5,6 @@ import { isTauri } from "../preview/runtime";
 export const overlayTitleBar = platform === "macos" && isTauri();
 
 /** Spread onto toolbar elements so empty toolbar space drags the window (macOS overlay only). */
-export const dragRegion: Record<string, string> = overlayTitleBar ? { "data-tauri-drag-region": "" } : {};
+export const dragRegion: Record<string, string> = overlayTitleBar
+  ? { "data-tauri-drag-region": "" }
+  : {};

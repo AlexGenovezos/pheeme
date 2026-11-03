@@ -227,7 +227,8 @@ body[data-resizing] .shell__divider:active::after {
   width: var(--label-dot-size);
   height: var(--label-dot-size);
   border-radius: var(--radius-full);
-  box-shadow: var(--space-0) var(--space-0) var(--space-0) var(--border-width) var(--color-sidebar-bg);
+  box-shadow: var(--space-0) var(--space-0) var(--space-0) var(--border-width)
+    var(--color-sidebar-bg);
 }
 
 /* One collapsible section per account inside Inboxes. */

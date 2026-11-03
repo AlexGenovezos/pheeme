@@ -38,11 +38,22 @@ export function AttachmentList({ accountId, messageId, attachments }: Attachment
         description: file.filename ?? undefined,
         action: {
           label: "Show in folder",
-          run: () => void revealDownload(path).catch((e) => toast({ title: "Couldn't show the file", description: toCommandError(e).message, tone: "danger" })),
+          run: () =>
+            void revealDownload(path).catch((e) =>
+              toast({
+                title: "Couldn't show the file",
+                description: toCommandError(e).message,
+                tone: "danger",
+              }),
+            ),
         },
       });
     } catch (error) {
-      toast({ title: "Couldn't save the attachment", description: toCommandError(error).message, tone: "danger" });
+      toast({
+        title: "Couldn't save the attachment",
+        description: toCommandError(error).message,
+        tone: "danger",
+      });
     } finally {
       setSaving((s) => {
         const next = new Set(s);
@@ -62,7 +73,9 @@ export function AttachmentList({ accountId, messageId, attachments }: Attachment
             <span className="attachments__name selectable" title={name}>
               {name}
             </span>
-            {file.size != null && <span className="attachments__size">{formatSize(file.size)}</span>}
+            {file.size != null && (
+              <span className="attachments__size">{formatSize(file.size)}</span>
+            )}
             <IconButton
               label={`Download ${name}`}
               icon={<Download />}

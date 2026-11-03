@@ -1,5 +1,20 @@
-import { archive, composeLater, labelMenuAnchor, openFocused, openLabelMenu, setRead, toggleStar, trash } from "../mail/actions";
-import { CATEGORIES, categoryMailbox, FAVORITES, homeMailbox, resolveActiveAccount } from "../mail/mailboxes";
+import {
+  archive,
+  composeLater,
+  labelMenuAnchor,
+  openFocused,
+  openLabelMenu,
+  setRead,
+  toggleStar,
+  trash,
+} from "../mail/actions";
+import {
+  CATEGORIES,
+  categoryMailbox,
+  FAVORITES,
+  homeMailbox,
+  resolveActiveAccount,
+} from "../mail/mailboxes";
 import { usePaletteStore } from "../palette/paletteStore";
 import { useAccountStore } from "../store/accountStore";
 import { useUiStore } from "../store/uiStore";
@@ -52,11 +67,42 @@ export function appCommands(): Command[] {
         if (id) ui().setMailbox({ accountId: id, labelId: f.labelId });
       },
     })),
-    { id: "conversation.archive", title: "Archive", group: "Conversation", shortcut: "e", run: () => void archive() },
-    { id: "conversation.delete", title: "Delete", group: "Conversation", shortcut: "#", keywords: ["trash"], run: () => void trash() },
-    { id: "conversation.star", title: "Star or unstar", group: "Conversation", shortcut: "s", run: () => void toggleStar() },
-    { id: "conversation.mark-unread", title: "Mark as unread", group: "Conversation", shortcut: "shift+u", run: () => void setRead(false) },
-    { id: "conversation.mark-read", title: "Mark as read", group: "Conversation", shortcut: "shift+i", run: () => void setRead(true) },
+    {
+      id: "conversation.archive",
+      title: "Archive",
+      group: "Conversation",
+      shortcut: "e",
+      run: () => void archive(),
+    },
+    {
+      id: "conversation.delete",
+      title: "Delete",
+      group: "Conversation",
+      shortcut: "#",
+      keywords: ["trash"],
+      run: () => void trash(),
+    },
+    {
+      id: "conversation.star",
+      title: "Star or unstar",
+      group: "Conversation",
+      shortcut: "s",
+      run: () => void toggleStar(),
+    },
+    {
+      id: "conversation.mark-unread",
+      title: "Mark as unread",
+      group: "Conversation",
+      shortcut: "shift+u",
+      run: () => void setRead(false),
+    },
+    {
+      id: "conversation.mark-read",
+      title: "Mark as read",
+      group: "Conversation",
+      shortcut: "shift+i",
+      run: () => void setRead(true),
+    },
     {
       id: "conversation.labels",
       title: "Label as…",
@@ -65,11 +111,41 @@ export function appCommands(): Command[] {
       keywords: ["tag"],
       run: () => void openLabelMenu(labelMenuAnchor()),
     },
-    { id: "conversation.open", title: "Open conversation", group: "Conversation", shortcut: "o", run: openFocused },
-    { id: "conversation.close", title: "Close conversation", group: "Conversation", shortcut: "u", run: () => ui().setOpenThread(null) },
-    { id: "conversation.reply", title: "Reply", group: "Conversation", shortcut: "r", run: composeLater },
-    { id: "conversation.reply-all", title: "Reply all", group: "Conversation", shortcut: "a", run: composeLater },
-    { id: "conversation.forward", title: "Forward", group: "Conversation", shortcut: "f", run: composeLater },
+    {
+      id: "conversation.open",
+      title: "Open conversation",
+      group: "Conversation",
+      shortcut: "o",
+      run: openFocused,
+    },
+    {
+      id: "conversation.close",
+      title: "Close conversation",
+      group: "Conversation",
+      shortcut: "u",
+      run: () => ui().setOpenThread(null),
+    },
+    {
+      id: "conversation.reply",
+      title: "Reply",
+      group: "Conversation",
+      shortcut: "r",
+      run: composeLater,
+    },
+    {
+      id: "conversation.reply-all",
+      title: "Reply all",
+      group: "Conversation",
+      shortcut: "a",
+      run: composeLater,
+    },
+    {
+      id: "conversation.forward",
+      title: "Forward",
+      group: "Conversation",
+      shortcut: "f",
+      run: composeLater,
+    },
     {
       id: "view.toggleSidebar",
       title: "Toggle sidebar",
@@ -93,8 +169,18 @@ export function appCommands(): Command[] {
       keywords: ["auto", "os"],
       run: () => theme().setMode("system"),
     },
-    { id: "theme.light", title: "Theme: Light", group: "Appearance", run: () => theme().setMode("light") },
-    { id: "theme.dark", title: "Theme: Dark", group: "Appearance", run: () => theme().setMode("dark") },
+    {
+      id: "theme.light",
+      title: "Theme: Light",
+      group: "Appearance",
+      run: () => theme().setMode("light"),
+    },
+    {
+      id: "theme.dark",
+      title: "Theme: Dark",
+      group: "Appearance",
+      run: () => theme().setMode("dark"),
+    },
   ];
 }
 

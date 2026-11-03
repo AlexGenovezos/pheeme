@@ -20,7 +20,8 @@ import { dragRegion } from "./chrome";
 export const SEARCH_INPUT_ID = "mail-search";
 
 /** Placeholder until the mail UI (Phase 6) wires real actions. */
-export const notYet = (action: string) => toast({ title: `${action} isn't wired up yet`, description: "It arrives with the mail UI." });
+export const notYet = (action: string) =>
+  toast({ title: `${action} isn't wired up yet`, description: "It arrives with the mail UI." });
 
 export { senderOf };
 
@@ -48,9 +49,20 @@ export const rowMenu = (t: ThreadSummary) => {
       shortcut: t.unread ? "shift+i" : "shift+u",
       onSelect: () => void setRead(t.unread, keys),
     },
-    { id: "star", label: t.starred ? "Remove star" : "Add star", shortcut: "s", onSelect: () => void setStarred(!t.starred, keys) },
+    {
+      id: "star",
+      label: t.starred ? "Remove star" : "Add star",
+      shortcut: "s",
+      onSelect: () => void setStarred(!t.starred, keys),
+    },
     { type: "separator" as const },
-    { id: "delete", label: "Delete", shortcut: "#", danger: true, onSelect: () => void trash(keys) },
+    {
+      id: "delete",
+      label: "Delete",
+      shortcut: "#",
+      danger: true,
+      onSelect: () => void trash(keys),
+    },
   ];
 };
 
@@ -76,8 +88,20 @@ export function ListPane() {
   const unread = threads.filter((t) => t.unread).length;
 
   useCommands([
-    { id: "list.next", title: "Next conversation", group: "Conversation", shortcut: "j", run: () => moveSelection(1) },
-    { id: "list.previous", title: "Previous conversation", group: "Conversation", shortcut: "k", run: () => moveSelection(-1) },
+    {
+      id: "list.next",
+      title: "Next conversation",
+      group: "Conversation",
+      shortcut: "j",
+      run: () => moveSelection(1),
+    },
+    {
+      id: "list.previous",
+      title: "Previous conversation",
+      group: "Conversation",
+      shortcut: "k",
+      run: () => moveSelection(-1),
+    },
     {
       id: "search.focus",
       title: "Search mail",
@@ -103,8 +127,19 @@ export function ListPane() {
 
   return (
     <div className="list-pane">
-      <div className="toolbar toolbar--list" data-sidebar-collapsed={collapsed || undefined} {...dragRegion}>
-        {collapsed && <IconButton label="Show sidebar" shortcut="mod+b" icon={<PanelLeftOpen />} onClick={toggleSidebar} />}
+      <div
+        className="toolbar toolbar--list"
+        data-sidebar-collapsed={collapsed || undefined}
+        {...dragRegion}
+      >
+        {collapsed && (
+          <IconButton
+            label="Show sidebar"
+            shortcut="mod+b"
+            icon={<PanelLeftOpen />}
+            onClick={toggleSidebar}
+          />
+        )}
         <h1 className="toolbar__title" {...dragRegion}>
           {title}
         </h1>

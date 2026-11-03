@@ -119,11 +119,19 @@ export const useMailStore = create<MailState>((set, get) => ({
         ...(limit ? { limit } : {}),
       });
       if (ticket !== latest) return;
-      set({ threads: overlay(page?.threads ?? [], query), next: page?.next ?? null, loadedQuery: query, loading: false, error: null });
+      set({
+        threads: overlay(page?.threads ?? [], query),
+        next: page?.next ?? null,
+        loadedQuery: query,
+        loading: false,
+        error: null,
+      });
     } catch (error) {
       if (ticket !== latest) return;
       // The previous mailbox's rows and cursor mustn't masquerade as this one's; a failed reload of the same query keeps its rows.
-      const stale = sameQuery(get().loadedQuery, query) ? {} : { threads: [], next: null, loadedQuery: null };
+      const stale = sameQuery(get().loadedQuery, query)
+        ? {}
+        : { threads: [], next: null, loadedQuery: null };
       set({ ...stale, loading: false, error: toCommandError(error) });
     }
   },
@@ -142,8 +150,16 @@ export const useMailStore = create<MailState>((set, get) => ({
       if (ticket !== latest) return;
       set((s) => {
         const have = new Set(s.threads.map(keyOf));
-        const fresh = overlay((page?.threads ?? []).filter((t) => !have.has(keyOf(t))), query);
-        return { threads: [...s.threads, ...fresh], next: page?.next ?? null, loading: false, error: null };
+        const fresh = overlay(
+          (page?.threads ?? []).filter((t) => !have.has(keyOf(t))),
+          query,
+        );
+        return {
+          threads: [...s.threads, ...fresh],
+          next: page?.next ?? null,
+          loading: false,
+          error: null,
+        };
       });
     } catch (error) {
       if (ticket !== latest) return;

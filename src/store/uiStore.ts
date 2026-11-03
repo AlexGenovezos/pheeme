@@ -35,7 +35,8 @@ const DEFAULT_LAYOUT: PaneLayout = {
   sidebarCollapsed: false,
 };
 
-const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), Math.max(min, max));
+const clamp = (n: number, min: number, max: number) =>
+  Math.min(Math.max(n, min), Math.max(min, max));
 
 export const clampSidebar = (w: number) => Math.round(clamp(w, PANE.sidebarMin, PANE.sidebarMax));
 
@@ -54,17 +55,25 @@ function readStored(storage: Pick<Storage, "getItem"> | undefined): Stored | nul
   }
 }
 
-export function readLayout(storage: Pick<Storage, "getItem"> | undefined = safeStorage()): PaneLayout {
+export function readLayout(
+  storage: Pick<Storage, "getItem"> | undefined = safeStorage(),
+): PaneLayout {
   const raw = readStored(storage);
   if (!raw) return DEFAULT_LAYOUT;
   return {
-    sidebarWidth: typeof raw.sidebarWidth === "number" ? clampSidebar(raw.sidebarWidth) : DEFAULT_LAYOUT.sidebarWidth,
-    listWidth: typeof raw.listWidth === "number" ? clampList(raw.listWidth) : DEFAULT_LAYOUT.listWidth,
+    sidebarWidth:
+      typeof raw.sidebarWidth === "number"
+        ? clampSidebar(raw.sidebarWidth)
+        : DEFAULT_LAYOUT.sidebarWidth,
+    listWidth:
+      typeof raw.listWidth === "number" ? clampList(raw.listWidth) : DEFAULT_LAYOUT.listWidth,
     sidebarCollapsed: raw.sidebarCollapsed === true,
   };
 }
 
-export function readNavPrefs(storage: Pick<Storage, "getItem"> | undefined = safeStorage()): NavPrefs {
+export function readNavPrefs(
+  storage: Pick<Storage, "getItem"> | undefined = safeStorage(),
+): NavPrefs {
   const raw = readStored(storage);
   return {
     activeAccountId: typeof raw?.activeAccountId === "string" ? raw.activeAccountId : null,
@@ -152,7 +161,8 @@ export const useUiStore = create<UiState>((set, get) => {
     toggleSidebar: () => persist({ sidebarCollapsed: !get().sidebarCollapsed }),
     setMailbox: (ref) => {
       set({ mailbox: ref, openThread: null, checked: [], anchor: null });
-      if (ref.accountId !== null && ref.accountId !== get().activeAccountId) persist({ activeAccountId: ref.accountId });
+      if (ref.accountId !== null && ref.accountId !== get().activeAccountId)
+        persist({ activeAccountId: ref.accountId });
     },
     setOpenThread: (key) => set({ openThread: key }),
     toggleChecked: (key) =>
@@ -166,7 +176,8 @@ export const useUiStore = create<UiState>((set, get) => {
         const start = s.anchor === null ? -1 : keys.indexOf(s.anchor);
         if (end === -1) return {};
         // No usable anchor (none yet, or it left the list): the range is just the target.
-        const span = start === -1 ? [to] : keys.slice(Math.min(start, end), Math.max(start, end) + 1);
+        const span =
+          start === -1 ? [to] : keys.slice(Math.min(start, end), Math.max(start, end) + 1);
         const checked = [...s.checked, ...span.filter((k) => !s.checked.includes(k))];
         return { checked, anchor: start === -1 ? to : s.anchor };
       }),
@@ -174,7 +185,8 @@ export const useUiStore = create<UiState>((set, get) => {
     clearChecked: () => set({ checked: [], anchor: null }),
     forgetAccount: (id, remaining) => {
       const s = get();
-      const ofAccount = (key: ThreadKey | null) => key !== null && parseThreadKey(key).accountId === id;
+      const ofAccount = (key: ThreadKey | null) =>
+        key !== null && parseThreadKey(key).accountId === id;
       if (s.mailbox.accountId === id) set({ ...navReset(), mailbox: homeMailbox(remaining) });
       else
         set({

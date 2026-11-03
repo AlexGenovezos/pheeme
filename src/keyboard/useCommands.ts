@@ -21,7 +21,9 @@ export function useCommands(commands: Command[], reg: CommandRegistry = registry
     latest.current = commands;
   });
   const signature = commands
-    .map((c) => [c.id, c.title, c.group, c.shortcut, c.global, c.hidden, c.keywords?.join(" ")].join("|"))
+    .map((c) =>
+      [c.id, c.title, c.group, c.shortcut, c.global, c.hidden, c.keywords?.join(" ")].join("|"),
+    )
     .join("\n");
 
   useEffect(() => {

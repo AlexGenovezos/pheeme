@@ -79,7 +79,12 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         }
       }),
       listen<SyncErrorEvent>(SYNC_EVENTS.error, ({ payload }) =>
-        set((s) => ({ syncErrors: { ...s.syncErrors, [payload.accountId]: { code: payload.code, message: payload.message } } })),
+        set((s) => ({
+          syncErrors: {
+            ...s.syncErrors,
+            [payload.accountId]: { code: payload.code, message: payload.message },
+          },
+        })),
       ),
     ]);
     return () => stops.forEach(stopQuietly);

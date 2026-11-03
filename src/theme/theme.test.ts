@@ -2,13 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import indexHtml from "../../index.html?raw";
 import tauriConf from "../../src-tauri/tauri.conf.json";
 import { darkTheme, lightTheme, THEME_TOKENS } from "../styles/themes";
-import {
-  initTheme,
-  readThemeMode,
-  resolveTheme,
-  THEME_MODE_KEY,
-  useThemeStore,
-} from "./theme";
+import { initTheme, readThemeMode, resolveTheme, THEME_MODE_KEY, useThemeStore } from "./theme";
 
 /** A controllable prefers-color-scheme media query. */
 function mockSystemDark(initial: boolean) {
@@ -120,7 +114,9 @@ describe("theme files", () => {
   // WCAG relative luminance and contrast of #rrggbb colors.
   const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
   const luminance = (c: number[]) => {
-    const [r, g, b] = c.map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
+    const [r, g, b] = c.map((v) =>
+      v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4,
+    );
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
   const contrast = (a: number[], b: number[]) => {
@@ -130,17 +126,22 @@ describe("theme files", () => {
   // --sidebar-selected-tint in tokens.css (vitest doesn't load CSS, so it is repeated here).
   const tint = 0.12;
 
-  test.each([lightTheme, darkTheme])("$name mailbox colors read as text on the sidebar, selected or not", (theme) => {
-    const bg = rgb(theme.tokens["--color-sidebar-bg"]);
-    const tokens = Object.keys(THEME_TOKENS).filter((t): t is keyof typeof theme.tokens => t.startsWith("--color-mailbox-"));
-    expect(tokens).toHaveLength(11);
-    for (const token of tokens) {
-      const color = rgb(theme.tokens[token]);
-      const selected = color.map((v, i) => v * tint + bg[i] * (1 - tint));
-      expect(contrast(color, bg), token).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(color, selected), `${token} selected`).toBeGreaterThanOrEqual(4.5);
-    }
-  });
+  test.each([lightTheme, darkTheme])(
+    "$name mailbox colors read as text on the sidebar, selected or not",
+    (theme) => {
+      const bg = rgb(theme.tokens["--color-sidebar-bg"]);
+      const tokens = Object.keys(THEME_TOKENS).filter((t): t is keyof typeof theme.tokens =>
+        t.startsWith("--color-mailbox-"),
+      );
+      expect(tokens).toHaveLength(11);
+      for (const token of tokens) {
+        const color = rgb(theme.tokens[token]);
+        const selected = color.map((v, i) => v * tint + bg[i] * (1 - tint));
+        expect(contrast(color, bg), token).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(color, selected), `${token} selected`).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
 
   test.each([lightTheme, darkTheme])("$name account dots stand out from the sidebar", (theme) => {
     const bg = rgb(theme.tokens["--color-sidebar-bg"]);
@@ -153,13 +154,17 @@ describe("theme files", () => {
 
 describe("no white flash", () => {
   const bootScript = indexHtml.match(/<script>([\s\S]*?)<\/script>/)![1];
-  const criticalStyle = indexHtml.match(/<style>([\s\S]*?)<\/style>/)![1];
+  // Whitespace-collapsed, so the check survives the formatter reflowing the rules.
+  const criticalStyle = indexHtml.match(/<style>([\s\S]*?)<\/style>/)![1].replace(/\s+/g, " ");
 
-  test.each(["light", "dark"] as const)("boot script applies a stored %s choice before React", (mode) => {
-    localStorage.setItem(THEME_MODE_KEY, mode);
-    new Function(bootScript)();
-    expect(root.getAttribute("data-theme")).toBe(mode);
-  });
+  test.each(["light", "dark"] as const)(
+    "boot script applies a stored %s choice before React",
+    (mode) => {
+      localStorage.setItem(THEME_MODE_KEY, mode);
+      new Function(bootScript)();
+      expect(root.getAttribute("data-theme")).toBe(mode);
+    },
+  );
 
   test("boot script leaves System to the media query", () => {
     localStorage.setItem(THEME_MODE_KEY, "system");
@@ -168,8 +173,12 @@ describe("no white flash", () => {
   });
 
   test("critical style colors match each theme's app background", () => {
-    expect(criticalStyle).toContain(`html[data-theme="light"] { background: ${lightTheme.tokens["--color-app-bg"]};`);
-    expect(criticalStyle).toContain(`html[data-theme="dark"] { background: ${darkTheme.tokens["--color-app-bg"]};`);
+    expect(criticalStyle).toContain(
+      `html[data-theme="light"] { background: ${lightTheme.tokens["--color-app-bg"]};`,
+    );
+    expect(criticalStyle).toContain(
+      `html[data-theme="dark"] { background: ${darkTheme.tokens["--color-app-bg"]};`,
+    );
   });
 
   test("the native window background matches the dark theme", () => {

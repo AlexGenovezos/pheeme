@@ -18,7 +18,10 @@ const summary = (id: string, accountId = "a"): ThreadSummary => ({
   hasAttachment: false,
   messageCount: 1,
 });
-const page = (...ids: string[]): ThreadPage => ({ threads: ids.map((id) => summary(id)), next: null });
+const page = (...ids: string[]): ThreadPage => ({
+  threads: ids.map((id) => summary(id)),
+  next: null,
+});
 const ids = () => useMailStore.getState().threads.map((t) => t.id);
 
 beforeEach(() => __resetMailStoreForTests());
@@ -36,7 +39,9 @@ test("loads threads for the active mailbox across accounts", async () => {
 
 test("reloads on sync:messages_updated", async () => {
   let version = 0;
-  mockIPC((cmd) => (cmd === "list_threads" ? page(`t${++version}`) : undefined), { shouldMockEvents: true });
+  mockIPC((cmd) => (cmd === "list_threads" ? page(`t${++version}`) : undefined), {
+    shouldMockEvents: true,
+  });
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
   expect(ids()).toEqual(["t1"]);
   const stop = await useMailStore.getState().subscribe();
@@ -47,7 +52,10 @@ test("reloads on sync:messages_updated", async () => {
 
 /** `n` distinct threads, numbered from `from`, newest first. */
 const rows = (from: number, n: number, accountId = "a") =>
-  Array.from({ length: n }, (_, i) => ({ ...summary(`t${from + i}`, accountId), date: 1000 - (from + i) }));
+  Array.from({ length: n }, (_, i) => ({
+    ...summary(`t${from + i}`, accountId),
+    date: 1000 - (from + i),
+  }));
 const cursorAfter = (id: string) => ({ lastMessageDate: 0, accountId: "a", threadId: id });
 const key = (t: ThreadSummary) => threadKey(t.accountId, t.id);
 
@@ -140,7 +148,8 @@ test("a reload during loadMore wins; the late page is dropped", async () => {
   let release: (p: ThreadPage) => void = () => {};
   mockIPC((cmd, args) => {
     if (cmd !== "list_threads") return undefined;
-    if ((args as { before?: unknown }).before) return new Promise<ThreadPage>((resolve) => (release = resolve));
+    if ((args as { before?: unknown }).before)
+      return new Promise<ThreadPage>((resolve) => (release = resolve));
     return { threads: rows(0, 2), next: cursorAfter("t1") };
   });
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
@@ -163,7 +172,10 @@ test("a failed first page for a new mailbox shows its error, not the old mailbox
   });
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "SENT" });
-  expect(useMailStore.getState().error).toEqual({ code: "internal", message: "Sent is unavailable" });
+  expect(useMailStore.getState().error).toEqual({
+    code: "internal",
+    message: "Sent is unavailable",
+  });
   expect(useMailStore.getState().query?.labelId).toBe("SENT");
   expect(useMailStore.getState().threads).toEqual([]);
   expect(useMailStore.getState().next).toBeNull();
@@ -179,7 +191,8 @@ test("switching mailboxes keeps the old rows until the new first page arrives", 
   let release: (p: ThreadPage) => void = () => {};
   mockIPC((cmd, args) => {
     if (cmd !== "list_threads") return undefined;
-    if ((args as { labelId: string }).labelId === "SENT") return new Promise<ThreadPage>((resolve) => (release = resolve));
+    if ((args as { labelId: string }).labelId === "SENT")
+      return new Promise<ThreadPage>((resolve) => (release = resolve));
     return { threads: rows(0, 2), next: cursorAfter("t1") };
   });
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
@@ -208,7 +221,11 @@ test("a failed reload of the same mailbox keeps its rows and cursor", async () =
 });
 
 test("patch rewrites only the rows named by key", async () => {
-  mockIPC((cmd) => (cmd === "list_threads" ? { threads: [summary("t1", "a"), summary("t1", "b"), summary("t2", "a")], next: null } : undefined));
+  mockIPC((cmd) =>
+    cmd === "list_threads"
+      ? { threads: [summary("t1", "a"), summary("t1", "b"), summary("t2", "a")], next: null }
+      : undefined,
+  );
   await useMailStore.getState().load({ accountIds: ["a", "b"], labelId: "INBOX" });
   useMailStore.getState().patch(["b:t1", "a:t2"], (t) => ({ ...t, unread: true }));
   expect(useMailStore.getState().threads.map((t) => [key(t), t.unread])).toEqual([
@@ -219,14 +236,21 @@ test("patch rewrites only the rows named by key", async () => {
 });
 
 test("remove drops rows by key across accounts", async () => {
-  mockIPC((cmd) => (cmd === "list_threads" ? { threads: [summary("t1", "a"), summary("t1", "b"), summary("t2", "b")], next: null } : undefined));
+  mockIPC((cmd) =>
+    cmd === "list_threads"
+      ? { threads: [summary("t1", "a"), summary("t1", "b"), summary("t2", "b")], next: null }
+      : undefined,
+  );
   await useMailStore.getState().load({ accountIds: ["a", "b"], labelId: "INBOX" });
   useMailStore.getState().remove(["b:t1", "a:t9"]);
   expect(useMailStore.getState().threads.map(key)).toEqual(["a:t1", "b:t2"]);
 });
 
 test("pending changes survive loads, reloads and pages until settled", async () => {
-  const old = (): ThreadPage => ({ threads: [summary("t1"), summary("t2"), summary("t3", "b")], next: null });
+  const old = (): ThreadPage => ({
+    threads: [summary("t1"), summary("t2"), summary("t3", "b")],
+    next: null,
+  });
   mockIPC((cmd) => (cmd === "list_threads" ? old() : undefined));
   const store = useMailStore.getState();
   await store.load({ accountIds: ["a", "b"], labelId: "INBOX" });
@@ -259,14 +283,18 @@ test("pending changes survive loads, reloads and pages until settled", async () 
 test("pending changes also cover rows that arrive on a later page, and apply in the order made", async () => {
   mockIPC((cmd, args) => {
     if (cmd !== "list_threads") return undefined;
-    return (args as { before?: unknown }).before ? page("t2") : { threads: [summary("t1")], next: cursorAfter("t1") };
+    return (args as { before?: unknown }).before
+      ? page("t2")
+      : { threads: [summary("t1")], next: cursorAfter("t1") };
   });
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
   useMailStore.getState().patch(["a:t2"], (t) => ({ ...t, starred: true }), newOp());
   useMailStore.getState().patch(["a:t2"], (t) => ({ ...t, starred: false }), newOp());
   useMailStore.getState().remove(["a:t1"], newOp());
   await useMailStore.getState().loadMore();
-  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([["a:t2", false]]);
+  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([
+    ["a:t2", false],
+  ]);
 });
 
 test("a pending removal is held only for the query it was made in, and settling can be per row", async () => {
@@ -280,14 +308,20 @@ test("a pending removal is held only for the query it was made in, and settling 
 
   // Another mailbox still lists it (flag changes follow it everywhere).
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "ALL" });
-  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([["a:t1", true], ["a:t2", true]]);
+  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([
+    ["a:t1", true],
+    ["a:t2", true],
+  ]);
   await useMailStore.getState().load(inbox);
   expect(ids()).toEqual(["t2"]);
 
   // Settling one row leaves the other's change held.
   useMailStore.getState().settle(flag, ["a:t1"]);
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "ALL" });
-  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([["a:t1", false], ["a:t2", true]]);
+  expect(useMailStore.getState().threads.map((t) => [key(t), t.starred])).toEqual([
+    ["a:t1", false],
+    ["a:t2", true],
+  ]);
 });
 
 test("changes without an op are not held across reloads", async () => {

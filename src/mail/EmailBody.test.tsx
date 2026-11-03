@@ -79,20 +79,32 @@ function loadFrame(html: string, scrollHeight?: () => number) {
   const iframe = frame();
   const doc = iframe.contentDocument!;
   doc.body.innerHTML = html;
-  if (scrollHeight) Object.defineProperty(doc.documentElement, "scrollHeight", { configurable: true, get: scrollHeight });
+  if (scrollHeight)
+    Object.defineProperty(doc.documentElement, "scrollHeight", {
+      configurable: true,
+      get: scrollHeight,
+    });
   fireEvent.load(iframe);
   return doc;
 }
 
 function click(doc: Document, selector: string) {
   const target = doc.querySelector(selector)!;
-  const event = new doc.defaultView!.MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+  const event = new doc.defaultView!.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+  });
   target.dispatchEvent(event);
   return event;
 }
 
 test("renders plain-text bodies linkified in the main document", () => {
-  render(<EmailBody message={message({ bodyHtml: null, bodyText: "See https://example.com/a <b>now</b>" })} />);
+  render(
+    <EmailBody
+      message={message({ bodyHtml: null, bodyText: "See https://example.com/a <b>now</b>" })}
+    />,
+  );
   expect(screen.queryByTitle("Message body")).toBeNull();
   const text = document.querySelector(".message-card__text.selectable")!;
   expect(text.textContent).toBe("See https://example.com/a <b>now</b>");
@@ -117,7 +129,9 @@ test("shows the load-images bar only with remote content, and clicking it rebuil
   expect(frame().getAttribute("srcdoc")).not.toContain("https:");
 
   fireEvent.click(screen.getByRole("button", { name: "Load images" }));
-  expect(frame().getAttribute("srcdoc")).toContain("img-src data: pheeme-att: http://pheeme-att.localhost https: http:");
+  expect(frame().getAttribute("srcdoc")).toContain(
+    "img-src data: pheeme-att: http://pheeme-att.localhost https: http:",
+  );
   expect(screen.queryByText("Images from the web are hidden.")).toBeNull();
 });
 
@@ -137,7 +151,11 @@ test("clicking a link inside the frame calls open_mail_link and does not navigat
   expect(opened).toEqual(["https://example.com/x?y=1", "mailto:a@b.c"]);
 
   // Middle-click opens nothing either.
-  const aux = new doc.defaultView!.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 });
+  const aux = new doc.defaultView!.MouseEvent("auxclick", {
+    bubbles: true,
+    cancelable: true,
+    button: 1,
+  });
   doc.querySelector("#web")!.dispatchEvent(aux);
   expect(aux.defaultPrevented).toBe(true);
   await act(async () => {});
@@ -151,7 +169,9 @@ test("sizes the iframe to its content height", () => {
   expect(frame().style.height).toBe("640px");
 
   // Content grows after load (an image arrives): the parent-side observer follows it.
-  const observer = FakeResizeObserver.instances.find((o) => o.targets.has(frame().contentDocument!.documentElement));
+  const observer = FakeResizeObserver.instances.find((o) =>
+    o.targets.has(frame().contentDocument!.documentElement),
+  );
   expect(observer).toBeDefined();
   content = 900;
   FakeResizeObserver.fireAll();
@@ -216,7 +236,10 @@ function expectScrollable(doc: Document) {
 
 test("a pinned frame scrolls even when the email hides overflow", () => {
   render(<EmailBody message={message()} />);
-  const doc = loadFrame("<style>html,body{overflow:hidden !important}</style><div style='height:200vh'></div><p>Footer</p>", () => 2 * frameHeight() + 40);
+  const doc = loadFrame(
+    "<style>html,body{overflow:hidden !important}</style><div style='height:200vh'></div><p>Footer</p>",
+    () => 2 * frameHeight() + 40,
+  );
   // Not pinned yet: the email's own overflow is left alone.
   expect(doc.documentElement.style.getPropertyValue("overflow")).toBe("");
   for (let i = 0; i < 50; i++) FakeResizeObserver.fireAll();
@@ -227,7 +250,9 @@ test("a pinned frame scrolls even when the email hides overflow", () => {
 
 test("caps enormous bodies at MAX_FRAME_HEIGHT and lets them scroll", () => {
   render(<EmailBody message={message()} />);
-  const doc = loadFrame("<div style='height:90000px'></div>", () => Math.max(90_000, frameHeight()));
+  const doc = loadFrame("<div style='height:90000px'></div>", () =>
+    Math.max(90_000, frameHeight()),
+  );
   expect(frameHeight()).toBe(MAX_FRAME_HEIGHT);
   expectScrollable(doc);
   for (let i = 0; i < 5; i++) FakeResizeObserver.fireAll();
@@ -244,7 +269,12 @@ test("a body that fits gets no forced scrolling", () => {
 
 /** A keydown as the frame's document would deliver it. */
 function press(doc: Document, target: Element, key: string, init: KeyboardEventInit = {}) {
-  const event = new doc.defaultView!.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
+  const event = new doc.defaultView!.KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
   target.dispatchEvent(event);
   return event;
 }
@@ -258,14 +288,20 @@ test("shortcuts typed inside the frame reach the app's commands", () => {
   ];
   try {
     render(<EmailBody message={message()} />);
-    const doc = loadFrame('<p id="text">Some text</p><a id="web" href="https://example.com/">go</a>');
+    const doc = loadFrame(
+      '<p id="text">Some text</p><a id="web" href="https://example.com/">go</a>',
+    );
 
     expect(press(doc, doc.querySelector("#text")!, "j").defaultPrevented).toBe(true);
     expect(next).toHaveBeenCalledTimes(1);
 
     // Copy isn't a command, so it stays native (not prevented).
-    expect(press(doc, doc.querySelector("#text")!, "c", { ctrlKey: true }).defaultPrevented).toBe(false);
-    expect(press(doc, doc.querySelector("#text")!, "c", { metaKey: true }).defaultPrevented).toBe(false);
+    expect(press(doc, doc.querySelector("#text")!, "c", { ctrlKey: true }).defaultPrevented).toBe(
+      false,
+    );
+    expect(press(doc, doc.querySelector("#text")!, "c", { metaKey: true }).defaultPrevented).toBe(
+      false,
+    );
   } finally {
     offs.forEach((off) => off());
   }
@@ -323,7 +359,12 @@ test("lets go of the old frame document when the srcdoc is rebuilt or the body u
 
 test("a body that couldn't be fetched offers to try again instead of claiming the message is empty", () => {
   const retry = vi.fn();
-  render(<EmailBody message={message({ bodyHtml: null, bodyText: null, bodyAvailable: false })} onRetry={retry} />);
+  render(
+    <EmailBody
+      message={message({ bodyHtml: null, bodyText: null, bodyAvailable: false })}
+      onRetry={retry}
+    />,
+  );
   expect(screen.queryByText("This message is empty.")).toBeNull();
   expect(screen.getByText("Couldn't load this message — you may be offline.")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));

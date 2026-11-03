@@ -57,7 +57,9 @@ test("load fetches once, caches, and dedupes a request already in flight", async
 });
 
 test("LRU keeps 30", async () => {
-  const all = Object.fromEntries(Array.from({ length: 35 }, (_, i) => [`a:t${i}`, detail(`t${i}`)]));
+  const all = Object.fromEntries(
+    Array.from({ length: 35 }, (_, i) => [`a:t${i}`, detail(`t${i}`)]),
+  );
   backend(all);
   expect(DETAIL_CACHE_SIZE).toBe(30);
   for (let i = 0; i < 30; i++) await store().load(`a:t${i}`);
@@ -77,7 +79,10 @@ test("not_found keeps a per-key error and no detail", async () => {
   backend({ "a:t2": detail("t2") });
   await store().load("a:t1");
   expect(store().details.has("a:t1")).toBe(false);
-  expect(store().errors["a:t1"]).toEqual({ code: "not_found", message: "That conversation isn't on this device." });
+  expect(store().errors["a:t1"]).toEqual({
+    code: "not_found",
+    message: "That conversation isn't on this device.",
+  });
   // Other threads are unaffected, and a later successful load clears the error.
   await store().load("a:t2");
   expect(store().errors["a:t2"]).toBeUndefined();
@@ -85,7 +90,9 @@ test("not_found keeps a per-key error and no detail", async () => {
 
 test("a load that joins a prefetch in flight reports its failure", async () => {
   let fail: (e: unknown) => void = () => {};
-  mockIPC((cmd) => (cmd === "get_thread" ? new Promise((_, reject) => (fail = reject)) : undefined));
+  mockIPC((cmd) =>
+    cmd === "get_thread" ? new Promise((_, reject) => (fail = reject)) : undefined,
+  );
   store().prefetch(["a:t1"]);
   const loading = store().load("a:t1");
   fail({ code: "not_found", message: "That conversation isn't on this device." });
@@ -96,7 +103,9 @@ test("a load that joins a prefetch in flight reports its failure", async () => {
 
 test("a prefetch nobody joined still fails quietly", async () => {
   let fail: (e: unknown) => void = () => {};
-  mockIPC((cmd) => (cmd === "get_thread" ? new Promise((_, reject) => (fail = reject)) : undefined));
+  mockIPC((cmd) =>
+    cmd === "get_thread" ? new Promise((_, reject) => (fail = reject)) : undefined,
+  );
   store().prefetch(["a:t1"]);
   fail({ code: "not_found", message: "gone" });
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -125,7 +134,12 @@ test("prefetch loads the keys it doesn't have and stays quiet about failures", a
 
 test("evict drops the listed threads of one account and their errors", async () => {
   backend({ "a:t1": detail("t1"), "b:t1": detail("t1", "b"), "a:t2": detail("t2") });
-  await Promise.all([store().load("a:t1"), store().load("b:t1"), store().load("a:t2"), store().load("a:gone")]);
+  await Promise.all([
+    store().load("a:t1"),
+    store().load("b:t1"),
+    store().load("a:t2"),
+    store().load("a:gone"),
+  ]);
   store().evict("a", ["t1", "gone"]);
   expect(cached().sort()).toEqual(["a:t2", "b:t1"]);
   expect(store().errors).toEqual({});
@@ -133,7 +147,9 @@ test("evict drops the listed threads of one account and their errors", async () 
 
 test("evicting a thread discards a response still in flight for it", async () => {
   let release: (d: ThreadDetail) => void = () => {};
-  mockIPC((cmd) => (cmd === "get_thread" ? new Promise<ThreadDetail>((resolve) => (release = resolve)) : undefined));
+  mockIPC((cmd) =>
+    cmd === "get_thread" ? new Promise<ThreadDetail>((resolve) => (release = resolve)) : undefined,
+  );
   const pending = store().load("a:t1");
   store().evict("a", ["t1"]);
   release(detail("t1"));
@@ -154,7 +170,12 @@ test("evicts and reloads the open thread on messages_updated", async () => {
   requests.length = 0;
 
   threads["a:t1"] = detail("t1", "a", "After");
-  await emit("sync:messages_updated", { accountId: "a", added: [], removed: [], modified: ["t1", "t2"] });
+  await emit("sync:messages_updated", {
+    accountId: "a",
+    added: [],
+    removed: [],
+    modified: ["t1", "t2"],
+  });
   await vi.waitFor(() => expect(store().details.get("a:t1")?.thread.subject).toBe("After"));
   // Only the open thread is re-requested; the other evicted thread waits until someone opens it.
   expect(requests).toEqual(["a:t1"]);
@@ -205,7 +226,12 @@ test("threads added by sync, or in another account, are left alone", async () =>
   useUiStore.getState().setOpenThread("a:t1");
   requests.length = 0;
   await emit("sync:messages_updated", { accountId: "a", added: ["t1"], removed: [], modified: [] });
-  await emit("sync:messages_updated", { accountId: "b", added: [], removed: ["t1"], modified: ["t1"] });
+  await emit("sync:messages_updated", {
+    accountId: "b",
+    added: [],
+    removed: ["t1"],
+    modified: ["t1"],
+  });
   // Let the handlers run.
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(requests).toEqual([]);
@@ -225,7 +251,10 @@ test("patchDetail rewrites a cached detail in place and ignores one that isn't c
 
 test("a pending detail patch is re-applied to every fetch until it settles", async () => {
   backend({ "a:t1": detail("t1") });
-  const tag = (d: ThreadDetail): ThreadDetail => ({ ...d, thread: { ...d.thread, subject: "Optimistic" } });
+  const tag = (d: ThreadDetail): ThreadDetail => ({
+    ...d,
+    thread: { ...d.thread, subject: "Optimistic" },
+  });
   store().patchDetail("a:t1", tag, 7); // not cached yet: held for the first fetch
   await store().load("a:t1");
   expect(store().details.get("a:t1")?.thread.subject).toBe("Optimistic");
@@ -281,7 +310,10 @@ test("a detail missing a body is re-requested on load instead of served from the
 });
 
 test("sync:completed for the account re-requests the open detail if it is missing a body", async () => {
-  const threads: Record<string, ThreadDetail> = { "a:t1": withBody("t1", false), "a:t2": withBody("t2", true) };
+  const threads: Record<string, ThreadDetail> = {
+    "a:t1": withBody("t1", false),
+    "a:t2": withBody("t2", true),
+  };
   const requests = backend(threads);
   const stop = await store().subscribe();
   await store().load("a:t1");
@@ -306,9 +338,15 @@ test("sync:completed for the account re-requests the open detail if it is missin
 
 test("waitForDetail outlasts a request evicted before it answers, and resolves once the detail is cached", async () => {
   const answers: Array<(d: ThreadDetail) => void> = [];
-  mockIPC((cmd) => (cmd === "get_thread" ? new Promise<ThreadDetail>((resolve) => answers.push(resolve)) : undefined));
+  mockIPC((cmd) =>
+    cmd === "get_thread"
+      ? new Promise<ThreadDetail>((resolve) => answers.push(resolve))
+      : undefined,
+  );
   let done = false;
-  const waiting = store().waitForDetail("a:t1").then((cached) => ((done = true), cached));
+  const waiting = store()
+    .waitForDetail("a:t1")
+    .then((cached) => ((done = true), cached));
   await vi.waitFor(() => expect(answers).toHaveLength(1));
   store().evict("a", ["t1"]); // the first answer will be dropped
   answers[0](detail("t1", "a", "Dropped"));
@@ -321,7 +359,11 @@ test("waitForDetail outlasts a request evicted before it answers, and resolves o
 
 test("waitForDetail gives up after five dropped requests and reports nothing cached", async () => {
   const answers: Array<(d: ThreadDetail) => void> = [];
-  mockIPC((cmd) => (cmd === "get_thread" ? new Promise<ThreadDetail>((resolve) => answers.push(resolve)) : undefined));
+  mockIPC((cmd) =>
+    cmd === "get_thread"
+      ? new Promise<ThreadDetail>((resolve) => answers.push(resolve))
+      : undefined,
+  );
   const waiting = store().waitForDetail("a:t1");
   for (let i = 0; i < 5; i++) {
     await vi.waitFor(() => expect(answers).toHaveLength(i + 1));

@@ -25,7 +25,10 @@ export function readThemeMode(storage: StorageLike | undefined = defaultStorage(
   return THEME_MODES.includes(stored as ThemeMode) ? (stored as ThemeMode) : "system";
 }
 
-export function writeThemeMode(mode: ThemeMode, storage: StorageLike | undefined = defaultStorage()) {
+export function writeThemeMode(
+  mode: ThemeMode,
+  storage: StorageLike | undefined = defaultStorage(),
+) {
   try {
     storage?.setItem(THEME_MODE_KEY, mode);
   } catch {

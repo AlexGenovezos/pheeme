@@ -22,9 +22,7 @@ const assets = [
   asset("Pheeme_0.4.0_amd64.deb.sig", 11),
 ];
 const signatures = Object.fromEntries(
-  assets
-    .filter((a) => a.name.endsWith(".sig"))
-    .map((a) => [a.name.slice(0, -4), `sig-${a.name}`]),
+  assets.filter((a) => a.name.endsWith(".sig")).map((a) => [a.name.slice(0, -4), `sig-${a.name}`]),
 );
 const url = (id) => `https://api.github.com/repos/o/r/releases/assets/${id}`;
 

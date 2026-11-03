@@ -4,7 +4,8 @@ import "./Button.css";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "ghost" | "danger";
-  size?: "sm" | "md";
+  /** `lg` is for roomy full-page screens (onboarding, accounts), not app chrome. */
+  size?: "sm" | "md" | "lg";
   icon?: ReactNode;
 }
 

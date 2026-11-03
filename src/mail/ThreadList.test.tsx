@@ -33,7 +33,8 @@ const thread = (n: number, accountId = "a1"): ThreadSummary => ({
   messageCount: 1,
 });
 
-const many = (count: number, accountId = "a1") => Array.from({ length: count }, (_, i) => thread(i, accountId));
+const many = (count: number, accountId = "a1") =>
+  Array.from({ length: count }, (_, i) => thread(i, accountId));
 const key = (n: number, accountId = "a1") => threadKey(accountId, `t${n}`);
 
 const props = (over: Partial<ThreadListProps> = {}): ThreadListProps => ({
@@ -43,13 +44,17 @@ const props = (over: Partial<ThreadListProps> = {}): ThreadListProps => ({
   ...over,
 });
 
-const cursor = { date: 1, id: "x", accountId: "a1" } as unknown as NonNullable<ReturnType<typeof useMailStore.getState>["next"]>;
+const cursor = { date: 1, id: "x", accountId: "a1" } as unknown as NonNullable<
+  ReturnType<typeof useMailStore.getState>["next"]
+>;
 
 /** Route a key through the shortcut registry, as the app root does for window keydowns. */
-const pressKey = (k: string) => act(() => void registry.handleKeyDown(new KeyboardEvent("keydown", { key: k })));
+const pressKey = (k: string) =>
+  act(() => void registry.handleKeyDown(new KeyboardEvent("keydown", { key: k })));
 
 const options = () => screen.queryAllByRole("option");
-const row = (n: number) => screen.getByText(`Subject ${n}`).closest('[role="option"]') as HTMLElement;
+const row = (n: number) =>
+  screen.getByText(`Subject ${n}`).closest('[role="option"]') as HTMLElement;
 
 let restoreLayout: () => void;
 
@@ -74,7 +79,9 @@ describe("virtualization and paging", () => {
     expect(options().length).toBeLessThan(60);
     expect(screen.getByRole("listbox")).toHaveAttribute("aria-multiselectable", "true");
     // The canvas declares the whole dataset's height, so the scroll extent is the full list.
-    expect(document.querySelector<HTMLElement>(".thread-list")!.style.height).toBe(`${1000 * 76}px`);
+    expect(document.querySelector<HTMLElement>(".thread-list")!.style.height).toBe(
+      `${1000 * 76}px`,
+    );
   });
 
   test("rows know their place in the set; the size is -1 while more pages exist", () => {
@@ -237,7 +244,8 @@ describe("focus and selection semantics", () => {
     fireEvent.click(row(1), { metaKey: true });
     fireEvent.mouseEnter(row(2));
     expect(within(row(2)).getByRole("checkbox")).toHaveAttribute("tabindex", "-1");
-    for (const button of within(row(2)).getAllByRole("button")) expect(button).toHaveAttribute("tabindex", "-1");
+    for (const button of within(row(2)).getAllByRole("button"))
+      expect(button).toHaveAttribute("tabindex", "-1");
     act(() => useUiStore.getState().setOpenThread(key(4)));
     pressKey("x");
     expect(useUiStore.getState().checked).toEqual([key(1), key(4)]);
@@ -317,7 +325,11 @@ describe("states", () => {
     useAccountStore.setState({ accounts: [account("a1", false)] });
     useUiStore.setState({ mailbox: categoryMailbox("a1", "CATEGORY_PERSONAL") });
     const reload = vi.fn(async () => {});
-    useMailStore.setState({ threads: [], error: { code: "internal", message: "Couldn't read the cache" }, reload });
+    useMailStore.setState({
+      threads: [],
+      error: { code: "internal", message: "Couldn't read the cache" },
+      reload,
+    });
     const { container } = render(<ThreadList {...props()} />);
     expect(container.querySelectorAll(".ui-skeleton")).toHaveLength(0);
     expect(screen.getByRole("alert")).toHaveTextContent("Couldn't read the cache");
@@ -327,7 +339,11 @@ describe("states", () => {
 
   test("error state retries", () => {
     const reload = vi.fn(async () => {});
-    useMailStore.setState({ threads: [], error: { code: "internal", message: "Couldn't read the cache" }, reload });
+    useMailStore.setState({
+      threads: [],
+      error: { code: "internal", message: "Couldn't read the cache" },
+      reload,
+    });
     render(<ThreadList {...props()} />);
     expect(screen.getByRole("alert")).toHaveTextContent("Couldn't read the cache");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -336,7 +352,11 @@ describe("states", () => {
 
   test("a failed page keeps the rows and offers a retry", () => {
     const reload = vi.fn(async () => {});
-    useMailStore.setState({ threads: many(5), error: { code: "internal", message: "Couldn't load more" }, reload });
+    useMailStore.setState({
+      threads: many(5),
+      error: { code: "internal", message: "Couldn't load more" },
+      reload,
+    });
     render(<ThreadList {...props()} />);
     expect(options()).toHaveLength(5);
     // The retry sits beside the listbox, not inside it.
@@ -359,7 +379,12 @@ describe("keyboard and menu wiring", () => {
     useMailStore.setState({ threads: many(5) });
     render(<ThreadList {...props()} />);
     const list = screen.getByRole("listbox");
-    const event = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true });
+    const event = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
     act(() => void list.dispatchEvent(event));
     expect(event.defaultPrevented).toBe(true);
     expect(useUiStore.getState().checked).toEqual([key(0), key(1), key(2), key(3), key(4)]);

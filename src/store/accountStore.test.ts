@@ -14,14 +14,22 @@ const account = (id: string, synced: boolean): AccountInfo => ({
 });
 
 beforeEach(() =>
-  useAccountStore.setState({ accounts: [account("a", false), account("b", false)], loaded: true, error: null, syncErrors: {} }),
+  useAccountStore.setState({
+    accounts: [account("a", false), account("b", false)],
+    loaded: true,
+    error: null,
+    syncErrors: {},
+  }),
 );
 
 test("markSynced flips one account and leaves the rest", () => {
   const before = useAccountStore.getState().accounts;
   useAccountStore.getState().markSynced("b");
   const after = useAccountStore.getState().accounts;
-  expect(after.map((a) => [a.id, a.synced])).toEqual([["a", false], ["b", true]]);
+  expect(after.map((a) => [a.id, a.synced])).toEqual([
+    ["a", false],
+    ["b", true],
+  ]);
   expect(after[0]).toBe(before[0]);
   // Already synced, or unknown: nothing changes.
   useAccountStore.getState().markSynced("b");
@@ -33,7 +41,9 @@ test("sync:completed marks that account synced", async () => {
   mockIPC(() => undefined, { shouldMockEvents: true });
   const stop = await useAccountStore.getState().subscribe();
   await emit("sync:completed", { accountId: "a" });
-  await vi.waitFor(() => expect(useAccountStore.getState().accounts.find((a) => a.id === "a")?.synced).toBe(true));
+  await vi.waitFor(() =>
+    expect(useAccountStore.getState().accounts.find((a) => a.id === "a")?.synced).toBe(true),
+  );
   expect(useAccountStore.getState().accounts.find((a) => a.id === "b")?.synced).toBe(false);
   stop();
 });
@@ -50,7 +60,11 @@ test("sync:error records the failure per account until that account completes a 
     }),
   );
   await emit("sync:completed", { accountId: "a" });
-  await vi.waitFor(() => expect(useAccountStore.getState().syncErrors).toEqual({ b: { code: "auth", message: "Sign in again" } }));
+  await vi.waitFor(() =>
+    expect(useAccountStore.getState().syncErrors).toEqual({
+      b: { code: "auth", message: "Sign in again" },
+    }),
+  );
   stop();
 });
 
@@ -62,14 +76,18 @@ describe("removing an account reconciles navigation", () => {
   });
 
   const browseAccountA = () => {
-    useUiStore.getState().setMailbox({ accountId: "a", labelId: "INBOX", category: "CATEGORY_SOCIAL" });
+    useUiStore
+      .getState()
+      .setMailbox({ accountId: "a", labelId: "INBOX", category: "CATEGORY_SOCIAL" });
     useUiStore.getState().toggleAccountCollapsed("a");
     useUiStore.getState().toggleAccountCollapsed("b");
     useUiStore.setState({ openThread: "a:t1", checked: ["a:t1", "b:t2", "a:t3"], anchor: "a:t3" });
   };
 
   test("with two or more accounts left it goes to All Inboxes and forgets the removed account", async () => {
-    useAccountStore.setState({ accounts: [account("a", true), account("b", true), account("c", true)] });
+    useAccountStore.setState({
+      accounts: [account("a", true), account("b", true), account("c", true)],
+    });
     browseAccountA();
     expect(useUiStore.getState().activeAccountId).toBe("a");
 
@@ -81,19 +99,33 @@ describe("removing an account reconciles navigation", () => {
     expect(ui.checked).toEqual([]);
     expect(ui.activeAccountId).toBeNull();
     expect(ui.collapsedAccounts).toEqual(["b"]);
-    expect(JSON.parse(localStorage.getItem("pheeme.layout")!)).toMatchObject({ activeAccountId: null, collapsedAccounts: ["b"] });
+    expect(JSON.parse(localStorage.getItem("pheeme.layout")!)).toMatchObject({
+      activeAccountId: null,
+      collapsedAccounts: ["b"],
+    });
   });
 
   test("with one account left it goes to that account's Primary", async () => {
     browseAccountA();
     await useAccountStore.getState().remove("a");
-    expect(useUiStore.getState().mailbox).toEqual({ accountId: "b", labelId: "INBOX", category: "CATEGORY_PERSONAL" });
+    expect(useUiStore.getState().mailbox).toEqual({
+      accountId: "b",
+      labelId: "INBOX",
+      category: "CATEGORY_PERSONAL",
+    });
   });
 
   test("browsing another account, only the removed account's open and checked conversations go", async () => {
-    useAccountStore.setState({ accounts: [account("a", true), account("b", true), account("c", true)] });
+    useAccountStore.setState({
+      accounts: [account("a", true), account("b", true), account("c", true)],
+    });
     useUiStore.getState().setMailbox({ accountId: null, labelId: "INBOX" });
-    useUiStore.setState({ openThread: "a:t1", checked: ["a:t1", "b:t2"], anchor: "a:t1", activeAccountId: "b" });
+    useUiStore.setState({
+      openThread: "a:t1",
+      checked: ["a:t1", "b:t2"],
+      anchor: "a:t1",
+      activeAccountId: "b",
+    });
 
     await useAccountStore.getState().remove("a");
 

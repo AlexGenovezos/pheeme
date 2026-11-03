@@ -17,7 +17,12 @@ const account = (id: string, email: string): AccountInfo => ({
   synced: true,
 });
 
-const label = (accountId: string, id: string, name: string, colorBackground: string | null = null): LabelInfo => ({
+const label = (
+  accountId: string,
+  id: string,
+  name: string,
+  colorBackground: string | null = null,
+): LabelInfo => ({
   id,
   accountId,
   name,
@@ -56,17 +61,26 @@ function seed(accounts: AccountInfo[]) {
       a2: { STARRED: { unread: 0, total: 8 }, Label_9: { unread: 1, total: 1 } },
     },
     categoryCounts: {
-      a1: { INBOX: 12, CATEGORY_PERSONAL: 3, CATEGORY_SOCIAL: 0, CATEGORY_PROMOTIONS: 1500, CATEGORY_UPDATES: 1 },
+      a1: {
+        INBOX: 12,
+        CATEGORY_PERSONAL: 3,
+        CATEGORY_SOCIAL: 0,
+        CATEGORY_PROMOTIONS: 1500,
+        CATEGORY_UPDATES: 1,
+      },
       a2: { INBOX: 2, CATEGORY_PERSONAL: 2 },
     },
     allInboxUnread: 14,
   });
 }
 
-const link = (name: string, scope: HTMLElement = document.body) => within(scope).getByRole("link", { name });
+const link = (name: string, scope: HTMLElement = document.body) =>
+  within(scope).getByRole("link", { name });
 const count = (row: HTMLElement) => row.querySelector(".ui-row__meta")?.textContent ?? "";
-const accountGroup = (email: string) => screen.getByRole("group", { name: new RegExp(email.replace(".", "\\.")) });
-const accountHeader = (email: string) => screen.getByRole("button", { name: new RegExp(email.replace(".", "\\.")) });
+const accountGroup = (email: string) =>
+  screen.getByRole("group", { name: new RegExp(email.replace(".", "\\.")) });
+const accountHeader = (email: string) =>
+  screen.getByRole("button", { name: new RegExp(email.replace(".", "\\.")) });
 const region = (name: string) => screen.getByRole("region", { name });
 
 beforeEach(() => {
@@ -87,7 +101,11 @@ describe("stacked layout", () => {
     const categories = ["Primary", "Social", "Promotions", "Updates", "Forums"];
     expect(names).toEqual(["All Inboxes", ...categories, ...categories]);
     for (const email of [ONE.email, TWO.email]) {
-      expect(within(accountGroup(email)).getAllByRole("link").map((r) => r.getAttribute("aria-label"))).toEqual(categories);
+      expect(
+        within(accountGroup(email))
+          .getAllByRole("link")
+          .map((r) => r.getAttribute("aria-label")),
+      ).toEqual(categories);
       expect(accountHeader(email)).toHaveAttribute("aria-expanded", "true");
     }
   });
@@ -117,7 +135,9 @@ describe("stacked layout", () => {
     expect(accountHeader(ONE.email).textContent).toContain("12");
     expect(within(accountGroup(ONE.email)).queryAllByRole("link")).toHaveLength(0);
     expect(within(accountGroup(TWO.email)).getAllByRole("link")).toHaveLength(5);
-    expect(JSON.parse(localStorage.getItem(LAYOUT_KEY)!)).toMatchObject({ collapsedAccounts: ["a1"] });
+    expect(JSON.parse(localStorage.getItem(LAYOUT_KEY)!)).toMatchObject({
+      collapsedAccounts: ["a1"],
+    });
 
     unmount();
     __resetUiStoreForTests();
@@ -134,7 +154,9 @@ describe("stacked layout", () => {
     fireEvent.click(link("Social", accountGroup(TWO.email)));
     expect(count(link("Starred", region("Favorites")))).toBe("8");
     expect(link("Clients", region("Gmail"))).toBeInTheDocument();
-    expect(within(region("Gmail")).queryByRole("link", { name: "Receipts" })).not.toBeInTheDocument();
+    expect(
+      within(region("Gmail")).queryByRole("link", { name: "Receipts" }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(link("All Inboxes"));
     expect(useUiStore.getState().mailbox).toEqual({ accountId: null, labelId: "INBOX" });
@@ -155,14 +177,11 @@ describe("stacked layout", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
     const favorites = region("Favorites");
-    expect(within(favorites).getAllByRole("link").map((r) => r.getAttribute("aria-label"))).toEqual([
-      "Starred",
-      "Drafts",
-      "Sent",
-      "All Mail",
-      "Spam",
-      "Trash",
-    ]);
+    expect(
+      within(favorites)
+        .getAllByRole("link")
+        .map((r) => r.getAttribute("aria-label")),
+    ).toEqual(["Starred", "Drafts", "Sent", "All Mail", "Spam", "Trash"]);
     expect(count(link("Starred", favorites))).toBe("5");
     expect(count(link("Drafts", favorites))).toBe("2");
     expect(count(link("Sent", favorites))).toBe("");
@@ -174,15 +193,17 @@ describe("stacked layout", () => {
     render(<Sidebar />);
     expect(screen.queryByRole("link", { name: "All Inboxes" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /me@home\.test/ })).not.toBeInTheDocument();
-    expect(within(region("Inboxes")).getAllByRole("link").map((r) => r.getAttribute("aria-label"))).toEqual([
-      "Primary",
-      "Social",
-      "Promotions",
-      "Updates",
-      "Forums",
-    ]);
+    expect(
+      within(region("Inboxes"))
+        .getAllByRole("link")
+        .map((r) => r.getAttribute("aria-label")),
+    ).toEqual(["Primary", "Social", "Promotions", "Updates", "Forums"]);
     // All Inboxes has no row here, so the default mailbox becomes the account's Primary.
-    expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" });
+    expect(useUiStore.getState().mailbox).toEqual({
+      accountId: "a1",
+      labelId: "INBOX",
+      category: "CATEGORY_PERSONAL",
+    });
     expect(link("Primary")).toHaveAttribute("aria-current", "true");
   });
 
@@ -196,7 +217,9 @@ describe("stacked layout", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
     const gmail = region("Gmail");
-    expect(link("Travel", gmail).querySelector(".sidebar__label-dot")).toHaveStyle({ backgroundColor: "#16a766" });
+    expect(link("Travel", gmail).querySelector(".sidebar__label-dot")).toHaveStyle({
+      backgroundColor: "#16a766",
+    });
     expect(link("Receipts", gmail).querySelector(".sidebar__label-dot")).toBeNull();
     expect(count(link("Travel", gmail))).toBe("4");
   });
@@ -210,10 +233,16 @@ describe("stacked layout", () => {
     fireEvent.click(social);
     expect(social).toHaveAttribute("aria-current", "true");
     expect(link("Social", accountGroup(TWO.email))).not.toHaveAttribute("aria-current");
-    expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_SOCIAL" });
+    expect(useUiStore.getState().mailbox).toEqual({
+      accountId: "a1",
+      labelId: "INBOX",
+      category: "CATEGORY_SOCIAL",
+    });
     fireEvent.click(link("Trash", region("Favorites")));
     expect(link("Trash", region("Favorites"))).toHaveAttribute("aria-current", "true");
-    expect(link("Trash", region("Favorites")).style.getPropertyValue("--row-color")).toBe("var(--color-mailbox-trash)");
+    expect(link("Trash", region("Favorites")).style.getPropertyValue("--row-color")).toBe(
+      "var(--color-mailbox-trash)",
+    );
   });
 
   test("account headers carry their account color dot", () => {
@@ -229,16 +258,24 @@ describe("stacked layout", () => {
     const stop = await useAccountStore.getState().subscribe();
     const { unmount } = render(<Sidebar />);
     expect(accountHeader(TWO.email)).not.toHaveAttribute("aria-description");
-    await act(() => emit("sync:error", { accountId: "a2", code: "network", message: "Gmail didn't answer" }));
+    await act(() =>
+      emit("sync:error", { accountId: "a2", code: "network", message: "Gmail didn't answer" }),
+    );
     await waitFor(() =>
-      expect(accountHeader(TWO.email)).toHaveAttribute("aria-description", expect.stringContaining("Gmail didn't answer")),
+      expect(accountHeader(TWO.email)).toHaveAttribute(
+        "aria-description",
+        expect.stringContaining("Gmail didn't answer"),
+      ),
     );
     expect(accountHeader(ONE.email)).not.toHaveAttribute("aria-description");
 
     // The failure is session state, not the sidebar's: it survives a remount.
     unmount();
     render(<Sidebar />);
-    expect(accountHeader(TWO.email)).toHaveAttribute("aria-description", expect.stringContaining("Gmail didn't answer"));
+    expect(accountHeader(TWO.email)).toHaveAttribute(
+      "aria-description",
+      expect.stringContaining("Gmail didn't answer"),
+    );
 
     await act(() => emit("sync:completed", { accountId: "a2" }));
     await waitFor(() => expect(accountHeader(TWO.email)).not.toHaveAttribute("aria-description"));
@@ -249,7 +286,11 @@ describe("stacked layout", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
     fireEvent.keyDown(link("Updates", accountGroup(TWO.email)), { key: "Enter" });
-    expect(useUiStore.getState().mailbox).toEqual({ accountId: "a2", labelId: "INBOX", category: "CATEGORY_UPDATES" });
+    expect(useUiStore.getState().mailbox).toEqual({
+      accountId: "a2",
+      labelId: "INBOX",
+      category: "CATEGORY_UPDATES",
+    });
     fireEvent.keyDown(link("Drafts", region("Favorites")), { key: " " });
     expect(useUiStore.getState().mailbox).toEqual({ accountId: "a2", labelId: "DRAFT" });
     fireEvent.keyDown(link("All Inboxes"), { key: "x" });
@@ -268,7 +309,9 @@ describe("stacked layout", () => {
 
 describe("go-to commands", () => {
   const run = (shortcutOrTitle: string) => {
-    const command = appCommands().find((c) => c.shortcut === shortcutOrTitle || c.title === shortcutOrTitle);
+    const command = appCommands().find(
+      (c) => c.shortcut === shortcutOrTitle || c.title === shortcutOrTitle,
+    );
     if (!command) throw new Error(`no command ${shortcutOrTitle}`);
     command.run();
   };
@@ -277,7 +320,9 @@ describe("go-to commands", () => {
     seed([ONE, TWO]);
     run("g s");
     expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "STARRED" });
-    useUiStore.getState().setMailbox({ accountId: "a2", labelId: "INBOX", category: "CATEGORY_UPDATES" });
+    useUiStore
+      .getState()
+      .setMailbox({ accountId: "a2", labelId: "INBOX", category: "CATEGORY_UPDATES" });
     run("g s");
     expect(useUiStore.getState().mailbox).toEqual({ accountId: "a2", labelId: "STARRED" });
     run("g a");
@@ -291,13 +336,21 @@ describe("go-to commands", () => {
     expect(useUiStore.getState().mailbox).toEqual({ accountId: null, labelId: "INBOX" });
     seed([ONE]);
     run("g i");
-    expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" });
+    expect(useUiStore.getState().mailbox).toEqual({
+      accountId: "a1",
+      labelId: "INBOX",
+      category: "CATEGORY_PERSONAL",
+    });
   });
 
   test("palette has Go to <category> for the active account", () => {
     seed([ONE, TWO]);
     useUiStore.getState().setMailbox({ accountId: "a2", labelId: "SENT" });
     run("Go to Promotions");
-    expect(useUiStore.getState().mailbox).toEqual({ accountId: "a2", labelId: "INBOX", category: "CATEGORY_PROMOTIONS" });
+    expect(useUiStore.getState().mailbox).toEqual({
+      accountId: "a2",
+      labelId: "INBOX",
+      category: "CATEGORY_PROMOTIONS",
+    });
   });
 });

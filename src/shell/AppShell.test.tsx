@@ -1,7 +1,14 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
-import { __resetUiStoreForTests, clampList, LAYOUT_KEY, PANE, readLayout, useUiStore } from "../store/uiStore";
+import {
+  __resetUiStoreForTests,
+  clampList,
+  LAYOUT_KEY,
+  PANE,
+  readLayout,
+  useUiStore,
+} from "../store/uiStore";
 import { AppShell } from "./AppShell";
 
 // jsdom has no PointerEvent; a MouseEvent subclass carries clientX the same way.
@@ -36,7 +43,9 @@ describe("pane dividers", () => {
     fireEvent.pointerUp(divider, { clientX: 640 });
     expect(useUiStore.getState().listWidth).toBe(PANE.listDefault + 40);
     expect(stored()).toMatchObject({ listWidth: PANE.listDefault + 40 });
-    expect(shell(container).style.getPropertyValue("--shell-list-w")).toBe(`${PANE.listDefault + 40}px`);
+    expect(shell(container).style.getPropertyValue("--shell-list-w")).toBe(
+      `${PANE.listDefault + 40}px`,
+    );
     expect(document.body.dataset.resizing).toBeUndefined();
   });
 
@@ -67,14 +76,20 @@ describe("pane dividers", () => {
     class FixedWidthObserver {
       constructor(private cb: ResizeObserverCallback) {}
       observe() {
-        this.cb([{ contentRect: { width: 1000 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+        this.cb(
+          [{ contentRect: { width: 1000 } } as ResizeObserverEntry],
+          this as unknown as ResizeObserver,
+        );
       }
       disconnect() {}
     }
     const original = window.ResizeObserver;
     window.ResizeObserver = FixedWidthObserver as unknown as typeof ResizeObserver;
     try {
-      localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarWidth: 220, listWidth: 660, sidebarCollapsed: false }));
+      localStorage.setItem(
+        LAYOUT_KEY,
+        JSON.stringify({ sidebarWidth: 220, listWidth: 660, sidebarCollapsed: false }),
+      );
       __resetUiStoreForTests();
       render(<AppShell />);
       const divider = screen.getByRole("separator", { name: "Resize conversation list" });
@@ -89,7 +104,10 @@ describe("pane dividers", () => {
   });
 
   test("a stored layout is restored on launch", () => {
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarWidth: 260, listWidth: 420, sidebarCollapsed: true }));
+    localStorage.setItem(
+      LAYOUT_KEY,
+      JSON.stringify({ sidebarWidth: 260, listWidth: 420, sidebarCollapsed: true }),
+    );
     __resetUiStoreForTests();
     const { container } = render(<AppShell />);
     expect(shell(container).dataset.sidebar).toBe("collapsed");
@@ -102,7 +120,11 @@ describe("pane dividers", () => {
 describe("layout storage", () => {
   test("corrupt or out-of-range values fall back safely", () => {
     localStorage.setItem(LAYOUT_KEY, "{not json");
-    expect(readLayout()).toEqual({ sidebarWidth: 220, listWidth: PANE.listDefault, sidebarCollapsed: false });
+    expect(readLayout()).toEqual({
+      sidebarWidth: 220,
+      listWidth: PANE.listDefault,
+      sidebarCollapsed: false,
+    });
     localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarWidth: 9999, listWidth: 10 }));
     expect(readLayout()).toMatchObject({ sidebarWidth: PANE.sidebarMax, listWidth: PANE.listMin });
   });

@@ -29,7 +29,8 @@ export function contentSecurityPolicy(allowRemote: boolean): string {
 }
 
 /** The bundled UI font can't load inside the frame (font-src is data: only), so bodies use the system's. */
-const SYSTEM_FONTS = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const SYSTEM_FONTS =
+  'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
 const FLIP = "invert(1) hue-rotate(180deg)";
 const MEDIA = 'img, video, picture, [style*="background-image"]';

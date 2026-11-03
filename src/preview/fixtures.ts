@@ -82,7 +82,13 @@ export const SYSTEM_LABELS: { id: string; name: string }[] = [
   { id: "CATEGORY_FORUMS", name: "Forums" },
 ];
 
-export const CATEGORY_IDS = ["CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS"];
+export const CATEGORY_IDS = [
+  "CATEGORY_PERSONAL",
+  "CATEGORY_SOCIAL",
+  "CATEGORY_PROMOTIONS",
+  "CATEGORY_UPDATES",
+  "CATEGORY_FORUMS",
+];
 const OTHER_CATEGORY_IDS = CATEGORY_IDS.filter((id) => id !== "CATEGORY_PERSONAL");
 
 // ── Rich bodies ──────────────────────────────────────────────────────────────
@@ -170,7 +176,14 @@ interface MessageOptions {
 
 const addr = ([name, address]: Person): EmailAddress => ({ name, address });
 
-function message(id: string, from: Person, date: number, text: string, to: Person, o: MessageOptions = {}): FixtureMessage {
+function message(
+  id: string,
+  from: Person,
+  date: number,
+  text: string,
+  to: Person,
+  o: MessageOptions = {},
+): FixtureMessage {
   return {
     id,
     fromName: from[0],
@@ -187,7 +200,13 @@ function message(id: string, from: Person, date: number, text: string, to: Perso
   };
 }
 
-const thread = (id: string, accountId: string, labelIds: string[], subject: string, messages: FixtureMessage[]): FixtureThread => ({
+const thread = (
+  id: string,
+  accountId: string,
+  labelIds: string[],
+  subject: string,
+  messages: FixtureMessage[],
+): FixtureThread => ({
   id,
   accountId,
   labelIds,
@@ -235,8 +254,20 @@ export function createFixtureThreads(): FixtureThread[] {
   return [
     // ── Personal: inbox, one or more threads per category ──
     thread("p-01", P, ["INBOX", "Label_3"], "Icon sketches for the dock", [
-      message("p-01-m1", mira, daysAgo(2), "Hi Avery,\n\nFirst pass at the dock icon. Do you want it playful or plain?", me),
-      message("p-01-m2", me, daysAgo(2) + 600_000, "Plain, with a little warmth. Can you try a folded letter?", mira),
+      message(
+        "p-01-m1",
+        mira,
+        daysAgo(2),
+        "Hi Avery,\n\nFirst pass at the dock icon. Do you want it playful or plain?",
+        me,
+      ),
+      message(
+        "p-01-m2",
+        me,
+        daysAgo(2) + 600_000,
+        "Plain, with a little warmth. Can you try a folded letter?",
+        mira,
+      ),
       message(
         "p-01-m3",
         mira,
@@ -341,7 +372,13 @@ export function createFixtureThreads(): FixtureThread[] {
       ),
     ]),
     thread("p-11", P, ["INBOX", "CATEGORY_SOCIAL"], "Tomás tagged you in a photo", [
-      message("p-11-m1", ["Tomás", "notify@circle.example"], daysAgo(4), "Tomás tagged you in \"Harbour walk\".", me),
+      message(
+        "p-11-m1",
+        ["Tomás", "notify@circle.example"],
+        daysAgo(4),
+        'Tomás tagged you in "Harbour walk".',
+        me,
+      ),
     ]),
     thread("p-12", P, ["INBOX", "CATEGORY_FORUMS"], "[rust-users] Weekly digest", [
       message(
@@ -355,10 +392,22 @@ export function createFixtureThreads(): FixtureThread[] {
     ]),
     // ── Personal: other mailboxes ──
     thread("p-13", P, ["SENT"], "Re: Icon sketches for the dock", [
-      message("p-13-m1", me, minutesAgo(5), "Folded letter, please. Can it hold up in the menu bar at 16 px?", mira),
+      message(
+        "p-13-m1",
+        me,
+        minutesAgo(5),
+        "Folded letter, please. Can it hold up in the menu bar at 16 px?",
+        mira,
+      ),
     ]),
     thread("p-14", P, ["DRAFT", "Label_3"], "Release notes 0.6", [
-      message("p-14-m1", me, minutesAgo(90), "The mail UI: category inboxes, a virtualized list, sandboxed HTML bodies and instant actions.", me),
+      message(
+        "p-14-m1",
+        me,
+        minutesAgo(90),
+        "The mail UI: category inboxes, a virtualized list, sandboxed HTML bodies and instant actions.",
+        me,
+      ),
     ]),
     thread("p-15", P, ["Label_2", "Label_1"], "Flight confirmation TP 1031", [
       message(
@@ -371,12 +420,25 @@ export function createFixtureThreads(): FixtureThread[] {
       ),
     ]),
     thread("p-16", P, ["SPAM"], "You have won a prize!!!", [
-      message("p-16-m1", ["Prize Desk", "win@prizes.example"], daysAgo(1), "Click here to claim: https://example.com/prize", me, {
-        unread: true,
-      }),
+      message(
+        "p-16-m1",
+        ["Prize Desk", "win@prizes.example"],
+        daysAgo(1),
+        "Click here to claim: https://example.com/prize",
+        me,
+        {
+          unread: true,
+        },
+      ),
     ]),
     thread("p-17", P, ["TRASH"], "Old newsletter", [
-      message("p-17-m1", ["Old Letters", "news@oldletters.example"], daysAgo(9), "Nothing to see here.", me),
+      message(
+        "p-17-m1",
+        ["Old Letters", "news@oldletters.example"],
+        daysAgo(9),
+        "Nothing to see here.",
+        me,
+      ),
     ]),
 
     // ── Work ──
@@ -391,53 +453,113 @@ export function createFixtureThreads(): FixtureThread[] {
       ),
     ]),
     thread("w-02", W, ["INBOX", "Label_11"], "Invoice 2026-114 from Lumen", [
-      message("w-02-m1", dana, daysAgo(3), "Invoice for the pilot is attached.", work, { attachments: [pdf("w-02-a1", "invoice-2026-114.pdf", 77_310)] }),
+      message("w-02-m1", dana, daysAgo(3), "Invoice for the pilot is attached.", work, {
+        attachments: [pdf("w-02-a1", "invoice-2026-114.pdf", 77_310)],
+      }),
       message("w-02-m2", work, daysAgo(3) + 3_600_000, "Thanks, forwarding to accounting.", dana),
       message("w-02-m3", dana, daysAgo(2), "Received, thank you.", work),
       message("w-02-m4", work, daysAgo(2) + 600_000, "Paid on Friday.", dana),
     ]),
     thread("w-03", W, ["INBOX", "CATEGORY_SOCIAL"], "Dana viewed your profile", [
-      message("w-03-m1", ["Peoplenet", "no-reply@peoplenet.example"], hoursAgo(6), "Dana Whitfield and 3 others viewed your profile this week.", work, { unread: true }),
-    ]),
-    thread("w-04", W, ["INBOX", "CATEGORY_SOCIAL"], "Your weekly connections", [
-      message("w-04-m1", ["Peoplenet", "no-reply@peoplenet.example"], daysAgo(5), "Five people you may know.", work),
-    ]),
-    thread("w-05", W, ["INBOX", "CATEGORY_PROMOTIONS"], "Spring upgrade, 30% off", [
-      message("w-05-m1", ["Workspace Sales", "sales@workspace.example"], hoursAgo(8), "Move your team to the annual plan before Friday: https://example.com/upgrade", work, {
-        unread: true,
-        html: PROMO_HTML,
-      }),
-    ]),
-    thread("w-06", W, ["INBOX", "CATEGORY_UPDATES"], "Security alert: new sign-in", [
-      message("w-06-m1", ["Account Security", "no-reply@accounts.example"], hoursAgo(2), "Your account was just signed in to from a new device in Lisbon, Portugal.", work, {
-        unread: true,
-        html: SECURITY_HTML,
-      }),
-    ]),
-    thread("w-07", W, ["INBOX", "CATEGORY_UPDATES"], "Receipt for your domain renewal", [
-      message("w-07-m1", ["Registrar", "billing@registrar.example"], daysAgo(8), "example.org renewed for one year.", work, { attachments: [pdf("w-07-a1", "receipt.pdf", 31_820)] }),
-    ]),
-    thread("w-08", W, ["INBOX", "CATEGORY_FORUMS"], "[tauri] WKWebView sandboxed iframe click events", [
       message(
-        "w-08-m1",
-        ["tauri-apps discussions", "noreply@forum.example.org"],
-        minutesAgo(200),
-        "Parent-registered listeners do reach a script-less sandboxed frame on macOS 14, as long as allow-same-origin is set.",
+        "w-03-m1",
+        ["Peoplenet", "no-reply@peoplenet.example"],
+        hoursAgo(6),
+        "Dana Whitfield and 3 others viewed your profile this week.",
         work,
         { unread: true },
       ),
     ]),
+    thread("w-04", W, ["INBOX", "CATEGORY_SOCIAL"], "Your weekly connections", [
+      message(
+        "w-04-m1",
+        ["Peoplenet", "no-reply@peoplenet.example"],
+        daysAgo(5),
+        "Five people you may know.",
+        work,
+      ),
+    ]),
+    thread("w-05", W, ["INBOX", "CATEGORY_PROMOTIONS"], "Spring upgrade, 30% off", [
+      message(
+        "w-05-m1",
+        ["Workspace Sales", "sales@workspace.example"],
+        hoursAgo(8),
+        "Move your team to the annual plan before Friday: https://example.com/upgrade",
+        work,
+        {
+          unread: true,
+          html: PROMO_HTML,
+        },
+      ),
+    ]),
+    thread("w-06", W, ["INBOX", "CATEGORY_UPDATES"], "Security alert: new sign-in", [
+      message(
+        "w-06-m1",
+        ["Account Security", "no-reply@accounts.example"],
+        hoursAgo(2),
+        "Your account was just signed in to from a new device in Lisbon, Portugal.",
+        work,
+        {
+          unread: true,
+          html: SECURITY_HTML,
+        },
+      ),
+    ]),
+    thread("w-07", W, ["INBOX", "CATEGORY_UPDATES"], "Receipt for your domain renewal", [
+      message(
+        "w-07-m1",
+        ["Registrar", "billing@registrar.example"],
+        daysAgo(8),
+        "example.org renewed for one year.",
+        work,
+        { attachments: [pdf("w-07-a1", "receipt.pdf", 31_820)] },
+      ),
+    ]),
+    thread(
+      "w-08",
+      W,
+      ["INBOX", "CATEGORY_FORUMS"],
+      "[tauri] WKWebView sandboxed iframe click events",
+      [
+        message(
+          "w-08-m1",
+          ["tauri-apps discussions", "noreply@forum.example.org"],
+          minutesAgo(200),
+          "Parent-registered listeners do reach a script-less sandboxed frame on macOS 14, as long as allow-same-origin is set.",
+          work,
+          { unread: true },
+        ),
+      ],
+    ),
     thread("w-09", W, ["INBOX", "CATEGORY_FORUMS"], "[tauri] Release plan for 2.x", [
-      message("w-09-m1", ["tauri-apps discussions", "noreply@forum.example.org"], daysAgo(3), "Plugin releases follow the core release.", work),
+      message(
+        "w-09-m1",
+        ["tauri-apps discussions", "noreply@forum.example.org"],
+        daysAgo(3),
+        "Plugin releases follow the core release.",
+        work,
+      ),
     ]),
     thread("w-10", W, ["INBOX"], "Weekly sync notes", [
-      message("w-10-m1", ["Priya Raman", "priya@example.org"], hoursAgo(30), "Notes from Tuesday:\n\n- ship the mail UI beta\n- start Phase 7 compose\n\nSee https://example.com/roadmap", work),
+      message(
+        "w-10-m1",
+        ["Priya Raman", "priya@example.org"],
+        hoursAgo(30),
+        "Notes from Tuesday:\n\n- ship the mail UI beta\n- start Phase 7 compose\n\nSee https://example.com/roadmap",
+        work,
+      ),
     ]),
     thread("w-11", W, ["SENT", "Label_10"], "Re: Pilot for the support team", [
       message("w-11-m1", work, minutesAgo(10), "Happy to. Let's find a time this week.", dana),
     ]),
     thread("w-12", W, ["DRAFT"], "Re: Pilot for the support team", [
-      message("w-12-m1", work, minutesAgo(8), "Dana, a few notes on the Workspace admin setup:", dana),
+      message(
+        "w-12-m1",
+        work,
+        minutesAgo(8),
+        "Dana, a few notes on the Workspace admin setup:",
+        dana,
+      ),
     ]),
   ];
 }
@@ -471,7 +593,8 @@ export function threadsIn(
   );
   // No account ids means every account.
   if (accountIds?.length) found = found.filter((t) => accountIds.includes(t.accountId));
-  if (category === "CATEGORY_PERSONAL") found = found.filter((t) => !OTHER_CATEGORY_IDS.some((c) => hasLabel(t, c)));
+  if (category === "CATEGORY_PERSONAL")
+    found = found.filter((t) => !OTHER_CATEGORY_IDS.some((c) => hasLabel(t, c)));
   else if (category) found = found.filter((t) => hasLabel(t, category));
   return found.sort((a, b) => threadDate(b) - threadDate(a));
 }

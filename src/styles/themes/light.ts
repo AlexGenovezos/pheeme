@@ -111,9 +111,7 @@ export const lightTheme: ThemeDefinition = {
     "--color-mailbox-spam": "#b23a0a",
     "--color-mailbox-trash": "#b42a26",
 
-    "--shadow-popover":
-      "0 0 0 1px #0e14140f, 0 2px 6px #0e141414, 0 10px 28px -6px #0e14142e",
-    "--shadow-overlay":
-      "0 0 0 1px #0e141414, 0 4px 12px #0e141414, 0 24px 56px -12px #0e141447",
+    "--shadow-popover": "0 0 0 1px #0e14140f, 0 2px 6px #0e141414, 0 10px 28px -6px #0e14142e",
+    "--shadow-overlay": "0 0 0 1px #0e141414, 0 4px 12px #0e141414, 0 24px 56px -12px #0e141447",
   },
 };

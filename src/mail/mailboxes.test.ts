@@ -23,7 +23,11 @@ test("All Inboxes queries every account's INBOX with no second label", () => {
 
 test("an account's Social category is INBOX plus CATEGORY_SOCIAL for that account only", () => {
   const ref: MailboxRef = { accountId: "a2", labelId: "INBOX", category: "CATEGORY_SOCIAL" };
-  expect(queryFor(ref, ALL_IDS)).toEqual({ accountIds: ["a2"], labelId: "INBOX", alsoLabelId: "CATEGORY_SOCIAL" });
+  expect(queryFor(ref, ALL_IDS)).toEqual({
+    accountIds: ["a2"],
+    labelId: "INBOX",
+    alsoLabelId: "CATEGORY_SOCIAL",
+  });
 });
 
 test("an account's Sent is one id and no second label", () => {
@@ -33,7 +37,10 @@ test("an account's Sent is one id and no second label", () => {
 });
 
 test("All Mail queries the ALL pseudo-label", () => {
-  expect(queryFor({ accountId: "a1", labelId: "ALL" }, ALL_IDS)).toEqual({ accountIds: ["a1"], labelId: "ALL" });
+  expect(queryFor({ accountId: "a1", labelId: "ALL" }, ALL_IDS)).toEqual({
+    accountIds: ["a1"],
+    labelId: "ALL",
+  });
 });
 
 test("formatCount is blank at zero and caps at 999+", () => {
@@ -65,14 +72,19 @@ test("categories and favorites keep the designed order and ids", () => {
     ["SPAM", "Spam", "unread", undefined],
     ["TRASH", "Trash", "unread", undefined],
   ]);
-  for (const row of [...CATEGORIES, ...FAVORITES]) expect(row.colorToken).toMatch(/^--color-mailbox-[a-z]+$/);
+  for (const row of [...CATEGORIES, ...FAVORITES])
+    expect(row.colorToken).toMatch(/^--color-mailbox-[a-z]+$/);
 });
 
 test("mailbox titles", () => {
   const labels = [{ id: "Label_1", name: "Receipts" }];
   expect(mailboxTitle({ accountId: null, labelId: "INBOX" }, labels)).toBe("All Inboxes");
-  expect(mailboxTitle({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_UPDATES" }, labels)).toBe("Updates");
-  expect(mailboxTitle({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" }, labels)).toBe("Primary");
+  expect(
+    mailboxTitle({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_UPDATES" }, labels),
+  ).toBe("Updates");
+  expect(
+    mailboxTitle({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" }, labels),
+  ).toBe("Primary");
   expect(mailboxTitle({ accountId: "a1", labelId: "INBOX" }, labels)).toBe("Inbox");
   expect(mailboxTitle({ accountId: "a1", labelId: "ALL" }, labels)).toBe("All Mail");
   expect(mailboxTitle({ accountId: "a1", labelId: "STARRED" }, labels)).toBe("Starred");
@@ -99,5 +111,9 @@ test("the active account falls back to the first when unset or no longer connect
 
 test("home is All Inboxes, or the only account's Primary", () => {
   expect(homeMailbox([{ id: "a1" }, { id: "a2" }])).toEqual({ accountId: null, labelId: "INBOX" });
-  expect(homeMailbox([{ id: "a1" }])).toEqual({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" });
+  expect(homeMailbox([{ id: "a1" }])).toEqual({
+    accountId: "a1",
+    labelId: "INBOX",
+    category: "CATEGORY_PERSONAL",
+  });
 });

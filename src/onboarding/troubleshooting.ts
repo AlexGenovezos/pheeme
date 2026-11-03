@@ -19,7 +19,10 @@ export const BROWSER_PROBLEMS: Problem[] = [
     code: "redirect_uri_mismatch",
     title: "Error 400: redirect_uri_mismatch",
     fix: "The client isn't a Desktop app client. Create a new client with application type Desktop app, then enter its ID and secret.",
-    link: { label: "Open Create client", url: "https://console.cloud.google.com/auth/clients/create" },
+    link: {
+      label: "Open Create client",
+      url: "https://console.cloud.google.com/auth/clients/create",
+    },
     action: "credentials",
   },
   {

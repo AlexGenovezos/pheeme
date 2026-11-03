@@ -1,7 +1,14 @@
 // Labels and the counts the sidebar shows, all read from the local cache and refreshed on sync events.
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
-import { type LabelInfo, labelCounts, listLabels, mailboxCounts, stopQuietly, SYNC_EVENTS } from "../lib/tauri";
+import {
+  type LabelInfo,
+  labelCounts,
+  listLabels,
+  mailboxCounts,
+  stopQuietly,
+  SYNC_EVENTS,
+} from "../lib/tauri";
 
 export interface LabelCountEntry {
   unread: number;
@@ -36,7 +43,8 @@ let refreshAgain = false;
 const NO_LABELS: LabelInfo[] = [];
 const sortedUserLabels = new WeakMap<LabelInfo[], LabelInfo[]>();
 
-const byName = (a: LabelInfo, b: LabelInfo) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+const byName = (a: LabelInfo, b: LabelInfo) =>
+  a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 
 interface AccountData {
   labels: LabelInfo[];
@@ -53,7 +61,9 @@ async function fetchAccount(accountId: string): Promise<AccountData | null> {
     ]);
     return {
       labels: labels ?? [],
-      counts: Object.fromEntries((counts ?? []).map((c) => [c.labelId, { unread: c.unread, total: c.total }])),
+      counts: Object.fromEntries(
+        (counts ?? []).map((c) => [c.labelId, { unread: c.unread, total: c.total }]),
+      ),
       categories: Object.fromEntries((categories ?? []).map((c) => [c.labelId, c.unread])),
     };
   } catch (error) {
@@ -140,7 +150,8 @@ export const useLabelStore = create<LabelState>((set, get) => ({
     }
     return sorted;
   },
-  labelName: (accountId, labelId) => get().labels[accountId]?.find((l) => l.id === labelId)?.name ?? labelId,
+  labelName: (accountId, labelId) =>
+    get().labels[accountId]?.find((l) => l.id === labelId)?.name ?? labelId,
 }));
 
 /** Test helper. */

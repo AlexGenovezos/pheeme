@@ -23,7 +23,9 @@ describe("Avatar", () => {
   });
 
   test("color is stable per sender", () => {
-    expect(avatarColorIndex("mira@northlight.studio")).toBe(avatarColorIndex("MIRA@northlight.studio"));
+    expect(avatarColorIndex("mira@northlight.studio")).toBe(
+      avatarColorIndex("MIRA@northlight.studio"),
+    );
     expect(avatarColorIndex("x")).toBeGreaterThanOrEqual(1);
   });
 
@@ -73,7 +75,14 @@ describe("Menu", () => {
 
   test("Escape and outside clicks close it", () => {
     const onClose = vi.fn();
-    render(<Menu x={0} y={0} onClose={onClose} items={[{ id: "a", label: "Alpha", onSelect: vi.fn() }]} />);
+    render(
+      <Menu
+        x={0}
+        y={0}
+        onClose={onClose}
+        items={[{ id: "a", label: "Alpha", onSelect: vi.fn() }]}
+      />,
+    );
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     fireEvent.pointerDown(document.body);
     expect(onClose).toHaveBeenCalledTimes(2);
@@ -83,8 +92,16 @@ describe("Menu", () => {
 describe("context menus", () => {
   test("browser preview shows a DOM menu at the requested point", async () => {
     render(<ContextMenuHost />);
-    await act(() => showContextMenu([{ id: "x", label: "Reply", checked: true, onSelect: vi.fn() }], { x: 40, y: 50 }));
-    expect(screen.getByRole("menuitemcheckbox", { name: "Reply" })).toHaveAttribute("aria-checked", "true");
+    await act(() =>
+      showContextMenu([{ id: "x", label: "Reply", checked: true, onSelect: vi.fn() }], {
+        x: 40,
+        y: 50,
+      }),
+    );
+    expect(screen.getByRole("menuitemcheckbox", { name: "Reply" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
     expect(screen.getByRole("menu")).toHaveStyle({ left: "40px", top: "50px" });
   });
 

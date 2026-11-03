@@ -27,17 +27,37 @@ import {
 
 type Args = Record<string, unknown> | undefined;
 
-const accountIdsOf = (args: Args): string[] => (Array.isArray(args?.accountIds) ? args.accountIds.map(String) : []);
+const accountIdsOf = (args: Args): string[] =>
+  Array.isArray(args?.accountIds) ? args.accountIds.map(String) : [];
 const stringsOf = (value: unknown): string[] => (Array.isArray(value) ? value.map(String) : []);
 
 /** The account's system labels and user labels, shaped like `list_labels`. */
 function labelsFor(accountId: string): LabelInfo[] {
-  const base = { accountId, messagesTotal: 0, messagesUnread: 0, threadsTotal: 0, threadsUnread: 0, colorText: null };
+  const base = {
+    accountId,
+    messagesTotal: 0,
+    messagesUnread: 0,
+    threadsTotal: 0,
+    threadsUnread: 0,
+    colorText: null,
+  };
   return [
-    ...SYSTEM_LABELS.map((l) => ({ ...base, id: l.id, name: l.name, type: "system", colorBackground: null })),
+    ...SYSTEM_LABELS.map((l) => ({
+      ...base,
+      id: l.id,
+      name: l.name,
+      type: "system",
+      colorBackground: null,
+    })),
     ...fixtureUserLabels
       .filter((l) => l.accountId === accountId)
-      .map((l) => ({ ...base, id: l.id, name: l.name, type: "user", colorBackground: l.color ?? null })),
+      .map((l) => ({
+        ...base,
+        id: l.id,
+        name: l.name,
+        type: "user",
+        colorBackground: l.color ?? null,
+      })),
   ];
 }
 
@@ -88,18 +108,30 @@ function toDetail(t: FixtureThread): ThreadDetail {
 /** One stateful backend for both onboarding and the shell in browser preview. */
 export function createPreviewHandlers(search = ""): Record<string, (args: Args) => unknown> {
   const params = new URLSearchParams(search);
-  const accounts: AccountInfo[] = params.get("accounts") === "0" ? [] : fixtureAccounts
-    .slice(0, params.get("accounts") === "1" ? 1 : undefined)
-    .map((account) => ({ ...account, clientId: "1.apps.googleusercontent.com", synced: true }));
+  const accounts: AccountInfo[] =
+    params.get("accounts") === "0"
+      ? []
+      : fixtureAccounts.slice(0, params.get("accounts") === "1" ? 1 : undefined).map((account) => ({
+          ...account,
+          clientId: "1.apps.googleusercontent.com",
+          synced: true,
+        }));
   const flows = new Set<string>();
   const threads = createFixtureThreads();
 
   /** Apply `change` to the named threads, then tell the stores, as the backend does after a cache write. */
   const changeThreads = (args: Args, change: (t: FixtureThread) => void): void => {
     const accountId = String(args?.accountId);
-    const changed = threads.filter((t) => t.accountId === accountId && stringsOf(args?.threadIds).includes(t.id));
+    const changed = threads.filter(
+      (t) => t.accountId === accountId && stringsOf(args?.threadIds).includes(t.id),
+    );
     changed.forEach(change);
-    const payload: SyncMessagesUpdated = { accountId, added: [], removed: [], modified: changed.map((t) => t.id) };
+    const payload: SyncMessagesUpdated = {
+      accountId,
+      added: [],
+      removed: [],
+      modified: changed.map((t) => t.id),
+    };
     // Fire and forget: the IPC mock isn't there when a test calls a handler directly.
     void emit(SYNC_EVENTS.messagesUpdated, payload).catch(() => {});
   };
@@ -127,19 +159,30 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       const ids = accountIdsOf(args);
       const unread = (category: string | null) =>
         threadsIn(threads, "INBOX", category, ids).filter((t) => hasLabel(t, "UNREAD")).length;
-      return [{ labelId: "INBOX", unread: unread(null) }, ...CATEGORY_IDS.map((c) => ({ labelId: c, unread: unread(c) }))];
+      return [
+        { labelId: "INBOX", unread: unread(null) },
+        ...CATEGORY_IDS.map((c) => ({ labelId: c, unread: unread(c) })),
+      ];
     },
     // Like the backend: counts thread-label rows (so no ALL, and Primary has no row of its own).
     label_counts: (args): LabelCount[] => {
       const mine = threads.filter((t) => t.accountId === args?.accountId);
       // UNREAD is a row of its own in the backend; here it follows the messages.
-      const labelIds = new Set([...mine.flatMap((t) => t.labelIds), ...(mine.some((t) => hasLabel(t, "UNREAD")) ? ["UNREAD"] : [])]);
+      const labelIds = new Set([
+        ...mine.flatMap((t) => t.labelIds),
+        ...(mine.some((t) => hasLabel(t, "UNREAD")) ? ["UNREAD"] : []),
+      ]);
       const countOf = (labelId: string, members: FixtureThread[]): LabelCount => ({
         labelId,
         unread: members.filter((t) => hasLabel(t, "UNREAD")).length,
         total: members.length,
       });
-      const rows = [...labelIds].sort().map((labelId) => countOf(labelId, mine.filter((t) => hasLabel(t, labelId))));
+      const rows = [...labelIds].sort().map((labelId) =>
+        countOf(
+          labelId,
+          mine.filter((t) => hasLabel(t, labelId)),
+        ),
+      );
       // All Mail, like the backend: everything outside Spam and Trash.
       const allMail = mine.filter((t) => !hasLabel(t, "SPAM") && !hasLabel(t, "TRASH"));
       return allMail.length > 0 ? [...rows, countOf("ALL", allMail)] : rows;
@@ -179,12 +222,18 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       const fail = params.get("fail");
       if (fail) throw { code: fail, message: `Mock failure: ${fail}.` };
       const account = accounts.find((a) => a.email === "you@example.com") ?? {
-        id: crypto.randomUUID(), email: "you@example.com", displayName: "You", clientId: "1.apps.googleusercontent.com", synced: true,
+        id: crypto.randomUUID(),
+        email: "you@example.com",
+        displayName: "You",
+        clientId: "1.apps.googleusercontent.com",
+        synced: true,
       };
       if (!accounts.includes(account)) accounts.push(account);
       return account;
     },
-    cancel_oauth: (args) => { flows.delete(String(args?.flowId)); },
+    cancel_oauth: (args) => {
+      flows.delete(String(args?.flowId));
+    },
     remove_account: (args) => {
       const index = accounts.findIndex((a) => a.id === args?.accountId);
       if (index !== -1) accounts.splice(index, 1);

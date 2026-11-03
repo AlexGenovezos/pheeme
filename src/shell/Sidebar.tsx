@@ -11,7 +11,14 @@ import {
   TriangleAlert,
   UserPlus,
 } from "lucide-react";
-import { type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useId } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+} from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { IconButton } from "../components/ui/IconButton";
 import { ListRow } from "../components/ui/ListRow";
@@ -36,12 +43,18 @@ import { useThemeStore, type ThemeMode } from "../theme/theme";
 import { dragRegion } from "./chrome";
 
 const MODE_ICON: Record<ThemeMode, typeof Sun> = { system: Monitor, light: Sun, dark: Moon };
-const MODE_LABEL: Record<ThemeMode, string> = { system: "Match system", light: "Light", dark: "Dark" };
+const MODE_LABEL: Record<ThemeMode, string> = {
+  system: "Match system",
+  light: "Light",
+  dark: "Dark",
+};
 
 const NO_COUNTS: Record<string, never> = {};
 
 const sameMailbox = (a: MailboxRef, b: MailboxRef) =>
-  a.accountId === b.accountId && a.labelId === b.labelId && (a.category ?? null) === (b.category ?? null);
+  a.accountId === b.accountId &&
+  a.labelId === b.labelId &&
+  (a.category ?? null) === (b.category ?? null);
 
 function activateOnKey(e: KeyboardEvent, run: () => void) {
   if (e.key === "Enter" || e.key === " ") {
@@ -64,7 +77,16 @@ interface MailboxRowProps {
   neutral?: boolean;
 }
 
-function MailboxRow({ name, icon: Icon, colorToken, count, unit, target, labelColor, neutral }: MailboxRowProps) {
+function MailboxRow({
+  name,
+  icon: Icon,
+  colorToken,
+  count,
+  unit,
+  target,
+  labelColor,
+  neutral,
+}: MailboxRowProps) {
   const selected = useUiStore((s) => sameMailbox(s.mailbox, target));
   const go = () => useUiStore.getState().setMailbox(target);
   const text = formatCount(count);
@@ -82,7 +104,11 @@ function MailboxRow({ name, icon: Icon, colorToken, count, unit, target, labelCo
         <>
           <Icon aria-hidden="true" />
           {labelColor && (
-            <span className="sidebar__label-dot" style={{ backgroundColor: labelColor }} aria-hidden="true" />
+            <span
+              className="sidebar__label-dot"
+              style={{ backgroundColor: labelColor }}
+              aria-hidden="true"
+            />
           )}
         </>
       }
@@ -113,7 +139,15 @@ function CategoryRows({ accountId }: { accountId: string }) {
   );
 }
 
-function AccountSection({ account, accounts, error }: { account: AccountInfo; accounts: AccountInfo[]; error?: string }) {
+function AccountSection({
+  account,
+  accounts,
+  error,
+}: {
+  account: AccountInfo;
+  accounts: AccountInfo[];
+  error?: string;
+}) {
   const collapsed = useUiStore((s) => s.collapsedAccounts.includes(account.id));
   const inboxUnread = useLabelStore((s) => s.categoryCounts[account.id]?.INBOX ?? 0);
   const rowsId = useId();
@@ -201,7 +235,13 @@ function GmailLabels({ accountId }: { accountId: string }) {
   );
 }
 
-export function Sidebar({ onManageAccounts, onAddAccount }: { onManageAccounts?: () => void; onAddAccount?: () => void }) {
+export function Sidebar({
+  onManageAccounts,
+  onAddAccount,
+}: {
+  onManageAccounts?: () => void;
+  onAddAccount?: () => void;
+}) {
   const accounts = useAccountStore((s) => s.accounts);
   const storedActive = useUiStore((s) => s.activeAccountId);
   const allInboxes = useUiStore((s) => sameMailbox(s.mailbox, ALL_INBOXES));
@@ -238,7 +278,12 @@ export function Sidebar({ onManageAccounts, onAddAccount }: { onManageAccounts?:
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
         <span className="toolbar__spacer" {...dragRegion} />
-        <IconButton label="Hide sidebar" shortcut="mod+b" icon={<PanelLeftClose />} onClick={toggleSidebar} />
+        <IconButton
+          label="Hide sidebar"
+          shortcut="mod+b"
+          icon={<PanelLeftClose />}
+          onClick={toggleSidebar}
+        />
       </div>
 
       <nav className="sidebar__scroll" aria-label="Mailboxes">
@@ -246,7 +291,11 @@ export function Sidebar({ onManageAccounts, onAddAccount }: { onManageAccounts?:
           {single ? (
             <>
               {errors[single.id] && (
-                <div className="sidebar__sync-error" role="status" title={errors[single.id].message}>
+                <div
+                  className="sidebar__sync-error"
+                  role="status"
+                  title={errors[single.id].message}
+                >
                   <TriangleAlert aria-hidden="true" />
                   <span>Sync failed: {errors[single.id].message}</span>
                 </div>
@@ -264,7 +313,12 @@ export function Sidebar({ onManageAccounts, onAddAccount }: { onManageAccounts?:
                 target={ALL_INBOXES}
               />
               {accounts.map((a) => (
-                <AccountSection key={a.id} account={a} accounts={accounts} error={errors[a.id]?.message} />
+                <AccountSection
+                  key={a.id}
+                  account={a}
+                  accounts={accounts}
+                  error={errors[a.id]?.message}
+                />
               ))}
             </>
           )}
@@ -274,13 +328,23 @@ export function Sidebar({ onManageAccounts, onAddAccount }: { onManageAccounts?:
       </nav>
 
       <div className="sidebar__footer">
-        {active && <Avatar name={active.displayName ?? active.email} email={active.email} size="sm" />}
+        {active && (
+          <Avatar name={active.displayName ?? active.email} email={active.email} size="sm" />
+        )}
         <span className="sidebar__account" title={active?.email}>
           {active?.email}
         </span>
-        {onAddAccount && <IconButton label="Add account" icon={<UserPlus />} onClick={onAddAccount} />}
-        {onManageAccounts && <IconButton label="Manage accounts" icon={<Settings />} onClick={onManageAccounts} />}
-        <IconButton label={`Appearance: ${MODE_LABEL[mode]}`} icon={<ModeIcon />} onClick={openThemeMenu} />
+        {onAddAccount && (
+          <IconButton label="Add account" icon={<UserPlus />} onClick={onAddAccount} />
+        )}
+        {onManageAccounts && (
+          <IconButton label="Manage accounts" icon={<Settings />} onClick={onManageAccounts} />
+        )}
+        <IconButton
+          label={`Appearance: ${MODE_LABEL[mode]}`}
+          icon={<ModeIcon />}
+          onClick={openThemeMenu}
+        />
       </div>
     </div>
   );

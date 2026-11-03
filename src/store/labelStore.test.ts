@@ -49,16 +49,31 @@ function backend(world: World) {
 
 const world = (): World => ({
   labels: {
-    a: [label("INBOX", "Inbox", "system"), label("Label_2", "travel"), label("Label_1", "Receipts"), label("SENT", "Sent", "system")],
+    a: [
+      label("INBOX", "Inbox", "system"),
+      label("Label_2", "travel"),
+      label("Label_1", "Receipts"),
+      label("SENT", "Sent", "system"),
+    ],
     b: [label("Label_9", "Work", "user", "b")],
   },
   counts: {
-    a: [{ labelId: "INBOX", unread: 3, total: 10 }, { labelId: "STARRED", unread: 0, total: 4 }],
+    a: [
+      { labelId: "INBOX", unread: 3, total: 10 },
+      { labelId: "STARRED", unread: 0, total: 4 },
+    ],
     b: [{ labelId: "INBOX", unread: 2, total: 5 }],
   },
   mailbox: {
-    a: [{ labelId: "INBOX", unread: 3 }, { labelId: "CATEGORY_PERSONAL", unread: 1 }, { labelId: "CATEGORY_SOCIAL", unread: 2 }],
-    b: [{ labelId: "INBOX", unread: 2 }, { labelId: "CATEGORY_PERSONAL", unread: 2 }],
+    a: [
+      { labelId: "INBOX", unread: 3 },
+      { labelId: "CATEGORY_PERSONAL", unread: 1 },
+      { labelId: "CATEGORY_SOCIAL", unread: 2 },
+    ],
+    b: [
+      { labelId: "INBOX", unread: 2 },
+      { labelId: "CATEGORY_PERSONAL", unread: 2 },
+    ],
   },
   allInbox: 5,
 });
@@ -69,7 +84,10 @@ test("load fills labels, label counts, category counts and the All Inboxes total
   backend(world());
   await store().load(["a", "b"]);
   expect(store().labels.b.map((l) => l.id)).toEqual(["Label_9"]);
-  expect(store().counts.a).toEqual({ INBOX: { unread: 3, total: 10 }, STARRED: { unread: 0, total: 4 } });
+  expect(store().counts.a).toEqual({
+    INBOX: { unread: 3, total: 10 },
+    STARRED: { unread: 0, total: 4 },
+  });
   expect(store().categoryCounts.a).toEqual({ INBOX: 3, CATEGORY_PERSONAL: 1, CATEGORY_SOCIAL: 2 });
   expect(store().categoryCounts.b).toEqual({ INBOX: 2, CATEGORY_PERSONAL: 2 });
   expect(store().allInboxUnread).toBe(5);
@@ -85,7 +103,11 @@ test("a single account's All Inboxes total comes from its own mailbox counts", a
 test("userLabels sorts and filters by type", async () => {
   backend(world());
   await store().load(["a", "b"]);
-  expect(store().userLabels("a").map((l) => l.name)).toEqual(["Receipts", "travel"]);
+  expect(
+    store()
+      .userLabels("a")
+      .map((l) => l.name),
+  ).toEqual(["Receipts", "travel"]);
   expect(store().userLabels("a")).toBe(store().userLabels("a"));
   expect(store().userLabels("nobody")).toEqual([]);
 });
@@ -134,10 +156,14 @@ test("one account failing leaves the others (and its own last values) in place",
   mockIPC((cmd, args) => {
     const a = args as { accountId?: string; accountIds?: string[] };
     if (failB && a.accountId === "b") throw { code: "internal", message: "boom" };
-    if (failB && a.accountIds?.length === 1 && a.accountIds[0] === "b") throw { code: "internal", message: "boom" };
+    if (failB && a.accountIds?.length === 1 && a.accountIds[0] === "b")
+      throw { code: "internal", message: "boom" };
     if (cmd === "list_labels") return w.labels[a.accountId ?? ""] ?? [];
     if (cmd === "label_counts") return w.counts[a.accountId ?? ""] ?? [];
-    if (cmd === "mailbox_counts") return (a.accountIds ?? []).length > 1 ? [{ labelId: "INBOX", unread: w.allInbox }] : w.mailbox[(a.accountIds ?? [])[0]] ?? [];
+    if (cmd === "mailbox_counts")
+      return (a.accountIds ?? []).length > 1
+        ? [{ labelId: "INBOX", unread: w.allInbox }]
+        : (w.mailbox[(a.accountIds ?? [])[0]] ?? []);
     return undefined;
   });
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

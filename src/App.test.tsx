@@ -14,13 +14,20 @@ import { __resetMailStoreForTests } from "./store/mailStore";
 import { __resetThreadStoreForTests } from "./store/threadStore";
 import { stubLayout } from "./test/layout";
 
-const account = { id: "a1", email: "me@example.com", displayName: "Me", clientId: "c.apps.googleusercontent.com" };
+const account = {
+  id: "a1",
+  email: "me@example.com",
+  displayName: "Me",
+  clientId: "c.apps.googleusercontent.com",
+};
 const fixtureBackend = createPreviewHandlers();
 /** The fixture account that owns a thread, so `get_thread` works for the test's single account "a1". */
 const ownerOf = (threadId: unknown) =>
-  (fixtureBackend.list_threads({ accountIds: [], labelId: "ALL" }) as { threads: { id: string; accountId: string }[] }).threads.find(
-    (t) => t.id === threadId,
-  )?.accountId;
+  (
+    fixtureBackend.list_threads({ accountIds: [], labelId: "ALL" }) as {
+      threads: { id: string; accountId: string }[];
+    }
+  ).threads.find((t) => t.id === threadId)?.accountId;
 /** One account; threads come from the preview fixtures, whichever fixture account they belong to. */
 const backend = (cmd: string, args?: unknown) =>
   cmd === "list_accounts"
@@ -28,7 +35,10 @@ const backend = (cmd: string, args?: unknown) =>
     : cmd === "list_threads"
       ? fixtureBackend.list_threads({ ...(args as object), accountIds: [] })
       : cmd === "get_thread"
-        ? fixtureBackend.get_thread({ ...(args as object), accountId: ownerOf((args as { threadId?: unknown }).threadId) })
+        ? fixtureBackend.get_thread({
+            ...(args as object),
+            accountId: ownerOf((args as { threadId?: unknown }).threadId),
+          })
         : undefined;
 
 let restoreLayout: () => void;
@@ -55,7 +65,9 @@ test("renders nothing until accounts load", () => {
 test("first run with no accounts opens the setup guide", async () => {
   mockIPC((cmd) => (cmd === "list_accounts" ? [] : undefined));
   render(<App />);
-  expect(await screen.findByText("Connect Gmail with your own Google Cloud app")).toBeInTheDocument();
+  expect(
+    await screen.findByText("Connect Gmail with your own Google Cloud app"),
+  ).toBeInTheDocument();
   expect(screen.getByRole("navigation", { name: "Setup steps" })).toBeInTheDocument();
 });
 
@@ -83,7 +95,8 @@ test("with accounts it shows them and can add or remove one", async () => {
 test("a failed remove keeps the account and shows why", async () => {
   mockIPC((cmd) => {
     if (cmd === "list_accounts") return [account];
-    if (cmd === "remove_account") throw { code: "keychain_unavailable", message: "No system keychain is available." };
+    if (cmd === "remove_account")
+      throw { code: "keychain_unavailable", message: "No system keychain is available." };
   });
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Manage accounts" }));
@@ -117,7 +130,11 @@ test("g then i goes to the inbox (Primary, with one account); j selects the firs
   fireEvent.keyDown(window, { key: "g" });
   expect(screen.getByRole("status")).toHaveTextContent("Go to Inbox");
   fireEvent.keyDown(window, { key: "i" });
-  expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" });
+  expect(useUiStore.getState().mailbox).toEqual({
+    accountId: "a1",
+    labelId: "INBOX",
+    category: "CATEGORY_PERSONAL",
+  });
 
   const list = screen.getByRole("listbox", { name: "Primary conversations" });
   await within(list).findAllByRole("option");
@@ -150,7 +167,9 @@ test("shortcuts typed into search don't fire commands", async () => {
 test("right-clicking a conversation opens the menu (DOM fallback in preview)", async () => {
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
-  const [first] = await within(screen.getByRole("listbox", { name: "Primary conversations" })).findAllByRole("option");
+  const [first] = await within(
+    screen.getByRole("listbox", { name: "Primary conversations" }),
+  ).findAllByRole("option");
   const archivedId = first.id;
   fireEvent.contextMenu(first, { clientX: 100, clientY: 100 });
   expect(screen.getByRole("menu")).toBeInTheDocument();
@@ -197,7 +216,7 @@ test("account management returns to the inbox", async () => {
 });
 
 test("mail shortcuts do not run during onboarding", async () => {
-  mockIPC((cmd) => cmd === "list_accounts" ? [] : undefined);
+  mockIPC((cmd) => (cmd === "list_accounts" ? [] : undefined));
   render(<App />);
   await screen.findByRole("navigation", { name: "Setup steps" });
   fireEvent.keyDown(window, { key: "b", ctrlKey: true });
@@ -245,7 +264,11 @@ test("the shell loads labels and counts for the connected accounts and marks acc
   useAccountStore.setState({ accounts: [], loaded: false, error: null, syncErrors: {} });
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
-  await vi.waitFor(() => expect(calls).toEqual(expect.arrayContaining(["list_labels", "label_counts", "mailbox_counts"])));
+  await vi.waitFor(() =>
+    expect(calls).toEqual(
+      expect.arrayContaining(["list_labels", "label_counts", "mailbox_counts"]),
+    ),
+  );
   expect(useAccountStore.getState().accounts[0].synced).toBeFalsy();
   await vi.waitFor(async () => {
     await emit("sync:completed", { accountId: "a1" });
@@ -259,7 +282,12 @@ test("a change Gmail rejects shows a toast", async () => {
   await screen.findByRole("navigation", { name: "Mailboxes" });
   // Listeners attach asynchronously after mount.
   await vi.waitFor(async () => {
-    await emit("outbox:rejected", { accountId: "a1", opId: "op1", kind: "archive", message: "Not found" });
+    await emit("outbox:rejected", {
+      accountId: "a1",
+      opId: "op1",
+      kind: "archive",
+      message: "Not found",
+    });
     expect(screen.getByText("Couldn't archive")).toBeInTheDocument();
   });
   expect(screen.getByText("Gmail said: Not found. Your change was undone.")).toBeInTheDocument();
@@ -305,7 +333,9 @@ test("a sync change to the open conversation while Manage accounts is open shows
 
   fireEvent.click(screen.getByRole("button", { name: "Manage accounts" }));
   subject = "After";
-  await act(() => emit("sync:messages_updated", { accountId, added: [], removed: [], modified: [threadId] }));
+  await act(() =>
+    emit("sync:messages_updated", { accountId, added: [], removed: [], modified: [threadId] }),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
 
   expect(await screen.findByRole("heading", { name: "After" })).toBeInTheDocument();

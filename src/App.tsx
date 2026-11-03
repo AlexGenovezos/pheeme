@@ -63,7 +63,13 @@ function useLabelsAndCounts() {
   }, [accountIds]);
 }
 
-function MailScreen({ onManageAccounts, onAddAccount }: { onManageAccounts: () => void; onAddAccount: () => void }) {
+function MailScreen({
+  onManageAccounts,
+  onAddAccount,
+}: {
+  onManageAccounts: () => void;
+  onAddAccount: () => void;
+}) {
   useGlobalShortcuts();
   useAppCommands();
   useNativeContextMenuOnly();
@@ -104,7 +110,9 @@ function App() {
   const [adding, setAdding] = useState(false);
   const [managing, setManaging] = useState(false);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
   useSessionSyncEvents();
   useEffect(() => {
     if (import.meta.env.PROD && isTauri()) return startUpdateChecks();
@@ -126,15 +134,23 @@ function App() {
       </div>
     );
   } else if (loaded && (accounts.length === 0 || adding)) {
-    screen = <Onboarding accounts={accounts} onConnected={(account) => {
-      upsert(account);
-      setAdding(false);
-      setManaging(false);
-    }} onClose={accounts.length > 0 ? () => setAdding(false) : undefined} />;
+    screen = (
+      <Onboarding
+        accounts={accounts}
+        onConnected={(account) => {
+          upsert(account);
+          setAdding(false);
+          setManaging(false);
+        }}
+        onClose={accounts.length > 0 ? () => setAdding(false) : undefined}
+      />
+    );
   } else if (loaded && managing) {
     screen = <AccountsHome onAdd={() => setAdding(true)} onClose={() => setManaging(false)} />;
   } else if (loaded) {
-    screen = <MailScreen onManageAccounts={() => setManaging(true)} onAddAccount={() => setAdding(true)} />;
+    screen = (
+      <MailScreen onManageAccounts={() => setManaging(true)} onAddAccount={() => setAdding(true)} />
+    );
   }
   return <ToastProvider pinned={<UpdateBanner />}>{screen}</ToastProvider>;
 }

@@ -15,10 +15,16 @@ import "./mail.css";
 export function EmailBody({ message, onRetry }: { message: MessageDetail; onRetry?(): void }) {
   if (message.bodyHtml) {
     return (
-      <HtmlBody key={message.id} html={message.bodyHtml} hasRemoteContent={message.hasRemoteContent} declaresDark={message.declaresDarkMode} />
+      <HtmlBody
+        key={message.id}
+        html={message.bodyHtml}
+        hasRemoteContent={message.hasRemoteContent}
+        declaresDark={message.declaresDarkMode}
+      />
     );
   }
-  if (message.bodyText) return <div className="message-card__text selectable">{linkify(message.bodyText)}</div>;
+  if (message.bodyText)
+    return <div className="message-card__text selectable">{linkify(message.bodyText)}</div>;
   if (!message.bodyAvailable) {
     return (
       <div className="message-card__unavailable">
@@ -133,7 +139,12 @@ const closestLink = (target: EventTarget | null) => {
  * to the app's shortcuts. The frame can't run scripts, so all of this runs in the parent against the
  * same-origin document. Returns a function that stops it.
  */
-function watchFrame(iframe: HTMLIFrameElement, wrapper: HTMLElement, doc: Document, commands: CommandRegistry = registry): () => void {
+function watchFrame(
+  iframe: HTMLIFrameElement,
+  wrapper: HTMLElement,
+  doc: Document,
+  commands: CommandRegistry = registry,
+): () => void {
   const root = doc.documentElement;
   let applied = 0;
   // Growth since anything outside our own resizing (load, an image arriving, a new width) happened.
@@ -161,7 +172,9 @@ function watchFrame(iframe: HTMLIFrameElement, wrapper: HTMLElement, doc: Docume
     external = false;
     if (selfGrowth > MAX_SELF_GROWTH || height > MAX_FRAME_HEIGHT) {
       pinned = true;
-      setHeight(height > MAX_FRAME_HEIGHT && selfGrowth <= MAX_SELF_GROWTH ? MAX_FRAME_HEIGHT : applied);
+      setHeight(
+        height > MAX_FRAME_HEIGHT && selfGrowth <= MAX_SELF_GROWTH ? MAX_FRAME_HEIGHT : applied,
+      );
       // The rest must stay reachable even if the email hides overflow: inline !important beats any
       // `overflow` rule (important or not) in the email's own stylesheets.
       for (const el of [root, doc.body]) el?.style.setProperty("overflow", "auto", "important");

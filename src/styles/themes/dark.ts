@@ -108,9 +108,7 @@ export const darkTheme: ThemeDefinition = {
     "--color-mailbox-spam": "#f28c62",
     "--color-mailbox-trash": "#f2827d",
 
-    "--shadow-popover":
-      "0 0 0 1px #ffffff0d, 0 2px 8px #00000066, 0 12px 32px -6px #00000099",
-    "--shadow-overlay":
-      "0 0 0 1px #ffffff12, 0 4px 14px #00000066, 0 28px 64px -12px #000000b3",
+    "--shadow-popover": "0 0 0 1px #ffffff0d, 0 2px 8px #00000066, 0 12px 32px -6px #00000099",
+    "--shadow-overlay": "0 0 0 1px #ffffff12, 0 4px 14px #00000066, 0 28px 64px -12px #000000b3",
   },
 };

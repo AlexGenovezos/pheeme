@@ -113,7 +113,8 @@ beforeEach(() => {
     if (cmd !== "modify_threads" && cmd !== "trash_threads") return undefined;
     return (async () => {
       await Promise.all(gates.filter((g) => g.match(a)).map((g) => g.open));
-      if (rejecting.has(a.accountId as string)) throw { code: "gmail", message: `Gmail refused ${a.accountId}` };
+      if (rejecting.has(a.accountId as string))
+        throw { code: "gmail", message: `Gmail refused ${a.accountId}` };
     })();
   });
 });
@@ -170,7 +171,12 @@ describe("archive", () => {
     await archive();
     toasts()[0].action!.run();
     await flush();
-    expect(modifyCalls()[1]).toEqual({ accountId: "a1", threadIds: ["t1"], add: ["INBOX"], remove: [] });
+    expect(modifyCalls()[1]).toEqual({
+      accountId: "a1",
+      threadIds: ["t1"],
+      add: ["INBOX"],
+      remove: [],
+    });
     expect(reload).toHaveBeenCalled();
   });
 
@@ -191,7 +197,12 @@ describe("archive", () => {
     expect(announced?.description).toBeUndefined();
     announced!.action!.run();
     await flush();
-    expect(last(modifyCalls())).toEqual({ accountId: "a1", threadIds: ["t1"], add: ["INBOX"], remove: [] });
+    expect(last(modifyCalls())).toEqual({
+      accountId: "a1",
+      threadIds: ["t1"],
+      add: ["INBOX"],
+      remove: [],
+    });
   });
 
   test("nothing is announced when every account is refused", async () => {
@@ -298,7 +309,9 @@ describe("pending changes and reloads", () => {
     useUiStore.setState({ openThread: key(1) });
     await setStarred(false);
     await reloadWith([thread(1, "a1", { starred: false }), thread(2, "a2")]);
-    expect(useMailStore.getState().threads.map((t) => [threadKey(t.accountId, t.id), t.starred])).toEqual([
+    expect(
+      useMailStore.getState().threads.map((t) => [threadKey(t.accountId, t.id), t.starred]),
+    ).toEqual([
       [key(1), false],
       [key(2, "a2"), true], // B is held
     ]);
@@ -352,7 +365,9 @@ describe("trash", () => {
     setList([thread(1), thread(2)]);
     useUiStore.setState({ openThread: key(1) });
     await trash();
-    expect(calls.filter((c) => c.cmd === "trash_threads").map((c) => c.args)).toEqual([{ accountId: "a1", threadIds: ["t1"] }]);
+    expect(calls.filter((c) => c.cmd === "trash_threads").map((c) => c.args)).toEqual([
+      { accountId: "a1", threadIds: ["t1"] },
+    ]);
     expect(modifyCalls()).toEqual([]);
     expect(toasts()[0].title).toBe("Moved to Trash");
     expect(toasts()[0].action).toBeUndefined();
@@ -375,12 +390,19 @@ describe("star and read", () => {
     setList([thread(1, "a1", { starred: true }), thread(2)]);
     useUiStore.setState({ checked: [key(1), key(2)] });
     await toggleStar();
-    expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1", "t2"], add: [], remove: ["STARRED"] }]);
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1", "t2"], add: [], remove: ["STARRED"] },
+    ]);
     expect(useMailStore.getState().threads.map((t) => t.starred)).toEqual([false, false]);
 
     useUiStore.setState({ checked: [key(2), key(1)] });
     await toggleStar();
-    expect(modifyCalls()[1]).toEqual({ accountId: "a1", threadIds: ["t2", "t1"], add: ["STARRED"], remove: [] });
+    expect(modifyCalls()[1]).toEqual({
+      accountId: "a1",
+      threadIds: ["t2", "t1"],
+      add: ["STARRED"],
+      remove: [],
+    });
     expect(useMailStore.getState().threads.map((t) => t.starred)).toEqual([true, true]);
   });
 
@@ -412,7 +434,9 @@ describe("unstarring in Starred", () => {
     expect(listKeys()).toEqual([key(2)]);
     expect(useUiStore.getState().openThread).toBe(key(2));
     await done;
-    expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1"], add: [], remove: ["STARRED"] }]);
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: [], remove: ["STARRED"] },
+    ]);
 
     toasts()[0].action!.run();
     await flush();
@@ -432,7 +456,9 @@ describe("unstarring in Starred", () => {
     // Switch to All Mail: the cache still has the star, but the change is on its way.
     useMailStore.setState({ query: { accountIds: ["a1"], labelId: "ALL" } });
     await reloadWith(starredRows);
-    expect(useMailStore.getState().threads.map((t) => [threadKey(t.accountId, t.id), t.starred])).toEqual([
+    expect(
+      useMailStore.getState().threads.map((t) => [threadKey(t.accountId, t.id), t.starred]),
+    ).toEqual([
       [key(1), false],
       [key(2), true],
     ]);
@@ -440,7 +466,10 @@ describe("unstarring in Starred", () => {
     useUiStore.setState({ openThread: key(1) });
     const starring = toggleStar();
     await flush();
-    expect(modifyCalls().map((c) => [c.add, c.remove])).toEqual([[[], ["STARRED"]], [["STARRED"], []]]);
+    expect(modifyCalls().map((c) => [c.add, c.remove])).toEqual([
+      [[], ["STARRED"]],
+      [["STARRED"], []],
+    ]);
     release();
     await Promise.all([unstarring, starring]);
   });
@@ -462,7 +491,9 @@ describe("opening", () => {
     openAndMarkRead(key(1));
     await flush();
     expect(useUiStore.getState().openThread).toBe(key(1));
-    expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1"], add: [], remove: ["UNREAD"] }]);
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: [], remove: ["UNREAD"] },
+    ]);
     expect(useMailStore.getState().threads[0].unread).toBe(false);
     // Quiet, and the selection is left alone.
     expect(toasts()).toEqual([]);
@@ -481,7 +512,9 @@ describe("opening", () => {
 
     await act();
     release();
-    await vi.waitFor(() => expect(calls.filter((c) => c.cmd === "get_thread").length).toBeGreaterThan(0));
+    await vi.waitFor(() =>
+      expect(calls.filter((c) => c.cmd === "get_thread").length).toBeGreaterThan(0),
+    );
     await flush();
     await flush();
 
@@ -508,7 +541,12 @@ describe("opening", () => {
     await setRead(false, [key(2)]);
     release();
     await vi.waitFor(() => expect(modifyCalls()).toHaveLength(2));
-    expect(modifyCalls()[1]).toEqual({ accountId: "a1", threadIds: ["t1"], add: [], remove: ["UNREAD"] });
+    expect(modifyCalls()[1]).toEqual({
+      accountId: "a1",
+      threadIds: ["t1"],
+      add: [],
+      remove: ["UNREAD"],
+    });
   });
 
   test("an already-read thread sends nothing", async () => {
@@ -569,7 +607,9 @@ describe("a thread removed underneath", () => {
     setList([thread(1)]);
     useUiStore.setState({ checked: [key(9), key(1)] });
     await archive();
-    expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1"], add: [], remove: ["INBOX"] }]);
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: [], remove: ["INBOX"] },
+    ]);
   });
 });
 
@@ -591,10 +631,14 @@ describe("labels", () => {
     messages: [{ id: `m${n}`, threadId: `t${n}`, labelIds } as MessageDetail],
   });
   const cache = (...details: ThreadDetail[]) =>
-    useThreadStore.setState({ details: new Map(details.map((d) => [threadKey(d.thread.accountId, d.thread.id), d])) });
+    useThreadStore.setState({
+      details: new Map(details.map((d) => [threadKey(d.thread.accountId, d.thread.id), d])),
+    });
 
   beforeEach(() => {
-    useLabelStore.setState({ labels: { a1: [label("Label_1", "Work"), label("Label_2", "Home")] } });
+    useLabelStore.setState({
+      labels: { a1: [label("Label_1", "Work"), label("Label_2", "Home")] },
+    });
   });
 
   test("toggling adds the label unless every target has it", async () => {
@@ -602,11 +646,18 @@ describe("labels", () => {
     cache(detail(1, ["INBOX", "Label_1"]), detail(2, ["INBOX"]));
     useUiStore.setState({ checked: [key(1), key(2)] });
     await toggleLabel("a1", "Label_1");
-    expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1", "t2"], add: ["Label_1"], remove: [] }]);
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1", "t2"], add: ["Label_1"], remove: [] },
+    ]);
 
     cache(detail(1, ["Label_1"]), detail(2, ["Label_1"]));
     await toggleLabel("a1", "Label_1", [key(1), key(2)]);
-    expect(modifyCalls()[1]).toEqual({ accountId: "a1", threadIds: ["t1", "t2"], add: [], remove: ["Label_1"] });
+    expect(modifyCalls()[1]).toEqual({
+      accountId: "a1",
+      threadIds: ["t1", "t2"],
+      add: [],
+      remove: ["Label_1"],
+    });
     // Labels don't show in the list, so the rows stay in an inbox.
     expect(listKeys()).toEqual([key(1), key(2)]);
   });
@@ -624,14 +675,17 @@ describe("labels", () => {
     setList([thread(1), thread(2, "a2")]);
     cache(detail(1, []));
     await toggleLabel("a1", "Label_1", [key(1), key(2, "a2")]);
-    expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1"], add: ["Label_1"], remove: [] }]);
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: ["Label_1"], remove: [] },
+    ]);
   });
 
   test("removing a label from more conversations than the detail cache holds still removes it", async () => {
     const count = 35;
     const rows = Array.from({ length: count }, (_, i) => thread(i));
     setList(rows);
-    for (const row of rows) details[key(Number(row.id.slice(1)))] = detail(Number(row.id.slice(1)), ["INBOX", "Label_1"]);
+    for (const row of rows)
+      details[key(Number(row.id.slice(1)))] = detail(Number(row.id.slice(1)), ["INBOX", "Label_1"]);
     useUiStore.setState({ checked: rows.map((t) => threadKey(t.accountId, t.id)) });
     await toggleLabel("a1", "Label_1");
     expect(modifyCalls()).toHaveLength(1);
@@ -658,7 +712,11 @@ describe("labels", () => {
     setList([thread(1)]);
     cache(original);
     useUiStore.setState({ openThread: key(1) });
-    const labelsNow = () => useThreadStore.getState().details.get(key(1))?.messages.flatMap((m) => m.labelIds);
+    const labelsNow = () =>
+      useThreadStore
+        .getState()
+        .details.get(key(1))
+        ?.messages.flatMap((m) => m.labelIds);
     const release = hold();
 
     const removing = toggleLabel("a1", "Label_1");
@@ -667,7 +725,10 @@ describe("labels", () => {
     // A second toggle sees the optimistic state, so it adds the label back.
     const adding = toggleLabel("a1", "Label_1");
     await flush();
-    expect(modifyCalls().map((c) => [c.add, c.remove])).toEqual([[[], ["Label_1"]], [["Label_1"], []]]);
+    expect(modifyCalls().map((c) => [c.add, c.remove])).toEqual([
+      [[], ["Label_1"]],
+      [["Label_1"], []],
+    ]);
     expect(labelsNow()).toEqual(["INBOX", "Label_1"]);
     release();
     await Promise.all([removing, adding]);
@@ -691,8 +752,14 @@ describe("labels", () => {
     setList([thread(1)]);
     cache(details[key(1)]);
     useUiStore.setState({ openThread: key(1) });
-    const labelsNow = () => useThreadStore.getState().details.get(key(1))?.messages.flatMap((m) => m.labelIds);
-    const releaseSecond = hold((a) => (a.remove as string[]).includes("Label_2") || (a.add as string[]).includes("Label_2"));
+    const labelsNow = () =>
+      useThreadStore
+        .getState()
+        .details.get(key(1))
+        ?.messages.flatMap((m) => m.labelIds);
+    const releaseSecond = hold(
+      (a) => (a.remove as string[]).includes("Label_2") || (a.add as string[]).includes("Label_2"),
+    );
 
     // Action 1 goes through; the cache now has Label_1 gone but not yet Label_2.
     await toggleLabel("a1", "Label_1");
@@ -737,7 +804,9 @@ describe("labels", () => {
     if (!work || work.type === "separator") throw new Error("no Work item");
     work.onSelect();
     await flush();
-    expect(modifyCalls()).toEqual([{ accountId: "a1", threadIds: ["t1", "t2"], add: [], remove: ["Label_1"] }]);
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1", "t2"], add: [], remove: ["Label_1"] },
+    ]);
   });
 
   test("an account without labels says so instead of opening an empty menu", async () => {

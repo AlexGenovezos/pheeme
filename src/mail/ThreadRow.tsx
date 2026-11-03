@@ -12,10 +12,12 @@ import "./mail.css";
 
 export type RowAction = "archive" | "delete" | "read";
 
-export const senderOf = (t: Pick<ThreadSummary, "fromName" | "fromAddress">) => t.fromName ?? t.fromAddress ?? "Unknown sender";
+export const senderOf = (t: Pick<ThreadSummary, "fromName" | "fromAddress">) =>
+  t.fromName ?? t.fromAddress ?? "Unknown sender";
 
 /** The row's DOM id, for the listbox's `aria-activedescendant`. Injective: every character outside [A-Za-z0-9-] becomes `_hex_`. */
-export const rowId = (key: string) => `thread-${key.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.codePointAt(0)!.toString(16)}_`)}`;
+export const rowId = (key: string) =>
+  `thread-${key.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.codePointAt(0)!.toString(16)}_`)}`;
 
 export interface ThreadRowProps {
   thread: ThreadSummary;
@@ -117,14 +119,36 @@ export const ThreadRow = memo(function ThreadRow({
       meta={
         <>
           <span className="thread-row__stamp" data-hidden={hovered || undefined}>
-            {thread.hasAttachment && <Paperclip aria-label="Has attachment" className="list-pane__glyph" />}
-            {thread.starred && <Star aria-label="Starred" className="list-pane__glyph list-pane__glyph--star" />}
-            {thread.date > 0 && <time dateTime={new Date(thread.date).toISOString()}>{formatListDate(thread.date)}</time>}
+            {thread.hasAttachment && (
+              <Paperclip aria-label="Has attachment" className="list-pane__glyph" />
+            )}
+            {thread.starred && (
+              <Star aria-label="Starred" className="list-pane__glyph list-pane__glyph--star" />
+            )}
+            {thread.date > 0 && (
+              <time dateTime={new Date(thread.date).toISOString()}>
+                {formatListDate(thread.date)}
+              </time>
+            )}
           </span>
           {hovered && (
             <span className="thread-row__actions" onMouseDown={(e) => e.preventDefault()}>
-              <IconButton size="sm" tabIndex={-1} label="Archive" shortcut="e" icon={<Archive />} onClick={act("archive")} />
-              <IconButton size="sm" tabIndex={-1} label="Delete" shortcut="#" icon={<Trash2 />} onClick={act("delete")} />
+              <IconButton
+                size="sm"
+                tabIndex={-1}
+                label="Archive"
+                shortcut="e"
+                icon={<Archive />}
+                onClick={act("archive")}
+              />
+              <IconButton
+                size="sm"
+                tabIndex={-1}
+                label="Delete"
+                shortcut="#"
+                icon={<Trash2 />}
+                onClick={act("delete")}
+              />
               <IconButton
                 size="sm"
                 tabIndex={-1}

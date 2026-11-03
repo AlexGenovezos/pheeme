@@ -1,8 +1,25 @@
-import { Archive, Forward, Mail, MailOpen, MoreHorizontal, Reply, Star, Trash2 } from "lucide-react";
+import {
+  Archive,
+  Forward,
+  Mail,
+  MailOpen,
+  MoreHorizontal,
+  Reply,
+  Star,
+  Trash2,
+} from "lucide-react";
 import { type MouseEvent, useMemo } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { showContextMenu } from "../lib/contextMenu";
-import { archive, composeLater, openLabelMenu, setRead, targetsOf, toggleStar, trash } from "../mail/actions";
+import {
+  archive,
+  composeLater,
+  openLabelMenu,
+  setRead,
+  targetsOf,
+  toggleStar,
+  trash,
+} from "../mail/actions";
 import { threadKey } from "../mail/mailboxes";
 import { ThreadView } from "../mail/ThreadView";
 import { useMailStore } from "../store/mailStore";
@@ -30,7 +47,12 @@ export function ViewPane() {
     const r = e.currentTarget.getBoundingClientRect();
     void showContextMenu(
       [
-        { id: "label", label: "Label as…", shortcut: "l", onSelect: () => void openLabelMenu({ x: r.left, y: r.bottom }) },
+        {
+          id: "label",
+          label: "Label as…",
+          shortcut: "l",
+          onSelect: () => void openLabelMenu({ x: r.left, y: r.bottom }),
+        },
         { id: "move", label: "Move to…", shortcut: "v", onSelect: () => notYet("Move") },
         { type: "separator" },
         { id: "original", label: "Show original", onSelect: () => notYet("Show original") },
@@ -42,8 +64,20 @@ export function ViewPane() {
   return (
     <div className="view-pane">
       <div className="toolbar toolbar--view" {...dragRegion}>
-        <IconButton label="Archive" shortcut="e" icon={<Archive />} disabled={stale} onClick={() => void archive()} />
-        <IconButton label="Delete" shortcut="#" icon={<Trash2 />} disabled={stale} onClick={() => void trash()} />
+        <IconButton
+          label="Archive"
+          shortcut="e"
+          icon={<Archive />}
+          disabled={stale}
+          onClick={() => void archive()}
+        />
+        <IconButton
+          label="Delete"
+          shortcut="#"
+          icon={<Trash2 />}
+          disabled={stale}
+          onClick={() => void trash()}
+        />
         <IconButton
           label={anyUnread ? "Mark as read" : "Mark as unread"}
           shortcut={anyUnread ? "shift+i" : "shift+u"}
@@ -59,10 +93,27 @@ export function ViewPane() {
           onClick={() => void toggleStar()}
         />
         <span className="toolbar__separator" />
-        <IconButton label="Reply" shortcut="r" icon={<Reply />} disabled={off} onClick={composeLater} />
-        <IconButton label="Forward" shortcut="f" icon={<Forward />} disabled={off} onClick={composeLater} />
+        <IconButton
+          label="Reply"
+          shortcut="r"
+          icon={<Reply />}
+          disabled={off}
+          onClick={composeLater}
+        />
+        <IconButton
+          label="Forward"
+          shortcut="f"
+          icon={<Forward />}
+          disabled={off}
+          onClick={composeLater}
+        />
         <span className="toolbar__spacer" {...dragRegion} />
-        <IconButton label="More actions" icon={<MoreHorizontal />} disabled={stale} onClick={openMore} />
+        <IconButton
+          label="More actions"
+          icon={<MoreHorizontal />}
+          disabled={stale}
+          onClick={openMore}
+        />
       </div>
 
       <ThreadView />

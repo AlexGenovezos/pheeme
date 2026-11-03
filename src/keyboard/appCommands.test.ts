@@ -36,7 +36,11 @@ beforeEach(() => {
   __resetUiStoreForTests();
   __resetMailStoreForTests();
   useToastStore.setState({ toasts: [] });
-  useAccountStore.setState({ accounts: [{ id: "a1", email: "a@example.com", displayName: null, clientId: "c", synced: true }] });
+  useAccountStore.setState({
+    accounts: [
+      { id: "a1", email: "a@example.com", displayName: null, clientId: "c", synced: true },
+    ],
+  });
   calls = [];
   mockIPC((cmd, args) => void calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> }));
   useMailStore.setState({ threads: [thread(1), thread(2)] });
@@ -50,7 +54,9 @@ const modifies = () => calls.filter((c) => c.cmd === "modify_threads").map((c) =
 
 test("plain s stars the open conversation, while g then s still goes to Starred", () => {
   expect(press("s")).toBe(true);
-  expect(modifies()).toEqual([{ accountId: "a1", threadIds: ["t1"], add: ["STARRED"], remove: [] }]);
+  expect(modifies()).toEqual([
+    { accountId: "a1", threadIds: ["t1"], add: ["STARRED"], remove: [] },
+  ]);
   expect(reg.pendingChord()).toBeNull();
 
   expect(press("g")).toBe(true);
@@ -75,7 +81,10 @@ test("e archives, # deletes, shift+i and shift+u set the read state, u closes", 
 
   useUiStore.setState({ openThread: threadKey("a1", "t2") });
   press("#", { shiftKey: true });
-  expect(last(calls)).toEqual({ cmd: "trash_threads", args: { accountId: "a1", threadIds: ["t2"] } });
+  expect(last(calls)).toEqual({
+    cmd: "trash_threads",
+    args: { accountId: "a1", threadIds: ["t2"] },
+  });
 
   useMailStore.setState({ threads: [thread(3)] });
   useUiStore.setState({ openThread: threadKey("a1", "t3") });

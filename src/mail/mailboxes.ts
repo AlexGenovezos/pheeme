@@ -18,7 +18,8 @@ import type { ThreadQuery } from "../lib/tauri";
 /** `${accountId}:${threadId}`. Thread ids are per account, so every UI collection keys on this. */
 export type ThreadKey = string;
 
-export const threadKey = (accountId: string, threadId: string): ThreadKey => `${accountId}:${threadId}`;
+export const threadKey = (accountId: string, threadId: string): ThreadKey =>
+  `${accountId}:${threadId}`;
 
 /** Splits on the first `:` (account ids never contain one). */
 export function parseThreadKey(key: ThreadKey): { accountId: string; threadId: string } {
@@ -51,20 +52,80 @@ export interface FavoriteRow extends MailboxRow {
 }
 
 export const CATEGORIES: MailboxRow[] = [
-  { labelId: "CATEGORY_PERSONAL", name: "Primary", icon: Inbox, colorToken: "--color-mailbox-primary" },
+  {
+    labelId: "CATEGORY_PERSONAL",
+    name: "Primary",
+    icon: Inbox,
+    colorToken: "--color-mailbox-primary",
+  },
   { labelId: "CATEGORY_SOCIAL", name: "Social", icon: Users, colorToken: "--color-mailbox-social" },
-  { labelId: "CATEGORY_PROMOTIONS", name: "Promotions", icon: Megaphone, colorToken: "--color-mailbox-promotions" },
-  { labelId: "CATEGORY_UPDATES", name: "Updates", icon: Info, colorToken: "--color-mailbox-updates" },
-  { labelId: "CATEGORY_FORUMS", name: "Forums", icon: MessagesSquare, colorToken: "--color-mailbox-forums" },
+  {
+    labelId: "CATEGORY_PROMOTIONS",
+    name: "Promotions",
+    icon: Megaphone,
+    colorToken: "--color-mailbox-promotions",
+  },
+  {
+    labelId: "CATEGORY_UPDATES",
+    name: "Updates",
+    icon: Info,
+    colorToken: "--color-mailbox-updates",
+  },
+  {
+    labelId: "CATEGORY_FORUMS",
+    name: "Forums",
+    icon: MessagesSquare,
+    colorToken: "--color-mailbox-forums",
+  },
 ];
 
 export const FAVORITES: FavoriteRow[] = [
-  { labelId: "STARRED", name: "Starred", icon: Star, colorToken: "--color-mailbox-starred", count: "total", goKey: "s" },
-  { labelId: "DRAFT", name: "Drafts", icon: File, colorToken: "--color-mailbox-drafts", count: "total", goKey: "d" },
-  { labelId: "SENT", name: "Sent", icon: Send, colorToken: "--color-mailbox-sent", count: "unread", goKey: "t" },
-  { labelId: "ALL", name: "All Mail", icon: Archive, colorToken: "--color-mailbox-allmail", count: "unread", goKey: "a" },
-  { labelId: "SPAM", name: "Spam", icon: OctagonAlert, colorToken: "--color-mailbox-spam", count: "unread" },
-  { labelId: "TRASH", name: "Trash", icon: Trash2, colorToken: "--color-mailbox-trash", count: "unread" },
+  {
+    labelId: "STARRED",
+    name: "Starred",
+    icon: Star,
+    colorToken: "--color-mailbox-starred",
+    count: "total",
+    goKey: "s",
+  },
+  {
+    labelId: "DRAFT",
+    name: "Drafts",
+    icon: File,
+    colorToken: "--color-mailbox-drafts",
+    count: "total",
+    goKey: "d",
+  },
+  {
+    labelId: "SENT",
+    name: "Sent",
+    icon: Send,
+    colorToken: "--color-mailbox-sent",
+    count: "unread",
+    goKey: "t",
+  },
+  {
+    labelId: "ALL",
+    name: "All Mail",
+    icon: Archive,
+    colorToken: "--color-mailbox-allmail",
+    count: "unread",
+    goKey: "a",
+  },
+  {
+    labelId: "SPAM",
+    name: "Spam",
+    icon: OctagonAlert,
+    colorToken: "--color-mailbox-spam",
+    count: "unread",
+  },
+  {
+    labelId: "TRASH",
+    name: "Trash",
+    icon: Trash2,
+    colorToken: "--color-mailbox-trash",
+    count: "unread",
+  },
 ];
 
 /** The list query for `ref`; `accountIds` is every connected account, used for All Inboxes. */
@@ -107,11 +168,17 @@ export const categoryMailbox = (accountId: string, category: string): MailboxRef
 
 /** Where "inbox" goes: All Inboxes, or the only account's Primary (there is no All Inboxes row then). */
 export function homeMailbox(accounts: { id: string }[]): MailboxRef {
-  return accounts.length === 1 ? categoryMailbox(accounts[0].id, CATEGORIES[0].labelId) : ALL_INBOXES;
+  return accounts.length === 1
+    ? categoryMailbox(accounts[0].id, CATEGORIES[0].labelId)
+    : ALL_INBOXES;
 }
 
 /** The account Favorites and labels follow: the stored one while it is still connected, else the first. */
-export function resolveActiveAccount(activeAccountId: string | null, accounts: { id: string }[]): string | null {
-  if (activeAccountId !== null && accounts.some((a) => a.id === activeAccountId)) return activeAccountId;
+export function resolveActiveAccount(
+  activeAccountId: string | null,
+  accounts: { id: string }[],
+): string | null {
+  if (activeAccountId !== null && accounts.some((a) => a.id === activeAccountId))
+    return activeAccountId;
   return accounts[0]?.id ?? null;
 }

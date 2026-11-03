@@ -92,7 +92,10 @@ test("activeAccountId persists", () => {
 });
 
 test("navigation preferences tolerate corrupt storage", () => {
-  localStorage.setItem(LAYOUT_KEY, JSON.stringify({ activeAccountId: 7, collapsedAccounts: ["a1", 3, null, "a2"] }));
+  localStorage.setItem(
+    LAYOUT_KEY,
+    JSON.stringify({ activeAccountId: 7, collapsedAccounts: ["a1", 3, null, "a2"] }),
+  );
   __resetUiStoreForTests();
   expect(ui().activeAccountId).toBeNull();
   expect(ui().collapsedAccounts).toEqual(["a1", "a2"]);

@@ -1,8 +1,6 @@
 // Typed wrappers around invoke(). Rust commands live in src-tauri/src/commands/.
 import { invoke } from "@tauri-apps/api/core";
 
-export { invoke };
-
 export interface AccountInfo {
   id: string;
   email: string;
@@ -154,16 +152,23 @@ export interface MailboxCount {
   unread: number;
 }
 
-export const listThreads = (query: ThreadQuery & { before?: ThreadCursor | null; limit?: number }) =>
-  invoke<ThreadPage>("list_threads", { ...query });
+export const listThreads = (
+  query: ThreadQuery & { before?: ThreadCursor | null; limit?: number },
+) => invoke<ThreadPage>("list_threads", { ...query });
 export const getThread = (accountId: string, threadId: string) =>
   invoke<ThreadDetail>("get_thread", { accountId, threadId });
 export const listLabels = (accountId: string) => invoke<LabelInfo[]>("list_labels", { accountId });
-export const mailboxCounts = (accountIds: string[]) => invoke<MailboxCount[]>("mailbox_counts", { accountIds });
+export const mailboxCounts = (accountIds: string[]) =>
+  invoke<MailboxCount[]>("mailbox_counts", { accountIds });
 /** Unread and total conversations per label of one account, counted from the local cache. */
-export const labelCounts = (accountId: string) => invoke<LabelCount[]>("label_counts", { accountId });
-export const modifyThreads = (accountId: string, threadIds: string[], add: string[], remove: string[]) =>
-  invoke<void>("modify_threads", { accountId, threadIds, add, remove });
+export const labelCounts = (accountId: string) =>
+  invoke<LabelCount[]>("label_counts", { accountId });
+export const modifyThreads = (
+  accountId: string,
+  threadIds: string[],
+  add: string[],
+  remove: string[],
+) => invoke<void>("modify_threads", { accountId, threadIds, add, remove });
 export const trashThreads = (accountId: string, threadIds: string[]) =>
   invoke<void>("trash_threads", { accountId, threadIds });
 /** Saves an attachment into the Downloads folder and resolves to the file's absolute path. */
@@ -174,7 +179,8 @@ export const revealDownload = (path: string) => invoke<void>("reveal_download", 
 /** Opens an http, https or mailto link from an email; anything else is rejected. */
 export const openMailLink = (url: string) => invoke<void>("open_mail_link", { url });
 /** Sync one account now, or every account when omitted. */
-export const syncNow = (accountId?: string | null) => invoke<void>("sync_now", { accountId: accountId ?? null });
+export const syncNow = (accountId?: string | null) =>
+  invoke<void>("sync_now", { accountId: accountId ?? null });
 
 /** Call an event unlisten fn, ignoring failures (e.g. the IPC bridge is already gone). */
 export function stopQuietly(stop: () => void) {

@@ -6,7 +6,13 @@ import { Onboarding } from "./Onboarding";
 import { loadProgress, saveProgress } from "./progress";
 
 const CLIENT_ID = "123-abc.apps.googleusercontent.com";
-const account: AccountInfo = { id: "a1", email: "me@example.com", displayName: null, clientId: CLIENT_ID, synced: true };
+const account: AccountInfo = {
+  id: "a1",
+  email: "me@example.com",
+  displayName: null,
+  clientId: CLIENT_ID,
+  synced: true,
+};
 
 type Handler = (args: Record<string, unknown>) => unknown;
 
@@ -95,7 +101,9 @@ test("credentials form validates the client ID and accepts the pasted JSON file"
   expect(screen.getByText(/Web application client/)).toBeInTheDocument();
 
   fireEvent.change(screen.getByLabelText("Client ID"), {
-    target: { value: JSON.stringify({ installed: { client_id: CLIENT_ID, client_secret: "from-json" } }) },
+    target: {
+      value: JSON.stringify({ installed: { client_id: CLIENT_ID, client_secret: "from-json" } }),
+    },
   });
   expect(screen.getByLabelText("Client ID")).toHaveValue(CLIENT_ID);
   expect(screen.getByLabelText("Client secret")).toHaveValue("from-json");
@@ -105,7 +113,10 @@ test("credentials form validates the client ID and accepts the pasted JSON file"
 test("signs in: explains the warning, opens Google, and confirms the account", async () => {
   const onConnected = vi.fn();
   const calls = backend({
-    begin_oauth: () => ({ flowId: "f1", authUrl: "https://accounts.google.com/o/oauth2/v2/auth?x=1" }),
+    begin_oauth: () => ({
+      flowId: "f1",
+      authUrl: "https://accounts.google.com/o/oauth2/v2/auth?x=1",
+    }),
     complete_oauth: () => account,
   });
   saveProgress({ step: "credentials", clientId: "" });
@@ -136,10 +147,18 @@ test("waiting screen lists browser-side errors and cancel stops the sign-in", as
   click("Next");
   click("Continue to Google");
   expect(await screen.findByText("Finish signing in in your browser")).toBeInTheDocument();
-  for (const code of ["redirect_uri_mismatch", "invalid_client", "org_internal", "access_denied", "admin_policy_enforced"]) {
+  for (const code of [
+    "redirect_uri_mismatch",
+    "invalid_client",
+    "org_internal",
+    "access_denied",
+    "admin_policy_enforced",
+  ]) {
     expect(screen.getByText(new RegExp(code))).toBeInTheDocument();
   }
-  await vi.waitFor(() => expect(screen.getByRole("button", { name: "Copy sign-in link" })).toBeEnabled());
+  await vi.waitFor(() =>
+    expect(screen.getByRole("button", { name: "Copy sign-in link" })).toBeEnabled(),
+  );
   click("Cancel");
   expect(calls).toContainEqual({ cmd: "cancel_oauth", args: { flowId: "f1" } });
   expect(screen.getByLabelText("Client secret")).toHaveValue("s3cret");
@@ -151,7 +170,10 @@ test("a sign-in error shows the plain-language fix and can retry", async () => {
     begin_oauth: () => ({ flowId: `f${++attempts}`, authUrl: "https://accounts.google.com/x" }),
     complete_oauth: () => {
       if (attempts === 1) {
-        throw { code: "invalid_grant", message: "Publish the app to In production, then sign in again." };
+        throw {
+          code: "invalid_grant",
+          message: "Publish the app to In production, then sign in again.",
+        };
       }
       return account;
     },
@@ -185,18 +207,27 @@ test("a credentials error leads back to the form", async () => {
 
 test("adding an account offers to reuse each existing client", async () => {
   const second: AccountInfo = { ...account, id: "a2", email: "two@example.com" };
-  const work: AccountInfo = { ...account, id: "a3", email: "me@work.com", clientId: "w.apps.googleusercontent.com" };
+  const work: AccountInfo = {
+    ...account,
+    id: "a3",
+    email: "me@work.com",
+    clientId: "w.apps.googleusercontent.com",
+  };
   const calls = backend({
     begin_oauth: () => ({ flowId: "f1", authUrl: "https://accounts.google.com/x" }),
     complete_oauth: () => ({ ...account, id: "a4", email: "new@example.com" }),
   });
   const onClose = vi.fn();
-  render(<Onboarding accounts={[account, second, work]} onConnected={() => {}} onClose={onClose} />);
+  render(
+    <Onboarding accounts={[account, second, work]} onConnected={() => {}} onClose={onClose} />,
+  );
   expect(screen.getAllByText("Use the same Google Cloud app")).toHaveLength(2);
   expect(screen.queryByRole("navigation")).toBeNull();
   fireEvent.click(screen.getByText(/The one me@work.com signed in with/));
   expect(await screen.findByText("new@example.com is connected")).toBeInTheDocument();
-  expect(calls.find((c) => c.cmd === "begin_oauth")?.args).toEqual({ client: { kind: "sameAs", accountId: "a3" } });
+  expect(calls.find((c) => c.cmd === "begin_oauth")?.args).toEqual({
+    client: { kind: "sameAs", accountId: "a3" },
+  });
   expect(localStorage.getItem("pheeme.onboarding.v1")).toBeNull();
 });
 
@@ -205,7 +236,9 @@ test("adding with a different client can open the full guide", () => {
   render(<Onboarding accounts={[account]} onConnected={() => {}} onClose={() => {}} />);
   fireEvent.click(screen.getByText("Use a different OAuth client"));
   click("Follow the setup guide");
-  expect(screen.getByRole("heading", { name: "Create a Google Cloud project" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Create a Google Cloud project" }),
+  ).toBeInTheDocument();
   expect(screen.getByRole("navigation", { name: "Setup steps" })).toBeInTheDocument();
 });
 
@@ -214,7 +247,9 @@ test("leaving mid-sign-in cancels the backend wait", async () => {
     begin_oauth: () => ({ flowId: "f9", authUrl: "https://accounts.google.com/x" }),
     complete_oauth: () => new Promise(() => {}),
   });
-  const { unmount } = render(<Onboarding accounts={[account]} onConnected={() => {}} onClose={() => {}} />);
+  const { unmount } = render(
+    <Onboarding accounts={[account]} onConnected={() => {}} onClose={() => {}} />,
+  );
   fireEvent.click(screen.getByText(/The one me@example.com signed in with/));
   await screen.findByText("Finish signing in in your browser");
   await act(async () => {});
@@ -234,7 +269,9 @@ test("cancelling while begin_oauth is still pending never opens Google", async (
   // The waiting screen's Cancel (the second one closes the add-account screen).
   fireEvent.click(screen.getAllByRole("button", { name: "Cancel" })[0]);
   await act(async () => resolveBegin({ flowId: "late", authUrl: "https://accounts.google.com/x" }));
-  await vi.waitFor(() => expect(calls).toContainEqual({ cmd: "cancel_oauth", args: { flowId: "late" } }));
+  await vi.waitFor(() =>
+    expect(calls).toContainEqual({ cmd: "cancel_oauth", args: { flowId: "late" } }),
+  );
   const cmds = calls.map((c) => c.cmd);
   expect(cmds).not.toContain("open_external");
   expect(cmds).not.toContain("complete_oauth");

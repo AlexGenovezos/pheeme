@@ -89,14 +89,18 @@ beforeEach(() => {
   __resetLabelStoreForTests();
   __resetMailStoreForTests();
   useAccountStore.setState({
-    accounts: [{ id: "a1", email: "Me@Example.com", displayName: null, clientId: "c", synced: true }],
+    accounts: [
+      { id: "a1", email: "Me@Example.com", displayName: null, clientId: "c", synced: true },
+    ],
   });
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
   mockIPC(() => undefined);
 });
 
 test("last and unread messages start expanded, others collapsed", () => {
-  open(detail([message(1), message(2, { unread: true }), message(3, { unread: false }), message(4)]));
+  open(
+    detail([message(1), message(2, { unread: true }), message(3, { unread: false }), message(4)]),
+  );
   renderView();
 
   expect(within(card(1)).getByRole("button", { expanded: false })).toBeInTheDocument();
@@ -108,7 +112,17 @@ test("last and unread messages start expanded, others collapsed", () => {
 });
 
 test("expanded cards show the sender, a 'to me' line and the full date", () => {
-  open(detail([message(1, { to: [{ name: "Me", address: "me@example.com" }, { name: "Bo Li", address: "bo@x.test" }], cc: [{ name: null, address: "cc@x.test" }] })]));
+  open(
+    detail([
+      message(1, {
+        to: [
+          { name: "Me", address: "me@example.com" },
+          { name: "Bo Li", address: "bo@x.test" },
+        ],
+        cc: [{ name: null, address: "cc@x.test" }],
+      }),
+    ]),
+  );
   renderView();
 
   expect(screen.getByText("s1@example.com")).toBeInTheDocument();
@@ -163,7 +177,12 @@ test("a sync event while the detail loads doesn't let mark-read overtake it", as
       if (n === 1) {
         // Real IPC answers later; the mock would otherwise deliver the event inside the call itself.
         await new Promise((resolve) => setTimeout(resolve, 0));
-        await emit("sync:messages_updated", { accountId: "a1", added: [], removed: [], modified: ["t1"] });
+        await emit("sync:messages_updated", {
+          accountId: "a1",
+          added: [],
+          removed: [],
+          modified: ["t1"],
+        });
         await refreshing;
       } else {
         refreshAsked();
@@ -194,7 +213,8 @@ test("opening an unread conversation keeps its unread messages expanded although
   mockIPC(
     (cmd) => {
       order.push(cmd);
-      if (cmd === "get_thread") return detail([message(1), message(2, { unread: !read }), message(3)]);
+      if (cmd === "get_thread")
+        return detail([message(1), message(2, { unread: !read }), message(3)]);
       if (cmd === "modify_threads") read = true;
       return undefined;
     },
@@ -212,8 +232,12 @@ test("opening an unread conversation keeps its unread messages expanded although
   expect(order.indexOf("get_thread")).toBeLessThan(order.indexOf("modify_threads"));
 
   // The change lands in the cache and the open thread refreshes with every message read.
-  await act(() => emit("sync:messages_updated", { accountId: "a1", added: [], removed: [], modified: ["t1"] }));
-  await waitFor(() => expect(useThreadStore.getState().details.get(KEY)?.messages[1].unread).toBe(false));
+  await act(() =>
+    emit("sync:messages_updated", { accountId: "a1", added: [], removed: [], modified: ["t1"] }),
+  );
+  await waitFor(() =>
+    expect(useThreadStore.getState().details.get(KEY)?.messages[1].unread).toBe(false),
+  );
   expect(screen.getByText("Body 2")).toBeInTheDocument();
   expect(screen.getByText("Body 3")).toBeInTheDocument();
   expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
@@ -222,7 +246,13 @@ test("opening an unread conversation keeps its unread messages expanded although
 
 test("shows only user-label chips", () => {
   useLabelStore.setState({
-    labels: { a1: [label("INBOX", "Inbox", "system"), label("Label_1", "Receipts", "user"), label("Label_2", "Travel", "user")] },
+    labels: {
+      a1: [
+        label("INBOX", "Inbox", "system"),
+        label("Label_1", "Receipts", "user"),
+        label("Label_2", "Travel", "user"),
+      ],
+    },
   });
   open(detail([message(1, { labelIds: ["INBOX", "UNREAD", "Label_1"] })]));
   renderView();
@@ -233,15 +263,18 @@ test("shows only user-label chips", () => {
   expect(chips.queryByText("Travel")).not.toBeInTheDocument();
 });
 
-test("not_found shows \"This conversation isn't available any more.\"", async () => {
+test('not_found shows "This conversation isn\'t available any more."', async () => {
   mockIPC((cmd) => {
-    if (cmd === "get_thread") throw { code: "not_found", message: "That conversation isn't on this device." };
+    if (cmd === "get_thread")
+      throw { code: "not_found", message: "That conversation isn't on this device." };
     return undefined;
   });
   useUiStore.setState({ openThread: KEY });
   renderView();
 
-  expect(await screen.findByText("This conversation isn't available any more.")).toBeInTheDocument();
+  expect(
+    await screen.findByText("This conversation isn't available any more."),
+  ).toBeInTheDocument();
 });
 
 test("plain text renders escaped with link buttons; HTML bodies render in the sandboxed frame", () => {
@@ -254,7 +287,9 @@ test("plain text renders escaped with link buttons; HTML bodies render in the sa
   act(() => open(detail([message(1, { bodyHtml: "<p>hi</p>", bodyText: "plain alt" })])));
   renderView();
   expect(screen.queryByText("plain alt")).toBeNull();
-  expect(screen.getByTitle("Message body").getAttribute("srcdoc")).toContain("<body><p>hi</p></body>");
+  expect(screen.getByTitle("Message body").getAttribute("srcdoc")).toContain(
+    "<body><p>hi</p></body>",
+  );
 });
 
 test("attachments list hides inline images and downloads with a toast", async () => {
@@ -264,7 +299,11 @@ test("attachments list hides inline images and downloads with a toast", async ()
     if (cmd === "save_attachment") return "/home/me/Downloads/plan.pdf";
     return undefined;
   });
-  const file = (id: string, filename: string, over: Partial<AttachmentInfo> = {}): AttachmentInfo => ({
+  const file = (
+    id: string,
+    filename: string,
+    over: Partial<AttachmentInfo> = {},
+  ): AttachmentInfo => ({
     id,
     filename,
     mimeType: "application/pdf",
@@ -273,7 +312,16 @@ test("attachments list hides inline images and downloads with a toast", async ()
     contentId: null,
     ...over,
   });
-  open(detail([message(1, { attachments: [file("att1", "plan.pdf"), file("att2", "logo.png", { isInline: true, contentId: "logo" })] })]));
+  open(
+    detail([
+      message(1, {
+        attachments: [
+          file("att1", "plan.pdf"),
+          file("att2", "logo.png", { isInline: true, contentId: "logo" }),
+        ],
+      }),
+    ]),
+  );
   renderView();
 
   const list = within(screen.getByRole("list", { name: "Attachments" }));
@@ -283,10 +331,18 @@ test("attachments list hides inline images and downloads with a toast", async ()
 
   fireEvent.click(list.getByRole("button", { name: "Download plan.pdf" }));
   expect(await screen.findByText("Saved to Downloads")).toBeInTheDocument();
-  expect(calls.find((c) => c.cmd === "save_attachment")?.args).toEqual({ accountId: "a1", messageId: "m1", attachmentId: "att1" });
+  expect(calls.find((c) => c.cmd === "save_attachment")?.args).toEqual({
+    accountId: "a1",
+    messageId: "m1",
+    attachmentId: "att1",
+  });
 
   fireEvent.click(screen.getByRole("button", { name: "Show in folder" }));
-  await waitFor(() => expect(calls.find((c) => c.cmd === "reveal_download")?.args).toEqual({ path: "/home/me/Downloads/plan.pdf" }));
+  await waitFor(() =>
+    expect(calls.find((c) => c.cmd === "reveal_download")?.args).toEqual({
+      path: "/home/me/Downloads/plan.pdf",
+    }),
+  );
 });
 
 test("Reply, Reply all and Forward say compose is coming", () => {

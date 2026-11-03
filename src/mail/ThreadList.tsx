@@ -1,6 +1,13 @@
 // The conversation list: virtualized rows, multi-select, infinite scroll, and the first-sync, empty and error states.
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
-import { type KeyboardEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  type KeyboardEvent,
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { Button } from "../components/ui/Button";
 import { ListRow } from "../components/ui/ListRow";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -22,7 +29,9 @@ const SKELETON_ROWS = 8;
 const FALLBACK_ROW_HEIGHT = 76;
 
 function rowHeightEstimate(): number {
-  const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-height-comfortable"));
+  const value = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue("--row-height-comfortable"),
+  );
   return Number.isFinite(value) && value > 0 ? value : FALLBACK_ROW_HEIGHT;
 }
 
@@ -47,9 +56,11 @@ export function ThreadList(props: ThreadListProps) {
   const error = useMailStore((s) => s.error);
   const accounts = useAccountStore((s) => s.accounts);
 
-  if (threads.length > 0) return <Rows key={`${mailbox.accountId}/${mailbox.labelId}/${mailbox.category}`} {...props} />;
+  if (threads.length > 0)
+    return <Rows key={`${mailbox.accountId}/${mailbox.labelId}/${mailbox.category}`} {...props} />;
 
-  const queried = mailbox.accountId === null ? accounts : accounts.filter((a) => a.id === mailbox.accountId);
+  const queried =
+    mailbox.accountId === null ? accounts : accounts.filter((a) => a.id === mailbox.accountId);
   const firstSync = queried.some((a) => !a.synced);
 
   // A failed first query is worth more than a skeleton that would never go away.
@@ -65,7 +76,11 @@ export function ThreadList(props: ThreadListProps) {
   }
   if (firstSync) {
     return (
-      <div className="list-pane__scroll" aria-busy="true" aria-label={`${props.title} conversations loading`}>
+      <div
+        className="list-pane__scroll"
+        aria-busy="true"
+        aria-label={`${props.title} conversations loading`}
+      >
         {Array.from({ length: SKELETON_ROWS }, (_, i) => (
           <ListRow
             key={i}
@@ -131,7 +146,8 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
 
   // Infinite scroll. The store ignores a call while a page is in flight; a finished page changes `threads.length` and asks again.
   useEffect(() => {
-    if (next && lastRendered >= 0 && lastRendered >= threads.length - LOAD_MORE_WITHIN) void useMailStore.getState().loadMore();
+    if (next && lastRendered >= 0 && lastRendered >= threads.length - LOAD_MORE_WITHIN)
+      void useMailStore.getState().loadMore();
   }, [lastRendered, threads.length, next]);
 
   // j/k and arrow keys move the open thread; keep it in view.
@@ -152,7 +168,12 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
     } else if (e.key === "Enter") {
       e.preventDefault();
       openFocused();
-    } else if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "a") {
+    } else if (
+      (e.metaKey || e.ctrlKey) &&
+      !e.altKey &&
+      !e.shiftKey &&
+      e.key.toLowerCase() === "a"
+    ) {
       // Not a registry shortcut: inside an email body the same keys must still select text.
       e.preventDefault();
       checkAll();
@@ -170,7 +191,12 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
         if (key !== null) useUiStore.getState().toggleChecked(key);
       },
     },
-    { id: "list.check-all", title: "Select all conversations", group: "Conversation", run: checkAll },
+    {
+      id: "list.check-all",
+      title: "Select all conversations",
+      group: "Conversation",
+      run: checkAll,
+    },
   ]);
 
   const select = useCallback(

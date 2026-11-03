@@ -37,14 +37,16 @@ export function dismissToast(id: number) {
 /** Show a non-blocking toast. Returns its id. */
 export function toast(options: ToastOptions): number {
   const id = nextId++;
-  useToastStore.setState((s) => ({ toasts: [...s.toasts, { ...options, id }].slice(-MAX_VISIBLE) }));
+  useToastStore.setState((s) => ({
+    toasts: [...s.toasts, { ...options, id }].slice(-MAX_VISIBLE),
+  }));
   const duration = options.duration ?? DEFAULT_DURATION;
-  if (duration > 0) timers.set(id, setTimeout(() => dismissToast(id), duration));
+  if (duration > 0)
+    timers.set(
+      id,
+      setTimeout(() => dismissToast(id), duration),
+    );
   return id;
-}
-
-export function useToast() {
-  return { toast, dismiss: dismissToast };
 }
 
 function ToastViewport({ pinned }: { pinned?: ReactNode }) {
@@ -73,7 +75,12 @@ function ToastViewport({ pinned }: { pinned?: ReactNode }) {
               {t.action.label}
             </button>
           )}
-          <button type="button" className="ui-toast__close" aria-label="Dismiss" onClick={() => dismissToast(t.id)}>
+          <button
+            type="button"
+            className="ui-toast__close"
+            aria-label="Dismiss"
+            onClick={() => dismissToast(t.id)}
+          >
             <X />
           </button>
         </div>

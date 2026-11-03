@@ -42,7 +42,11 @@ beforeEach(() => {
     { shouldMockEvents: true },
   );
   useMailStore.setState({
-    threads: [thread(1, { unread: true }), thread(2, { unread: true, starred: true }), thread(3, { starred: true })],
+    threads: [
+      thread(1, { unread: true }),
+      thread(2, { unread: true, starred: true }),
+      thread(3, { starred: true }),
+    ],
   });
 });
 
@@ -57,7 +61,8 @@ test("checked rows enable the mutations with nothing open; Reply and Forward sta
     useUiStore.getState().toggleChecked(key(2));
   });
 
-  for (const name of ["Archive", "Delete", "Mark as read", "Star", "More actions"]) expect(button(name)).toBeEnabled();
+  for (const name of ["Archive", "Delete", "Mark as read", "Star", "More actions"])
+    expect(button(name)).toBeEnabled();
   expect(button("Reply")).toBeDisabled();
   expect(button("Forward")).toBeDisabled();
 });
@@ -76,7 +81,9 @@ test("the toggles follow the checked rows, not an unrelated open conversation", 
   expect(button("Reply")).toBeEnabled();
 
   fireEvent.click(button("Mark as read"));
-  expect(modified).toEqual([{ accountId: "a1", threadIds: ["t1", "t2"], add: [], remove: ["UNREAD"] }]);
+  expect(modified).toEqual([
+    { accountId: "a1", threadIds: ["t1", "t2"], add: [], remove: ["UNREAD"] },
+  ]);
 });
 
 test("with every checked row starred and read, the toggles offer the opposite", () => {
@@ -95,7 +102,9 @@ test("Star follows the first checked row, like the s shortcut", () => {
   });
   render(<ViewPane />);
   fireEvent.click(button("Remove star"));
-  expect(modified).toEqual([{ accountId: "a1", threadIds: ["t2", "t1"], add: [], remove: ["STARRED"] }]);
+  expect(modified).toEqual([
+    { accountId: "a1", threadIds: ["t2", "t1"], add: [], remove: ["STARRED"] },
+  ]);
 });
 
 test("checked rows that have all left the list leave the mutations off", () => {

@@ -17,7 +17,10 @@ import { useUiStore } from "./uiStore";
 export const DETAIL_CACHE_SIZE = 30;
 
 /** Optimistic detail changes the cache hasn't caught up with, per thread, in the order they were made. */
-let pendingDetails = new Map<ThreadKey, Array<{ op: number; fn: (detail: ThreadDetail) => ThreadDetail }>>();
+let pendingDetails = new Map<
+  ThreadKey,
+  Array<{ op: number; fn: (detail: ThreadDetail) => ThreadDetail }>
+>();
 const withPending = (key: ThreadKey, detail: ThreadDetail) =>
   (pendingDetails.get(key) ?? []).reduce((d, change) => change.fn(d), detail);
 
@@ -77,7 +80,8 @@ export const useThreadStore = create<ThreadState>((set, get) => {
           const details = new Map(s.details);
           details.delete(key); // re-insert as the most recent
           details.set(key, withPending(key, detail));
-          while (details.size > DETAIL_CACHE_SIZE) details.delete(details.keys().next().value as ThreadKey);
+          while (details.size > DETAIL_CACHE_SIZE)
+            details.delete(details.keys().next().value as ThreadKey);
           const errors = { ...s.errors };
           delete errors[key];
           return { details, errors };
@@ -151,7 +155,8 @@ export const useThreadStore = create<ThreadState>((set, get) => {
       }
     },
     patchDetail: (key, fn, op) => {
-      if (op !== undefined) pendingDetails.set(key, [...(pendingDetails.get(key) ?? []), { op, fn }]);
+      if (op !== undefined)
+        pendingDetails.set(key, [...(pendingDetails.get(key) ?? []), { op, fn }]);
       set((s) => {
         const current = s.details.get(key);
         if (!current) return {};
@@ -181,9 +186,15 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         if (changed.length === 0) return;
         const open = useUiStore.getState().openThread;
         const parsed = open ? parseThreadKey(open) : null;
-        const refresh = open && parsed?.accountId === payload.accountId && changed.includes(parsed.threadId) ? open : null;
+        const refresh =
+          open && parsed?.accountId === payload.accountId && changed.includes(parsed.threadId)
+            ? open
+            : null;
         // The open thread is refreshed in place so the pane never blanks; the rest are simply forgotten.
-        get().evict(payload.accountId, refresh ? changed.filter((id) => id !== parsed?.threadId) : changed);
+        get().evict(
+          payload.accountId,
+          refresh ? changed.filter((id) => id !== parsed?.threadId) : changed,
+        );
         if (refresh) void fetchDetail(refresh);
       });
       // A body that couldn't be fetched offline may be reachable now that a sync got through.

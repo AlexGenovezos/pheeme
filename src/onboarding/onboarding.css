@@ -1,6 +1,6 @@
 .onboarding {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: var(--onboarding-rail-width) 1fr;
   height: 100%;
 }
 
@@ -9,22 +9,22 @@
 }
 
 .onboarding-rail {
-  background: var(--color-bg-subtle);
-  border-right: 1px solid var(--color-border);
+  background: var(--color-pane-bg);
+  border-right: var(--border-width) solid var(--color-border);
   padding: var(--space-6) var(--space-3);
   overflow-y: auto;
 }
 
 .onboarding-rail__brand {
-  font-weight: 600;
-  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-lg);
   padding: 0 var(--space-3) var(--space-5);
 }
 
 .onboarding-rail ol {
   list-style: none;
   display: grid;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .rail-step button {
@@ -37,31 +37,31 @@
   border-radius: var(--radius-sm);
   background: none;
   text-align: left;
-  color: var(--color-text-muted);
-  transition: background var(--motion-fast);
+  color: var(--color-foreground-muted);
+  transition: background var(--duration-fast);
 }
 
 .rail-step button:not(:disabled):hover {
-  background: var(--color-bg-hover);
+  background: var(--color-control-hover-bg);
 }
 
 .rail-step--current button {
-  color: var(--color-text);
-  font-weight: 500;
-  background: var(--color-bg-hover);
+  color: var(--color-foreground);
+  font-weight: var(--font-weight-medium);
+  background: var(--color-control-hover-bg);
 }
 
 .rail-step__dot {
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 1px solid var(--color-border);
-  font-size: 11px;
+  width: var(--step-dot-size);
+  height: var(--step-dot-size);
+  border-radius: var(--radius-full);
+  border: var(--border-width) solid var(--color-border);
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
-  background: var(--color-bg);
+  background: var(--color-app-bg);
 }
 
 .rail-step--current .rail-step__dot {
@@ -72,21 +72,21 @@
 .rail-step--done .rail-step__dot {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: var(--color-accent-text);
+  color: var(--color-accent-foreground);
 }
 
 .onboarding-main {
   position: relative;
   overflow-y: auto;
-  padding: var(--space-7) var(--space-6);
+  padding: var(--space-12) var(--space-6);
 }
 
 .onboarding-content {
-  max-width: 560px;
+  max-width: var(--onboarding-content-width);
   margin: 0 auto;
   display: grid;
   gap: var(--space-4);
-  animation: onboarding-in 150ms ease-out;
+  animation: onboarding-in var(--duration-base) var(--ease-out);
 }
 
 .onboarding-content > form {
@@ -95,11 +95,16 @@
 }
 
 @keyframes onboarding-in {
-  from { opacity: 0; transform: translateY(4px); }
+  from {
+    opacity: 0;
+    transform: translateY(var(--enter-offset));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .onboarding-content { animation: none; }
+  .onboarding-content {
+    animation: none;
+  }
 }
 
 .onboarding-mark {
@@ -110,44 +115,44 @@
 }
 
 .onboarding h1 {
-  font-size: var(--text-xl);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-tight);
+  line-height: var(--line-height-tight);
   margin-bottom: var(--space-1);
 }
 
 .guide-lead {
-  font-size: var(--text-lg);
+  font-size: var(--font-size-lg);
 }
 
 .guide-actions {
   display: grid;
   gap: var(--space-2);
   padding-left: var(--space-5);
-  font-size: var(--text-lg);
+  font-size: var(--font-size-lg);
 }
 
 .guide-actions li::marker {
-  color: var(--color-text-muted);
+  color: var(--color-foreground-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .guide-why {
-  color: var(--color-text-muted);
-  border-top: 1px solid var(--color-border);
+  color: var(--color-foreground-muted);
+  border-top: var(--border-width) solid var(--color-border);
   padding-top: var(--space-4);
 }
 
 .guide-why strong {
-  font-weight: 500;
-  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-foreground);
 }
 
 .guide-shot {
   width: 100%;
   border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
 }
 
 .onboarding-footer {
@@ -163,65 +168,15 @@
   right: var(--space-4);
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  height: 32px;
-  padding: 0 var(--space-4);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  font-weight: 500;
-  white-space: nowrap;
-  transition: background var(--motion-fast), border-color var(--motion-fast);
-}
-
-.btn:not(:disabled):hover {
-  background: var(--color-bg-hover);
-}
-
-.btn:disabled {
-  opacity: 0.45;
-}
-
-.btn--primary, .btn--accent {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: var(--color-accent-text);
-}
-
-.btn--primary:not(:disabled):hover, .btn--accent:not(:disabled):hover {
-  background: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
-}
-
-.btn--accent {
+.external {
   justify-self: start;
-}
-
-.btn--quiet {
-  border-color: transparent;
-  background: none;
-  color: var(--color-text-muted);
-}
-
-.btn--small {
-  height: 26px;
-  padding: 0 var(--space-3);
-  font-size: var(--text-sm);
-}
-
-.btn--danger {
-  color: var(--color-danger);
 }
 
 .link {
   border: 0;
   background: none;
   color: var(--color-accent);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .link:hover {
@@ -241,23 +196,23 @@
 
 .copy-field {
   display: grid;
-  grid-template-columns: 140px 1fr auto;
+  grid-template-columns: var(--copy-field-label-width) 1fr auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-subtle);
+  background: var(--color-pane-bg);
 }
 
 .copy-field__label {
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
 }
 
 .copy-field__value {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
 
@@ -267,37 +222,22 @@
 }
 
 .field > label {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
-.field input {
-  height: 36px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  font-family: var(--font-mono);
-  font-size: var(--text-md);
-  transition: border-color var(--motion-fast);
-}
-
-.field input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px var(--color-focus);
-}
-
-.field input[aria-invalid="true"] {
-  border-color: var(--color-danger);
+/* Client IDs and secrets are easier to check character by character in mono. */
+.field .ui-input__field {
+  font-family: var(--font-family-mono);
 }
 
 .field__hint {
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
 }
 
 .field__error {
   color: var(--color-danger);
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
 }
 
 .choice-list {
@@ -307,64 +247,75 @@
 
 .choice {
   display: grid;
-  gap: 2px;
+  gap: var(--space-0-5);
   text-align: left;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg);
-  transition: background var(--motion-fast), border-color var(--motion-fast);
+  background: var(--color-app-bg);
+  transition:
+    background var(--duration-fast),
+    border-color var(--duration-fast);
 }
 
 .choice:hover {
-  background: var(--color-bg-subtle);
+  background: var(--color-pane-bg);
   border-color: var(--color-accent);
 }
 
 .choice strong {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .choice > span {
-  color: var(--color-text-muted);
+  color: var(--color-foreground-muted);
 }
 
 .waiting-mark {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
+  width: var(--waiting-mark-size);
+  height: var(--waiting-mark-size);
+  border-radius: var(--radius-full);
   background: var(--color-accent);
-  animation: waiting-pulse 1.4s ease-in-out infinite;
+  animation: waiting-pulse var(--duration-pulse) ease-in-out infinite;
 }
 
 @keyframes waiting-pulse {
-  0%, 100% { opacity: 0.35; transform: scale(0.85); }
-  50% { opacity: 1; transform: scale(1); }
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .waiting-mark { animation: none; }
+  .waiting-mark {
+    animation: none;
+  }
 }
 
 .done-mark {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: var(--done-mark-size);
+  height: var(--done-mark-size);
+  border-radius: var(--radius-full);
   background: var(--color-success);
-  color: var(--color-bg);
-  font-weight: 600;
+  color: var(--color-app-bg);
+  font-weight: var(--font-weight-semibold);
 }
 
 .problems {
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
 }
 
 .problems summary {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .problems ul {
@@ -380,7 +331,7 @@
 }
 
 .problems p {
-  color: var(--color-text-muted);
+  color: var(--color-foreground-muted);
 }
 
 .account-row {
@@ -388,7 +339,7 @@
 }
 
 .account-row:hover {
-  background: var(--color-bg);
+  background: var(--color-app-bg);
   border-color: var(--color-border);
 }
 
@@ -404,12 +355,12 @@
 }
 
 .account-row__text span {
-  color: var(--color-text-muted);
+  color: var(--color-foreground-muted);
 }
 
 .account-row__confirm {
   display: grid;
   gap: var(--space-2);
   margin-top: var(--space-2);
-  color: var(--color-text-muted);
+  color: var(--color-foreground-muted);
 }

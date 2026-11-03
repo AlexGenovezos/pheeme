@@ -118,6 +118,7 @@ kbd {
 .lede { font-size: var(--t-1); line-height: 1.45; color: var(--paper); max-width: 34ch; }
 .actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 2rem; }
 .fine { margin-top: 1.25rem; color: var(--muted); font-size: .95rem; max-width: 40ch; }
+.fine a { color: var(--paper); }
 
 /* the stamp + postmark */
 .post { position: relative; justify-self: center; width: min(430px, 100%); }

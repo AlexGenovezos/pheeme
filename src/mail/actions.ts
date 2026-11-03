@@ -5,7 +5,14 @@
 // the error and reloads from the cache, which still holds whatever Gmail refused.
 import { toast } from "../components/ui/Toast";
 import { type ContextMenuItem, showContextMenu } from "../lib/contextMenu";
-import { getThread, modifyThreads, type ThreadDetail, type ThreadSummary, toCommandError, trashThreads } from "../lib/tauri";
+import {
+  getThread,
+  modifyThreads,
+  type ThreadDetail,
+  type ThreadSummary,
+  toCommandError,
+  trashThreads,
+} from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { newOp, useMailStore } from "../store/mailStore";
@@ -35,8 +42,17 @@ interface Change {
 const modify = (
   add: string[],
   remove: string[],
-  { patch, leavesList = false, detail }: { patch?: Change["patch"]; leavesList?: boolean; detail?: Change["detail"] } = {},
-): Change => ({ patch, leavesList, detail, send: (accountId, ids) => modifyThreads(accountId, ids, add, remove) });
+  {
+    patch,
+    leavesList = false,
+    detail,
+  }: { patch?: Change["patch"]; leavesList?: boolean; detail?: Change["detail"] } = {},
+): Change => ({
+  patch,
+  leavesList,
+  detail,
+  send: (accountId, ids) => modifyThreads(accountId, ids, add, remove),
+});
 
 /** The checked conversations, else the open one. Keys may have left the list since; mutating actions skip those. */
 export function targetsOf(checked: ThreadKey[], openThread: ThreadKey | null): ThreadKey[] {
@@ -95,7 +111,11 @@ function refreshDetails(groups: Map<string, string[]>) {
  * message and reloads, which puts back the rows of the account whose change never reached the cache and leaves the
  * others as they are. Resolves to the groups that went through.
  */
-async function send(groups: Map<string, string[]>, change: Change, op: number): Promise<Map<string, string[]>> {
+async function send(
+  groups: Map<string, string[]>,
+  change: Change,
+  op: number,
+): Promise<Map<string, string[]>> {
   const done = new Map<string, string[]>();
   await Promise.all(
     [...groups].map(async ([accountId, ids]) => {
@@ -127,7 +147,12 @@ function nextOpenAfter(removed: Set<ThreadKey>): ThreadKey | null | undefined {
   const at = keys.indexOf(open);
   const below = keys.slice(at + 1).find((k) => !removed.has(k));
   if (below !== undefined) return below;
-  return keys.slice(0, Math.max(at, 0)).reverse().find((k) => !removed.has(k)) ?? null;
+  return (
+    keys
+      .slice(0, Math.max(at, 0))
+      .reverse()
+      .find((k) => !removed.has(k)) ?? null
+  );
 }
 
 interface ApplyOptions {
@@ -163,7 +188,8 @@ function apply(
     else if (next !== undefined) openAndMarkRead(next);
   }
   const patchDetail = change.detail;
-  if (patchDetail) for (const key of rowKeys) useThreadStore.getState().patchDetail(key, patchDetail, op);
+  if (patchDetail)
+    for (const key of rowKeys) useThreadStore.getState().patchDetail(key, patchDetail, op);
   if (!keepChecked) ui().clearChecked();
 
   const go = () => send(groups, change, op);
@@ -226,7 +252,9 @@ export function setStarred(starred: boolean, keys?: ThreadKey[]): Promise<void> 
       patch: (t) => ({ ...t, starred: value }),
       leavesList: !value && ui().mailbox.labelId === "STARRED",
     });
-  return apply(keys, to(starred), { announce: { title: starred ? "Starred" : "Removed star", undo: to(!starred) } });
+  return apply(keys, to(starred), {
+    announce: { title: starred ? "Starred" : "Removed star", undo: to(!starred) },
+  });
 }
 
 /** Stars the targets unless the first one is starred already, in which case it unstars them all. */
@@ -243,7 +271,9 @@ export function setRead(read: boolean, keys?: ThreadKey[]): Promise<void> {
 }
 
 const readChange = (read: boolean): Change =>
-  modify(read ? [] : ["UNREAD"], read ? ["UNREAD"] : [], { patch: (t) => ({ ...t, unread: !read }) });
+  modify(read ? [] : ["UNREAD"], read ? ["UNREAD"] : [], {
+    patch: (t) => ({ ...t, unread: !read }),
+  });
 
 /**
  * The labels each of `keys` carries, from the cached detail or else straight from the backend. Read once per action
@@ -283,7 +313,11 @@ const withLabel =
   });
 
 /** Adds `labelId` to the targets of `accountId`, or removes it if they all have it already. */
-export async function toggleLabel(accountId: string, labelId: string, keys?: ThreadKey[]): Promise<void> {
+export async function toggleLabel(
+  accountId: string,
+  labelId: string,
+  keys?: ThreadKey[],
+): Promise<void> {
   const rowKeys = present(keys)
     .map((r) => r.key)
     .filter((k) => parseThreadKey(k).accountId === accountId);
@@ -291,13 +325,20 @@ export async function toggleLabel(accountId: string, labelId: string, keys?: Thr
   const add = !allHave(await labelsOf(rowKeys), labelId);
   // Removing a label in that label's own mailbox takes the row out of it.
   const leavesList = !add && ui().mailbox.labelId === labelId;
-  await apply(rowKeys, modify(add ? [labelId] : [], add ? [] : [labelId], { leavesList, detail: withLabel(labelId, add) }));
+  await apply(
+    rowKeys,
+    modify(add ? [labelId] : [], add ? [] : [labelId], {
+      leavesList,
+      detail: withLabel(labelId, add),
+    }),
+  );
 }
 
 /** Where the labels menu opens for the keyboard: under the open row, else near the top of the window. */
 export function labelMenuAnchor(): { x: number; y: number } {
   const open = ui().openThread;
-  const rect = open === null ? undefined : document.getElementById(rowId(open))?.getBoundingClientRect();
+  const rect =
+    open === null ? undefined : document.getElementById(rowId(open))?.getBoundingClientRect();
   if (rect && (rect.width > 0 || rect.height > 0)) return { x: rect.left + 48, y: rect.bottom };
   return { x: window.innerWidth / 2, y: window.innerHeight / 3 };
 }
@@ -368,7 +409,12 @@ export function moveSelection(delta: 1 | -1): void {
   if (keys.length === 0) return;
   const open = ui().openThread;
   const at = open === null ? -1 : keys.indexOf(open);
-  const to = at < 0 ? (delta === 1 ? 0 : keys.length - 1) : Math.min(Math.max(at + delta, 0), keys.length - 1);
+  const to =
+    at < 0
+      ? delta === 1
+        ? 0
+        : keys.length - 1
+      : Math.min(Math.max(at + delta, 0), keys.length - 1);
   if (to === at) return;
   openAndMarkRead(keys[to]);
 }
