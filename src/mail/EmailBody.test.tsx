@@ -205,12 +205,40 @@ test("a tall email that settles after one resize renders at full height", () => 
   expect(frameHeight()).toBe(12_200);
 });
 
+/** The frame scrolls whatever the email's own CSS says: inline `overflow: auto !important` on root and body. */
+function expectScrollable(doc: Document) {
+  for (const el of [doc.documentElement, doc.body]) {
+    expect(el.style.getPropertyValue("overflow")).toBe("auto");
+    expect(el.style.getPropertyPriority("overflow")).toBe("important");
+  }
+}
+
+test("a pinned frame scrolls even when the email hides overflow", () => {
+  render(<EmailBody message={message()} />);
+  const doc = loadFrame("<style>html,body{overflow:hidden !important}</style><div style='height:200vh'></div><p>Footer</p>", () => 2 * frameHeight() + 40);
+  // Not pinned yet: the email's own overflow is left alone.
+  expect(doc.documentElement.style.getPropertyValue("overflow")).toBe("");
+  for (let i = 0; i < 50; i++) FakeResizeObserver.fireAll();
+  expectScrollable(doc);
+  // The inline rule wins over the email's stylesheet in the cascade.
+  expect(doc.defaultView!.getComputedStyle(doc.documentElement).overflow).toBe("auto");
+});
+
 test("caps enormous bodies at MAX_FRAME_HEIGHT and lets them scroll", () => {
   render(<EmailBody message={message()} />);
-  loadFrame("<div style='height:90000px'></div>", () => Math.max(90_000, frameHeight()));
+  const doc = loadFrame("<div style='height:90000px'></div>", () => Math.max(90_000, frameHeight()));
   expect(frameHeight()).toBe(MAX_FRAME_HEIGHT);
+  expectScrollable(doc);
   for (let i = 0; i < 5; i++) FakeResizeObserver.fireAll();
   expect(frameHeight()).toBe(MAX_FRAME_HEIGHT);
+});
+
+test("a body that fits gets no forced scrolling", () => {
+  render(<EmailBody message={message()} />);
+  const doc = loadFrame("<div style='height:8000px'></div>", () => Math.max(8_000, frameHeight()));
+  for (let i = 0; i < 5; i++) FakeResizeObserver.fireAll();
+  expect(doc.documentElement.style.getPropertyValue("overflow")).toBe("");
+  expect(doc.body.style.getPropertyValue("overflow")).toBe("");
 });
 
 /** A keydown as the frame's document would deliver it. */

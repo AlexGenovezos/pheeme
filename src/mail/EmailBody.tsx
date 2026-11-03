@@ -150,6 +150,9 @@ function watchFrame(iframe: HTMLIFrameElement, wrapper: HTMLElement, doc: Docume
     if (selfGrowth > MAX_SELF_GROWTH || height > MAX_FRAME_HEIGHT) {
       pinned = true;
       setHeight(height > MAX_FRAME_HEIGHT && selfGrowth <= MAX_SELF_GROWTH ? MAX_FRAME_HEIGHT : applied);
+      // The rest must stay reachable even if the email hides overflow: inline !important beats any
+      // `overflow` rule (important or not) in the email's own stylesheets.
+      for (const el of [root, doc.body]) el?.style.setProperty("overflow", "auto", "important");
       return;
     }
     setHeight(height);
