@@ -131,7 +131,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     // Like the backend: counts thread-label rows (so no ALL, and Primary has no row of its own).
     label_counts: (args): LabelCount[] => {
       const mine = threads.filter((t) => t.accountId === args?.accountId);
-      const labelIds = new Set(mine.flatMap((t) => t.labelIds));
+      // UNREAD is a row of its own in the backend; here it follows the messages.
+      const labelIds = new Set([...mine.flatMap((t) => t.labelIds), ...(mine.some((t) => hasLabel(t, "UNREAD")) ? ["UNREAD"] : [])]);
       return [...labelIds].sort().map((labelId) => {
         const members = mine.filter((t) => hasLabel(t, labelId));
         return { labelId, unread: members.filter((t) => hasLabel(t, "UNREAD")).length, total: members.length };
@@ -150,8 +151,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
           else t.labelIds = t.labelIds.filter((l) => l !== label);
         }
         for (const label of add) {
-          // Gmail marks the newest message unread; the rest keep their state.
-          if (label === "UNREAD") lastMessage(t).unread = true;
+          // Like the backend, an added label lands on every message of the thread.
+          if (label === "UNREAD") t.messages.forEach((m) => (m.unread = true));
           else if (!t.labelIds.includes(label)) t.labelIds.push(label);
         }
       });

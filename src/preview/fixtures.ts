@@ -56,8 +56,8 @@ const hoursAgo = (h: number) => minutesAgo(h * 60);
 const daysAgo = (d: number) => hoursAgo(d * 24);
 
 export const fixtureAccounts: FixtureAccount[] = [
-  { id: "acc-personal", email: "alex@genovezos.dev", displayName: "Alex Genovezos" },
-  { id: "acc-work", email: "alex@pheeme.app", displayName: "Alex (Pheeme)" },
+  { id: "acc-personal", email: "avery@example.com", displayName: "Avery Quinn" },
+  { id: "acc-work", email: "avery@example.org", displayName: "Avery (Studio)" },
 ];
 
 export const fixtureUserLabels: FixtureUserLabel[] = [
@@ -108,8 +108,8 @@ const CI_HTML = `
     <li>typecheck</li><li>lint</li><li>test</li><li>macOS bundle</li>
   </ul>
   <p><img src="${REMOTE_IMAGE}" alt="Build timeline" style="width: 100%; border-radius: 6px;"></p>
-  <p><a href="https://github.com/AlexGenovezos/pheeme/actions">View the run on GitHub</a> or
-  <a href="mailto:alex@pheeme.app">reply to the author</a>.</p>
+  <p><a href="https://ci.example.com/runs/1031">View the run on GitHub</a> or
+  <a href="mailto:avery@example.org">reply to the author</a>.</p>
 </div>`;
 
 const DARK_NEWSLETTER_HTML = `
@@ -136,7 +136,7 @@ const PROMO_HTML = `
 const SECURITY_HTML = `
 <div style="font-family: Arial, sans-serif; max-width: 520px; color: #202124;">
   <h2 style="margin: 0 0 8px;">New sign-in on a Mac</h2>
-  <p>Your account <strong>alex@pheeme.app</strong> was just signed in to from a new device.</p>
+  <p>Your account <strong>avery@example.org</strong> was just signed in to from a new device.</p>
   <table style="border-collapse: collapse;"><tr><td style="padding: 2px 12px 2px 0; color: #5f6368;">Where</td><td>Lisbon, Portugal</td></tr>
   <tr><td style="padding: 2px 12px 2px 0; color: #5f6368;">Device</td><td>MacBook Pro</td></tr></table>
   <p><a href="https://example.com/security">Check activity</a></p>
@@ -156,8 +156,8 @@ const pdf = (id: string, filename: string, size: number): AttachmentInfo => ({
 type Person = [name: string, address: string];
 
 const ME: Record<string, Person> = {
-  "acc-personal": ["Alex Genovezos", "alex@genovezos.dev"],
-  "acc-work": ["Alex (Pheeme)", "alex@pheeme.app"],
+  "acc-personal": ["Avery Quinn", "avery@example.com"],
+  "acc-work": ["Avery (Studio)", "avery@example.org"],
 };
 
 interface MessageOptions {
@@ -201,8 +201,8 @@ export function createFixtureThreads(): FixtureThread[] {
   const W = "acc-work";
   const me = ME[P];
   const work = ME[W];
-  const mira: Person = ["Mira Okafor", "mira@northlight.studio"];
-  const jonas: Person = ["Jonas Weber", "jonas.weber@posteo.de"];
+  const mira: Person = ["Mira Okafor", "mira@example.net"];
+  const jonas: Person = ["Jonas Weber", "jonas@example.net"];
   const dana: Person = ["Dana Whitfield", "dana@lumen.example"];
 
   // The long thread: twelve messages, the last one unread.
@@ -235,7 +235,7 @@ export function createFixtureThreads(): FixtureThread[] {
   return [
     // ── Personal: inbox, one or more threads per category ──
     thread("p-01", P, ["INBOX", "Label_3"], "Icon sketches for the dock", [
-      message("p-01-m1", mira, daysAgo(2), "Hi Alex,\n\nFirst pass at the dock icon. Do you want it playful or plain?", me),
+      message("p-01-m1", mira, daysAgo(2), "Hi Avery,\n\nFirst pass at the dock icon. Do you want it playful or plain?", me),
       message("p-01-m2", me, daysAgo(2) + 600_000, "Plain, with a little warmth. Can you try a folded letter?", mira),
       message(
         "p-01-m3",
@@ -257,9 +257,9 @@ export function createFixtureThreads(): FixtureThread[] {
     thread("p-02", P, ["INBOX", "CATEGORY_UPDATES"], "[pheeme] CI passed on feat/mail-ui", [
       message(
         "p-02-m1",
-        ["GitHub", "notifications@github.com"],
+        ["GitHub", "notifications@ci.example.com"],
         minutesAgo(47),
-        "All checks have passed on feat/mail-ui.\n\n- typecheck\n- lint\n- test\n- macOS bundle\n\nView the run on GitHub: https://github.com/AlexGenovezos/pheeme/actions",
+        "All checks have passed on feat/mail-ui.\n\n- typecheck\n- lint\n- test\n- macOS bundle\n\nView the run on GitHub: https://ci.example.com/runs/1031",
         me,
         { unread: true, html: CI_HTML, remote: true },
       ),
@@ -278,16 +278,16 @@ export function createFixtureThreads(): FixtureThread[] {
     thread("p-05", P, ["INBOX"], "Keyboard map feedback", [
       message(
         "p-05-m1",
-        ["Priya Raman", "priya@fieldnotes.io"],
+        ["Priya Raman", "priya@example.org"],
         hoursAgo(10),
         "j/k feels right. I kept reaching for e to archive while reading a thread, so that should work there too.",
         me,
       ),
       message(
         "p-05-m2",
-        ["Priya Raman", "priya@fieldnotes.io"],
+        ["Priya Raman", "priya@example.org"],
         hoursAgo(9),
-        "Also: g then i to jump to the inbox is muscle memory from Gmail. Please keep it.\n\nMy notes are at https://fieldnotes.io/priya/keyboard-map (and a shorter version: www.example.org/keys).\n\nPriya",
+        "Also: g then i to jump to the inbox is muscle memory from Gmail. Please keep it.\n\nMy notes are at https://example.org/priya/keyboard-map (and a shorter version: www.example.org/keys).\n\nPriya",
         me,
         { unread: true },
       ),
@@ -305,7 +305,7 @@ export function createFixtureThreads(): FixtureThread[] {
     thread("p-07", P, ["INBOX", "STARRED"], "Photos from Saturday", [
       message(
         "p-07-m1",
-        ["Sam Lindqvist", "sam@lindqvist.se"],
+        ["Sam Lindqvist", "sam@example.com"],
         hoursAgo(50),
         "Finally went through them. A few of the harbour ones came out really well; the shared album has all 84.\n\nSam",
         me,
@@ -324,7 +324,7 @@ export function createFixtureThreads(): FixtureThread[] {
     thread("p-09", P, ["INBOX", "CATEGORY_PROMOTIONS"], "OAuth consent screen verification", [
       message(
         "p-09-m1",
-        ["Google Cloud", "cloud-noreply@google.com"],
+        ["Google Cloud", "noreply@cloud.example.com"],
         hoursAgo(74),
         "Your app is in testing mode. Up to 100 test users can sign in without verification. Refresh tokens for apps in testing expire after 7 days.",
         me,
@@ -333,7 +333,7 @@ export function createFixtureThreads(): FixtureThread[] {
     thread("p-10", P, ["INBOX", "CATEGORY_SOCIAL"], "Dinner list", [
       message(
         "p-10-m1",
-        ["Ana Ribeiro", "ana@ribeiro.pt"],
+        ["Ana Ribeiro", "ana@example.net"],
         hoursAgo(3),
         "Adding you to the Thursday list. Bring the good olive oil if you still have it.\n\nAna",
         me,
@@ -385,7 +385,7 @@ export function createFixtureThreads(): FixtureThread[] {
         "w-01-m1",
         dana,
         minutesAgo(25),
-        "Hi Alex,\n\nWe'd like ten seats for a month. Does the BYOC setup work with our Workspace admin policy, or do we need an internal OAuth client? Our policy page: https://lumen.example/it/oauth-policy\n\nDana",
+        "Hi Avery,\n\nWe'd like ten seats for a month. Does the BYOC setup work with our Workspace admin policy, or do we need an internal OAuth client? Our policy page: https://lumen.example/it/oauth-policy\n\nDana",
         work,
         { unread: true },
       ),
@@ -415,12 +415,12 @@ export function createFixtureThreads(): FixtureThread[] {
       }),
     ]),
     thread("w-07", W, ["INBOX", "CATEGORY_UPDATES"], "Receipt for your domain renewal", [
-      message("w-07-m1", ["Registrar", "billing@registrar.example"], daysAgo(8), "pheeme.app renewed for one year.", work, { attachments: [pdf("w-07-a1", "receipt.pdf", 31_820)] }),
+      message("w-07-m1", ["Registrar", "billing@registrar.example"], daysAgo(8), "example.org renewed for one year.", work, { attachments: [pdf("w-07-a1", "receipt.pdf", 31_820)] }),
     ]),
     thread("w-08", W, ["INBOX", "CATEGORY_FORUMS"], "[tauri] WKWebView sandboxed iframe click events", [
       message(
         "w-08-m1",
-        ["tauri-apps discussions", "noreply@github.com"],
+        ["tauri-apps discussions", "noreply@forum.example.org"],
         minutesAgo(200),
         "Parent-registered listeners do reach a script-less sandboxed frame on macOS 14, as long as allow-same-origin is set.",
         work,
@@ -428,10 +428,10 @@ export function createFixtureThreads(): FixtureThread[] {
       ),
     ]),
     thread("w-09", W, ["INBOX", "CATEGORY_FORUMS"], "[tauri] Release plan for 2.x", [
-      message("w-09-m1", ["tauri-apps discussions", "noreply@github.com"], daysAgo(3), "Plugin releases follow the core release.", work),
+      message("w-09-m1", ["tauri-apps discussions", "noreply@forum.example.org"], daysAgo(3), "Plugin releases follow the core release.", work),
     ]),
     thread("w-10", W, ["INBOX"], "Weekly sync notes", [
-      message("w-10-m1", ["Priya Raman", "priya@fieldnotes.io"], hoursAgo(30), "Notes from Tuesday:\n\n- ship the mail UI beta\n- start Phase 7 compose\n\nSee https://pheeme.app/roadmap", work),
+      message("w-10-m1", ["Priya Raman", "priya@example.org"], hoursAgo(30), "Notes from Tuesday:\n\n- ship the mail UI beta\n- start Phase 7 compose\n\nSee https://example.com/roadmap", work),
     ]),
     thread("w-11", W, ["SENT", "Label_10"], "Re: Pilot for the support team", [
       message("w-11-m1", work, minutesAgo(10), "Happy to. Let's find a time this week.", dana),

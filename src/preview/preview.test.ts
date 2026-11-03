@@ -37,7 +37,7 @@ describe("preview IPC", () => {
     await expect(invoke("get_thread", { accountId: "acc-personal", threadId: "p-01" })).resolves.toMatchObject({
       thread: { id: "p-01", messageCount: 4 },
     });
-    await expect(invoke("greet", { name: "Alex" })).resolves.toContain("Alex");
+    await expect(invoke("greet", { name: "Avery" })).resolves.toContain("Avery");
   });
 
   test("list_threads honours All Mail and the category inboxes", () => {
@@ -146,6 +146,27 @@ describe("preview IPC", () => {
     await invoke("modify_threads", { accountId: "acc-personal", threadIds: ["p-05"], add: ["UNREAD"], remove: [] });
     expect((await counts("acc-personal")).CATEGORY_PERSONAL).toBe(before.CATEGORY_PERSONAL);
     expect(await counts("acc-work")).toEqual(workBefore);
+  });
+
+  test("marking a conversation read or unread applies to every message, like the backend", async () => {
+    installPreview();
+    const flags = async () =>
+      ((await invoke("get_thread", { accountId: "acc-personal", threadId: "p-01" })) as ThreadDetail).messages.map((m) => m.unread);
+    const unreadRow = async () =>
+      ((await invoke("label_counts", { accountId: "acc-personal" })) as { labelId: string; unread: number; total: number }[]).find(
+        (c) => c.labelId === "UNREAD",
+      );
+    // p-01 starts with only its newest message unread.
+    expect(await flags()).toEqual([false, false, false, true]);
+    const startUnread = (await unreadRow())?.total ?? 0;
+
+    await invoke("modify_threads", { accountId: "acc-personal", threadIds: ["p-01"], add: [], remove: ["UNREAD"] });
+    expect(await flags()).toEqual([false, false, false, false]);
+    expect(await unreadRow()).toEqual({ labelId: "UNREAD", unread: startUnread - 1, total: startUnread - 1 });
+
+    await invoke("modify_threads", { accountId: "acc-personal", threadIds: ["p-01"], add: ["UNREAD"], remove: [] });
+    expect(await flags()).toEqual([true, true, true, true]);
+    expect(await unreadRow()).toEqual({ labelId: "UNREAD", unread: startUnread, total: startUnread });
   });
 
   test("modify_threads refuses Trash and Spam like the backend", () => {
