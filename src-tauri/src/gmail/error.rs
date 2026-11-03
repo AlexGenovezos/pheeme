@@ -11,8 +11,12 @@ pub enum GmailError {
     #[error("authentication failed: {0}")]
     Auth(String),
     /// Timeout, connection failure or a broken response stream, after retries.
+    /// The request may have reached Gmail (timeout, dropped connection): its effect is unknown.
     #[error("network error: {0}")]
     Network(String),
+    /// The request never reached Gmail (connection refused, DNS, offline): safe to retry.
+    #[error("can't reach Gmail: {0}")]
+    Offline(String),
     /// HTTP 429 (or a 403 rate-limit reason) that outlasted the retry budget.
     #[error("rate limited by Gmail{}", retry_after_suffix(.retry_after))]
     RateLimit { retry_after: Option<Duration> },
@@ -50,7 +54,7 @@ impl GmailError {
         }
         match self {
             GmailError::Auth(_) => "auth",
-            GmailError::Network(_) => "network",
+            GmailError::Network(_) | GmailError::Offline(_) => "network",
             GmailError::RateLimit { .. } => "rate_limit",
             GmailError::Api { status: 404, .. } => "not_found",
             GmailError::Api { .. } => "api",
@@ -110,6 +114,7 @@ mod tests {
     fn codes_are_stable() {
         assert_eq!(GmailError::Auth("x".into()).code(), "auth");
         assert_eq!(GmailError::Network("x".into()).code(), "network");
+        assert_eq!(GmailError::Offline("x".into()).code(), "network");
         assert_eq!(
             GmailError::RateLimit { retry_after: None }.code(),
             "rate_limit"

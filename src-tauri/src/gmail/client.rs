@@ -220,6 +220,9 @@ impl GmailClient {
                         attempt += 1;
                         continue;
                     }
+                    if e.is_connect() {
+                        return Err(GmailError::Offline(e.to_string()));
+                    }
                     return Err(GmailError::Network(e.to_string()));
                 }
             };
@@ -700,7 +703,7 @@ mod tests {
             .send_json::<Value>(ApiRequest::get(&["profile"]))
             .await
             .unwrap_err();
-        assert!(matches!(err, GmailError::Network(_)), "{err:?}");
+        assert!(matches!(err, GmailError::Offline(_)), "{err:?}");
         assert_eq!(err.code(), "network");
     }
 

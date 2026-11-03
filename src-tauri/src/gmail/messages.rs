@@ -7,6 +7,9 @@ use super::types::{AttachmentBody, Message, MessageFormat, MessageListResponse, 
 use futures::stream::{self, StreamExt};
 use serde_json::json;
 
+/// Gmail's cap on ids per `messages.batchModify` call.
+pub const BATCH_MODIFY_LIMIT: usize = 1000;
+
 impl GmailClient {
     /// One page of message ids. Pass the previous page's `next_page_token` to continue.
     pub async fn list_messages(
@@ -20,6 +23,40 @@ impl GmailClient {
             req = req.query("labelIds", *label);
         }
         self.send_json(req.query_opt("pageToken", page_token)).await
+    }
+
+    /// One page of message ids matching a Gmail search (`q`), e.g. `rfc822msgid:<id@host>`.
+    pub async fn search_messages(
+        &self,
+        q: &str,
+        page_token: Option<&str>,
+        max_results: u32,
+    ) -> Result<MessageListResponse, GmailError> {
+        let req = ApiRequest::get(&["messages"])
+            .query("q", q)
+            .query("maxResults", max_results.to_string())
+            .query_opt("pageToken", page_token);
+        self.send_json(req).await
+    }
+
+    /// Add and remove labels on many messages (`messages.batchModify`, 1000 ids per request).
+    /// Idempotent, so safe to replay.
+    pub async fn batch_modify_messages(
+        &self,
+        ids: &[String],
+        add_labels: &[String],
+        remove_labels: &[String],
+    ) -> Result<(), GmailError> {
+        for chunk in ids.chunks(BATCH_MODIFY_LIMIT) {
+            let body = json!({
+                "ids": chunk,
+                "addLabelIds": add_labels,
+                "removeLabelIds": remove_labels,
+            });
+            self.send_empty(ApiRequest::post(&["messages", "batchModify"]).json(body))
+                .await?;
+        }
+        Ok(())
     }
 
     pub async fn get_message(
@@ -395,5 +432,68 @@ mod tests {
             .await;
         assert_eq!(results.len(), 25);
         assert!(results.iter().all(|(_, r)| r.is_ok()));
+    }
+
+    #[tokio::test]
+    async fn batch_modify_posts_ids_and_labels() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/messages/batchModify"))
+            .and(body_json(serde_json::json!({
+                "ids": ["m1", "m2"],
+                "addLabelIds": ["STARRED"],
+                "removeLabelIds": ["INBOX"],
+            })))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        client
+            .batch_modify_messages(
+                &["m1".into(), "m2".into()],
+                &["STARRED".into()],
+                &["INBOX".into()],
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn batch_modify_chunks_over_1000() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/messages/batchModify"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let ids: Vec<String> = (0..1001).map(|n| format!("m{n}")).collect();
+        client
+            .batch_modify_messages(&ids, &[], &["UNREAD".into()])
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn search_messages_passes_q() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/messages"))
+            .and(query_param("q", "rfc822msgid:<a@b>"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "messages": [{"id": "m1", "threadId": "t1"}],
+                "resultSizeEstimate": 1
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let page = client
+            .search_messages("rfc822msgid:<a@b>", None, 10)
+            .await
+            .unwrap();
+        assert_eq!(page.messages[0].id, "m1");
     }
 }
