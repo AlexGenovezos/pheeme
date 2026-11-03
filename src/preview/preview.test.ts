@@ -69,6 +69,17 @@ describe("preview IPC", () => {
     }
   });
 
+  test("the All Mail count matches the All Mail list", () => {
+    const handlers = createPreviewHandlers();
+    const listed = (handlers.list_threads({ accountIds: ["acc-personal"], labelId: "ALL", limit: 500 }) as {
+      threads: { unread: boolean }[];
+    }).threads;
+    const all = (handlers.label_counts({ accountId: "acc-personal" }) as { labelId: string; unread: number; total: number }[]).find(
+      (c) => c.labelId === "ALL",
+    );
+    expect(all).toEqual({ labelId: "ALL", unread: listed.filter((t) => t.unread).length, total: listed.length });
+  });
+
   test("labels come per account, with and without colors", () => {
     const handlers = createPreviewHandlers();
     const userLabels = (accountId: string) =>

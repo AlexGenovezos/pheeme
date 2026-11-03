@@ -692,18 +692,22 @@ pub struct LabelCount {
     pub total: i64,
 }
 
+/// The count row for All Mail (every thread outside Spam and Trash), beside the labels.
+pub const ALL_MAIL: &str = "ALL";
+
 /// Thread counts per label id for one account, counted from the cached threads (not
-/// Gmail's own counters) in a single pass over the account's `thread_labels`. Labels with
-/// no threads are omitted; labels with no unread threads report `unread: 0`.
+/// Gmail's own counters), plus an [`ALL_MAIL`] row. A thread counts as unread exactly when
+/// the lists show it unread (`unread_count > 0`), so Spam and Trash count their unread
+/// threads although a wholly spammed or trashed thread has no `UNREAD` label. Labels with
+/// no threads (and All Mail when empty) are omitted; no unread threads is `unread: 0`.
 pub async fn label_counts(pool: &SqlitePool, account_id: &str) -> Result<Vec<LabelCount>> {
     let rows = sqlx::query!(
         r#"
         SELECT tl.label_id AS "label_id!",
                COUNT(*) AS "total!: i64",
-               COUNT(u.label_id) AS "unread!: i64"
+               SUM(t.unread_count > 0) AS "unread!: i64"
         FROM thread_labels tl
-        LEFT JOIN thread_labels u
-          ON u.account_id = tl.account_id AND u.thread_id = tl.thread_id AND u.label_id = 'UNREAD'
+        JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
         WHERE tl.account_id = ?
         GROUP BY tl.label_id
         ORDER BY tl.label_id
@@ -712,14 +716,38 @@ pub async fn label_counts(pool: &SqlitePool, account_id: &str) -> Result<Vec<Lab
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows
+    // The same predicate as `list_all_mail`.
+    let all = sqlx::query!(
+        r#"
+        SELECT COUNT(*) AS "total!: i64",
+               COALESCE(SUM(t.unread_count > 0), 0) AS "unread!: i64"
+        FROM threads t
+        WHERE t.account_id = ?
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = t.account_id AND e.thread_id = t.id
+                  AND e.label_id IN ('SPAM', 'TRASH'))
+        "#,
+        account_id
+    )
+    .fetch_one(pool)
+    .await?;
+    let mut counts: Vec<LabelCount> = rows
         .into_iter()
         .map(|r| LabelCount {
             label_id: r.label_id,
             unread: r.unread,
             total: r.total,
         })
-        .collect())
+        .collect();
+    if all.total > 0 {
+        counts.push(LabelCount {
+            label_id: ALL_MAIL.to_owned(),
+            unread: all.unread,
+            total: all.total,
+        });
+    }
+    Ok(counts)
 }
 
 #[cfg(test)]
@@ -777,10 +805,11 @@ mod tests {
         pool
     }
 
+    /// A thread under `l`; it has an unread message when `l` has `UNREAD` (as derived).
     async fn seed(pool: &SqlitePool, account_id: &str, id: &str, date: Option<i64>, l: &[&str]) {
-        upsert_thread(pool, &thread(account_id, id, date), &labels(l))
-            .await
-            .unwrap();
+        let mut t = thread(account_id, id, date);
+        t.unread_count = l.contains(&"UNREAD").into();
+        upsert_thread(pool, &t, &labels(l)).await.unwrap();
     }
 
     fn query<'a>(
@@ -1540,6 +1569,75 @@ mod tests {
         assert_eq!(count("STARRED"), Some((1, 2)));
         assert_eq!(count("INBOX"), Some((1, 1)));
         assert_eq!(count("Label_2"), None);
+    }
+
+    #[tokio::test]
+    async fn special_mailbox_counts_match_their_lists() {
+        let pool = seeded_pool().await;
+        let msg = |id: &str, labels: &str, read: i64| DbMessage {
+            id: id.into(),
+            account_id: "a1".into(),
+            thread_id: id.replace('m', "t"),
+            label_ids: Some(labels.into()),
+            from_address: None,
+            from_name: None,
+            to_addresses: None,
+            cc_addresses: None,
+            subject: None,
+            snippet: None,
+            body_html: None,
+            body_text: None,
+            date: Some(100),
+            size_estimate: None,
+            has_attachment: 0,
+            is_read: read,
+            is_starred: 0,
+            raw_headers: None,
+            fully_fetched: 1,
+            rfc822_message_id: None,
+        };
+        let mut tx = crate::db::begin_write(&pool).await.unwrap();
+        for m in [
+            msg("m1", r#"["INBOX","UNREAD"]"#, 0),
+            msg("m2", r#"["SENT"]"#, 1),
+            // Wholly spammed / trashed and unread: derive_thread keeps only SPAM / TRASH.
+            msg("m3", r#"["SPAM","UNREAD"]"#, 0),
+            msg("m4", r#"["TRASH","UNREAD"]"#, 0),
+            msg("m5", r#"["TRASH"]"#, 1),
+        ] {
+            crate::db::messages::upsert_message_tx(&mut tx, &m)
+                .await
+                .unwrap();
+        }
+        let ids: Vec<String> = (1..=5).map(|i| format!("t{i}")).collect();
+        recompute_threads(&mut tx, "a1", &ids).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let counts = label_counts(&pool, "a1").await.unwrap();
+        let count = |id: &str| {
+            counts
+                .iter()
+                .find(|c| c.label_id == id)
+                .map(|c| (c.unread, c.total))
+        };
+        // All Mail is everything outside Spam and Trash, as `list_all_mail` lists it.
+        let all = list_all_mail(&pool, &labels(&["a1"]), None, 50)
+            .await
+            .unwrap();
+        let all_unread = all.threads.iter().filter(|t| t.unread_count > 0).count() as i64;
+        assert_eq!(
+            count(ALL_MAIL),
+            Some((all_unread, all.threads.len() as i64))
+        );
+        assert_eq!(count(ALL_MAIL), Some((1, 2)));
+        assert_eq!(count("SPAM"), Some((1, 1)));
+        assert_eq!(count("TRASH"), Some((1, 2)));
+        assert_eq!(count("INBOX"), Some((1, 1)));
+        assert_eq!(
+            label_counts(&pool, "a2").await.unwrap(),
+            [],
+            "an empty account has no rows, All Mail included"
+        );
     }
 
     #[tokio::test]

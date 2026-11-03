@@ -134,10 +134,15 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       const mine = threads.filter((t) => t.accountId === args?.accountId);
       // UNREAD is a row of its own in the backend; here it follows the messages.
       const labelIds = new Set([...mine.flatMap((t) => t.labelIds), ...(mine.some((t) => hasLabel(t, "UNREAD")) ? ["UNREAD"] : [])]);
-      return [...labelIds].sort().map((labelId) => {
-        const members = mine.filter((t) => hasLabel(t, labelId));
-        return { labelId, unread: members.filter((t) => hasLabel(t, "UNREAD")).length, total: members.length };
+      const countOf = (labelId: string, members: FixtureThread[]): LabelCount => ({
+        labelId,
+        unread: members.filter((t) => hasLabel(t, "UNREAD")).length,
+        total: members.length,
       });
+      const rows = [...labelIds].sort().map((labelId) => countOf(labelId, mine.filter((t) => hasLabel(t, labelId))));
+      // All Mail, like the backend: everything outside Spam and Trash.
+      const allMail = mine.filter((t) => !hasLabel(t, "SPAM") && !hasLabel(t, "TRASH"));
+      return allMail.length > 0 ? [...rows, countOf("ALL", allMail)] : rows;
     },
     sync_now: () => undefined,
     modify_threads: (args) => {

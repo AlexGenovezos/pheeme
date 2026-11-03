@@ -20,8 +20,8 @@ use std::sync::Arc;
 
 pub const DEFAULT_PAGE: i64 = 50;
 
-/// `label_id` that lists every thread not in Spam or Trash.
-pub const ALL_MAIL: &str = "ALL";
+/// `label_id` that lists every thread not in Spam or Trash (and its `label_counts` row).
+pub const ALL_MAIL: &str = threads::ALL_MAIL;
 /// The Primary tab is `INBOX` minus these (Gmail's own id for Primary is `CATEGORY_PERSONAL`).
 pub const OTHER_CATEGORIES: [&str; 4] = [
     "CATEGORY_SOCIAL",

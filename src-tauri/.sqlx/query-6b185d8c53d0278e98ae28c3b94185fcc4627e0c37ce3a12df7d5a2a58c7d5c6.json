@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT tl.label_id AS \"label_id!\",\n               COUNT(*) AS \"total!: i64\",\n               SUM(t.unread_count > 0) AS \"unread!: i64\"\n        FROM thread_labels tl\n        JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id\n        WHERE tl.account_id = ?\n        GROUP BY tl.label_id\n        ORDER BY tl.label_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "label_id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "total!: i64",
+        "ordinal": 1,
+        "type_info": "Null"
+      },
+      {
+        "name": "unread!: i64",
+        "ordinal": 2,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "6b185d8c53d0278e98ae28c3b94185fcc4627e0c37ce3a12df7d5a2a58c7d5c6"
+}
