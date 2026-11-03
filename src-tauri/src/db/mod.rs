@@ -168,6 +168,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn migration_003_refetches_messages_that_have_attachments() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let all = sqlx::migrate!("src/db/migrations");
+        let through_002 = sqlx::migrate::Migrator {
+            migrations: all
+                .migrations
+                .iter()
+                .filter(|m| m.version <= 2)
+                .cloned()
+                .collect::<Vec<_>>()
+                .into(),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        through_002.run(&pool).await.unwrap();
+        sqlx::query("INSERT INTO accounts (id, email, client_id, created_at, updated_at) VALUES ('a', 'a@x', 'c', 0, 0)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        for (id, body) in [("with-att", "hello"), ("plain", "hi")] {
+            sqlx::query("INSERT INTO messages (id, account_id, thread_id, body_text, fully_fetched) VALUES (?, 'a', 't', ?, 1)")
+                .bind(id)
+                .bind(body)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        sqlx::query("INSERT INTO attachments (id, message_id, account_id, filename) VALUES ('0', 'with-att', 'a', 'a.pdf')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        all.run(&pool).await.unwrap();
+
+        let rows: Vec<(String, i64, Option<String>)> =
+            sqlx::query_as("SELECT id, fully_fetched, body_text FROM messages ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            rows,
+            [
+                ("plain".into(), 1, Some("hi".into())),
+                ("with-att".into(), 0, Some("hello".into())),
+            ],
+            "only the message with attachment rows is queued for a re-fetch; bodies stay"
+        );
+        let (inline, cid): (i64, Option<String>) =
+            sqlx::query_as("SELECT is_inline, content_id FROM attachments")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!((inline, cid), (0, None));
+    }
+
+    #[tokio::test]
     async fn attachments_are_found_by_content_id_and_row_id() {
         let pool = fresh_pool().await;
         accounts::insert_account(&pool, &test_account("acct-1"))
