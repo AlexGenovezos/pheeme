@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
+    "build": "tsrs && vite build",
+    "typecheck": "tsrs --noEmit && tsrs --noEmit -p tsconfig.e2e.json",
+    "typecheck:typescript": "tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
     "lint": "oxlint --deny-warnings && node scripts/check-tokens.mjs",
     "test": "vitest",
     "test:ci": "vitest run",
@@ -51,7 +52,8 @@
     "jsdom": "^25.0.1",
     "oxfmt": "^0.75.0",
     "oxlint": "^1.90.0",
-    "typescript": "~5.8.3",
+    "tsrs": "0.20.1-ts7.1.0-beta",
+    "typescript": "~7.0.2",
     "vite": "^6",
     "vitest": "^2"
   }

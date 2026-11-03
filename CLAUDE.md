@@ -17,7 +17,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # Vite dev server only (frontend)
 npm run tauri dev    # Full app with hot reload (runs both Vite + Rust)
-npm run build        # TypeScript check + Vite production build
+npm run build        # Type check (tsrs) + Vite production build
+npm run typecheck    # tsrs, the Rust port of TypeScript 7.1 (beta); typecheck:typescript runs the same checks with tsc 7
 npm run test         # Vitest test runner
 npm run lint         # oxlint, warnings fail (config: .oxlintrc.json) + design-token check
 npm run format       # oxfmt formats TS/JS/CSS/JSON/YAML/HTML (.oxfmtrc.json); CI runs format:check
