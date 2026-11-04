@@ -73,6 +73,7 @@ describe("parseNotes", () => {
     ["> quote", "line 1: a quote"],
     ["| a | b |", "line 1: a table"],
     ["```\ncode", "line 1: a code block"],
+    ["**Press `c`**", "line 1: code or a link inside a **heading**"],
     ["Some *italics*.", "line 1: a stray * (only **bold** is supported)"],
     ["Some _italics_.", "line 1: _italics_ (only **bold** is supported)"],
     ["A <b>tag</b>.", "line 1: HTML"],

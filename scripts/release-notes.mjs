@@ -122,6 +122,8 @@ export function parseNotes(text) {
     }
     const heading = /^\*\*([^*]+)\*\*$/.exec(line);
     if (heading) {
+      if (/[`[]/.test(heading[1]))
+        errors.push(`line ${lineNo}: code or a link inside a **heading**`);
       end();
       blocks.push({ type: "heading", text: heading[1] });
     } else if (line.startsWith("- ")) {

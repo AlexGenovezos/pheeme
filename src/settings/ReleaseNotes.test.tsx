@@ -46,3 +46,13 @@ test("renders headings, bullets and code, and opens links in the browser", () =>
   fireEvent.click(within(v09).getByRole("link", { name: "the guide" }));
   expect(openExternal).toHaveBeenCalledWith("https://pheeme.app/guide");
 });
+
+test("Tab reaches the notes' links before wrapping to the search", () => {
+  render(<Settings />);
+  act(() => useSettingsStore.getState().openSettings("about"));
+  const links = within(screen.getByRole("region", { name: "What's new" })).getAllByRole("link");
+  const last = links[links.length - 1];
+  last.focus();
+  fireEvent.keyDown(last, { key: "Tab" });
+  expect(screen.getByRole("searchbox")).toHaveFocus();
+});
