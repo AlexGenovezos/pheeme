@@ -104,7 +104,11 @@ export function ListPane() {
   const userLabels = useLabelStore((s) => (accountId ? s.userLabels(accountId) : NO_LABELS));
   const mailboxName = mailboxTitle({ accountId, labelId, category }, userLabels);
   const title = searchText ? "Search results" : mailboxName;
-  const unread = threads.filter((t) => t.unread).length;
+  const unread = useLabelStore((s) => {
+    if (accountId === null) return s.allInboxUnread;
+    if (category) return s.categoryCounts[accountId]?.[category] ?? 0;
+    return s.counts[accountId]?.[labelId]?.unread ?? 0;
+  });
   const sidebarKey = useKeybinding("view.toggleSidebar", "mod+b");
 
   useCommands([
