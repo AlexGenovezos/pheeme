@@ -124,7 +124,7 @@ export const FAVORITES: FavoriteRow[] = [
     name: "Trash",
     icon: Trash2,
     colorToken: "--color-mailbox-trash",
-    count: "unread",
+    count: "total",
   },
 ];
 
