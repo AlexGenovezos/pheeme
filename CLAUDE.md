@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Source of truth:** [docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md) sets scope, priorities and the phase order, and overrides `Gmail client project plan.md` wherever they disagree (see its §9). The plan remains the detailed technical reference.
 
-**Current state:** Phases 1–7 of design §12 are built and shipped as betas: foundation, OAuth + multi-account onboarding, the Gmail API client, the sync engine, the app shell, the mail UI (v0.6) and compose (v0.8). Phases 5–7 still wait on Alex's Mac check and the §6 UI review before their issues close (progress per phase: GitHub epic #21). Search (Phase 8) has local-first results, background Gmail results, account scope, paging and recent searches; it still needs Alex’s Mac check and the §6 UI review.
+**Current state:** Phases 1–8 of design §12 are built: foundation, OAuth + multi-account onboarding, the Gmail API client, the sync engine, the app shell, the mail UI (v0.6), compose (v0.8) and search (v0.9). Phases 1–5 and 7 have passed acceptance; mail UI and search still need Alex's real-Mac checks and the §6 UI review before their issues close (progress per phase: GitHub epic #21). v0.9 also includes encrypted Google Cloud client transfer between devices, offline release notes in Settings › About, and default-on persistent diagnostic logs.
 
 ## Commands
 
