@@ -237,6 +237,7 @@ async fn list_inbox(
             label_id: "INBOX",
             also_label_id: None,
             exclude_label_ids: &[],
+            read_filter: None,
             before,
             limit: PAGE,
         },

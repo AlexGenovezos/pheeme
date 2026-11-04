@@ -201,3 +201,7 @@ export function resolveActiveAccount(
     return activeAccountId;
   return accounts[0]?.id ?? null;
 }
+
+/** Session filter identity, including account and category. */
+export const mailboxKey = (ref: MailboxRef): string =>
+  JSON.stringify([ref.accountId, ref.labelId, ref.category ?? null]);

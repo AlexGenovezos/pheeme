@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               COALESCE(t.last_message_date, 0) AS \"cursor_date!: i64\"\n        FROM threads t INDEXED BY idx_threads_account_date\n        WHERE t.account_id = ?1\n          AND COALESCE(t.last_message_date, 0) <= ?2\n          AND (COALESCE(t.last_message_date, 0), t.account_id, t.id) < (?2, ?3, ?4)\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = t.account_id AND e.thread_id = t.id\n                  AND e.label_id IN ('SPAM', 'TRASH'))\n        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC\n        LIMIT ?5\n        ",
+  "query": "\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               tl.last_message_date AS \"cursor_date!\"\n        FROM thread_labels tl\n        JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id\n        WHERE tl.label_id = ?1\n          AND tl.account_id IN (SELECT value FROM json_each(?2))\n          AND (?3 IS NULL OR EXISTS (\n                SELECT 1 FROM thread_labels x\n                WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id\n                  AND x.label_id = ?3))\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = tl.account_id AND e.thread_id = tl.thread_id\n                  AND e.label_id IN (SELECT value FROM json_each(?4)))\n          AND (?6 IS NULL OR t.unread_count > 0 OR\n               json_array(t.account_id, t.id) IN (SELECT value FROM json_each(?6)))\n        ORDER BY tl.last_message_date DESC, tl.account_id DESC, tl.thread_id DESC\n        LIMIT ?5\n        ",
   "describe": {
     "columns": [
       {
@@ -64,13 +64,13 @@
         "type_info": "Integer"
       },
       {
-        "name": "cursor_date!: i64",
+        "name": "cursor_date!",
         "ordinal": 12,
-        "type_info": "Null"
+        "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 5
+      "Right": 6
     },
     "nullable": [
       false,
@@ -85,8 +85,8 @@
       true,
       true,
       false,
-      null
+      false
     ]
   },
-  "hash": "d3aca07d78fe2bc6678a60cffb955d609e66bc249b6eb4efadf4adf4d08d393e"
+  "hash": "d9265222b251c7c4082351f5408ff277c50d93c05d76d2f2b1f4559ddb6cea58"
 }

@@ -158,7 +158,17 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
         String(args?.labelId ?? "INBOX"),
         args?.alsoLabelId ? String(args.alsoLabelId) : null,
         accountIdsOf(args),
-      ).map(toSummary),
+      )
+        .filter(
+          (t) =>
+            !args?.unreadOnly ||
+            hasLabel(t, "UNREAD") ||
+            (Array.isArray(args?.keepRead) &&
+              args.keepRead.some(
+                (pair) => Array.isArray(pair) && pair[0] === t.accountId && pair[1] === t.id,
+              )),
+        )
+        .map(toSummary),
       next: null,
     }),
     get_thread: (args) => {

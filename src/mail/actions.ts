@@ -121,7 +121,7 @@ const keysOf = (groups: Map<string, string[]>): ThreadKey[] =>
   [...groups].flatMap(([accountId, ids]) => ids.map((id) => threadKey(accountId, id)));
 
 function reloadLists() {
-  void mail().reload();
+  void mail().reload(true);
   void useLabelStore.getState().load(useAccountStore.getState().accounts.map((a) => a.id));
 }
 
@@ -224,7 +224,7 @@ function apply(
   const drop = () => {
     mail().settle(op, rowKeys, true);
     useThreadStore.getState().settleDetails(op, rowKeys);
-    void mail().reload(); // the patched rows go back to what the cache says
+    void mail().reload(true); // the patched rows go back to what the cache says
     return new Map<string, string[]>();
   };
   return (after ? after.then((wanted) => (wanted ? go() : drop()), go) : go()).then((done) => {
@@ -247,7 +247,7 @@ async function revert(done: Map<string, string[]>, original: Change, inverse: Ch
   if (inverse.leavesList) mail().remove(keys, op);
   await send(done, inverse, op);
   // Rows the change had taken out of the list can only come back from the cache.
-  if (original.leavesList) await mail().reload();
+  if (original.leavesList) await mail().reload(true);
 }
 
 // Archive and its kin only leave the list when the list is the inbox (a label view or All Mail keeps them).

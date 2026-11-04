@@ -18,7 +18,7 @@ import { useAccountStore } from "../store/accountStore";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
 import { moveSelection, openAndMarkRead, openFocused } from "./actions";
-import { accountColorIndex, type MailboxRef, threadKey } from "./mailboxes";
+import { accountColorIndex, mailboxKey, type MailboxRef, threadKey } from "./mailboxes";
 import { type RowAction, rowId, ThreadRow } from "./ThreadRow";
 import "./mail.css";
 
@@ -53,6 +53,7 @@ export function ThreadList(props: ThreadListProps) {
   const mailbox = useUiStore((s) => s.mailbox);
   const search = useMailStore((s) => s.search);
   const searchText = useUiStore((s) => s.searchText.trim());
+  const unreadOnly = useUiStore((s) => !!s.unreadMailboxes[mailboxKey(s.mailbox)]);
   const threads = useMailStore((s) => s.threads);
   const loading = useMailStore((s) => s.loading);
   const error = useMailStore((s) => s.error);
@@ -113,7 +114,9 @@ export function ThreadList(props: ThreadListProps) {
               : search?.remoteLoading
                 ? "Looking for matching mail…"
                 : "No conversations match your search."
-            : emptyCopy(mailbox, props.title)}
+            : unreadOnly
+              ? `No unread mail in ${props.title}`
+              : emptyCopy(mailbox, props.title)}
         </p>
         {searchText && Object.keys(search?.remoteNext ?? {}).length > 0 && (
           <Button onClick={() => void useMailStore.getState().loadMore()}>Load more results</Button>

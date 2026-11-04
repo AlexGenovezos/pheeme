@@ -198,7 +198,7 @@ fn heap_levels_off_over_a_long_session() {
             // The change is queued straight on the outbox: `MailService::modify_threads` would
             // also start a sync in the background, still running when the heap is sampled.
             let page = mail
-                .list_threads(&me, "INBOX", None, None, None)
+                .list_threads(&me, "INBOX", None, None, None, None)
                 .await
                 .unwrap();
             let newest = page.threads[0].id.clone();

@@ -1,7 +1,7 @@
 // Mail state: the thread list for the active mailbox, kept fresh by sync events.
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
-import { type ThreadKey, threadKey } from "../mail/mailboxes";
+import { parseThreadKey, type ThreadKey, threadKey } from "../mail/mailboxes";
 import {
   type CommandError,
   listThreads,
@@ -43,11 +43,11 @@ interface MailState {
   loading: boolean;
   error: CommandError | null;
   /** Load the first page for `query`, replacing the list. `limit` asks for more than one page. */
-  load(query: MailQuery, limit?: number): Promise<void>;
+  load(query: MailQuery, limit?: number, preserveRead?: boolean): Promise<void>;
   /** Append the next page. Does nothing while a load is in flight or at the end of the list. */
   loadMore(): Promise<void>;
   /** Re-run the current query (after a sync), as deep as the list is loaded so the scroll position survives. */
-  reload(): Promise<void>;
+  reload(preserveRead?: boolean): Promise<void>;
   /**
    * Rewrite the rows named by `keys` (optimistic changes). With an `op` (from `newOp`) the change is also pending:
    * every later load, reload and page re-applies it until `settle(op)`, so a reload that was answered before the
@@ -89,6 +89,19 @@ interface PendingChange {
 }
 let pending = new Map<ThreadKey, PendingChange[]>();
 let ops = 0;
+// Rows read during this mailbox visit remain eligible in background queries. The backend
+// still checks mailbox membership, so archiving, deleting or relabelling them removes them.
+const keptRead = new Set<ThreadKey>();
+const readArgs = (query: ThreadQuery) =>
+  query.unreadOnly
+    ? {
+        unreadOnly: true,
+        keepRead: [...keptRead].map((key): [string, string] => {
+          const { accountId, threadId } = parseThreadKey(key);
+          return [accountId, threadId];
+        }),
+      }
+    : {};
 
 /** A fresh id to tag the changes of one action, for `patch`, `remove` and `settle`. */
 export const newOp = () => ++ops;
@@ -121,6 +134,7 @@ const sameQuery = (a: MailQuery | null, b: MailQuery | null) =>
   b !== null &&
   a.labelId === b.labelId &&
   a.search === b.search &&
+  !!a.unreadOnly === !!b.unreadOnly &&
   (a.alsoLabelId ?? null) === (b.alsoLabelId ?? null) &&
   a.accountIds.length === b.accountIds.length &&
   a.accountIds.every((id, i) => id === b.accountIds[i]);
@@ -274,7 +288,8 @@ export const useMailStore = create<MailState>((set, get) => {
   return {
     ...EMPTY,
     query: null,
-    load: async (query, limit) => {
+    load: async (query, limit, preserveRead = false) => {
+      if (!preserveRead || !sameQuery(get().query, query)) keptRead.clear();
       const ticket = ++latest;
       if (query.search) {
         remoteRows = new Map();
@@ -314,6 +329,7 @@ export const useMailStore = create<MailState>((set, get) => {
         const page = await listThreads({
           accountIds: query.accountIds,
           labelId: query.labelId,
+          ...readArgs(query),
           ...(query.alsoLabelId ? { alsoLabelId: query.alsoLabelId } : {}),
           ...(limit ? { limit } : {}),
         });
@@ -350,6 +366,7 @@ export const useMailStore = create<MailState>((set, get) => {
         const page = await listThreads({
           accountIds: query.accountIds,
           labelId: query.labelId,
+          ...readArgs(query),
           ...(query.alsoLabelId ? { alsoLabelId: query.alsoLabelId } : {}),
           before: next,
         });
@@ -372,21 +389,40 @@ export const useMailStore = create<MailState>((set, get) => {
         set({ loading: false, error: toCommandError(error) });
       }
     },
-    reload: async () => {
+    reload: async (preserveRead = false) => {
       const { query, threads } = get();
       if (query?.search) await localSearch(latest, query, reloadDepth(threads.length));
-      else if (query) await get().load(query, reloadDepth(threads.length));
+      else if (query) await get().load(query, reloadDepth(threads.length), preserveRead);
     },
     retryGmail: () => remotePages(true),
     patch: (keys, fn, op) => {
       if (op !== undefined) register(keys, { op, fn, query: null });
       const wanted = new Set(keys);
-      set((s) => ({ threads: s.threads.map((t) => (wanted.has(keyOf(t)) ? fn(t) : t)) }));
+      let newlyKept = false;
+      set((s) => ({
+        threads: s.threads.map((t) => {
+          if (!wanted.has(keyOf(t))) return t;
+          const updated = fn(t);
+          if (
+            s.query?.unreadOnly &&
+            sameQuery(s.query, s.loadedQuery) &&
+            t.unread &&
+            !updated.unread
+          ) {
+            keptRead.add(keyOf(t));
+            newlyKept = true;
+          }
+          return updated;
+        }),
+      }));
+      // Replace a request issued before the read, which cannot yet include this row.
+      if (newlyKept && get().loading) void get().reload(true);
     },
     remove: (keys, op) => {
       // The rows being removed are in the list on screen, which is the loaded query (else the one asked for).
       if (op !== undefined)
         register(keys, { op, fn: null, query: get().loadedQuery ?? get().query });
+      keys.forEach((key) => keptRead.delete(key));
       const gone = new Set(keys);
       set((s) => ({ threads: s.threads.filter((t) => !gone.has(keyOf(t))) }));
     },
@@ -413,12 +449,13 @@ export const useMailStore = create<MailState>((set, get) => {
     },
     clear: () => {
       latest++;
+      keptRead.clear();
       remoteRows.clear();
       removedFromSearch.clear();
       set({ ...EMPTY, query: null });
     },
     subscribe: async () => {
-      const reload = () => void get().reload();
+      const reload = () => void get().reload(true);
       const stops = await Promise.all([
         listen<SyncMessagesUpdated>(SYNC_EVENTS.messagesUpdated, ({ payload }) => {
           if (get().search && payload.removed.length) {
@@ -473,5 +510,6 @@ export const useMailStore = create<MailState>((set, get) => {
 export function __resetMailStoreForTests() {
   latest++;
   pending = new Map();
+  keptRead.clear();
   useMailStore.setState({ ...EMPTY, query: null });
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               COALESCE(t.last_message_date, 0) AS \"cursor_date!: i64\"\n        FROM threads t INDEXED BY idx_threads_account_date\n        WHERE t.account_id = ?1\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = t.account_id AND e.thread_id = t.id\n                  AND e.label_id IN ('SPAM', 'TRASH'))\n        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC\n        LIMIT ?2\n        ",
+  "query": "\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               COALESCE(t.last_message_date, 0) AS \"cursor_date!: i64\"\n        FROM threads t INDEXED BY idx_threads_account_date\n        WHERE t.account_id = ?1\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = t.account_id AND e.thread_id = t.id\n                  AND e.label_id IN ('SPAM', 'TRASH'))\n          AND (?3 IS NULL OR t.unread_count > 0 OR\n               json_array(t.account_id, t.id) IN (SELECT value FROM json_each(?3)))\n        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC\n        LIMIT ?2\n        ",
   "describe": {
     "columns": [
       {
@@ -70,7 +70,7 @@
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 3
     },
     "nullable": [
       false,
@@ -88,5 +88,5 @@
       null
     ]
   },
-  "hash": "67a52d3b67def787b8acef365019324715bf8d9787af74349477119dd2891eb8"
+  "hash": "e362d5ceec1e990a5254c0178846f8a0feb6a38a41bdae104a054aaeee213a46"
 }
