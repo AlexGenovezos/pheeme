@@ -163,7 +163,12 @@ export const useMailStore = create<MailState>((set, get) => {
       const rows = overlay(page.threads, query);
       for (const row of rows) remoteRows.delete(keyOf(row));
       set((s) => {
-        const retained = more ? s.threads : overlay([...remoteRows.values()], query);
+        const retained = more
+          ? s.threads
+          : overlay(
+              [...remoteRows.values()].filter((row) => !removedFromSearch.has(keyOf(row))),
+              query,
+            );
         const matches = new Map(rows.map((t) => [keyOf(t), t]));
         const combined = more ? appendUnique(retained, rows) : appendUnique(rows, retained);
         // Reloads refresh matching rows but keep the order the user is already reading.
@@ -395,7 +400,8 @@ export const useMailStore = create<MailState>((set, get) => {
               const row = remoteRows.get(key);
               if (row) remoteRows.set(key, change.fn(row));
             } else if (sameQuery(change.query, get().query)) {
-              remoteRows.delete(key);
+              // IPC success only queues the write. Keep the snapshot until sync can confirm
+              // Trash or restore it after Gmail rejects the outbox operation.
               if (get().query?.search) removedFromSearch.add(key);
             }
           }
@@ -436,12 +442,17 @@ export const useMailStore = create<MailState>((set, get) => {
               .then((detail) => {
                 if (ticket !== latest || remoteUpdates.get(key) !== version || !remoteRows.has(key))
                   return;
+                const hidden = removedFromSearch.has(key);
+                if (hidden && detail.messages.some((m) => m.labelIds.includes("TRASH"))) return;
+                if (hidden) removedFromSearch.delete(key);
                 remoteRows.set(key, detail.thread);
                 const query = get().query;
                 if (query)
                   set((s) => ({
                     threads: overlay(
-                      s.threads.map((row) => (keyOf(row) === key ? detail.thread : row)),
+                      hidden
+                        ? appendUnique(s.threads, [detail.thread])
+                        : s.threads.map((row) => (keyOf(row) === key ? detail.thread : row)),
                       query,
                     ),
                   }));
