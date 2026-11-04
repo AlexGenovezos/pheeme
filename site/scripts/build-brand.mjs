@@ -15,8 +15,6 @@ const C = {
   blueHi: "#4A8DF2",
   blueLo: "#173C92",
   ink: "#16388A", // wordmark on light
-  navyHi: "#14347F",
-  navyLo: "#081944",
   goldLo: "#C08A35",
   goldMid: "#E8C579",
   goldHi: "#F8E6B4",
@@ -146,26 +144,16 @@ for (const [way, p] of Object.entries(WAYS)) {
   );
 }
 
-// --- 5. app icon: navy squircle, white envelope, gold wing
-function appIcon({ rounded = true, scale = 0.74, radius = 114 } = {}) {
-  const id = `a${uid++}`;
-  const m = mark({ env: C.white, wing: "gold" });
-  const side = 512;
-  const s = (side * scale) / Math.max(BOX.w, BOX.h);
-  const tx = side / 2 - (BOX.x + BOX.w / 2) * s;
-  const ty = side / 2 - (BOX.y + BOX.h / 2) * s;
-  const bgDefs = `<linearGradient id="${id}bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.navyHi}"/><stop offset="1" stop-color="${C.navyLo}"/></linearGradient>`;
-  const bg = rounded
-    ? `<rect width="512" height="512" rx="${radius}" fill="url(#${id}bg)"/>`
-    : `<rect width="512" height="512" fill="url(#${id}bg)"/>`;
-  return svg("0 0 512 512", bgDefs + m.defs, bg + `<g transform="translate(${tx} ${ty}) scale(${s})">${m.body}</g>`);
-}
-write("pheeme-app-icon.svg", appIcon());
-write("pheeme-app-icon-square.svg", appIcon({ rounded: false })); // for iOS/Android, which mask it themselves
-write("pheeme-app-icon-maskable.svg", appIcon({ rounded: false, scale: 0.58 })); // safe zone for Android adaptive icons
-
-// The desktop app icon (../src-tauri/app-icon.svg) is the engraved statue from
-// scripts/build-fama-icon.sh, not this logo, so it isn't written here.
+// --- 5. app icons share the desktop statue engraving as their source.
+const desktopIcon = readFileSync(join(ROOT, "../src-tauri/app-icon.svg"), "utf8");
+// Remove the desktop Dock padding for small browser icons.
+const browserIcon = desktopIcon.replace('viewBox="0 0 1024 1024"', 'viewBox="100 100 824 824"');
+const squareIcon = browserIcon.replaceAll('rx="185"', 'rx="0"');
+// Adaptive icons need an opaque background, including the desktop padding.
+const maskableIcon = desktopIcon.replace(/(<svg[^>]*>)/, '$1<rect width="1024" height="1024" fill="#F4F1E8"/>');
+write("pheeme-app-icon.svg", browserIcon);
+write("pheeme-app-icon-square.svg", squareIcon);
+write("pheeme-app-icon-maskable.svg", maskableIcon);
 
 // ---------- rasterize ----------
 const render = (input, output, w, h = w, bg) =>
@@ -183,10 +171,10 @@ for (const f of files) {
   }
 }
 
-// favicons + platform icons (favicon uses a tighter crop so the wing survives at 16px)
+// Favicons and platform icons use the same statue as the desktop app.
 const icon = join(OUT, "pheeme-app-icon.svg");
 const fav = join(OUT, "favicon.svg");
-writeFileSync(fav, appIcon({ scale: 0.9, radius: 96 }));
+writeFileSync(fav, browserIcon);
 writeFileSync(join(PUB, "favicon.svg"), readFileSync(fav));
 // The desktop app (repo root) uses the same favicon and the color mark.
 writeFileSync(join(ROOT, "../public/favicon.svg"), readFileSync(fav));
