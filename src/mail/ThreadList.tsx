@@ -51,13 +51,20 @@ export function emptyCopy(mailbox: MailboxRef, title: string): string {
 
 export function ThreadList(props: ThreadListProps) {
   const mailbox = useUiStore((s) => s.mailbox);
+  const search = useMailStore((s) => s.search);
+  const searchText = useUiStore((s) => s.searchText.trim());
   const threads = useMailStore((s) => s.threads);
   const loading = useMailStore((s) => s.loading);
   const error = useMailStore((s) => s.error);
   const accounts = useAccountStore((s) => s.accounts);
 
   if (threads.length > 0)
-    return <Rows key={`${mailbox.accountId}/${mailbox.labelId}/${mailbox.category}`} {...props} />;
+    return (
+      <Rows
+        key={`${mailbox.accountId}/${mailbox.labelId}/${mailbox.category}/${searchText}`}
+        {...props}
+      />
+    );
 
   const queried =
     mailbox.accountId === null ? accounts : accounts.filter((a) => a.id === mailbox.accountId);
@@ -74,7 +81,7 @@ export function ThreadList(props: ThreadListProps) {
       </div>
     );
   }
-  if (firstSync) {
+  if (firstSync && !searchText) {
     return (
       <div
         className="list-pane__scroll"
@@ -99,7 +106,18 @@ export function ThreadList(props: ThreadListProps) {
   return (
     <div className="list-pane__scroll">
       <div className="thread-state">
-        <p className="thread-state__message">{emptyCopy(mailbox, props.title)}</p>
+        <p className="thread-state__message">
+          {searchText
+            ? search?.remoteError
+              ? "No cached matches. Retry Gmail to search the rest of your mail."
+              : search?.remoteLoading
+                ? "Looking for matching mail…"
+                : "No conversations match your search."
+            : emptyCopy(mailbox, props.title)}
+        </p>
+        {searchText && Object.keys(search?.remoteNext ?? {}).length > 0 && (
+          <Button onClick={() => void useMailStore.getState().loadMore()}>Load more results</Button>
+        )}
       </div>
     </div>
   );
@@ -110,7 +128,12 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const open = useUiStore((s) => s.openThread);
   const checked = useUiStore((s) => s.checked);
   const threads = useMailStore((s) => s.threads);
+  const loading = useMailStore((s) => s.loading);
   const next = useMailStore((s) => s.next);
+  const search = useMailStore((s) => s.search);
+  const searchAccountId = useUiStore((s) => s.searchAccountId);
+  const remoteMore = Object.keys(search?.remoteNext ?? {}).length > 0;
+  const canLoadMore = !!next || remoteMore;
   const error = useMailStore((s) => s.error);
   const accounts = useAccountStore((s) => s.accounts);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -146,9 +169,23 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
 
   // Infinite scroll. The store ignores a call while a page is in flight; a finished page changes `threads.length` and asks again.
   useEffect(() => {
-    if (next && lastRendered >= 0 && lastRendered >= threads.length - LOAD_MORE_WITHIN)
+    if (
+      canLoadMore &&
+      !error &&
+      lastRendered >= 0 &&
+      lastRendered >= threads.length - LOAD_MORE_WITHIN
+    )
       void useMailStore.getState().loadMore();
-  }, [lastRendered, threads.length, next]);
+  }, [
+    lastRendered,
+    threads.length,
+    next,
+    canLoadMore,
+    search?.remoteNext,
+    search?.remoteLoading,
+    loading,
+    error,
+  ]);
 
   // j/k and arrow keys move the open thread; keep it in view.
   useEffect(() => {
@@ -226,10 +263,10 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
     [rowMenu],
   );
 
-  const showAccountDot = mailbox.accountId === null;
+  const showAccountDot = search ? searchAccountId === null : mailbox.accountId === null;
 
   // Logical set size; -1 while more pages exist.
-  const setSize = next ? -1 : threads.length;
+  const setSize = canLoadMore || search?.remoteLoading ? -1 : threads.length;
 
   return (
     <div className="thread-body">

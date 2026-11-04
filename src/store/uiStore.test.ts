@@ -146,3 +146,22 @@ test("layout changes keep the navigation preferences in storage", () => {
   ui().toggleSidebar();
   expect(stored()).toMatchObject({ sidebarCollapsed: true, collapsedAccounts: ["a1"] });
 });
+
+test("search remembers the mailbox underneath it and resets selection on query and account changes", () => {
+  const store = () => useUiStore.getState();
+  store().setMailbox({ accountId: "a1", labelId: "SENT" });
+  store().setOpenThread("a1:t1");
+  store().toggleChecked("a1:t1");
+  store().setSearch("invoice");
+  expect(store().searchAccountId).toBe("a1");
+  expect(store().openThread).toBeNull();
+  expect(store().checked).toEqual([]);
+  store().setSearchAccount(null);
+  store().setSearch("invoice has:attachment");
+  expect(store().searchAccountId).toBeNull();
+  store().setSearch("");
+  expect(store().mailbox).toEqual({ accountId: "a1", labelId: "SENT" });
+  store().setSearch("another");
+  store().setMailbox({ accountId: "a1", labelId: "SENT" });
+  expect(store().searchText).toBe("");
+});
