@@ -339,37 +339,51 @@ test("sync rollback refreshes flags on Gmail-only matches from the cached thread
   stop();
 });
 
-test("Gmail rejecting an accepted trash restores a Gmail-only result from sync", async () => {
-  let trashed = false;
-  mockIPC(
-    (cmd) => {
-      if (cmd === "search_messages") return { ...local(), local: false };
-      if (cmd === "get_thread")
-        return { thread: row("match"), messages: [{ labelIds: trashed ? ["TRASH"] : ["INBOX"] }] };
-      return remote(row("match"));
-    },
-    { shouldMockEvents: true },
-  );
-  const loading = store().load(query("invoice OR receipt"));
-  await startGmail();
-  await loading;
-  const stop = await store().subscribe();
-  const op = newOp();
-  store().remove(["a:match"], op);
-  trashed = true;
-  // The IPC command has accepted the write into the outbox, not confirmed Gmail's acceptance.
-  store().settle(op);
-  const changed = () =>
-    emit("sync:messages_updated", { accountId: "a", added: [], removed: [], modified: ["match"] });
-  await changed();
-  await vi.advanceTimersByTimeAsync(0);
-  expect(keys()).toEqual([]);
-  // Later Gmail rejects the write and the outbox restores the cached labels.
-  trashed = false;
-  await changed();
-  await vi.advanceTimersByTimeAsync(0);
-  expect(keys()).toEqual(["a:match"]);
-  await store().reload();
-  expect(keys()).toEqual(["a:match"]);
-  stop();
-});
+test.each([false, true])(
+  "Gmail rejecting accepted trash restores Gmail-only results (mixed labels: %s)",
+  async (mixed) => {
+    let trashed = false;
+    mockIPC(
+      (cmd) => {
+        if (cmd === "search_messages") return { ...local(), local: false };
+        if (cmd === "get_thread")
+          return {
+            thread: row("match"),
+            messages: [
+              { labelIds: trashed ? ["TRASH"] : ["INBOX"] },
+              ...(mixed ? [{ labelIds: ["TRASH"] }] : []),
+            ],
+          };
+        return remote(row("match"));
+      },
+      { shouldMockEvents: true },
+    );
+    const loading = store().load(query("invoice OR receipt"));
+    await startGmail();
+    await loading;
+    const stop = await store().subscribe();
+    const op = newOp();
+    store().remove(["a:match"], op);
+    trashed = true;
+    // The IPC command has accepted the write into the outbox, not confirmed Gmail's acceptance.
+    store().settle(op);
+    const changed = () =>
+      emit("sync:messages_updated", {
+        accountId: "a",
+        added: [],
+        removed: [],
+        modified: ["match"],
+      });
+    await changed();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(keys()).toEqual([]);
+    // Later Gmail rejects the write and the outbox restores the cached labels.
+    trashed = false;
+    await changed();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(keys()).toEqual(["a:match"]);
+    await store().reload();
+    expect(keys()).toEqual(["a:match"]);
+    stop();
+  },
+);

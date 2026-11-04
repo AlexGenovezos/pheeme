@@ -443,7 +443,7 @@ export const useMailStore = create<MailState>((set, get) => {
                 if (ticket !== latest || remoteUpdates.get(key) !== version || !remoteRows.has(key))
                   return;
                 const hidden = removedFromSearch.has(key);
-                if (hidden && detail.messages.some((m) => m.labelIds.includes("TRASH"))) return;
+                if (hidden && detail.messages.every((m) => m.labelIds.includes("TRASH"))) return;
                 if (hidden) removedFromSearch.delete(key);
                 remoteRows.set(key, detail.thread);
                 const query = get().query;
