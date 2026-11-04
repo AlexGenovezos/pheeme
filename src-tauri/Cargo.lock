@@ -3557,6 +3557,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bytes",
+ "cc",
  "chrono",
  "dhat",
  "file-rotate",
@@ -3587,6 +3588,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-shell",
  "tauri-plugin-updater",
+ "tauri-winrt-notification",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -3595,6 +3597,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "wiremock",
+ "zbus 5.14.0",
  "zeroize",
 ]
 
@@ -6042,6 +6045,7 @@ dependencies = [
  "signal-hook-registry",
  "socket2",
  "tokio-macros",
+ "tracing",
  "windows-sys 0.61.2",
 ]
 
@@ -7750,6 +7754,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_repr",
+ "tokio",
  "tracing",
  "uds_windows",
  "uuid",

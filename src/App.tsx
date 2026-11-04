@@ -1,7 +1,8 @@
+import { useDesktopEvents } from "./desktop/events";
 import { useModCommands, useModEvents } from "./mods/lifecycle";
 import { ModPanel } from "./mods/ModSurfaces";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast, ToastProvider } from "./components/ui/Toast";
 import { ComposeHost, useComposeEvents } from "./compose/ComposeHost";
 import { Onboarding } from "./onboarding/Onboarding";
@@ -108,6 +109,8 @@ function App() {
   useModEvents();
   const { accounts, loaded, error, load, upsert } = useAccountStore();
   const [adding, setAdding] = useState(false);
+  const showMail = useCallback(() => setAdding(false), []);
+  useDesktopEvents(loaded && accounts.length > 0, showMail);
   // Onboarding replaces the mail screen; the settings dialog closes so it doesn't reopen on return.
   const addAccount = () => {
     useSettingsStore.getState().close();

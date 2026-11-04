@@ -16,6 +16,7 @@ test-support = []
 bench = ["test-support", "dep:gungraun"]
 
 [build-dependencies]
+cc = "1"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
@@ -60,11 +61,15 @@ rquickjs = "0.14"
 
 # Valgrind only runs on Linux. Optional so that plain builds don't need libclang.
 [target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5", default-features = false, features = ["tokio"] }
 gungraun = { version = "0.20.0", features = ["act"], optional = true }
 
 # Same major as keyring's apple-native backend, to recognise its macOS error codes.
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winrt-notification = { package = "tauri-winrt-notification", version = "0.7" }
 
 [dev-dependencies]
 dhat = "0.3.3"

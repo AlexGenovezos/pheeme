@@ -1061,3 +1061,123 @@ async fn send_in_its_undo_window_does_not_hold_up_other_changes() {
     outbox::process(&h.engine, t + 10_000).await.unwrap();
     assert_eq!(h.fake.sent().len(), 1);
 }
+
+fn arrivals(events: &RecordingEvents) -> Vec<super::events::NewMail> {
+    events
+        .take()
+        .into_iter()
+        .flat_map(|event| match event {
+            SyncEvent::NewMail {
+                account_id,
+                messages,
+            } => {
+                assert_eq!(account_id, ACCT);
+                messages
+            }
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn notifications_only_for_new_unread_primary_including_replies() {
+    let h = harness().await;
+    h.fake
+        .seed(FakeMsg::new("old", "existing", &["INBOX", "UNREAD"]));
+    h.engine.run_initial_sync().await.unwrap();
+    assert!(
+        arrivals(&h.events).is_empty(),
+        "initial inbox must stay silent"
+    );
+    for (id, labels) in [
+        ("primary", vec!["INBOX", "UNREAD", "CATEGORY_PERSONAL"]),
+        ("no-category", vec!["INBOX", "UNREAD"]),
+        ("read", vec!["INBOX"]),
+        ("promo", vec!["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"]),
+        ("social", vec!["INBOX", "UNREAD", "CATEGORY_SOCIAL"]),
+        ("updates", vec!["INBOX", "UNREAD", "CATEGORY_UPDATES"]),
+        ("forums", vec!["INBOX", "UNREAD", "CATEGORY_FORUMS"]),
+        ("spam", vec!["INBOX", "UNREAD", "SPAM"]),
+        ("trash", vec!["INBOX", "UNREAD", "TRASH"]),
+        ("sent", vec!["INBOX", "UNREAD", "SENT"]),
+        ("draft", vec!["INBOX", "UNREAD", "DRAFT"]),
+        ("archive", vec!["UNREAD"]),
+    ] {
+        h.fake.add(FakeMsg::new(id, id, &labels));
+    }
+    h.fake
+        .add(FakeMsg::new("reply", "existing", &["INBOX", "UNREAD"]));
+    h.engine.run_incremental_sync().await.unwrap();
+    let mail = arrivals(&h.events);
+    assert_eq!(
+        sorted(mail.iter().map(|m| m.thread_id.clone()).collect()),
+        s(&["existing", "no-category", "primary"])
+    );
+    let primary = mail.iter().find(|m| m.thread_id == "primary").unwrap();
+    assert_eq!(primary.sender, "Sender primary");
+    assert_eq!(primary.subject, "Subject primary");
+    assert!(primary.snippet.contains("Body of primary"));
+    h.engine.run_incremental_sync().await.unwrap();
+    assert!(arrivals(&h.events).is_empty(), "no repeats next sync");
+}
+
+#[tokio::test]
+async fn notification_replay_reclassification_backfill_and_resync_stay_silent() {
+    let h = harness().await;
+    h.fake
+        .seed(FakeMsg::new("archived", "archived", &["UNREAD"]));
+    h.engine.run_initial_sync().await.unwrap();
+    let start = history_id(&h.pool).await.unwrap();
+    h.fake.add(FakeMsg::new("new", "new", &["INBOX", "UNREAD"]));
+    h.engine.run_incremental_sync().await.unwrap();
+    assert_eq!(arrivals(&h.events).len(), 1);
+    // Simulate a replay of the same history after a restart.
+    accounts::update_history_id(&h.pool, ACCT, &start, 0)
+        .await
+        .unwrap();
+    h.engine.run_incremental_sync().await.unwrap();
+    assert!(arrivals(&h.events).is_empty());
+    // Moving existing mail into Primary is not a new delivery, even if it wasn't cached.
+    h.fake.relabel("archived", &["INBOX"], &[]);
+    h.engine.run_incremental_sync().await.unwrap();
+    assert!(arrivals(&h.events).is_empty());
+    h.fake
+        .seed(FakeMsg::new("older", "older", &["INBOX", "UNREAD"]).days_ago(90));
+    while h.engine.backfill_step().await.unwrap() != BackfillProgress::Done {}
+    assert!(arrivals(&h.events).is_empty());
+    h.fake.expire_history();
+    h.fake
+        .add(FakeMsg::new("resynced", "resynced", &["INBOX", "UNREAD"]));
+    h.engine.run_incremental_sync().await.unwrap();
+    assert!(
+        arrivals(&h.events).is_empty(),
+        "expired history must not alert for a re-downloaded inbox"
+    );
+}
+
+#[tokio::test]
+async fn notification_waits_for_successful_commit_and_uses_final_labels() {
+    let h = harness().await;
+    h.engine.run_initial_sync().await.unwrap();
+    h.fake.add(FakeMsg::new("new", "new", &["INBOX", "UNREAD"]));
+    h.fake.fail_next("get_message", network());
+    assert!(h.engine.run_incremental_sync().await.is_err());
+    assert!(arrivals(&h.events).is_empty());
+    h.engine.run_incremental_sync().await.unwrap();
+    assert_eq!(arrivals(&h.events).len(), 1);
+    // Read or deleted on another device before sync finished: no stale notification.
+    h.fake.add(FakeMsg::new(
+        "already-read",
+        "read-thread",
+        &["INBOX", "UNREAD"],
+    ));
+    h.fake.relabel("already-read", &[], &["UNREAD"]);
+    h.fake.add(FakeMsg::new(
+        "deleted",
+        "deleted-thread",
+        &["INBOX", "UNREAD"],
+    ));
+    h.fake.delete("deleted");
+    h.engine.run_incremental_sync().await.unwrap();
+    assert!(arrivals(&h.events).is_empty());
+}

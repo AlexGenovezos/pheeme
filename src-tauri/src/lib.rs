@@ -4,6 +4,7 @@ mod app_menu;
 pub mod commands;
 pub mod compose;
 pub mod db;
+pub mod desktop;
 mod diagnostics;
 pub mod gmail;
 pub mod identity;
@@ -74,6 +75,7 @@ struct TauriEvents(tauri::AppHandle);
 impl SyncEvents for TauriEvents {
     fn emit(&self, event: SyncEvent) {
         use tauri::Emitter;
+        desktop::sync_event(&self.0, &event);
         if let Err(e) = self.0.emit(event.name(), &event) {
             tracing::warn!(error = %e, "couldn't emit {}", event.name());
         }
@@ -179,8 +181,10 @@ pub fn run() {
                 Arc::new(secrets::KeyringStore::new()),
                 events,
             ))?;
-            state.sync.start();
+            let sync = state.sync.clone();
             app.manage(state);
+            desktop::install(app.handle());
+            sync.start();
             let mod_events = app.handle().clone();
             let safe_mode = std::env::args().any(|arg| arg == "--disable-mods")
                 || std::env::var("PHEEME_DISABLE_MODS").is_ok_and(|value| value == "1");
@@ -211,6 +215,31 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                #[cfg(target_os = "linux")]
+                {
+                    // Re-check the host at close time: a tray extension may have been disabled
+                    // since the last sync. Query D-Bus off the UI thread before hiding the window.
+                    api.prevent_close();
+                    let window = window.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if desktop::has_tray_host(window.app_handle()).await {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.destroy();
+                        }
+                    });
+                }
+                #[cfg(not(target_os = "linux"))]
+                if window
+                    .state::<Arc<desktop::Desktop>>()
+                    .can_hide
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    && window.hide().is_ok()
+                {
+                    api.prevent_close();
+                }
+            }
             if let tauri::WindowEvent::Focused(true) = event {
                 if let Some(state) = window.try_state::<AppState>() {
                     state.sync.trigger_focus();
@@ -218,6 +247,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::settings::desktop_settings,
+            commands::settings::set_account_notifications,
+            commands::settings::take_notification_target,
             commands::mods::list_mods,
             commands::mods::prepare_mod_install,
             commands::mods::discard_mod_install,
@@ -270,6 +302,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                desktop::show_window(app);
+            }
             if let tauri::RunEvent::Exit = event {
                 info!("Pheeme exiting");
                 if let Some(logs) = app.try_state::<diagnostics::LogGuard>() {

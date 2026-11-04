@@ -30,6 +30,8 @@ restarting to apply one.
 
 ## Docs
 
+- [Desktop notifications and tray](docs/desktop-notifications.md): per-account alerts, background sync and OS acceptance checks
+
 - [Mods](docs/mods.md): install personal features and write integrations without maintaining a fork
 
 - [Local diagnostics](docs/diagnostics.md): always-on logs and where to find them

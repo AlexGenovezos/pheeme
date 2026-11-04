@@ -1,5 +1,6 @@
+import { NotificationsSettings } from "./NotificationsSettings";
 import { ModsSettings } from "../mods/ModsSettings";
-import { Info, Keyboard, Palette, Puzzle, SquarePen, Users } from "lucide-react";
+import { Bell, Info, Keyboard, Palette, Puzzle, SquarePen, Users } from "lucide-react";
 import {
   UNDO_SEND_CHOICES,
   type UndoSendSeconds,
@@ -139,6 +140,15 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
         ],
       },
     ],
+  },
+  {
+    id: "notifications",
+    title: "Notifications",
+    icon: Bell,
+    group: "App",
+    keywords: ["alerts", "primary", "unread", "tray", "background", "sound", "focus"],
+    Component: NotificationsSettings,
+    matches: accountsMatch,
   },
   {
     id: "mods",
