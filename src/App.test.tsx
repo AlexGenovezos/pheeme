@@ -101,6 +101,7 @@ test("with accounts it shows them and can add or remove one", async () => {
 test("a failed remove keeps the account and shows why", async () => {
   mockIPC((cmd) => {
     if (cmd === "list_accounts") return [account];
+    if (cmd === "transfer_interfaces") return ["192.168.1.2"];
     if (cmd === "remove_account")
       throw { code: "keychain_unavailable", message: "No system keychain is available." };
   });

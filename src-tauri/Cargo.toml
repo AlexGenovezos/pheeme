@@ -51,6 +51,9 @@ percent-encoding = "2"
 lettre = { version = "0.11", default-features = false, features = ["builder"] }
 mime_guess = "2"
 bytes = "1"
+snow = "0.10"
+if-addrs = "0.13"
+zeroize = "1"
 
 # Valgrind only runs on Linux. Optional so that plain builds don't need libclang.
 [target.'cfg(target_os = "linux")'.dependencies]

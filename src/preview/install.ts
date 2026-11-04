@@ -26,6 +26,7 @@ import {
   threadsIn,
 } from "./fixtures";
 import { createComposeHandlers } from "./compose";
+import { createTransferHandlers } from "./transfer";
 
 type Args = Record<string, unknown> | undefined;
 
@@ -119,6 +120,11 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
           synced: true,
         }));
   const flows = new Set<string>();
+  const beginSignIn = () => {
+    const flowId = crypto.randomUUID();
+    flows.add(flowId);
+    return { flowId, authUrl: "https://accounts.google.com/o/oauth2/v2/auth?mock=1" };
+  };
   const threads = [
     ...createFixtureThreads(),
     ...generatedThreads(Number(params.get("threads")) || 0),
@@ -249,11 +255,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       changeThreads(args, (t) => {
         t.labelIds = [...t.labelIds.filter((l) => l !== "INBOX"), "TRASH"];
       }),
-    begin_oauth: () => {
-      const flowId = crypto.randomUUID();
-      flows.add(flowId);
-      return { flowId, authUrl: "https://accounts.google.com/o/oauth2/v2/auth?mock=1" };
-    },
+    begin_oauth: beginSignIn,
+    ...createTransferHandlers(beginSignIn),
     complete_oauth: async (args) => {
       const flowId = String(args?.flowId);
       await new Promise((resolve) => setTimeout(resolve, Number(params.get("delay") ?? 2500)));

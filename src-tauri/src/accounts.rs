@@ -220,6 +220,15 @@ impl AccountService {
         ))
     }
 
+    /// Only the native transfer service receives these; refresh tokens never leave here.
+    pub async fn client_for_transfer(
+        &self,
+        account_id: &str,
+    ) -> Result<ClientCredentials, AccountError> {
+        let account = self.account(account_id).await?;
+        Ok(self.saved_credentials(&account).await?.0)
+    }
+
     /// Starts listening for Google's redirect and returns the URL to open in the browser.
     /// Starting a new sign-in abandons any earlier one.
     pub async fn begin_sign_in(&self, choice: ClientChoice) -> Result<SignInStart, AccountError> {
