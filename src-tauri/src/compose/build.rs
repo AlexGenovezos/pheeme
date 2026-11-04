@@ -7,6 +7,7 @@
 use super::{ComposeDraft, StagedAttachment, MAX_ATTACHMENT_BYTES};
 use crate::gmail::mime::EmailAddress;
 use crate::mail::MailError;
+use crate::text::decode_html_entities;
 use lettre::message::header::{ContentTransferEncoding, ContentType};
 use lettre::message::{Attachment, Body, Mailbox, MultiPart, SinglePart};
 use lettre::{Address, Message};
@@ -168,7 +169,7 @@ pub fn html_to_text(html: &str) -> String {
             ("a", false) => pending_href.push(attr(tag, "href")),
             ("a", true) => {
                 if let Some(Some(href)) = pending_href.pop() {
-                    let href = decode_entities(&href);
+                    let href = decode_html_entities(&href);
                     let text_end = out.trim_end();
                     if !href.starts_with("mailto:") && !text_end.ends_with(&href) {
                         out.push_str(&format!(" <{href}>"));
@@ -236,7 +237,7 @@ fn block_break(out: &mut String, depth: usize) {
 }
 
 fn push_text(out: &mut String, raw: &str, depth: usize) {
-    let text = decode_entities(raw);
+    let text = decode_html_entities(raw);
     // HTML whitespace collapses; line breaks come from tags.
     let mut collapsed = String::with_capacity(text.len());
     let mut last_space = out.ends_with([' ', '\n']) || out.is_empty();
@@ -282,48 +283,6 @@ fn tidy(text: &str) -> String {
         out.push('\n');
     }
     out.trim_end().to_owned()
-}
-
-fn decode_entities(s: &str) -> String {
-    if !s.contains('&') {
-        return s.to_owned();
-    }
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(amp) = rest.find('&') {
-        out.push_str(&rest[..amp]);
-        let after = &rest[amp..];
-        let decoded = after.find(';').filter(|&semi| semi <= 10).and_then(|semi| {
-            let entity = &after[1..semi];
-            let c = match entity {
-                "amp" => Some('&'),
-                "lt" => Some('<'),
-                "gt" => Some('>'),
-                "quot" => Some('"'),
-                "apos" | "#39" => Some('\''),
-                "nbsp" => Some('\u{a0}'),
-                _ => entity
-                    .strip_prefix("#x")
-                    .or_else(|| entity.strip_prefix("#X"))
-                    .and_then(|h| u32::from_str_radix(h, 16).ok())
-                    .or_else(|| entity.strip_prefix('#').and_then(|d| d.parse().ok()))
-                    .and_then(char::from_u32),
-            };
-            c.map(|c| (c, semi))
-        });
-        match decoded {
-            Some((c, semi)) => {
-                out.push(c);
-                rest = &after[semi + 1..];
-            }
-            None => {
-                out.push('&');
-                rest = &after[1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
 }
 
 /// Escape text for HTML, turning line breaks into `<br>`.

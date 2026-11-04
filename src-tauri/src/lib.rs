@@ -13,6 +13,7 @@ pub mod render;
 pub mod search;
 pub mod secrets;
 pub mod sync;
+mod text;
 pub mod transfer;
 
 use anyhow::Context;

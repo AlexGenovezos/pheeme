@@ -11,6 +11,7 @@
 
 use super::error::GmailError;
 use super::types::{Header, Message, MessagePart};
+use crate::text::decode_html_entities;
 use base64::{
     alphabet,
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
@@ -476,50 +477,6 @@ pub fn parse_addresses(name: &str, value: &str) -> Vec<EmailAddress> {
         .collect()
 }
 
-/// Gmail snippets arrive HTML-escaped (`&#39;`, `&amp;`, ...).
-fn decode_html_entities(s: &str) -> String {
-    if !s.contains('&') {
-        return s.to_owned();
-    }
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(start) = rest.find('&') {
-        out.push_str(&rest[..start]);
-        let tail = &rest[start..];
-        let decoded = tail.find(';').filter(|&end| end <= 10).and_then(|end| {
-            let entity = &tail[1..end];
-            let ch = match entity {
-                "amp" => Some('&'),
-                "lt" => Some('<'),
-                "gt" => Some('>'),
-                "quot" => Some('"'),
-                "apos" => Some('\''),
-                "nbsp" => Some('\u{a0}'),
-                _ => entity.strip_prefix('#').and_then(|n| {
-                    let code = match n.strip_prefix(['x', 'X']) {
-                        Some(hex) => u32::from_str_radix(hex, 16).ok(),
-                        None => n.parse().ok(),
-                    };
-                    code.and_then(char::from_u32)
-                }),
-            };
-            ch.map(|c| (c, end + 1))
-        });
-        match decoded {
-            Some((c, len)) => {
-                out.push(c);
-                rest = &tail[len..];
-            }
-            None => {
-                out.push('&');
-                rest = &tail[1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -713,11 +670,19 @@ mod tests {
     }
 
     #[test]
-    fn html_entities() {
+    fn snippet_decodes_html_entities() {
+        let snippet = |text: &str| {
+            parse_message(&Message {
+                snippet: text.into(),
+                ..Default::default()
+            })
+            .unwrap()
+            .snippet
+        };
         assert_eq!(
-            decode_html_entities("a &amp; b &#39;c&#39; &lt;d&gt; &#x1F600;"),
+            snippet("a &amp; b &#39;c&#39; &lt;d&gt; &#x1F600;"),
             "a & b 'c' <d> \u{1f600}"
         );
-        assert_eq!(decode_html_entities("AT&T & co"), "AT&T & co");
+        assert_eq!(snippet("AT&T & co"), "AT&T & co");
     }
 }
