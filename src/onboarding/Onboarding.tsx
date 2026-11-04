@@ -1,27 +1,33 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { TextInput } from "../components/ui/TextInput";
-import {
-  type AccountInfo,
-  type ClientChoice,
-  type CommandError,
-  beginOauth,
-  cancelOauth,
-  completeOauth,
-  openExternal,
-  toCommandError,
-} from "../lib/tauri";
+import { type AccountInfo, type ClientChoice, type CommandError, openExternal } from "../lib/tauri";
 import { parseClientJson } from "./clientJson";
 import { clearProgress, loadProgress, saveProgress } from "./progress";
 import { type GuideStep, STEPS, type StepId, stepById, stepIndex } from "./steps";
 import { BROWSER_PROBLEMS, isCredentialProblem, problemTitle } from "./troubleshooting";
-import { cancelClientTransfer, receiveClientTransfer } from "../transfer/api";
+import { type SignInState, useSignIn } from "./useSignIn";
 import { ReceiveCredentials } from "../transfer/ReceiveCredentials";
 import "./onboarding.css";
 
 type View = StepId | "choose" | "error" | "done" | "receive" | "receiving";
 
-type SignInChoice = ClientChoice | { kind: "transfer"; invitation: string };
+type SetupView = StepId | "choose" | "receive";
+
+function currentView(state: SignInState, setup: SetupView): View {
+  switch (state.phase) {
+    case "idle":
+      return setup;
+    case "receiving":
+      return "receiving";
+    case "authorizing":
+      return "authorize";
+    case "failed":
+      return state.client ? "error" : "receive";
+    case "connected":
+      return "done";
+  }
+}
 
 interface Props {
   /** Accounts already connected. Empty means first run: the full setup guide. */
@@ -36,21 +42,20 @@ const CLIENT_ID_SUFFIX = ".apps.googleusercontent.com";
 export function Onboarding({ accounts, onConnected, onClose }: Props) {
   const firstRun = accounts.length === 0;
   const [initial] = useState(() =>
-    firstRun ? loadProgress() : { step: "choose" as View, clientId: "" },
+    firstRun ? loadProgress() : { step: "choose" as SetupView, clientId: "" },
   );
-  const [view, setView] = useState<View>(initial.step);
+  const [setupView, setView] = useState<SetupView>(initial.step);
   const [guide, setGuide] = useState(firstRun);
   const [clientId, setClientId] = useState(initial.clientId);
   const [clientSecret, setClientSecret] = useState("");
-  const [choice, setChoice] = useState<ClientChoice | null>(null);
-  const [authUrl, setAuthUrl] = useState("");
-  const [error, setError] = useState<CommandError | null>(null);
-  const [connected, setConnected] = useState<AccountInfo | null>(null);
-  const flowRef = useRef<string | null>(null);
-  const transferRef = useRef<string | null>(null);
-  // Bumped on every start, cancel and unmount, so a late response from an
-  // abandoned attempt (e.g. begin_oauth stuck behind a keychain prompt) is ignored.
-  const attemptRef = useRef(0);
+  const [preparedClient, setPreparedClient] = useState<ClientChoice | null>(null);
+  const { state, start: startSignIn, cancel } = useSignIn();
+  const view = currentView(state, setupView);
+  const choice =
+    state.phase === "authorizing" || state.phase === "failed" ? state.client : preparedClient;
+  const error = state.phase === "failed" ? state.error : null;
+  const authUrl = state.phase === "authorizing" ? state.authUrl : "";
+  const connected = state.phase === "connected" ? state.account : null;
 
   useEffect(() => {
     if (
@@ -65,69 +70,12 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
     }
   }, [firstRun, view, clientId]);
 
-  function abandonAttempt() {
-    attemptRef.current += 1;
-    const flowId = flowRef.current;
-    flowRef.current = null;
-    if (flowId) void cancelOauth(flowId).catch(() => {});
-    const transferId = transferRef.current;
-    transferRef.current = null;
-    if (transferId) void cancelClientTransfer(transferId).catch(() => {});
-  }
-
-  // Leaving the screen mid-sign-in stops the backend from waiting for the browser.
-  useEffect(() => abandonAttempt, []);
-
-  async function startSignIn(next: SignInChoice) {
-    abandonAttempt();
-    const attempt = attemptRef.current;
-    const current = () => attemptRef.current === attempt;
-    // Do not retain the invitation in React state after starting the connection.
-    setChoice(next.kind === "transfer" ? null : next);
-    setError(null);
-    setAuthUrl("");
-    setView(next.kind === "transfer" ? "receiving" : "authorize");
-    try {
-      let start;
-      if (next.kind === "transfer") {
-        const transferId = crypto.randomUUID();
-        transferRef.current = transferId;
-        const pending = receiveClientTransfer(transferId, next.invitation);
-        next.invitation = "";
-        start = await pending;
-        if (current()) transferRef.current = null;
-      } else {
-        start = await beginOauth(next);
-      }
-      if (!current()) {
-        void cancelOauth(start.flowId).catch(() => {});
-        return;
-      }
-      flowRef.current = start.flowId;
-      setView("authorize");
-      setAuthUrl(start.authUrl);
-      void openExternal(start.authUrl).catch(() => {});
-      const account = await completeOauth(start.flowId);
-      if (!current()) return;
-      flowRef.current = null;
-      if (firstRun) clearProgress();
-      setConnected(account);
-      setView("done");
-    } catch (raw) {
-      // A cancelled or superseded attempt already moved the screen on.
-      if (!current()) return;
-      flowRef.current = null;
-      setError(toCommandError(raw));
-      if (next.kind === "transfer") {
-        setView("receive");
-        return;
-      }
-      setView("error");
-    }
-  }
+  useEffect(() => {
+    if (firstRun && state.phase === "connected") clearProgress();
+  }, [firstRun, state.phase]);
 
   function cancelSignIn() {
-    abandonAttempt();
+    cancel();
     setView(
       view === "receiving" || !choice
         ? "receive"
@@ -138,6 +86,7 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
   }
 
   function goTo(step: StepId) {
+    cancel();
     setGuide(true);
     setView(step);
   }
@@ -154,7 +103,7 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
               <ReceiveCredentials
                 onReceive={(invitation) => void startSignIn({ kind: "transfer", invitation })}
                 onBack={() => {
-                  setError(null);
+                  cancel();
                   setGuide(firstRun);
                   setView(firstRun ? "welcome" : "choose");
                 }}
@@ -188,7 +137,7 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
                 setClientSecret(secret);
               }}
               onSubmit={() => {
-                setChoice({
+                setPreparedClient({
                   kind: "new",
                   clientId: clientId.trim(),
                   clientSecret: clientSecret.trim(),
@@ -216,7 +165,14 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
             <SignInError
               error={error}
               onRetry={choice ? () => void startSignIn(choice) : undefined}
-              onFixCredentials={choice?.kind === "new" ? () => setView("credentials") : undefined}
+              onFixCredentials={
+                choice?.kind === "new"
+                  ? () => {
+                      cancel();
+                      setView("credentials");
+                    }
+                  : undefined
+              }
             />
           )}
           {view === "done" && connected && (
@@ -253,7 +209,7 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
               variant="ghost"
               size="lg"
               onClick={() => {
-                setError(null);
+                cancel();
                 setGuide(false);
                 setView("receive");
               }}
