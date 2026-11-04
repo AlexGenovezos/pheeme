@@ -67,20 +67,28 @@ export function AttachmentList({ accountId, messageId, attachments }: Attachment
     <ul className="attachments" aria-label="Attachments">
       {files.map((file) => {
         const name = file.filename ?? "Attachment";
+        const downloading = saving.has(file.id);
         return (
           <li key={file.id} className="attachments__item">
             <File className="attachments__icon" aria-hidden="true" />
             <span className="attachments__name selectable" title={name}>
               {name}
             </span>
-            {file.size != null && (
-              <span className="attachments__size">{formatSize(file.size)}</span>
+            {downloading ? (
+              <span className="attachments__size" role="status">
+                Downloading…
+              </span>
+            ) : (
+              file.size != null && (
+                <span className="attachments__size">{formatSize(file.size)}</span>
+              )
             )}
             <IconButton
-              label={`Download ${name}`}
+              label={`${downloading ? "Downloading" : "Download"} ${name}`}
               icon={<Download />}
               size="sm"
-              disabled={saving.has(file.id)}
+              disabled={downloading}
+              aria-busy={downloading}
               onClick={() => void download(file)}
             />
           </li>

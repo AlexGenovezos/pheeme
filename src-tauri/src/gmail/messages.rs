@@ -104,7 +104,10 @@ impl GmailClient {
                 &part.body.data,
                 &part.body.attachment_id,
             ) {
-                let bytes = self.get_attachment(message_id, attachment_id).await?;
+                // Body backfill is background work too; it must leave the download slots free.
+                let bytes = self
+                    .fetch_attachment(message_id, attachment_id, false)
+                    .await?;
                 part.body.data = Some(encode_base64url(&bytes));
             }
             Ok(())
@@ -178,13 +181,18 @@ impl GmailClient {
         message_id: &str,
         attachment_id: &str,
     ) -> Result<Vec<u8>, GmailError> {
+        self.fetch_attachment(message_id, attachment_id, true).await
+    }
+
+    async fn fetch_attachment(
+        &self,
+        message_id: &str,
+        attachment_id: &str,
+        interactive: bool,
+    ) -> Result<Vec<u8>, GmailError> {
+        let req = ApiRequest::get(&["messages", message_id, "attachments", attachment_id]);
         let body: AttachmentBody = self
-            .send_json(ApiRequest::get(&[
-                "messages",
-                message_id,
-                "attachments",
-                attachment_id,
-            ]))
+            .send_json(if interactive { req.interactive() } else { req })
             .await?;
         decode_base64url(&body.data)
     }
@@ -437,6 +445,61 @@ mod tests {
         assert_eq!(
             client.get_attachment("m1", "a1").await.unwrap(),
             b"\xfb\xff"
+        );
+    }
+
+    #[tokio::test]
+    async fn downloading_an_attachment_does_not_wait_for_slow_backfill_requests() {
+        use std::sync::Arc;
+        use std::time::Duration;
+        use tokio::sync::Semaphore;
+
+        let server = MockServer::start().await;
+        let started = Arc::new(Semaphore::new(0));
+        let arrivals = started.clone();
+        Mock::given(method("GET"))
+            .and(wiremock::matchers::path_regex(r"^/messages/m[0-9]+$"))
+            .respond_with(move |_: &wiremock::Request| {
+                arrivals.add_permits(1);
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id": "m1", "threadId": "t1"}))
+                    .set_delay(Duration::from_secs(10))
+            })
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/messages/m1/attachments/a1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": encode_base64url(b"downloaded file"), "size": 15
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = client_for(&server).0.with_quota(100_000);
+        let backfill = client.clone();
+        let task = tokio::spawn(async move {
+            let ids = (0..MAX_CONCURRENT_REQUESTS)
+                .map(|i| format!("m{i}"))
+                .collect::<Vec<_>>();
+            backfill.batch_get_messages(&ids, MessageFormat::Full).await
+        });
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            started.acquire_many(crate::gmail::client::MAX_BACKGROUND_REQUESTS as u32),
+        )
+        .await
+        .expect("backfill requests reached Gmail")
+        .unwrap()
+        .forget();
+
+        let result =
+            tokio::time::timeout(Duration::from_secs(1), client.get_attachment("m1", "a1")).await;
+        task.abort();
+        assert_eq!(
+            result
+                .expect("download waited behind the backfill")
+                .unwrap(),
+            b"downloaded file"
         );
     }
 
