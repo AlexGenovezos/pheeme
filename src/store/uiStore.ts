@@ -114,6 +114,10 @@ function safeStorage(): Storage | undefined {
 
 interface UiState extends PaneLayout, NavPrefs {
   mailbox: MailboxRef;
+  searchText: string;
+  searchAccountId: string | null;
+  setSearch(text: string): void;
+  setSearchAccount(accountId: string | null): void;
   /** The conversation shown in the reading pane. */
   openThread: ThreadKey | null;
   /** Multi-selection, in the order it was checked. */
@@ -170,6 +174,18 @@ export const useUiStore = create<UiState>((set, get) => {
     ...readLayout(),
     ...readNavPrefs(),
     ...navReset(),
+    searchText: "",
+    searchAccountId: null,
+    setSearch: (text) =>
+      set((s) => ({
+        searchText: text,
+        searchAccountId: s.searchText.trim() ? s.searchAccountId : s.mailbox.accountId,
+        openThread: null,
+        checked: [],
+        anchor: null,
+      })),
+    setSearchAccount: (searchAccountId) =>
+      set({ searchAccountId, openThread: null, checked: [], anchor: null }),
     mailbox: readLastMailbox(),
     setSidebarWidth: (w) => persist({ sidebarWidth: clampSidebar(w) }),
     setListWidth: (w, available) => persist({ listWidth: clampList(w, available) }),
@@ -177,7 +193,7 @@ export const useUiStore = create<UiState>((set, get) => {
     resetListWidth: () => persist({ listWidth: PANE.listDefault }),
     toggleSidebar: () => persist({ sidebarCollapsed: !get().sidebarCollapsed }),
     setMailbox: (ref) => {
-      set({ openThread: null, checked: [], anchor: null });
+      set({ searchText: "", openThread: null, checked: [], anchor: null });
       persist({
         mailbox: ref,
         ...(ref.accountId !== null && { activeAccountId: ref.accountId }),
@@ -204,6 +220,7 @@ export const useUiStore = create<UiState>((set, get) => {
     clearChecked: () => set({ checked: [], anchor: null }),
     forgetAccount: (id, remaining) => {
       const s = get();
+      if (s.searchAccountId === id) set({ searchText: "", searchAccountId: null });
       const ofAccount = (key: ThreadKey | null) =>
         key !== null && parseThreadKey(key).accountId === id;
       if (s.mailbox.accountId === id) set({ ...navReset(), mailbox: homeMailbox(remaining) });
@@ -235,6 +252,8 @@ export function __resetUiStoreForTests() {
     ...readLayout(),
     ...readNavPrefs(),
     ...navReset(),
+    searchText: "",
+    searchAccountId: null,
     mailbox: readLastMailbox(),
   });
 }

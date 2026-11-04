@@ -1,8 +1,6 @@
-import { PanelLeftOpen, Search } from "lucide-react";
+import { PanelLeftOpen } from "lucide-react";
 import { useEffect } from "react";
 import { IconButton } from "../components/ui/IconButton";
-import { Kbd } from "../components/ui/Kbd";
-import { TextInput } from "../components/ui/TextInput";
 import { toast } from "../components/ui/Toast";
 import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
@@ -16,9 +14,9 @@ import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
+import { SearchBar, SEARCH_INPUT_ID } from "../search/SearchBar";
 import { dragRegion } from "./chrome";
-
-export const SEARCH_INPUT_ID = "mail-search";
+export { SEARCH_INPUT_ID };
 
 /** Placeholder until the mail UI (Phase 6) wires real actions. */
 export const notYet = (action: string) =>
@@ -76,6 +74,12 @@ export const rowMenu = (t: ThreadSummary) => {
 
 export function ListPane() {
   const { accountId, labelId, category } = useUiStore((s) => s.mailbox);
+  const searchText = useUiStore((s) => s.searchText.trim());
+  const searchAccountId = useUiStore((s) => s.searchAccountId);
+  const search = useMailStore((s) => s.search);
+  const next = useMailStore((s) => s.next);
+  const loading = useMailStore((s) => s.loading);
+  const error = useMailStore((s) => s.error);
   const anyChecked = useUiStore((s) => s.checked.length > 0);
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
@@ -88,14 +92,20 @@ export function ListPane() {
     const { load, clear } = useMailStore.getState();
     const ids = accountIds ? accountIds.split("\n") : [];
     if (ids.length === 0) clear();
+    else if (searchText)
+      void load({
+        accountIds: searchAccountId === null ? ids : ids.filter((id) => id === searchAccountId),
+        labelId: "ALL",
+        search: searchText,
+      });
     else void load(queryFor({ accountId, labelId, category }, ids));
-  }, [accountId, labelId, category, accountIds]);
+  }, [accountId, labelId, category, accountIds, searchText, searchAccountId]);
 
   const userLabels = useLabelStore((s) => (accountId ? s.userLabels(accountId) : NO_LABELS));
-  const title = mailboxTitle({ accountId, labelId, category }, userLabels);
+  const mailboxName = mailboxTitle({ accountId, labelId, category }, userLabels);
+  const title = searchText ? "Search results" : mailboxName;
   const unread = threads.filter((t) => t.unread).length;
   const sidebarKey = useKeybinding("view.toggleSidebar", "mod+b");
-  const searchKey = useKeybinding("search.focus", "/");
 
   useCommands([
     {
@@ -132,7 +142,17 @@ export function ListPane() {
             run: () => useUiStore.getState().clearChecked(),
           },
         ]
-      : []),
+      : searchText
+        ? [
+            {
+              id: "search.clear",
+              title: "Clear search",
+              group: "Navigation",
+              shortcut: "escape",
+              run: () => useUiStore.getState().setSearch(""),
+            },
+          ]
+        : []),
   ]);
 
   return (
@@ -153,23 +173,30 @@ export function ListPane() {
         <h1 className="toolbar__title" {...dragRegion}>
           {title}
         </h1>
-        {unread > 0 && (
-          <span className="toolbar__subtitle" {...dragRegion}>
-            {unread} unread
+        {searchText ? (
+          <span className="toolbar__subtitle" aria-live="polite">
+            {threads.length}
+            {next ||
+            loading ||
+            error ||
+            search?.remoteLoading ||
+            Object.keys(search?.remoteNext ?? {}).length ||
+            search?.remoteError
+              ? "+"
+              : ""}{" "}
+            {threads.length === 1 ? "result" : "results"}
           </span>
+        ) : (
+          unread > 0 && (
+            <span className="toolbar__subtitle" {...dragRegion}>
+              {unread} unread
+            </span>
+          )
         )}
       </div>
 
       <div className="list-pane__search">
-        <TextInput
-          id={SEARCH_INPUT_ID}
-          type="search"
-          placeholder="Search mail"
-          aria-label="Search mail"
-          leading={<Search />}
-          trailing={searchKey && <Kbd shortcut={searchKey} />}
-          onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
-        />
+        <SearchBar />
       </div>
 
       <ThreadList title={title} onRowAction={onRowAction} rowMenu={rowMenu} />

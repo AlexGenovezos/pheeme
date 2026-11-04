@@ -818,3 +818,22 @@ describe("labels", () => {
     expect(toasts()[0].title).toBe("No labels yet");
   });
 });
+
+test("search actions use the search results, rather than the mailbox underneath them", async () => {
+  // Searching while the Inbox is underneath must not make archive discard a search hit.
+  useMailStore.setState({ query: { accountIds: ["a1"], labelId: "ALL", search: "invoice" } });
+  useUiStore.getState().setMailbox({ accountId: "a1", labelId: "INBOX" });
+  setList([thread(1)]);
+  await archive([key(1)]);
+  expect(listKeys()).toEqual([key(1)]);
+  // The same is true for unstar in a search launched from Starred.
+  useUiStore.getState().setMailbox({ accountId: "a1", labelId: "STARRED" });
+  setList([thread(1, "a1", { starred: true })]);
+  await setStarred(false, [key(1)]);
+  expect(listKeys()).toEqual([key(1)]);
+  // And Trash underneath doesn't prevent trashing a hit from another folder.
+  useUiStore.getState().setMailbox({ accountId: "a1", labelId: "TRASH" });
+  await trash([key(1)]);
+  expect(listKeys()).toEqual([]);
+  expect(calls.some((c) => c.cmd === "trash_threads")).toBe(true);
+});

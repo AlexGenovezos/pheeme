@@ -155,7 +155,7 @@ async function send(
         failure = { reason };
       }
       const keys = ids.map((id) => threadKey(accountId, id));
-      mail().settle(op, keys);
+      mail().settle(op, keys, failure !== null);
       useThreadStore.getState().settleDetails(op, keys);
       if (failure) {
         toast({ title: toCommandError(failure.reason).message, tone: "danger" });
@@ -222,7 +222,7 @@ function apply(
 
   const go = () => send(groups, change, op);
   const drop = () => {
-    mail().settle(op, rowKeys);
+    mail().settle(op, rowKeys, true);
     useThreadStore.getState().settleDetails(op, rowKeys);
     void mail().reload(); // the patched rows go back to what the cache says
     return new Map<string, string[]>();
@@ -251,7 +251,8 @@ async function revert(done: Map<string, string[]>, original: Change, inverse: Ch
 }
 
 // Archive and its kin only leave the list when the list is the inbox (a label view or All Mail keeps them).
-const inInbox = () => ui().mailbox.labelId === "INBOX";
+const inMailbox = (labelId: string) => !mail().query?.search && ui().mailbox.labelId === labelId;
+const inInbox = () => inMailbox("INBOX");
 
 export function archive(keys?: ThreadKey[]): Promise<void> {
   return apply(keys, modify([], ["INBOX"], { leavesList: inInbox() }), {
@@ -262,7 +263,7 @@ export function archive(keys?: ThreadKey[]): Promise<void> {
 
 /** Moves to Trash. Gmail's outbox has no untrash yet, so there is no Undo. */
 export function trash(keys?: ThreadKey[]): Promise<void> {
-  if (ui().mailbox.labelId === "TRASH") {
+  if (inMailbox("TRASH")) {
     toast({ title: "Already in Trash" });
     return Promise.resolve();
   }
@@ -278,7 +279,7 @@ export function setStarred(starred: boolean, keys?: ThreadKey[]): Promise<void> 
   const to = (value: boolean): Change =>
     modify(value ? ["STARRED"] : [], value ? [] : ["STARRED"], {
       patch: (t) => ({ ...t, starred: value }),
-      leavesList: !value && ui().mailbox.labelId === "STARRED",
+      leavesList: !value && inMailbox("STARRED"),
     });
   return apply(keys, to(starred), {
     announce: { title: starred ? "Starred" : "Removed star", undo: to(!starred) },
@@ -352,7 +353,7 @@ export async function toggleLabel(
   if (rowKeys.length === 0) return;
   const add = !allHave(await labelsOf(rowKeys), labelId);
   // Removing a label in that label's own mailbox takes the row out of it.
-  const leavesList = !add && ui().mailbox.labelId === labelId;
+  const leavesList = !add && inMailbox(labelId);
   await apply(
     rowKeys,
     modify(add ? [labelId] : [], add ? [] : [labelId], {

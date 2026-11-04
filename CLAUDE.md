@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Source of truth:** [docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md) sets scope, priorities and the phase order, and overrides `Gmail client project plan.md` wherever they disagree (see its §9). The plan remains the detailed technical reference.
 
-**Current state:** Phases 1–7 of design §12 are built and shipped as betas: foundation, OAuth + multi-account onboarding, the Gmail API client, the sync engine, the app shell, the mail UI (v0.6) and compose (v0.8). Phases 5–7 still wait on Alex's Mac check and the §6 UI review before their issues close (progress per phase: GitHub epic #21). Search (Phase 8) is next; its backend is in PR #45.
+**Current state:** Phases 1–7 of design §12 are built and shipped as betas: foundation, OAuth + multi-account onboarding, the Gmail API client, the sync engine, the app shell, the mail UI (v0.6) and compose (v0.8). Phases 5–7 still wait on Alex's Mac check and the §6 UI review before their issues close (progress per phase: GitHub epic #21). Search (Phase 8) has local-first results, background Gmail results, account scope, paging and recent searches; it still needs Alex’s Mac check and the §6 UI review.
 
 ## Commands
 
@@ -71,10 +71,10 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 
 Six Zustand stores:
 - `accountStore` — connected accounts (load, upsert, remove)
-- `mailStore` — the thread list for the active mailbox (paged, optimistic patches), reloaded on `sync:*` events
+- `mailStore` — the active mailbox or search results (paged, optimistic patches), reloaded on `sync:*` events; search combines instant local matches with background Gmail pages
 - `labelStore` — per-account labels, label counts and category counts, plus the All Inboxes unread count
 - `threadStore` — thread-detail cache with prefetch; evicts on `sync:messages_updated`
-- `uiStore` — active mailbox, selected thread, multi-select, pane layout
+- `uiStore` — active mailbox, search text and account scope, selected thread, multi-select, pane layout
 - `composeStore` (`src/compose/`) — open compose panels (autosave, close prompt) and sends waiting out undo or Gmail's confirmation; a refused or undone send reopens its panel
 
 Settings is a dialog over the app (`src/settings/`). Pages, sections and rows are declared as data in `src/settings/pages.tsx`: a new setting is one `SettingDef` there. Keyboard shortcuts come from the command registry; user rebindings are overrides stored by `src/keyboard/bindings.ts`, so label a button with `useKeybinding(commandId)` rather than a literal key.
