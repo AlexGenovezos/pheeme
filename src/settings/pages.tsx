@@ -134,7 +134,14 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     title: "About",
     icon: Info,
     group: "App",
-    keywords: ["version", "updates", "check for updates"],
+    keywords: [
+      "version",
+      "updates",
+      "check for updates",
+      "what's new",
+      "changelog",
+      "release notes",
+    ],
     Component: AboutSettings,
   },
 ];

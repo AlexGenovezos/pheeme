@@ -374,6 +374,51 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* What's new: each release's notes (src/settings/ReleaseNotes.tsx). */
+.release-notes {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+}
+
+.release-notes__version {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-0);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.release-notes__lead {
+  margin: var(--space-1) var(--space-0) var(--space-0);
+  color: var(--color-foreground-muted);
+}
+
+.release-notes__heading {
+  margin: var(--space-3) var(--space-0) var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.release-notes__list {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-0);
+  padding-left: var(--space-5);
+}
+
+.release-notes__code {
+  padding: var(--space-0) var(--space-1);
+  border: var(--border-width) solid var(--color-kbd-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-kbd-bg);
+  color: var(--color-kbd-foreground);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
 @keyframes settings-fade {
   from {
     opacity: 0;
