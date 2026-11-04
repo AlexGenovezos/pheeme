@@ -1,4 +1,4 @@
-import { PanelLeftOpen } from "lucide-react";
+import { PanelLeftOpen, SquarePen } from "lucide-react";
 import { useEffect } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
@@ -6,7 +6,7 @@ import { toast } from "../components/ui/Toast";
 import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import type { ThreadSummary } from "../lib/tauri";
-import { archive, moveSelection, setRead, setStarred, trash } from "../mail/actions";
+import { archive, composeNew, moveSelection, setRead, setStarred, trash } from "../mail/actions";
 import { mailboxKey, mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
 import { ThreadList } from "../mail/ThreadList";
 import { senderOf } from "../mail/ThreadRow";
@@ -117,6 +117,7 @@ export function ListPane() {
     return s.counts[accountId]?.[labelId]?.unread ?? 0;
   });
   const sidebarKey = useKeybinding("view.toggleSidebar", "mod+b");
+  const composeKey = useKeybinding("compose.new", "c");
 
   useCommands([
     {
@@ -174,12 +175,20 @@ export function ListPane() {
         {...dragRegion}
       >
         {collapsed && (
-          <IconButton
-            label="Show sidebar"
-            shortcut={sidebarKey}
-            icon={<PanelLeftOpen />}
-            onClick={toggleSidebar}
-          />
+          <>
+            <IconButton
+              label="Show sidebar"
+              shortcut={sidebarKey}
+              icon={<PanelLeftOpen />}
+              onClick={toggleSidebar}
+            />
+            <IconButton
+              label="New message"
+              shortcut={composeKey}
+              icon={<SquarePen />}
+              onClick={composeNew}
+            />
+          </>
         )}
         <h1 className="toolbar__title" {...dragRegion}>
           {title}
