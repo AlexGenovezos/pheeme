@@ -1,12 +1,12 @@
 /**
  * The document an HTML email body renders in (Builder's calls 11–13). The fragment arrives sanitized by
- * the backend, but ammonia can't filter CSS, so this shell's CSP is what stops remote loads: CSS `url()`,
- * `@import` and web fonts never load, and images only from `data:` and the signed `pheeme-att` protocol
- * until the reader asks for remote images.
+ * the backend, but ammonia can't filter CSS, so this shell's CSP blocks remote stylesheets and web fonts
+ * and controls images (including CSS backgrounds). Open messages allow remote images; otherwise only
+ * `data:` and the signed `pheeme-att` protocol can load images.
  */
 
 export interface SrcdocOptions {
-  /** Add `https: http:` to img-src ("Load images"). */
+  /** Add `https: http:` to img-src for an opened message. */
   allowRemote: boolean;
   /** The app is showing its dark theme. */
   dark: boolean;

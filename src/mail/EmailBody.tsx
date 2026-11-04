@@ -1,5 +1,4 @@
-import { ImageOff } from "lucide-react";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { Button } from "../components/ui/Button";
 import { registry, type CommandRegistry } from "../keyboard/registry";
 import type { MessageDetail } from "../lib/tauri";
@@ -15,12 +14,7 @@ import "./mail.css";
 export function EmailBody({ message, onRetry }: { message: MessageDetail; onRetry?(): void }) {
   if (message.bodyHtml) {
     return (
-      <HtmlBody
-        key={message.id}
-        html={message.bodyHtml}
-        hasRemoteContent={message.hasRemoteContent}
-        declaresDark={message.declaresDarkMode}
-      />
+      <HtmlBody key={message.id} html={message.bodyHtml} declaresDark={message.declaresDarkMode} />
     );
   }
   if (message.bodyText)
@@ -42,12 +36,10 @@ export function EmailBody({ message, onRetry }: { message: MessageDetail; onRetr
 
 interface HtmlBodyProps {
   html: string;
-  hasRemoteContent: boolean;
   declaresDark: boolean;
 }
 
-export function HtmlBody({ html, hasRemoteContent, declaresDark }: HtmlBodyProps) {
-  const [allowRemote, setAllowRemote] = useState(false);
+export function HtmlBody({ html, declaresDark }: HtmlBodyProps) {
   const dark = useThemeStore((s) => s.resolved === "dark");
   const wrapper = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -57,13 +49,14 @@ export function HtmlBody({ html, hasRemoteContent, declaresDark }: HtmlBodyProps
   const srcDoc = useMemo(() => {
     const tokens = getComputedStyle(document.documentElement);
     return buildSrcdoc(html, {
-      allowRemote,
+      // Bodies mount only when a message (or quoted original) is expanded. Opening it loads its images.
+      allowRemote: true,
       dark,
       declaresDark,
       textColor: tokens.getPropertyValue("--color-foreground"),
       linkColor: tokens.getPropertyValue("--color-link"),
     });
-  }, [html, allowRemote, dark, declaresDark]);
+  }, [html, dark, declaresDark]);
 
   const detach = useCallback(() => {
     stopWatching.current?.();
@@ -83,15 +76,6 @@ export function HtmlBody({ html, hasRemoteContent, declaresDark }: HtmlBodyProps
 
   return (
     <div className="email-body" ref={wrapper}>
-      {hasRemoteContent && !allowRemote && (
-        <div className="email-body__images">
-          <ImageOff aria-hidden="true" className="email-body__images-icon" />
-          <span className="email-body__images-text">Images from the web are hidden.</span>
-          <Button size="sm" variant="ghost" onClick={() => setAllowRemote(true)}>
-            Load images
-          </Button>
-        </div>
-      )}
       <iframe
         ref={frame}
         className="email-body__frame"
