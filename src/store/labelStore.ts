@@ -1,14 +1,8 @@
 // Labels and the counts the sidebar shows, all read from the local cache and refreshed on sync events.
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
-import {
-  type LabelInfo,
-  labelCounts,
-  listLabels,
-  mailboxCounts,
-  stopQuietly,
-  SYNC_EVENTS,
-} from "../lib/tauri";
+import { subscribeAll } from "../lib/subscriptions";
+import { type LabelInfo, labelCounts, listLabels, mailboxCounts, SYNC_EVENTS } from "../lib/tauri";
 
 export interface LabelCountEntry {
   unread: number;
@@ -26,7 +20,7 @@ interface LabelState {
   /** Fetch everything for `accountIds`; accounts not listed are dropped. */
   load(accountIds: string[]): Promise<void>;
   /** Reload on label and message sync events. Resolves to the unsubscribe function. */
-  subscribe(): Promise<() => void>;
+  subscribe(signal?: AbortSignal): Promise<() => void>;
   /** An account's own labels, sorted by name. The array is stable until the labels change. */
   userLabels(accountId: string): LabelInfo[];
   /** The label's display name, or its id when unknown. */
@@ -116,7 +110,7 @@ export const useLabelStore = create<LabelState>((set, get) => ({
       return { labels, counts, categoryCounts, allInboxUnread: inbox ?? s.allInboxUnread };
     });
   },
-  subscribe: async () => {
+  subscribe: (signal) => {
     // Sync bursts (initial sync, backfill) emit often; refresh once more at most while one is running.
     const refresh = async () => {
       if (refreshing) {
@@ -133,12 +127,12 @@ export const useLabelStore = create<LabelState>((set, get) => ({
         refreshing = false;
       }
     };
-    const stops = await Promise.all(
-      [SYNC_EVENTS.labelsUpdated, SYNC_EVENTS.messagesUpdated, SYNC_EVENTS.completed].map((event) =>
-        listen(event, () => void refresh()),
+    return subscribeAll(
+      [SYNC_EVENTS.labelsUpdated, SYNC_EVENTS.messagesUpdated, SYNC_EVENTS.completed].map(
+        (event) => () => listen(event, () => void refresh()),
       ),
+      signal,
     );
-    return () => stops.forEach(stopQuietly);
   },
   userLabels: (accountId) => {
     const labels = get().labels[accountId];

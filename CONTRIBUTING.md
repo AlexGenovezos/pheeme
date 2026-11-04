@@ -72,6 +72,11 @@ Follow the conventions in [CLAUDE.md](CLAUDE.md#key-conventions); for example, m
 outbox, never straight to Gmail. When onboarding guide text changes, update `src/onboarding/steps.ts` and
 `docs/google-cloud-setup.md` together.
 
+Before adding a helper, search for existing behavior in the relevant domain and shared modules.
+The [refactoring register](docs/refactoring.md) tracks known duplication, planned extractions and
+deliberate repetition. Update it when a change resolves an item or exposes another concrete maintenance
+problem.
+
 <a id="verification"></a>
 
 ## Provide evidence for the changed behavior

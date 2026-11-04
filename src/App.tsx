@@ -10,7 +10,8 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { useAppCommands } from "./keyboard/appCommands";
 import { isEditableTarget } from "./keyboard/registry";
 import { useGlobalShortcuts } from "./keyboard/useCommands";
-import { type OutboxRejected, stopQuietly, SYNC_EVENTS } from "./lib/tauri";
+import { createSubscriptionScope } from "./lib/subscriptions";
+import { type OutboxRejected, SYNC_EVENTS } from "./lib/tauri";
 import { listenForManualChecks, startUpdateChecks } from "./lib/updater";
 import { CommandPalette } from "./palette/CommandPalette";
 import { Settings } from "./settings/Settings";
@@ -40,24 +41,23 @@ function useNativeContextMenuOnly() {
 /** Keep the thread list, labels and counts fresh on sync, and say when Gmail refuses a queued change. */
 function useSyncEvents() {
   useEffect(() => {
-    let stopped = false;
-    const stops: (() => void)[] = [];
-    const keep = (stop: () => void) => (stopped ? stopQuietly(stop) : stops.push(stop));
+    const scope = createSubscriptionScope();
     const log = (err: unknown) => console.warn("sync event listener failed", err);
-    useMailStore.getState().subscribe().then(keep, log);
-    useLabelStore.getState().subscribe().then(keep, log);
-    listen<OutboxRejected>(SYNC_EVENTS.outboxRejected, ({ payload }) =>
-      toast({
-        title: `Couldn't ${payload.kind}`,
-        description: `Gmail said: ${payload.message}. Your change was undone.`,
-        tone: "danger",
-        duration: 0,
-      }),
-    ).then(keep, log);
-    return () => {
-      stopped = true;
-      stops.forEach(stopQuietly);
-    };
+    scope.add((signal) => useMailStore.getState().subscribe(signal)).catch(log);
+    scope.add((signal) => useLabelStore.getState().subscribe(signal)).catch(log);
+    scope
+      .add(() =>
+        listen<OutboxRejected>(SYNC_EVENTS.outboxRejected, ({ payload }) =>
+          toast({
+            title: `Couldn't ${payload.kind}`,
+            description: `Gmail said: ${payload.message}. Your change was undone.`,
+            tone: "danger",
+            duration: 0,
+          }),
+        ),
+      )
+      .catch(log);
+    return scope.dispose;
   }, []);
 }
 
@@ -96,16 +96,11 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
  */
 function useSessionSyncEvents() {
   useEffect(() => {
-    let stopped = false;
-    const stops: (() => void)[] = [];
-    const keep = (stop: () => void) => (stopped ? stopQuietly(stop) : stops.push(stop));
+    const scope = createSubscriptionScope();
     const log = (err: unknown) => console.warn("sync event listener failed", err);
-    useAccountStore.getState().subscribe().then(keep, log);
-    useThreadStore.getState().subscribe().then(keep, log);
-    return () => {
-      stopped = true;
-      stops.forEach(stopQuietly);
-    };
+    scope.add((signal) => useAccountStore.getState().subscribe(signal)).catch(log);
+    scope.add((signal) => useThreadStore.getState().subscribe(signal)).catch(log);
+    return scope.dispose;
   }, []);
 }
 
