@@ -465,6 +465,8 @@ impl GmailClient {
                 let delay = retry_after.unwrap_or_else(|| jittered(self.retry.backoff(attempt)));
                 warn!(
                     attempt,
+                    method = %req.method,
+                    resource = req.segments.first().map(String::as_str).unwrap_or(""),
                     status = status.as_u16(),
                     reason = reason.as_deref().unwrap_or(""),
                     message = %message,
@@ -476,6 +478,16 @@ impl GmailClient {
                 continue;
             }
             if rate_limited {
+                warn!(
+                    attempts = attempt + 1,
+                    method = %req.method,
+                    resource = req.segments.first().map(String::as_str).unwrap_or(""),
+                    status = status.as_u16(),
+                    reason = reason.as_deref().unwrap_or(""),
+                    message = %message,
+                    ?retry_after,
+                    "Gmail rate limit outlasted request retry budget"
+                );
                 return Err(GmailError::RateLimit { retry_after });
             }
             return Err(GmailError::Api {
