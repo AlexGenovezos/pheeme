@@ -85,13 +85,14 @@ export function SendCredentials({ accounts }: { accounts: AccountInfo[] }) {
   }
 
   async function start() {
+    if (!selected) return;
     const current = ++attempt.current;
     setBusy(true);
     setError("");
     setStatus(null);
     setCopied(false);
     try {
-      const next = await offerClientTransfer(accountId, address);
+      const next = await offerClientTransfer(selected.id, address);
       if (current !== attempt.current) {
         void cancelClientTransfer(next.transferId).catch(() => {});
         return;

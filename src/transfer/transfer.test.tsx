@@ -192,3 +192,26 @@ test("sender uses the app menu to choose a client and local network", async () =
     args: { accountId: "a2", address: "10.0.0.5" },
   });
 });
+
+test("removing the selected account sends the remaining client's credentials", async () => {
+  const remaining = {
+    ...account,
+    id: "a2",
+    clientId: "other.apps.googleusercontent.com",
+    email: "other@example.com",
+  };
+  const calls = backend({
+    transfer_interfaces: () => ["192.168.1.2"],
+    offer_client_transfer: () => new Promise(() => {}),
+  });
+  const { rerender } = render(<SendCredentials accounts={[account, remaining]} />);
+  await vi.waitFor(() =>
+    expect(screen.getByRole("button", { name: "Send to another device" })).toBeEnabled(),
+  );
+  rerender(<SendCredentials accounts={[remaining]} />);
+  click("Send to another device");
+  expect(calls).toContainEqual({
+    cmd: "offer_client_transfer",
+    args: { accountId: remaining.id, address: "192.168.1.2" },
+  });
+});
