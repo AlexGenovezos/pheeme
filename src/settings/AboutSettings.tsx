@@ -2,6 +2,8 @@ import { version } from "../../package.json";
 import { Button } from "../components/ui/Button";
 import { checkForUpdatesNow, displayVersion, useUpdateStore } from "../lib/updater";
 import { isTauri } from "../preview/runtime";
+import { RELEASES } from "./releaseNotes";
+import { ReleaseNotes } from "./ReleaseNotes";
 import { SettingsRow, SettingsSection } from "./rows";
 
 const CHECK_STATUS = {
@@ -42,13 +44,20 @@ export function AboutSettings() {
     );
 
   return (
-    <SettingsSection title="Pheeme">
-      <SettingsRow
-        title="Version"
-        description="Open-source Gmail client, MIT licensed."
-        control={<span className="settings-about__version">{displayVersion(version)}</span>}
-      />
-      <SettingsRow title="Updates" description={description} control={control} />
-    </SettingsSection>
+    <>
+      <SettingsSection title="Pheeme">
+        <SettingsRow
+          title="Version"
+          description="Open-source Gmail client, MIT licensed."
+          control={<span className="settings-about__version">{displayVersion(version)}</span>}
+        />
+        <SettingsRow title="Updates" description={description} control={control} />
+      </SettingsSection>
+      {RELEASES.length > 0 && (
+        <SettingsSection title="What's new">
+          <ReleaseNotes releases={RELEASES} current={version} />
+        </SettingsSection>
+      )}
+    </>
   );
 }

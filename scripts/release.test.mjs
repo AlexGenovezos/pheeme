@@ -90,6 +90,11 @@ describe("checkNotes", () => {
     expect(checkNotes("<!-- only a comment -->\n")).toEqual(["the notes are empty"]);
     expect(checkNotes("TODO: lead\n")).toEqual(["a TODO is left"]);
   });
+  it("rejects Markdown the app can't show", () => {
+    expect(checkNotes("Lead.\n\n## Compose\n- Reply\n")).toEqual([
+      "line 3: a # heading (use a line of **bold** text)",
+    ]);
+  });
 });
 
 describe("checkRelease", () => {

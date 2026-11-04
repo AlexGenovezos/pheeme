@@ -30,6 +30,9 @@ Versions are `MAJOR.MINOR` (files store `X.Y.0`). Betas go up by one minor: v0.7
    - the **Heads-up** stays whenever prepare added one (an older version can't open a cache a newer
      one migrated)
    - leave out PRs under "Behind the scenes" unless people notice them (speed, memory, fixes)
+   - the app shows the notes in Settings › About, so only that format: paragraphs, `**heading**`
+     lines, `-` bullets on one line each, **bold**, `code`, links to https github.com/pheeme.app.
+     `release:check` names any line outside it (`scripts/release-notes.mjs`)
 
    Done when `npm run release:check -- X.Y` prints `vX.Y is ready to tag`.
 4. **Website.** If this release finishes an item on the roadmap (`#roadmap` in

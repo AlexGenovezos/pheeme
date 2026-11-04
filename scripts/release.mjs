@@ -7,7 +7,10 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { isNewer, parseNotes, stripComments } from "./release-notes.mjs";
 import { checkVersions, readVersions, setVersion } from "./version.mjs";
+
+export { isNewer };
 
 export const NOTES_DIR = "docs/releases";
 const MIGRATIONS_DIR = "src-tauri/src/db/migrations";
@@ -21,16 +24,6 @@ export function parseVersion(input) {
   const version = String(input ?? "").replace(/^v/, "");
   if (!/^\d+\.\d+$/.test(version)) throw new Error(`not a MAJOR.MINOR version: ${input}`);
   return { version, tag: `v${version}` };
-}
-
-const parts = (v) => v.split(".").map(Number);
-/** a > b for MAJOR.MINOR[.PATCH] strings. */
-export function isNewer(a, b) {
-  const [x, y] = [parts(a), parts(b)];
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
-  }
-  return false;
 }
 
 export const notesPath = (root, tag) => path.join(root, NOTES_DIR, `${tag}.md`);
@@ -92,18 +85,16 @@ export function checkNotes(text) {
   if (text == null) return ["no release notes file"];
   const errors = [];
   if (text.includes(DRAFT_START)) errors.push("the DRAFT block is still there");
-  const visible = text.replace(/<!--[\s\S]*?-->/g, "");
+  const visible = stripComments(text);
   if (/\bTODO\b/.test(visible)) errors.push("a TODO is left");
   if (!visible.trim()) errors.push("the notes are empty");
+  // The app shows the notes too (Settings › About), with only the format release-notes.mjs reads.
+  if (!errors.length) errors.push(...parseNotes(text).errors);
   return errors;
 }
 
 /** The notes as published: without the writing guide and other HTML comments. */
-export const publishedNotes = (text) =>
-  text
-    .replace(/<!--[\s\S]*?-->\n?/g, "")
-    .trim()
-    .concat("\n");
+export const publishedNotes = (text) => stripComments(text).trim().concat("\n");
 
 /** Everything that must hold before `tag` is pushed. */
 export function checkRelease(root, input) {
