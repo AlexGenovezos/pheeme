@@ -52,7 +52,7 @@ Edit the geometry or colors at the top of `scripts/build-brand.mjs`, then run:
 node scripts/build-brand.mjs
 ```
 
-It also writes the desktop app's favicon and mark (`../public/`). The desktop app icon is separate: `scripts/build-fama-icon.sh` (ImageMagick and python3) engraves it into `../src-tauri/app-icon.svg`, then `npm run icons` from the repo root regenerates the platform icons.
+The app and website favicons, touch icons, and downloadable app icons all use the statue engraving in `../src-tauri/app-icon.svg`. Browser icons crop away the desktop Dock padding. To change the engraving, run `scripts/build-fama-icon.sh` (ImageMagick and python3), then `npm run icons` from the repo root for desktop platform sizes and `node scripts/build-brand.mjs` from this directory for the web assets. The brand build also writes the app's favicon and color mark (`../public/`).
 
 It needs `magick` (ImageMagick), `zip`, and a Playwright `chrome-headless-shell` (or set `CHROME=/path/to/chrome`). The wordmark is Poppins SemiBold outlined to a path by `scripts/wordmark.py`, so it doesn't depend on the font. Site type is Instrument Sans and Martian Mono (both SIL OFL), self-hosted in `public/fonts`.
 
