@@ -3,6 +3,7 @@ pub mod attachments;
 pub mod labels;
 pub mod messages;
 pub mod outbox;
+pub mod search;
 pub mod sync_state;
 pub mod threads;
 

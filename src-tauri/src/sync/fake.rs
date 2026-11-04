@@ -674,26 +674,59 @@ impl MailApi for FakeGmail {
         })
     }
 
-    async fn search_messages(&self, q: &str) -> Result<MessageListResponse, GmailError> {
+    /// `rfc822msgid:<id> [in:sent]`, or plain words that must all appear in the subject or
+    /// body (case-insensitive; operators are ignored, and Spam/Trash only count with
+    /// `include_spam_trash`). Newest first, paged by `max`.
+    async fn search_messages(
+        &self,
+        q: &str,
+        include_spam_trash: bool,
+        page_token: Option<&str>,
+        max: u32,
+    ) -> Result<MessageListResponse, GmailError> {
         self.enter("search_messages")?;
-        let mut terms = q.split_whitespace();
-        let wanted = terms
-            .next()
-            .and_then(|t| t.strip_prefix("rfc822msgid:"))
-            .expect("fake only searches rfc822msgid:");
-        let sent_only = terms.any(|t| t == "in:sent");
         let s = self.lock();
+        let mut hits: Vec<&FakeMsg> = match q.strip_prefix("rfc822msgid:") {
+            Some(rest) => {
+                let mut terms = rest.split_whitespace();
+                let wanted = terms.next().unwrap_or_default();
+                let sent_only = terms.any(|t| t == "in:sent");
+                s.messages
+                    .values()
+                    .filter(|m| m.message_id == wanted)
+                    .filter(|m| !sent_only || m.labels.iter().any(|l| l == "SENT"))
+                    .collect()
+            }
+            None => {
+                let words: Vec<String> = q
+                    .split_whitespace()
+                    .filter(|w| !w.contains(':'))
+                    .map(str::to_lowercase)
+                    .collect();
+                s.messages
+                    .values()
+                    .filter(|m| {
+                        include_spam_trash || !m.labels.iter().any(|l| l == "TRASH" || l == "SPAM")
+                    })
+                    .filter(|m| {
+                        let text = format!("{} {}", m.subject, m.body).to_lowercase();
+                        words.iter().all(|w| text.contains(w.as_str()))
+                    })
+                    .collect()
+            }
+        };
+        hits.sort_by_key(|m| std::cmp::Reverse(m.date_ms));
+        let refs: Vec<MessageRef> = hits
+            .into_iter()
+            .map(|m| MessageRef {
+                id: m.id.clone(),
+                thread_id: m.thread_id.clone(),
+            })
+            .collect();
+        let (messages, next_page_token) = Self::page(&refs, page_token, max as usize);
         Ok(MessageListResponse {
-            messages: s
-                .messages
-                .values()
-                .filter(|m| m.message_id == wanted)
-                .filter(|m| !sent_only || m.labels.iter().any(|l| l == "SENT"))
-                .map(|m| MessageRef {
-                    id: m.id.clone(),
-                    thread_id: m.thread_id.clone(),
-                })
-                .collect(),
+            messages,
+            next_page_token,
             ..Default::default()
         })
     }

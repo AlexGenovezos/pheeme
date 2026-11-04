@@ -13,6 +13,7 @@ use crate::db::threads::{self, RecomputeResult, CATEGORY_LABELS};
 use crate::db::{self, accounts, attachments, labels, messages, sync_state};
 use crate::gmail::types::{HistoryRecord, Message};
 use crate::gmail::{GmailError, MessageFormat};
+use crate::search;
 use futures::stream::{self, StreamExt};
 use sqlx::{SqliteConnection, SqlitePool};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -24,6 +25,8 @@ pub const BACKFILL_PAGE: u32 = 500;
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// Concurrent `threads.get` calls; the client caps requests at 10 anyway.
 const THREAD_FETCHES: usize = 10;
+/// Messages per Gmail search page.
+pub const SEARCH_PAGE: u32 = 50;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
@@ -572,6 +575,73 @@ impl SyncEngine {
         drop(guard);
         self.emit_write(result, Vec::new());
         Ok(())
+    }
+
+    /// One page of a Gmail search. Threads with matches the cache doesn't have yet are
+    /// fetched in full and cached like backfill does (backfill skips cached messages, so
+    /// they get their bodies now). Returns the matching thread ids in Gmail's order
+    /// (newest first) and the next page token.
+    pub async fn search_gmail(
+        &self,
+        q: &str,
+        page_token: Option<&str>,
+    ) -> Result<(Vec<String>, Option<String>), SyncError> {
+        let (q, spam_trash) = search::gmail_query(q);
+        let page = self
+            .api
+            .search_messages(&q, spam_trash, page_token, SEARCH_PAGE)
+            .await?;
+        let ids: Vec<String> = page.messages.iter().map(|m| m.id.clone()).collect();
+        let mut conn = self.db.acquire().await?;
+        let cached = messages::existing_ids(&mut conn, &self.account_id, &ids).await?;
+        drop(conn);
+        let mut thread_ids = Vec::new();
+        let mut missing = Vec::new();
+        for m in &page.messages {
+            if !thread_ids.contains(&m.thread_id) {
+                thread_ids.push(m.thread_id.clone());
+            }
+            if !cached.contains(&m.id) && !missing.contains(&m.thread_id) {
+                missing.push(m.thread_id.clone());
+            }
+        }
+        if missing.is_empty() {
+            return Ok((thread_ids, page.next_page_token));
+        }
+
+        let results: Vec<_> = stream::iter(missing)
+            .map(|id| async move { self.api.get_thread(&id, MessageFormat::Full).await })
+            .buffer_unordered(THREAD_FETCHES)
+            .collect()
+            .await;
+        let mut fetched = Vec::new();
+        for result in results {
+            match result {
+                Ok(thread) => fetched.extend(thread.messages),
+                Err(e) if e.is_not_found() => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        let guard = self.write_lock.lock().await;
+        let mut tx = db::begin_write(&self.db).await?;
+        let mut touched = Vec::new();
+        for msg in &fetched {
+            // Sync may have deleted it since; don't bring it back.
+            if guard.contains(&msg.id) {
+                continue;
+            }
+            let (row, atts) = convert::message_rows(&self.account_id, msg, true)?;
+            if messages::insert_message_if_absent(&mut tx, &row).await? {
+                attachments::replace_for_message(&mut tx, &self.account_id, &row.id, &atts).await?;
+                touched.push(row.thread_id);
+            }
+        }
+        let (result, confirmed) = self.finish_write(&mut tx, &touched).await?;
+        tx.commit().await?;
+        drop(guard);
+        self.emit_write(result, confirmed);
+        Ok((thread_ids, page.next_page_token))
     }
 
     /// Labels, plus fresh counters for Inbox and the category tabs.

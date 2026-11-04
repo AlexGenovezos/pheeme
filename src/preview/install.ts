@@ -141,6 +141,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     void emit(SYNC_EVENTS.messagesUpdated, payload).catch(() => {});
   };
 
+  let recent: string[] = [];
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
@@ -191,6 +192,39 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       // All Mail, like the backend: everything outside Spam and Trash.
       const allMail = mine.filter((t) => !hasLabel(t, "SPAM") && !hasLabel(t, "TRASH"));
       return allMail.length > 0 ? [...rows, countOf("ALL", allMail)] : rows;
+    },
+    // Words must all appear in the subject, sender or snippet; Gmail finds nothing more.
+    search_messages: (args) => {
+      const words = String(args?.query ?? "")
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+      const hit = (t: FixtureThread) => {
+        const summary = toSummary(t);
+        const text = [summary.subject, summary.fromName, summary.fromAddress, summary.snippet]
+          .join(" ")
+          .toLowerCase();
+        return words.length > 0 && words.every((w) => text.includes(w));
+      };
+      return {
+        threads: threads
+          .filter(
+            (t) =>
+              (!accountIdsOf(args).length || accountIdsOf(args).includes(t.accountId)) && hit(t),
+          )
+          .map(toSummary),
+        next: null,
+        local: true,
+      };
+    },
+    search_gmail: () => ({ threads: [], next: {}, failed: [] }),
+    recent_searches: () => [...recent],
+    add_recent_search: (args) => {
+      const q = String(args?.query ?? "").trim();
+      if (q) recent = [q, ...recent.filter((r) => r !== q)].slice(0, 20);
+    },
+    remove_recent_search: (args) => {
+      recent = args?.query == null ? [] : recent.filter((r) => r !== args.query);
     },
     sync_now: () => undefined,
     modify_threads: (args) => {

@@ -631,7 +631,7 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
     } else {
         match engine
             .api
-            .search_messages(&format!("rfc822msgid:{rfc} in:sent"))
+            .search_messages(&format!("rfc822msgid:{rfc} in:sent"), false, None, 10)
             .await
         {
             Ok(page) => !page.messages.is_empty(),

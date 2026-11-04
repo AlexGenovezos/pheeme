@@ -1,0 +1,92 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        WITH hits AS (\n          SELECT DISTINCT m.account_id, m.thread_id FROM messages m\n          WHERE m.account_id IN (SELECT value FROM json_each(?1))\n            AND (?2 IS NULL OR m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?2))\n            AND (?3 IS NULL OR NOT EXISTS (\n                  SELECT 1 FROM json_each(?3) g\n                  WHERE NOT EXISTS (\n                    SELECT 1 FROM json_each(g.value) c, json_each(m.label_ids) l\n                    WHERE c.value = m.account_id || char(31) || l.value)))\n            AND (?4 OR NOT EXISTS (\n                  SELECT 1 FROM json_each(m.label_ids) l WHERE l.value IN ('TRASH', 'SPAM')))\n            AND (NOT ?5 OR m.has_attachment = 1)\n            AND (?6 IS NULL OR m.is_read = ?6)\n            AND (?7 IS NULL OR m.is_starred = ?7)\n            AND (?8 IS NULL OR m.date >= ?8)\n            AND (?9 IS NULL OR m.date < ?9)\n            AND (?10 IS NULL OR m.size_estimate > ?10)\n            AND (?11 IS NULL OR m.size_estimate < ?11)\n            AND (NOT ?12 OR lower(m.from_address) =\n                  (SELECT lower(a.email) FROM accounts a WHERE a.id = m.account_id))\n            AND (NOT ?13 OR EXISTS (\n                  SELECT 1 FROM accounts a, json_each(m.to_addresses) r\n                  WHERE a.id = m.account_id\n                    AND lower(json_extract(r.value, '$.address')) = lower(a.email)\n                  UNION ALL\n                  SELECT 1 FROM accounts a, json_each(m.cc_addresses) r\n                  WHERE a.id = m.account_id\n                    AND lower(json_extract(r.value, '$.address')) = lower(a.email)))\n        )\n        SELECT t.id AS \"id!\", t.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               COALESCE(t.last_message_date, 0) AS \"cursor_date!: i64\"\n        FROM hits h JOIN threads t ON t.account_id = h.account_id AND t.id = h.thread_id\n        WHERE ?14 IS NULL\n           OR (COALESCE(t.last_message_date, 0), t.account_id, t.id) < (?14, ?15, ?16)\n        ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC\n        LIMIT ?17\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_id!",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "subject",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "snippet",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "history_id",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_message_date",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "message_count!",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "unread_count!",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "has_attachment!",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "from_name",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "from_address",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_starred!",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "cursor_date!: i64",
+        "ordinal": 12,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 17
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "55c9a8c643e6f4540f5c065d5ad257d8616287881766ad2c348a743e8583a2aa"
+}

@@ -25,7 +25,15 @@ pub trait MailApi: Send + Sync {
         page_token: Option<&str>,
         max: u32,
     ) -> Result<MessageListResponse, GmailError>;
-    async fn search_messages(&self, q: &str) -> Result<MessageListResponse, GmailError>;
+    /// One page of messages matching a Gmail search (`q`), newest first. Spam and Trash
+    /// are only searched with `include_spam_trash`.
+    async fn search_messages(
+        &self,
+        q: &str,
+        include_spam_trash: bool,
+        page_token: Option<&str>,
+        max: u32,
+    ) -> Result<MessageListResponse, GmailError>;
     /// Results in any order; match on the id.
     async fn batch_get_messages(
         &self,
@@ -110,8 +118,14 @@ impl MailApi for GmailClient {
         self.list_all_messages(page_token, max).await
     }
 
-    async fn search_messages(&self, q: &str) -> Result<MessageListResponse, GmailError> {
-        GmailClient::search_messages(self, q, None, 10).await
+    async fn search_messages(
+        &self,
+        q: &str,
+        include_spam_trash: bool,
+        page_token: Option<&str>,
+        max: u32,
+    ) -> Result<MessageListResponse, GmailError> {
+        GmailClient::search_messages(self, q, include_spam_trash, page_token, max).await
     }
 
     async fn batch_get_messages(

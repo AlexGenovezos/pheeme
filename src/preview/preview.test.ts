@@ -7,7 +7,7 @@ import {
   SYNC_EVENTS,
   type SyncMessagesUpdated,
 } from "../lib/tauri";
-import { fixtureAccounts } from "./fixtures";
+import { createFixtureThreads, fixtureAccounts } from "./fixtures";
 import { createPreviewHandlers, handlePreviewCommand, installPreview } from "./install";
 import { detectTauri, isPreview, isTauri } from "./runtime";
 
@@ -317,6 +317,23 @@ describe("preview IPC", () => {
         remove: [],
       }),
     ).toThrow();
+  });
+
+  test("search and recent searches answer in preview", async () => {
+    installPreview();
+    const t = createFixtureThreads()[0];
+    const page = await invoke<{ threads: { id: string }[]; local: boolean }>("search_messages", {
+      accountIds: [t.accountId],
+      query: String(t.subject).split(" ")[0],
+    });
+    expect(page.local).toBe(true);
+    expect(page.threads.map((x) => x.id)).toContain(t.id);
+    await invoke("add_recent_search", { query: " a " });
+    await invoke("add_recent_search", { query: "b" });
+    await invoke("add_recent_search", { query: "a" });
+    await expect(invoke("recent_searches")).resolves.toEqual(["a", "b"]);
+    await invoke("remove_recent_search", { query: null });
+    await expect(invoke("recent_searches")).resolves.toEqual([]);
   });
 
   test("the updater check reports no update", () => {

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM recent_searches WHERE query NOT IN\n           (SELECT query FROM recent_searches ORDER BY used_at DESC, rowid DESC LIMIT ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "c2e9ddbf041bac34f503c1d5bf208ef398b0e19557ccc93645a6e240b12adaee"
+}
