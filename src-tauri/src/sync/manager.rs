@@ -396,11 +396,18 @@ mod tests {
         let engine = manager.engine("a1");
         let dispatch = outbox::process(&engine, now_ms());
         tokio::pin!(dispatch);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(100), &mut dispatch)
-                .await
-                .is_err()
-        );
+        tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::select! {
+                result = &mut dispatch => panic!("dispatch completed before blocked cleanup: {result:?}"),
+                _ = async {
+                    while fake.calls("delete_draft") == 0 {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                } => {}
+            }
+        })
+        .await
+        .expect("dispatch never reached draft cleanup");
         assert_eq!(fake.sent().len(), 1);
         assert_eq!(fake.drafts().len(), 1, "cleanup is still blocked");
         assert!(events.take().iter().any(|e| matches!(
