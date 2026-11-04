@@ -37,6 +37,19 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run test:ci
+      - name: Install browser for mod UI proof
+        if: matrix.os == 'ubuntu-22.04'
+        run: npx playwright install --with-deps chromium
+      - name: Mod install and interaction flow
+        if: matrix.os == 'ubuntu-22.04'
+        run: npx playwright test e2e/mods.spec.ts
+      - name: Mod UI evidence
+        if: always() && matrix.os == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mod-ui-evidence
+          path: test-results/
+          retention-days: 7
       - run: node --test .github/scripts/labels.test.cjs
       - run: npx vite build
       - name: Rust formatting

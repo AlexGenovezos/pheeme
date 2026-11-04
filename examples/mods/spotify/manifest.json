@@ -1,0 +1,22 @@
+{
+  "id": "example.spotify",
+  "name": "Spotify",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entry": "main.js",
+  "description": "See the current Spotify track and save it to your library. Requires your own Spotify developer client and API access.",
+  "commands": [{ "id": "heart", "title": "Save current Spotify track" }],
+  "permissions": {
+    "network": [],
+    "connections": [
+      {
+        "id": "spotify",
+        "name": "Spotify",
+        "authorizationUrl": "https://accounts.spotify.com/authorize",
+        "tokenUrl": "https://accounts.spotify.com/api/token",
+        "scopes": ["user-read-currently-playing", "user-library-modify"],
+        "apiOrigins": ["https://api.spotify.com"]
+      }
+    ]
+  }
+}

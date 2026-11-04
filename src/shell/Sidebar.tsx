@@ -1,3 +1,4 @@
+import { ModSidebar } from "../mods/ModSurfaces";
 import {
   ChevronRight,
   type LucideIcon,
@@ -310,6 +311,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
         {active && <GmailLabels accountId={active.id} />}
       </nav>
 
+      <ModSidebar />
       <div className="sidebar__footer">
         {active && (
           <Avatar name={active.displayName ?? active.email} email={active.email} size="sm" />
