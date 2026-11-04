@@ -1,3 +1,5 @@
+import { useModCommands, useModEvents } from "./mods/lifecycle";
+import { ModPanel } from "./mods/ModSurfaces";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { toast, ToastProvider } from "./components/ui/Toast";
@@ -70,6 +72,7 @@ function useLabelsAndCounts() {
 function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
   useGlobalShortcuts();
   useAppCommands();
+  useModCommands();
   useNativeContextMenuOnly();
   useSyncEvents();
   useLabelsAndCounts();
@@ -81,6 +84,7 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
       <CommandPalette />
       <Settings onAddAccount={onAddAccount} />
       <ContextMenuHost />
+      <ModPanel />
     </>
   );
 }
@@ -106,6 +110,7 @@ function useSessionSyncEvents() {
 }
 
 function App() {
+  useModEvents();
   const { accounts, loaded, error, load, upsert } = useAccountStore();
   const [adding, setAdding] = useState(false);
   // Onboarding replaces the mail screen; the settings dialog closes so it doesn't reopen on return.

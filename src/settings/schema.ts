@@ -22,6 +22,8 @@ export interface SettingsSectionDef {
 }
 
 export interface SettingsPageDef {
+  /** An installed mod rendered through the public declarative controls. */
+  modId?: string;
   id: string;
   title: string;
   icon: LucideIcon;

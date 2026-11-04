@@ -1,4 +1,5 @@
-import { Info, Keyboard, Palette, SquarePen, Users } from "lucide-react";
+import { ModsSettings } from "../mods/ModsSettings";
+import { Info, Keyboard, Palette, Puzzle, SquarePen, Users } from "lucide-react";
 import {
   UNDO_SEND_CHOICES,
   type UndoSendSeconds,
@@ -138,6 +139,14 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
         ],
       },
     ],
+  },
+  {
+    id: "mods",
+    title: "Mods",
+    icon: Puzzle,
+    group: "App",
+    keywords: ["plugins", "extensions", "install", "custom features"],
+    Component: ModsSettings,
   },
   {
     id: "about",

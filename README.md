@@ -30,6 +30,8 @@ restarting to apply one.
 
 ## Docs
 
+- [Mods](docs/mods.md): install personal features and write integrations without maintaining a fork
+
 - [Local diagnostics](docs/diagnostics.md): always-on logs and where to find them
 - [Design](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md): scope, priorities and roadmap
 - [Technical plan](Gmail%20client%20project%20plan.md): the detailed implementation reference

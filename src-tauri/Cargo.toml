@@ -56,6 +56,7 @@ bytes = "1"
 snow = "0.10"
 if-addrs = "0.13"
 zeroize = "1"
+rquickjs = "0.14"
 
 # Valgrind only runs on Linux. Optional so that plain builds don't need libclang.
 [target.'cfg(target_os = "linux")'.dependencies]

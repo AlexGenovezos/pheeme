@@ -4,6 +4,8 @@ import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
 import { isEditableTarget, registry } from "../keyboard/registry";
 import { AddAccountContext } from "./AccountsSettings";
+import { ModSettings, modSettingsPages } from "../mods/ModsSettings";
+import { useModStore } from "../mods/store";
 import { SETTINGS_PAGES } from "./pages";
 import { SettingsRow, SettingsSection } from "./rows";
 import { pageMatches, pageTitleMatches, settingMatches, type SettingsPageDef } from "./schema";
@@ -21,11 +23,12 @@ export function Settings({
   pages?: SettingsPageDef[];
   onAddAccount?: () => void;
 }) {
+  const mods = useModStore((s) => s.mods);
   const open = useSettingsStore((s) => s.open);
   if (!open) return null;
   return (
     <AddAccountContext.Provider value={onAddAccount}>
-      <SettingsDialog pages={pages} />
+      <SettingsDialog pages={[...pages, ...modSettingsPages(mods)]} />
     </AddAccountContext.Provider>
   );
 }
@@ -175,6 +178,7 @@ function SettingsDialog({ pages }: { pages: SettingsPageDef[] }) {
 }
 
 function PageBody({ page, query }: { page: SettingsPageDef; query: string }) {
+  if (page.modId) return <ModSettings key={page.modId} id={page.modId} />;
   if (page.Component) return <page.Component query={query} />;
   // A search that names the page shows all of it; otherwise only the rows it finds.
   const all = !query.trim() || pageTitleMatches(page, query);

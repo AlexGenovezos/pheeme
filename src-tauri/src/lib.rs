@@ -8,6 +8,7 @@ mod diagnostics;
 pub mod gmail;
 pub mod identity;
 pub mod mail;
+pub mod mods;
 pub mod render;
 pub mod search;
 pub mod secrets;
@@ -179,6 +180,28 @@ pub fn run() {
             ))?;
             state.sync.start();
             app.manage(state);
+            let mod_events = app.handle().clone();
+            let safe_mode = std::env::args().any(|arg| arg == "--disable-mods")
+                || std::env::var("PHEEME_DISABLE_MODS").is_ok_and(|value| value == "1");
+            match tauri::async_runtime::block_on(mods::ModService::open(
+                data_dir.join("mods"),
+                Arc::new(secrets::OsKeychain),
+                safe_mode,
+                Arc::new(move || {
+                    use tauri::Emitter;
+                    let _ = mod_events.emit("mods:changed", ());
+                }),
+                Arc::new(|url| {
+                    open::that_detached(url).map_err(|_| "Could not open the login browser".into())
+                }),
+            )) {
+                Ok(mods) => {
+                    app.manage(mods);
+                }
+                Err(error) => {
+                    tracing::error!(%error, "Could not load mods; mail remains available")
+                }
+            }
 
             info!("Database ready; sync started");
 
@@ -194,6 +217,16 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::mods::list_mods,
+            commands::mods::prepare_mod_install,
+            commands::mods::discard_mod_install,
+            commands::mods::install_mod,
+            commands::mods::set_mod_enabled,
+            commands::mods::remove_mod,
+            commands::mods::mod_action,
+            commands::mods::mod_connection_status,
+            commands::mods::connect_mod,
+            commands::mods::disconnect_mod,
             commands::open_external,
             commands::open_mail_link,
             commands::attachments::save_attachment,
