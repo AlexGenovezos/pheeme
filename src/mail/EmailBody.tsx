@@ -130,6 +130,33 @@ function watchFrame(
   commands: CommandRegistry = registry,
 ): () => void {
   const root = doc.documentElement;
+  const images = Array.from(doc.images, (image) => ({
+    image,
+    height: image.style.getPropertyValue("height"),
+    priority: image.style.getPropertyPriority("height"),
+  }));
+  // Responsive emails reflow at the pane width. Older promotional emails often contain fixed-width
+  // tables (including inline min-widths); scale that layout only when it still overflows at full size.
+  const fitWidth = () => {
+    root.style.setProperty("zoom", "1", "important");
+    for (const { image, height, priority } of images) {
+      // Restore the sender's height before checking the new width. A height-sized logo must keep its
+      // dimensions; only an image actually shrunk by max-width needs its fixed height released.
+      image.style.setProperty("height", height, priority);
+      const constrained = image.getBoundingClientRect().width;
+      const maxWidth = image.style.getPropertyValue("max-width");
+      const maxPriority = image.style.getPropertyPriority("max-width");
+      image.style.setProperty("max-width", "none", "important");
+      const requested = image.getBoundingClientRect().width;
+      image.style.setProperty("max-width", maxWidth, maxPriority);
+      if (requested > constrained + 1) image.style.setProperty("height", "auto", "important");
+    }
+    const available = iframe.clientWidth;
+    const content = Math.max(root.scrollWidth, doc.body?.scrollWidth ?? 0);
+    if (available > 0 && content > available) {
+      root.style.setProperty("zoom", String(available / content), "important");
+    }
+  };
   let applied = 0;
   // Growth since anything outside our own resizing (load, an image arriving, a new width) happened.
   let selfGrowth = 0;
@@ -171,8 +198,10 @@ function watchFrame(
   // text reflowed) collapse the frame and measure again. The wrapper holds its height meanwhile, so the
   // reading pane's scroll position isn't clamped; it all happens in one task, so nothing paints.
   const remeasureFromZero = () => {
+    if (pinned) return;
     wrapper.style.minHeight = `${wrapper.offsetHeight}px`;
     iframe.style.height = "0px";
+    fitWidth();
     applied = 0;
     external = true;
     measure();
@@ -193,6 +222,7 @@ function watchFrame(
   // Images don't bubble `load`, but capture sees them: their growth is the content's, not the frame's.
   const onContentLoad = () => {
     external = true;
+    remeasureFromZero();
   };
 
   const onClick = (event: MouseEvent) => {
@@ -225,6 +255,7 @@ function watchFrame(
     if (doc.body) observer.observe(doc.body);
     observer.observe(iframe);
   }
+  fitWidth();
   measure();
 
   return () => {
