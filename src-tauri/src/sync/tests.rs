@@ -56,6 +56,7 @@ async fn listed(pool: &SqlitePool, label: &str) -> Vec<String> {
             label_id: label,
             also_label_id: None,
             exclude_label_ids: &[],
+            read_filter: None,
             before: None,
             limit: 500,
         },

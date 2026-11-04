@@ -421,3 +421,10 @@ describe("keyboard and menu wiring", () => {
     expect(calls).not.toContain("modify_threads");
   });
 });
+
+test("the unread-only empty state names the current mailbox", () => {
+  act(() => useUiStore.getState().toggleUnreadOnly());
+  render(<ThreadList {...props({ title: "All Inboxes" })} />);
+  expect(screen.getByText("No unread mail in All Inboxes")).toBeInTheDocument();
+  expect(screen.queryByText("Inbox zero.")).not.toBeInTheDocument();
+});

@@ -349,3 +349,93 @@ test("ignores a stale response", async () => {
   expect(ids()).toEqual(["sent-1"]);
   expect(useMailStore.getState().query?.labelId).toBe("SENT");
 });
+
+test("a just-read row survives syncs and paging until refresh or leaving its mailbox", async () => {
+  const calls: Record<string, unknown>[] = [];
+  let read = false;
+  mockIPC(
+    (cmd, args) => {
+      if (cmd !== "list_threads") return;
+      const a = args as Record<string, unknown>;
+      calls.push(a);
+      const kept = a.keepRead as [string, string][] | undefined;
+      return {
+        threads:
+          read && !kept?.some(([account, id]) => account === "a" && id === "t1")
+            ? []
+            : [{ ...summary("t1"), unread: !read }],
+        next: a.before ? null : cursorAfter("t1"),
+      };
+    },
+    { shouldMockEvents: true },
+  );
+  const query = {
+    accountIds: ["a"],
+    labelId: "INBOX",
+    alsoLabelId: "CATEGORY_SOCIAL",
+    unreadOnly: true,
+  };
+  await useMailStore.getState().load(query);
+  useMailStore.getState().patch([threadKey("a", "t1")], (t) => ({ ...t, unread: false }));
+  read = true;
+  const stop = await useMailStore.getState().subscribe();
+  await emit("sync:messages_updated", { accountId: "a", added: [], removed: [], modified: ["t1"] });
+  await vi.waitFor(() =>
+    expect(calls[calls.length - 1]).toMatchObject({ ...query, keepRead: [["a", "t1"]] }),
+  );
+  expect(ids()).toEqual(["t1"]);
+  expect(useMailStore.getState().threads[0].unread).toBe(false);
+  await useMailStore.getState().loadMore();
+  expect(calls[calls.length - 1]).toMatchObject({
+    ...query,
+    keepRead: [["a", "t1"]],
+    before: cursorAfter("t1"),
+  });
+  await useMailStore.getState().reload();
+  expect(ids()).toEqual([]);
+  read = false;
+  await useMailStore.getState().load(query);
+  useMailStore.getState().patch([threadKey("a", "t1")], (t) => ({ ...t, unread: false }));
+  read = true;
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "SENT" });
+  await useMailStore.getState().load(query);
+  expect(ids()).toEqual([]);
+  stop();
+});
+
+test("an unread-filter failure clears the previous unfiltered rows and cursor", async () => {
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") return;
+    if ((args as { unreadOnly?: boolean }).unreadOnly)
+      throw { code: "internal", message: "Unavailable" };
+    return { threads: [summary("t1")], next: cursorAfter("t1") };
+  });
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX", unreadOnly: true });
+  expect(ids()).toEqual([]);
+  expect(useMailStore.getState().next).toBeNull();
+});
+
+test("reading during a background load replaces the query that did not yet retain the row", async () => {
+  let release!: (page: ThreadPage) => void;
+  let calls = 0;
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") return;
+    calls++;
+    if (calls === 2)
+      return new Promise<ThreadPage>((resolve) => {
+        release = resolve;
+      });
+    const keep = (args as { keepRead?: [string, string][] }).keepRead;
+    return { threads: [{ ...summary("t1"), unread: !keep?.length }], next: null };
+  });
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX", unreadOnly: true });
+  const background = useMailStore.getState().reload(true);
+  await vi.waitFor(() => expect(release).toBeDefined());
+  useMailStore.getState().patch([threadKey("a", "t1")], (t) => ({ ...t, unread: false }));
+  await vi.waitFor(() => expect(calls).toBe(3));
+  release({ threads: [], next: null });
+  await background;
+  expect(ids()).toEqual(["t1"]);
+  expect(useMailStore.getState().threads[0].unread).toBe(false);
+});

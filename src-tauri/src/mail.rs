@@ -339,6 +339,7 @@ impl MailService {
     /// `account_ids`, newest first. `label_id == ALL_MAIL` lists everything outside
     /// Spam and Trash; `also_label_id == CATEGORY_PERSONAL` lists `label_id` minus the
     /// other categories, so accounts without category labels still show their inbox.
+    /// `read_filter`: None lists all rows; Some lists unread plus the supplied account/thread pairs.
     pub async fn list_threads(
         &self,
         account_ids: &[String],
@@ -346,6 +347,7 @@ impl MailService {
         also_label_id: Option<&str>,
         before: Option<ThreadCursorDto>,
         limit: Option<i64>,
+        read_filter: Option<&[(String, String)]>,
     ) -> Result<ThreadPageDto, MailError> {
         let before = before.map(|c| ThreadCursor {
             last_message_date: c.last_message_date,
@@ -354,7 +356,8 @@ impl MailService {
         });
         let limit = limit.unwrap_or(DEFAULT_PAGE).clamp(1, MAX_PAGE);
         let page = if label_id == ALL_MAIL {
-            threads::list_all_mail(&self.db, account_ids, before.as_ref(), limit).await?
+            threads::list_all_mail(&self.db, account_ids, before.as_ref(), limit, read_filter)
+                .await?
         } else {
             let primary = also_label_id == Some(PRIMARY_CATEGORY);
             let exclude: Vec<String> = if primary {
@@ -369,6 +372,7 @@ impl MailService {
                     label_id,
                     also_label_id: if primary { None } else { also_label_id },
                     exclude_label_ids: &exclude,
+                    read_filter,
                     before: before.as_ref(),
                     limit,
                 },
@@ -939,7 +943,7 @@ mod tests {
             .unwrap();
 
         let page = mail
-            .list_threads(&["a1".into()], "INBOX", None, None, None)
+            .list_threads(&["a1".into()], "INBOX", None, None, None, None)
             .await
             .unwrap();
         assert!(!page.threads[0].unread, "read in the cache immediately");
@@ -1004,17 +1008,31 @@ mod tests {
         };
 
         let primary = mail
-            .list_threads(&accounts, "INBOX", Some("CATEGORY_PERSONAL"), None, None)
+            .list_threads(
+                &accounts,
+                "INBOX",
+                Some("CATEGORY_PERSONAL"),
+                None,
+                None,
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(ids(primary), ["t1", "t2"]);
         let social = mail
-            .list_threads(&accounts, "INBOX", Some("CATEGORY_SOCIAL"), None, None)
+            .list_threads(
+                &accounts,
+                "INBOX",
+                Some("CATEGORY_SOCIAL"),
+                None,
+                None,
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(ids(social), ["t3"]);
         let all = mail
-            .list_threads(&accounts, ALL_MAIL, None, None, None)
+            .list_threads(&accounts, ALL_MAIL, None, None, None, None)
             .await
             .unwrap();
         assert_eq!(ids(all), ["t1", "t2", "t3", "t5"]);

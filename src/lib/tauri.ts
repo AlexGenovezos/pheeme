@@ -83,6 +83,7 @@ export interface ThreadQuery {
    * (Primary) means the label minus the other four categories. `labelId: "ALL"` is All Mail.
    */
   alsoLabelId?: string | null;
+  unreadOnly?: boolean;
 }
 
 export interface EmailAddress {
@@ -153,7 +154,12 @@ export interface MailboxCount {
 }
 
 export const listThreads = (
-  query: ThreadQuery & { before?: ThreadCursor | null; limit?: number },
+  query: ThreadQuery & {
+    before?: ThreadCursor | null;
+    limit?: number;
+    /** Account/thread pairs opened in this unread-only mailbox visit. */
+    keepRead?: [string, string][];
+  },
 ) => invoke<ThreadPage>("list_threads", { ...query });
 export const getThread = (accountId: string, threadId: string) =>
   invoke<ThreadDetail>("get_thread", { accountId, threadId });

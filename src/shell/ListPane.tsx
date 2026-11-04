@@ -1,12 +1,13 @@
 import { PanelLeftOpen } from "lucide-react";
 import { useEffect } from "react";
+import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { toast } from "../components/ui/Toast";
 import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import type { ThreadSummary } from "../lib/tauri";
 import { archive, moveSelection, setRead, setStarred, trash } from "../mail/actions";
-import { mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
+import { mailboxKey, mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
 import { ThreadList } from "../mail/ThreadList";
 import { senderOf } from "../mail/ThreadRow";
 import type { RowAction } from "../mail/ThreadRow";
@@ -80,6 +81,8 @@ export function ListPane() {
   const next = useMailStore((s) => s.next);
   const loading = useMailStore((s) => s.loading);
   const error = useMailStore((s) => s.error);
+  const unreadOnly = useUiStore((s) => !!s.unreadMailboxes[mailboxKey(s.mailbox)]);
+  const toggleUnreadOnly = useUiStore((s) => s.toggleUnreadOnly);
   const anyChecked = useUiStore((s) => s.checked.length > 0);
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
@@ -98,8 +101,12 @@ export function ListPane() {
         labelId: "ALL",
         search: searchText,
       });
-    else void load(queryFor({ accountId, labelId, category }, ids));
-  }, [accountId, labelId, category, accountIds, searchText, searchAccountId]);
+    else
+      void load({
+        ...queryFor({ accountId, labelId, category }, ids),
+        ...(unreadOnly ? { unreadOnly: true } : {}),
+      });
+  }, [accountId, labelId, category, accountIds, searchText, searchAccountId, unreadOnly]);
 
   const userLabels = useLabelStore((s) => (accountId ? s.userLabels(accountId) : NO_LABELS));
   const mailboxName = mailboxTitle({ accountId, labelId, category }, userLabels);
@@ -196,6 +203,17 @@ export function ListPane() {
               {unread} unread
             </span>
           )
+        )}
+        {!searchText && (
+          <Button
+            size="sm"
+            variant={unreadOnly ? "primary" : "secondary"}
+            className="toolbar__unread-toggle"
+            aria-pressed={unreadOnly}
+            onClick={toggleUnreadOnly}
+          >
+            Unread only
+          </Button>
         )}
       </div>
 

@@ -5,6 +5,8 @@ use crate::mail::{ThreadCursorDto, ThreadDetailDto, ThreadPageDto};
 use crate::AppState;
 use tauri::State;
 
+// Keep the IPC arguments flat, matching the other thread commands.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn list_threads(
     state: State<'_, AppState>,
@@ -13,6 +15,8 @@ pub async fn list_threads(
     also_label_id: Option<String>,
     before: Option<ThreadCursorDto>,
     limit: Option<i64>,
+    unread_only: Option<bool>,
+    keep_read: Option<Vec<(String, String)>>,
 ) -> Result<ThreadPageDto, CommandError> {
     Ok(state
         .mail
@@ -22,6 +26,9 @@ pub async fn list_threads(
             also_label_id.as_deref(),
             before,
             limit,
+            unread_only
+                .unwrap_or(false)
+                .then_some(keep_read.as_deref().unwrap_or_default()),
         )
         .await?)
 }

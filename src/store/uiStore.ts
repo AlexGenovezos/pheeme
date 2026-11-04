@@ -1,6 +1,12 @@
 // UI state: pane layout and navigation preferences (persisted), current mailbox, open and checked threads.
 import { create } from "zustand";
-import { homeMailbox, type MailboxRef, parseThreadKey, type ThreadKey } from "../mail/mailboxes";
+import {
+  mailboxKey,
+  homeMailbox,
+  type MailboxRef,
+  parseThreadKey,
+  type ThreadKey,
+} from "../mail/mailboxes";
 
 /** Pane geometry in CSS px. The shell writes these into CSS variables. */
 export const PANE = {
@@ -118,6 +124,9 @@ interface UiState extends PaneLayout, NavPrefs {
   searchAccountId: string | null;
   setSearch(text: string): void;
   setSearchAccount(accountId: string | null): void;
+  /** Per-mailbox filters for this session only. */
+  unreadMailboxes: Record<string, boolean>;
+  toggleUnreadOnly(): void;
   /** The conversation shown in the reading pane. */
   openThread: ThreadKey | null;
   /** Multi-selection, in the order it was checked. */
@@ -171,6 +180,17 @@ export const useUiStore = create<UiState>((set, get) => {
     writeStored(persistedOf(get()));
   };
   return {
+    unreadMailboxes: {},
+    toggleUnreadOnly: () =>
+      set((s) => ({
+        unreadMailboxes: {
+          ...s.unreadMailboxes,
+          [mailboxKey(s.mailbox)]: !s.unreadMailboxes[mailboxKey(s.mailbox)],
+        },
+        checked: [],
+        anchor: null,
+        openThread: null,
+      })),
     ...readLayout(),
     ...readNavPrefs(),
     ...navReset(),
@@ -249,6 +269,7 @@ export const useUiStore = create<UiState>((set, get) => {
 /** Test helper: reload persisted state from storage and reset navigation. */
 export function __resetUiStoreForTests() {
   useUiStore.setState({
+    unreadMailboxes: {},
     ...readLayout(),
     ...readNavPrefs(),
     ...navReset(),
