@@ -72,7 +72,7 @@ test("categories and favorites keep the designed order and ids", () => {
     ["SENT", "Sent", "unread", "t"],
     ["ALL", "All Mail", "unread", "a"],
     ["SPAM", "Spam", "unread", undefined],
-    ["TRASH", "Trash", "unread", undefined],
+    ["TRASH", "Trash", "total", undefined],
   ]);
   for (const row of [...CATEGORIES, ...FAVORITES])
     expect(row.colorToken).toMatch(/^--color-mailbox-[a-z]+$/);
