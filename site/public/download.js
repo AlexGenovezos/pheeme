@@ -5,10 +5,10 @@
   const REPO = "AlexGenovezos/pheeme";
 
   // Each OS lists the installers it can use, best first. Matched by filename
-  // suffix, because release asset names carry the version. Macs get a dmg per
-  // arch (older releases had one universal dmg); see macAssets.
+  // suffix, because release asset names carry the version. macOS supports Apple
+  // Silicon; older releases had a compatible universal dmg.
   const PLATFORMS = {
-    mac: { name: "macOS", assets: ["_universal.dmg", "_aarch64.dmg", ".dmg"] },
+    mac: { name: "macOS (Apple Silicon)", assets: ["_aarch64.dmg", "_universal.dmg"] },
     windows: { name: "Windows", assets: ["-setup.exe", ".msi"] },
     linux: { name: "Linux", assets: [".AppImage", ".deb"] },
   };
@@ -23,17 +23,6 @@
     if (platform.includes("win")) return "windows";
     if (platform.includes("linux") && !platform.includes("android")) return "linux";
     return null;
-  }
-
-  // Apple Silicon unless the browser says x86. Only Chromium reports the
-  // architecture; Safari and Firefox get Apple Silicon, and the note links the
-  // Intel build.
-  async function macAssets() {
-    let arch = "";
-    try {
-      arch = (await navigator.userAgentData?.getHighEntropyValues(["architecture"]))?.architecture;
-    } catch {}
-    return arch === "x86" ? ["_universal.dmg", "_x64.dmg", ".dmg"] : PLATFORMS.mac.assets;
   }
 
   function pick(assets, suffixes) {
@@ -67,8 +56,7 @@
     }
 
     const version = release.tag_name;
-    const suffixes = os === "mac" ? await macAssets() : platform?.assets;
-    const asset = platform && pick(release.assets || [], suffixes);
+    const asset = platform && pick(release.assets || [], platform.assets);
     if (asset) {
       for (const b of buttons) b.href = asset.browser_download_url;
     } else {
@@ -76,18 +64,10 @@
     }
 
     if (note) {
-      const parts = [`Beta ${version} for macOS, Windows and Linux`];
+      const parts = [`Beta ${version} for macOS (Apple Silicon), Windows and Linux`];
       // Linux gets the AppImage by default; Debian and Ubuntu users want the .deb.
       const deb = os === "linux" && pick(release.assets || [], [".deb"]);
       if (deb) parts.push(link(".deb package", deb.browser_download_url));
-      // A per-arch release: offer the Mac build the button didn't pick.
-      const other =
-        os === "mac" &&
-        pick(release.assets || [], asset?.name.endsWith("_x64.dmg") ? ["_aarch64.dmg"] : ["_x64.dmg"]);
-      if (other) {
-        const intel = other.name.endsWith("_x64.dmg");
-        parts.push(link(intel ? "Intel Mac" : "Apple Silicon Mac", other.browser_download_url));
-      }
       parts.push(link("All downloads", release.html_url));
       note.replaceChildren(...parts.flatMap((p, i) => (i ? [" · ", p] : [p])));
     }
