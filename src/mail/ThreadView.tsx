@@ -185,14 +185,14 @@ function EmptyHint() {
   return (
     <p className="pane-empty__hint">
       {next && previous && (
-        <>
-          <Kbd shortcut={next} /> and <Kbd shortcut={previous} /> move through the list.{" "}
-        </>
+        <span className="pane-empty__hint-line">
+          <Kbd shortcut={next} /> and <Kbd shortcut={previous} /> move through the list.
+        </span>
       )}
       {palette && (
-        <>
+        <span className="pane-empty__hint-line">
           <Kbd shortcut={palette} /> shows every command.
-        </>
+        </span>
       )}
     </p>
   );
