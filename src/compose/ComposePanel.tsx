@@ -281,7 +281,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
             >
               <MoreHorizontal aria-hidden="true" />
             </button>
-            {showQuote && <HtmlBody html={quote} hasRemoteContent={false} declaresDark={false} />}
+            {showQuote && <HtmlBody html={quote} declaresDark={false} />}
           </div>
         )}
         {(draft.attachments.length > 0 || win.attaching > 0) && (

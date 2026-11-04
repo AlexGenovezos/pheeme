@@ -142,6 +142,26 @@ test("clicking a collapsed card expands it, and the chevron collapses it", () =>
   expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
 });
 
+test("a collapsed HTML message only mounts its images when expanded", () => {
+  open(
+    detail([
+      message(1, {
+        bodyHtml: '<img src="https://example.com/photo.png">',
+        hasRemoteContent: true,
+      }),
+      message(2),
+    ]),
+  );
+  renderView();
+  expect(screen.queryByTitle("Message body")).toBeNull();
+
+  fireEvent.click(within(card(1)).getByRole("button"));
+  expect(screen.getByTitle("Message body").getAttribute("srcdoc")).toContain(
+    "img-src data: pheeme-att: http://pheeme-att.localhost https: http:",
+  );
+  expect(screen.queryByRole("button", { name: "Load images" })).toBeNull();
+});
+
 test("a refresh that marks messages read doesn't fold the open cards, but a new message opens", () => {
   // The unread message is not the last, so only its unread flag opens it.
   open(detail([message(1), message(2, { unread: true }), message(3)]));
