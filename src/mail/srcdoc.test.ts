@@ -81,7 +81,7 @@ describe("buildSrcdoc", () => {
   test("sets the base typography and keeps images inside the frame width", () => {
     const css = shellCss(parse("<p>Hi</p>"));
     expect(css).toMatch(/body\s*{[^}]*margin:\s*0/);
-    expect(css).toMatch(/body\s*{[^}]*overflow-wrap:\s*anywhere/);
+    expect(css).toMatch(/body\s*{[^}]*overflow-wrap:\s*break-word/);
     expect(css).toMatch(/body\s*{[^}]*font:\s*14px\/1\.6 system-ui/);
     expect(css).toMatch(/img\s*{[^}]*max-width:\s*100%[^}]*height:\s*auto/);
   });

@@ -68,7 +68,9 @@ function themeCss({ dark, declaresDark, textColor, linkColor }: SrcdocOptions): 
 const BASE_CSS = [
   // Height follows content (the frame is sized to it), never the frame's own viewport.
   `html, body { height: auto !important; min-height: 0 !important; }`,
-  `body { margin: 0; overflow-wrap: anywhere; font: 14px/1.6 ${SYSTEM_FONTS}; }`,
+  // Wrap long URLs without reducing table cells' minimum width to a single character. `anywhere`
+  // collapses narrow columns such as GitHub Actions' 24px "Status" heading and its status icons.
+  `body { margin: 0; overflow-wrap: break-word; font: 14px/1.6 ${SYSTEM_FONTS}; }`,
   `img { max-width: 100%; height: auto; }`,
 ].join("\n");
 
