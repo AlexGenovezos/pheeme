@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO recent_searches (query, used_at) VALUES (?, ?)\n         ON CONFLICT(query) DO UPDATE SET used_at = excluded.used_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "8f4ec9313415a4c736a474bd3755cba187742cb6f0a3bf7d1b98da0f7788d964"
+}

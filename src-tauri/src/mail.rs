@@ -4,17 +4,21 @@
 
 use crate::db::attachments::{self, DbAttachment};
 use crate::db::messages::{parse_labels, DbMessage};
+use crate::db::search::{self as search_db, ThreadSearch, LABEL_KEY_SEP};
 use crate::db::threads::{self, DbThread, ThreadCursor, ThreadQuery};
 use crate::db::{labels, messages};
 use crate::gmail::mime::EmailAddress;
 use crate::gmail::MessageFormat;
 use crate::render;
+use crate::search;
+use crate::sync::engine::now_ms;
 use crate::sync::engine::SyncError;
 use crate::sync::manager::SyncManager;
 use crate::sync::MailApi;
 use crate::sync::{outbox, SyncEvent};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -291,6 +295,27 @@ pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
         .map(|n| dir.join(format!("{stem} ({n}){ext}")))
         .find(|p| !taken(p))
         .expect("an unused name exists")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchPageDto {
+    pub threads: Vec<ThreadSummaryDto>,
+    pub next: Option<ThreadCursorDto>,
+    /// False when the query uses syntax only Gmail understands: local search found
+    /// nothing because it didn't run, and the Gmail results are the whole answer.
+    pub local: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GmailSearchPageDto {
+    /// Newest first. Now cached, so they open like any other thread.
+    pub threads: Vec<ThreadSummaryDto>,
+    /// Page token per account that has more results; pass it back for the next page.
+    pub next: HashMap<String, String>,
+    /// Accounts whose Gmail search failed (offline, for example).
+    pub failed: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -630,6 +655,157 @@ impl MailService {
         })
     }
 
+    /// Local search over cached mail, newest first, keyset-paged like
+    /// [`Self::list_threads`]. Takes Gmail search syntax (see [`crate::search`]).
+    pub async fn search_messages(
+        &self,
+        account_ids: &[String],
+        query: &str,
+        before: Option<ThreadCursorDto>,
+        limit: Option<i64>,
+    ) -> Result<SearchPageDto, MailError> {
+        let empty = |local| SearchPageDto {
+            threads: Vec::new(),
+            next: None,
+            local,
+        };
+        let Some(q) = search::parse(query, now_ms()) else {
+            return Ok(empty(false));
+        };
+        if q.is_empty() || account_ids.is_empty() {
+            return Ok(empty(true));
+        }
+        let mut label_groups = Vec::with_capacity(q.labels.len());
+        for value in &q.labels {
+            let mut keys = Vec::new();
+            for account_id in account_ids {
+                for l in labels::get_labels(&self.db, account_id).await? {
+                    if search::label_matches(value, &l.id, &l.name) {
+                        keys.push(format!("{account_id}{LABEL_KEY_SEP}{}", l.id));
+                    }
+                }
+            }
+            if keys.is_empty() {
+                return Ok(empty(true));
+            }
+            label_groups.push(keys);
+        }
+        let cursor = before.map(|c| ThreadCursor {
+            last_message_date: c.last_message_date,
+            account_id: c.account_id,
+            thread_id: c.thread_id,
+        });
+        let page = search_db::search_threads(
+            &self.db,
+            &ThreadSearch {
+                account_ids,
+                fts: q.fts.as_deref(),
+                label_groups: &label_groups,
+                include_spam_trash: q.include_spam_trash,
+                has_attachment: q.has_attachment,
+                unread: q.unread,
+                starred: q.starred,
+                after: q.after,
+                before: q.before,
+                larger: q.larger,
+                smaller: q.smaller,
+                from_me: q.from_me,
+                to_me: q.to_me,
+                cursor: cursor.as_ref(),
+                limit: limit.unwrap_or(DEFAULT_PAGE).clamp(1, MAX_PAGE),
+            },
+        )
+        .await?;
+        Ok(SearchPageDto {
+            threads: page.threads.into_iter().map(Into::into).collect(),
+            next: page.next.map(|c| ThreadCursorDto {
+                last_message_date: c.last_message_date,
+                account_id: c.account_id,
+                thread_id: c.thread_id,
+            }),
+            local: true,
+        })
+    }
+
+    /// Gmail's own search, one page per account, run in parallel. Matches not cached yet
+    /// are cached first. `page_tokens` continues a search: only the accounts in it are
+    /// asked again. Fails only when every account's search failed.
+    pub async fn search_gmail(
+        &self,
+        account_ids: &[String],
+        query: &str,
+        page_tokens: Option<HashMap<String, String>>,
+    ) -> Result<GmailSearchPageDto, MailError> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Err(MailError::Invalid("Type something to search for.".into()));
+        }
+        let pages: Vec<(String, Option<String>)> = match page_tokens {
+            Some(tokens) => tokens.into_iter().map(|(a, t)| (a, Some(t))).collect(),
+            None => account_ids.iter().map(|a| (a.clone(), None)).collect(),
+        };
+        let searches = pages.into_iter().map(|(account, token)| {
+            let engine = self.sync.engine(&account);
+            let query = query.to_owned();
+            async move {
+                let result = engine.search_gmail(&query, token.as_deref()).await;
+                (account, result)
+            }
+        });
+        let results = futures::future::join_all(searches).await;
+
+        let mut out = GmailSearchPageDto {
+            threads: Vec::new(),
+            next: HashMap::new(),
+            failed: Vec::new(),
+        };
+        let mut first_error = None;
+        let tried = results.len();
+        for (account, result) in results {
+            match result {
+                Ok((thread_ids, next)) => {
+                    for id in thread_ids {
+                        if let Some(t) = threads::get_thread(&self.db, &account, &id).await? {
+                            out.threads.push(t.into());
+                        }
+                    }
+                    if let Some(token) = next {
+                        out.next.insert(account, token);
+                    }
+                }
+                Err(e) => {
+                    tracing::info!(account = %account, error = %e, "Gmail search failed");
+                    out.failed.push(account);
+                    first_error.get_or_insert(e);
+                }
+            }
+        }
+        if let Some(e) = first_error.filter(|_| out.failed.len() == tried) {
+            return Err(e.into());
+        }
+        out.threads
+            .sort_by(|a, b| (b.date, &b.account_id, &b.id).cmp(&(a.date, &a.account_id, &a.id)));
+        Ok(out)
+    }
+
+    /// Recent searches, newest first.
+    pub async fn recent_searches(&self) -> Result<Vec<String>, MailError> {
+        Ok(search_db::list_recent(&self.db).await?)
+    }
+
+    pub async fn add_recent_search(&self, query: &str) -> Result<(), MailError> {
+        let query = query.trim();
+        if !query.is_empty() {
+            search_db::add_recent(&self.db, query, now_ms()).await?;
+        }
+        Ok(())
+    }
+
+    /// Forget one recent search, or all of them when `query` is `None`.
+    pub async fn remove_recent_search(&self, query: Option<&str>) -> Result<(), MailError> {
+        Ok(search_db::remove_recent(&self.db, query).await?)
+    }
+
     /// Manual refresh: one account, or all.
     pub fn sync_now(&self, account_id: Option<String>) {
         self.sync.trigger(account_id);
@@ -687,6 +863,7 @@ async fn write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::accounts::{self, DbAccount};
     use crate::db::test_support::TestDb;
     use crate::gmail::GmailError;
     use crate::sync::events::RecordingEvents;
@@ -1311,5 +1488,213 @@ mod tests {
             !dir.dir().join("nowhere").exists(),
             "the link was not followed"
         );
+    }
+
+    async fn search_setup() -> (
+        tempfile::TempDir,
+        MailService,
+        Arc<FakeGmail>,
+        Arc<FakeGmail>,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = crate::db::init_db(dir.path()).await.unwrap();
+        for id in ["a1", "a2"] {
+            accounts::insert_account(
+                &pool,
+                &DbAccount {
+                    id: id.into(),
+                    email: format!("{id}@example.com"),
+                    display_name: None,
+                    profile_photo_url: None,
+                    client_id: "c".into(),
+                    history_id: None,
+                    created_at: 0,
+                    updated_at: 0,
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let (f1, f2) = (Arc::new(FakeGmail::new()), Arc::new(FakeGmail::new()));
+        let mut m = FakeMsg::new("m1", "t1", &["INBOX", "UNREAD", "Label_9"]);
+        m.subject = "Invoice for March".into();
+        f1.seed(m);
+        let mut old = FakeMsg::new("old", "t-old", &["Label_9"]).days_ago(2000);
+        old.subject = "Ancient invoice".into();
+        old.body = "zebra crossing".into();
+        f1.seed(old);
+        let mut sibling = FakeMsg::new("old-reply", "t-old", &[]).days_ago(1999);
+        sibling.subject = "Re: something else".into();
+        f1.seed(sibling);
+        let mut m2 = FakeMsg::new("m2", "t2", &["INBOX"]);
+        m2.subject = "Invoice from a2".into();
+        f2.seed(m2);
+        let apis = (f1.clone(), f2.clone());
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |id: &str| {
+                if id == "a1" {
+                    apis.0.clone() as Arc<dyn MailApi>
+                } else {
+                    apis.1.clone() as Arc<dyn MailApi>
+                }
+            }),
+            Arc::new(RecordingEvents::default()),
+        );
+        // Initial sync only (Inbox), no backfill: `old` stays uncached.
+        for id in ["a1", "a2"] {
+            sync.engine(id).run_initial_sync().await.unwrap();
+        }
+        let mut conn = pool.acquire().await.unwrap();
+        labels::upsert_label_tx(
+            &mut conn,
+            &labels::DbLabel {
+                id: "Label_9".into(),
+                account_id: "a1".into(),
+                name: "Clients/Acme".into(),
+                label_type: "user".into(),
+                message_list_visibility: None,
+                label_list_visibility: None,
+                color_background: None,
+                color_text: None,
+                messages_total: 0,
+                messages_unread: 0,
+                threads_total: 0,
+                threads_unread: 0,
+            },
+        )
+        .await
+        .unwrap();
+        drop(conn);
+        let cache_dir = dir.path().join("cache");
+        (dir, MailService::new(pool, sync, cache_dir), f1, f2)
+    }
+
+    fn thread_ids(threads: &[ThreadSummaryDto]) -> Vec<&str> {
+        threads.iter().map(|t| t.id.as_str()).collect()
+    }
+
+    #[tokio::test]
+    async fn search_messages_runs_gmail_syntax_locally() {
+        let (_dir, mail, _, _) = search_setup().await;
+        let both: Vec<String> = vec!["a1".into(), "a2".into()];
+        let page = mail
+            .search_messages(&both, "invoic", None, None)
+            .await
+            .unwrap();
+        assert!(page.local);
+        let mut found = thread_ids(&page.threads);
+        found.sort();
+        assert_eq!(
+            found,
+            ["t1", "t2"],
+            "prefix match while typing; old isn't cached"
+        );
+
+        let page = mail
+            .search_messages(&both, "invoice is:unread label:clients-acme", None, None)
+            .await
+            .unwrap();
+        assert_eq!(thread_ids(&page.threads), ["t1"]);
+        let page = mail
+            .search_messages(&both, "label:no-such-label", None, None)
+            .await
+            .unwrap();
+        assert!(page.local && page.threads.is_empty());
+
+        let page = mail
+            .search_messages(&both, "invoice OR bill", None, None)
+            .await
+            .unwrap();
+        assert!(
+            !page.local && page.threads.is_empty(),
+            "OR is left to Gmail"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_gmail_caches_whole_threads_it_finds() {
+        let (_dir, mail, f1, f2) = search_setup().await;
+        let both: Vec<String> = vec!["a1".into(), "a2".into()];
+        f2.fail_next(
+            "search_messages",
+            crate::gmail::GmailError::Offline("x".into()),
+        );
+
+        let fetches = f1.calls("get_thread");
+        let page = mail.search_gmail(&both, "ancient", None).await.unwrap();
+        assert_eq!(thread_ids(&page.threads), ["t-old"]);
+        assert_eq!(
+            page.threads[0].message_count, 2,
+            "the whole thread is cached"
+        );
+        assert_eq!(page.failed, ["a2"]);
+        assert!(page.next.is_empty());
+        assert_eq!(f1.calls("get_thread"), fetches + 1);
+
+        // Now cached with bodies: local search finds it, and searching again fetches nothing.
+        let local = mail
+            .search_messages(&both, "zebra", None, None)
+            .await
+            .unwrap();
+        assert_eq!(thread_ids(&local.threads), ["t-old"]);
+        mail.search_gmail(&both, "ancient", None).await.unwrap();
+        assert_eq!(f1.calls("get_thread"), fetches + 1);
+
+        let mut trashed = FakeMsg::new("binned", "t-bin", &["TRASH"]).days_ago(3000);
+        trashed.subject = "binned receipt".into();
+        f1.seed(trashed);
+        let page = mail.search_gmail(&both, "binned", None).await.unwrap();
+        assert!(page.threads.is_empty(), "Gmail leaves Trash out by default");
+        let page = mail
+            .search_gmail(&both, "binned in:trash", None)
+            .await
+            .unwrap();
+        assert_eq!(thread_ids(&page.threads), ["t-bin"]);
+
+        f1.fail_next(
+            "search_messages",
+            crate::gmail::GmailError::Offline("x".into()),
+        );
+        f2.fail_next(
+            "search_messages",
+            crate::gmail::GmailError::Offline("x".into()),
+        );
+        assert!(
+            mail.search_gmail(&both, "ancient", None).await.is_err(),
+            "every account failed"
+        );
+        assert!(matches!(
+            mail.search_gmail(&both, "  ", None).await,
+            Err(MailError::Invalid(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn search_gmail_pages_per_account() {
+        let (_dir, mail, f1, _) = search_setup().await;
+        for i in 0..60 {
+            let mut m = FakeMsg::new(&format!("p{i}"), &format!("tp{i}"), &[]).days_ago(i + 1);
+            m.subject = "paged result".into();
+            f1.add(m);
+        }
+        let both: Vec<String> = vec!["a1".into(), "a2".into()];
+        let first = mail.search_gmail(&both, "paged", None).await.unwrap();
+        assert_eq!(first.threads.len(), 50);
+        assert_eq!(first.next.keys().collect::<Vec<_>>(), ["a1"]);
+        let rest = mail
+            .search_gmail(&both, "paged", Some(first.next))
+            .await
+            .unwrap();
+        assert_eq!(rest.threads.len(), 10);
+        assert!(rest.next.is_empty());
+    }
+
+    #[tokio::test]
+    async fn recent_searches_trim_and_skip_blank() {
+        let (_dir, mail, _, _) = search_setup().await;
+        mail.add_recent_search("  from:alice  ").await.unwrap();
+        mail.add_recent_search("   ").await.unwrap();
+        assert_eq!(mail.recent_searches().await.unwrap(), ["from:alice"]);
     }
 }

@@ -178,6 +178,45 @@ export const saveAttachment = (accountId: string, messageId: string, attachmentI
 export const revealDownload = (path: string) => invoke<void>("reveal_download", { path });
 /** Opens an http, https or mailto link from an email; anything else is rejected. */
 export const openMailLink = (url: string) => invoke<void>("open_mail_link", { url });
+export interface SearchPage extends ThreadPage {
+  /** False when the query uses syntax only Gmail understands; then only Gmail answers. */
+  local: boolean;
+}
+
+export interface GmailSearchPage {
+  /** Newest first; cached by the backend, so they open like any thread. */
+  threads: ThreadSummary[];
+  /** Page token per account with more results; pass back as `pageTokens`. */
+  next: Record<string, string>;
+  /** Accounts whose Gmail search failed (offline, for example). */
+  failed: string[];
+}
+
+/** Cached mail matching `query` (Gmail syntax), instantly. */
+export const searchMessages = (
+  accountIds: string[],
+  query: string,
+  before?: ThreadCursor | null,
+  limit?: number,
+) =>
+  invoke<SearchPage>("search_messages", {
+    accountIds,
+    query,
+    before: before ?? null,
+    limit: limit ?? null,
+  });
+/** Gmail's search, for mail not cached yet. Omit `pageTokens` for the first page. */
+export const searchGmail = (
+  accountIds: string[],
+  query: string,
+  pageTokens?: Record<string, string> | null,
+) => invoke<GmailSearchPage>("search_gmail", { accountIds, query, pageTokens: pageTokens ?? null });
+export const recentSearches = () => invoke<string[]>("recent_searches");
+export const addRecentSearch = (query: string) => invoke<void>("add_recent_search", { query });
+/** Forget one recent search, or all of them when `query` is omitted. */
+export const removeRecentSearch = (query?: string | null) =>
+  invoke<void>("remove_recent_search", { query: query ?? null });
+
 /** Sync one account now, or every account when omitted. */
 // Compose (src-tauri/src/commands/compose.rs)
 

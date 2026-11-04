@@ -42,12 +42,14 @@ impl GmailClient {
     pub async fn search_messages(
         &self,
         q: &str,
+        include_spam_trash: bool,
         page_token: Option<&str>,
         max_results: u32,
     ) -> Result<MessageListResponse, GmailError> {
         let req = ApiRequest::get(&["messages"])
             .query("q", q)
             .query("maxResults", max_results.to_string())
+            .query_opt("includeSpamTrash", include_spam_trash.then_some("true"))
             .query_opt("pageToken", page_token);
         self.send_json(req).await
     }
@@ -570,7 +572,7 @@ mod tests {
             .await;
         let (client, _) = client_for(&server);
         let page = client
-            .search_messages("rfc822msgid:<a@b>", None, 10)
+            .search_messages("rfc822msgid:<a@b>", false, None, 10)
             .await
             .unwrap();
         assert_eq!(page.messages[0].id, "m1");

@@ -8,6 +8,7 @@ pub mod gmail;
 pub mod identity;
 pub mod mail;
 pub mod render;
+pub mod search;
 pub mod secrets;
 pub mod sync;
 
@@ -203,6 +204,11 @@ pub fn run() {
             commands::labels::list_labels,
             commands::labels::mailbox_counts,
             commands::labels::label_counts,
+            commands::search::search_messages,
+            commands::search::search_gmail,
+            commands::search::recent_searches,
+            commands::search::add_recent_search,
+            commands::search::remove_recent_search,
             commands::sync::sync_now,
             commands::compose::compose_template,
             commands::compose::stage_attachment,

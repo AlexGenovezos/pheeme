@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT query AS \"query!\" FROM recent_searches\n           ORDER BY used_at DESC, rowid DESC LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "query!",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b9abda6d800a2cb758fa00dc74bd5e00e87d1749bf28c564736becc4e009c8a3"
+}

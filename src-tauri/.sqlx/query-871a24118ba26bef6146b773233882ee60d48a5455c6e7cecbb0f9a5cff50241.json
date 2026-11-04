@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM recent_searches WHERE ?1 IS NULL OR query = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "871a24118ba26bef6146b773233882ee60d48a5455c6e7cecbb0f9a5cff50241"
+}
