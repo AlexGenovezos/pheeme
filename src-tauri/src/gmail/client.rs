@@ -22,6 +22,9 @@ pub const DEFAULT_BASE_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/
 /// Requests in flight per client (one client per account).
 pub const MAX_CONCURRENT_REQUESTS: usize = 10;
 
+/// Leave room for on-demand attachment downloads even while sync requests are slow or retrying.
+pub(crate) const MAX_BACKGROUND_REQUESTS: usize = MAX_CONCURRENT_REQUESTS - 2;
+
 /// Quota units per second each client may spend. Gmail's per-user limit is 6,000 units per
 /// minute for current projects (it was 15,000), enforced per minute; beyond it Gmail answers
 /// 403 `rateLimitExceeded`. 80/s (4,800 a minute) leaves headroom for the user's other
@@ -177,6 +180,7 @@ pub(crate) struct ApiRequest {
     /// Whether failures that leave the outcome unknown (timeouts, dropped connections, 5xx) may
     /// be retried. False for non-idempotent calls such as sends: Gmail may already have acted.
     retry_ambiguous: bool,
+    interactive: bool,
 }
 
 impl ApiRequest {
@@ -188,11 +192,18 @@ impl ApiRequest {
             body: None,
             upload: None,
             retry_ambiguous: true,
+            interactive: false,
         }
     }
 
     pub fn get(segments: &[&str]) -> Self {
         Self::new(Method::GET, segments)
+    }
+
+    /// A file the reader asked for; may use slots reserved from background sync.
+    pub fn interactive(mut self) -> Self {
+        self.interactive = true;
+        self
     }
 
     pub fn post(segments: &[&str]) -> Self {
@@ -283,6 +294,7 @@ pub struct GmailClient {
     base_url: String,
     retry: RetryPolicy,
     permits: Arc<Semaphore>,
+    background_permits: Arc<Semaphore>,
     quota: Arc<QuotaLimiter>,
 }
 
@@ -299,6 +311,7 @@ impl GmailClient {
             base_url: DEFAULT_BASE_URL.to_owned(),
             retry: RetryPolicy::default(),
             permits: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
+            background_permits: Arc::new(Semaphore::new(MAX_BACKGROUND_REQUESTS)),
             quota: Arc::new(QuotaLimiter::new(QUOTA_UNITS_PER_SEC)),
         }
     }
@@ -356,6 +369,18 @@ impl GmailClient {
     /// The permit is held for the whole call, backoff sleeps included, so a rate-limited client
     /// slows down instead of piling retries on top of new requests.
     async fn execute(&self, req: &ApiRequest) -> Result<Vec<u8>, GmailError> {
+        // Take the background gate first: queued sync calls must not reserve the last
+        // two global slots. All calls still share the total cap and Gmail quota limiter.
+        let _background = if req.interactive {
+            None
+        } else {
+            Some(
+                self.background_permits
+                    .acquire()
+                    .await
+                    .map_err(|_| GmailError::Network("request limiter closed".into()))?,
+            )
+        };
         let _permit = self
             .permits
             .acquire()
