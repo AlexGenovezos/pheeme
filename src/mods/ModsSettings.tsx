@@ -216,8 +216,8 @@ function InstalledMod({ mod, safeMode }: { mod: ModInfo; safeMode: boolean }) {
         control={
           <Switch
             label={`Enable ${mod.manifest.name}`}
-            checked={mod.enabled && !safeMode}
-            disabled={busy || safeMode}
+            checked={mod.enabled}
+            disabled={busy || (safeMode && !mod.enabled)}
             onChange={(enabled) => void perform(() => setModEnabled(mod.manifest.id, enabled))}
           />
         }

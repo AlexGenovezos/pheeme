@@ -125,19 +125,27 @@ impl ModService {
             open_browser,
         });
         if !safe_mode {
+            let ids: Vec<_> = service
+                .state
+                .lock()
+                .unwrap()
+                .records
+                .iter()
+                .filter(|(_, record)| record.enabled)
+                .map(|(id, _)| id.clone())
+                .collect();
             let startup = service.clone();
             tokio::spawn(async move {
                 let _operation = startup.operation.lock().await;
-                let ids: Vec<_> = startup
-                    .state
-                    .lock()
-                    .unwrap()
-                    .records
-                    .iter()
-                    .filter(|(_, r)| r.enabled)
-                    .map(|(id, _)| id.clone())
-                    .collect();
                 for id in ids {
+                    let should_start = {
+                        let state = startup.state.lock().unwrap();
+                        state.records.get(&id).is_some_and(|record| record.enabled)
+                            && !state.sessions.contains_key(&id)
+                    };
+                    if !should_start {
+                        continue;
+                    }
                     if let Err(error) = startup.start(&id).await {
                         startup.fail(&id, None, &error);
                     }
@@ -384,16 +392,10 @@ impl ModService {
                 views: Views::default(),
             },
         );
-        match tokio::time::timeout(Duration::from_secs(3), ready).await {
-            Ok(Ok(true)) => {}
-            _ => {
-                Self::stop_locked(&mut self.state.lock().unwrap(), id);
-                return Err("JavaScript failed or exceeded its execution or memory limit".into());
-            }
-        }
         let service = Arc::downgrade(self);
-        let id = id.to_owned();
+        let task_id = id.to_owned();
         tokio::spawn(async move {
+            let id = task_id;
             let mut window = std::time::Instant::now();
             let mut calls = 0;
             loop {
@@ -428,6 +430,13 @@ impl ModService {
                 }
             }
         });
+        match tokio::time::timeout(Duration::from_secs(35), ready).await {
+            Ok(Ok(true)) => {}
+            _ => {
+                Self::stop_locked(&mut self.state.lock().unwrap(), id);
+                return Err("JavaScript failed or exceeded its execution or memory limit".into());
+            }
+        }
         Ok(())
     }
 

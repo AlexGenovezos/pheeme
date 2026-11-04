@@ -85,6 +85,8 @@ fn run(
     })));
     let context = Context::full(&runtime).map_err(|_| ())?;
     let event_sink = events.clone();
+    let pending = Arc::new(AtomicUsize::new(0));
+    let outgoing = pending.clone();
     let overflow = stopped.clone();
     context
         .with(|ctx| -> rquickjs::Result<()> {
@@ -97,7 +99,12 @@ fn run(
                     }
                     let sent = serde_json::from_str::<Call>(&json)
                         .ok()
-                        .is_some_and(|call| event_sink.try_send(Event::Call(call)).is_ok());
+                        .is_some_and(|call| {
+                            if call.id != 0 {
+                                outgoing.fetch_add(1, Ordering::SeqCst);
+                            }
+                            event_sink.try_send(Event::Call(call)).is_ok()
+                        });
                     if !sent {
                         overflow.store(true, Ordering::SeqCst);
                     }
@@ -111,15 +118,26 @@ fn run(
     if rejections.load(Ordering::SeqCst) != 0 {
         return Err(());
     }
-    ready.send(true).map_err(|_| ())?;
+    let mut ready = Some(ready);
     while !stopped.load(Ordering::SeqCst) {
+        if pending.load(Ordering::SeqCst) == 0 {
+            if let Some(ready) = ready.take() {
+                ready.send(true).map_err(|_| ())?;
+            }
+        }
         let message = match receiver.recv_timeout(Duration::from_millis(250)) {
             Ok(message) => message,
             Err(mpsc::RecvTimeoutError::Timeout) => {
+                if ready.is_some() {
+                    continue;
+                }
                 serde_json::json!({"type":"tick", "now": chrono::Utc::now().timestamp_millis()})
             }
             Err(_) => break,
         };
+        if message["type"] == "reply" {
+            pending.fetch_sub(1, Ordering::SeqCst);
+        }
         *deadline.lock().unwrap() = Instant::now() + Duration::from_millis(250);
         context
             .with(|ctx| {

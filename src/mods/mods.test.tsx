@@ -3,6 +3,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { createModHandlers } from "../preview/mods";
 import { registry } from "../keyboard/registry";
+import { useCommands } from "../keyboard/useCommands";
 import { useModCommands } from "./lifecycle";
 import { ModsSettings } from "./ModsSettings";
 import { ModPanel, ModSidebar } from "./ModSurfaces";
@@ -13,10 +14,11 @@ beforeEach(() => {
   useModStore.setState({ mods: [], safeMode: false, loaded: false, error: null, panel: null });
 });
 
-function installFixtures(seeded = false) {
+function installFixtures(seeded = false, safeMode = false) {
   const handlers = createModHandlers(new URLSearchParams(seeded ? "mods=1" : ""));
   const invoke = vi.fn((command: string, args?: unknown) => {
     const handler = handlers[command as keyof typeof handlers];
+    if (command === "list_mods") return { ...handlers.list_mods(), safeMode };
     if (handler) return handler(args as Record<string, unknown>);
     throw new Error(`Unexpected command: ${command}`);
   });
@@ -113,4 +115,52 @@ test("removal asks whether to keep preferences", async () => {
     id: "example.counter",
     keepPreferences: false,
   });
+});
+
+test("safe mode lets an enabled mod be persistently disabled", async () => {
+  const invoke = installFixtures(true, true);
+  await useModStore.getState().load();
+  useModStore.setState((s) => ({
+    safeMode: true,
+    mods: s.mods.map((m) => ({ ...m, running: false })),
+  }));
+  render(<ModsSettings />);
+  const toggle = screen.getByRole("switch", { name: "Enable Counter" });
+  expect(toggle).toBeChecked();
+  expect(toggle).toBeEnabled();
+  fireEvent.click(toggle);
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("set_mod_enabled", {
+      id: "example.counter",
+      enabled: false,
+    }),
+  );
+  await waitFor(() => expect(toggle).not.toBeChecked());
+  expect(toggle).toBeDisabled();
+});
+
+test("saved mod defaults are reconciled after built-in effects register", async () => {
+  installFixtures(true);
+  await useModStore.getState().load();
+  useModStore.setState((s) => ({
+    mods: s.mods.map((m) => ({
+      ...m,
+      manifest: {
+        ...m.manifest,
+        commands: [{ id: "increment", title: "Increment counter", shortcut: "e x" }],
+      },
+    })),
+  }));
+  const archive = vi.fn();
+  function Commands() {
+    useCommands([{ id: "conversation.archive", title: "Archive", shortcut: "e", run: archive }]);
+    useModCommands();
+    return null;
+  }
+  render(<Commands />);
+  await waitFor(() =>
+    expect(registry.get("mod:example.counter:increment")?.shortcut).toBeUndefined(),
+  );
+  await act(() => registry.handleKeyDown(new KeyboardEvent("keydown", { key: "e" })));
+  expect(archive).toHaveBeenCalledOnce();
 });

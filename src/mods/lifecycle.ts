@@ -2,8 +2,8 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { toast } from "../components/ui/Toast";
 import { findConflicts } from "../keyboard/bindings";
-import { parseShortcut, registry } from "../keyboard/registry";
-import { useCommands } from "../keyboard/useCommands";
+import { parseShortcut } from "../keyboard/registry";
+import { useCommandList, useCommands } from "../keyboard/useCommands";
 import { stopQuietly, toCommandError } from "../lib/tauri";
 import { modAction } from "./api";
 import { useModStore } from "./store";
@@ -40,7 +40,8 @@ export function reportModError(error: unknown) {
 
 export function useModCommands() {
   const mods = useModStore((s) => s.mods);
-  const occupied = registry.list().filter((c) => !c.id.startsWith("mod:"));
+  const registered = useCommandList();
+  const occupied = registered.filter((c) => !c.id.startsWith("mod:"));
   const commands = mods
     .filter((m) => m.running)
     .flatMap((mod) =>

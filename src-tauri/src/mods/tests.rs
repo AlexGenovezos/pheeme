@@ -138,6 +138,35 @@ async fn failed_update_restores_previous_package_and_safe_mode_never_runs_code()
     assert!(safe.snapshot().safe_mode);
     assert!(!safe.snapshot().mods[0].running);
     assert!(safe.enable("example.counter", true).await.is_err());
+    safe.enable("example.counter", false).await.unwrap();
+    let installed = safe.root.clone();
+    drop(safe);
+    let normal = service(&installed).await;
+    assert!(!normal.snapshot().mods[0].enabled);
+    assert!(!normal.snapshot().mods[0].running);
+}
+
+#[tokio::test]
+async fn asynchronous_startup_failure_rolls_back_before_update_returns() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    counter(&source, "example.counter");
+    let mods = service(&root.path().join("installed")).await;
+    let first = mods.prepare(&source).unwrap();
+    mods.install(&first.ticket).await.unwrap();
+    let old_directory = mods.state.lock().unwrap().records["example.counter"]
+        .directory
+        .clone();
+    let mut manifest: Value =
+        serde_json::from_str(&fs::read_to_string(source.join("manifest.json")).unwrap()).unwrap();
+    manifest["version"] = json!("2.0.0");
+    fs::write(source.join("manifest.json"), manifest.to_string()).unwrap();
+    fs::write(source.join("main.js"), "(async () => { await pheeme.storage.get('count'); throw new Error('async startup failed'); })();").unwrap();
+    let update = mods.prepare(&source).unwrap();
+    assert!(mods.install(&update.ticket).await.is_err());
+    assert_eq!(mods.snapshot().mods[0].manifest.version, "1.0.0");
+    assert!(mods.snapshot().mods[0].running);
+    assert!(mods.root.join("packages").join(old_directory).exists());
 }
 
 #[tokio::test]
