@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { version } from "../../package.json";
 import { displayVersion } from "../lib/updater";
-import { RELEASES, releasesFrom } from "./releaseNotes";
+import { RELEASES, releasesFrom } from "./releases";
 
 describe("releasesFrom", () => {
   const files = {

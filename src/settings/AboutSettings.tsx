@@ -2,7 +2,7 @@ import { version } from "../../package.json";
 import { Button } from "../components/ui/Button";
 import { checkForUpdatesNow, displayVersion, useUpdateStore } from "../lib/updater";
 import { isTauri } from "../preview/runtime";
-import { RELEASES } from "./releaseNotes";
+import { RELEASES } from "./releases";
 import { ReleaseNotes } from "./ReleaseNotes";
 import { SettingsRow, SettingsSection } from "./rows";
 

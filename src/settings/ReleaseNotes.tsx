@@ -3,7 +3,7 @@ import type { NotesInline } from "../../scripts/release-notes.mjs";
 import { Badge } from "../components/ui/Badge";
 import { openExternal } from "../lib/tauri";
 import { displayVersion } from "../lib/updater";
-import type { Release } from "./releaseNotes";
+import type { Release } from "./releases";
 
 function openLink(e: MouseEvent<HTMLAnchorElement>) {
   e.preventDefault();

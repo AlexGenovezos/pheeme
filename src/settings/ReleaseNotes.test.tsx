@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 import { version } from "../../package.json";
 import { displayVersion } from "../lib/updater";
 import { ReleaseNotes } from "./ReleaseNotes";
-import { releasesFrom } from "./releaseNotes";
+import { releasesFrom } from "./releases";
 import { Settings } from "./Settings";
 import { useSettingsStore } from "./settingsStore";
 
