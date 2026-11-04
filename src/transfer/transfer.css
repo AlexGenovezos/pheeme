@@ -1,0 +1,30 @@
+.client-transfer {
+  display: grid;
+  gap: var(--space-3);
+  color: var(--color-foreground);
+  font-size: var(--font-size-sm);
+}
+
+.client-transfer p {
+  margin: 0;
+  line-height: var(--line-height-reading);
+}
+
+.client-transfer select {
+  min-width: 0;
+  width: 100%;
+  padding: var(--space-2);
+  color: var(--color-foreground);
+  background: var(--color-input-bg);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.client-transfer__code {
+  overflow-wrap: anywhere;
+  user-select: all;
+  padding: var(--space-3);
+  background: var(--color-input-bg);
+  border-radius: var(--radius-sm);
+}

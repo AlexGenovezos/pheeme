@@ -11,6 +11,7 @@ pub mod render;
 pub mod search;
 pub mod secrets;
 pub mod sync;
+pub mod transfer;
 
 use anyhow::Context;
 use secrets::SecretStore;
@@ -28,6 +29,7 @@ pub struct AppState {
     pub mail: mail::MailService,
     pub compose: compose::ComposeService,
     pub sync: Arc<SyncManager>,
+    pub transfers: transfer::TransferService,
 }
 
 /// Build application state: open the database in `data_dir` (attachment bytes are cached
@@ -59,6 +61,7 @@ pub async fn build_state(
         mail,
         compose,
         sync,
+        transfers: transfer::TransferService::default(),
     })
 }
 
@@ -195,6 +198,12 @@ pub fn run() {
             commands::auth::complete_oauth,
             commands::auth::cancel_oauth,
             commands::auth::refresh_token,
+            commands::transfer::transfer_interfaces,
+            commands::transfer::offer_client_transfer,
+            commands::transfer::client_transfer_status,
+            commands::transfer::approve_client_transfer,
+            commands::transfer::cancel_client_transfer,
+            commands::transfer::receive_client_transfer,
             commands::accounts::list_accounts,
             commands::accounts::remove_account,
             commands::threads::list_threads,

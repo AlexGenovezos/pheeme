@@ -4,6 +4,7 @@ import { Avatar } from "../components/ui/Avatar";
 import { Button } from "../components/ui/Button";
 import { type AccountInfo, type CommandError, toCommandError } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
+import { SendCredentials } from "../transfer/SendCredentials";
 import { SettingsRow, SettingsSection } from "./rows";
 import { matchesQuery } from "./schema";
 
@@ -19,20 +20,25 @@ export function AccountsSettings() {
   const accounts = useAccountStore((s) => s.accounts);
   const onAdd = useContext(AddAccountContext);
   return (
-    <SettingsSection
-      title="Connected accounts"
-      action={
-        onAdd && (
-          <Button size="sm" icon={<UserPlus />} onClick={onAdd}>
-            Add account
-          </Button>
-        )
-      }
-    >
-      {accounts.map((account) => (
-        <AccountRow key={account.id} account={account} />
-      ))}
-    </SettingsSection>
+    <>
+      <SettingsSection
+        title="Connected accounts"
+        action={
+          onAdd && (
+            <Button size="sm" icon={<UserPlus />} onClick={onAdd}>
+              Add account
+            </Button>
+          )
+        }
+      >
+        {accounts.map((account) => (
+          <AccountRow key={account.id} account={account} />
+        ))}
+      </SettingsSection>
+      <SettingsSection title="Transfer client credentials">
+        <SendCredentials accounts={accounts} />
+      </SettingsSection>
+    </>
   );
 }
 

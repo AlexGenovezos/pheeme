@@ -34,6 +34,7 @@ restarting to apply one.
 - [Technical plan](Gmail%20client%20project%20plan.md): the detailed implementation reference
 
 - [Google Cloud setup](docs/google-cloud-setup.md): create the OAuth client Pheeme signs in with (the app also walks you through it)
+- [Transfer client credentials](docs/local-credential-transfer.md): securely reuse your Google Cloud client on another device over your local network
 
 ## Develop on macOS
 

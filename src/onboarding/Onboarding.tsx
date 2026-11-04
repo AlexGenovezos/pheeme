@@ -15,9 +15,13 @@ import { parseClientJson } from "./clientJson";
 import { clearProgress, loadProgress, saveProgress } from "./progress";
 import { type GuideStep, STEPS, type StepId, stepById, stepIndex } from "./steps";
 import { BROWSER_PROBLEMS, isCredentialProblem, problemTitle } from "./troubleshooting";
+import { cancelClientTransfer, receiveClientTransfer } from "../transfer/api";
+import { ReceiveCredentials } from "../transfer/ReceiveCredentials";
 import "./onboarding.css";
 
-type View = StepId | "choose" | "error" | "done";
+type View = StepId | "choose" | "error" | "done" | "receive" | "receiving";
+
+type SignInChoice = ClientChoice | { kind: "transfer"; invitation: string };
 
 interface Props {
   /** Accounts already connected. Empty means first run: the full setup guide. */
@@ -43,12 +47,20 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
   const [error, setError] = useState<CommandError | null>(null);
   const [connected, setConnected] = useState<AccountInfo | null>(null);
   const flowRef = useRef<string | null>(null);
+  const transferRef = useRef<string | null>(null);
   // Bumped on every start, cancel and unmount, so a late response from an
   // abandoned attempt (e.g. begin_oauth stuck behind a keychain prompt) is ignored.
   const attemptRef = useRef(0);
 
   useEffect(() => {
-    if (firstRun && view !== "choose" && view !== "error" && view !== "done") {
+    if (
+      firstRun &&
+      view !== "choose" &&
+      view !== "error" &&
+      view !== "done" &&
+      view !== "receive" &&
+      view !== "receiving"
+    ) {
       saveProgress({ step: view, clientId });
     }
   }, [firstRun, view, clientId]);
@@ -58,26 +70,41 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
     const flowId = flowRef.current;
     flowRef.current = null;
     if (flowId) void cancelOauth(flowId).catch(() => {});
+    const transferId = transferRef.current;
+    transferRef.current = null;
+    if (transferId) void cancelClientTransfer(transferId).catch(() => {});
   }
 
   // Leaving the screen mid-sign-in stops the backend from waiting for the browser.
   useEffect(() => abandonAttempt, []);
 
-  async function startSignIn(next: ClientChoice) {
+  async function startSignIn(next: SignInChoice) {
     abandonAttempt();
     const attempt = attemptRef.current;
     const current = () => attemptRef.current === attempt;
-    setChoice(next);
+    // Do not retain the invitation in React state after starting the connection.
+    setChoice(next.kind === "transfer" ? null : next);
     setError(null);
     setAuthUrl("");
-    setView("authorize");
+    setView(next.kind === "transfer" ? "receiving" : "authorize");
     try {
-      const start = await beginOauth(next);
+      let start;
+      if (next.kind === "transfer") {
+        const transferId = crypto.randomUUID();
+        transferRef.current = transferId;
+        const pending = receiveClientTransfer(transferId, next.invitation);
+        next.invitation = "";
+        start = await pending;
+        if (current()) transferRef.current = null;
+      } else {
+        start = await beginOauth(next);
+      }
       if (!current()) {
         void cancelOauth(start.flowId).catch(() => {});
         return;
       }
       flowRef.current = start.flowId;
+      setView("authorize");
       setAuthUrl(start.authUrl);
       void openExternal(start.authUrl).catch(() => {});
       const account = await completeOauth(start.flowId);
@@ -91,13 +118,23 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
       if (!current()) return;
       flowRef.current = null;
       setError(toCommandError(raw));
+      if (next.kind === "transfer") {
+        setView("receive");
+        return;
+      }
       setView("error");
     }
   }
 
   function cancelSignIn() {
     abandonAttempt();
-    setView(choice?.kind === "sameAs" ? "choose" : "credentials");
+    setView(
+      view === "receiving" || !choice
+        ? "receive"
+        : choice.kind === "sameAs"
+          ? "choose"
+          : "credentials",
+    );
   }
 
   function goTo(step: StepId) {
@@ -105,13 +142,36 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
     setView(step);
   }
 
-  const showRail = guide && view !== "choose";
+  const showRail = guide && view !== "choose" && view !== "receive" && view !== "receiving";
 
   return (
     <div className={`onboarding${showRail ? "" : " onboarding--single"}`}>
       {showRail && <Rail current={view} onSelect={goTo} />}
       <main className="onboarding-main">
         <div className="onboarding-content" key={view}>
+          {view === "receive" && (
+            <>
+              <ReceiveCredentials
+                onReceive={(invitation) => void startSignIn({ kind: "transfer", invitation })}
+                onBack={() => {
+                  setError(null);
+                  setGuide(firstRun);
+                  setView(firstRun ? "welcome" : "choose");
+                }}
+              />
+              {error && <p role="alert">{error.message}</p>}
+            </>
+          )}
+          {view === "receiving" && (
+            <>
+              <h1>Waiting for the sending device</h1>
+              <p className="guide-lead">
+                Approve the transfer in Pheeme on your other device. This connection expires after
+                five minutes.
+              </p>
+              <Button onClick={cancelSignIn}>Cancel transfer</Button>
+            </>
+          )}
           {view === "choose" && (
             <ChooseClient
               accounts={accounts}
@@ -187,6 +247,19 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
                       )
               }
             />
+          )}
+          {["welcome", "credentials", "choose"].includes(view) && (
+            <Button
+              variant="ghost"
+              size="lg"
+              onClick={() => {
+                setError(null);
+                setGuide(false);
+                setView("receive");
+              }}
+            >
+              Receive from another device
+            </Button>
           )}
         </div>
         {onClose && view !== "done" && (

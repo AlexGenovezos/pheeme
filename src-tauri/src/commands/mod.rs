@@ -8,6 +8,7 @@ pub mod search;
 pub mod settings;
 pub mod sync;
 pub mod threads;
+pub mod transfer;
 
 use crate::accounts::AccountError;
 use crate::mail::MailError;
