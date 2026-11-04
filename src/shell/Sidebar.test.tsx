@@ -213,6 +213,22 @@ describe("stacked layout", () => {
     expect(count(link("Spam", favorites))).toBe("3");
   });
 
+  test("Trash counts read conversations too, so deleting read mail increases the badge", () => {
+    seed([ONE, TWO]);
+    render(<Sidebar />);
+    const trash = link("Trash", region("Favorites"));
+    expect(count(trash)).toBe("");
+
+    act(() => {
+      const counts = useLabelStore.getState().counts;
+      useLabelStore.setState({
+        counts: { ...counts, a1: { ...counts.a1, TRASH: { unread: 0, total: 1 } } },
+      });
+    });
+    expect(count(trash)).toBe("1");
+    expect(trash).toHaveAttribute("aria-description", "1 conversations");
+  });
+
   test("single account: no All Inboxes row and no account header", () => {
     seed([ONE]);
     render(<Sidebar />);
