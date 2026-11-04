@@ -4,6 +4,7 @@ mod app_menu;
 pub mod commands;
 pub mod compose;
 pub mod db;
+mod diagnostics;
 pub mod gmail;
 pub mod identity;
 pub mod mail;
@@ -120,13 +121,6 @@ fn reveal_window_fallback(app: tauri::AppHandle) {
 }
 
 pub fn run() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
-
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -156,6 +150,16 @@ pub fn run() {
             },
         )
         .setup(|app| {
+            let log_dir = app.path().app_log_dir();
+            let log_path = log_dir.as_ref().ok().cloned();
+            app.manage(diagnostics::init(log_dir));
+            info!(
+                version = env!("CARGO_PKG_VERSION"),
+                os = std::env::consts::OS,
+                arch = std::env::consts::ARCH,
+                directory = ?log_path,
+                "Pheeme starting"
+            );
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -229,8 +233,16 @@ pub fn run() {
             commands::compose::send_email,
             commands::compose::cancel_send,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                info!("Pheeme exiting");
+                if let Some(logs) = app.try_state::<diagnostics::LogGuard>() {
+                    logs.shutdown();
+                }
+            }
+        });
 }
 
 #[cfg(test)]
