@@ -3,8 +3,8 @@
 // uploaded. tauri-action would otherwise have each build read-modify-write it, which races when
 // the builds run in parallel. Keys and URLs match what tauri-action v1 writes: the NSIS exe (or
 // the msi, when a release has one) and the AppImage are the primary Windows and Linux updaters,
-// and a universal macOS bundle serves both arches. Since v0.8 macOS ships one bundle per arch and
-// Windows ships no msi; the older shapes stay supported. The NSIS installer removes an earlier
+// and macOS ships an Apple Silicon bundle. Older releases used universal or per-arch macOS
+// bundles and Windows msi installers; those shapes stay supported. The NSIS installer removes an earlier
 // msi install, so msi users update through it.
 //
 // usage: node scripts/updater-json.mjs <version> <assets.json> <sig-dir>

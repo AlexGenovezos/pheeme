@@ -42,17 +42,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # One job per Mac arch: a universal build compiles both, one after the other.
           - name: macos-aarch64
             os: macos-latest
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
             bundle-dir: src-tauri/target/aarch64-apple-darwin/release/bundle
-          - name: macos-x86_64
-            os: macos-latest
-            target: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin
-            bundle-dir: src-tauri/target/x86_64-apple-darwin/release/bundle
           - name: windows-latest
             os: windows-latest
             args: ""
@@ -137,10 +131,6 @@ jobs:
             os: macos-latest
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
-          - name: macos-x86_64
-            os: macos-latest
-            target: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin
           - name: windows-latest
             os: windows-latest
             args: ""
@@ -207,7 +197,7 @@ jobs:
           gh release download "$GITHUB_REF_NAME" -p latest.json -D "$RUNNER_TEMP"
           jq -e --arg v "${GITHUB_REF_NAME#v}.0" '
             .version == $v and
-            ([.platforms["darwin-aarch64", "darwin-x86_64", "windows-x86_64", "linux-x86_64"]
+            ([.platforms["darwin-aarch64", "windows-x86_64", "linux-x86_64"]
               | (.url // "") != "" and (.signature // "") != ""] | all)
           ' "$RUNNER_TEMP/latest.json"
       - name: Publish with the release notes from docs/releases

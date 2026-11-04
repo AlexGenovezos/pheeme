@@ -53,8 +53,8 @@ parameters shape it: the default opens the shell with fixture mail;
 `?fail=invalid_grant` makes sign-in fail with that code, `?delay=ms` sets how
 long sign-in takes.
 
-The setup script checks the Apple and Rust toolchains, installs the universal
-Rust targets and SQLx CLI, and runs `npm ci`. To test the real macOS keychain
+The setup script checks the Apple and Rust toolchains, installs the Apple Silicon
+Rust target and SQLx CLI, and runs `npm ci`. To test the real macOS keychain
 integration once, run:
 
 ```bash
@@ -73,7 +73,7 @@ Versions are two-part (`v0.2`): 0.x is beta, and 1.0 is when Pheeme leaves beta.
 3. Commit as `release: v0.2` and merge it through a PR.
 4. After the merge: `git tag v0.2 && git push origin v0.2`
 5. The Release workflow checks the version and notes, creates a draft release,
-   builds macOS (Apple Silicon and Intel in parallel), Windows and Linux,
+   builds macOS (Apple Silicon), Windows and Linux,
    checks `latest.json`, then publishes with the notes as the release text. Release builds restore a Rust cache that the workflow's dry run
    saves on `main` (when dependencies or the toolchain change, and twice a
    week); without it a release compiles every crate from scratch.
