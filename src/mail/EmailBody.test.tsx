@@ -119,20 +119,21 @@ test("uses sandbox allow-same-origin only", () => {
   expect(iframe.getAttribute("srcdoc")).toContain('http-equiv="Content-Security-Policy"');
 });
 
-test("shows the load-images bar only with remote content, and clicking it rebuilds with https:", () => {
-  const { unmount } = render(<EmailBody message={message()} />);
-  expect(screen.queryByText("Images from the web are hidden.")).toBeNull();
-  unmount();
-
-  render(<EmailBody message={message({ hasRemoteContent: true })} />);
-  expect(screen.getByText("Images from the web are hidden.")).toBeInTheDocument();
-  expect(frame().getAttribute("srcdoc")).not.toContain("https:");
-
-  fireEvent.click(screen.getByRole("button", { name: "Load images" }));
+test("opening an HTML email loads remote images without another click", () => {
+  render(
+    <EmailBody
+      message={message({
+        bodyHtml: '<img src="https://example.com/photo.png">',
+        hasRemoteContent: true,
+      })}
+    />,
+  );
   expect(frame().getAttribute("srcdoc")).toContain(
     "img-src data: pheeme-att: http://pheeme-att.localhost https: http:",
   );
-  expect(screen.queryByText("Images from the web are hidden.")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Load images" })).toBeNull();
+  expect(frame().getAttribute("sandbox")).toBe("allow-same-origin");
+  expect(frame().getAttribute("referrerpolicy")).toBe("no-referrer");
 });
 
 test("clicking a link inside the frame calls open_mail_link and does not navigate", async () => {
