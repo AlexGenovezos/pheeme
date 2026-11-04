@@ -562,15 +562,29 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
     if !store::claim_send(&engine.db, &op.id, &checking, now).await? {
         return Ok(Step::Continue);
     }
-    match engine
+    let started = std::time::Instant::now();
+    let dispatch_at = now_ms();
+    tracing::info!(
+        op = %op.id,
+        queued_ms = dispatch_at.saturating_sub(op.created_at),
+        dispatch_late_ms = dispatch_at.saturating_sub(op.next_attempt_at.max(op.created_at)),
+        "send dispatch started"
+    );
+    let result = engine
         .api
         .send_message(&raw, payload.thread_id.as_deref())
-        .await
-    {
+        .await;
+    tracing::info!(
+        op = %op.id,
+        request_ms = started.elapsed().as_millis() as u64,
+        accepted = result.is_ok(),
+        "send request finished"
+    );
+    match result {
         Ok(_) => {
             store::delete(&engine.db, &op.id).await?;
-            delete_source_draft(engine, op).await;
             send_status(engine, op, "sent");
+            delete_source_draft(engine, op).await;
             Ok(Step::Done)
         }
         Err(e) if never_sent(&e) => {
@@ -653,8 +667,8 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
     };
     if found {
         store::delete(&engine.db, &op.id).await?;
-        delete_source_draft(engine, op).await;
         send_status(engine, op, "sent");
+        delete_source_draft(engine, op).await;
         return Ok(true);
     }
     let checks_done = op.checks_done + 1;
