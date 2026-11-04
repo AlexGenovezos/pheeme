@@ -149,9 +149,25 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   };
 
   let recent: string[] = [];
+  const notificationChoices = new Map<string, boolean>();
+  const desktopSettings = () => ({
+    accounts: accounts.map((a) => ({
+      accountId: a.id,
+      email: a.email,
+      enabled: notificationChoices.get(a.id) ?? false,
+    })),
+    permission: "system",
+    trayAvailable: false,
+  });
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
+    desktop_settings: desktopSettings,
+    set_account_notifications: (args) => {
+      notificationChoices.set(String(args?.accountId), args?.enabled === true);
+      return desktopSettings();
+    },
+    take_notification_target: () => null,
     list_labels: (args) => labelsFor(String(args?.accountId)),
     list_threads: (args): ThreadPage => ({
       threads: threadsIn(

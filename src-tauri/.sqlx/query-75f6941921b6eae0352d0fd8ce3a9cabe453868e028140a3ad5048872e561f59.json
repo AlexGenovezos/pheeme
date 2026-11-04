@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT a.id as account_id, a.email, COALESCE(n.enabled, 0) as \"enabled!: bool\"\n        FROM accounts a LEFT JOIN notification_settings n ON n.account_id = a.id\n        ORDER BY a.email",
+  "describe": {
+    "columns": [
+      {
+        "name": "account_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "email",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "enabled!: bool",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "75f6941921b6eae0352d0fd8ce3a9cabe453868e028140a3ad5048872e561f59"
+}

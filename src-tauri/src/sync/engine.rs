@@ -7,7 +7,7 @@
 
 use super::api::MailApi;
 use super::convert;
-use super::events::{SyncEvent, SyncEvents};
+use super::events::{NewMail, SyncEvent, SyncEvents};
 use super::outbox;
 use crate::db::threads::{self, RecomputeResult, CATEGORY_LABELS};
 use crate::db::{self, accounts, attachments, labels, messages, sync_state};
@@ -209,6 +209,16 @@ impl SyncEngine {
         let backfilling = !sync_state::get(&mut *tx, &self.account_id)
             .await?
             .backfill_complete;
+        // Only history additions can notify. Check cache membership under the same write lock
+        // as the cursor commit: initial sync, search, backfill, label changes and replay stay silent.
+        let added_ids: Vec<String> = records
+            .iter()
+            .flat_map(|r| &r.messages_added)
+            .map(|m| m.message.id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let known = messages::existing_ids(&mut tx, &self.account_id, &added_ids).await?;
         let mut touched: Vec<String> = Vec::new();
         for (id, intent) in &intents {
             match intent {
@@ -240,6 +250,14 @@ impl SyncEngine {
         }
         touched.extend(self.store_messages(&mut tx, &fetched, true).await?);
         let (result, confirmed) = self.finish_write(&mut tx, &touched).await?;
+        let mut new_mail = Vec::new();
+        for id in added_ids.iter().filter(|id| !known.contains(*id)) {
+            if let Some(message) = messages::get_message(&mut *tx, &self.account_id, id).await? {
+                if let Some(mail) = NewMail::from_message(&message) {
+                    new_mail.push(mail);
+                }
+            }
+        }
         accounts::update_history_id(&mut *tx, &self.account_id, &latest, now_ms() / 1000).await?;
         sync_state::touch(&mut tx, &self.account_id, now_ms()).await?;
         tx.commit().await?;
@@ -247,6 +265,12 @@ impl SyncEngine {
 
         let changed = !result.is_empty();
         self.emit_write(result, confirmed);
+        if !new_mail.is_empty() {
+            self.emit(SyncEvent::NewMail {
+                account_id: self.account(),
+                messages: new_mail,
+            });
+        }
         // Counters move with every change and are cheap to read, so refresh them each time;
         // a failure here leaves the cursor committed and heals on the next sync.
         self.sync_labels().await?;

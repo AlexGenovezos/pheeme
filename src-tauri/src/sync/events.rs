@@ -3,9 +3,61 @@
 
 use serde::Serialize;
 
+/// A newly delivered unread Primary message, emitted only by incremental history sync.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewMail {
+    pub thread_id: String,
+    pub sender: String,
+    pub subject: String,
+    pub snippet: String,
+}
+
+impl NewMail {
+    pub fn from_message(message: &crate::db::messages::DbMessage) -> Option<Self> {
+        let labels = message.labels();
+        let has = |label: &str| labels.iter().any(|l| l == label);
+        if message.is_read != 0
+            || !has("INBOX")
+            || [
+                "TRASH",
+                "SPAM",
+                "DRAFT",
+                "SENT",
+                "CATEGORY_SOCIAL",
+                "CATEGORY_PROMOTIONS",
+                "CATEGORY_UPDATES",
+                "CATEGORY_FORUMS",
+            ]
+            .iter()
+            .any(|l| has(l))
+        {
+            return None;
+        }
+        Some(Self {
+            thread_id: message.thread_id.clone(),
+            sender: message
+                .from_name
+                .clone()
+                .filter(|s| !s.is_empty())
+                .or_else(|| message.from_address.clone())
+                .unwrap_or_else(|| "New mail".into()),
+            subject: message
+                .subject
+                .clone()
+                .unwrap_or_else(|| "(No subject)".into()),
+            snippet: message.snippet.clone().unwrap_or_default(),
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged, rename_all_fields = "camelCase")]
 pub enum SyncEvent {
+    NewMail {
+        account_id: String,
+        messages: Vec<NewMail>,
+    },
     Started {
         account_id: String,
     },
@@ -45,6 +97,7 @@ pub enum SyncEvent {
 impl SyncEvent {
     pub fn name(&self) -> &'static str {
         match self {
+            SyncEvent::NewMail { .. } => "sync:new_mail",
             SyncEvent::Started { .. } => "sync:started",
             SyncEvent::MessagesUpdated { .. } => "sync:messages_updated",
             SyncEvent::LabelsUpdated { .. } => "sync:labels_updated",
