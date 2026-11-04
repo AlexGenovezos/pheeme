@@ -430,7 +430,9 @@ impl ComposeService {
         if draft.to.is_empty() && draft.cc.is_empty() && draft.bcc.is_empty() {
             return Err(MailError::Invalid("Add at least one recipient.".into()));
         }
+        let started = std::time::Instant::now();
         let raw = self.render(account_id, draft, &new_message_id()).await?;
+        let render_ms = started.elapsed().as_millis() as u64;
         let undo = undo_ms.min(MAX_UNDO_MS);
         let send_at = if undo == 0 { 0 } else { now_ms() + undo as i64 };
         let op_id = outbox::queue_send(
@@ -444,6 +446,13 @@ impl ComposeService {
             },
         )
         .await?;
+        tracing::info!(
+            op = %op_id,
+            undo_ms = undo,
+            render_ms,
+            preparation_ms = started.elapsed().as_millis() as u64,
+            "send queued"
+        );
         self.sync
             .trigger_after(account_id, Duration::from_millis(undo));
         Ok(QueuedSend {

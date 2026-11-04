@@ -33,6 +33,7 @@ struct AccountSync {
     api: Arc<dyn MailApi>,
     write_lock: WriteLock,
     run_lock: tokio::sync::Mutex<()>,
+    outbox_lock: tokio::sync::Mutex<()>,
     running: AtomicBool,
     dirty: AtomicBool,
     backfilling: AtomicBool,
@@ -92,6 +93,7 @@ impl SyncManager {
                     api: (self.api_for)(id),
                     write_lock: Default::default(),
                     run_lock: Default::default(),
+                    outbox_lock: Default::default(),
                     running: AtomicBool::new(false),
                     dirty: AtomicBool::new(false),
                     backfilling: AtomicBool::new(false),
@@ -128,6 +130,15 @@ impl SyncManager {
         )
     }
 
+    /// Serialize queue processing separately from fetching mail. A send whose undo window expires
+    /// must not wait for a slow history/body fetch, while label operations still keep their order.
+    async fn process_outbox(&self, account_id: &str) -> Result<(), SyncError> {
+        let a = self.account(account_id);
+        let _processing = a.outbox_lock.lock().await;
+        outbox::process(&self.engine(account_id), now_ms()).await?;
+        Ok(())
+    }
+
     /// Push queued changes, pull Gmail's, push again if anything became due, then make
     /// sure the backfill is running. Errors are emitted as `sync:error`, except for an
     /// account that was removed meanwhile, which is dropped quietly.
@@ -140,9 +151,9 @@ impl SyncManager {
         let _running = a.run_lock.lock().await;
         let engine = self.engine(account_id);
         let result = async {
-            outbox::process(&engine, now_ms()).await?;
+            self.process_outbox(account_id).await?;
             engine.run_incremental_sync().await?;
-            outbox::process(&engine, now_ms()).await?;
+            self.process_outbox(account_id).await?;
             Ok::<_, SyncError>(())
         }
         .await;
@@ -205,12 +216,25 @@ impl SyncManager {
         });
     }
 
-    /// Sync one account once `delay` has passed (a send waiting out its undo window).
+    /// Dispatch queued changes once `delay` has passed, then refresh mail. Dispatch runs independently
+    /// of an ongoing mail fetch, but shares its outbox lock so no operation is processed twice.
     pub fn trigger_after(self: &Arc<Self>, account_id: &str, delay: Duration) {
         let this = self.clone();
         let id = account_id.to_owned();
         self.runtime.spawn(async move {
             tokio::time::sleep(delay).await;
+            if !this.exists(&id).await {
+                this.forget(&id);
+                return;
+            }
+            if let Err(e) = this.process_outbox(&id).await {
+                tracing::warn!(account = %id, error = %e, "scheduled outbox dispatch failed");
+                this.events.emit(SyncEvent::Error {
+                    account_id: id.clone(),
+                    code: e.code().to_owned(),
+                    message: e.to_string(),
+                });
+            }
             this.run_coalesced(&id).await;
         });
     }
@@ -297,6 +321,95 @@ mod tests {
             events.clone(),
         );
         (db, pool, fake, events, manager)
+    }
+
+    #[tokio::test]
+    async fn undo_deadline_dispatches_during_a_blocked_mail_fetch() {
+        let (_dir, pool, fake, events, manager) = setup().await;
+        manager.engine("a1").run_initial_sync().await.unwrap();
+        fake.add(FakeMsg::new("new", "new-thread", &["INBOX"]));
+        let gate = fake.hold_batch_gets();
+        let sync = manager.run_coalesced("a1");
+        tokio::pin!(sync);
+        assert!(tokio::time::timeout(Duration::from_millis(50), &mut sync)
+            .await
+            .is_err());
+        assert!(manager.account("a1").run_lock.try_lock().is_err());
+
+        let undo = Duration::from_millis(200);
+        let op_id = outbox::queue_send(
+            &pool,
+            "a1",
+            b"To: friend@example.com\r\nSubject: Forward\r\n\r\nForwarded content",
+            &outbox::SendOptions {
+                send_at: now_ms() + undo.as_millis() as i64,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        manager.trigger_after("a1", undo);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(fake.sent().is_empty(), "must preserve the undo window");
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if events.take().iter().any(|e| {
+                    matches!(
+                        e, SyncEvent::SendStatus { op_id: id, status, .. }
+                            if id == &op_id && status == "sent"
+                    )
+                }) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("send waited for the blocked mail fetch");
+        assert_eq!(fake.sent().len(), 1);
+        assert!(manager.account("a1").run_lock.try_lock().is_err());
+
+        // Finish the fetch and its coalesced follow-up; neither may dispatch the message again.
+        gate.add_permits(10);
+        sync.await;
+        assert_eq!(fake.sent().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn send_confirmation_does_not_wait_for_draft_cleanup() {
+        let (_dir, pool, fake, events, manager) = setup().await;
+        let raw = b"To: friend@example.com\r\nSubject: Forward\r\n\r\nForwarded content";
+        let draft = fake.create_draft(raw, None).await.unwrap();
+        let gate = fake.hold_draft_deletes();
+        let op_id = outbox::queue_send(
+            &pool,
+            "a1",
+            raw,
+            &outbox::SendOptions {
+                draft_id: Some(draft.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let engine = manager.engine("a1");
+        let dispatch = outbox::process(&engine, now_ms());
+        tokio::pin!(dispatch);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut dispatch)
+                .await
+                .is_err()
+        );
+        assert_eq!(fake.sent().len(), 1);
+        assert_eq!(fake.drafts().len(), 1, "cleanup is still blocked");
+        assert!(events.take().iter().any(|e| matches!(
+            e, SyncEvent::SendStatus { op_id: id, status, .. }
+                if id == &op_id && status == "sent"
+        )));
+        gate.add_permits(1);
+        dispatch.await.unwrap();
+        assert!(fake.drafts().is_empty());
     }
 
     #[tokio::test]

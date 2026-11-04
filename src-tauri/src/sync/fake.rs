@@ -262,6 +262,7 @@ struct State {
     before_batch_get: Option<Box<dyn FnOnce() + Send>>,
     /// While set, every `batch_get_messages` waits for a permit (see [`FakeGmail::hold_batch_gets`]).
     batch_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
+    draft_delete_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     list_page: Option<usize>,
     next_sent: u64,
     /// `(message id, attachment id)` → bytes.
@@ -348,6 +349,13 @@ impl FakeGmail {
     pub fn hold_batch_gets(&self) -> std::sync::Arc<tokio::sync::Semaphore> {
         let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
         self.lock().batch_gate = Some(gate.clone());
+        gate
+    }
+
+    /// Stall draft cleanup after a send, independently of Gmail accepting the message.
+    pub fn hold_draft_deletes(&self) -> std::sync::Arc<tokio::sync::Semaphore> {
+        let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+        self.lock().draft_delete_gate = Some(gate.clone());
         gate
     }
 
@@ -891,6 +899,10 @@ impl MailApi for FakeGmail {
 
     async fn delete_draft(&self, id: &str) -> Result<(), GmailError> {
         self.enter("delete_draft")?;
+        let gate = self.lock().draft_delete_gate.clone();
+        if let Some(gate) = gate {
+            let _permit = gate.acquire().await.expect("gate open");
+        }
         let message_id = self.draft_message(id)?;
         self.lock().drafts.remove(id);
         self.delete(&message_id);
