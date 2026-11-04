@@ -7,7 +7,7 @@ not transferred.
 
 1. Connect both devices to the same Wi-Fi or Ethernet network.
 2. On the device already set up, open **Settings → Accounts**. Under
-   **Transfer client credentials**, choose the Google Cloud app and its local
+   **Other devices**, choose the Google Cloud app and its local
    network address, then click **Send to another device**. If several addresses
    appear, choose the one belonging to your Wi-Fi or Ethernet connection.
 3. On the new device's setup screen, choose **Receive from another device**.

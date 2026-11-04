@@ -4,6 +4,8 @@ import { beforeEach, expect, test, vi } from "vitest";
 import type { AccountInfo } from "../lib/tauri";
 import { Onboarding } from "../onboarding/Onboarding";
 import { SendCredentials } from "./SendCredentials";
+import { ContextMenuHost } from "../shell/ContextMenuHost";
+import { closeDomMenu } from "../lib/contextMenu";
 import type { TransferOffer } from "./api";
 
 const account: AccountInfo = {
@@ -26,7 +28,10 @@ function backend(handlers: Record<string, (args: Record<string, unknown>) => unk
   return calls;
 }
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  closeDomMenu();
+});
 
 test("receiving waits for native transfer approval, then uses normal Google sign-in without exposing credentials", async () => {
   let approve!: (start: { flowId: string; authUrl: string }) => void;
@@ -151,4 +156,39 @@ test("connection failures clear the code and offer a fresh receiving attempt", a
   click("Connect securely");
   expect(await screen.findByRole("alert")).toHaveTextContent("Check the local network.");
   expect(screen.getByLabelText("Transfer code")).toHaveValue("");
+});
+
+test("sender uses the app menu to choose a client and local network", async () => {
+  const calls = backend({
+    transfer_interfaces: () => ["192.168.1.2", "10.0.0.5"],
+    offer_client_transfer: () => new Promise(() => {}),
+  });
+  render(
+    <>
+      <SendCredentials
+        accounts={[
+          account,
+          {
+            ...account,
+            id: "a2",
+            clientId: "other.apps.googleusercontent.com",
+            email: "other@example.com",
+          },
+        ]}
+      />
+      <ContextMenuHost />
+    </>,
+  );
+  await vi.waitFor(() =>
+    expect(screen.getByRole("button", { name: "Send to another device" })).toBeEnabled(),
+  );
+  click("Google Cloud app");
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "other@example.com" }));
+  click("Local network address");
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "10.0.0.5" }));
+  click("Send to another device");
+  expect(calls).toContainEqual({
+    cmd: "offer_client_transfer",
+    args: { accountId: "a2", address: "10.0.0.5" },
+  });
 });

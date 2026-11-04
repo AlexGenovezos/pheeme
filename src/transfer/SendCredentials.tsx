@@ -1,6 +1,9 @@
+import { Check, ChevronDown, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { type AccountInfo, toCommandError } from "../lib/tauri";
+import { showContextMenu } from "../lib/contextMenu";
+import { SettingsRow } from "../settings/rows";
 import {
   approveClientTransfer,
   cancelClientTransfer,
@@ -117,100 +120,168 @@ export function SendCredentials({ accounts }: { accounts: AccountInfo[] }) {
     }
   }
 
+  const selected = clients.find((a) => a.id === accountId) ?? clients[0];
+  const completed = status?.phase === "completed";
+
   return (
-    <div className="client-transfer">
-      <p>
-        Send this Google Cloud app's client ID and secret to Pheeme on another device on the same
-        network. You will sign in to Google separately there.
-      </p>
-      {!offer && (
-        <>
-          <label htmlFor="transfer-account">Google Cloud app</label>
-          <select
-            id="transfer-account"
-            value={accountId}
-            disabled={busy}
-            onChange={(e) => setAccountId(e.target.value)}
-          >
-            {clients.map((a) => (
-              <option key={a.id} value={a.id}>
-                The app used by {a.email}
-              </option>
-            ))}
-          </select>
-          <label htmlFor="transfer-address">Local network address</label>
-          <select
-            id="transfer-address"
-            value={address}
-            disabled={busy}
-            onChange={(e) => setAddress(e.target.value)}
-          >
-            {addresses.map((ip) => (
-              <option key={ip} value={ip}>
-                {ip}
-              </option>
-            ))}
-          </select>
-          {!address && (
-            <p>No local IPv4 address found. Connect to Wi-Fi or Ethernet and reopen this page.</p>
-          )}
-          <Button disabled={busy || !address || !accountId} onClick={() => void start()}>
-            Send to another device
-          </Button>
-          {busy && (
-            <Button variant="ghost" onClick={cancel}>
-              Cancel
+    <>
+      <SettingsRow
+        title={
+          offer ? "Set up another device" : completed ? "Credentials sent" : "Client credentials"
+        }
+        description={
+          offer
+            ? "On the new device, choose Receive from another device during setup."
+            : completed
+              ? "Continue signing in to Google on your other device."
+              : "Reuse your Google Cloud app on another device on the same network."
+        }
+        control={
+          offer || busy ? (
+            <Button variant="ghost" size="sm" onClick={cancel}>
+              Cancel transfer
             </Button>
+          ) : (
+            <Button size="sm" disabled={!address || !selected} onClick={() => void start()}>
+              {completed ? "Send again" : "Send to another device"}
+            </Button>
+          )
+        }
+      />
+      {!offer && !completed && (
+        <>
+          {clients.length > 1 && (
+            <SettingsRow
+              title="Google Cloud app"
+              description="Choose which client to share."
+              control={
+                <Choice
+                  label="Google Cloud app"
+                  value={selected?.id ?? ""}
+                  options={clients.map((a) => ({ value: a.id, label: a.email }))}
+                  disabled={busy}
+                  onChange={setAccountId}
+                />
+              }
+            />
+          )}
+          {addresses.length > 1 && (
+            <SettingsRow
+              title="Network"
+              description="Choose your Wi-Fi or Ethernet address."
+              control={
+                <Choice
+                  label="Local network address"
+                  value={address}
+                  options={addresses.map((ip) => ({ value: ip, label: ip }))}
+                  disabled={busy}
+                  onChange={setAddress}
+                />
+              }
+            />
+          )}
+          {!address && (
+            <p className="transfer-note">Connect to Wi-Fi or Ethernet, then reopen this page.</p>
           )}
         </>
       )}
       {offer && (
         <>
-          <p>
-            On the other device, choose “Receive from another device” during setup and enter this
-            code. Keep it private; it expires in {Math.ceil(offer.expiresInSeconds / 60)} minutes.
-          </p>
-          <code className="client-transfer__code">{offer.invitation}</code>
-          <Button
-            onClick={() =>
-              void navigator.clipboard.writeText(offer.invitation).then(
-                () => setCopied(true),
-                () => setError("Couldn't copy. Select the code and copy it manually."),
+          <div className="transfer-pairing">
+            <div className="transfer-pairing__label">
+              <span>Transfer code</span>
+              <span>Expires in {Math.ceil(offer.expiresInSeconds / 60)} minutes</span>
+            </div>
+            <div className="transfer-pairing__code">
+              <code>{offer.invitation}</code>
+              <Button
+                size="sm"
+                icon={copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                onClick={() =>
+                  void navigator.clipboard.writeText(offer.invitation).then(
+                    () => setCopied(true),
+                    () => setError("Couldn't copy. Select the code and copy it manually."),
+                  )
+                }
+              >
+                {copied ? "Copied" : "Copy transfer code"}
+              </Button>
+            </div>
+            <p className="transfer-pairing__hint">
+              Keep this code private. You will approve the connection here before anything is sent.
+            </p>
+          </div>
+          <SettingsRow
+            title={
+              <span role="status">
+                {status?.phase === "approval"
+                  ? "Allow this device?"
+                  : status?.phase === "sending"
+                    ? "Sending securely…"
+                    : "Waiting for the other device…"}
+              </span>
+            }
+            description={
+              status?.phase === "approval"
+                ? `${status.peer} entered your code. Approve only if this is your other device.`
+                : undefined
+            }
+            control={
+              status?.phase === "approval" && (
+                <Button variant="primary" size="sm" disabled={busy} onClick={() => void approve()}>
+                  Approve transfer
+                </Button>
               )
             }
-          >
-            {copied ? "Copied" : "Copy transfer code"}
-          </Button>
-          {status?.phase === "approval" ? (
-            <>
-              <p role="status">
-                A device at {status.peer} has entered your code. Approve only if you just requested
-                this transfer on your other device.
-              </p>
-              <Button variant="primary" disabled={busy} onClick={() => void approve()}>
-                Approve transfer
-              </Button>
-            </>
-          ) : (
-            <p role="status">
-              {status?.phase === "sending" ? "Sending securely…" : "Waiting for the other device…"}
-            </p>
-          )}
-          <Button variant="ghost" onClick={cancel}>
-            Cancel transfer
-          </Button>
+          />
         </>
       )}
-      {status?.phase === "completed" && (
-        <p role="status">
-          Credentials received by the other device. Continue signing in to Google there.
+      {(error || status?.error) && (
+        <p className="transfer-note transfer-note--error" role="alert">
+          {error || status?.error}
         </p>
       )}
-      {(error || status?.error) && <p role="alert">{error || status?.error}</p>}
-      <p>
-        If the connection fails, check that both devices are on the same network and allow Pheeme
-        through the sending device's firewall. Guest Wi-Fi may block device connections.
-      </p>
-    </div>
+    </>
+  );
+}
+
+/** Use the same native menu and compact action styling as the rest of the app. */
+function Choice({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="transfer-choice"
+      aria-label={label}
+      aria-haspopup="menu"
+      disabled={disabled}
+      onClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        void showContextMenu(
+          options.map((option) => ({
+            id: option.value,
+            label: option.label,
+            checked: option.value === value,
+            onSelect: () => onChange(option.value),
+          })),
+          { x: rect.left, y: rect.bottom },
+        );
+      }}
+    >
+      {options.find((option) => option.value === value)?.label}
+      <ChevronDown aria-hidden="true" />
+    </Button>
   );
 }

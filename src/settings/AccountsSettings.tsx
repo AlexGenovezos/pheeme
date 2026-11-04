@@ -35,7 +35,7 @@ export function AccountsSettings() {
           <AccountRow key={account.id} account={account} />
         ))}
       </SettingsSection>
-      <SettingsSection title="Transfer client credentials">
+      <SettingsSection title="Other devices">
         <SendCredentials accounts={accounts} />
       </SettingsSection>
     </>
