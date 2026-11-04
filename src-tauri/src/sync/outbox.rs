@@ -488,6 +488,7 @@ async fn apply_op(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, Sync
 /// Undo a rejected change: messages go back to Gmail's current labels (or, if those
 /// can't be read, to their labels before the change); later queued changes are re-applied.
 async fn rollback(engine: &SyncEngine, op: &DbOp, error: &GmailError) -> Result<(), SyncError> {
+    tracing::warn!(account = %engine.account_id, kind = %op.kind, error = %error, "Gmail rejected a queued change; rolling it back");
     let targets = store::messages_of(&engine.db, &op.id).await?;
     let ids: Vec<String> = targets.iter().map(|t| t.message_id.clone()).collect();
     let server: HashMap<String, Vec<String>> = engine

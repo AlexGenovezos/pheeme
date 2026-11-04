@@ -49,6 +49,7 @@ function useSyncEvents() {
         title: `Couldn't ${payload.kind}`,
         description: `Gmail said: ${payload.message}. Your change was undone.`,
         tone: "danger",
+        duration: 0,
       }),
     ).then(keep, log);
     return () => {

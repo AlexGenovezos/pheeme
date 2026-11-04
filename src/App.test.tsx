@@ -292,21 +292,32 @@ test("the shell loads labels and counts for the connected accounts and marks acc
   });
 });
 
-test("a change Gmail rejects shows a toast", async () => {
+test("a Gmail rejection stays visible until dismissed so its error can be read", async () => {
   mockIPC(backend, { shouldMockEvents: true });
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
-  // Listeners attach asynchronously after mount.
-  await vi.waitFor(async () => {
-    await emit("outbox:rejected", {
-      accountId: "a1",
-      opId: "op1",
-      kind: "archive",
-      message: "Not found",
+  vi.useFakeTimers();
+  try {
+    // Listeners attach asynchronously after mount.
+    await vi.waitFor(async () => {
+      await emit("outbox:rejected", {
+        accountId: "a1",
+        opId: "op1",
+        kind: "trash",
+        message: "Precondition check failed",
+      });
+      expect(screen.getByText("Couldn't trash")).toBeInTheDocument();
     });
-    expect(screen.getByText("Couldn't archive")).toBeInTheDocument();
-  });
-  expect(screen.getByText("Gmail said: Not found. Your change was undone.")).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(10_000));
+    const error = screen.getByRole("alert");
+    expect(error).toHaveTextContent(
+      "Gmail said: Precondition check failed. Your change was undone.",
+    );
+    fireEvent.click(within(error).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText("Couldn't trash")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("an account's sync failure survives adding an account and coming back", async () => {

@@ -61,7 +61,11 @@ function ToastViewport({ pinned }: { pinned?: ReactNode }) {
         >
           <div className="ui-toast__text">
             <span className="ui-toast__title">{t.title}</span>
-            {t.description && <span className="ui-toast__description">{t.description}</span>}
+            {t.description && (
+              <span className={cx("ui-toast__description", t.tone === "danger" && "selectable")}>
+                {t.description}
+              </span>
+            )}
           </div>
           {t.action && (
             <button
