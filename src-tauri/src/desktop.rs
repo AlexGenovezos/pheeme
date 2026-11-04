@@ -312,6 +312,9 @@ pub fn install(app: &AppHandle) {
                     tray.set_tooltip(Some(format!(
                         "Pheeme — {unread} unread inbox conversations"
                     )))?;
+                    // The macOS envelope is constant. Replacing it resets its template tint;
+                    // only the title changes there as the unread count moves.
+                    #[cfg(not(target_os = "macos"))]
                     tray.set_icon(Some(icon::image(unread)))?;
                     #[cfg(target_os = "macos")]
                     tray.set_title(Some(if unread > 0 {

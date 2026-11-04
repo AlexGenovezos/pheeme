@@ -170,18 +170,22 @@ pub async fn tray_available() -> bool {
     let Ok(connection) = Connection::session().await else {
         return false;
     };
+    tray_host_registered(&connection).await
+}
+
+async fn tray_host_registered(connection: &Connection) -> bool {
     let Ok(proxy) = Proxy::new(
-        &connection,
-        "org.freedesktop.DBus",
-        "/org/freedesktop/DBus",
-        "org.freedesktop.DBus",
+        connection,
+        "org.kde.StatusNotifierWatcher",
+        "/StatusNotifierWatcher",
+        "org.kde.StatusNotifierWatcher",
     )
     .await
     else {
         return false;
     };
     proxy
-        .call::<_, _, bool>("NameHasOwner", &("org.kde.StatusNotifierWatcher",))
+        .get_property::<bool>("IsStatusNotifierHostRegistered")
         .await
         .unwrap_or(false)
 }
@@ -218,6 +222,75 @@ mod protocol_tests {
             let _ = self.0.wait();
         }
     }
+    fn private_bus() -> (Bus, String) {
+        let mut child = Command::new("dbus-daemon")
+            .args(["--session", "--nofork", "--print-address=1"])
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("dbus-daemon installed with Linux desktop dependencies");
+        let mut address = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut address)
+            .unwrap();
+        (Bus(child), address.trim().to_owned())
+    }
+
+    struct FakeWatcher(Arc<std::sync::atomic::AtomicBool>);
+    #[zbus::interface(name = "org.kde.StatusNotifierWatcher")]
+    impl FakeWatcher {
+        #[zbus(property, name = "IsStatusNotifierHostRegistered")]
+        fn host_registered(&self) -> bool {
+            self.0.load(Ordering::Relaxed)
+        }
+    }
+
+    #[tokio::test]
+    async fn tray_requires_registered_host_not_just_a_watcher() {
+        let (_bus, address) = private_bus();
+        let client = zbus::connection::Builder::address(address.as_str())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        assert!(
+            !tray_host_registered(&client).await,
+            "no watcher must not hide the app"
+        );
+        let registered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let server = zbus::connection::Builder::address(address.as_str())
+            .unwrap()
+            .name("org.kde.StatusNotifierWatcher")
+            .unwrap()
+            .serve_at("/StatusNotifierWatcher", FakeWatcher(registered.clone()))
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        assert!(
+            !tray_host_registered(&client).await,
+            "watcher without a panel must not hide the app"
+        );
+        registered.store(true, Ordering::Relaxed);
+        assert!(
+            tray_host_registered(&client).await,
+            "registered host enables tray behavior"
+        );
+        registered.store(false, Ordering::Relaxed);
+        assert!(
+            !tray_host_registered(&client).await,
+            "removing the panel restores normal close behavior"
+        );
+        server
+            .object_server()
+            .remove::<FakeWatcher, _>("/StatusNotifierWatcher")
+            .await
+            .unwrap();
+        assert!(
+            !tray_host_registered(&client).await,
+            "missing property must fail closed"
+        );
+    }
+
     struct FakeDesktop {
         next: AtomicU32,
         calls: mpsc::UnboundedSender<(String, String, Vec<String>)>,
@@ -256,17 +329,7 @@ mod protocol_tests {
     #[tokio::test]
     async fn private_bus_checks_delivery_markup_and_account_specific_clicks() {
         // An isolated test bus and fake daemon: never displays mail on the user's desktop.
-        let mut child = Command::new("dbus-daemon")
-            .args(["--session", "--nofork", "--print-address=1"])
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("dbus-daemon installed with Linux desktop dependencies");
-        let mut address = String::new();
-        BufReader::new(child.stdout.take().unwrap())
-            .read_line(&mut address)
-            .unwrap();
-        let _bus = Bus(child);
-        let address = address.trim().to_owned();
+        let (_bus, address) = private_bus();
         let (calls_tx, mut calls) = mpsc::unbounded_channel();
         let server = zbus::connection::Builder::address(address.as_str())
             .unwrap()
