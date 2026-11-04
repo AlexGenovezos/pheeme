@@ -1,11 +1,11 @@
 // Conversation details for the reading pane: a small LRU cache, prefetch, and eviction on sync.
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
+import { subscribeAll } from "../lib/subscriptions";
 import { parseThreadKey, type ThreadKey, threadKey } from "../mail/mailboxes";
 import {
   type CommandError,
   getThread,
-  stopQuietly,
   SYNC_EVENTS,
   type SyncAccountEvent,
   type SyncMessagesUpdated,
@@ -59,7 +59,7 @@ interface ThreadState {
    * Evict on `sync:messages_updated` and refresh the open thread if it changed; on `sync:completed` re-request the
    * open thread if it is missing a body. Resolves to the unsubscribe function.
    */
-  subscribe(): Promise<() => void>;
+  subscribe(signal?: AbortSignal): Promise<() => void>;
 }
 
 // A request is current while it is the entry here; evicting or re-requesting a key supersedes it.
@@ -180,35 +180,37 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         return { details, errors };
       });
     },
-    subscribe: async () => {
-      const stop = await listen<SyncMessagesUpdated>(SYNC_EVENTS.messagesUpdated, ({ payload }) => {
-        const changed = [...payload.modified, ...payload.removed];
-        if (changed.length === 0) return;
-        const open = useUiStore.getState().openThread;
-        const parsed = open ? parseThreadKey(open) : null;
-        const refresh =
-          open && parsed?.accountId === payload.accountId && changed.includes(parsed.threadId)
-            ? open
-            : null;
-        // The open thread is refreshed in place so the pane never blanks; the rest are simply forgotten.
-        get().evict(
-          payload.accountId,
-          refresh ? changed.filter((id) => id !== parsed?.threadId) : changed,
-        );
-        if (refresh) void fetchDetail(refresh);
-      });
-      // A body that couldn't be fetched offline may be reachable now that a sync got through.
-      const stopCompleted = await listen<SyncAccountEvent>(SYNC_EVENTS.completed, ({ payload }) => {
-        const open = useUiStore.getState().openThread;
-        if (!open || parseThreadKey(open).accountId !== payload.accountId) return;
-        const cached = get().details.get(open);
-        if (cached && !isComplete(cached)) void get().load(open);
-      });
-      return () => {
-        stopQuietly(stop);
-        stopQuietly(stopCompleted);
-      };
-    },
+    subscribe: (signal) =>
+      subscribeAll(
+        [
+          () =>
+            listen<SyncMessagesUpdated>(SYNC_EVENTS.messagesUpdated, ({ payload }) => {
+              const changed = [...payload.modified, ...payload.removed];
+              if (changed.length === 0) return;
+              const open = useUiStore.getState().openThread;
+              const parsed = open ? parseThreadKey(open) : null;
+              const refresh =
+                open && parsed?.accountId === payload.accountId && changed.includes(parsed.threadId)
+                  ? open
+                  : null;
+              // The open thread is refreshed in place so the pane never blanks; the rest are simply forgotten.
+              get().evict(
+                payload.accountId,
+                refresh ? changed.filter((id) => id !== parsed?.threadId) : changed,
+              );
+              if (refresh) void fetchDetail(refresh);
+            }),
+          // A body that couldn't be fetched offline may be reachable now that a sync got through.
+          () =>
+            listen<SyncAccountEvent>(SYNC_EVENTS.completed, ({ payload }) => {
+              const open = useUiStore.getState().openThread;
+              if (!open || parseThreadKey(open).accountId !== payload.accountId) return;
+              const cached = get().details.get(open);
+              if (cached && !isComplete(cached)) void get().load(open);
+            }),
+        ],
+        signal,
+      ),
   };
 });
 

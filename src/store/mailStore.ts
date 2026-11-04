@@ -1,6 +1,7 @@
 // Mail state: the thread list for the active mailbox, kept fresh by sync events.
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
+import { subscribeAll } from "../lib/subscriptions";
 import { parseThreadKey, type ThreadKey, threadKey } from "../mail/mailboxes";
 import {
   type CommandError,
@@ -8,7 +9,6 @@ import {
   getThread,
   searchMessages,
   searchGmail,
-  stopQuietly,
   SYNC_EVENTS,
   type ThreadCursor,
   type ThreadQuery,
@@ -66,7 +66,7 @@ interface MailState {
   /** Clear the list without querying (mailboxes with no backing label yet). */
   clear(): void;
   /** Reload on sync events. Resolves to the unsubscribe function. */
-  subscribe(): Promise<() => void>;
+  subscribe(signal?: AbortSignal): Promise<() => void>;
 }
 
 // Each load takes a ticket; only the latest ticket may write its result.
@@ -454,54 +454,62 @@ export const useMailStore = create<MailState>((set, get) => {
       removedFromSearch.clear();
       set({ ...EMPTY, query: null });
     },
-    subscribe: async () => {
+    subscribe: (signal) => {
       const reload = () => void get().reload(true);
-      const stops = await Promise.all([
-        listen<SyncMessagesUpdated>(SYNC_EVENTS.messagesUpdated, ({ payload }) => {
-          if (get().search && payload.removed.length) {
-            const gone = new Set(payload.removed.map((id) => threadKey(payload.accountId, id)));
-            for (const key of gone) {
-              remoteRows.delete(key);
-              removedFromSearch.add(key);
-            }
-            set((s) => ({ threads: s.threads.filter((t) => !gone.has(keyOf(t))) }));
-          }
-          reload();
-          // Gmail-only matches aren't in an FTS result. Refresh their flags from the cache on sync,
-          // including an outbox rollback, while leaving their result positions alone.
-          const ticket = latest;
-          for (const id of payload.modified) {
-            const key = threadKey(payload.accountId, id);
-            if (!remoteRows.has(key)) continue;
-            const version = (remoteUpdates.get(key) ?? 0) + 1;
-            remoteUpdates.set(key, version);
-            void getThread(payload.accountId, id)
-              .then((detail) => {
-                if (ticket !== latest || remoteUpdates.get(key) !== version || !remoteRows.has(key))
-                  return;
-                const hidden = removedFromSearch.has(key);
-                if (hidden && detail.messages.every((m) => m.labelIds.includes("TRASH"))) return;
-                if (hidden) removedFromSearch.delete(key);
-                remoteRows.set(key, detail.thread);
-                const query = get().query;
-                if (query)
-                  set((s) => ({
-                    threads: overlay(
-                      hidden
-                        ? appendUnique(s.threads, [detail.thread])
-                        : s.threads.map((row) => (keyOf(row) === key ? detail.thread : row)),
-                      query,
-                    ),
-                  }));
-              })
-              .catch(() => {
-                /* Keep the usable snapshot if the cache cannot be read yet. */
-              });
-          }
-        }),
-        listen(SYNC_EVENTS.completed, reload),
-      ]);
-      return () => stops.forEach(stopQuietly);
+      return subscribeAll(
+        [
+          () =>
+            listen<SyncMessagesUpdated>(SYNC_EVENTS.messagesUpdated, ({ payload }) => {
+              if (get().search && payload.removed.length) {
+                const gone = new Set(payload.removed.map((id) => threadKey(payload.accountId, id)));
+                for (const key of gone) {
+                  remoteRows.delete(key);
+                  removedFromSearch.add(key);
+                }
+                set((s) => ({ threads: s.threads.filter((t) => !gone.has(keyOf(t))) }));
+              }
+              reload();
+              // Gmail-only matches aren't in an FTS result. Refresh their flags from the cache on sync,
+              // including an outbox rollback, while leaving their result positions alone.
+              const ticket = latest;
+              for (const id of payload.modified) {
+                const key = threadKey(payload.accountId, id);
+                if (!remoteRows.has(key)) continue;
+                const version = (remoteUpdates.get(key) ?? 0) + 1;
+                remoteUpdates.set(key, version);
+                void getThread(payload.accountId, id)
+                  .then((detail) => {
+                    if (
+                      ticket !== latest ||
+                      remoteUpdates.get(key) !== version ||
+                      !remoteRows.has(key)
+                    )
+                      return;
+                    const hidden = removedFromSearch.has(key);
+                    if (hidden && detail.messages.every((m) => m.labelIds.includes("TRASH")))
+                      return;
+                    if (hidden) removedFromSearch.delete(key);
+                    remoteRows.set(key, detail.thread);
+                    const query = get().query;
+                    if (query)
+                      set((s) => ({
+                        threads: overlay(
+                          hidden
+                            ? appendUnique(s.threads, [detail.thread])
+                            : s.threads.map((row) => (keyOf(row) === key ? detail.thread : row)),
+                          query,
+                        ),
+                      }));
+                  })
+                  .catch(() => {
+                    /* Keep the usable snapshot if the cache cannot be read yet. */
+                  });
+              }
+            }),
+          () => listen(SYNC_EVENTS.completed, reload),
+        ],
+        signal,
+      );
     },
   };
 });

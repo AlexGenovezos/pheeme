@@ -1,6 +1,6 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { stopQuietly } from "../lib/tauri";
+import { createSubscriptionScope } from "../lib/subscriptions";
 import { isTauri } from "../preview/runtime";
 import { useComposeStore } from "./composeStore";
 import "./compose.css";
@@ -22,28 +22,25 @@ function useFileDrops(enabled: boolean): number | null {
   const [over, setOver] = useState<number | null>(null);
   useEffect(() => {
     if (!enabled || !isTauri()) return;
-    let stop: (() => void) | null = null;
-    let stopped = false;
-    void getCurrentWebview()
-      .onDragDropEvent(({ payload }) => {
-        if (payload.type === "leave") {
-          setOver(null);
-          return;
-        }
-        const scale = window.devicePixelRatio || 1;
-        const id = panelAt(payload.position.x / scale, payload.position.y / scale);
-        if (payload.type === "over" || payload.type === "enter") setOver(id);
-        else if (payload.type === "drop") {
-          setOver(null);
-          if (id !== null) void useComposeStore.getState().attachFiles(id, payload.paths);
-        }
-      })
-      .then((unlisten) => (stopped ? stopQuietly(unlisten) : (stop = unlisten)))
+    const scope = createSubscriptionScope();
+    scope
+      .add(() =>
+        getCurrentWebview().onDragDropEvent(({ payload }) => {
+          if (payload.type === "leave") {
+            setOver(null);
+            return;
+          }
+          const scale = window.devicePixelRatio || 1;
+          const id = panelAt(payload.position.x / scale, payload.position.y / scale);
+          if (payload.type === "over" || payload.type === "enter") setOver(id);
+          else if (payload.type === "drop") {
+            setOver(null);
+            if (id !== null) void useComposeStore.getState().attachFiles(id, payload.paths);
+          }
+        }),
+      )
       .catch((err) => console.warn("file drop listener failed", err));
-    return () => {
-      stopped = true;
-      if (stop) stopQuietly(stop);
-    };
+    return scope.dispose;
   }, [enabled]);
   return over;
 }
@@ -73,16 +70,10 @@ export function ComposeHost() {
 /** Follow send outcomes for the whole session (a panel is gone by the time its send is confirmed). */
 export function useComposeEvents() {
   useEffect(() => {
-    let stopped = false;
-    let stop: (() => void) | null = null;
-    useComposeStore
-      .getState()
-      .subscribe()
-      .then((s) => (stopped ? s() : (stop = s)))
+    const scope = createSubscriptionScope();
+    scope
+      .add(() => useComposeStore.getState().subscribe())
       .catch((err) => console.warn("send status listener failed", err));
-    return () => {
-      stopped = true;
-      stop?.();
-    };
+    return scope.dispose;
   }, []);
 }

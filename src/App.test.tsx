@@ -11,7 +11,7 @@ import { usePaletteStore } from "./palette/paletteStore";
 import { useSettingsStore } from "./settings/settingsStore";
 import { __resetUiStoreForTests, useUiStore } from "./store/uiStore";
 import { useAccountStore } from "./store/accountStore";
-import { __resetMailStoreForTests } from "./store/mailStore";
+import { __resetMailStoreForTests, useMailStore } from "./store/mailStore";
 import { __resetThreadStoreForTests } from "./store/threadStore";
 import { stubLayout } from "./test/layout";
 
@@ -366,4 +366,28 @@ test("a sync change to the open conversation while adding an account shows on re
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
   expect(await screen.findByRole("heading", { name: "After" })).toBeInTheDocument();
+});
+
+test("the list header toggles unread mail and remembers its state when switching mailboxes", async () => {
+  const handlers = createPreviewHandlers();
+  mockIPC((cmd, args) => handlers[cmd]?.(args as Record<string, unknown>), {
+    shouldMockEvents: true,
+  });
+  render(<App />);
+  const toggle = await screen.findByRole("button", { name: "Unread only" });
+  await vi.waitFor(() => expect(useMailStore.getState().threads.some((t) => !t.unread)).toBe(true));
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(toggle);
+  await vi.waitFor(() => {
+    expect(useMailStore.getState().query?.unreadOnly).toBe(true);
+    expect(useMailStore.getState().loading).toBe(false);
+    expect(useMailStore.getState().threads.every((t) => t.unread)).toBe(true);
+  });
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("link", { name: "Starred" }));
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(screen.getByRole("link", { name: "All Inboxes" }));
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(toggle);
+  await vi.waitFor(() => expect(useMailStore.getState().threads.some((t) => !t.unread)).toBe(true));
 });

@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { create } from "zustand";
+import { createSubscriptionScope } from "./subscriptions";
 
 export interface PendingUpdate {
   version: string;
@@ -107,10 +108,9 @@ export async function checkForUpdatesNow(): Promise<void> {
 /** Run a manual check whenever the app menu asks for one. Returns an unsubscribe. */
 export function listenForManualChecks(): () => void {
   const log = (err: unknown) => deps.log("update menu listener failed", err);
-  const unlisten = listen(CHECK_FOR_UPDATES_EVENT, () => void checkForUpdatesNow()).catch(log);
-  return () => {
-    unlisten.then((stop) => stop?.()).catch(log);
-  };
+  const scope = createSubscriptionScope();
+  scope.add(() => listen(CHECK_FOR_UPDATES_EVENT, () => void checkForUpdatesNow())).catch(log);
+  return scope.dispose;
 }
 
 export function startUpdateChecks(
