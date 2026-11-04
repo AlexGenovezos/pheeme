@@ -1160,7 +1160,7 @@ async fn notification_waits_for_successful_commit_and_uses_final_labels() {
     let h = harness().await;
     h.engine.run_initial_sync().await.unwrap();
     h.fake.add(FakeMsg::new("new", "new", &["INBOX", "UNREAD"]));
-    h.fake.fail_next("batch_get_messages", network());
+    h.fake.fail_next("get_message", network());
     assert!(h.engine.run_incremental_sync().await.is_err());
     assert!(arrivals(&h.events).is_empty());
     h.engine.run_incremental_sync().await.unwrap();
