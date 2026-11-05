@@ -36,6 +36,7 @@ beforeEach(() => {
       { id: "a1", email: "me@example.com", displayName: "Me", clientId: "c", synced: true },
     ],
     syncErrors: {},
+    reconnecting: null,
   });
   archive.mockReset();
   star.mockReset();
@@ -235,6 +236,20 @@ describe("keyboard shortcuts", () => {
     fireEvent.click(resetAll);
     expect(registry.overrides()).toEqual({});
   });
+});
+
+test("Accounts offers to sign in again only when Google signed the account out", () => {
+  render(<Harness />);
+  open("accounts");
+  expect(within(dialog()).queryByRole("button", { name: "Sign in again" })).toBeNull();
+  act(() =>
+    useAccountStore.setState({
+      syncErrors: { a1: { code: "signed_out", message: "Google signed Pheeme out" } },
+    }),
+  );
+  fireEvent.click(within(dialog()).getByRole("button", { name: "Sign in again" }));
+  expect(useAccountStore.getState().reconnecting).toBe("a1");
+  expect(useSettingsStore.getState().open).toBe(false);
 });
 
 test("Accounts can remove an account after confirming", async () => {

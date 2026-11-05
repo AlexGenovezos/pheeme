@@ -22,6 +22,8 @@ interface AccountState {
   accounts: AccountInfo[];
   /** Per account: the last sync failure, until that account next completes a sync. Session only. */
   syncErrors: Record<string, SyncFailure>;
+  /** The account being signed in again (onboarding shows its sign-in), if any. */
+  reconnecting: string | null;
   loaded: boolean;
   error: CommandError | null;
   load: () => Promise<void>;
@@ -29,6 +31,8 @@ interface AccountState {
   upsert: (account: AccountInfo) => void;
   /** Removes the account and moves navigation off it (`uiStore.forgetAccount`). */
   remove: (accountId: string) => Promise<void>;
+  /** Start signing an account in again; `reconnect(null)` ends it. */
+  reconnect: (accountId: string | null) => void;
   /** The account's first sync finished, so its cache is usable. */
   markSynced: (accountId: string) => void;
   /** Mark accounts synced and clear their failure on `sync:completed`; record `sync:error`. Resolves to the unsubscribe function. */
@@ -38,6 +42,7 @@ interface AccountState {
 export const useAccountStore = create<AccountState>((set, get) => ({
   accounts: [],
   syncErrors: {},
+  reconnecting: null,
   loaded: false,
   error: null,
   load: async () => {
@@ -62,6 +67,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     // Navigation pointing at the removed account would keep querying it.
     useUiStore.getState().forgetAccount(accountId, get().accounts);
   },
+  reconnect: (accountId) => set({ reconnecting: accountId }),
   markSynced: (accountId) =>
     set((state) =>
       state.accounts.some((a) => a.id === accountId && !a.synced)

@@ -257,6 +257,61 @@ test("leaving mid-sign-in cancels the backend wait", async () => {
   expect(calls).toContainEqual({ cmd: "cancel_oauth", args: { flowId: "f9" } });
 });
 
+test("reconnecting goes straight to Google for that account, and cancel leaves", async () => {
+  const calls = backend({
+    begin_oauth: () => ({ flowId: "f1", authUrl: "https://accounts.google.com/x" }),
+    complete_oauth: () => new Promise(() => {}),
+  });
+  const onClose = vi.fn();
+  render(
+    <Onboarding
+      accounts={[account]}
+      reconnect={account}
+      onConnected={() => {}}
+      onClose={onClose}
+    />,
+  );
+  expect(await screen.findByText("Finish signing in in your browser")).toBeInTheDocument();
+  expect(screen.getByText("me@example.com", { selector: "strong" })).toBeInTheDocument();
+  expect(screen.queryByText("Use the same Google Cloud app")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Receive from another device" })).toBeNull();
+  expect(calls.find((c) => c.cmd === "begin_oauth")?.args).toEqual({
+    client: { kind: "reconnect", accountId: "a1" },
+  });
+  await vi.waitFor(() =>
+    expect(screen.getByRole("button", { name: "Copy sign-in link" })).toBeEnabled(),
+  );
+  fireEvent.click(screen.getAllByRole("button", { name: "Cancel" })[0]);
+  expect(calls).toContainEqual({ cmd: "cancel_oauth", args: { flowId: "f1" } });
+  expect(onClose).toHaveBeenCalled();
+});
+
+test("reconnecting as a different account explains it and can retry", async () => {
+  let attempts = 0;
+  backend({
+    begin_oauth: () => ({ flowId: `f${++attempts}`, authUrl: "https://accounts.google.com/x" }),
+    complete_oauth: () => {
+      if (attempts === 1) {
+        throw { code: "wrong_account", message: "You signed in as other@example.com." };
+      }
+      return account;
+    },
+  });
+  render(
+    <Onboarding
+      accounts={[account]}
+      reconnect={account}
+      onConnected={() => {}}
+      onClose={() => {}}
+    />,
+  );
+  expect(
+    await screen.findByRole("heading", { name: "That's a different account" }),
+  ).toBeInTheDocument();
+  click("Try again");
+  expect(await screen.findByText("me@example.com is connected")).toBeInTheDocument();
+});
+
 test("cancelling while begin_oauth is still pending never opens Google", async () => {
   let resolveBegin: (value: unknown) => void = () => {};
   const calls = backend({

@@ -34,6 +34,8 @@ pub enum AccountError {
     NoSignIn,
     #[error("Pheeme has no saved sign-in for this account. Sign in again.")]
     NoSavedSignIn,
+    #[error("You signed in as {actual}. To reconnect {expected}, sign in again and choose that account.")]
+    WrongAccount { expected: String, actual: String },
     #[error("Something went wrong: {0}")]
     Internal(String),
 }
@@ -50,6 +52,7 @@ impl AccountError {
             Self::NotFound => "not_found",
             Self::NoSignIn => "no_sign_in",
             Self::NoSavedSignIn => "no_saved_sign_in",
+            Self::WrongAccount { .. } => "wrong_account",
             Self::Internal(_) => "internal",
         }
     }
@@ -74,6 +77,9 @@ pub enum ClientChoice {
     /// Reuse the client an existing account signed in with.
     #[serde(rename_all = "camelCase")]
     SameAs { account_id: String },
+    /// Sign an existing account in again with its own client, keeping its cached mail.
+    #[serde(rename_all = "camelCase")]
+    Reconnect { account_id: String },
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -111,6 +117,8 @@ struct PendingSignIn {
     creds: ClientCredentials,
     verifier: String,
     redirect_uri: String,
+    /// Reconnecting: the address the user must sign in as.
+    expected_email: Option<String>,
     callback: JoinHandle<Result<String, OAuthError>>,
 }
 
@@ -232,14 +240,19 @@ impl AccountService {
     /// Starts listening for Google's redirect and returns the URL to open in the browser.
     /// Starting a new sign-in abandons any earlier one.
     pub async fn begin_sign_in(&self, choice: ClientChoice) -> Result<SignInStart, AccountError> {
-        let creds = match choice {
+        let (creds, expected_email) = match choice {
             ClientChoice::New {
                 client_id,
                 client_secret,
-            } => validate_new_client(&client_id, &client_secret)?,
+            } => (validate_new_client(&client_id, &client_secret)?, None),
             ClientChoice::SameAs { account_id } => {
                 let account = self.account(&account_id).await?;
-                self.saved_credentials(&account).await?.0
+                (self.saved_credentials(&account).await?.0, None)
+            }
+            ClientChoice::Reconnect { account_id } => {
+                let account = self.account(&account_id).await?;
+                let creds = self.saved_credentials(&account).await?.0;
+                (creds, Some(account.email))
             }
         };
 
@@ -255,6 +268,7 @@ impl AccountService {
             &loopback.redirect_uri,
             &pkce.challenge,
             &state,
+            expected_email.as_deref(),
         );
         let redirect_uri = loopback.redirect_uri.clone();
         let callback = tokio::spawn(loopback.wait_for_code(state, self.sign_in_timeout));
@@ -269,6 +283,7 @@ impl AccountService {
             creds,
             verifier: pkce.verifier,
             redirect_uri,
+            expected_email,
             callback,
         });
         Ok(SignInStart { flow_id, auth_url })
@@ -317,7 +332,8 @@ impl AccountService {
             .refresh_token
             .clone()
             .ok_or(OAuthError::NoRefreshToken)?;
-        let profile = auth::user_info(&self.http, &self.endpoints, &tokens.access_token).await?;
+        let mut profile =
+            auth::user_info(&self.http, &self.endpoints, &tokens.access_token).await?;
 
         // A flow cancelled or replaced while talking to Google must not save anything.
         {
@@ -326,6 +342,17 @@ impl AccountService {
                 return Err(OAuthError::Cancelled.into());
             }
             *active = None;
+        }
+        // Reconnecting must not quietly add (or overwrite) a different account.
+        if let Some(expected) = pending.expected_email {
+            if !expected.eq_ignore_ascii_case(&profile.email) {
+                return Err(AccountError::WrongAccount {
+                    expected,
+                    actual: profile.email,
+                });
+            }
+            // Same address, maybe in other case: save it onto the stored account.
+            profile.email = expected;
         }
 
         let account = self
@@ -483,14 +510,24 @@ impl crate::gmail::TokenProvider for AccountTokens {
         self.service
             .access_token(&self.account_id)
             .await
-            .map_err(|e| crate::gmail::GmailError::Auth(e.to_string()))
+            .map_err(token_error)
     }
 
     async fn refresh_access_token(&self) -> Result<String, crate::gmail::GmailError> {
         self.service
             .refresh_access_token(&self.account_id)
             .await
-            .map_err(|e| crate::gmail::GmailError::Auth(e.to_string()))
+            .map_err(token_error)
+    }
+}
+
+/// A dead or missing sign-in is `SignedOut`, so the UI can offer to sign in again.
+fn token_error(error: AccountError) -> crate::gmail::GmailError {
+    match error {
+        AccountError::OAuth(OAuthError::InvalidGrant) | AccountError::NoSavedSignIn => {
+            crate::gmail::GmailError::SignedOut(error.to_string())
+        }
+        other => crate::gmail::GmailError::Auth(other.to_string()),
     }
 }
 
@@ -889,7 +926,7 @@ mod tests {
             .await;
         let error = h.service.access_token(&account.id).await.unwrap_err();
         assert_eq!(error.code(), "invalid_grant");
-        assert!(error.to_string().contains("In production"));
+        assert!(error.to_string().contains("Sign in again"));
     }
 
     #[tokio::test]
@@ -912,7 +949,69 @@ mod tests {
             .await;
         let error = tokens.refresh_access_token().await.unwrap_err();
         assert!(
-            matches!(error, crate::gmail::GmailError::Auth(ref m) if m.contains("In production"))
+            matches!(error, crate::gmail::GmailError::SignedOut(ref m) if m.contains("Sign in again")),
+            "{error:?}"
+        );
+        assert_eq!(error.code(), "signed_out");
+    }
+
+    #[tokio::test]
+    async fn reconnect_keeps_the_account_and_preselects_its_address() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+
+        mock_google(&h.server, "Me@Example.com", "refresh-2").await;
+        let start = h
+            .service
+            .begin_sign_in(ClientChoice::Reconnect {
+                account_id: account.id.clone(),
+            })
+            .await
+            .unwrap();
+        let q: HashMap<_, _> = Url::parse(&start.auth_url)
+            .unwrap()
+            .query_pairs()
+            .into_owned()
+            .collect();
+        assert_eq!(q["login_hint"], "me@example.com");
+        assert_eq!(q["client_id"], CLIENT_A);
+        approve(&start, "code-2").await;
+        let again = h.service.complete_sign_in(&start.flow_id).await.unwrap();
+
+        assert_eq!(again.id, account.id);
+        assert_eq!(h.service.list_accounts().await.unwrap().len(), 1);
+        assert_eq!(
+            h.secrets.get(&account.id).unwrap().unwrap().refresh_token,
+            "refresh-2"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconnect_as_another_address_saves_nothing() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+
+        mock_google(&h.server, "other@example.com", "refresh-2").await;
+        let error = sign_in(
+            &h,
+            ClientChoice::Reconnect {
+                account_id: account.id.clone(),
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error.code(), "wrong_account");
+        assert!(error.to_string().contains("me@example.com"), "{error}");
+        assert_eq!(
+            h.service.list_accounts().await.unwrap(),
+            vec![account.clone()]
+        );
+        assert_eq!(
+            h.secrets.get(&account.id).unwrap().unwrap().refresh_token,
+            "refresh-1"
         );
     }
 
@@ -966,6 +1065,10 @@ mod tests {
             serde_json::from_value(serde_json::json!({"kind": "sameAs", "accountId": "a"}))
                 .unwrap();
         assert!(matches!(same, ClientChoice::SameAs { account_id } if account_id == "a"));
+        let reconnect: ClientChoice =
+            serde_json::from_value(serde_json::json!({"kind": "reconnect", "accountId": "a"}))
+                .unwrap();
+        assert!(matches!(reconnect, ClientChoice::Reconnect { account_id } if account_id == "a"));
     }
 
     #[test]

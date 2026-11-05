@@ -35,11 +35,13 @@ interface Props {
   onConnected: (account: AccountInfo) => void;
   /** Leave without adding an account (only offered when one already exists). */
   onClose?: () => void;
+  /** Sign this connected account in again (straight to Google) instead of adding one. */
+  reconnect?: AccountInfo;
 }
 
 const CLIENT_ID_SUFFIX = ".apps.googleusercontent.com";
 
-export function Onboarding({ accounts, onConnected, onClose }: Props) {
+export function Onboarding({ accounts, onConnected, onClose, reconnect }: Props) {
   const firstRun = accounts.length === 0;
   const [initial] = useState(() =>
     firstRun ? loadProgress() : { step: "choose" as SetupView, clientId: "" },
@@ -74,7 +76,18 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
     if (firstRun && state.phase === "connected") clearProgress();
   }, [firstRun, state.phase]);
 
+  const reconnectId = reconnect?.id;
+  useEffect(() => {
+    if (reconnectId) void startSignIn({ kind: "reconnect", accountId: reconnectId });
+    // oxlint-disable-next-line react/exhaustive-deps -- start once per reconnect
+  }, [reconnectId]);
+
   function cancelSignIn() {
+    if (reconnect) {
+      cancel();
+      onClose?.();
+      return;
+    }
     cancel();
     setView(
       view === "receiving" || !choice
@@ -121,7 +134,7 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
               <Button onClick={cancelSignIn}>Cancel transfer</Button>
             </>
           )}
-          {view === "choose" && (
+          {view === "choose" && !reconnect && (
             <ChooseClient
               accounts={accounts}
               onReuse={(accountId) => void startSignIn({ kind: "sameAs", accountId })}
@@ -157,6 +170,7 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
           {view === "authorize" && (
             <Waiting
               authUrl={authUrl}
+              email={reconnect?.email}
               onCancel={cancelSignIn}
               onFixCredentials={choice?.kind === "new" ? cancelSignIn : undefined}
             />
@@ -204,7 +218,7 @@ export function Onboarding({ accounts, onConnected, onClose }: Props) {
               }
             />
           )}
-          {["welcome", "credentials", "choose"].includes(view) && (
+          {["welcome", "credentials", "choose"].includes(view) && !reconnect && (
             <Button
               variant="ghost"
               size="lg"
@@ -533,10 +547,13 @@ function ChooseClient({
 
 function Waiting({
   authUrl,
+  email,
   onCancel,
   onFixCredentials,
 }: {
   authUrl: string;
+  /** Reconnecting: the address to sign in as. */
+  email?: string;
   onCancel: () => void;
   onFixCredentials?: () => void;
 }) {
@@ -546,7 +563,13 @@ function Waiting({
       <div className="waiting-mark" aria-hidden />
       <h1>Finish signing in in your browser</h1>
       <p className="guide-lead">
-        Pheeme opened Google's sign-in page. When it says you can close the tab, come back here.
+        Pheeme opened Google's sign-in page.{" "}
+        {email && (
+          <>
+            Sign in as <strong>{email}</strong>.{" "}
+          </>
+        )}
+        When it says you can close the tab, come back here.
       </p>
       <div className="button-row">
         <Button

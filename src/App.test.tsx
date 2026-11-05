@@ -52,7 +52,13 @@ beforeEach(() => {
   mockIPC(backend);
   __resetMailStoreForTests();
   __resetThreadStoreForTests();
-  useAccountStore.setState({ accounts: [], loaded: false, error: null, syncErrors: {} });
+  useAccountStore.setState({
+    accounts: [],
+    loaded: false,
+    error: null,
+    syncErrors: {},
+    reconnecting: null,
+  });
   restoreLayout = stubLayout(); // jsdom has no layout, so the virtualized list would render no rows
 });
 
@@ -338,6 +344,40 @@ test("an account's sync failure survives adding an account and coming back", asy
 
   await act(() => emit("sync:completed", { accountId: "a1" }));
   await vi.waitFor(() => expect(screen.queryByText(/Sync failed/)).not.toBeInTheDocument());
+});
+
+test("a signed-out account signs in again in place and goes back to the mail", async () => {
+  const calls: { cmd: string; args: unknown }[] = [];
+  mockIPC(
+    (cmd, args) => {
+      calls.push({ cmd, args });
+      if (cmd === "begin_oauth") return { flowId: "f1", authUrl: "https://accounts.google.com/x" };
+      if (cmd === "complete_oauth") return account;
+      return backend(cmd, args);
+    },
+    { shouldMockEvents: true },
+  );
+  render(<App />);
+  await screen.findByRole("navigation", { name: "Mailboxes" });
+  // An ordinary failure doesn't offer a sign-in.
+  await vi.waitFor(async () => {
+    await emit("sync:error", { accountId: "a1", code: "network", message: "Gmail didn't answer" });
+    expect(screen.getByText("Sync failed: Gmail didn't answer")).toBeInTheDocument();
+  });
+  expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+
+  await act(() =>
+    emit("sync:error", { accountId: "a1", code: "signed_out", message: "Google signed out" }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Sign in again" }));
+
+  expect(await screen.findByText("me@example.com is connected")).toBeInTheDocument();
+  expect(calls.find((c) => c.cmd === "begin_oauth")?.args).toEqual({
+    client: { kind: "reconnect", accountId: "a1" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  expect(await screen.findByRole("navigation", { name: "Mailboxes" })).toBeInTheDocument();
+  expect(useAccountStore.getState().reconnecting).toBeNull();
 });
 
 test("a sync change to the open conversation while adding an account shows on return", async () => {

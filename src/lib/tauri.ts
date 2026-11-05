@@ -12,7 +12,9 @@ export interface AccountInfo {
 
 export type ClientChoice =
   | { kind: "new"; clientId: string; clientSecret: string }
-  | { kind: "sameAs"; accountId: string };
+  | { kind: "sameAs"; accountId: string }
+  /** Sign an existing account in again with its own client, keeping its mail. */
+  | { kind: "reconnect"; accountId: string };
 
 export interface SignInStart {
   flowId: string;
