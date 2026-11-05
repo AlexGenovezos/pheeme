@@ -85,6 +85,8 @@ jobs:
         with:
           name: Real app on Linux
           tool: customSmallerIsBetter
+          # Scheduled runs carry no commit in the event payload; the token lets the action look it up.
+          github-token: ${{ github.token }}
           output-file-path: perf.json
           external-data-json-path: perf-history/app-perf.json
           alert-threshold: "120%"
@@ -97,6 +99,7 @@ jobs:
         with:
           name: Real app on Linux, start time
           tool: customSmallerIsBetter
+          github-token: ${{ github.token }}
           output-file-path: startup.json
           external-data-json-path: perf-history/app-startup.json
           fail-on-alert: false
