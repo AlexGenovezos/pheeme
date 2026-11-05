@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { ThreadDetail } from "../src/lib/tauri";
 
+test.use({ video: "on" });
+
 for (const html of [false, true]) {
   test(`Left returns from a ${html ? "HTML" : "plain-text"} email to Up/Down navigation`, async ({
     page,
@@ -44,6 +46,7 @@ for (const html of [false, true]) {
       : page.getByText("Keyboard navigation email", { exact: true });
     await body.click();
     await expect(list).not.toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath("before-returning-to-list.png") });
     await page.keyboard.press("ArrowLeft");
     await expect(list).toBeFocused();
     await expect(list).toHaveAttribute("aria-activedescendant", secondId!);
