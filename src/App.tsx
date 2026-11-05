@@ -107,7 +107,8 @@ function useSessionSyncEvents() {
 
 function App() {
   useModEvents();
-  const { accounts, loaded, error, load, upsert } = useAccountStore();
+  const { accounts, loaded, error, load, upsert, reconnecting, reconnect } = useAccountStore();
+  const reconnectAccount = accounts.find((a) => a.id === reconnecting);
   const [adding, setAdding] = useState(false);
   const showMail = useCallback(() => setAdding(false), []);
   useDesktopEvents(loaded && accounts.length > 0, showMail);
@@ -144,15 +145,25 @@ function App() {
         </main>
       </div>
     );
-  } else if (loaded && (accounts.length === 0 || adding)) {
+  } else if (loaded && (accounts.length === 0 || adding || reconnectAccount)) {
     screen = (
       <Onboarding
+        key={reconnectAccount?.id ?? "add"}
         accounts={accounts}
+        reconnect={reconnectAccount}
         onConnected={(account) => {
           upsert(account);
           setAdding(false);
+          reconnect(null);
         }}
-        onClose={accounts.length > 0 ? () => setAdding(false) : undefined}
+        onClose={
+          accounts.length > 0
+            ? () => {
+                setAdding(false);
+                reconnect(null);
+              }
+            : undefined
+        }
       />
     );
   } else if (loaded) {

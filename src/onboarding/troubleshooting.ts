@@ -61,6 +61,7 @@ const TITLES: Record<string, string> = {
   invalid_client: "Google didn't accept the client ID or secret",
   redirect_uri_mismatch: "That isn't a Desktop app client",
   invalid_grant: "Signed out by Google",
+  wrong_account: "That's a different account",
   code_rejected: "The sign-in expired",
   missing_scope: "Pheeme needs Gmail access",
   no_refresh_token: "Google didn't return a lasting sign-in",

@@ -10,6 +10,9 @@ pub enum GmailError {
     /// The token provider failed, or Gmail still answered 401 after a refresh.
     #[error("authentication failed: {0}")]
     Auth(String),
+    /// Google no longer accepts the account's saved sign-in: only signing in again fixes it.
+    #[error("{0}")]
+    SignedOut(String),
     /// Timeout, connection failure or a broken response stream, after retries.
     /// The request may have reached Gmail (timeout, dropped connection): its effect is unknown.
     #[error("network error: {0}")]
@@ -54,6 +57,7 @@ impl GmailError {
         }
         match self {
             GmailError::Auth(_) => "auth",
+            GmailError::SignedOut(_) => "signed_out",
             GmailError::Network(_) | GmailError::Offline(_) => "network",
             GmailError::RateLimit { .. } => "rate_limit",
             GmailError::Api { status: 404, .. } => "not_found",
@@ -113,6 +117,7 @@ mod tests {
     #[test]
     fn codes_are_stable() {
         assert_eq!(GmailError::Auth("x".into()).code(), "auth");
+        assert_eq!(GmailError::SignedOut("x".into()).code(), "signed_out");
         assert_eq!(GmailError::Network("x".into()).code(), "network");
         assert_eq!(GmailError::Offline("x".into()).code(), "network");
         assert_eq!(

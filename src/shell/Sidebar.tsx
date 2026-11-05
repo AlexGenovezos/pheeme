@@ -29,7 +29,8 @@ import {
   resolveActiveAccount,
 } from "../mail/mailboxes";
 import { composeNew } from "../mail/actions";
-import { useAccountStore } from "../store/accountStore";
+import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
+import { type SyncFailure, useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useKeybinding } from "../keyboard/useCommands";
 import { useSettingsStore } from "../settings/settingsStore";
@@ -133,7 +134,7 @@ function AccountSection({
 }: {
   account: AccountInfo;
   accounts: AccountInfo[];
-  error?: string;
+  error?: SyncFailure;
 }) {
   const collapsed = useUiStore((s) => s.collapsedAccounts.includes(account.id));
   const inboxUnread = useLabelStore((s) => s.categoryCounts[account.id]?.INBOX ?? 0);
@@ -147,8 +148,8 @@ function AccountSection({
         className="sidebar__account-header"
         aria-expanded={!collapsed}
         aria-controls={rowsId}
-        aria-description={error ? `Sync failed: ${error}` : undefined}
-        title={error ? `${account.email}\nSync failed: ${error}` : account.email}
+        aria-description={error ? `Sync failed: ${error.message}` : undefined}
+        title={error ? `${account.email}\nSync failed: ${error.message}` : account.email}
         onClick={() => useUiStore.getState().toggleAccountCollapsed(account.id)}
       >
         <span
@@ -161,6 +162,12 @@ function AccountSection({
         {collapsedCount && <span className="sidebar__account-count">{collapsedCount}</span>}
         <ChevronRight className="sidebar__chevron" aria-hidden="true" />
       </button>
+      {isSignedOut(error) && (
+        <div className="sidebar__sync-error" role="status">
+          <span>Signed out by Google</span>
+          <ReconnectButton accountId={account.id} />
+        </div>
+      )}
       <div id={rowsId} className="sidebar__group-rows" hidden={collapsed}>
         {!collapsed && <CategoryRows accountId={account.id} />}
       </div>
@@ -282,6 +289,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
                 >
                   <TriangleAlert aria-hidden="true" />
                   <span>Sync failed: {errors[single.id].message}</span>
+                  {isSignedOut(errors[single.id]) && <ReconnectButton accountId={single.id} />}
                 </div>
               )}
               <CategoryRows accountId={single.id} />
@@ -297,12 +305,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
                 target={ALL_INBOXES}
               />
               {accounts.map((a) => (
-                <AccountSection
-                  key={a.id}
-                  account={a}
-                  accounts={accounts}
-                  error={errors[a.id]?.message}
-                />
+                <AccountSection key={a.id} account={a} accounts={accounts} error={errors[a.id]} />
               ))}
             </>
           )}

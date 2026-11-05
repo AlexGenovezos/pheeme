@@ -3,6 +3,7 @@ import { createContext, useContext, useState } from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { Button } from "../components/ui/Button";
 import { type AccountInfo, type CommandError, toCommandError } from "../lib/tauri";
+import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
 import { useAccountStore } from "../store/accountStore";
 import { SendCredentials } from "../transfer/SendCredentials";
 import { SettingsRow, SettingsSection } from "./rows";
@@ -79,9 +80,12 @@ function AccountRow({ account }: { account: AccountInfo }) {
         }
         control={
           !confirming && (
-            <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
-              Remove
-            </Button>
+            <div className="settings-account__buttons">
+              {isSignedOut(syncError) && <ReconnectButton accountId={account.id} />}
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+                Remove
+              </Button>
+            </div>
           )
         }
       />

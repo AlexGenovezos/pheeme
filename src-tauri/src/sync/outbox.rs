@@ -351,7 +351,10 @@ fn is_rejection(e: &GmailError) -> bool {
 fn never_sent(e: &GmailError) -> bool {
     matches!(
         e,
-        GmailError::Offline(_) | GmailError::RateLimit { .. } | GmailError::Auth(_)
+        GmailError::Offline(_)
+            | GmailError::RateLimit { .. }
+            | GmailError::Auth(_)
+            | GmailError::SignedOut(_)
     )
 }
 

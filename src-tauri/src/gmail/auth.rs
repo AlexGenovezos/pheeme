@@ -68,7 +68,7 @@ pub enum OAuthError {
     InvalidClient,
     #[error("This OAuth client isn't a Desktop app client. Create a new client with application type Desktop app and use its ID and secret.")]
     RedirectUriMismatch,
-    #[error("Google no longer accepts this account's sign-in. That happens when access is revoked, the password changes, or the Google Cloud app is still in Testing (sign-ins expire after 7 days there). Publish the app to In production, then sign in again.")]
+    #[error("Google signed Pheeme out of this account. Sign in again to reconnect it; its mail stays. Google does this when access is revoked, the password changes or the account is locked. If it happens every 7 days, your Google Cloud app is still in Testing: publish it to In production.")]
     InvalidGrant,
     #[error("The sign-in code expired or was already used. Start again.")]
     CodeRejected,
@@ -164,9 +164,11 @@ pub fn authorization_url(
     redirect_uri: &str,
     code_challenge: &str,
     state: &str,
+    login_hint: Option<&str>,
 ) -> String {
     let mut url = Url::parse(&endpoints.auth).expect("auth endpoint is a valid URL");
-    url.query_pairs_mut()
+    let mut query = url.query_pairs_mut();
+    query
         .append_pair("client_id", client_id)
         .append_pair("redirect_uri", redirect_uri)
         .append_pair("response_type", "code")
@@ -178,6 +180,11 @@ pub fn authorization_url(
         // when an account is re-added; select_account lets the user pick a second account.
         .append_pair("access_type", "offline")
         .append_pair("prompt", "select_account consent");
+    // Reconnecting an account preselects it on Google's account chooser.
+    if let Some(email) = login_hint {
+        query.append_pair("login_hint", email);
+    }
+    drop(query);
     url.into()
 }
 
@@ -489,6 +496,7 @@ mod tests {
             "http://127.0.0.1:5000/oauth/callback",
             "chal",
             "st",
+            None,
         );
         let url = Url::parse(&url).unwrap();
         assert_eq!(url.host_str(), Some("accounts.google.com"));
@@ -503,6 +511,7 @@ mod tests {
         assert_eq!(q["prompt"], "select_account consent");
         assert_eq!(q["scope"], SCOPES.join(" "));
         assert!(!q["scope"].contains("https://mail.google.com/"));
+        assert!(!q.contains_key("login_hint"));
     }
 
     #[test]
