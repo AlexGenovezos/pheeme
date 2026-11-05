@@ -1,16 +1,10 @@
 name: Site
 
-# Deploys pheeme.app from site/. Only site changes trigger it.
+# Deploys the marketing site and real app preview together on every main push.
 on:
   push:
     branches: [main]
-    paths:
-      - site/**
-      - .github/workflows/site.yml
   pull_request:
-    paths:
-      - site/**
-      - .github/workflows/site.yml
   workflow_dispatch:
 
 permissions:
@@ -26,6 +20,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # The browser checks build site/dist, including /demo from the app source.
+      # A broken demo must not replace the live site.
+      - run: npm run test:site
 
       # main -> production at pheeme.app
       - name: Deploy to pheeme.app

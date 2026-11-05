@@ -2,19 +2,21 @@
 
 # pheeme.app
 
-Marketing site for pheeme, the open-source email client for developers. It lives in `site/` of the app repo; run the commands below from this folder.
+Marketing site for pheeme, the open-source email client for developers. It lives in `site/` of the app repo. Run npm commands from the repository root; other commands below run from `site/`.
 
-Plain HTML and CSS, no build step. Everything in `public/` is served as-is by a Cloudflare Worker (static assets) at **pheeme.app** and **www.pheeme.app**.
+The marketing pages are plain HTML and CSS. `npm run build:site` copies `site/public/` to `site/dist/` and builds the actual app into `site/dist/demo/`, using the same Vite configuration and entry point as the desktop client. A Cloudflare Worker serves those static assets at **pheeme.app** and **www.pheeme.app**.
+
+The home page embeds `/demo/` in an iframe, keeping the app's styles and shortcuts isolated from the marketing page. The existing browser preview backend (`src/preview/install.ts`) supplies sample mail: the app's components, styles and interactions run unchanged, while Gmail and desktop services are simulated. Mail changes reset on reload; preferences such as theme and pane widths persist in the visitor's browser. On small screens the embed scrolls horizontally to preserve the desktop layout. The full demo is also available directly at `/demo/`.
 
 ## Deploys
 
-`.github/workflows/site.yml` runs only when something under `site/` (or the workflow itself) changes.
+`.github/workflows/site.yml` runs for every pull request and push to `main`, including app changes. It installs dependencies, builds the combined site, and runs browser checks before deploying. This keeps the website's demo in sync with the app source on `main`; there is no separate demo UI to maintain or generated bundle to commit.
 
-- Push to `main` → GitHub Actions runs `wrangler deploy` → live on pheeme.app.
+- Push to `main` → build and browser checks → `wrangler deploy` → live on pheeme.app.
 - Open a pull request → a preview version is uploaded (production is untouched).
 - Needs the repo secret `CLOUDFLARE_API_TOKEN` (Cloudflare token from the "Edit Cloudflare Workers" template, scoped to the pheeme.app account and zone).
 
-Manual deploy: `wrangler deploy`.
+Manual deploy: run `npm run build:site` from the repository root, then `wrangler deploy` from `site/`.
 
 ## Motion
 
@@ -25,8 +27,13 @@ Manual deploy: `wrangler deploy`.
 ## Local preview
 
 ```sh
-wrangler dev          # or: python3 -m http.server -d public 8787
+# From the repository root:
+npm run build:site
+cd site
+wrangler dev          # or: python3 -m http.server -d dist 8787
 ```
+
+Run `npm run test:site` from the repository root to build the site and check the embedded app, archive/search, lazy-loaded compose, settings, sample-mail reset, and narrow-screen scrolling in Chromium. Install the browser first with `npx playwright install chromium` if needed. The test server uses Python 3.
 
 ## Layout
 
@@ -34,7 +41,8 @@ wrangler dev          # or: python3 -m http.server -d public 8787
 | --- | --- |
 | `public/index.html`, `styles.css` | Home page (the stamp hero is an inline SVG symbol) |
 | `public/motion.js` | Scroll scenes and reveal-on-enter animations |
-| `public/demo.js` | The keyboard inbox demo |
+| `scripts/build.mjs` | Builds the marketing pages and real app preview into `dist/` |
+| `dist/demo/` | Generated app preview embedded by the home page (not committed) |
 | `public/download.js` | Points the hero download button at the latest release installer for the visitor's OS |
 | `public/changelog.html`, `changelog.js` | pheeme.app/changelog: every GitHub release with its notes, fetched live (notes come from `docs/releases/` in the app repo) |
 | `public/logos.html` | Logo download page (pheeme.app/logos) |

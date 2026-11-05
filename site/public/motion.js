@@ -37,10 +37,6 @@
       el.style.setProperty("--t", ease(range(enter, 0.12, 0.34)).toFixed(4));
       const e = ease(range(enter, 0.08, 0.58));
       el.style.setProperty("--e", e.toFixed(4));
-      if (e >= 0.999 && !el.dataset.landed) {
-        el.dataset.landed = "1";
-        document.dispatchEvent(new CustomEvent("pheeme:demo-ready"));
-      }
     },
     words(el, p) {
       el.style.setProperty("--p", range(p, 0.05, 0.8).toFixed(4));

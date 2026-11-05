@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsrs && vite build",
+    "build:site": "tsrs && node site/scripts/build.mjs",
     "typecheck": "tsrs --noEmit && tsrs --noEmit -p tsconfig.e2e.json",
     "typecheck:typescript": "tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
     "lint": "oxlint --deny-warnings && node scripts/check-tokens.mjs",
     "test": "vitest",
     "test:ci": "vitest run",
+    "test:site": "playwright test --config site/playwright.config.ts",
     "preview": "vite preview",
     "tauri": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri",
     "test:coverage": "vitest run --coverage",
