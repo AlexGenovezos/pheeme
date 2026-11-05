@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+test.use({ video: "on" });
+
 test("unread counts follow keyboard navigation while email details are still loading", async ({
   page,
 }, testInfo) => {
