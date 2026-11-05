@@ -26,7 +26,6 @@
   <!-- Scroll scenes only switch on with JS and when the visitor hasn't asked for reduced motion. -->
   <script>if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("motion");</script>
   <script src="/motion.js" defer></script>
-  <script src="/demo.js" defer></script>
   <script src="/download.js" defer></script>
 </head>
 <body>
@@ -107,40 +106,18 @@
       </div>
     </section>
 
-    <!-- 2. The inbox tilts up to face you as you scroll, then comes alive. -->
+    <!-- 2. The real app, built from the same source as the desktop client. -->
     <section class="scene scene-inbox" data-scene="inbox" aria-labelledby="demo-title">
       <div class="sticky">
         <h2 id="demo-title" class="scene-title">Every action is one keystroke.</h2>
         <div class="tilt wrap">
-          <div class="window" id="demo" tabindex="0" aria-describedby="demo-help">
-            <div class="titlebar" aria-hidden="true">
-              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-              <span class="title">Inbox</span>
-              <span class="search" id="search" hidden><span class="slash">/</span><span id="query"></span><span class="caret"></span></span>
+          <div class="window" id="demo">
+            <div class="demo-viewport">
+              <iframe class="demo-frame" src="/demo/" title="Try Pheeme with sample mail" loading="lazy" aria-describedby="demo-help"></iframe>
             </div>
-            <div class="panes">
-              <aside class="folders" aria-hidden="true">
-                <ul>
-                  <li class="on">Inbox <span id="count">7</span></li>
-                  <li>Starred <span id="starcount">1</span></li>
-                  <li>Done <span id="donecount">0</span></li>
-                  <li>Sent</li>
-                  <li>Drafts</li>
-                </ul>
-              </aside>
-              <ol class="list" id="list" aria-label="Messages" aria-live="polite"></ol>
-              <article class="reader" id="reader" aria-live="polite"></article>
-            </div>
-            <div class="keybar" id="demo-help">
-              <span class="hint" id="hint">Your keyboard runs this demo.</span>
-              <span class="keys">
-                <button type="button" data-key="j"><kbd>j</kbd> next</button>
-                <button type="button" data-key="k"><kbd>k</kbd> previous</button>
-                <button type="button" data-key="e"><kbd>e</kbd> done</button>
-                <button type="button" data-key="s"><kbd>s</kbd> star</button>
-                <button type="button" data-key="/"><kbd>/</kbd> search</button>
-                <button type="button" data-key="z"><kbd>z</kbd> undo</button>
-              </span>
+            <div class="demo-help" id="demo-help">
+              <p>The real Pheeme app, with sample mail. Click inside to try it.<span class="demo-mobile-hint"> Swipe sideways to explore.</span></p>
+              <a href="/demo/" target="_blank" rel="noopener">Open full demo <span aria-hidden="true">↗</span></a>
             </div>
           </div>
         </div>
@@ -210,7 +187,7 @@
         </li>
         <li class="done" data-reveal style="--d:.34s">
           <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">DONE</text></svg>
-          <h3>The keyboard inbox</h3><p>The demo above, for real: categories, threads, and actions that land before Gmail answers.</p>
+          <h3>The keyboard inbox</h3><p>Try it above: categories, threads, and actions that land before Gmail answers.</p>
         </li>
         <li class="done" data-reveal style="--d:.46s">
           <svg class="pm" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/><circle cx="60" cy="60" r="38"/><text x="60" y="66" text-anchor="middle">DONE</text></svg>

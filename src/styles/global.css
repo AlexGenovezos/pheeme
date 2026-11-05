@@ -50,6 +50,11 @@ body {
   overscroll-behavior: none;
 }
 
+/* Let touch swipes reach the website's horizontal scroller around the preview. */
+html[data-runtime="browser"] body {
+  overscroll-behavior-x: auto;
+}
+
 /* Content people may want to copy opts back in. */
 .selectable,
 input,
