@@ -201,3 +201,79 @@ test("only the latest load writes its result", async () => {
   await first;
   expect(store().counts.a.INBOX.unread).toBe(1);
 });
+
+const readChange = (delta = -1) => ({
+  accountId: "a",
+  delta,
+  labelIds: ["INBOX"],
+  categoryIds: ["INBOX", "CATEGORY_SOCIAL"],
+});
+
+test("pending reads reject older refreshes and reconcile once all commands settle", async () => {
+  const w = world();
+  backend(w);
+  await store().load(["a", "b"]);
+
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  mockIPC(async (cmd, args) => {
+    const a = args as { accountId?: string; accountIds?: string[] };
+    const snapshot =
+      cmd === "list_labels"
+        ? w.labels[a.accountId ?? ""]
+        : cmd === "label_counts"
+          ? w.counts[a.accountId ?? ""]
+          : a.accountIds?.length === 1
+            ? w.mailbox[a.accountIds[0]]
+            : [{ labelId: "INBOX", unread: w.allInbox }];
+    await gate;
+    return snapshot;
+  });
+  const stale = store().load(["a", "b"]);
+  store().patchUnread(1, [readChange()]);
+  store().patchUnread(2, [readChange()]);
+  release();
+  await stale;
+  expect(store().counts.a.INBOX).toEqual({ unread: 1, total: 10 });
+  expect(store().categoryCounts.a.CATEGORY_SOCIAL).toBe(0);
+  expect(store().allInboxUnread).toBe(3);
+  expect(store().counts.b.INBOX.unread).toBe(2);
+
+  // A refresh after one write commits mustn't count it twice or restore the other unread row.
+  w.counts.a = [{ labelId: "INBOX", unread: 2, total: 10 }];
+  w.allInbox = 4;
+  store().settleUnread(1);
+  await store().load(["a", "b"]);
+  expect(store().counts.a.INBOX.unread).toBe(1);
+  expect(store().allInboxUnread).toBe(3);
+
+  w.counts.a = [{ labelId: "INBOX", unread: 1, total: 10 }];
+  w.mailbox.a = [
+    { labelId: "INBOX", unread: 1 },
+    { labelId: "CATEGORY_PERSONAL", unread: 1 },
+  ];
+  w.allInbox = 3;
+  store().settleUnread(2);
+  await vi.waitFor(() =>
+    expect(store().categoryCounts.a).toEqual({ INBOX: 1, CATEGORY_PERSONAL: 1 }),
+  );
+  expect(store().counts.a.INBOX.unread).toBe(1);
+  expect(store().allInboxUnread).toBe(3);
+});
+
+test("failed or cancelled reads restore cached counts, and mark-unread raises them immediately", async () => {
+  backend(world());
+  await store().load(["a", "b"]);
+  store().patchUnread(1, [readChange()]);
+  expect(store().allInboxUnread).toBe(4);
+  store().settleUnread(1); // No cache write: failed command or cancelled automatic read.
+  await vi.waitFor(() => expect(store().allInboxUnread).toBe(5));
+  expect(store().counts.a.INBOX.unread).toBe(3);
+
+  store().patchUnread(2, [readChange(1)]);
+  expect(store().counts.a.INBOX).toEqual({ unread: 4, total: 10 });
+  expect(store().categoryCounts.a.CATEGORY_SOCIAL).toBe(3);
+  expect(store().allInboxUnread).toBe(6);
+  store().settleUnread(2);
+  await vi.waitFor(() => expect(store().allInboxUnread).toBe(5));
+});

@@ -16,11 +16,17 @@ import {
   trashThreads,
 } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
-import { useLabelStore } from "../store/labelStore";
+import { type UnreadCountChange, useLabelStore } from "../store/labelStore";
 import { newOp, useMailStore } from "../store/mailStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
-import { parseThreadKey, resolveActiveAccount, type ThreadKey, threadKey } from "./mailboxes";
+import {
+  CATEGORIES,
+  parseThreadKey,
+  resolveActiveAccount,
+  type ThreadKey,
+  threadKey,
+} from "./mailboxes";
 import { rowId } from "./ThreadRow";
 
 /** The message a Reply, Reply all or Forward answers: the conversation's latest that isn't a draft. */
@@ -58,6 +64,7 @@ const keyOf = (t: ThreadSummary) => threadKey(t.accountId, t.id);
 
 /** A change to some conversations: what the list shows right away, and how it reaches Gmail. */
 interface Change {
+  read?: boolean;
   /** Rewrites the rows immediately. */
   patch?: (thread: ThreadSummary) => ThreadSummary;
   /** The change takes the rows out of the mailbox being shown. */
@@ -164,7 +171,54 @@ async function send(
       }
     }),
   );
+  useLabelStore.getState().settleUnread(op);
   return done;
+}
+
+/** Membership we already know, so count updates never wait for a detail/body request. */
+function unreadCountChange(thread: ThreadSummary, read: boolean): UnreadCountChange {
+  const detail = useThreadStore.getState().details.get(keyOf(thread));
+  const labels = new Set(
+    detail?.messages.flatMap((m) =>
+      m.labelIds.includes("TRASH")
+        ? ["TRASH"]
+        : m.labelIds.includes("SPAM")
+          ? ["SPAM"]
+          : m.labelIds,
+    ),
+  );
+  const query = mail().loadedQuery ?? mail().query;
+  if (query && !query.search && query.accountIds.includes(thread.accountId)) {
+    labels.add(query.labelId);
+    if (query.alsoLabelId) labels.add(query.alsoLabelId);
+  }
+  if (thread.starred) labels.add("STARRED");
+  const categories = labels.has("INBOX")
+    ? CATEGORIES.filter((c) => c.labelId !== "CATEGORY_PERSONAL" && labels.has(c.labelId)).map(
+        (c) => c.labelId,
+      )
+    : [];
+  // Primary is the inbox minus the other four categories, including accounts with no category labels.
+  if (labels.has("INBOX") && categories.length === 0 && (detail || labels.has("CATEGORY_PERSONAL")))
+    categories.push("CATEGORY_PERSONAL");
+  if (labels.has("INBOX")) categories.push("INBOX");
+  if (!labels.has("SPAM") && !labels.has("TRASH") && (detail || labels.has("INBOX")))
+    labels.add("ALL");
+  return {
+    accountId: thread.accountId,
+    delta: read ? -1 : 1,
+    labelIds: [...labels].filter((id) => id !== "UNREAD"),
+    categoryIds: categories,
+  };
+}
+
+function patchUnread(op: number, rows: ThreadSummary[], change: Change) {
+  const { read } = change;
+  if (read === undefined) return;
+  useLabelStore.getState().patchUnread(
+    op,
+    rows.filter((t) => t.unread === read).map((t) => unreadCountChange(t, read)),
+  );
 }
 
 /** Where the open thread goes when `removed` leave the list: the next row, else the one above, else nothing. `undefined` if it stays. */
@@ -208,6 +262,11 @@ function apply(
 
   // Everything up to the command runs before the first await, so the list answers at once.
   // A change can do both: the flag change follows the conversation into other mailboxes, the removal is scoped to this one.
+  patchUnread(
+    op,
+    rows.map((r) => r.thread),
+    change,
+  );
   if (change.patch) mail().patch(rowKeys, change.patch, op);
   if (change.leavesList) {
     const next = nextOpenAfter(new Set(rowKeys));
@@ -224,6 +283,7 @@ function apply(
   const drop = () => {
     mail().settle(op, rowKeys, true);
     useThreadStore.getState().settleDetails(op, rowKeys);
+    useLabelStore.getState().settleUnread(op);
     void mail().reload(true); // the patched rows go back to what the cache says
     return new Map<string, string[]>();
   };
@@ -243,6 +303,11 @@ function apply(
 async function revert(done: Map<string, string[]>, original: Change, inverse: Change) {
   const op = newOp();
   const keys = keysOf(done);
+  patchUnread(
+    op,
+    present(keys).map((r) => r.thread),
+    inverse,
+  );
   if (inverse.patch) mail().patch(keys, inverse.patch, op);
   if (inverse.leavesList) mail().remove(keys, op);
   await send(done, inverse, op);
@@ -299,10 +364,12 @@ export function setRead(read: boolean, keys?: ThreadKey[]): Promise<void> {
   });
 }
 
-const readChange = (read: boolean): Change =>
-  modify(read ? [] : ["UNREAD"], read ? ["UNREAD"] : [], {
+const readChange = (read: boolean): Change => ({
+  ...modify(read ? [] : ["UNREAD"], read ? ["UNREAD"] : [], {
     patch: (t) => ({ ...t, unread: !read }),
-  });
+  }),
+  read,
+});
 
 /**
  * The labels each of `keys` carries, from the cached detail or else straight from the backend. Read once per action
