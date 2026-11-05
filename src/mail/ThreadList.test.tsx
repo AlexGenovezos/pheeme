@@ -2,11 +2,13 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { registry } from "../keyboard/registry";
+import { useGlobalShortcuts } from "../keyboard/useCommands";
 import type { AccountInfo, ThreadSummary } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { stubLayout } from "../test/layout";
+import { HtmlBody } from "./EmailBody";
 import { ALL_INBOXES, categoryMailbox, threadKey } from "./mailboxes";
 import { ThreadList, type ThreadListProps } from "./ThreadList";
 import { rowId } from "./ThreadRow";
@@ -181,6 +183,85 @@ describe("selection", () => {
 });
 
 describe("focus and selection semantics", () => {
+  test("clicking a conversation focuses the list so arrows keep navigating", () => {
+    useMailStore.setState({ threads: many(3) });
+    render(<ThreadList {...props()} />);
+    const list = screen.getByRole("listbox");
+
+    fireEvent.click(row(1));
+    expect(list).toHaveFocus();
+    expect(useUiStore.getState().openThread).toBe(key(1));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    expect(useUiStore.getState().openThread).toBe(key(2));
+  });
+
+  test("Left returns from the reading pane to the current conversation and restores Up/Down", () => {
+    function Mail() {
+      useGlobalShortcuts();
+      return (
+        <>
+          <ThreadList {...props()} />
+          <button>Reply</button>
+          <input aria-label="Reply text" />
+        </>
+      );
+    }
+    useMailStore.setState({ threads: many(3) });
+    useUiStore.setState({ openThread: key(1) });
+    render(<Mail />);
+    const list = screen.getByRole("listbox");
+    const reply = screen.getByRole("button", { name: "Reply" });
+    reply.focus();
+
+    fireEvent.keyDown(reply, { key: "ArrowLeft", shiftKey: true });
+    expect(reply).toHaveFocus();
+    fireEvent.keyDown(reply, { key: "ArrowLeft" });
+    expect(list).toHaveFocus();
+    expect(useUiStore.getState().openThread).toBe(key(1));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    expect(useUiStore.getState().openThread).toBe(key(2));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(useUiStore.getState().openThread).toBe(key(1));
+
+    const input = screen.getByRole("textbox", { name: "Reply text" });
+    input.focus();
+    fireEvent.keyDown(input, { key: "ArrowLeft" });
+    expect(input).toHaveFocus();
+  });
+
+  test("Left returns from an HTML email iframe and arrows resume at the open conversation", () => {
+    useMailStore.setState({ threads: many(3) });
+    useUiStore.setState({ openThread: key(1) });
+    render(
+      <>
+        <ThreadList {...props()} />
+        <HtmlBody html="<p>Email body</p>" declaresDark={false} />
+      </>,
+    );
+    const list = screen.getByRole("listbox");
+    const frame = screen.getByTitle("Message body") as HTMLIFrameElement;
+    const doc = frame.contentDocument!;
+    doc.body.innerHTML = '<a href="https://example.com">Email link</a>';
+    fireEvent.load(frame);
+    const link = doc.querySelector("a")!;
+    link.focus();
+    expect(document.activeElement).toBe(frame);
+
+    const event = new doc.defaultView!.KeyboardEvent("keydown", {
+      key: "ArrowLeft",
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => void link.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(list).toHaveFocus();
+    expect(useUiStore.getState().openThread).toBe(key(1));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    expect(useUiStore.getState().openThread).toBe(key(2));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(useUiStore.getState().openThread).toBe(key(1));
+  });
+
   test("focus stays on the listbox across the virtual window; activedescendant follows the open row", () => {
     useMailStore.setState({ threads: many(200) });
     render(<ThreadList {...props()} />);

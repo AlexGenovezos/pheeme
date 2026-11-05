@@ -236,7 +236,7 @@ function watchFrame(
 
   // Keys typed with focus in the frame never reach the parent window's shortcut handler, so hand them over.
   // Enter/Space on a link stay native: they activate it, which arrives above as a click. Unbound keys
-  // (mod+c, arrows, Tab) aren't touched, so copying, selecting and tabbing keep working.
+  // (mod+c, Tab) aren't touched, so copying, selecting and tabbing keep working.
   const onKeyDown = (event: KeyboardEvent) => {
     if ((event.key === "Enter" || event.key === " ") && closestLink(event.target)) return;
     commands.handleKeyDown(event);
