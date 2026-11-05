@@ -484,6 +484,47 @@ describe("unstarring in Starred", () => {
 });
 
 describe("opening", () => {
+  test("rapid navigation lowers mailbox and inbox counts before details or commands finish", async () => {
+    let releaseDetail!: () => void;
+    detailGate = new Promise((resolve) => (releaseDetail = resolve));
+    const releaseCommand = hold();
+    useMailStore.setState({
+      query: { accountIds: ["a1"], labelId: "INBOX", alsoLabelId: "CATEGORY_UPDATES" },
+    });
+    useLabelStore.setState({
+      counts: {
+        a1: { INBOX: { unread: 50, total: 100 }, ALL: { unread: 80, total: 200 } },
+        a2: { INBOX: { unread: 5, total: 10 } },
+      },
+      categoryCounts: { a1: { INBOX: 50, CATEGORY_UPDATES: 47, CATEGORY_PERSONAL: 3 } },
+      allInboxUnread: 55,
+    });
+    setList([1, 2, 3].map((n) => thread(n, "a1", { unread: true })));
+
+    for (let i = 0; i < 3; i++) {
+      moveSelection(1);
+      expect(useLabelStore.getState().categoryCounts.a1.CATEGORY_UPDATES).toBe(46 - i);
+      expect(useLabelStore.getState().allInboxUnread).toBe(54 - i);
+    }
+    openAndMarkRead(key(3)); // Already read: don't decrement twice.
+    expect(useLabelStore.getState().categoryCounts.a1).toEqual({
+      INBOX: 47,
+      CATEGORY_UPDATES: 44,
+      CATEGORY_PERSONAL: 3,
+    });
+    expect(useLabelStore.getState().counts.a1).toEqual({
+      INBOX: { unread: 47, total: 100 },
+      ALL: { unread: 77, total: 200 },
+    });
+    expect(useLabelStore.getState().counts.a2.INBOX.unread).toBe(5);
+    expect(modifyCalls()).toEqual([]);
+    releaseDetail();
+    await vi.waitFor(() => expect(modifyCalls()).toHaveLength(3));
+    expect(useLabelStore.getState().categoryCounts.a1.CATEGORY_UPDATES).toBe(44);
+    releaseCommand();
+    await flush();
+  });
+
   test("opening an unread thread marks it read once", async () => {
     setList([thread(1, "a1", { unread: true }), thread(2)]);
     useUiStore.setState({ checked: [key(2)] });

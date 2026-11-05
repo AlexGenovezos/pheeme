@@ -9,6 +9,13 @@ export interface LabelCountEntry {
   total: number;
 }
 
+export interface UnreadCountChange {
+  accountId: string;
+  delta: number;
+  labelIds: string[];
+  categoryIds: string[];
+}
+
 interface LabelState {
   labels: Record<string, LabelInfo[]>;
   /** Per account, per label: conversations unread and in total (`label_counts`). */
@@ -19,6 +26,9 @@ interface LabelState {
   allInboxUnread: number;
   /** Fetch everything for `accountIds`; accounts not listed are dropped. */
   load(accountIds: string[]): Promise<void>;
+  /** Update known mailbox counts with the rows, holding cache refreshes until all read commands settle. */
+  patchUnread(op: number, changes: UnreadCountChange[]): void;
+  settleUnread(op: number): void;
   /** Reload on label and message sync events. Resolves to the unsubscribe function. */
   subscribe(signal?: AbortSignal): Promise<() => void>;
   /** An account's own labels, sorted by name. The array is stable until the labels change. */
@@ -33,6 +43,7 @@ let latest = 0;
 let knownIds: string[] = [];
 let refreshing = false;
 let refreshAgain = false;
+const pendingReads = new Set<number>();
 
 const NO_LABELS: LabelInfo[] = [];
 const sortedUserLabels = new WeakMap<LabelInfo[], LabelInfo[]>();
@@ -85,6 +96,9 @@ export const useLabelStore = create<LabelState>((set, get) => ({
   load: async (accountIds) => {
     const ticket = ++latest;
     knownIds = accountIds;
+    // A count query can include some pending writes and miss others. Keep the optimistic
+    // counts until all writes finish, then query once without risking a double decrement.
+    if (pendingReads.size > 0) return;
     const [accounts, inbox] = await Promise.all([
       Promise.all(accountIds.map(fetchAccount)),
       fetchInboxUnread(accountIds),
@@ -109,6 +123,35 @@ export const useLabelStore = create<LabelState>((set, get) => ({
       });
       return { labels, counts, categoryCounts, allInboxUnread: inbox ?? s.allInboxUnread };
     });
+  },
+  patchUnread: (op, changes) => {
+    if (changes.length === 0) return;
+    pendingReads.add(op);
+    ++latest; // A refresh started before this read mustn't put the old counts back.
+    set((s) => {
+      const counts = { ...s.counts };
+      const categoryCounts = { ...s.categoryCounts };
+      let allInboxUnread = s.allInboxUnread;
+      for (const { accountId, delta, labelIds, categoryIds } of changes) {
+        const labels = { ...counts[accountId] };
+        for (const id of new Set(labelIds)) {
+          const entry = labels[id];
+          if (entry) labels[id] = { ...entry, unread: Math.max(0, entry.unread + delta) };
+        }
+        counts[accountId] = labels;
+        const categories = { ...categoryCounts[accountId] };
+        for (const id of new Set(categoryIds))
+          categories[id] = Math.max(0, (categories[id] ?? 0) + delta);
+        categoryCounts[accountId] = categories;
+        if (categoryIds.includes("INBOX")) allInboxUnread = Math.max(0, allInboxUnread + delta);
+      }
+      return { counts, categoryCounts, allInboxUnread };
+    });
+  },
+  settleUnread: (op) => {
+    if (!pendingReads.delete(op) || pendingReads.size > 0) return;
+    // Success, failure and cancelled automatic reads all reconcile against the cache.
+    void get().load(knownIds);
   },
   subscribe: (signal) => {
     // Sync bursts (initial sync, backfill) emit often; refresh once more at most while one is running.
@@ -154,5 +197,6 @@ export function __resetLabelStoreForTests() {
   knownIds = [];
   refreshing = false;
   refreshAgain = false;
+  pendingReads.clear();
   useLabelStore.setState({ labels: {}, counts: {}, categoryCounts: {}, allInboxUnread: 0 });
 }
