@@ -222,6 +222,13 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
 
   useCommands([
     {
+      id: "list.focus",
+      title: "Focus conversation list",
+      group: "Navigation",
+      shortcut: "left",
+      run: () => scrollRef.current?.focus(),
+    },
+    {
       id: "list.toggle-check",
       title: "Select conversation",
       group: "Conversation",
@@ -241,6 +248,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
 
   const select = useCallback(
     (e: MouseEvent, thread: ThreadSummary) => {
+      scrollRef.current?.focus({ preventScroll: true });
       const key = threadKey(thread.accountId, thread.id);
       const ui = useUiStore.getState();
       if (e.metaKey || e.ctrlKey) ui.toggleChecked(key);
