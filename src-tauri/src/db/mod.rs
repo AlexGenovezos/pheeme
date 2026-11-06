@@ -61,6 +61,21 @@ mod tests {
         pool
     }
 
+    /// `.cargo/config.toml` builds SQLite without SQLITE_ENABLE_MEMORY_MANAGEMENT, whose
+    /// shared page cache makes the pool's connections read one at a time.
+    #[tokio::test]
+    async fn sqlite_page_caches_are_per_connection() {
+        let pool = fresh_pool().await;
+        let options: Vec<String> = sqlx::query_scalar("PRAGMA compile_options")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !options.iter().any(|o| o == "ENABLE_MEMORY_MANAGEMENT"),
+            "built with a shared page cache: {options:?}"
+        );
+    }
+
     #[tokio::test]
     async fn migrations_create_all_tables() {
         let pool = fresh_pool().await;

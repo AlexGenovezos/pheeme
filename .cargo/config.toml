@@ -1,0 +1,6 @@
+[env]
+# The SQLite that libsqlite3-sys bundles defines SQLITE_ENABLE_MEMORY_MANAGEMENT, which puts
+# every connection's page cache behind one global lock: the pool's connections then take
+# turns, and a sync's count queries hold up the thread list. Undefining it lets reads run in
+# parallel. `db::tests::sqlite_page_caches_are_per_connection` checks it is in effect.
+LIBSQLITE3_FLAGS = "-USQLITE_ENABLE_MEMORY_MANAGEMENT"
