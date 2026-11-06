@@ -9,7 +9,7 @@ use gungraun::client_requests::callgrind;
 use gungraun::{
     library_benchmark, library_benchmark_group, main, Callgrind, EntryPoint, LibraryBenchmarkConfig,
 };
-use pheeme_lib::db::{self, accounts, messages, threads};
+use pheeme_lib::db::{self, accounts, messages, search, threads};
 use pheeme_lib::mail::{MailService, ThreadDetailDto};
 use pheeme_lib::sync::engine::SyncEngine;
 use pheeme_lib::sync::fake::{FakeGmail, FakeMsg};
@@ -282,6 +282,58 @@ fn list_threads((ctx, before): (Ctx, Option<threads::ThreadCursor>)) -> threads:
     page
 }
 
+async fn search_all(pool: &SqlitePool, fts: &str) -> threads::ThreadPage {
+    search::search_threads(
+        pool,
+        &search::ThreadSearch {
+            account_ids: &[ACCT.to_string()],
+            fts: Some(fts),
+            label_groups: &[],
+            include_spam_trash: false,
+            has_attachment: false,
+            unread: None,
+            starred: None,
+            after: None,
+            before: None,
+            larger: None,
+            smaller: None,
+            from_me: false,
+            to_me: false,
+            cursor: None,
+            limit: PAGE,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+/// The seeded mailbox with the search query already prepared, as after the previous keystroke.
+fn warm_search(fts: &'static str) -> (Ctx, &'static str) {
+    let ctx = open_fixture();
+    ctx.rt.block_on(search_all(&ctx.pool, fts));
+    (ctx, fts)
+}
+
+/// The first letter typed, which matches every message ("Subject", "Sender", "Snippet").
+fn first_letter() -> (Ctx, &'static str) {
+    warm_search("\"s\"*")
+}
+
+/// A word in one message, the oldest thread: every thread is checked.
+fn rare_word() -> (Ctx, &'static str) {
+    warm_search("\"m49999\"")
+}
+
+#[library_benchmark]
+#[bench::first_letter(setup = first_letter)]
+#[bench::rare_word(setup = rare_word)]
+fn search_threads((ctx, fts): (Ctx, &'static str)) -> threads::ThreadPage {
+    let page = measured(&ctx.rt, search_all(&ctx.pool, fts));
+    let expected = if fts.contains('*') { PAGE as usize } else { 1 };
+    assert_eq!(page.threads.len(), expected);
+    page
+}
+
 /// [`RELABELED`] Inbox threads whose messages were archived and starred, with the thread rows
 /// not yet recomputed.
 fn relabeled() -> (Ctx, Vec<String>) {
@@ -406,6 +458,7 @@ library_benchmark_group!(
     name = hot_paths,
     benchmarks = [
         list_threads,
+        search_threads,
         recompute_threads,
         initial_sync,
         incremental_sync,

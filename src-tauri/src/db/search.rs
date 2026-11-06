@@ -49,6 +49,11 @@ struct Row {
 
 /// Threads with at least one message matching `s`, newest first, keyset-paged like
 /// [`crate::db::threads::list_threads`].
+///
+/// Walks threads newest first and stops at a full page, so a broad search (the first letter
+/// typed) costs a page of threads rather than every match: on a 228k-message mailbox, "g"
+/// took 1.6 s when the matches were collected and sorted first. A search that matches
+/// little still walks every thread, which costs about 0.1 s at that size.
 pub async fn search_threads(pool: &SqlitePool, s: &ThreadSearch<'_>) -> Result<ThreadPage> {
     if s.limit <= 0 {
         anyhow::bail!("search limit must be positive");
@@ -75,43 +80,45 @@ pub async fn search_threads(pool: &SqlitePool, s: &ThreadSearch<'_>) -> Result<T
     let rows = sqlx::query_as!(
         Row,
         r#"
-        WITH hits AS (
-          SELECT DISTINCT m.account_id, m.thread_id FROM messages m
-          WHERE m.account_id IN (SELECT value FROM json_each(?1))
-            AND (?2 IS NULL OR m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?2))
-            AND (?3 IS NULL OR NOT EXISTS (
-                  SELECT 1 FROM json_each(?3) g
-                  WHERE NOT EXISTS (
-                    SELECT 1 FROM json_each(g.value) c, json_each(m.label_ids) l
-                    WHERE c.value = m.account_id || char(31) || l.value)))
-            AND (?4 OR NOT EXISTS (
-                  SELECT 1 FROM json_each(m.label_ids) l WHERE l.value IN ('TRASH', 'SPAM')))
-            AND (NOT ?5 OR m.has_attachment = 1)
-            AND (?6 IS NULL OR m.is_read = ?6)
-            AND (?7 IS NULL OR m.is_starred = ?7)
-            AND (?8 IS NULL OR m.date >= ?8)
-            AND (?9 IS NULL OR m.date < ?9)
-            AND (?10 IS NULL OR m.size_estimate > ?10)
-            AND (?11 IS NULL OR m.size_estimate < ?11)
-            AND (NOT ?12 OR lower(m.from_address) =
-                  (SELECT lower(a.email) FROM accounts a WHERE a.id = m.account_id))
-            AND (NOT ?13 OR EXISTS (
-                  SELECT 1 FROM accounts a, json_each(m.to_addresses) r
-                  WHERE a.id = m.account_id
-                    AND lower(json_extract(r.value, '$.address')) = lower(a.email)
-                  UNION ALL
-                  SELECT 1 FROM accounts a, json_each(m.cc_addresses) r
-                  WHERE a.id = m.account_id
-                    AND lower(json_extract(r.value, '$.address')) = lower(a.email)))
-        )
         SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
                t.history_id, t.last_message_date, t.message_count AS "message_count!",
                t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
                t.from_name, t.from_address, t.is_starred AS "is_starred!",
                COALESCE(t.last_message_date, 0) AS "cursor_date!: i64"
-        FROM hits h JOIN threads t ON t.account_id = h.account_id AND t.id = h.thread_id
-        WHERE ?14 IS NULL
-           OR (COALESCE(t.last_message_date, 0), t.account_id, t.id) < (?14, ?15, ?16)
+        FROM threads t INDEXED BY idx_threads_all_date
+        WHERE t.account_id IN (SELECT value FROM json_each(?1))
+          AND (?14 IS NULL
+               OR (COALESCE(t.last_message_date, 0), t.account_id, t.id) < (?14, ?15, ?16))
+          AND EXISTS (
+            SELECT 1 FROM messages m
+            WHERE m.account_id = t.account_id AND m.thread_id = t.id
+              -- The unary + keeps the FTS matches a lookup set built once per query. Without
+              -- it SQLite drives this lookup from the matches, visiting every one per thread.
+              AND (?2 IS NULL OR +m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?2))
+              AND (?3 IS NULL OR NOT EXISTS (
+                    SELECT 1 FROM json_each(?3) g
+                    WHERE NOT EXISTS (
+                      SELECT 1 FROM json_each(g.value) c, json_each(m.label_ids) l
+                      WHERE c.value = m.account_id || char(31) || l.value)))
+              AND (?4 OR NOT EXISTS (
+                    SELECT 1 FROM json_each(m.label_ids) l WHERE l.value IN ('TRASH', 'SPAM')))
+              AND (NOT ?5 OR m.has_attachment = 1)
+              AND (?6 IS NULL OR m.is_read = ?6)
+              AND (?7 IS NULL OR m.is_starred = ?7)
+              AND (?8 IS NULL OR m.date >= ?8)
+              AND (?9 IS NULL OR m.date < ?9)
+              AND (?10 IS NULL OR m.size_estimate > ?10)
+              AND (?11 IS NULL OR m.size_estimate < ?11)
+              AND (NOT ?12 OR lower(m.from_address) =
+                    (SELECT lower(a.email) FROM accounts a WHERE a.id = m.account_id))
+              AND (NOT ?13 OR EXISTS (
+                    SELECT 1 FROM accounts a, json_each(m.to_addresses) r
+                    WHERE a.id = m.account_id
+                      AND lower(json_extract(r.value, '$.address')) = lower(a.email)
+                    UNION ALL
+                    SELECT 1 FROM accounts a, json_each(m.cc_addresses) r
+                    WHERE a.id = m.account_id
+                      AND lower(json_extract(r.value, '$.address')) = lower(a.email))))
         ORDER BY COALESCE(t.last_message_date, 0) DESC, t.account_id DESC, t.id DESC
         LIMIT ?17
         "#,
