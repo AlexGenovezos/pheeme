@@ -28,8 +28,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--avatar-size-md);
-  height: var(--avatar-size-md);
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
 }
 
 .thread-row__check {
@@ -110,10 +110,24 @@
 
 .thread-view__subject {
   margin-bottom: var(--space-3);
-  font-size: var(--font-size-2xl);
+  font-size: max(var(--font-size-2xl), calc(var(--font-size-reading) * 1.5));
   font-weight: var(--font-weight-semibold);
   line-height: var(--line-height-tight);
   letter-spacing: var(--letter-spacing-tight);
+}
+
+.thread-view__account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin-bottom: var(--space-2);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.thread-view__account svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
 }
 
 .thread-view__labels {
@@ -147,6 +161,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: var(--control-height-sm);
+  min-height: var(--control-height-sm);
   padding: var(--space-0-5);
   border: var(--space-0);
   border-radius: var(--radius-full);

@@ -1,6 +1,5 @@
 import { ChevronUp, Pencil } from "lucide-react";
 import { useComposeStore } from "../compose/composeStore";
-import { Avatar } from "../components/ui/Avatar";
 import { Button } from "../components/ui/Button";
 import { formatFullDate, formatListDate } from "../lib/dates";
 import type { EmailAddress, MessageDetail } from "../lib/tauri";
@@ -50,7 +49,6 @@ export function MessageCard({ message, accountId, expanded, onToggle }: MessageC
           aria-expanded="false"
           onClick={onToggle}
         >
-          <Avatar name={name} email={message.fromAddress ?? undefined} />
           <span
             className="message-card__sender"
             data-unread={message.unread || undefined}
@@ -76,7 +74,6 @@ export function MessageCard({ message, accountId, expanded, onToggle }: MessageC
   return (
     <article className="message-card" aria-label={`Message from ${name}`}>
       <header className="message-card__header">
-        <Avatar name={name} email={message.fromAddress ?? undefined} />
         <div className="message-card__from">
           <div className="message-card__identity">
             <span className="message-card__name selectable" data-draft={isDraft || undefined}>

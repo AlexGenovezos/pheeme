@@ -22,7 +22,8 @@ export const darkTheme: ThemeDefinition = {
 
     "--color-foreground": "#e4e9e9",
     "--color-foreground-muted": "#9ba6a6",
-    "--color-foreground-subtle": "#6b7676",
+    "--color-foreground-subtle": "#97a2a2",
+    "--color-foreground-disabled": "#6b7676",
     "--color-link": "#66d0c6",
     "--color-selection-bg": "#24524d",
 
@@ -40,7 +41,7 @@ export const darkTheme: ThemeDefinition = {
     "--color-input-bg": "#101414",
     "--color-input-foreground": "#e4e9e9",
     "--color-input-border": "#353c3d",
-    "--color-input-placeholder": "#6b7676",
+    "--color-input-placeholder": "#a0aeae",
 
     "--color-list-hover-bg": "#1e2425",
     "--color-list-active-bg": "#183a37",

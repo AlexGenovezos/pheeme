@@ -128,6 +128,43 @@ describe("theme files", () => {
   const tint = 0.12;
 
   test.each([lightTheme, darkTheme])(
+    "$name keeps disabled controls dimmer than enabled secondary text",
+    (theme) => {
+      const background = rgb(theme.tokens["--color-pane-bg"]);
+      const subtle = contrast(rgb(theme.tokens["--color-foreground-subtle"]), background);
+      const muted = contrast(rgb(theme.tokens["--color-foreground-muted"]), background);
+      const disabled = contrast(rgb(theme.tokens["--color-foreground-disabled"]), background);
+      expect(muted).toBeGreaterThanOrEqual(subtle);
+      expect(subtle).toBeGreaterThan(disabled);
+    },
+  );
+
+  test.each([lightTheme, darkTheme])(
+    "$name secondary text and placeholders remain readable on their surfaces",
+    (theme) => {
+      for (const foreground of ["--color-foreground-subtle", "--color-foreground-muted"] as const) {
+        for (const background of [
+          "--color-pane-bg",
+          "--color-sidebar-bg",
+          "--color-badge-bg",
+          "--color-list-active-bg",
+        ] as const) {
+          expect(
+            contrast(rgb(theme.tokens[foreground]), rgb(theme.tokens[background])),
+            `${foreground} on ${background}`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+      expect(
+        contrast(
+          rgb(theme.tokens["--color-input-placeholder"]),
+          rgb(theme.tokens["--color-input-bg"]),
+        ),
+      ).toBeGreaterThanOrEqual(4.5);
+    },
+  );
+
+  test.each([lightTheme, darkTheme])(
     "$name mailbox colors read as text on the sidebar, selected or not",
     (theme) => {
       const bg = rgb(theme.tokens["--color-sidebar-bg"]);

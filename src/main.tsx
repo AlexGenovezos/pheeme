@@ -9,6 +9,7 @@ import { loadBindings } from "./keyboard/bindings";
 import { isPreview, isTauri } from "./preview/runtime";
 import { syncNativeWindow, vibrancy } from "./theme/nativeWindow";
 import { initTheme } from "./theme/theme";
+import { initReadingSize } from "./settings/readingSettings";
 
 const root = document.documentElement;
 root.dataset.platform = platform;
@@ -17,6 +18,7 @@ if (vibrancy) root.dataset.vibrancy = "";
 
 // Theme tokens land on :root before the first React render, so nothing paints unthemed.
 initTheme(isTauri() ? syncNativeWindow : undefined);
+initReadingSize();
 loadBindings();
 
 function render() {

@@ -153,22 +153,21 @@ describe("selection", () => {
     expect(useUiStore.getState().checked).not.toContain(key(8));
   });
 
-  test("avatar becomes a checkbox while anything is checked", () => {
+  test("visible checkboxes toggle selection without opening a conversation", () => {
     render(<ThreadList {...props()} />);
-    expect(within(row(1)).getByRole("img", { name: "Sender 1" })).toBeInTheDocument();
-    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(within(row(1)).getByRole("checkbox")).not.toBeChecked();
 
-    fireEvent.click(row(2), { metaKey: true });
-    expect(within(row(1)).queryByRole("img", { name: "Sender 1" })).not.toBeInTheDocument();
+    fireEvent.click(within(row(2)).getByRole("checkbox"));
+    expect(useUiStore.getState().openThread).toBeNull();
     expect(within(row(1)).getByRole("checkbox")).not.toBeChecked();
     expect(within(row(2)).getByRole("checkbox")).toBeChecked();
 
     fireEvent.click(within(row(2)).getByRole("checkbox"));
     expect(useUiStore.getState().checked).toEqual([]);
-    expect(within(row(1)).getByRole("img", { name: "Sender 1" })).toBeInTheDocument();
+    expect(within(row(1)).getByRole("checkbox")).not.toBeChecked();
   });
 
-  test("hovering a row turns its avatar into a checkbox and shows the actions", () => {
+  test("hovering shows the actions while selection stays available", () => {
     const onRowAction = vi.fn();
     render(<ThreadList {...props({ onRowAction })} />);
     fireEvent.mouseEnter(row(1));
@@ -178,7 +177,7 @@ describe("selection", () => {
     fireEvent.click(within(row(1)).getByRole("checkbox"));
     expect(useUiStore.getState().checked).toEqual([key(1)]);
     fireEvent.mouseLeave(row(1));
-    expect(within(row(1)).getByRole("checkbox")).toBeInTheDocument(); // still selecting
+    expect(within(row(1)).getByRole("checkbox")).toBeInTheDocument();
   });
 });
 

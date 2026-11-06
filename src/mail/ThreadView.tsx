@@ -1,4 +1,4 @@
-import { Forward, Reply, ReplyAll, X } from "lucide-react";
+import { Forward, Mail, Reply, ReplyAll, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
@@ -7,6 +7,7 @@ import type { LabelInfo, ThreadDetail } from "../lib/tauri";
 import { useLabelStore } from "../store/labelStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
+import { useAccountStore } from "../store/accountStore";
 import { MessageCard } from "./MessageCard";
 import { respond, toggleLabel } from "./actions";
 import { parseThreadKey } from "./mailboxes";
@@ -78,6 +79,7 @@ export function ThreadView() {
   const error = useThreadStore((s) => (openKey ? s.errors[openKey] : undefined));
   const load = useThreadStore((s) => s.load);
   const accountId = openKey ? parseThreadKey(openKey).accountId : "";
+  const accountEmail = useAccountStore((s) => s.accounts.find((a) => a.id === accountId)?.email);
   const userLabels = useLabelStore((s) => s.userLabels(accountId));
   const scroller = useRef<HTMLDivElement>(null);
   const [expansion, setExpansion] = useState<Expansion>({
@@ -122,6 +124,12 @@ export function ThreadView() {
     const subject = detail.thread.subject || "(no subject)";
     content = (
       <div className="thread-view">
+        {accountEmail && (
+          <p className="thread-view__account selectable">
+            <Mail aria-hidden="true" />
+            <span>{accountEmail}</span>
+          </p>
+        )}
         <h2 className="thread-view__subject selectable">{subject}</h2>
         <LabelChips
           labels={chips}

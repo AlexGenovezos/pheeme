@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pheeme UI scorecard</title>
+    <style>
+      :root {
+        font-family: var(--font-sans, system-ui);
+        color: var(--foreground);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      p {
+        line-height: 1.5;
+        margin: 0 0 14px;
+      }
+      .muted {
+        color: var(--muted-foreground);
+      }
+      .summary {
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+      .number {
+        font-size: 52px;
+        font-weight: 700;
+        letter-spacing: -2px;
+        line-height: 1;
+      }
+      .denom {
+        font-size: 20px;
+        color: var(--muted-foreground);
+        letter-spacing: 0;
+      }
+      .summary p {
+        margin: 0;
+      }
+      .scoretext {
+        font-size: 14px;
+      }
+      .bars {
+        display: grid;
+        gap: 13px;
+      }
+      .barrow {
+        display: grid;
+        grid-template-columns: minmax(140px, 1fr) minmax(70px, 1.1fr) 48px;
+        align-items: center;
+        gap: 12px;
+        font-size: 13px;
+      }
+      .track {
+        height: 9px;
+        border-radius: 6px;
+        background: var(--secondary);
+        overflow: hidden;
+      }
+      .fill {
+        height: 9px;
+        background: var(--chart-1);
+        border-radius: 6px;
+        transition: width 0.2s;
+      }
+      .points {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .note {
+        font-size: 12px;
+        margin-top: 14px;
+      }
+      .fixes {
+        margin: 22px 0;
+        padding: 16px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+      }
+      .fixes h2 {
+        font-size: 15px;
+        margin: 0 0 10px;
+      }
+      .fixes ul {
+        margin: 0;
+        padding-left: 18px;
+        font-size: 13px;
+        line-height: 1.65;
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin: 18px 0;
+        font-size: 12px;
+      }
+      button {
+        font: inherit;
+        color: var(--foreground);
+        background: var(--secondary);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 10px;
+        cursor: pointer;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 3px;
+      }
+      details {
+        border-top: 1px solid var(--border);
+        padding: 11px 0;
+      }
+      summary {
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.45;
+      }
+      .rules {
+        margin-top: 12px;
+        display: grid;
+        gap: 14px;
+      }
+      .rule {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: 8px;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .rule input {
+        margin: 3px 0;
+        accent-color: var(--primary);
+      }
+      .evidence {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        margin-top: 4px;
+      }
+      .tag {
+        font-size: 11px;
+        font-family: var(--font-mono, monospace);
+        color: var(--muted-foreground);
+        margin-right: 5px;
+      }
+      .result {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--success);
+        margin-left: 5px;
+      }
+      .fail {
+        color: var(--warning);
+      }
+      .foot {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        margin: 16px 0 0;
+      }
+      @media (max-width: 450px) {
+        .barrow {
+          grid-template-columns: minmax(123px, 1.3fr) minmax(45px, 0.8fr) 42px;
+          gap: 7px;
+          font-size: 12px;
+        }
+        .summary {
+          gap: 14px;
+        }
+        .number {
+          font-size: 44px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .fill {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="summary">
+      <div class="number">
+        <span id="total" aria-live="polite">78</span><span class="denom">/100</span>
+      </div>
+      <div class="scoretext">
+        <p id="status"><strong>Current UI baseline</strong></p>
+        <p class="muted">Pheeme 0.10 · 40 binary checks · rubric v1</p>
+      </div>
+    </div>
+    <div class="bars" aria-label="Share of available points earned in each category">
+      <div class="barrow">
+        <span>Hierarchy &amp; scanning</span>
+        <div
+          class="track"
+          role="meter"
+          aria-label="Hierarchy &amp; scanning"
+          aria-valuemin="0"
+          aria-valuemax="15"
+          aria-valuenow="12"
+          id="meter-H"
+        >
+          <div class="fill" id="bar-H" style="width: 80%"></div>
+        </div>
+        <span class="points" id="points-H">12/15</span>
+      </div>
+      <div class="barrow">
+        <span>Typography &amp; contrast</span>
+        <div
+          class="track"
+          role="meter"
+          aria-label="Typography &amp; contrast"
+          aria-valuemin="0"
+          aria-valuemax="15"
+          aria-valuenow="6"
+          id="meter-T"
+        >
+          <div class="fill" id="bar-T" style="width: 40%"></div>
+        </div>
+        <span class="points" id="points-T">6/15</span>
+      </div>
+      <div class="barrow">
+        <span>Action discoverability</span>
+        <div
+          class="track"
+          role="meter"
+          aria-label="Action discoverability"
+          aria-valuemin="0"
+          aria-valuemax="15"
+          aria-valuenow="9"
+          id="meter-A"
+        >
+          <div class="fill" id="bar-A" style="width: 60%"></div>
+        </div>
+        <span class="points" id="points-A">9/15</span>
+      </div>
+      <div class="barrow">
+        <span>Visual consistency</span>
+        <div
+          class="track"
+          role="meter"
+          aria-label="Visual consistency"
+          aria-valuemin="0"
+          aria-valuemax="10"
+          aria-valuenow="10"
+          id="meter-C"
+        >
+          <div class="fill" id="bar-C" style="width: 100%"></div>
+        </div>
+        <span class="points" id="points-C">10/10</span>
+      </div>
+      <div class="barrow">
+        <span>Feedback &amp; recovery</span>
+        <div
+          class="track"
+          role="meter"
+          aria-label="Feedback &amp; recovery"
+          aria-valuemin="0"
+          aria-valuemax="15"
+          aria-valuenow="15"
+          id="meter-F"
+        >
+          <div class="fill" id="bar-F" style="width: 100%"></div>
+        </div>
+        <span class="points" id="points-F">15/15</span>
+      </div>
+      <div class="barrow">
+        <span>Keyboard &amp; semantics</span>
+        <div
+          class="track"
+          role="meter"
+          aria-label="Keyboard &amp; semantics"
+          aria-valuemin="0"
+          aria-valuemax="10"
+          aria-valuenow="10"
+          id="meter-K"
+        >
+          <div class="fill" id="bar-K" style="width: 100%"></div>
+        </div>
+        <span class="points" id="points-K">10/10</span>
+      </div>
+      <div class="barrow">
+        <span>Window layout &amp; targets</span>
+        <div
+          class="track"
+          role="meter"
+          aria-label="Window layout &amp; targets"
+          aria-valuemin="0"
+          aria-valuemax="10"
+          aria-valuenow="8"
+          id="meter-R"
+        >
+          <div class="fill" id="bar-R" style="width: 80%"></div>
+        </div>
+        <span class="points" id="points-R">8/10</span>
+      </div>
+      <div class="barrow">
+        <span>Onboarding clarity</span>
+        <div
+          class="track"
+          role="meter"
+          aria-label="Onboarding clarity"
+          aria-valuemin="0"
+          aria-valuemax="10"
+          aria-valuenow="8"
+          id="meter-O"
+        >
+          <div class="fill" id="bar-O" style="width: 80%"></div>
+        </div>
+        <span class="points" id="points-O">8/10</span>
+      </div>
+    </div>
+    <p class="note muted">
+      Each bar shows the proportion of that category’s points earned. Checks earn either 2 or 3
+      points; no partial credit.
+    </p>
+    <div class="fixes">
+      <h2>Fastest route to 90/100</h2>
+      <ul>
+        <li>Improve subtle text contrast in both themes. <strong>+3</strong></li>
+        <li>Use at least 15px for reading and composing. <strong>+3</strong></li>
+        <li>Give New message a persistent text label. <strong>+3</strong></li>
+        <li>Make batch selection discoverable before hover. <strong>+3</strong></li>
+      </ul>
+    </div>
+    <p style="font-size: 13px">
+      Open a category for its exact rules and evidence. Toggle a check to model a future change;
+      hypothetical scores are not verified results.
+    </p>
+    <div class="controls">
+      <button id="reset" type="button">Reset to baseline</button
+      ><span class="muted" id="counter">32 of 40 checks pass</span>
+    </div>
+    <details>
+      <summary>
+        Hierarchy &amp; scanning · 3 points per check · <span id="detail-H">4/5 pass</span>
+      </summary>
+      <div class="rules">
+        <label class="rule"
+          ><input type="checkbox" id="H1" data-group="H" checked /><span
+            ><span class="tag">H1</span>The active mailbox has a filled row or non-color marker, and
+            the list header names that mailbox.<span class="result" id="result-H1">PASS</span>
+            <div class="evidence">
+              Browser: Primary and All Inboxes have selected row fills and matching headers.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="H2" data-group="H" checked /><span
+            ><span class="tag">H2</span>Unread conversations use both a non-color type change and an
+            unread marker.<span class="result" id="result-H2">PASS</span>
+            <div class="evidence">
+              Browser + source: unread sender/subject use weight 600 plus a dot; read rows use
+              regular weight.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="H3" data-group="H" checked /><span
+            ><span class="tag">H3</span>The open conversation subject is at least 1.4× the
+            app-rendered message body font size.<span class="result" id="result-H3">PASS</span>
+            <div class="evidence">Browser: subject 22px; message body 14px; ratio 1.57.</div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="H4" data-group="H" checked /><span
+            ><span class="tag">H4</span>Sidebar, list, and reader top toolbars share a height and
+            top edge within 1 CSS px.<span class="result" id="result-H4">PASS</span>
+            <div class="evidence">Browser: all three start at y=0 and are 44px high.</div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="H5" data-group="H" /><span
+            ><span class="tag">H5</span>In All Inboxes, an incoming conversation's owning account
+            email is visible inside the reading pane without hover or opening compose.<span
+              class="result fail"
+              id="result-H5"
+              >FAIL</span
+            >
+            <div class="evidence">
+              Browser: Mira’s message shows mira@example.net and “to me”; the owning
+              avery@example.com address is absent from the reading pane. List account dots require
+              hover for the address.
+            </div></span
+          ></label
+        >
+      </div>
+    </details>
+    <details>
+      <summary>
+        Typography &amp; contrast · 3 points per check · <span id="detail-T">2/5 pass</span>
+      </summary>
+      <div class="rules">
+        <label class="rule"
+          ><input type="checkbox" id="T1" data-group="T" checked /><span
+            ><span class="tag">T1</span>Primary mailbox names and conversation sender/subject text
+            are at least 13 CSS px at 100% zoom.<span class="result" id="result-T1">PASS</span>
+            <div class="evidence">
+              Browser + tokens: primary labels and conversation text use 13px.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="T2" data-group="T" /><span
+            ><span class="tag">T2</span>App-rendered plain-text reading and compose bodies default
+            to at least 15 CSS px with line-height at least 1.5.<span
+              class="result fail"
+              id="result-T2"
+              >FAIL</span
+            >
+            <div class="evidence">
+              Browser + CSS: both bodies use 14px with line-height 1.6. Size fails. Sender-supplied
+              HTML mail is excluded.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="T3" data-group="T" /><span
+            ><span class="tag">T3</span>Enabled section labels, helper text, metadata, and input
+            placeholders have at least 4.5:1 text/background contrast in both themes.<span
+              class="result fail"
+              id="result-T3"
+              >FAIL</span
+            >
+            <div class="evidence">
+              Browser + theme values: sidebar section labels are 2.82:1 in light and 3.51:1 in dark.
+              Search placeholder colors also fall below 4.5:1. Decorative marks and disabled actions
+              are excluded.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="T4" data-group="T" checked /><span
+            ><span class="tag">T4</span>The fixture plain-text message wraps within its reader at
+            both audit window sizes without clipping or horizontal scrolling.<span
+              class="result"
+              id="result-T4"
+              >PASS</span
+            >
+            <div class="evidence">
+              Browser: Mira’s message fits the 680px reader at 1280px and wraps inside the 400px
+              reader at 900px.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="T5" data-group="T" /><span
+            ><span class="tag">T5</span>An in-app text-size setting or documented app zoom command
+            can increase reading and compose text to at least 18px.<span
+              class="result fail"
+              id="result-T5"
+              >FAIL</span
+            >
+            <div class="evidence">
+              Source: Appearance exposes theme and sidebar only; the app command registry has no
+              text-size/zoom command. Browser or OS zoom alone does not satisfy this chosen product
+              requirement.
+            </div></span
+          ></label
+        >
+      </div>
+    </details>
+    <details>
+      <summary>
+        Action discoverability · 3 points per check · <span id="detail-A">3/5 pass</span>
+      </summary>
+      <div class="rules">
+        <label class="rule"
+          ><input type="checkbox" id="A1" data-group="A" /><span
+            ><span class="tag">A1</span>New message is a persistent action with a visible text label
+            in the expanded sidebar.<span class="result fail" id="result-A1">FAIL</span>
+            <div class="evidence">
+              Browser: a 28×28px pen icon, named through aria-label and a hover tooltip, is the only
+              sidebar compose action.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="A2" data-group="A" checked /><span
+            ><span class="tag">A2</span>Mail search and settings can each be reached with one click
+            from the expanded shell.<span class="result" id="result-A2">PASS</span>
+            <div class="evidence">
+              Browser: visible search field and footer Settings button.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="A3" data-group="A" checked /><span
+            ><span class="tag">A3</span>An open conversation offers visible text-labeled Reply,
+            Reply all, and Forward actions.<span class="result" id="result-A3">PASS</span>
+            <div class="evidence">
+              Browser: all three appear below the conversation and are reachable by reader
+              scrolling.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="A4" data-group="A" checked /><span
+            ><span class="tag">A4</span>Every icon-only button in the shell's top toolbars has an
+            accessible name and a text tooltip.<span class="result" id="result-A4">PASS</span>
+            <div class="evidence">
+              Browser + IconButton.tsx: New message, sidebar toggle, Archive, Delete, read state,
+              Star, Reply, Forward, and More actions have aria-label and title.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="A5" data-group="A" /><span
+            ><span class="tag">A5</span>Before hover or an existing selection, the inbox shows a
+            checkbox, Select action, or visible instruction explaining batch selection.<span
+              class="result fail"
+              id="result-A5"
+              >FAIL</span
+            >
+            <div class="evidence">
+              Browser + ThreadRow.tsx: avatars turn into checkboxes on hover or once a row is
+              checked; no persistent Select affordance is shown. The palette exposes the shortcut
+              but requires discovery.
+            </div></span
+          ></label
+        >
+      </div>
+    </details>
+    <details>
+      <summary>
+        Visual consistency · 2 points per check · <span id="detail-C">5/5 pass</span>
+      </summary>
+      <div class="rules">
+        <label class="rule"
+          ><input type="checkbox" id="C1" data-group="C" checked /><span
+            ><span class="tag">C1</span>App chrome uses one bundled font family across shell,
+            compose, settings, and onboarding; keycaps/code and sender HTML are exempt.<span
+              class="result"
+              id="result-C1"
+              >PASS</span
+            >
+            <div class="evidence">
+              Source + browser: shared IBM Plex Sans Variable family.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="C2" data-group="C" checked /><span
+            ><span class="tag">C2</span>The repository's design-token check passes for the audited
+            checkout.<span class="result" id="result-C2">PASS</span>
+            <div class="evidence">Command: npm run lint:tokens exited 0.</div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="C3" data-group="C" checked /><span
+            ><span class="tag">C3</span>Shell, settings, onboarding, and compose use the shared
+            Button/IconButton components for their standard actions.<span
+              class="result"
+              id="result-C3"
+              >PASS</span
+            >
+            <div class="evidence">
+              Source: shared component imports and consistent rendered button styles.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="C4" data-group="C" checked /><span
+            ><span class="tag">C4</span>Standard chrome icons come from one family and use shared
+            size/stroke tokens.<span class="result" id="result-C4">PASS</span>
+            <div class="evidence">
+              Source + browser: Lucide, 14px/16px icon sizes and 1.75 stroke token; brand art
+              excluded.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="C5" data-group="C" checked /><span
+            ><span class="tag">C5</span>Switching light/dark changes the same shell and settings
+            surfaces without changing component geometry.<span class="result" id="result-C5"
+              >PASS</span
+            >
+            <div class="evidence">
+              Browser + theme implementation: common CSS geometry with theme color tokens; theme
+              change observed in settings and reader.
+            </div></span
+          ></label
+        >
+      </div>
+    </details>
+    <details>
+      <summary>
+        Feedback &amp; recovery · 3 points per check · <span id="detail-F">5/5 pass</span>
+      </summary>
+      <div class="rules">
+        <label class="rule"
+          ><input type="checkbox" id="F1" data-group="F" checked /><span
+            ><span class="tag">F1</span>Archiving a fixture conversation shows a confirmation with
+            Undo; Undo restores that conversation to the inbox.<span class="result" id="result-F1"
+              >PASS</span
+            >
+            <div class="evidence">
+              Browser: “Archived / Undo” appeared; Undo restored “Icon sketches for the dock”.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="F2" data-group="F" checked /><span
+            ><span class="tag">F2</span>Editing a valid fixture draft results in a visible saved
+            confirmation without closing compose.<span class="result" id="result-F2">PASS</span>
+            <div class="evidence">
+              Browser: a valid recipient plus scratch subject produced “Draft saved” in the compose
+              footer.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="F3" data-group="F" checked /><span
+            ><span class="tag">F3</span>Trying to send an invalid recipient keeps compose open and
+            shows an inline error identifying the invalid value.<span class="result" id="result-F3"
+              >PASS</span
+            >
+            <div class="evidence">
+              Browser: invalid-address produced ““invalid-address” isn't an email address.” below
+              the editor.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="F4" data-group="F" checked /><span
+            ><span class="tag">F4</span>A search with no matches shows an explicit empty result and
+            a one-click clear action that returns to mail.<span class="result" id="result-F4"
+              >PASS</span
+            >
+            <div class="evidence">
+              Browser: zzzz-no-match-ui-audit yielded “No conversations match your search.”; Clear
+              search returned the inbox.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="F5" data-group="F" checked /><span
+            ><span class="tag">F5</span>Mail list and reader load-error UI provides an error message
+            and a retry action for recoverable failures.<span class="result" id="result-F5"
+              >PASS</span
+            >
+            <div class="evidence">
+              Source: ThreadList.tsx and ThreadView.tsx render error text and Try again controls.
+              Native/network failure behavior was not exercised.
+            </div></span
+          ></label
+        >
+      </div>
+    </details>
+    <details>
+      <summary>
+        Keyboard &amp; semantics · 2 points per check · <span id="detail-K">5/5 pass</span>
+      </summary>
+      <div class="rules">
+        <label class="rule"
+          ><input type="checkbox" id="K1" data-group="K" checked /><span
+            ><span class="tag">K1</span>Tab navigation shows a focus indicator at least 2 CSS px
+            wide on the sampled settings switch.<span class="result" id="result-K1">PASS</span>
+            <div class="evidence">
+              Browser: the Show sidebar switch had a 2px solid teal outline after Tab.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="K2" data-group="K" checked /><span
+            ><span class="tag">K2</span>Ctrl/Cmd+K opens a command palette and moves keyboard focus
+            to its command input; Escape dismisses it.<span class="result" id="result-K2"
+              >PASS</span
+            >
+            <div class="evidence">
+              Browser: Ctrl+K opened the command list with the combobox focused; Escape dismissed
+              it.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="K3" data-group="K" checked /><span
+            ><span class="tag">K3</span>A focused conversation list supports arrow navigation, Enter
+            to open, and X to toggle selection.<span class="result" id="result-K3">PASS</span>
+            <div class="evidence">
+              Browser: ArrowDown + Enter opened “Keyboard map feedback”; X marked that option
+              aria-selected=true.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="K4" data-group="K" checked /><span
+            ><span class="tag">K4</span>Settings keeps Tab/Shift+Tab inside its dialog and restores
+            the invoking button's focus on Escape.<span class="result" id="result-K4">PASS</span>
+            <div class="evidence">
+              Browser + source: initial Shift+Tab stayed in the dialog; Escape restored Settings
+              focus; the trap wraps first/last controls.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="K5" data-group="K" checked /><span
+            ><span class="tag">K5</span>The audited shell has named sidebar/list/reader landmarks,
+            named controls, and associated labels for compose To/Subject/Message.<span
+              class="result"
+              id="result-K5"
+              >PASS</span
+            >
+            <div class="evidence">
+              Accessibility tree + source: Mailboxes, Conversations, Reading pane, IconButton names,
+              recipient aria-label, Subject label htmlFor, and Message editor aria-label. This is
+              not a full screen-reader audit.
+            </div></span
+          ></label
+        >
+      </div>
+    </details>
+    <details>
+      <summary>
+        Window layout &amp; targets · 2 points per check · <span id="detail-R">4/5 pass</span>
+      </summary>
+      <div class="rules">
+        <label class="rule"
+          ><input type="checkbox" id="R1" data-group="R" checked /><span
+            ><span class="tag">R1</span>At the supported 900×600 minimum, sidebar/list/reader stay
+            inside the viewport without overlapping.<span class="result" id="result-R1">PASS</span>
+            <div class="evidence">
+              Browser: 220px + 280px + 400px panes; native minimum confirmed in tauri.conf.json.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="R2" data-group="R" checked /><span
+            ><span class="tag">R2</span>Settings fits inside 900×600 with its close action visible
+            and its content area scrollable.<span class="result" id="result-R2">PASS</span>
+            <div class="evidence">
+              Browser + CSS: dialog x=48,y=48,w=804,h=504; body uses overflow-y:auto.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="R3" data-group="R" checked /><span
+            ><span class="tag">R3</span>Compose fits inside 900×600 and its Send action remains
+            inside the viewport.<span class="result" id="result-R3">PASS</span>
+            <div class="evidence">
+              Browser: compose x=324,y=60,w=560,h=540; Send bottom=592.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="R4" data-group="R" checked /><span
+            ><span class="tag">R4</span>The mailbox list has its own vertical scrolling while
+            account/settings controls remain anchored in the footer.<span
+              class="result"
+              id="result-R4"
+              >PASS</span
+            >
+            <div class="evidence">
+              Browser + shell CSS: sidebar scroll region above the fixed footer; long
+              account/category/label navigation is contained independently.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="R5" data-group="R" /><span
+            ><span class="tag">R5</span>Secondary action buttons in the sampled reader and compose
+            are at least 24×24 CSS px.<span class="result fail" id="result-R5">FAIL</span>
+            <div class="evidence">
+              Browser: Remove label and Collapse message are 18×18px. This is a fixed ergonomic
+              target, not a claim of a WCAG violation; spacing exceptions are not evaluated here.
+            </div></span
+          ></label
+        >
+      </div>
+    </details>
+    <details>
+      <summary>
+        Onboarding clarity · 2 points per check · <span id="detail-O">4/5 pass</span>
+      </summary>
+      <div class="rules">
+        <label class="rule"
+          ><input type="checkbox" id="O1" data-group="O" checked /><span
+            ><span class="tag">O1</span>Before setup starts, the UI states the Google Cloud
+            prerequisite, expected time, and cost.<span class="result" id="result-O1">PASS</span>
+            <div class="evidence">
+              Browser: welcome explains ownership, about 15 minutes, and no cost.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="O2" data-group="O" checked /><span
+            ><span class="tag">O2</span>Setup shows a numbered current step, offers backward
+            navigation after the first step, and persists progress for resume.<span
+              class="result"
+              id="result-O2"
+              >PASS</span
+            >
+            <div class="evidence">
+              Browser: 11-step rail, current-step styling, Back/Next on project step. Source:
+              progress.ts and Onboarding.tsx save and restore the step.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="O3" data-group="O" checked /><span
+            ><span class="tag">O3</span>Steps requiring fixed console values offer a copy control
+            and a direct link to the relevant console page.<span class="result" id="result-O3"
+              >PASS</span
+            >
+            <div class="evidence">
+              Browser: project step provides Open New Project and Copy. Source: steps.ts and shared
+              guide render fixed-value copy fields and console links.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="O4" data-group="O" checked /><span
+            ><span class="tag">O4</span>The credentials step uses visible field labels, masks the
+            secret, and renders inline validation for malformed client IDs/JSON.<span
+              class="result"
+              id="result-O4"
+              >PASS</span
+            >
+            <div class="evidence">
+              Source: Credentials in Onboarding.tsx renders Client ID/Client secret labels, password
+              input, and field error text.
+            </div></span
+          ></label
+        ><label class="rule"
+          ><input type="checkbox" id="O5" data-group="O" /><span
+            ><span class="tag">O5</span>The default setup path contains no required Next step solely
+            for an unreleased feature.<span class="result fail" id="result-O5">FAIL</span>
+            <div class="evidence">
+              Source + rail: Enable Calendar API is the fourth step; its copy says Calendar is
+              coming. Make that step optional or defer it until Calendar is used.
+            </div></span
+          ></label
+        >
+      </div>
+    </details>
+    <p class="foot">
+      Local checkout a564a90 plus existing edits · Audited Nov 4, 2026 · Browser fixtures, 1280×800
+      and 900×600, light/dark. Source-backed checks are marked in their evidence. Native
+      integrations and the marketing site were outside scope. Weights and thresholds are design
+      judgments; the score is deterministic under these fixed rules.
+    </p>
+    <script>
+      const baseline = [
+        {
+          id: "H",
+          weight: 15,
+          checks: [
+            { id: "H1", pass: true },
+            { id: "H2", pass: true },
+            { id: "H3", pass: true },
+            { id: "H4", pass: true },
+            { id: "H5", pass: false },
+          ],
+        },
+        {
+          id: "T",
+          weight: 15,
+          checks: [
+            { id: "T1", pass: true },
+            { id: "T2", pass: false },
+            { id: "T3", pass: false },
+            { id: "T4", pass: true },
+            { id: "T5", pass: false },
+          ],
+        },
+        {
+          id: "A",
+          weight: 15,
+          checks: [
+            { id: "A1", pass: false },
+            { id: "A2", pass: true },
+            { id: "A3", pass: true },
+            { id: "A4", pass: true },
+            { id: "A5", pass: false },
+          ],
+        },
+        {
+          id: "C",
+          weight: 10,
+          checks: [
+            { id: "C1", pass: true },
+            { id: "C2", pass: true },
+            { id: "C3", pass: true },
+            { id: "C4", pass: true },
+            { id: "C5", pass: true },
+          ],
+        },
+        {
+          id: "F",
+          weight: 15,
+          checks: [
+            { id: "F1", pass: true },
+            { id: "F2", pass: true },
+            { id: "F3", pass: true },
+            { id: "F4", pass: true },
+            { id: "F5", pass: true },
+          ],
+        },
+        {
+          id: "K",
+          weight: 10,
+          checks: [
+            { id: "K1", pass: true },
+            { id: "K2", pass: true },
+            { id: "K3", pass: true },
+            { id: "K4", pass: true },
+            { id: "K5", pass: true },
+          ],
+        },
+        {
+          id: "R",
+          weight: 10,
+          checks: [
+            { id: "R1", pass: true },
+            { id: "R2", pass: true },
+            { id: "R3", pass: true },
+            { id: "R4", pass: true },
+            { id: "R5", pass: false },
+          ],
+        },
+        {
+          id: "O",
+          weight: 10,
+          checks: [
+            { id: "O1", pass: true },
+            { id: "O2", pass: true },
+            { id: "O3", pass: true },
+            { id: "O4", pass: true },
+            { id: "O5", pass: false },
+          ],
+        },
+      ];
+      function update() {
+        let score = 0,
+          passed = 0,
+          changed = false;
+        for (const g of baseline) {
+          let n = 0;
+          for (const c of g.checks) {
+            const ok = document.getElementById(c.id).checked;
+            n += Number(ok);
+            changed ||= ok !== c.pass;
+            const result = document.getElementById("result-" + c.id);
+            result.textContent = ok ? "PASS" : "FAIL";
+            result.className = "result" + (ok ? "" : " fail");
+          }
+          const points = (n * g.weight) / 5;
+          score += points;
+          passed += n;
+          document.getElementById("bar-" + g.id).style.width = n * 20 + "%";
+          document.getElementById("meter-" + g.id).setAttribute("aria-valuenow", points);
+          document.getElementById("points-" + g.id).textContent = points + "/" + g.weight;
+          document.getElementById("detail-" + g.id).textContent = n + "/5 pass";
+        }
+        document.getElementById("total").textContent = score;
+        document.getElementById("status").textContent = changed
+          ? "Hypothetical score · changes not verified"
+          : "Current UI baseline";
+        document.getElementById("counter").textContent = passed + " of 40 checks pass";
+      }
+      document
+        .querySelectorAll("input[type=checkbox]")
+        .forEach((e) => e.addEventListener("change", update));
+      document.getElementById("reset").addEventListener("click", () => {
+        for (const g of baseline)
+          for (const c of g.checks) document.getElementById(c.id).checked = c.pass;
+        update();
+      });
+    </script>
+  </body>
+</html>

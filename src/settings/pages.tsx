@@ -14,6 +14,7 @@ import { THEME_MODES, type ThemeMode, useThemeStore } from "../theme/theme";
 import { AboutSettings } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
+import { READING_SIZES, type ReadingSize, useReadingSettings } from "./readingSettings";
 import type { SettingsPageDef } from "./schema";
 
 const MODE_LABELS: Record<ThemeMode, string> = { system: "System", light: "Light", dark: "Dark" };
@@ -36,6 +37,22 @@ function SidebarControl() {
   const toggle = useUiStore((s) => s.toggleSidebar);
   return (
     <Switch label="Show sidebar" checked={shown} onChange={(next) => next !== shown && toggle()} />
+  );
+}
+
+function ReadingSizeControl() {
+  const size = useReadingSettings((s) => s.size);
+  const setSize = useReadingSettings((s) => s.setSize);
+  return (
+    <SegmentedControl
+      label="Reading text size"
+      value={size}
+      options={READING_SIZES.map((value) => ({
+        value,
+        label: value === "large" ? "Large" : "Standard",
+      }))}
+      onChange={(value) => setSize(value as ReadingSize)}
+    />
   );
 }
 
@@ -75,6 +92,18 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             description: "Follow your system, or always use light or dark.",
             keywords: ["dark mode", "light mode", "appearance"],
             Control: ThemeModeControl,
+          },
+        ],
+      },
+      {
+        title: "Reading",
+        settings: [
+          {
+            id: "reading.size",
+            title: "Text size",
+            description: "For plain-text messages and the messages you write.",
+            keywords: ["font", "larger", "accessibility", "compose", "zoom"],
+            Control: ReadingSizeControl,
           },
         ],
       },

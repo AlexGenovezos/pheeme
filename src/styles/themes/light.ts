@@ -25,7 +25,8 @@ export const lightTheme: ThemeDefinition = {
 
     "--color-foreground": "#1a1f1f",
     "--color-foreground-muted": "#586262",
-    "--color-foreground-subtle": "#8a9494",
+    "--color-foreground-subtle": "#596565",
+    "--color-foreground-disabled": "#8a9494",
     "--color-link": "#1d6f69",
     "--color-selection-bg": "#bfe3df",
 
@@ -43,7 +44,7 @@ export const lightTheme: ThemeDefinition = {
     "--color-input-bg": "#ffffff",
     "--color-input-foreground": "#1a1f1f",
     "--color-input-border": "#cdd4d4",
-    "--color-input-placeholder": "#8a9494",
+    "--color-input-placeholder": "#596565",
 
     "--color-list-hover-bg": "#f2f5f5",
     "--color-list-active-bg": "#dcefec",

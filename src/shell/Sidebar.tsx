@@ -36,6 +36,8 @@ import { useKeybinding } from "../keyboard/useCommands";
 import { useSettingsStore } from "../settings/settingsStore";
 import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
+import { Button } from "../components/ui/Button";
+import { describeShortcut } from "../keyboard/format";
 
 const NO_COUNTS: Record<string, never> = {};
 
@@ -264,17 +266,25 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton
-          label="New message"
-          shortcut={composeShortcut}
-          icon={<SquarePen />}
-          onClick={composeNew}
-        />
-        <IconButton
           label="Hide sidebar"
           shortcut={sidebarShortcut}
           icon={<PanelLeftClose />}
           onClick={toggleSidebar}
         />
+      </div>
+
+      <div className="sidebar__compose">
+        <Button
+          variant="primary"
+          size="lg"
+          icon={<SquarePen aria-hidden="true" />}
+          title={
+            composeShortcut ? `New message (${describeShortcut(composeShortcut)})` : "New message"
+          }
+          onClick={composeNew}
+        >
+          New message
+        </Button>
       </div>
 
       <nav className="sidebar__scroll" aria-label="Mailboxes">

@@ -1,0 +1,428 @@
+{
+  "rubricVersion": 1,
+  "date": "2026-11-04",
+  "timezone": "America/Chicago",
+  "baselineHead": "a564a90",
+  "target": 95,
+  "before": 78.0,
+  "after": 98.0,
+  "groups": [
+    {
+      "id": "H",
+      "name": "Hierarchy & scanning",
+      "weight": 15,
+      "checks": [
+        {
+          "id": "H1",
+          "rule": "The active mailbox has a filled row or non-color marker, and the list header names that mailbox.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: Primary and All Inboxes have selected row fills and matching headers.",
+          "afterEvidence": "Browser: Primary and All Inboxes have selected row fills and matching headers.",
+          "points": 3.0
+        },
+        {
+          "id": "H2",
+          "rule": "Unread conversations use both a non-color type change and an unread marker.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser + source: unread sender/subject use weight 600 plus a dot; read rows use regular weight.",
+          "afterEvidence": "Browser + source: unread sender/subject use weight 600 plus a dot; read rows use regular weight.",
+          "points": 3.0
+        },
+        {
+          "id": "H3",
+          "rule": "The open conversation subject is at least 1.4× the app-rendered message body font size.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: subject 22px; message body 14px; ratio 1.57.",
+          "afterEvidence": "Browser: the subject is 24px with standard 16px body text (1.5×); Large uses 27px with 18px body text.",
+          "points": 3.0
+        },
+        {
+          "id": "H4",
+          "rule": "Sidebar, list, and reader top toolbars share a height and top edge within 1 CSS px.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: all three start at y=0 and are 44px high.",
+          "afterEvidence": "Browser: all three start at y=0 and are 44px high.",
+          "points": 3.0
+        },
+        {
+          "id": "H5",
+          "rule": "In All Inboxes, an incoming conversation's owning account email is visible inside the reading pane without hover or opening compose.",
+          "before": false,
+          "after": true,
+          "beforeEvidence": "Browser: Mira’s message shows mira@example.net and “to me”; the owning avery@example.com address is absent from the reading pane. List account dots require hover for the address.",
+          "afterEvidence": "Browser: avery@example.com is visible above the incoming subject in All Inboxes, without hover.",
+          "points": 3.0
+        }
+      ]
+    },
+    {
+      "id": "T",
+      "name": "Typography & contrast",
+      "weight": 15,
+      "checks": [
+        {
+          "id": "T1",
+          "rule": "Primary mailbox names and conversation sender/subject text are at least 13 CSS px at 100% zoom.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser + tokens: primary labels and conversation text use 13px.",
+          "afterEvidence": "Browser + tokens: primary labels and conversation text use 13px.",
+          "points": 3.0
+        },
+        {
+          "id": "T2",
+          "rule": "App-rendered plain-text reading and compose bodies default to at least 15 CSS px with line-height at least 1.5.",
+          "before": false,
+          "after": true,
+          "beforeEvidence": "Browser + CSS: both bodies use 14px with line-height 1.6. Size fails. Sender-supplied HTML mail is excluded.",
+          "afterEvidence": "Browser: default plain-text message and compose bodies are 16px with line-height 1.6.",
+          "points": 3.0
+        },
+        {
+          "id": "T3",
+          "rule": "Enabled section labels, helper text, metadata, and input placeholders have at least 4.5:1 text/background contrast in both themes.",
+          "before": false,
+          "after": true,
+          "beforeEvidence": "Browser + theme values: sidebar section labels are 2.82:1 in light and 3.51:1 in dark. Search placeholder colors also fall below 4.5:1. Decorative marks and disabled actions are excluded.",
+          "afterEvidence": "Theme values and regression tests: sidebar label contrast is 5.48:1 in light and 6.28:1 in dark. Search placeholders are 6.04:1 and 7.72:1. Disabled controls have a separate dimmer token; muted text remains stronger than subtle text in both themes.",
+          "points": 3.0
+        },
+        {
+          "id": "T4",
+          "rule": "The fixture plain-text message wraps within its reader at both audit window sizes without clipping or horizontal scrolling.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: Mira’s message fits the 680px reader at 1280px and wraps inside the 400px reader at 900px.",
+          "afterEvidence": "Browser: the updated message wraps inside the 400px reader at 900×600; its text box has equal clientWidth and scrollWidth (334px). The 1280×800 view also fits.",
+          "points": 3.0
+        },
+        {
+          "id": "T5",
+          "rule": "An in-app text-size setting or documented app zoom command can increase reading and compose text to at least 18px.",
+          "before": false,
+          "after": true,
+          "beforeEvidence": "Source: Appearance exposes theme and sidebar only; the app command registry has no text-size/zoom command. Browser or OS zoom alone does not satisfy this chosen product requirement.",
+          "afterEvidence": "Browser: Appearance → Reading → Text size → Large changes both reading and composing to 18px. A full reload restores the choice. Persistence and invalid stored values have regression tests.",
+          "points": 3.0
+        }
+      ]
+    },
+    {
+      "id": "A",
+      "name": "Action discoverability",
+      "weight": 15,
+      "checks": [
+        {
+          "id": "A1",
+          "rule": "New message is a persistent action with a visible text label in the expanded sidebar.",
+          "before": false,
+          "after": true,
+          "beforeEvidence": "Browser: a 28×28px pen icon, named through aria-label and a hover tooltip, is the only sidebar compose action.",
+          "afterEvidence": "Browser: a full-width text-labeled New message button is persistent under the window toolbar; the compose shortcut remains available.",
+          "points": 3.0
+        },
+        {
+          "id": "A2",
+          "rule": "Mail search and settings can each be reached with one click from the expanded shell.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: visible search field and footer Settings button.",
+          "afterEvidence": "Browser: visible search field and footer Settings button.",
+          "points": 3.0
+        },
+        {
+          "id": "A3",
+          "rule": "An open conversation offers visible text-labeled Reply, Reply all, and Forward actions.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: all three appear below the conversation and are reachable by reader scrolling.",
+          "afterEvidence": "Browser: all three appear below the conversation and are reachable by reader scrolling.",
+          "points": 3.0
+        },
+        {
+          "id": "A4",
+          "rule": "Every icon-only button in the shell's top toolbars has an accessible name and a text tooltip.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser + IconButton.tsx: New message, sidebar toggle, Archive, Delete, read state, Star, Reply, Forward, and More actions have aria-label and title.",
+          "afterEvidence": "Browser + IconButton.tsx: New message, sidebar toggle, Archive, Delete, read state, Star, Reply, Forward, and More actions have aria-label and title.",
+          "points": 3.0
+        },
+        {
+          "id": "A5",
+          "rule": "Before hover or an existing selection, the inbox shows a checkbox, Select action, or visible instruction explaining batch selection.",
+          "before": false,
+          "after": true,
+          "beforeEvidence": "Browser + ThreadRow.tsx: avatars turn into checkboxes on hover or once a row is checked; no persistent Select affordance is shown. The palette exposes the shortcut but requires discovery.",
+          "afterEvidence": "Browser: Select all is visible before hover. Clicking it selects all 22 loaded fixture conversations and announces 22 selected; Clear selection reverses it.",
+          "points": 3.0
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "name": "Visual consistency",
+      "weight": 10,
+      "checks": [
+        {
+          "id": "C1",
+          "rule": "App chrome uses one bundled font family across shell, compose, settings, and onboarding; keycaps/code and sender HTML are exempt.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Source + browser: shared IBM Plex Sans Variable family.",
+          "afterEvidence": "Source + browser: shared IBM Plex Sans Variable family.",
+          "points": 2.0
+        },
+        {
+          "id": "C2",
+          "rule": "The repository's design-token check passes for the audited checkout.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Command: npm run lint:tokens exited 0.",
+          "afterEvidence": "npm run lint passes, including the design-token guard.",
+          "points": 2.0
+        },
+        {
+          "id": "C3",
+          "rule": "Shell, settings, onboarding, and compose use the shared Button/IconButton components for their standard actions.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Source: shared component imports and consistent rendered button styles.",
+          "afterEvidence": "Source: shared component imports and consistent rendered button styles.",
+          "points": 2.0
+        },
+        {
+          "id": "C4",
+          "rule": "Standard chrome icons come from one family and use shared size/stroke tokens.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Source + browser: Lucide, 14px/16px icon sizes and 1.75 stroke token; brand art excluded.",
+          "afterEvidence": "Source + browser: Lucide, 14px/16px icon sizes and 1.75 stroke token; brand art excluded.",
+          "points": 2.0
+        },
+        {
+          "id": "C5",
+          "rule": "Switching light/dark changes the same shell and settings surfaces without changing component geometry.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser + theme implementation: common CSS geometry with theme color tokens; theme change observed in settings and reader.",
+          "afterEvidence": "Browser + theme implementation: common CSS geometry with theme color tokens; theme change observed in settings and reader.",
+          "points": 2.0
+        }
+      ]
+    },
+    {
+      "id": "F",
+      "name": "Feedback & recovery",
+      "weight": 15,
+      "checks": [
+        {
+          "id": "F1",
+          "rule": "Archiving a fixture conversation shows a confirmation with Undo; Undo restores that conversation to the inbox.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: “Archived / Undo” appeared; Undo restored “Icon sketches for the dock”.",
+          "afterEvidence": "Browser after changes: Archived / Undo appeared; Undo restored Icon sketches for the dock to the inbox.",
+          "points": 3.0
+        },
+        {
+          "id": "F2",
+          "rule": "Editing a valid fixture draft results in a visible saved confirmation without closing compose.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: a valid recipient plus scratch subject produced “Draft saved” in the compose footer.",
+          "afterEvidence": "Browser after changes: the valid audit draft showed Draft saved in the compose footer.",
+          "points": 3.0
+        },
+        {
+          "id": "F3",
+          "rule": "Trying to send an invalid recipient keeps compose open and shows an inline error identifying the invalid value.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: invalid-address produced ““invalid-address” isn't an email address.” below the editor.",
+          "afterEvidence": "Browser after changes: invalid-address kept compose open and produced an inline error naming the invalid address.",
+          "points": 3.0
+        },
+        {
+          "id": "F4",
+          "rule": "A search with no matches shows an explicit empty result and a one-click clear action that returns to mail.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: zzzz-no-match-ui-audit yielded “No conversations match your search.”; Clear search returned the inbox.",
+          "afterEvidence": "Browser after changes: an unmatched query shows No conversations match your search; Clear search returns to mail.",
+          "points": 3.0
+        },
+        {
+          "id": "F5",
+          "rule": "Mail list and reader load-error UI provides an error message and a retry action for recoverable failures.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Source: ThreadList.tsx and ThreadView.tsx render error text and Try again controls. Native/network failure behavior was not exercised.",
+          "afterEvidence": "Source: ThreadList.tsx and ThreadView.tsx render error text and Try again controls. Native/network failure behavior was not exercised.",
+          "points": 3.0
+        }
+      ]
+    },
+    {
+      "id": "K",
+      "name": "Keyboard & semantics",
+      "weight": 10,
+      "checks": [
+        {
+          "id": "K1",
+          "rule": "Tab navigation shows a focus indicator at least 2 CSS px wide on the sampled settings switch.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: the Show sidebar switch had a 2px solid teal outline after Tab.",
+          "afterEvidence": "Browser after changes: the sampled Show sidebar switch has a 2px solid focus outline after Tab.",
+          "points": 2.0
+        },
+        {
+          "id": "K2",
+          "rule": "Ctrl/Cmd+K opens a command palette and moves keyboard focus to its command input; Escape dismisses it.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: Ctrl+K opened the command list with the combobox focused; Escape dismissed it.",
+          "afterEvidence": "Browser after changes: Ctrl+K opens the command palette and focuses its combobox; Escape dismisses it.",
+          "points": 2.0
+        },
+        {
+          "id": "K3",
+          "rule": "A focused conversation list supports arrow navigation, Enter to open, and X to toggle selection.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: ArrowDown + Enter opened “Keyboard map feedback”; X marked that option aria-selected=true.",
+          "afterEvidence": "Browser after changes: ArrowDown + Enter opened Dinner list; X marked the focused option selected.",
+          "points": 2.0
+        },
+        {
+          "id": "K4",
+          "rule": "Settings keeps Tab/Shift+Tab inside its dialog and restores the invoking button's focus on Escape.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser + source: initial Shift+Tab stayed in the dialog; Escape restored Settings focus; the trap wraps first/last controls.",
+          "afterEvidence": "Browser after changes: Tab wraps inside Settings and Escape restores focus to the invoking Settings button. The existing Shift+Tab trap remains in source and tests.",
+          "points": 2.0
+        },
+        {
+          "id": "K5",
+          "rule": "The audited shell has named sidebar/list/reader landmarks, named controls, and associated labels for compose To/Subject/Message.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Accessibility tree + source: Mailboxes, Conversations, Reading pane, IconButton names, recipient aria-label, Subject label htmlFor, and Message editor aria-label. This is not a full screen-reader audit.",
+          "afterEvidence": "Accessibility tree + source: Mailboxes, Conversations, Reading pane, IconButton names, recipient aria-label, Subject label htmlFor, and Message editor aria-label. This is not a full screen-reader audit.",
+          "points": 2.0
+        }
+      ]
+    },
+    {
+      "id": "R",
+      "name": "Window layout & targets",
+      "weight": 10,
+      "checks": [
+        {
+          "id": "R1",
+          "rule": "At the supported 900×600 minimum, sidebar/list/reader stay inside the viewport without overlapping.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: 220px + 280px + 400px panes; native minimum confirmed in tauri.conf.json.",
+          "afterEvidence": "Browser after changes: pane rectangles are 220px, 280px, and 400px at 900×600 with no horizontal overflow.",
+          "points": 2.0
+        },
+        {
+          "id": "R2",
+          "rule": "Settings fits inside 900×600 with its close action visible and its content area scrollable.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser + CSS: dialog x=48,y=48,w=804,h=504; body uses overflow-y:auto.",
+          "afterEvidence": "Browser after changes: Settings fits at x=48,y=48,w=804,h=504 at the supported minimum; its close action stays visible and the content scrolls.",
+          "points": 2.0
+        },
+        {
+          "id": "R3",
+          "rule": "Compose fits inside 900×600 and its Send action remains inside the viewport.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: compose x=324,y=60,w=560,h=540; Send bottom=592.",
+          "afterEvidence": "Browser after changes: the compose panel fits at 900×600 with Send inside the viewport, including Large text.",
+          "points": 2.0
+        },
+        {
+          "id": "R4",
+          "rule": "The mailbox list has its own vertical scrolling while account/settings controls remain anchored in the footer.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser + shell CSS: sidebar scroll region above the fixed footer; long account/category/label navigation is contained independently.",
+          "afterEvidence": "Browser + shell CSS: sidebar scroll region above the fixed footer; long account/category/label navigation is contained independently.",
+          "points": 2.0
+        },
+        {
+          "id": "R5",
+          "rule": "Secondary action buttons in the sampled reader and compose are at least 24×24 CSS px.",
+          "before": false,
+          "after": true,
+          "beforeEvidence": "Browser: Remove label and Collapse message are 18×18px. This is a fixed ergonomic target, not a claim of a WCAG violation; spacing exceptions are not evaluated here.",
+          "afterEvidence": "Browser: every visible reader and compose action button in the sample is at least 24×24px. Label removal, message collapse, recipient edit/removal, attachment removal, and quote toggles use the shared minimum.",
+          "points": 2.0
+        }
+      ]
+    },
+    {
+      "id": "O",
+      "name": "Onboarding clarity",
+      "weight": 10,
+      "checks": [
+        {
+          "id": "O1",
+          "rule": "Before setup starts, the UI states the Google Cloud prerequisite, expected time, and cost.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: welcome explains ownership, about 15 minutes, and no cost.",
+          "afterEvidence": "Browser: welcome explains ownership, about 15 minutes, and no cost.",
+          "points": 2.0
+        },
+        {
+          "id": "O2",
+          "rule": "Setup shows a numbered current step, offers backward navigation after the first step, and persists progress for resume.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: 11-step rail, current-step styling, Back/Next on project step. Source: progress.ts and Onboarding.tsx save and restore the step.",
+          "afterEvidence": "Browser and source: the original 11 numbered setup steps are retained, with Back and progress persistence unchanged.",
+          "points": 2.0
+        },
+        {
+          "id": "O3",
+          "rule": "Steps requiring fixed console values offer a copy control and a direct link to the relevant console page.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Browser: project step provides Open New Project and Copy. Source: steps.ts and shared guide render fixed-value copy fields and console links.",
+          "afterEvidence": "Browser: project step provides Open New Project and Copy. Source: steps.ts and shared guide render fixed-value copy fields and console links.",
+          "points": 2.0
+        },
+        {
+          "id": "O4",
+          "rule": "The credentials step uses visible field labels, masks the secret, and renders inline validation for malformed client IDs/JSON.",
+          "before": true,
+          "after": true,
+          "beforeEvidence": "Source: Credentials in Onboarding.tsx renders Client ID/Client secret labels, password input, and field error text.",
+          "afterEvidence": "Source: Credentials in Onboarding.tsx renders Client ID/Client secret labels, password input, and field error text.",
+          "points": 2.0
+        },
+        {
+          "id": "O5",
+          "rule": "The default setup path contains no required Next step solely for an unreleased feature.",
+          "before": false,
+          "after": false,
+          "beforeEvidence": "Source + rail: Enable Calendar API is the fourth step; its copy says Calendar is coming. Make that step optional or defer it until Calendar is used.",
+          "afterEvidence": "FAIL intentionally: Calendar API preparation is retained as required by the design spec (§4 and §8, decided by Alex). This original criterion conflicts with that decision and remains a two-point deduction.",
+          "points": 2.0
+        }
+      ]
+    }
+  ],
+  "scope": "Desktop browser fixtures and source inspection; native integrations and full screen-reader audit excluded."
+}

@@ -14,7 +14,7 @@
   --font-size-xs: 11px;
   --font-size-sm: 12px;
   --font-size-md: 13px;
-  --font-size-reading: 14px;
+  --font-size-reading: 16px;
   --font-size-lg: 15px;
   --font-size-xl: 18px;
   --font-size-2xl: 22px;
@@ -138,6 +138,10 @@
   --z-popover: 100;
   --z-overlay: 200;
   --z-toast: 300;
+}
+
+:root[data-reading-size="large"] {
+  --font-size-reading: 18px;
 }
 
 @media (prefers-reduced-motion: reduce) {

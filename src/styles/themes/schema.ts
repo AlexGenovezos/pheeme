@@ -23,7 +23,8 @@ export const THEME_TOKENS = {
   // Text
   "--color-foreground": "foreground",
   "--color-foreground-muted": "descriptionForeground",
-  "--color-foreground-subtle": "disabledForeground",
+  "--color-foreground-subtle": "descriptionForeground",
+  "--color-foreground-disabled": "disabledForeground",
   "--color-link": "textLink.foreground",
   "--color-selection-bg": "editor.selectionBackground",
 
