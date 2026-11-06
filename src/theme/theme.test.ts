@@ -69,6 +69,15 @@ describe("persistence", () => {
     stop();
   });
 
+  test("writes hex where the webview can't parse oklch()", () => {
+    mockSystemDark(false);
+    vi.stubGlobal("CSS", { supports: (_: string, value: string) => !value.startsWith("oklch(") });
+    const stop = initTheme();
+    expect(root.style.getPropertyValue("--color-app-bg")).toBe("#ffffff");
+    expect(root.style.getPropertyValue("--color-sidebar-vibrant-bg")).toBe("#f2f4f466");
+    stop();
+  });
+
   test("initTheme restores the stored mode", () => {
     mockSystemDark(true);
     localStorage.setItem(THEME_MODE_KEY, "light");

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { builtInThemes, type ThemeDefinition } from "../styles/themes";
+import { themeColorToHex } from "../styles/themes/color";
 
 export type ThemeMode = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
@@ -45,10 +46,17 @@ export function systemPrefersDark(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia(DARK_QUERY).matches;
 }
 
+/** WKWebView before Safari 15.4 (macOS 10.13 to early 12) can't parse oklch(). */
+function supportsOklch(): boolean {
+  return globalThis.CSS?.supports?.("color", "oklch(0 0 0)") ?? true;
+}
+
 /** Write a theme's tokens onto :root so every `var(--color-…)` picks them up. */
 export function applyTheme(theme: ThemeDefinition, root: HTMLElement = document.documentElement) {
+  const oklch = supportsOklch();
   for (const [token, value] of Object.entries(theme.tokens)) {
-    root.style.setProperty(token, value);
+    const hex = !oklch && token.startsWith("--color-");
+    root.style.setProperty(token, hex ? themeColorToHex(value) : value);
   }
   root.dataset.theme = theme.kind;
   root.style.colorScheme = theme.kind;

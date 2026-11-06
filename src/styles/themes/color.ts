@@ -106,7 +106,7 @@ export function contrastRatio(foreground: string, background: string, base = "#f
 /**
  * Move only the lightness of `color` until it reaches `minContrast` on `surface`,
  * so a color that is too dim keeps its hue instead of collapsing to black or white.
- * Returns the color unchanged when it already passes.
+ * Returns the color unchanged when it already passes. Both colors are treated as opaque.
  */
 export function readableThemeColorOn(color: string, surface: string, minContrast: number): string {
   const fg = requireColor(color);
