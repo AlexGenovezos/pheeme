@@ -315,6 +315,63 @@ fn list_unread_threads(ctx: Ctx) -> threads::ThreadPage {
     page
 }
 
+/// The seeded mailbox with its unread mail in Promotions, as in a real one, leaving the
+/// Social tab a handful (fewer than a page). The unread list of that tab must not walk the
+/// whole Inbox to find them. Edits the derived rows directly: the list reads nothing else.
+fn sparse_unread() -> Ctx {
+    let ctx = copy_fixture();
+    ctx.rt.block_on(async {
+        sqlx::query(
+            "DELETE FROM thread_labels WHERE label_id = 'UNREAD'
+               AND thread_id NOT IN (SELECT thread_id FROM thread_labels
+                                     WHERE label_id = 'CATEGORY_PROMOTIONS')
+               AND thread_id NOT IN (SELECT thread_id FROM thread_labels
+                                     WHERE label_id = 'CATEGORY_SOCIAL'
+                                     ORDER BY last_message_date DESC LIMIT 60)",
+        )
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE threads SET unread_count = 0 WHERE unread_count > 0 AND NOT EXISTS (
+               SELECT 1 FROM thread_labels u WHERE u.account_id = threads.account_id
+                 AND u.thread_id = threads.id AND u.label_id = 'UNREAD')",
+        )
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+        list_unread_social(&ctx.pool).await;
+    });
+    ctx
+}
+
+/// The Social tab's first page with "Unread only" on.
+async fn list_unread_social(pool: &SqlitePool) -> threads::ThreadPage {
+    threads::list_threads(
+        pool,
+        &threads::ThreadQuery {
+            account_ids: &[ACCT.to_string()],
+            label_id: "INBOX",
+            also_label_id: Some("CATEGORY_SOCIAL"),
+            exclude_label_ids: &[],
+            read_filter: Some(&[]),
+            before: None,
+            limit: PAGE,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+#[library_benchmark]
+#[bench::few_unread(setup = sparse_unread)]
+fn list_unread_tab(ctx: Ctx) -> threads::ThreadPage {
+    let page = measured(&ctx.rt, list_unread_social(&ctx.pool));
+    assert!(!page.threads.is_empty() && page.threads.len() < PAGE as usize);
+    assert!(page.next.is_none());
+    page
+}
+
 /// The seeded mailbox with both count queries prepared and their pages cached, as after the
 /// first sidebar refresh. Every sync event reruns them (sidebar and tray).
 fn warm_counts() -> Ctx {
@@ -525,6 +582,7 @@ library_benchmark_group!(
     benchmarks = [
         list_threads,
         list_unread_threads,
+        list_unread_tab,
         unread_counts,
         label_counts,
         search_threads,

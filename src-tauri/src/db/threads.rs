@@ -252,6 +252,13 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
     if q.limit <= 0 {
         anyhow::bail!("thread list limit must be positive");
     }
+    if let Some(keep) = q.read_filter {
+        // An unread thread outside Spam and Trash carries `UNREAD` (see `label_counts`); one
+        // wholly in Spam or Trash carries only those, so those two keep the label walk.
+        if !matches!(q.label_id, "SPAM" | "TRASH") {
+            return list_unread(pool, q, keep).await;
+        }
+    }
     let fetch_limit = q.limit.saturating_add(1);
 
     let read_filter = q.read_filter.map(serde_json::to_string).transpose()?;
@@ -333,6 +340,155 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery<'_>) -> Result<Thre
                 exclude,
                 fetch_limit,
                 read_filter,
+            )
+            .fetch_all(pool)
+            .await?
+        }
+    };
+    Ok(page_from_rows(rows, q.limit as usize))
+}
+
+/// [`list_threads`] with "Unread only" on: walks the account's `UNREAD` rows, newest first,
+/// instead of every row of the label. A tab with a few unread threads among a hundred
+/// thousand (Updates, while Promotions holds the unread mail) then reads the unread rows, not
+/// the whole Inbox. The second arm adds the threads read during this visit (`keep`), which
+/// no longer carry `UNREAD`, and skips those the first arm returns. Both arms come out in the
+/// listing order, so SQLite merges them and stops at the limit. A thread's label rows
+/// all carry its date, so `u`'s date, account and id order and page it like `tl`'s.
+async fn list_unread(
+    pool: &SqlitePool,
+    q: &ThreadQuery<'_>,
+    keep: &[(String, String)],
+) -> Result<ThreadPage> {
+    let fetch_limit = q.limit.saturating_add(1);
+    let keep = serde_json::to_string(keep)?;
+    let account_ids = serde_json::to_string(q.account_ids)?;
+    let exclude = serde_json::to_string(q.exclude_label_ids)?;
+
+    let rows = match q.before {
+        None => {
+            sqlx::query_as!(
+                ThreadRow,
+                r#"
+        SELECT u.thread_id AS "id!", u.account_id AS "account_id!", t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count AS "message_count!",
+               t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               t.from_name, t.from_address, t.is_starred AS "is_starred!",
+               u.last_message_date AS "cursor_date!"
+        FROM thread_labels u INDEXED BY idx_thread_labels_listing
+        CROSS JOIN thread_labels tl
+            ON tl.account_id = u.account_id AND tl.thread_id = u.thread_id AND tl.label_id = ?1
+        CROSS JOIN threads t ON t.account_id = u.account_id AND t.id = u.thread_id
+        WHERE u.label_id = 'UNREAD'
+          AND u.account_id IN (SELECT value FROM json_each(?2))
+          AND t.unread_count > 0
+          AND (?3 IS NULL OR EXISTS (
+                SELECT 1 FROM thread_labels x
+                WHERE x.account_id = u.account_id AND x.thread_id = u.thread_id
+                  AND x.label_id = ?3))
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = u.account_id AND e.thread_id = u.thread_id
+                  AND e.label_id IN (SELECT value FROM json_each(?4)))
+        UNION ALL
+        SELECT tl.thread_id, tl.account_id, t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count,
+               t.unread_count, t.has_attachment,
+               t.from_name, t.from_address, t.is_starred,
+               tl.last_message_date
+        FROM json_each(?6) k
+        CROSS JOIN thread_labels tl
+            ON tl.account_id = k.value ->> 0 AND tl.thread_id = k.value ->> 1
+           AND tl.label_id = ?1
+        CROSS JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
+        WHERE tl.account_id IN (SELECT value FROM json_each(?2))
+          AND (?3 IS NULL OR EXISTS (
+                SELECT 1 FROM thread_labels x
+                WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id
+                  AND x.label_id = ?3))
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = tl.account_id AND e.thread_id = tl.thread_id
+                  AND e.label_id IN (SELECT value FROM json_each(?4)))
+          AND NOT (t.unread_count > 0 AND EXISTS (
+                SELECT 1 FROM thread_labels r
+                WHERE r.account_id = tl.account_id AND r.thread_id = tl.thread_id
+                  AND r.label_id = 'UNREAD'))
+        ORDER BY 13 DESC, 2 DESC, 1 DESC
+        LIMIT ?5
+        "#,
+                q.label_id,
+                account_ids,
+                q.also_label_id,
+                exclude,
+                fetch_limit,
+                keep,
+            )
+            .fetch_all(pool)
+            .await?
+        }
+        Some(c) => {
+            sqlx::query_as!(
+                ThreadRow,
+                r#"
+        SELECT u.thread_id AS "id!", u.account_id AS "account_id!", t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count AS "message_count!",
+               t.unread_count AS "unread_count!", t.has_attachment AS "has_attachment!",
+               t.from_name, t.from_address, t.is_starred AS "is_starred!",
+               u.last_message_date AS "cursor_date!"
+        FROM thread_labels u INDEXED BY idx_thread_labels_listing
+        CROSS JOIN thread_labels tl
+            ON tl.account_id = u.account_id AND tl.thread_id = u.thread_id AND tl.label_id = ?1
+        CROSS JOIN threads t ON t.account_id = u.account_id AND t.id = u.thread_id
+        WHERE u.label_id = 'UNREAD'
+          AND u.account_id IN (SELECT value FROM json_each(?2))
+          AND (u.last_message_date, u.account_id, u.thread_id) < (?3, ?4, ?5)
+          AND t.unread_count > 0
+          AND (?6 IS NULL OR EXISTS (
+                SELECT 1 FROM thread_labels x
+                WHERE x.account_id = u.account_id AND x.thread_id = u.thread_id
+                  AND x.label_id = ?6))
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = u.account_id AND e.thread_id = u.thread_id
+                  AND e.label_id IN (SELECT value FROM json_each(?7)))
+        UNION ALL
+        SELECT tl.thread_id, tl.account_id, t.subject, t.snippet,
+               t.history_id, t.last_message_date, t.message_count,
+               t.unread_count, t.has_attachment,
+               t.from_name, t.from_address, t.is_starred,
+               tl.last_message_date
+        FROM json_each(?9) k
+        CROSS JOIN thread_labels tl
+            ON tl.account_id = k.value ->> 0 AND tl.thread_id = k.value ->> 1
+           AND tl.label_id = ?1
+        CROSS JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
+        WHERE tl.account_id IN (SELECT value FROM json_each(?2))
+          AND (tl.last_message_date, tl.account_id, tl.thread_id) < (?3, ?4, ?5)
+          AND (?6 IS NULL OR EXISTS (
+                SELECT 1 FROM thread_labels x
+                WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id
+                  AND x.label_id = ?6))
+          AND NOT EXISTS (
+                SELECT 1 FROM thread_labels e
+                WHERE e.account_id = tl.account_id AND e.thread_id = tl.thread_id
+                  AND e.label_id IN (SELECT value FROM json_each(?7)))
+          AND NOT (t.unread_count > 0 AND EXISTS (
+                SELECT 1 FROM thread_labels r
+                WHERE r.account_id = tl.account_id AND r.thread_id = tl.thread_id
+                  AND r.label_id = 'UNREAD'))
+        ORDER BY 13 DESC, 2 DESC, 1 DESC
+        LIMIT ?8
+        "#,
+                q.label_id,
+                account_ids,
+                c.last_message_date,
+                c.account_id,
+                c.thread_id,
+                q.also_label_id,
+                exclude,
+                fetch_limit,
+                keep,
             )
             .fetch_all(pool)
             .await?
@@ -1763,12 +1919,10 @@ mod tests {
         assert_eq!(count("Label_2"), None);
     }
 
-    /// The count queries skip most rows by relying on how thread labels are derived: an
-    /// unread thread carries `UNREAD`, or only `SPAM`/`TRASH` when all its messages are
-    /// spammed or trashed. Compare them with a plain scan of every row, over a mailbox with
-    /// the cases that bend that rule, so a change to the derivation can't skew the counts.
-    #[tokio::test]
-    async fn counts_match_a_full_scan() {
+    /// Accounts `a1` and `a2` with the threads that bend the label derivation: partly or
+    /// wholly spammed or trashed, unread or not, and optimistic read changes. See
+    /// [`counts_match_a_full_scan`].
+    async fn derivation_edge_cases() -> SqlitePool {
         let pool = seeded_pool().await;
         let msg = |account: &str, id: &str, thread: &str, labels: &[&str]| DbMessage {
             id: id.into(),
@@ -1783,7 +1937,8 @@ mod tests {
             snippet: None,
             body_html: None,
             body_text: None,
-            date: Some(100),
+            // Three dates, so the lists both order by date and break ties.
+            date: Some(100 + id[1..].parse::<i64>().unwrap() % 3),
             size_estimate: None,
             has_attachment: 0,
             is_read: (!labels.contains(&"UNREAD")).into(),
@@ -1853,6 +2008,16 @@ mod tests {
             recompute_threads(&mut tx, account, &ids).await.unwrap();
         }
         tx.commit().await.unwrap();
+        pool
+    }
+
+    /// The count queries skip most rows by relying on how thread labels are derived: an
+    /// unread thread carries `UNREAD`, or only `SPAM`/`TRASH` when all its messages are
+    /// spammed or trashed. Compare them with a plain scan of every row, over a mailbox with
+    /// the cases that bend that rule, so a change to the derivation can't skew the counts.
+    #[tokio::test]
+    async fn counts_match_a_full_scan() {
+        let pool = derivation_edge_cases().await;
 
         for account in ["a1", "a2"] {
             let mut expected: Vec<(String, i64, i64)> = sqlx::query_as(
@@ -2024,6 +2189,92 @@ mod tests {
 
         let none = list_all_mail(&pool, &[], None, 10, None).await.unwrap();
         assert!(none.threads.is_empty() && none.next.is_none());
+    }
+
+    /// The unread list walks `UNREAD` rows rather than the label's, relying on the same
+    /// derivation as the counts. Compare it with a scan of the label's rows, page by page,
+    /// for every mailbox shape the app lists.
+    #[tokio::test]
+    async fn unread_lists_match_a_full_scan() {
+        let pool = derivation_edge_cases().await;
+        let categories = labels(&[
+            "CATEGORY_SOCIAL",
+            "CATEGORY_PROMOTIONS",
+            "CATEGORY_UPDATES",
+            "CATEGORY_FORUMS",
+        ]);
+        let keeps = [
+            vec![],
+            // Read now (t4), read all along (a2 t2, t6), wholly spam (t9), and a thread
+            // that's unread anyway (t1).
+            vec![
+                pair("a1", "t4"),
+                pair("a2", "t2"),
+                pair("a1", "t6"),
+                pair("a1", "t9"),
+                pair("a1", "t1"),
+            ],
+        ];
+        let mut checked = 0;
+        for scope in [&["a1"][..], &["a2"], &["a1", "a2"]] {
+            let accounts = labels(scope);
+            for label in ["INBOX", "Label_1", "SENT", "UNREAD", "SPAM", "TRASH"] {
+                for also in [None, Some("CATEGORY_SOCIAL"), Some("CATEGORY_FORUMS")] {
+                    for exclude in [&[][..], &categories[..]] {
+                        for keep in &keeps {
+                            let expected: Vec<(String, String)> = sqlx::query_as(
+                                "SELECT tl.account_id, tl.thread_id FROM thread_labels tl
+                                 JOIN threads t ON t.account_id = tl.account_id
+                                   AND t.id = tl.thread_id
+                                 WHERE tl.label_id = ?1
+                                   AND tl.account_id IN (SELECT value FROM json_each(?2))
+                                   AND (?3 IS NULL OR EXISTS (SELECT 1 FROM thread_labels x
+                                     WHERE x.account_id = tl.account_id
+                                       AND x.thread_id = tl.thread_id AND x.label_id = ?3))
+                                   AND NOT EXISTS (SELECT 1 FROM thread_labels e
+                                     WHERE e.account_id = tl.account_id
+                                       AND e.thread_id = tl.thread_id
+                                       AND e.label_id IN (SELECT value FROM json_each(?4)))
+                                   AND (t.unread_count > 0 OR json_array(t.account_id, t.id)
+                                     IN (SELECT value FROM json_each(?5)))
+                                 ORDER BY tl.last_message_date DESC, tl.account_id DESC,
+                                   tl.thread_id DESC",
+                            )
+                            .bind(label)
+                            .bind(serde_json::to_string(&accounts).unwrap())
+                            .bind(also)
+                            .bind(serde_json::to_string(exclude).unwrap())
+                            .bind(serde_json::to_string(keep).unwrap())
+                            .fetch_all(&pool)
+                            .await
+                            .unwrap();
+                            for limit in [1, 2, 50] {
+                                let q = ThreadQuery {
+                                    account_ids: &accounts,
+                                    label_id: label,
+                                    also_label_id: also,
+                                    exclude_label_ids: exclude,
+                                    read_filter: Some(keep),
+                                    before: None,
+                                    limit,
+                                };
+                                assert_eq!(
+                                    page_all(&pool, &q).await,
+                                    expected,
+                                    "{label} also {also:?} excluding {} keeping {} \
+                                     of {scope:?}, pages of {limit}",
+                                    exclude.len(),
+                                    keep.len(),
+                                );
+                            }
+                            checked += !expected.is_empty() as usize;
+                        }
+                    }
+                }
+            }
+        }
+        // Most shapes list something: the comparison isn't vacuous.
+        assert!(checked > 40, "only {checked} non-empty lists");
     }
 
     /// The four SQL texts of `list_all_mail` (single/multi account x first/cursor page),
