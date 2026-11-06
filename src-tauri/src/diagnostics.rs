@@ -4,6 +4,7 @@ use file_rotate::{compression::Compression, suffix::AppendCount, ContentLimit, F
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -80,6 +81,60 @@ pub fn init(directory: tauri::Result<PathBuf>) -> LogGuard {
         tracing::warn!(%error, "persistent diagnostics unavailable; logging to stderr only");
     }
     LogGuard(Mutex::new(guard))
+}
+
+/// Reads the UI waits on that take at least this long are logged with their arguments.
+pub const SLOW_READ: Duration = Duration::from_millis(100);
+
+/// Connections in use when a request starts. All of them busy means the request queues
+/// for one, which `elapsed_ms` then includes.
+#[derive(Debug, Clone, Copy)]
+pub struct PoolLoad {
+    pub busy: u32,
+    pub size: u32,
+}
+
+impl PoolLoad {
+    pub fn of(pool: &sqlx::SqlitePool) -> Self {
+        let size = pool.size();
+        Self {
+            busy: size.saturating_sub(pool.num_idle() as u32),
+            size,
+        }
+    }
+}
+
+impl std::fmt::Display for PoolLoad {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.busy, self.size)
+    }
+}
+
+/// Milliseconds since `start`, for log fields.
+pub fn ms_since(start: Instant) -> u64 {
+    start.elapsed().as_millis() as u64
+}
+
+/// Warn when the async runtime falls behind: a tick that should come every 100 ms arriving
+/// late means its worker threads were busy (blocking work on the runtime), so every command
+/// and query result waited too. A machine that slept shows up as one long stall.
+pub fn watch_runtime_stalls() {
+    const TICK: Duration = Duration::from_millis(100);
+    const STALL: Duration = Duration::from_millis(250);
+    tauri::async_runtime::spawn(async {
+        let mut tick = tokio::time::interval(TICK);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        tick.tick().await;
+        let mut last = Instant::now();
+        loop {
+            tick.tick().await;
+            let lag = last.elapsed().saturating_sub(TICK);
+            if lag >= STALL {
+                tracing::warn!(lag_ms = lag.as_millis() as u64, "async runtime stalled");
+            }
+            last = Instant::now();
+        }
+    });
 }
 
 #[cfg(test)]

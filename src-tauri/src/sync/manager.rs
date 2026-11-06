@@ -19,6 +19,8 @@ pub const SYNC_INTERVAL: Duration = Duration::from_secs(90);
 /// Focus changes fire often; don't sync on focus more often than this.
 pub const FOCUS_MIN_INTERVAL: Duration = Duration::from_secs(15);
 /// Pause between backfill pages, to stay well inside Gmail's per-user quota.
+/// Sync runs at least this long are logged.
+const SLOW_SYNC: Duration = Duration::from_secs(2);
 pub const BACKFILL_PAUSE: Duration = Duration::from_secs(1);
 
 /// Pause after Gmail rate-limits the backfill, unless it says how long to wait. The page's
@@ -150,13 +152,23 @@ impl SyncManager {
         let a = self.account(account_id);
         let _running = a.run_lock.lock().await;
         let engine = self.engine(account_id);
+        let start = Instant::now();
         let result = async {
             self.process_outbox(account_id).await?;
-            engine.run_incremental_sync().await?;
+            let changed = engine.run_incremental_sync().await?;
             self.process_outbox(account_id).await?;
-            Ok::<_, SyncError>(())
+            Ok::<_, SyncError>(changed)
         }
         .await;
+        if start.elapsed() >= SLOW_SYNC {
+            tracing::info!(
+                account = account_id,
+                elapsed_ms = start.elapsed().as_millis() as u64,
+                changed = ?result.as_ref().ok(),
+                "slow sync"
+            );
+        }
+        let result = result.map(|_| ());
         match result {
             Ok(()) => {
                 self.ensure_backfill(account_id);

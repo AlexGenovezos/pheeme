@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT x.label_id AS \"label_id!\", COUNT(*) AS \"unread!: i64\"\n        FROM (\n            SELECT DISTINCT c.thread_id AS thread_id\n            FROM thread_labels c INDEXED BY idx_thread_labels_listing\n            WHERE c.label_id IN ('UNREAD', 'SPAM', 'TRASH') AND c.account_id = ?1\n        ) u\n        CROSS JOIN threads t ON t.account_id = ?1 AND t.id = u.thread_id\n        CROSS JOIN thread_labels x ON x.account_id = ?1 AND x.thread_id = u.thread_id\n        WHERE t.unread_count > 0\n        GROUP BY x.label_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "label_id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "unread!: i64",
+        "ordinal": 1,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "8198584861d0627844e30efb74f3d18592ee88b13c7c34cf3058264c9f2c6391"
+}

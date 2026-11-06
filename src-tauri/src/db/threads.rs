@@ -2,7 +2,7 @@ use crate::db::messages::{self, DbMessage};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct DbThread {
@@ -656,6 +656,10 @@ pub async fn recompute_threads(
 /// A category is `INBOX ∩ CATEGORY_x`; `CATEGORY_PERSONAL` (Primary) is the unread inbox
 /// minus the other four categories, so an account without category labels still has its
 /// whole inbox under Primary. Labels with no unread threads are omitted.
+///
+/// Walks the `UNREAD` rows of `idx_thread_labels_listing`, not the inbox: a large inbox is
+/// mostly read, and these counts rerun on every sync event. `CROSS JOIN` keeps that order
+/// (SQLite has no statistics to choose it).
 pub async fn unread_counts(
     pool: &SqlitePool,
     account_ids: &[String],
@@ -666,23 +670,23 @@ pub async fn unread_counts(
         SELECT label_id AS "label_id!", COUNT(*) AS "count!: i64"
         FROM (
             SELECT x.label_id AS label_id
-            FROM thread_labels i
-            JOIN thread_labels u
-              ON u.account_id = i.account_id AND u.thread_id = i.thread_id AND u.label_id = 'UNREAD'
-            JOIN thread_labels x
-              ON x.account_id = i.account_id AND x.thread_id = i.thread_id
+            FROM thread_labels u INDEXED BY idx_thread_labels_listing
+            CROSS JOIN thread_labels i
+              ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'
+            CROSS JOIN thread_labels x
+              ON x.account_id = u.account_id AND x.thread_id = u.thread_id
              AND x.label_id IN ('INBOX', 'CATEGORY_SOCIAL',
                                 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS')
-            WHERE i.label_id = 'INBOX' AND i.account_id IN (SELECT value FROM json_each(?1))
+            WHERE u.label_id = 'UNREAD' AND u.account_id IN (SELECT value FROM json_each(?1))
             UNION ALL
             SELECT 'CATEGORY_PERSONAL' AS label_id
-            FROM thread_labels i
-            JOIN thread_labels u
-              ON u.account_id = i.account_id AND u.thread_id = i.thread_id AND u.label_id = 'UNREAD'
-            WHERE i.label_id = 'INBOX' AND i.account_id IN (SELECT value FROM json_each(?1))
+            FROM thread_labels u INDEXED BY idx_thread_labels_listing
+            CROSS JOIN thread_labels i
+              ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'
+            WHERE u.label_id = 'UNREAD' AND u.account_id IN (SELECT value FROM json_each(?1))
               AND NOT EXISTS (
                     SELECT 1 FROM thread_labels c
-                    WHERE c.account_id = i.account_id AND c.thread_id = i.thread_id
+                    WHERE c.account_id = u.account_id AND c.thread_id = u.thread_id
                       AND c.label_id IN ('CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS',
                                          'CATEGORY_UPDATES', 'CATEGORY_FORUMS'))
         )
@@ -712,43 +716,70 @@ pub const ALL_MAIL: &str = "ALL";
 /// the lists show it unread (`unread_count > 0`), so Spam and Trash count their unread
 /// threads although a wholly spammed or trashed thread has no `UNREAD` label. Labels with
 /// no threads (and All Mail when empty) are omitted; no unread threads is `unread: 0`.
+///
+/// These rerun on every sync event, so the unread side only visits candidate threads:
+/// `is_read` mirrors each message's `UNREAD` label, so an unread thread carries `UNREAD`
+/// unless all its messages are spammed or trashed, and then it carries `SPAM` or `TRASH`.
 pub async fn label_counts(pool: &SqlitePool, account_id: &str) -> Result<Vec<LabelCount>> {
-    let rows = sqlx::query!(
+    let totals = sqlx::query!(
         r#"
-        SELECT tl.label_id AS "label_id!",
-               COUNT(*) AS "total!: i64",
-               SUM(t.unread_count > 0) AS "unread!: i64"
-        FROM thread_labels tl
-        JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
-        WHERE tl.account_id = ?
-        GROUP BY tl.label_id
-        ORDER BY tl.label_id
+        SELECT label_id AS "label_id!", COUNT(*) AS "total!: i64"
+        FROM thread_labels
+        WHERE account_id = ?
+        GROUP BY label_id
+        ORDER BY label_id
         "#,
         account_id
     )
     .fetch_all(pool)
     .await?;
-    // The same predicate as `list_all_mail`.
+    let unread: HashMap<String, i64> = sqlx::query!(
+        r#"
+        SELECT x.label_id AS "label_id!", COUNT(*) AS "unread!: i64"
+        FROM (
+            SELECT DISTINCT c.thread_id AS thread_id
+            FROM thread_labels c INDEXED BY idx_thread_labels_listing
+            WHERE c.label_id IN ('UNREAD', 'SPAM', 'TRASH') AND c.account_id = ?1
+        ) u
+        CROSS JOIN threads t ON t.account_id = ?1 AND t.id = u.thread_id
+        CROSS JOIN thread_labels x ON x.account_id = ?1 AND x.thread_id = u.thread_id
+        WHERE t.unread_count > 0
+        GROUP BY x.label_id
+        "#,
+        account_id
+    )
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|r| (r.label_id, r.unread))
+    .collect();
+    // The same predicate as `list_all_mail`: every thread minus those in Spam or Trash. Its
+    // unread threads aren't spammed or trashed, so all of them carry `UNREAD`.
     let all = sqlx::query!(
         r#"
-        SELECT COUNT(*) AS "total!: i64",
-               COALESCE(SUM(t.unread_count > 0), 0) AS "unread!: i64"
-        FROM threads t
-        WHERE t.account_id = ?
-          AND NOT EXISTS (
-                SELECT 1 FROM thread_labels e
-                WHERE e.account_id = t.account_id AND e.thread_id = t.id
-                  AND e.label_id IN ('SPAM', 'TRASH'))
+        SELECT
+            (SELECT COUNT(*) FROM threads WHERE account_id = ?1)
+            - (SELECT COUNT(DISTINCT thread_id)
+               FROM thread_labels INDEXED BY idx_thread_labels_listing
+               WHERE label_id IN ('SPAM', 'TRASH') AND account_id = ?1) AS "total!: i64",
+            (SELECT COUNT(*)
+             FROM thread_labels u INDEXED BY idx_thread_labels_listing
+             CROSS JOIN threads t ON t.account_id = u.account_id AND t.id = u.thread_id
+             WHERE u.label_id = 'UNREAD' AND u.account_id = ?1 AND t.unread_count > 0
+               AND NOT EXISTS (
+                    SELECT 1 FROM thread_labels e
+                    WHERE e.account_id = u.account_id AND e.thread_id = u.thread_id
+                      AND e.label_id IN ('SPAM', 'TRASH'))) AS "unread!: i64"
         "#,
         account_id
     )
     .fetch_one(pool)
     .await?;
-    let mut counts: Vec<LabelCount> = rows
+    let mut counts: Vec<LabelCount> = totals
         .into_iter()
         .map(|r| LabelCount {
+            unread: unread.get(&r.label_id).copied().unwrap_or(0),
             label_id: r.label_id,
-            unread: r.unread,
             total: r.total,
         })
         .collect();
@@ -1762,12 +1793,18 @@ mod tests {
             msg("m3", r#"["SPAM","UNREAD"]"#, 0),
             msg("m4", r#"["TRASH","UNREAD"]"#, 0),
             msg("m5", r#"["TRASH"]"#, 1),
+            // One thread in both Spam and Trash: All Mail leaves it out once.
+            msg("m6", r#"["SPAM"]"#, 1),
+            DbMessage {
+                thread_id: "t6".into(),
+                ..msg("m7", r#"["TRASH"]"#, 1)
+            },
         ] {
             crate::db::messages::upsert_message_tx(&mut tx, &m)
                 .await
                 .unwrap();
         }
-        let ids: Vec<String> = (1..=5).map(|i| format!("t{i}")).collect();
+        let ids: Vec<String> = (1..=6).map(|i| format!("t{i}")).collect();
         recompute_threads(&mut tx, "a1", &ids).await.unwrap();
         tx.commit().await.unwrap();
 
@@ -1788,8 +1825,8 @@ mod tests {
             Some((all_unread, all.threads.len() as i64))
         );
         assert_eq!(count(ALL_MAIL), Some((1, 2)));
-        assert_eq!(count("SPAM"), Some((1, 1)));
-        assert_eq!(count("TRASH"), Some((1, 2)));
+        assert_eq!(count("SPAM"), Some((1, 2)));
+        assert_eq!(count("TRASH"), Some((1, 3)));
         assert_eq!(count("INBOX"), Some((1, 1)));
         assert_eq!(
             label_counts(&pool, "a2").await.unwrap(),

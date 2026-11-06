@@ -157,6 +157,7 @@ pub fn run() {
             let log_dir = app.path().app_log_dir();
             let log_path = log_dir.as_ref().ok().cloned();
             app.manage(diagnostics::init(log_dir));
+            diagnostics::watch_runtime_stalls();
             info!(
                 version = env!("CARGO_PKG_VERSION"),
                 os = std::env::consts::OS,
