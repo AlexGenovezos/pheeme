@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ThemeDefinition } from "../styles/themes";
+import { themeColorToHex } from "../styles/themes/color";
 import { platform } from "../lib/platform";
 import { isTauri } from "../preview/runtime";
 import type { ThemeMode } from "./theme";
@@ -18,7 +19,9 @@ export function syncNativeWindow(mode: ThemeMode, theme: ThemeDefinition) {
   win.setTheme(mode === "system" ? null : theme.kind).catch(warn("setTheme"));
   // A transparent window must stay transparent, or the vibrancy behind the sidebar is covered.
   if (!vibrancy)
-    win.setBackgroundColor(theme.tokens["--color-app-bg"]).catch(warn("setBackgroundColor"));
+    win
+      .setBackgroundColor(themeColorToHex(theme.tokens["--color-app-bg"]))
+      .catch(warn("setBackgroundColor"));
 }
 
 let revealed = false;

@@ -4,6 +4,11 @@
  * imported from VS Code JSON (design doc §6, post-v1). `null` means VS Code has
  * no matching key; an importer derives those from neighbours or keeps ours.
  *
+ * Names stay per UI part and tied to VS Code keys (#28 weighed T3 Code's ~60
+ * general roles instead): the mail UI is built on these, and the table below
+ * is the import mapping. T3's main benefit, writing a few base colors and
+ * working out the rest, comes from build.ts, which derives the variant tokens.
+ *
  * Token                                VS Code key
  * ------------------------------------ ----------------------------------------
  */
@@ -76,6 +81,7 @@ export const THEME_TOKENS = {
   "--color-toast-bg": "notifications.background",
   "--color-toast-foreground": "notifications.foreground",
   "--color-toast-border": "notifications.border",
+  "--color-toast-danger-foreground": "notificationsErrorIcon.foreground",
   "--color-scrim": null,
   "--color-shadow": "widget.shadow",
 
