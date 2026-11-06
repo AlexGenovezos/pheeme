@@ -9,6 +9,7 @@ import { useThemeStore } from "../theme/theme";
 import { SEQUENCE_WAIT_MS } from "./KeyboardSettings";
 import { Settings } from "./Settings";
 import { useSettingsStore } from "./settingsStore";
+import { initReadingSize, READING_SIZE_KEY } from "./readingSettings";
 
 const archive = vi.fn();
 const star = vi.fn();
@@ -28,6 +29,7 @@ const open = (page?: string) => act(() => useSettingsStore.getState().openSettin
 
 beforeEach(() => {
   localStorage.clear();
+  initReadingSize();
   registry.clear();
   __resetUiStoreForTests();
   useSettingsStore.setState({ open: false, page: "appearance" });
@@ -104,6 +106,18 @@ test("Appearance sets the theme mode and the sidebar", () => {
 
   fireEvent.click(within(dialog()).getByRole("switch", { name: "Show sidebar" }));
   expect(useUiStore.getState().sidebarCollapsed).toBe(true);
+});
+
+test("Appearance changes and persists the reading size", () => {
+  render(<Harness />);
+  open("appearance");
+  fireEvent.click(within(dialog()).getByRole("radio", { name: "Large" }));
+  expect(document.documentElement.dataset.readingSize).toBe("large");
+  expect(localStorage.getItem(READING_SIZE_KEY)).toBe("large");
+  expect(within(dialog()).getByRole("radio", { name: "Large" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
 });
 
 describe("search", () => {

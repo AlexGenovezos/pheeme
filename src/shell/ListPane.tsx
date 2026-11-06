@@ -1,4 +1,4 @@
-import { PanelLeftOpen, SquarePen } from "lucide-react";
+import { PanelLeftOpen, SquareCheckBig, SquarePen, X } from "lucide-react";
 import { useEffect } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
@@ -84,6 +84,7 @@ export function ListPane() {
   const unreadOnly = useUiStore((s) => !!s.unreadMailboxes[mailboxKey(s.mailbox)]);
   const toggleUnreadOnly = useUiStore((s) => s.toggleUnreadOnly);
   const anyChecked = useUiStore((s) => s.checked.length > 0);
+  const checkedCount = useUiStore((s) => s.checked.length);
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
 
@@ -229,6 +230,32 @@ export function ListPane() {
       <div className="list-pane__search">
         <SearchBar />
       </div>
+
+      {threads.length > 0 && (
+        <div className="list-pane__controls">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={anyChecked ? <X aria-hidden="true" /> : <SquareCheckBig aria-hidden="true" />}
+            title={
+              anyChecked ? "Clear selection" : `Select all ${threads.length} loaded conversations`
+            }
+            onClick={() => {
+              const ui = useUiStore.getState();
+              if (anyChecked) ui.clearChecked();
+              else ui.checkAll(threads.map((thread) => threadKey(thread.accountId, thread.id)));
+            }}
+          >
+            {anyChecked ? "Clear selection" : "Select all"}
+          </Button>
+          <span>
+            <span aria-live="polite">{anyChecked ? `${checkedCount} selected` : ""}</span>
+            {!anyChecked &&
+              !searchText &&
+              `${threads.length}${next ? "+" : ""} ${threads.length === 1 ? "conversation" : "conversations"}`}
+          </span>
+        </div>
+      )}
 
       <ThreadList title={title} onRowAction={onRowAction} rowMenu={rowMenu} />
     </div>

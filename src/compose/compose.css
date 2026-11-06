@@ -212,6 +212,8 @@
 }
 
 .compose-chip__text {
+  min-width: var(--control-height-sm);
+  min-height: var(--control-height-sm);
   overflow: hidden;
   padding: var(--space-0);
   border: none;
@@ -228,6 +230,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: var(--control-height-sm);
+  min-height: var(--control-height-sm);
   margin-inline: var(--space-0-5);
   padding: var(--space-0-5);
   border: none;
@@ -382,7 +386,8 @@ button.compose-from:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: var(--space-3);
+  min-width: var(--control-height-sm);
+  height: var(--control-height-sm);
   padding: var(--space-0) var(--space-1);
   border: none;
   border-radius: var(--radius-xs);

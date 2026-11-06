@@ -1,7 +1,6 @@
-// One conversation in the list: avatar (a checkbox while selecting), sender, subject, snippet, date and hover actions.
+// One conversation in the list: selection checkbox, sender, subject, snippet, date and hover actions.
 import { Archive, Mail, MailOpen, Paperclip, Star, Trash2 } from "lucide-react";
 import { memo, type MouseEvent, useState } from "react";
-import { Avatar } from "../components/ui/Avatar";
 import { IconButton } from "../components/ui/IconButton";
 import { registry } from "../keyboard/registry";
 import { ListRow } from "../components/ui/ListRow";
@@ -29,8 +28,6 @@ export interface ThreadRowProps {
   open: boolean;
   /** Part of the multi-selection. */
   checked: boolean;
-  /** Anything in the list is checked, so every avatar is a checkbox. */
-  anyChecked: boolean;
   /** All Inboxes mixes accounts, so rows carry their account's color. */
   showAccountDot: boolean;
   /** 1..6, the `--color-account-N` token. */
@@ -48,7 +45,6 @@ export const ThreadRow = memo(function ThreadRow({
   setSize,
   open,
   checked,
-  anyChecked,
   showAccountDot,
   accountColor,
   accountEmail,
@@ -59,7 +55,6 @@ export const ThreadRow = memo(function ThreadRow({
 }: ThreadRowProps) {
   const [hovered, setHovered] = useState(false);
   const sender = senderOf(thread);
-  const asCheckbox = anyChecked || hovered;
   const act = (action: RowAction) => (e: MouseEvent) => {
     e.stopPropagation();
     onAction(action, thread);
@@ -80,28 +75,25 @@ export const ThreadRow = memo(function ThreadRow({
       onClick={(e) => onSelect(e, thread)}
       onContextMenu={(e) => onContextMenu(e, thread)}
       leading={
-        asCheckbox ? (
-          <span className="thread-row__lead">
-            <input
-              type="checkbox"
-              className="thread-row__check"
-              aria-label={`Select conversation from ${sender}`}
-              checked={checked}
-              readOnly
-              // Mouse target only: focus stays on the listbox, and `x` is the keyboard path.
-              tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onCheck(e, thread);
-              }}
-            />
-          </span>
-        ) : (
-          <span className="thread-row__lead">
-            <Avatar name={sender} email={thread.fromAddress ?? undefined} />
-          </span>
-        )
+        <label
+          className="thread-row__lead"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            className="thread-row__check"
+            aria-label={`Select conversation from ${sender}`}
+            checked={checked}
+            readOnly
+            // Mouse target only: focus stays on the listbox, and `x` is the keyboard path.
+            tabIndex={-1}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCheck(e, thread);
+            }}
+          />
+        </label>
       }
       title={
         <>

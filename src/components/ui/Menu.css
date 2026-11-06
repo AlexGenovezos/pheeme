@@ -32,7 +32,7 @@
 }
 
 .ui-menu__item[aria-disabled="true"] {
-  color: var(--color-foreground-subtle);
+  color: var(--color-foreground-disabled);
 }
 
 .ui-menu__item--danger:not([data-active]) {

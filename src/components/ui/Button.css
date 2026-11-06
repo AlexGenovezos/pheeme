@@ -76,7 +76,7 @@
 
 .ui-button:disabled,
 .ui-icon-button:disabled {
-  color: var(--color-foreground-subtle);
+  color: var(--color-foreground-disabled);
 }
 .ui-button--primary:disabled {
   background: var(--color-button-secondary-bg);

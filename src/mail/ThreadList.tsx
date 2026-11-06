@@ -143,7 +143,6 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
 
   const keys = useMemo(() => threads.map((t) => threadKey(t.accountId, t.id)), [threads]);
   const checkedSet = useMemo(() => new Set(checked), [checked]);
-  const anyChecked = checked.length > 0;
   const accountEmail = useMemo(() => new Map(accounts.map((a) => [a.id, a.email])), [accounts]);
 
   const openIndex = open === null ? -1 : keys.indexOf(open);
@@ -310,7 +309,6 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
                   setSize={setSize}
                   open={key === open}
                   checked={checkedSet.has(key)}
-                  anyChecked={anyChecked}
                   showAccountDot={showAccountDot}
                   accountColor={accountColorIndex(thread.accountId, accounts)}
                   accountEmail={accountEmail.get(thread.accountId) ?? thread.accountId}
