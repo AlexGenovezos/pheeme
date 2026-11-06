@@ -303,7 +303,17 @@ pub fn install(app: &AppHandle) {
                     .iter()
                     .map(|a| a.account_id.clone())
                     .collect::<Vec<_>>();
+                let start = std::time::Instant::now();
+                let pool = crate::diagnostics::PoolLoad::of(&state.db);
                 let counts = db::threads::unread_counts(&state.db, &ids).await?;
+                if start.elapsed() >= crate::diagnostics::SLOW_READ {
+                    tracing::info!(
+                        elapsed_ms = crate::diagnostics::ms_since(start),
+                        accounts = ids.len(),
+                        %pool,
+                        "slow tray unread count"
+                    );
+                }
                 let unread = counts
                     .iter()
                     .find(|(id, _)| id == "INBOX")

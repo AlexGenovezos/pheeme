@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            (SELECT COUNT(*) FROM threads WHERE account_id = ?1)\n            - (SELECT COUNT(DISTINCT thread_id)\n               FROM thread_labels INDEXED BY idx_thread_labels_listing\n               WHERE label_id IN ('SPAM', 'TRASH') AND account_id = ?1) AS \"total!: i64\",\n            (SELECT COUNT(*)\n             FROM thread_labels u INDEXED BY idx_thread_labels_listing\n             CROSS JOIN threads t ON t.account_id = u.account_id AND t.id = u.thread_id\n             WHERE u.label_id = 'UNREAD' AND u.account_id = ?1 AND t.unread_count > 0\n               AND NOT EXISTS (\n                    SELECT 1 FROM thread_labels e\n                    WHERE e.account_id = u.account_id AND e.thread_id = u.thread_id\n                      AND e.label_id IN ('SPAM', 'TRASH'))) AS \"unread!: i64\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "total!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "unread!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "c33e962b7a3baa1cc2a688892deabd52d58785b2c19996e7c751a563dffad51e"
+}

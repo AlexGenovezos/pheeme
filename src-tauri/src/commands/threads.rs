@@ -1,8 +1,10 @@
 //! Thread commands: thin adapters over [`crate::mail::MailService`].
 
 use super::CommandError;
+use crate::diagnostics::{ms_since, PoolLoad, SLOW_READ};
 use crate::mail::{ThreadCursorDto, ThreadDetailDto, ThreadPageDto};
 use crate::AppState;
+use std::time::Instant;
 use tauri::State;
 
 // Keep the IPC arguments flat, matching the other thread commands.
@@ -18,7 +20,11 @@ pub async fn list_threads(
     unread_only: Option<bool>,
     keep_read: Option<Vec<(String, String)>>,
 ) -> Result<ThreadPageDto, CommandError> {
-    Ok(state
+    let start = Instant::now();
+    let pool = PoolLoad::of(&state.db);
+    let paged = before.is_some();
+    let unread_only = unread_only.unwrap_or(false);
+    let result = state
         .mail
         .list_threads(
             &account_ids,
@@ -26,11 +32,25 @@ pub async fn list_threads(
             also_label_id.as_deref(),
             before,
             limit,
-            unread_only
-                .unwrap_or(false)
-                .then_some(keep_read.as_deref().unwrap_or_default()),
+            unread_only.then_some(keep_read.as_deref().unwrap_or_default()),
         )
-        .await?)
+        .await;
+    if start.elapsed() >= SLOW_READ {
+        tracing::info!(
+            elapsed_ms = ms_since(start),
+            label = %label_id,
+            also_label = ?also_label_id,
+            accounts = account_ids.len(),
+            unread_only,
+            keep_read = keep_read.as_ref().map_or(0, Vec::len),
+            ?limit,
+            paged,
+            rows = result.as_ref().map_or(0, |p| p.threads.len()),
+            %pool,
+            "slow thread list"
+        );
+    }
+    Ok(result?)
 }
 
 #[tauri::command]

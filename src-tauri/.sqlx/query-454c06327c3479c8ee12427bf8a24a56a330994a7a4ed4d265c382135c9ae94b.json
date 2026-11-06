@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT label_id AS \"label_id!\", COUNT(*) AS \"total!: i64\"\n        FROM thread_labels\n        WHERE account_id = ?\n        GROUP BY label_id\n        ORDER BY label_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "label_id!",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "total!: i64",
+        "ordinal": 1,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "454c06327c3479c8ee12427bf8a24a56a330994a7a4ed4d265c382135c9ae94b"
+}
