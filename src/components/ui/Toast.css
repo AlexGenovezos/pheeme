@@ -42,7 +42,7 @@
 }
 
 .ui-toast--danger .ui-toast__title {
-  color: var(--color-danger);
+  color: var(--color-toast-danger-foreground);
 }
 
 .ui-toast__action,

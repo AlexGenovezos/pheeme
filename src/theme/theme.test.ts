@@ -3,6 +3,12 @@ import indexHtml from "../../index.html?raw";
 import tauriConf from "../../src-tauri/tauri.conf.json";
 import tauriMacConf from "../../src-tauri/tauri.macos.conf.json";
 import { darkTheme, lightTheme, THEME_TOKENS } from "../styles/themes";
+import {
+  contrastRatio,
+  themeColorToHex,
+  toCanonicalThemeColor,
+  withAlpha,
+} from "../styles/themes/color";
 import { initTheme, readThemeMode, resolveTheme, THEME_MODE_KEY, useThemeStore } from "./theme";
 
 /** A controllable prefers-color-scheme media query. */
@@ -112,82 +118,130 @@ describe("theme files", () => {
     expect(Object.keys(darkTheme.tokens).sort()).toEqual(schema);
   });
 
-  // WCAG relative luminance and contrast of #rrggbb colors.
-  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-  const luminance = (c: number[]) => {
-    const [r, g, b] = c.map((v) =>
-      v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4,
-    );
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  };
-  const contrast = (a: number[], b: number[]) => {
-    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-    return (hi + 0.05) / (lo + 0.05);
-  };
-  // --sidebar-selected-tint in tokens.css (vitest doesn't load CSS, so it is repeated here).
-  const tint = 0.12;
+  test.each([lightTheme, darkTheme])("$name stores every color as canonical OKLCH", (theme) => {
+    for (const [token, value] of Object.entries(theme.tokens)) {
+      if (token.startsWith("--shadow-")) continue;
+      expect(value, token).toMatch(/^oklch\([\d.]+ [\d.]+ [\d.]+( \/ [\d.]+)?\)$/);
+      expect(toCanonicalThemeColor(value), token).toBe(value);
+    }
+  });
 
-  test.each([lightTheme, darkTheme])(
-    "$name keeps disabled controls dimmer than enabled secondary text",
-    (theme) => {
-      const background = rgb(theme.tokens["--color-pane-bg"]);
-      const subtle = contrast(rgb(theme.tokens["--color-foreground-subtle"]), background);
-      const muted = contrast(rgb(theme.tokens["--color-foreground-muted"]), background);
-      const disabled = contrast(rgb(theme.tokens["--color-foreground-disabled"]), background);
-      expect(muted).toBeGreaterThanOrEqual(subtle);
-      expect(subtle).toBeGreaterThan(disabled);
-    },
-  );
-
-  test.each([lightTheme, darkTheme])(
-    "$name secondary text and placeholders remain readable on their surfaces",
-    (theme) => {
-      for (const foreground of ["--color-foreground-subtle", "--color-foreground-muted"] as const) {
-        for (const background of [
+  type Token = keyof typeof lightTheme.tokens;
+  // Every text color on each surface it is drawn on: WCAG AA, 4.5:1. Translucent surfaces sit on the pane.
+  const TEXT: [Token, Token[]][] = [
+    [
+      "--color-foreground",
+      [
+        "--color-app-bg",
+        "--color-list-hover-bg",
+        "--color-list-inactive-bg",
+        "--color-selection-bg",
+        "--color-control-hover-bg",
+        "--color-control-active-bg",
+      ],
+    ],
+    ["--color-sidebar-foreground", ["--color-sidebar-bg"]],
+    ...(["--color-foreground-muted", "--color-foreground-subtle"] as const).map(
+      (muted): [Token, Token[]] => [
+        muted,
+        [
           "--color-pane-bg",
           "--color-sidebar-bg",
           "--color-badge-bg",
           "--color-list-active-bg",
-        ] as const) {
-          expect(
-            contrast(rgb(theme.tokens[foreground]), rgb(theme.tokens[background])),
-            `${foreground} on ${background}`,
-          ).toBeGreaterThanOrEqual(4.5);
-        }
-      }
-      expect(
-        contrast(
-          rgb(theme.tokens["--color-input-placeholder"]),
-          rgb(theme.tokens["--color-input-bg"]),
-        ),
-      ).toBeGreaterThanOrEqual(4.5);
+          "--color-list-hover-bg",
+          "--color-list-inactive-bg",
+          "--color-menu-bg",
+        ],
+      ],
+    ),
+    ["--color-link", ["--color-pane-bg", "--color-list-active-bg"]],
+    ["--color-accent-foreground", ["--color-accent", "--color-accent-hover"]],
+    [
+      "--color-button-secondary-foreground",
+      ["--color-button-secondary-bg", "--color-button-secondary-hover-bg"],
+    ],
+    ["--color-input-foreground", ["--color-input-bg"]],
+    ["--color-input-placeholder", ["--color-input-bg"]],
+    ["--color-list-active-foreground", ["--color-list-active-bg"]],
+    ["--color-list-highlight-foreground", ["--color-pane-bg"]],
+    ["--color-badge-foreground", ["--color-badge-bg"]],
+    ["--color-badge-accent-foreground", ["--color-badge-accent-bg"]],
+    ["--color-kbd-foreground", ["--color-kbd-bg"]],
+    ["--color-menu-foreground", ["--color-menu-bg"]],
+    ["--color-menu-selection-foreground", ["--color-menu-selection-bg"]],
+    ["--color-palette-foreground", ["--color-palette-bg"]],
+    ["--color-palette-active-foreground", ["--color-palette-active-bg"]],
+    ["--color-toast-foreground", ["--color-toast-bg"]],
+    ["--color-toast-danger-foreground", ["--color-toast-bg"]],
+    ["--color-danger", ["--color-pane-bg", "--color-menu-bg"]],
+    ["--color-warning", ["--color-pane-bg"]],
+    ["--color-success", ["--color-pane-bg"]],
+    ["--color-info", ["--color-pane-bg"]],
+    ["--color-avatar-foreground", [1, 2, 3, 4, 5, 6].map((i) => `--color-avatar-${i}` as Token)],
+  ];
+  // Indicators that aren't text: 3:1 (WCAG non-text contrast).
+  const NON_TEXT: [Token, Token[]][] = [
+    ["--color-focus-border", ["--color-pane-bg"]],
+    ["--color-unread-indicator", ["--color-pane-bg", "--color-list-active-bg"]],
+    ...[1, 2, 3, 4, 5, 6].map((i): [Token, Token[]] => [
+      `--color-account-${i}` as Token,
+      ["--color-sidebar-bg"],
+    ]),
+  ];
+
+  test.each([lightTheme, darkTheme])("$name keeps every foreground readable", (theme) => {
+    const t = theme.tokens;
+    const failures = [
+      ...TEXT.map((p) => [...p, 4.5] as const),
+      ...NON_TEXT.map((p) => [...p, 3] as const),
+    ]
+      .flatMap(([fg, bgs, min]) =>
+        bgs.map((bg) => ({
+          pair: `${fg} on ${bg}`,
+          ratio: contrastRatio(t[fg], t[bg], t["--color-pane-bg"]),
+          min,
+        })),
+      )
+      .filter(({ ratio, min }) => ratio < min)
+      .map(({ pair, ratio }) => `${pair}: ${ratio.toFixed(2)}`);
+    expect(failures).toEqual([]);
+  });
+
+  test.each([lightTheme, darkTheme])(
+    "$name keeps disabled controls dimmer than enabled secondary text",
+    (theme) => {
+      const t = theme.tokens;
+      const onPane = (token: Token) => contrastRatio(t[token], t["--color-pane-bg"]);
+      expect(onPane("--color-foreground-muted")).toBeGreaterThanOrEqual(
+        onPane("--color-foreground-subtle"),
+      );
+      expect(onPane("--color-foreground-subtle")).toBeGreaterThan(
+        onPane("--color-foreground-disabled"),
+      );
     },
   );
 
   test.each([lightTheme, darkTheme])(
     "$name mailbox colors read as text on the sidebar, selected or not",
     (theme) => {
-      const bg = rgb(theme.tokens["--color-sidebar-bg"]);
-      const tokens = Object.keys(THEME_TOKENS).filter((t): t is keyof typeof theme.tokens =>
-        t.startsWith("--color-mailbox-"),
+      const t = theme.tokens;
+      // --sidebar-selected-tint in tokens.css (vitest doesn't load CSS, so it is repeated here).
+      const tint = 0.12;
+      const tokens = Object.keys(THEME_TOKENS).filter((k): k is Token =>
+        k.startsWith("--color-mailbox-"),
       );
       expect(tokens).toHaveLength(11);
       for (const token of tokens) {
-        const color = rgb(theme.tokens[token]);
-        const selected = color.map((v, i) => v * tint + bg[i] * (1 - tint));
-        expect(contrast(color, bg), token).toBeGreaterThanOrEqual(4.5);
-        expect(contrast(color, selected), `${token} selected`).toBeGreaterThanOrEqual(4.5);
+        const selected = withAlpha(t[token], tint);
+        expect(contrastRatio(t[token], t["--color-sidebar-bg"]), token).toBeGreaterThanOrEqual(4.5);
+        expect(
+          contrastRatio(t[token], selected, t["--color-sidebar-bg"]),
+          `${token} selected`,
+        ).toBeGreaterThanOrEqual(4.5);
       }
     },
   );
-
-  test.each([lightTheme, darkTheme])("$name account dots stand out from the sidebar", (theme) => {
-    const bg = rgb(theme.tokens["--color-sidebar-bg"]);
-    for (let i = 1; i <= 6; i++) {
-      const token = `--color-account-${i}` as keyof typeof theme.tokens;
-      expect(contrast(rgb(theme.tokens[token]), bg), token).toBeGreaterThanOrEqual(3);
-    }
-  });
 });
 
 describe("no white flash", () => {
@@ -212,15 +266,17 @@ describe("no white flash", () => {
 
   test("critical style colors match each theme's app background", () => {
     expect(criticalStyle).toContain(
-      `html[data-theme="light"] { background: ${lightTheme.tokens["--color-app-bg"]};`,
+      `html[data-theme="light"] { background: ${themeColorToHex(lightTheme.tokens["--color-app-bg"])};`,
     );
     expect(criticalStyle).toContain(
-      `html[data-theme="dark"] { background: ${darkTheme.tokens["--color-app-bg"]};`,
+      `html[data-theme="dark"] { background: ${themeColorToHex(darkTheme.tokens["--color-app-bg"])};`,
     );
   });
 
   test("the native window background matches the dark theme", () => {
-    expect(tauriConf.app.windows[0].backgroundColor).toBe(darkTheme.tokens["--color-app-bg"]);
+    expect(tauriConf.app.windows[0].backgroundColor).toBe(
+      themeColorToHex(darkTheme.tokens["--color-app-bg"]),
+    );
   });
 
   test("the macOS window is the main window made transparent over sidebar vibrancy", () => {
