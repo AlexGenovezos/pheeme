@@ -721,6 +721,8 @@ pub const ALL_MAIL: &str = "ALL";
 /// `is_read` mirrors each message's `UNREAD` label, so an unread thread carries `UNREAD`
 /// unless all its messages are spammed or trashed, and then it carries `SPAM` or `TRASH`.
 pub async fn label_counts(pool: &SqlitePool, account_id: &str) -> Result<Vec<LabelCount>> {
+    // One snapshot for all three queries, so a sync landing between them can't skew them.
+    let mut tx = pool.begin().await?;
     let totals = sqlx::query!(
         r#"
         SELECT label_id AS "label_id!", COUNT(*) AS "total!: i64"
@@ -731,7 +733,7 @@ pub async fn label_counts(pool: &SqlitePool, account_id: &str) -> Result<Vec<Lab
         "#,
         account_id
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *tx)
     .await?;
     let unread: HashMap<String, i64> = sqlx::query!(
         r#"
@@ -748,7 +750,7 @@ pub async fn label_counts(pool: &SqlitePool, account_id: &str) -> Result<Vec<Lab
         "#,
         account_id
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *tx)
     .await?
     .into_iter()
     .map(|r| (r.label_id, r.unread))
@@ -773,8 +775,9 @@ pub async fn label_counts(pool: &SqlitePool, account_id: &str) -> Result<Vec<Lab
         "#,
         account_id
     )
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
+    tx.commit().await?;
     let mut counts: Vec<LabelCount> = totals
         .into_iter()
         .map(|r| LabelCount {
@@ -1758,6 +1761,165 @@ mod tests {
         assert_eq!(count("STARRED"), Some((1, 2)));
         assert_eq!(count("INBOX"), Some((1, 1)));
         assert_eq!(count("Label_2"), None);
+    }
+
+    /// The count queries skip most rows by relying on how thread labels are derived: an
+    /// unread thread carries `UNREAD`, or only `SPAM`/`TRASH` when all its messages are
+    /// spammed or trashed. Compare them with a plain scan of every row, over a mailbox with
+    /// the cases that bend that rule, so a change to the derivation can't skew the counts.
+    #[tokio::test]
+    async fn counts_match_a_full_scan() {
+        let pool = seeded_pool().await;
+        let msg = |account: &str, id: &str, thread: &str, labels: &[&str]| DbMessage {
+            id: id.into(),
+            account_id: account.into(),
+            thread_id: thread.into(),
+            label_ids: Some(serde_json::to_string(labels).unwrap()),
+            from_address: None,
+            from_name: None,
+            to_addresses: None,
+            cc_addresses: None,
+            subject: None,
+            snippet: None,
+            body_html: None,
+            body_text: None,
+            date: Some(100),
+            size_estimate: None,
+            has_attachment: 0,
+            is_read: (!labels.contains(&"UNREAD")).into(),
+            is_starred: 0,
+            raw_headers: None,
+            fully_fetched: 1,
+            rfc822_message_id: None,
+        };
+        let mailbox: &[(&str, &str, &str, &[&str])] = &[
+            ("a1", "m1", "t1", &["INBOX", "UNREAD", "CATEGORY_PERSONAL"]),
+            (
+                "a1",
+                "m2",
+                "t2",
+                &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"],
+            ),
+            ("a1", "m3", "t3", &["INBOX", "CATEGORY_SOCIAL"]),
+            ("a1", "m4", "t4", &["INBOX", "UNREAD"]),
+            ("a1", "m5", "t5", &["Label_1", "UNREAD"]),
+            ("a1", "m6", "t6", &["SENT"]),
+            // Partly trashed: an unread message in the Inbox, a read one in Trash.
+            ("a1", "m7", "t7", &["INBOX", "UNREAD"]),
+            ("a1", "m8", "t7", &["TRASH"]),
+            // Partly trashed the other way: the unread message is the trashed one.
+            ("a1", "m9", "t8", &["INBOX"]),
+            ("a1", "m10", "t8", &["TRASH", "UNREAD"]),
+            // Wholly spammed or trashed and unread: the thread keeps only SPAM / TRASH.
+            ("a1", "m11", "t9", &["SPAM", "UNREAD"]),
+            ("a1", "m12", "t10", &["TRASH", "UNREAD"]),
+            ("a1", "m13", "t11", &["SPAM", "UNREAD"]),
+            ("a1", "m14", "t11", &["TRASH"]),
+            // Read across the board, in Spam and Trash.
+            ("a1", "m15", "t12", &["SPAM"]),
+            ("a1", "m16", "t13", &["TRASH"]),
+            // Two messages, one unread, in two categories.
+            ("a1", "m17", "t14", &["INBOX", "CATEGORY_UPDATES"]),
+            ("a1", "m18", "t14", &["INBOX", "UNREAD", "CATEGORY_FORUMS"]),
+            // The same thread id in another account.
+            ("a2", "m1", "t1", &["INBOX", "UNREAD", "CATEGORY_SOCIAL"]),
+            ("a2", "m2", "t2", &["INBOX"]),
+            ("a2", "m3", "t3", &["TRASH", "UNREAD"]),
+        ];
+        let mut tx = crate::db::begin_write(&pool).await.unwrap();
+        for (account, id, thread, labels) in mailbox {
+            crate::db::messages::upsert_message_tx(&mut tx, &msg(account, id, thread, labels))
+                .await
+                .unwrap();
+        }
+        // An optimistic change through the outbox path: mark t3 unread, t4 read.
+        crate::db::messages::set_labels(
+            &mut tx,
+            "a1",
+            "m3",
+            &labels(&["INBOX", "CATEGORY_SOCIAL", "UNREAD"]),
+        )
+        .await
+        .unwrap();
+        crate::db::messages::set_labels(&mut tx, "a1", "m4", &labels(&["INBOX"]))
+            .await
+            .unwrap();
+        for account in ["a1", "a2"] {
+            let ids: Vec<String> = mailbox
+                .iter()
+                .filter(|m| m.0 == account)
+                .map(|m| m.2.to_string())
+                .collect();
+            recompute_threads(&mut tx, account, &ids).await.unwrap();
+        }
+        tx.commit().await.unwrap();
+
+        for account in ["a1", "a2"] {
+            let mut expected: Vec<(String, i64, i64)> = sqlx::query_as(
+                "SELECT tl.label_id, SUM(t.unread_count > 0), COUNT(*)
+                 FROM thread_labels tl
+                 JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id
+                 WHERE tl.account_id = ? GROUP BY tl.label_id ORDER BY tl.label_id",
+            )
+            .bind(account)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            let (unread, total): (i64, i64) = sqlx::query_as(
+                "SELECT COALESCE(SUM(t.unread_count > 0), 0), COUNT(*) FROM threads t
+                 WHERE t.account_id = ? AND NOT EXISTS (
+                   SELECT 1 FROM thread_labels e WHERE e.account_id = t.account_id
+                     AND e.thread_id = t.id AND e.label_id IN ('SPAM', 'TRASH'))",
+            )
+            .bind(account)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            expected.push((ALL_MAIL.to_owned(), unread, total));
+            let actual: Vec<(String, i64, i64)> = label_counts(&pool, account)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|c| (c.label_id, c.unread, c.total))
+                .collect();
+            assert_eq!(actual, expected, "label counts of {account}");
+        }
+
+        let categories =
+            "('CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS')";
+        for scope in [&["a1"][..], &["a2"], &["a1", "a2"]] {
+            let ids = labels(scope);
+            let json = serde_json::to_string(&ids).unwrap();
+            let expected: Vec<(String, i64)> = sqlx::query_as(&format!(
+                "SELECT label_id, COUNT(*) FROM (
+                   SELECT x.label_id AS label_id FROM thread_labels i
+                   JOIN thread_labels u ON u.account_id = i.account_id
+                     AND u.thread_id = i.thread_id AND u.label_id = 'UNREAD'
+                   JOIN thread_labels x ON x.account_id = i.account_id
+                     AND x.thread_id = i.thread_id
+                     AND (x.label_id = 'INBOX' OR x.label_id IN {categories})
+                   WHERE i.label_id = 'INBOX' AND i.account_id IN (SELECT value FROM json_each(?1))
+                   UNION ALL
+                   SELECT 'CATEGORY_PERSONAL' FROM thread_labels i
+                   JOIN thread_labels u ON u.account_id = i.account_id
+                     AND u.thread_id = i.thread_id AND u.label_id = 'UNREAD'
+                   WHERE i.label_id = 'INBOX' AND i.account_id IN (SELECT value FROM json_each(?1))
+                     AND NOT EXISTS (SELECT 1 FROM thread_labels c
+                       WHERE c.account_id = i.account_id AND c.thread_id = i.thread_id
+                         AND c.label_id IN {categories}))
+                 GROUP BY label_id ORDER BY label_id"
+            ))
+            .bind(&json)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            assert!(!expected.is_empty());
+            assert_eq!(
+                unread_counts(&pool, &ids).await.unwrap(),
+                expected,
+                "{scope:?}"
+            );
+        }
     }
 
     #[tokio::test]

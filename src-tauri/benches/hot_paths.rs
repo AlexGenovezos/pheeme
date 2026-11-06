@@ -282,6 +282,72 @@ fn list_threads((ctx, before): (Ctx, Option<threads::ThreadCursor>)) -> threads:
     page
 }
 
+/// The first Inbox page with "Unread only" on, as the toggle loads it.
+async fn list_unread(pool: &SqlitePool) -> threads::ThreadPage {
+    threads::list_threads(
+        pool,
+        &threads::ThreadQuery {
+            account_ids: &[ACCT.to_string()],
+            label_id: "INBOX",
+            also_label_id: None,
+            exclude_label_ids: &[],
+            read_filter: Some(&[]),
+            before: None,
+            limit: PAGE,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+fn warm_unread() -> Ctx {
+    let ctx = open_fixture();
+    ctx.rt.block_on(list_unread(&ctx.pool));
+    ctx
+}
+
+#[library_benchmark]
+#[bench::first_page(setup = warm_unread)]
+fn list_unread_threads(ctx: Ctx) -> threads::ThreadPage {
+    let page = measured(&ctx.rt, list_unread(&ctx.pool));
+    assert_eq!(page.threads.len(), PAGE as usize);
+    assert!(page.threads.iter().all(|t| t.unread_count > 0));
+    page
+}
+
+/// The seeded mailbox with both count queries prepared and their pages cached, as after the
+/// first sidebar refresh. Every sync event reruns them (sidebar and tray).
+fn warm_counts() -> Ctx {
+    let ctx = open_fixture();
+    ctx.rt.block_on(async {
+        threads::unread_counts(&ctx.pool, &[ACCT.to_string()])
+            .await
+            .unwrap();
+        threads::label_counts(&ctx.pool, ACCT).await.unwrap();
+    });
+    ctx
+}
+
+#[library_benchmark]
+#[bench::inbox_and_tabs(setup = warm_counts)]
+fn unread_counts(ctx: Ctx) -> Vec<(String, i64)> {
+    let counts = measured(
+        &ctx.rt,
+        threads::unread_counts(&ctx.pool, &[ACCT.to_string()]),
+    )
+    .unwrap();
+    assert!(counts.iter().any(|(label, n)| label == "INBOX" && *n > 0));
+    counts
+}
+
+#[library_benchmark]
+#[bench::every_label(setup = warm_counts)]
+fn label_counts(ctx: Ctx) -> Vec<threads::LabelCount> {
+    let counts = measured(&ctx.rt, threads::label_counts(&ctx.pool, ACCT)).unwrap();
+    assert!(counts.iter().any(|c| c.label_id == "INBOX" && c.unread > 0));
+    counts
+}
+
 async fn search_all(pool: &SqlitePool, fts: &str) -> threads::ThreadPage {
     search::search_threads(
         pool,
@@ -458,6 +524,9 @@ library_benchmark_group!(
     name = hot_paths,
     benchmarks = [
         list_threads,
+        list_unread_threads,
+        unread_counts,
+        label_counts,
         search_threads,
         recompute_threads,
         initial_sync,
