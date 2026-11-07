@@ -611,6 +611,10 @@ impl GmailClient {
         };
         let background = priority == Priority::Background;
         let user = priority == Priority::Interactive;
+        let url = self.url_for(req)?;
+        // Before anything is held: a slow token refresh (or keychain prompt) must not hold
+        // back other requests or slots.
+        let mut token = self.tokens.access_token().await?;
         // Until it goes out, a user request holds sync and background requests back.
         let mut waiting = user.then(|| self.turns.user_waiting());
         if let Some(p) = &probe {
@@ -641,8 +645,6 @@ impl GmailClient {
         if let Some(p) = &probe {
             p.slot_wait(queued.elapsed());
         }
-        let url = self.url_for(req)?;
-        let mut token = self.tokens.access_token().await?;
         let mut refreshed = false;
         let mut attempt = 0;
         let units = req.quota_units();
@@ -1703,6 +1705,58 @@ mod tests {
         }
     }
 
+    /// Hands out tokens, but the first request for one hangs until released (a keychain prompt).
+    struct StuckFirstToken {
+        calls: std::sync::atomic::AtomicUsize,
+        release: tokio::sync::Semaphore,
+    }
+
+    #[async_trait::async_trait]
+    impl TokenProvider for StuckFirstToken {
+        async fn access_token(&self) -> Result<String, GmailError> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                let _ = self.release.acquire().await;
+            }
+            Ok("token-0".into())
+        }
+
+        async fn refresh_access_token(&self) -> Result<String, GmailError> {
+            self.access_token().await
+        }
+    }
+
+    #[tokio::test]
+    async fn a_user_request_stuck_on_its_token_does_not_hold_sync_back() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        let tokens = Arc::new(StuckFirstToken {
+            calls: Default::default(),
+            release: tokio::sync::Semaphore::new(0),
+        });
+        let client = GmailClient::new(tokens.clone())
+            .with_base_url(server.uri())
+            .with_retry_policy(fast_retry());
+        let c = client.clone();
+        let mine = tokio::spawn(user_action(async move {
+            c.send_json::<Value>(ApiRequest::get(&["labels", "L1"]))
+                .await
+        }));
+        while tokens.calls.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        let sync = client.send_json::<Value>(ApiRequest::get(&["history"]));
+        tokio::time::timeout(Duration::from_secs(1), sync)
+            .await
+            .expect("sync waited for the user's token")
+            .unwrap();
+        tokens.release.add_permits(1);
+        mine.await.unwrap().unwrap();
+    }
+
     #[tokio::test]
     async fn sync_waits_while_a_user_request_retries() {
         let server = MockServer::start().await;
@@ -1780,8 +1834,14 @@ mod tests {
                 if left > RATE_LIMIT_COOLDOWN - Duration::from_secs(10)),
             "{err:?}"
         );
+        // So is the backfill's mailbox-size read.
+        let err = crate::sync::MailApi::backfill_profile(&client)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, GmailError::RateLimit { .. }), "{err:?}");
         let sent = server.received_requests().await.unwrap();
         assert_eq!(requests_to(&sent, "/messages/bulk"), 0);
+        assert_eq!(requests_to(&sent, "/profile"), 0);
 
         // The user's request goes straight out.
         let mine = user_action(client.send_json::<Value>(ApiRequest::get(&["labels", "L1"])));

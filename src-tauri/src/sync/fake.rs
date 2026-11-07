@@ -660,6 +660,11 @@ impl MailApi for FakeGmail {
         })
     }
 
+    async fn backfill_profile(&self) -> Result<UserProfile, GmailError> {
+        self.enter("backfill_profile")?;
+        self.profile().await
+    }
+
     async fn list_labels(&self) -> Result<Vec<Label>, GmailError> {
         self.enter("list_labels")?;
         let s = self.lock();

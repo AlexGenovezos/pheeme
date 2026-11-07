@@ -9,6 +9,12 @@ impl GmailClient {
     pub async fn get_profile(&self) -> Result<UserProfile, GmailError> {
         self.send_json(ApiRequest::get(&["profile"])).await
     }
+
+    /// [`Self::get_profile`] as background work: see [`super::client::Priority::Background`].
+    pub async fn backfill_profile(&self) -> Result<UserProfile, GmailError> {
+        self.send_json(ApiRequest::get(&["profile"]).background())
+            .await
+    }
 }
 
 #[cfg(test)]
