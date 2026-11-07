@@ -139,24 +139,6 @@
   list-style: none;
 }
 
-.label-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-0-5) var(--space-1) var(--space-0-5) var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--color-badge-bg);
-  color: var(--color-badge-foreground);
-  font-size: var(--font-size-sm);
-}
-
-.label-chip__dot {
-  width: var(--label-dot-size);
-  height: var(--label-dot-size);
-  border-radius: var(--radius-full);
-}
-
-.label-chip__remove,
 .message-card__toggle {
   display: inline-flex;
   align-items: center;
@@ -170,19 +152,16 @@
   color: var(--color-foreground-muted);
   cursor: default;
 }
-.label-chip__remove:hover,
 .message-card__toggle:hover {
   background: var(--color-control-hover-bg);
   color: var(--color-foreground);
 }
-.label-chip__remove:focus-visible,
 .message-card__toggle:focus-visible,
 .message-card__summary:focus-visible,
 .link-button:focus-visible {
   outline: var(--focus-ring-width) solid var(--color-focus-border);
   outline-offset: var(--focus-ring-offset);
 }
-.label-chip__remove svg,
 .message-card__toggle svg {
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);

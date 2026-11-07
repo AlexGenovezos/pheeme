@@ -6,7 +6,8 @@ import { registry } from "../keyboard/registry";
 import { ListRow } from "../components/ui/ListRow";
 import { cx } from "../lib/utils";
 import { formatListDate } from "../lib/dates";
-import type { ThreadSummary } from "../lib/tauri";
+import { LabelChip } from "../labels/LabelChip";
+import type { LabelInfo, ThreadSummary } from "../lib/tauri";
 import { threadKey } from "./mailboxes";
 import "./mail.css";
 
@@ -18,6 +19,9 @@ export const senderOf = (t: Pick<ThreadSummary, "fromName" | "fromAddress">) =>
 /** The row's DOM id, for the listbox's `aria-activedescendant`. Injective: every character outside [A-Za-z0-9-] becomes `_hex_`. */
 export const rowId = (key: string) =>
   `thread-${key.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.codePointAt(0)!.toString(16)}_`)}`;
+
+/** Chips shown before the subject; the rest collapse into `+N`. */
+const MAX_ROW_CHIPS = 3;
 
 export interface ThreadRowProps {
   thread: ThreadSummary;
@@ -33,6 +37,10 @@ export interface ThreadRowProps {
   /** 1..6, the `--color-account-N` token. */
   accountColor: number;
   accountEmail: string;
+  /** The account's labels by id, stable until they change. */
+  labels: ReadonlyMap<string, LabelInfo>;
+  /** The mailbox being viewed, whose own chip would be redundant. */
+  currentLabelId: string;
   onSelect(e: MouseEvent, thread: ThreadSummary): void;
   onCheck(e: MouseEvent, thread: ThreadSummary): void;
   onAction(action: RowAction, thread: ThreadSummary): void;
@@ -48,6 +56,8 @@ export const ThreadRow = memo(function ThreadRow({
   showAccountDot,
   accountColor,
   accountEmail,
+  labels,
+  currentLabelId,
   onSelect,
   onCheck,
   onAction,
@@ -55,6 +65,10 @@ export const ThreadRow = memo(function ThreadRow({
 }: ThreadRowProps) {
   const [hovered, setHovered] = useState(false);
   const sender = senderOf(thread);
+  const chips = thread.labelIds.flatMap((id) => {
+    const label = labels.get(id);
+    return label && label.messageListVisibility !== "hide" && id !== currentLabelId ? [label] : [];
+  });
   const act = (action: RowAction) => (e: MouseEvent) => {
     e.stopPropagation();
     onAction(action, thread);
@@ -158,7 +172,29 @@ export const ThreadRow = memo(function ThreadRow({
           )}
         </>
       }
-      subtitle={thread.subject ?? "(no subject)"}
+      subtitle={
+        <>
+          {chips.length > 0 && (
+            <span className="label-chips">
+              {chips.slice(0, MAX_ROW_CHIPS).map((label) => (
+                <LabelChip key={label.id} label={label} />
+              ))}
+              {chips.length > MAX_ROW_CHIPS && (
+                <span
+                  className="label-chips__more"
+                  title={chips
+                    .slice(MAX_ROW_CHIPS)
+                    .map((l) => l.name)
+                    .join(", ")}
+                >
+                  +{chips.length - MAX_ROW_CHIPS}
+                </span>
+              )}
+            </span>
+          )}
+          {thread.subject ?? "(no subject)"}
+        </>
+      }
       description={thread.snippet}
     />
   );

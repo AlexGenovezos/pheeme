@@ -320,10 +320,17 @@ const inMailbox = (labelId: string) => !mail().query?.search && ui().mailbox.lab
 const inInbox = () => inMailbox("INBOX");
 
 export function archive(keys?: ThreadKey[]): Promise<void> {
-  return apply(keys, modify([], ["INBOX"], { leavesList: inInbox() }), {
-    announce: { title: "Archived", undo: modify(["INBOX"], []) },
-    cancelsAutoRead: true,
-  });
+  return apply(
+    keys,
+    modify([], ["INBOX"], { leavesList: inInbox(), detail: withLabel("INBOX", false) }),
+    {
+      announce: {
+        title: "Archived",
+        undo: modify(["INBOX"], [], { detail: withLabel("INBOX", true) }),
+      },
+      cancelsAutoRead: true,
+    },
+  );
 }
 
 /** Moves to Trash. Gmail's outbox has no untrash yet, so there is no Undo. */
@@ -408,6 +415,17 @@ const withLabel =
     })),
   });
 
+/** A row's user-label ids after adding or removing `labelId`, kept sorted by name like the backend's. */
+function rowLabelIds(t: ThreadSummary, labelId: string, add: boolean): string[] {
+  if (!add) return t.labelIds.filter((id) => id !== labelId);
+  if (t.labelIds.includes(labelId)) return t.labelIds;
+  const { labelName } = useLabelStore.getState();
+  const name = (id: string) => labelName(t.accountId, id);
+  return [...t.labelIds, labelId].sort((a, b) =>
+    name(a).localeCompare(name(b), undefined, { sensitivity: "base" }),
+  );
+}
+
 /** Adds `labelId` to the targets of `accountId`, or removes it if they all have it already. */
 export async function toggleLabel(
   accountId: string,
@@ -425,6 +443,7 @@ export async function toggleLabel(
     rowKeys,
     modify(add ? [labelId] : [], add ? [] : [labelId], {
       leavesList,
+      patch: (t) => ({ ...t, labelIds: rowLabelIds(t, labelId, add) }),
       detail: withLabel(labelId, add),
     }),
   );

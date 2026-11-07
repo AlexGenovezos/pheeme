@@ -3,8 +3,9 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { registry } from "../keyboard/registry";
 import { useGlobalShortcuts } from "../keyboard/useCommands";
-import type { AccountInfo, ThreadSummary } from "../lib/tauri";
+import type { AccountInfo, LabelInfo, ThreadSummary } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
+import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { stubLayout } from "../test/layout";
@@ -508,4 +509,61 @@ test("the unread-only empty state names the current mailbox", () => {
   render(<ThreadList {...props({ title: "All Inboxes" })} />);
   expect(screen.getByText("No unread mail in All Inboxes")).toBeInTheDocument();
   expect(screen.queryByText("Inbox zero.")).not.toBeInTheDocument();
+});
+
+describe("label chips", () => {
+  const userLabel = (id: string, name: string, over: Partial<LabelInfo> = {}): LabelInfo => ({
+    id,
+    accountId: "a1",
+    name,
+    type: "user",
+    messagesTotal: 0,
+    messagesUnread: 0,
+    threadsTotal: 0,
+    threadsUnread: 0,
+    colorBackground: null,
+    colorText: null,
+    messageListVisibility: "show",
+    labelListVisibility: "labelShow",
+    ...over,
+  });
+
+  test("row shows chips for visible user labels, not the current label", () => {
+    __resetLabelStoreForTests();
+    useLabelStore.setState({
+      labels: {
+        a1: [
+          userLabel("L1", "Clients/Acme", { colorBackground: "#4a86e8", colorText: "#000000" }),
+          userLabel("L2", "Receipts"),
+          userLabel("L3", "Hidden", { messageListVisibility: "hide" }),
+          userLabel("L4", "Current"),
+        ],
+      },
+    });
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "L4" } });
+    useMailStore.setState({
+      threads: [{ ...thread(1), labelIds: ["L1", "L2", "L3", "L4"] }],
+    });
+    render(<ThreadList {...props()} />);
+    const r = within(row(1));
+    expect(r.getByText("Clients/Acme")).toBeInTheDocument();
+    expect(r.getByText("Clients/Acme").closest("[title]")).toHaveAttribute("title", "Clients/Acme");
+    expect(r.getByText("Receipts")).toBeInTheDocument();
+    expect(r.queryByText("Hidden")).toBeNull();
+    expect(r.queryByText("Current")).toBeNull();
+  });
+
+  test("more than three chips collapse into +N", () => {
+    __resetLabelStoreForTests();
+    const labels = ["A", "B", "C", "D", "E"].map((n) => userLabel(`L${n}`, n));
+    useLabelStore.setState({ labels: { a1: labels } });
+    useMailStore.setState({
+      threads: [{ ...thread(1), labelIds: labels.map((l) => l.id) }],
+    });
+    render(<ThreadList {...props()} />);
+    const r = within(row(1));
+    expect(r.getByText("C")).toBeInTheDocument();
+    expect(r.queryByText("D")).toBeNull();
+    expect(r.getByText("+2")).toBeInTheDocument();
+  });
 });

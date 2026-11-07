@@ -685,6 +685,17 @@ describe("labels", () => {
     });
   });
 
+  test("toggling patches the row's label ids at once, sorted by name", async () => {
+    setList([thread(1, "a1", { labelIds: ["Label_1"] })]);
+    cache(detail(1, ["INBOX", "Label_1"]));
+    const pending = toggleLabel("a1", "Label_2", [key(1)]);
+    await flush();
+    expect(useMailStore.getState().threads[0].labelIds).toEqual(["Label_2", "Label_1"]);
+    await pending;
+    await toggleLabel("a1", "Label_1", [key(1)]);
+    expect(useMailStore.getState().threads[0].labelIds).toEqual(["Label_2"]);
+  });
+
   test("toggling adds the label unless every target has it", async () => {
     setList([thread(1), thread(2)]);
     cache(detail(1, ["INBOX", "Label_1"]), detail(2, ["INBOX"]));

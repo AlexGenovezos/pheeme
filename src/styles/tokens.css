@@ -76,6 +76,9 @@
   --unread-dot-size: 7px;
   --account-dot-size: 8px;
   --label-dot-size: 6px;
+  --label-chip-max-width: 160px;
+  --label-chip-line-height: 16px;
+  --hairline: 1px;
   --badge-min-width: 18px;
   --kbd-min-width: 18px;
   --divider-hit-area: 7px;

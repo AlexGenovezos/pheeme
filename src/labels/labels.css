@@ -1,0 +1,60 @@
+.label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-0-5);
+  max-width: var(--label-chip-max-width);
+  padding: var(--space-0) var(--space-1-5);
+  border-radius: var(--radius-full);
+  background: var(--color-badge-bg);
+  color: var(--color-badge-foreground);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--label-chip-line-height);
+  vertical-align: baseline;
+}
+
+.label-chip--outlined {
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-border);
+}
+
+.label-chip__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.label-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: var(--space-0);
+  border: var(--space-0);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  cursor: default;
+}
+.label-chip__remove:hover {
+  opacity: 1;
+}
+.label-chip__remove:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+}
+.label-chip__remove svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.label-chips {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-inline-end: var(--space-1-5);
+  vertical-align: baseline;
+}
+.label-chips__more {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}

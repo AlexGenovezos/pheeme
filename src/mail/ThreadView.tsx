@@ -1,7 +1,8 @@
-import { Forward, Mail, Reply, ReplyAll, X } from "lucide-react";
+import { Forward, Mail, Reply, ReplyAll } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
+import { LabelChip } from "../labels/LabelChip";
 import { useKeybinding } from "../keyboard/useCommands";
 import type { LabelInfo, ThreadDetail } from "../lib/tauri";
 import { useLabelStore } from "../store/labelStore";
@@ -9,7 +10,7 @@ import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { useAccountStore } from "../store/accountStore";
 import { MessageCard } from "./MessageCard";
-import { respond, toggleLabel } from "./actions";
+import { archive, respond, toggleLabel } from "./actions";
 import { parseThreadKey } from "./mailboxes";
 import "./mail.css";
 
@@ -39,6 +40,22 @@ function withNewMessages(state: Expansion, key: string, detail: ThreadDetail): E
   return { key, seen, open };
 }
 
+/** The Inbox chip when the label list hasn't loaded: system labels carry no colour, so it draws in the badge tokens. */
+const INBOX_FALLBACK = (accountId: string): LabelInfo => ({
+  id: "INBOX",
+  accountId,
+  name: "Inbox",
+  type: "system",
+  messagesTotal: 0,
+  messagesUnread: 0,
+  threadsTotal: 0,
+  threadsUnread: 0,
+  colorBackground: null,
+  colorText: null,
+  messageListVisibility: null,
+  labelListVisibility: null,
+});
+
 function LabelChips({
   labels,
   onRemove,
@@ -50,23 +67,8 @@ function LabelChips({
   return (
     <ul className="thread-view__labels" aria-label="Labels">
       {labels.map((label) => (
-        <li key={label.id} className="label-chip">
-          {label.colorBackground && (
-            <span
-              className="label-chip__dot"
-              style={{ backgroundColor: label.colorBackground }}
-              aria-hidden="true"
-            />
-          )}
-          <span className="label-chip__name">{label.name}</span>
-          <button
-            type="button"
-            className="label-chip__remove"
-            aria-label={`Remove label ${label.name}`}
-            onClick={() => onRemove(label)}
-          >
-            <X aria-hidden="true" />
-          </button>
+        <li key={label.id}>
+          <LabelChip label={label} onRemove={() => onRemove(label)} />
         </li>
       ))}
     </ul>
@@ -81,6 +83,7 @@ export function ThreadView() {
   const accountId = openKey ? parseThreadKey(openKey).accountId : "";
   const accountEmail = useAccountStore((s) => s.accounts.find((a) => a.id === accountId)?.email);
   const userLabels = useLabelStore((s) => s.userLabels(accountId));
+  const labelsById = useLabelStore((s) => s.labelsById(accountId));
   const scroller = useRef<HTMLDivElement>(null);
   const [expansion, setExpansion] = useState<Expansion>({
     key: null,
@@ -121,6 +124,9 @@ export function ThreadView() {
   } else if (detail) {
     const onThread = new Set(detail.messages.flatMap((m) => m.labelIds));
     const chips = userLabels.filter((l) => onThread.has(l.id));
+    const inbox = onThread.has("INBOX")
+      ? (labelsById.get("INBOX") ?? INBOX_FALLBACK(accountId))
+      : null;
     const subject = detail.thread.subject || "(no subject)";
     content = (
       <div className="thread-view">
@@ -132,8 +138,12 @@ export function ThreadView() {
         )}
         <h2 className="thread-view__subject selectable">{subject}</h2>
         <LabelChips
-          labels={chips}
-          onRemove={(label) => void toggleLabel(accountId, label.id, [openKey])}
+          labels={inbox ? [inbox, ...chips] : chips}
+          onRemove={(label) =>
+            void (label.id === "INBOX"
+              ? archive([openKey])
+              : toggleLabel(accountId, label.id, [openKey]))
+          }
         />
         <div className="thread-view__messages">
           {detail.messages.map((m) => (
