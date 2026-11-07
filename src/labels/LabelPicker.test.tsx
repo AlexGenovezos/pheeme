@@ -12,6 +12,7 @@ import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { openCreateLabel } from "./create";
 import { LabelPickerHost } from "./LabelPicker";
+import { useLabelDialogStore } from "./dialogStore";
 import { usePickerStore } from "./pickerStore";
 import { revealLabels } from "./reveal";
 
@@ -65,6 +66,7 @@ beforeEach(() => {
   __resetLabelStoreForTests();
   useAccountStore.setState({ accounts: [] });
   usePickerStore.getState().close();
+  useLabelDialogStore.getState().close();
   useToastStore.setState({ toasts: [] });
   vi.mocked(revealLabels).mockClear();
   calls = [];
@@ -168,38 +170,24 @@ describe("Label as…", () => {
     expect(option("Receipts")).toHaveAttribute("aria-checked", "false");
   });
 
-  test("create_row_creates_then_applies", async () => {
+  test("create_row_opens_the_dialog_with_the_pickers_targets", async () => {
     await openForBoth();
     type("  Clients/Globex ");
     expect(options()[0]).toHaveTextContent('Create "Clients/Globex"…');
     press("Enter");
-    await flush();
-    expect(calls.find((c) => c.cmd === "create_label")?.args).toEqual({
-      accountId: "a1",
-      name: "Clients/Globex",
-      color: null,
+    expect(screen.queryByRole("dialog", { name: "Label as" })).toBeNull();
+    const dialog = useLabelDialogStore.getState().dialog;
+    expect(dialog).toMatchObject({
+      kind: "label",
+      spec: {
+        mode: "create",
+        accountId: "a1",
+        name: "Clients/Globex",
+        applyTo: [key(1), key(2)],
+        move: false,
+      },
     });
-    expect(modifyCalls()).toEqual([
-      { accountId: "a1", threadIds: ["t1", "t2"], add: ["Label_new"], remove: [] },
-    ]);
-    // The new label is listed (ticked) straight away.
-    type("");
-    expect(option("Clients/Globex")).toHaveAttribute("aria-checked", "true");
-  });
-
-  test("a create Gmail refuses shows its message and applies nothing", async () => {
-    mockIPC((cmd, args) => {
-      calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-      if (cmd === "create_label") throw { code: "gmail", message: "Gmail is unreachable" };
-      return undefined;
-    });
-    await openForBoth();
-    type("Travel");
-    press("Enter");
-    await flush();
-    expect(useToastStore.getState().toasts[0].title).toBe("Gmail is unreachable");
-    expect(modifyCalls()).toEqual([]);
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(calls.find((c) => c.cmd === "create_label")).toBeUndefined();
   });
 
   test("an exact match (any case) offers no create row", async () => {
@@ -224,25 +212,13 @@ describe("Label as…", () => {
   });
 });
 
-test("Create label… with nothing selected only creates", async () => {
-  render(<LabelPickerHost />);
+test("Create label… opens the new-label dialog", () => {
   act(() => openCreateLabel("a1"));
-  expect(screen.getByRole("dialog", { name: "Create label" })).toBeInTheDocument();
-  expect(optionNames()).toEqual(["Manage labels"]);
-  type("Travel");
-  expect(optionNames()).toEqual(['Create "Travel"…', "Manage labels"]);
-  press("Enter");
-  await flush();
-  expect(calls.find((c) => c.cmd === "create_label")?.args).toMatchObject({ name: "Travel" });
-  expect(modifyCalls()).toEqual([]);
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(useToastStore.getState().toasts[0].title).toBe('Created "Travel"');
-  expect(
-    useLabelStore
-      .getState()
-      .userLabels("a1")
-      .map((l) => l.name),
-  ).toContain("Travel");
+  expect(useLabelDialogStore.getState().dialog).toMatchObject({
+    kind: "label",
+    spec: { mode: "create", accountId: "a1" },
+  });
+  expect(usePickerStore.getState().spec).toBeNull();
 });
 
 describe("after a click", () => {

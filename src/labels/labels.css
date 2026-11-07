@@ -186,3 +186,85 @@
     transform: scale(var(--enter-scale));
   }
 }
+
+/* Create / edit / delete label dialogs: a small modal over the blurred app. */
+.label-dialog-scrim {
+  position: fixed;
+  inset: var(--space-0);
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--color-scrim);
+  -webkit-backdrop-filter: blur(var(--settings-backdrop-blur));
+  backdrop-filter: blur(var(--settings-backdrop-blur));
+}
+.label-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: var(--label-dialog-width);
+  max-width: 100%;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-pane-bg);
+  color: var(--color-foreground);
+  box-shadow: var(--shadow-overlay);
+  animation: label-picker-in var(--duration-slow) var(--ease-out);
+}
+.label-dialog:focus-visible {
+  outline: none;
+}
+.label-dialog__title {
+  margin: var(--space-0);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.label-dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.label-dialog__field {
+  font-size: var(--font-size-sm);
+  color: var(--color-foreground-subtle);
+}
+.label-dialog__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-size: var(--font-size-md);
+}
+.label-dialog__select {
+  height: var(--control-height-md);
+  padding: var(--space-0) var(--space-2);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+  color: var(--color-input-foreground);
+  font: inherit;
+}
+.label-dialog__select:disabled {
+  opacity: 0.5;
+}
+.label-dialog__body {
+  margin: var(--space-0);
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  color: var(--color-foreground-muted, var(--color-foreground));
+}
+.label-dialog__error {
+  margin: var(--space-0);
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+}
+.label-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}

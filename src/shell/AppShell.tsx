@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { LabelDialogHost } from "../labels/LabelDialog";
 import { LabelPickerHost } from "../labels/LabelPicker";
 import { PANE, useUiStore } from "../store/uiStore";
 import { ChordHint } from "./ChordHint";
@@ -93,6 +94,7 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
       </main>
       <ChordHint />
       <LabelPickerHost />
+      <LabelDialogHost />
     </div>
   );
 }

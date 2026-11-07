@@ -8,6 +8,7 @@ import { useAccountStore } from "../store/accountStore";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
+import { useLabelDialogStore } from "../labels/dialogStore";
 import { usePickerStore } from "../labels/pickerStore";
 import { appCommands } from "./appCommands";
 import { createRegistry } from "./registry";
@@ -173,14 +174,13 @@ test("v_opens_move_picker for the open conversation; l opens Label as…", async
   usePickerStore.getState().close();
 });
 
-test("Create label… opens the picker's create flow for the account in view", () => {
+test("Create label… opens the new-label dialog for the account in view", () => {
   const create = reg.list().find((c) => c.id === "labels.create");
   expect(create?.title).toBe("Create label…");
   create?.run();
-  expect(usePickerStore.getState().spec).toMatchObject({
-    mode: "label",
-    accountId: "a1",
-    keys: [],
+  expect(useLabelDialogStore.getState().dialog).toMatchObject({
+    kind: "label",
+    spec: { mode: "create", accountId: "a1" },
   });
-  usePickerStore.getState().close();
+  useLabelDialogStore.getState().close();
 });

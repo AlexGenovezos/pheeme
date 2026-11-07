@@ -9,11 +9,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { toast } from "../components/ui/Toast";
-import { createLabel, type LabelInfo, toCommandError } from "../lib/tauri";
+import type { LabelInfo } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { applyLabel, moveOrigin, moveTo } from "../mail/actions";
 import { useLabelStore } from "../store/labelStore";
+import { openLabelDialog } from "./dialogStore";
 import { chipColors } from "./palette";
 import { type Membership, type PickerSpec, usePickerStore } from "./pickerStore";
 import { revealLabels } from "./reveal";
@@ -57,19 +57,6 @@ function LabelDot({ label }: { label: LabelInfo }) {
   );
 }
 
-/** Adds a label just created to the store at once, so it lists (and names its chips) before the next refresh. */
-function remember(label: LabelInfo) {
-  useLabelStore.setState((s) => ({
-    labels: {
-      ...s.labels,
-      [label.accountId]: [
-        ...(s.labels[label.accountId] ?? []).filter((l) => l.id !== label.id),
-        label,
-      ],
-    },
-  }));
-}
-
 const NO_LABELS: LabelInfo[] = [];
 
 export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): void }) {
@@ -82,7 +69,6 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   const [membership, setMembership] = useState(() => new Map(spec.membership));
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const [creating, setCreating] = useState(false);
   // Labels whose tick is still on its way to Gmail; the ref guards synchronously, the state draws the row.
   const inFlight = useRef(new Set<string>());
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
@@ -162,30 +148,16 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     setTick(label.id, add ? "all" : "none", add);
   };
 
-  const create = async (name: string) => {
-    if (creating) return;
-    setCreating(true);
-    let label: LabelInfo;
-    try {
-      label = await createLabel(accountId, name, null);
-    } catch (error) {
-      setCreating(false);
-      toast({ title: toCommandError(error).message, tone: "danger" });
-      return;
-    }
-    remember(label);
-    setCreating(false);
-    if (createOnly) {
-      onClose();
-      toast({ title: `Created "${label.name}"` });
-    } else if (mode === "move") {
-      onClose();
-      void moveTo(accountId, keys, label.id);
-    } else {
-      setQuery("");
-      setActive(0);
-      setTick(label.id, "all", true);
-    }
+  /** Hands the typed name to the new-label dialog, which labels the picker's conversations once it exists. */
+  const create = (name: string) => {
+    onClose();
+    openLabelDialog({
+      mode: "create",
+      accountId,
+      name,
+      applyTo: createOnly ? undefined : keys,
+      move: mode === "move",
+    });
   };
 
   const choose = (option: Option | undefined) => {
@@ -200,7 +172,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
         onClose();
         return void moveTo(accountId, keys, option.kind === "inbox" ? "INBOX" : "TRASH");
       case "create":
-        return void create(option.name);
+        return create(option.name);
       case "manage":
         onClose();
         return revealLabels();
@@ -254,11 +226,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
         role="option"
         aria-selected={i === active}
         aria-checked={state ? tick(state) : undefined}
-        aria-disabled={
-          (option.kind === "create" && creating) ||
-          (option.kind === "label" && busy.has(option.label.id)) ||
-          undefined
-        }
+        aria-disabled={(option.kind === "label" && busy.has(option.label.id)) || undefined}
         data-index={i}
         title={option.kind === "label" ? option.label.name : undefined}
         className={cx("label-picker__option", option.kind === "manage" && "label-picker__footer")}
