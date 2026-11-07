@@ -130,10 +130,13 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   useEffect(() => {
     if (mode !== "label" || createOnly) return;
     let current = true;
+    // Re-reads can overlap: only the latest one applies, so a slower older one can't overwrite it.
+    let latest = 0;
     const reread = async () => {
+      const read = ++latest;
       const since = ticks.current.count;
       const fresh = await labelMembership(accountId, keys, { fresh: true }).catch(() => null);
-      if (!current || !fresh) return; // couldn't read them: keep the ticks shown
+      if (!current || read !== latest || !fresh) return; // stale, or couldn't read: keep the ticks shown
       const keep = (id: string) =>
         inFlight.current.has(id) || (ticks.current.last.get(id) ?? -1) >= since;
       setMembership((m) => {

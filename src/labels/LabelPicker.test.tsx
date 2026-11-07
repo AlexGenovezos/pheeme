@@ -396,6 +396,36 @@ describe("after a click", () => {
     await flush();
   });
 
+  test("when re-reads overlap, a slower older one doesn't overwrite the newer", async () => {
+    const held: Array<() => void> = [];
+    let reads = 0;
+    mockIPC(
+      (cmd, args) => {
+        const a = (args ?? {}) as Record<string, unknown>;
+        calls.push({ cmd, args: a });
+        if (cmd !== "get_thread") return undefined;
+        const n = Number(String(a.threadId).slice(1));
+        // The first re-read (two threads) sees Clients on both and answers late; the second sees none.
+        if (reads++ < 2)
+          return new Promise((resolve) =>
+            held.push(() => resolve(detail(n, ["INBOX", "Label_1"]))),
+          );
+        return detail(n, ["INBOX"]);
+      },
+      { shouldMockEvents: true },
+    );
+    await openForBoth();
+    const updated = { accountId: "a1", added: [], removed: [], modified: ["t1"] };
+    await act(() => emit("sync:messages_updated", updated));
+    await act(() => emit("sync:messages_updated", updated));
+    await flush();
+    expect(option("Clients")).toHaveAttribute("aria-checked", "false");
+
+    held.forEach((release) => release());
+    await flush();
+    expect(option("Clients")).toHaveAttribute("aria-checked", "false");
+  });
+
   test("unticking the label being viewed takes the rows out, and later ticks still reach them", async () => {
     useLabelStore.setState((s) => ({ labels: { a1: [...s.labels.a1, label("Label_4", "Work")] } }));
     useThreadStore.setState({
