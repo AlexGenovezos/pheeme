@@ -5,7 +5,7 @@ import { platform } from "../lib/platform";
 import type { CommandError, MessageDetail, ThreadLoading as Loading } from "../lib/tauri";
 import { useThemeStore } from "../theme/theme";
 import { linkify, openLink } from "./linkify";
-import { buildSrcdoc } from "./srcdoc";
+import { BROKEN_IMAGE, buildSrcdoc } from "./srcdoc";
 import { ThreadLoading } from "./ThreadLoading";
 import "./mail.css";
 
@@ -255,8 +255,17 @@ function watchFrame(
     }
   };
 
+  // The dark theme flips images back from the inverted page; a failed one (blocked host, offline) would
+  // flip its alt text too, leaving the light email's dark text color on the now dark page.
+  const markBroken = () => {
+    for (const image of Array.from(doc.images)) {
+      if (image.complete) image.toggleAttribute(BROKEN_IMAGE, image.naturalWidth === 0);
+    }
+  };
+
   // Images don't bubble `load`, but capture sees them: their growth is the content's, not the frame's.
   const onContentLoad = () => {
+    markBroken();
     external = true;
     remeasureFromZero();
   };
@@ -285,6 +294,8 @@ function watchFrame(
   doc.addEventListener("keydown", onKeyDown);
   doc.addEventListener("load", onContentLoad, true);
   doc.addEventListener("error", onContentLoad, true);
+  // The frame's own `load` (every image done) reaches the parent's listener in WebKit too.
+  iframe.addEventListener("load", markBroken);
 
   // WebKit (the macOS app) runs none of the listeners on `doc` while the frame is sandboxed without scripts,
   // and a click into the email focuses the frame, after which no key reaches the app (Left, j/k, ...). There,
@@ -327,10 +338,12 @@ function watchFrame(
     if (doc.body) observer.observe(doc.body);
     observer.observe(iframe);
   }
+  markBroken();
   fitWidth();
   measure();
 
   return () => {
+    iframe.removeEventListener("load", markBroken);
     observer?.disconnect();
     doc.removeEventListener("click", onClick, true);
     doc.removeEventListener("auxclick", onClick, true);

@@ -34,6 +34,8 @@ const SYSTEM_FONTS =
 
 const FLIP = "invert(1) hue-rotate(180deg)";
 const MEDIA = 'img, video, picture, [style*="background-image"]';
+/** Set by the parent on an image that failed to load (the sanitizer drops authors' `data-*` attributes). */
+export const BROKEN_IMAGE = "data-pheeme-broken";
 
 /** Theme values are inserted into CSS, so accept only what a color can look like (no `;`, `{`, `<`, quotes). */
 const SAFE_COLOR = /^[#\w\s(),.%/-]+$/;
@@ -51,6 +53,8 @@ function themeCss({ dark, declaresDark, textColor, linkColor }: SrcdocOptions): 
       `html { background: white; color: black; filter: ${FLIP}; }`,
       `${MEDIA} { filter: ${FLIP}; }`,
       `:is(picture, [style*="background-image"]) :is(${MEDIA}) { filter: none; }`,
+      // A failed image shows its alt text, which reads like the text around it only if it stays inverted.
+      `img[${BROKEN_IMAGE}] { filter: none; }`,
     ].join("\n");
   }
   const text = safeColor(textColor);
