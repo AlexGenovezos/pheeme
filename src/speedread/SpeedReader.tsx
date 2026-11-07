@@ -18,8 +18,18 @@ import { Switch } from "../components/ui/Switch";
 import { registry } from "../keyboard/registry";
 import { useSettingsStore } from "../settings/settingsStore";
 import { type SpeedReadSession, useSpeedReader } from "./open";
+import { savedPosition, savePosition } from "./positions";
 import { useSpeedReaderSettings, WORD_SIZES, type WordSize } from "./settings";
-import { MAX_WPM, MIN_WPM, timeLeft, toWords, type Word, wordDuration, WPM_STEP } from "./words";
+import {
+  MAX_WPM,
+  MIN_WPM,
+  resumeIndex,
+  timeLeft,
+  toWords,
+  type Word,
+  wordDuration,
+  WPM_STEP,
+} from "./words";
 import "./speedread.css";
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -209,7 +219,9 @@ const pressesItself = (target: EventTarget, dialog: HTMLElement) => {
 export function SpeedReader({ session, onClose }: { session: SpeedReadSession; onClose(): void }) {
   const words = useMemo(() => toWords(session.paragraphs), [session.paragraphs]);
   const { wpm, pauses, size, update } = useSpeedReaderSettings();
-  const [index, setIndex] = useState(0);
+  // Pick up where this email was left, from the start of that sentence.
+  const [resumedAt] = useState(() => resumeIndex(words, savedPosition(session.id, words.length)));
+  const [index, setIndex] = useState(resumedAt);
   const [play, setPlay] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const last = words.length - 1;
@@ -229,6 +241,20 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
       if (returnFocus?.isConnected) returnFocus.focus();
     };
   }, [returnFocus]);
+
+  // Remember the place whenever reading stops: a pause, a step, or closing the reader mid-way. Not where it
+  // reopened: saving the rewound spot would back up further each time it's opened and closed unread.
+  const at = useRef(index);
+  useEffect(() => {
+    at.current = index;
+    if (!playing && index !== resumedAt) savePosition(session.id, index, words.length);
+  }, [playing, index, resumedAt, session.id, words.length]);
+  useEffect(
+    () => () => {
+      if (at.current !== resumedAt) savePosition(session.id, at.current, words.length);
+    },
+    [resumedAt, session.id, words],
+  );
 
   // One word at a time.
   useEffect(() => {
@@ -363,6 +389,9 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
           <span className="speed-reader__guide speed-reader__guide--bottom" />
           {!playing && index === 0 && (
             <span className="speed-reader__hint">Press Space to start</span>
+          )}
+          {!playing && index > 0 && index === resumedAt && (
+            <span className="speed-reader__hint">Press Space to continue where you left off</span>
           )}
         </div>
 

@@ -5,7 +5,8 @@ import type { MessageDetail } from "../lib/tauri";
  *
  * It suits a letter, not a layout: prose someone wrote, long enough to be worth it. Newsletters, receipts
  * and notifications put their words in tables, images and links, so an email is skipped when too much of
- * it lives there. Quoted replies are dropped so a reply reads only what's new.
+ * it lives there. Quoted replies are dropped so a reply reads only what's new, unless what's new is too short
+ * to bother with: then the reader starts at the new text and carries on into the quoted conversation.
  */
 
 /** Fewer words than this reads faster normally. */
@@ -49,9 +50,14 @@ const BLOCK = new Set([
   "ul",
 ]);
 const SKIP = new Set(["head", "script", "style", "template", "title", "noscript"]);
-/** Quoted earlier messages in replies (Gmail, Apple Mail, Yahoo) and signatures: not what was just written. */
-const LEFT_OUT =
-  'blockquote, .gmail_quote, .gmail_attr, [type="cite"], .yahoo_quoted, .gmail_signature, .moz-signature';
+/**
+ * Quoted earlier messages in replies (Gmail, Apple Mail, Yahoo). Classes are matched anywhere in the attribute:
+ * Yahoo prefixes its own (`ydpc367e72yahoo_quoted`) and the Gmail classes inside messages it quotes.
+ */
+const QUOTES =
+  'blockquote, [class*="gmail_quote"], [class*="gmail_attr"], [type="cite"], [class*="yahoo_quoted"]';
+/** Signatures: never what someone wrote to you, quoted or not. */
+const SIGNATURES = '[class*="gmail_signature"], .moz-signature';
 /** Outlook marks only where the quoted original starts; everything after the marker is the original. */
 const OUTLOOK_QUOTE_START = "#divRplyFwdMsg, #appendonsend";
 
@@ -85,12 +91,40 @@ function paragraphsOf(root: Node): string[] {
   return lines.map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
 }
 
-function fromHtml(html: string): string[] | null {
+/**
+ * A "-- " line starts a signature, which runs to the end of its block. Mailing lists (Google Groups) append
+ * their footer this way, once more at every level of a quoted conversation.
+ */
+function removeDashSignatures(body: HTMLElement) {
+  const walker = body.ownerDocument.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  const starts: Text[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node as Text;
+    const next = text.nextSibling;
+    if (
+      /(^|\n)[ \t]*--[ \t]*$/.test(text.data) &&
+      next instanceof Element &&
+      next.localName === "br"
+    ) {
+      starts.push(text);
+    }
+  }
+  for (const text of starts) {
+    while (text.nextSibling) text.nextSibling.remove();
+    text.data = text.data.replace(/[ \t]*--[ \t]*$/, "");
+  }
+}
+
+function fromHtml(html: string, keepQuotes: boolean): string[] | null {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const body = doc.body;
-  const outlook = body.querySelector(OUTLOOK_QUOTE_START);
-  if (outlook) cutFrom(outlook, body);
-  body.querySelectorAll(LEFT_OUT).forEach((q) => q.remove());
+  if (!keepQuotes) {
+    const outlook = body.querySelector(OUTLOOK_QUOTE_START);
+    if (outlook) cutFrom(outlook, body);
+    body.querySelectorAll(QUOTES).forEach((q) => q.remove());
+  }
+  body.querySelectorAll(SIGNATURES).forEach((s) => s.remove());
+  removeDashSignatures(body);
 
   const images = [...body.querySelectorAll("img")].filter((img) => {
     const w = Number(img.getAttribute("width"));
@@ -115,13 +149,32 @@ function fromHtml(html: string): string[] | null {
   return paragraphs;
 }
 
-function fromPlainText(text: string): string[] | null {
+const isSignatureLine = (line: string) => /^--\s*$/.test(line);
+/** "On Mon, 3 Nov 2026, Matt <matt@example.com> wrote:", which mailers often wrap onto a second line. */
+const startsAttribution = (lines: string[], i: number) =>
+  /^On .+wrote:\s*$/.test(lines[i]) ||
+  (/^On .+/.test(lines[i]) && /wrote:\s*$/.test(lines[i + 1] ?? ""));
+
+function fromPlainText(text: string, keepQuotes: boolean): string[] | null {
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
-  // A signature starts at "-- "; the quoted original at its "On …, … wrote:" line or the first "> ".
   const kept: string[] = [];
-  for (const line of lines) {
-    if (/^--\s*$/.test(line) || line.startsWith(">")) break;
-    if (/^On .+wrote:\s*$/.test(line)) break;
+  // With the quotes: "> " markers come off, and each signature is skipped until its quoted message ends.
+  let signatureDepth = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const marker = /^(?:[ \t]*>)*[ \t]?/.exec(lines[i])![0];
+    const depth = marker.split(">").length - 1;
+    const line = lines[i].slice(marker.length);
+    if (!keepQuotes) {
+      // A signature starts at "-- "; the quoted original at its "On …, … wrote:" line or the first "> ".
+      if (isSignatureLine(line) || depth > 0 || startsAttribution(lines, i)) break;
+    } else if (signatureDepth >= 0 && depth === signatureDepth && !startsAttribution(lines, i)) {
+      continue;
+    } else if (isSignatureLine(line)) {
+      signatureDepth = depth;
+      continue;
+    } else {
+      signatureDepth = -1;
+    }
     kept.push(line);
   }
   // Blank lines separate paragraphs; single line breaks are just where the sender's mailer wrapped.
@@ -136,12 +189,18 @@ function fromPlainText(text: string): string[] | null {
 
 const cache = new WeakMap<MessageDetail, string[] | null>();
 
-/** The paragraphs to speed read, or null when the email isn't simple prose (or is too short to bother). */
+/**
+ * The paragraphs to speed read, or null when the email isn't simple prose or is too short to bother with, even
+ * counting the conversation it quotes.
+ */
 export function speedReadText(message: MessageDetail): string[] | null {
   if (cache.has(message)) return cache.get(message)!;
   let result: string[] | null = null;
-  if (message.bodyHtml) result = fromHtml(message.bodyHtml);
-  else if (message.bodyText) result = fromPlainText(message.bodyText);
+  if (message.bodyHtml)
+    result = fromHtml(message.bodyHtml, false) ?? fromHtml(message.bodyHtml, true);
+  else if (message.bodyText) {
+    result = fromPlainText(message.bodyText, false) ?? fromPlainText(message.bodyText, true);
+  }
   cache.set(message, result);
   return result;
 }

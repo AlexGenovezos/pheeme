@@ -91,3 +91,20 @@ export function timeLeft(words: Word[], from: number, wpm: number, pauses: boole
   for (let i = from; i < words.length; i++) ms += wordDuration(words[i], wpm, pauses);
   return ms;
 }
+
+/** Furthest a resumed reading backs up to find the start of its sentence. */
+const MAX_REWIND = 20;
+
+/**
+ * Where to pick up a reading that stopped at `index`: the start of that sentence (or paragraph), so the
+ * first words make sense again, but never more than a few lines back.
+ */
+export function resumeIndex(words: Word[], index: number): number {
+  let i = index;
+  while (i > 0 && index - i < MAX_REWIND) {
+    const before = words[i - 1];
+    if (before.sentenceEnd || before.paragraphEnd) break;
+    i--;
+  }
+  return i;
+}

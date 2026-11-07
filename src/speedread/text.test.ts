@@ -87,6 +87,37 @@ describe("speedReadText: HTML", () => {
     expect(speedReadText(msg({ html: `<p>${prose(40)}</p>${signature}` }))).toBeNull();
   });
 
+  test("leaves out a Yahoo quote, whose class Yahoo prefixes", () => {
+    const html = `<div class="ydp253aab85yahoo-style-wrap"><div dir="ltr">${prose(90)}</div></div><div id="ydpc367e72yahoo_quoted_5054539665" class="ydpc367e72yahoo_quoted"><div>On Saturday, Matt wrote:</div><div><div class="ydpc367e72yiv0031642572gmail_default">${prose(200, 500)}</div></div></div>`;
+    const text = speedReadText(msg({ html }))?.join(" ") ?? "";
+    expect(text).toContain("word89");
+    expect(text).not.toContain("word500");
+    expect(text).not.toContain("wrote");
+  });
+
+  test("leaves out a mailing list's footer", () => {
+    const footer = `<p></p>\n\n-- <br>\nYou received this message because you are subscribed to the Google Groups "Board" group.<br>\nTo unsubscribe <a href="mailto:x">board+unsubscribe@example.org</a>.<br>\n`;
+    const text = speedReadText(msg({ html: `<div>${prose(90)}</div>${footer}` }))?.join(" ") ?? "";
+    expect(text).toContain("word89");
+    expect(text).not.toContain("subscribed");
+    expect(text).not.toContain("--");
+  });
+
+  test("reads a short reply on into the conversation it quotes", () => {
+    const footer = `<p></p>\n-- <br>\nYou received this message because you are subscribed.<br>\n`;
+    const html = `<div dir="auto">${prose(10)}</div><div><br><div class="gmail_quote gmail_quote_container"><div class="gmail_attr">On Sat, Matt wrote:<br></div><blockquote class="gmail_quote"><div>${prose(90, 500)}</div>${footer}</blockquote></div></div>${footer}`;
+    expect(speedReadText(msg({ html }))).toEqual([
+      prose(10),
+      "On Sat, Matt wrote:",
+      prose(90, 500),
+    ]);
+  });
+
+  test("still skips a short reply when the conversation is short too", () => {
+    const html = `<p>Thanks!</p><div class="gmail_quote">On Sat, Matt wrote:<blockquote>Lunch?</blockquote></div>`;
+    expect(speedReadText(msg({ html }))).toBeNull();
+  });
+
   test("ignores styles and scripts", () => {
     const html = `<style>p { color: red }</style><p>${prose(90)}</p>`;
     expect(speedReadText(msg({ html }))?.join(" ")).not.toContain("color");
@@ -110,6 +141,21 @@ describe("speedReadText: plain text", () => {
       const signed = `${prose(90)}\n${marker}\nMatt Smith\n555 0100`;
       expect(speedReadText(msg({ text: signed }))?.join(" ")).not.toContain("Smith");
     }
+  });
+
+  test("stops at an attribution line the mailer wrapped", () => {
+    const text = `${prose(90)}\n\nOn Sat, Nov 7, 2026 at 12:16 PM Matt Smith <matt@example.com>\nwrote:\n> old text\n`;
+    const read = speedReadText(msg({ text }))?.join(" ") ?? "";
+    expect(read).toContain("word89");
+    expect(read).not.toContain("Matt");
+  });
+
+  test("reads a short reply on into the quoted text, without markers or signatures", () => {
+    const text = `${prose(5)}\n\nOn Sat, Matt wrote:\n> ${prose(50, 500)}\n> ${prose(50, 550)}\n> -- \n> Matt Smith\n> 555 0100\n`;
+    expect(speedReadText(msg({ text }))).toEqual([
+      `${prose(5)}`,
+      `On Sat, Matt wrote: ${prose(50, 500)} ${prose(50, 550)}`,
+    ]);
   });
 
   test("prefers the HTML body when there is one", () => {

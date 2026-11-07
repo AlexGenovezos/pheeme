@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { beats, clampWpm, focusIndex, timeLeft, toWords, wordDuration } from "./words";
+import { beats, clampWpm, focusIndex, resumeIndex, timeLeft, toWords, wordDuration } from "./words";
 
 const chars = (w: string) => Array.from(w);
 
@@ -70,5 +70,19 @@ describe("timing", () => {
     expect(clampWpm(20)).toBe(100);
     expect(clampWpm(5000)).toBe(1000);
     expect(clampWpm(312)).toBe(300);
+  });
+});
+
+describe("resumeIndex", () => {
+  test("backs up to the start of the sentence or paragraph", () => {
+    const words = toWords(["One two. Three four five", "Six seven"]);
+    expect(resumeIndex(words, 4)).toBe(2);
+    expect(resumeIndex(words, 6)).toBe(5);
+    expect(resumeIndex(words, 0)).toBe(0);
+  });
+
+  test("goes back no more than 20 words in a long sentence", () => {
+    const words = toWords([Array.from({ length: 50 }, (_, i) => `w${i}`).join(" ")]);
+    expect(resumeIndex(words, 45)).toBe(25);
   });
 });

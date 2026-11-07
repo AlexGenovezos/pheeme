@@ -95,7 +95,12 @@ export function MessageCard({
     recipientLine("cc", message.cc, myAddress),
   ].filter(Boolean);
   return (
-    <article className="message-card" aria-label={`Message from ${name}`}>
+    <article
+      className="message-card"
+      aria-label={`Message from ${name}`}
+      // The speed reader reads the message on screen; drafts aren't read.
+      data-message-id={isDraft ? undefined : message.id}
+    >
       <header
         className="message-card__header"
         onMouseDown={(e) => (pressedAt.current = { x: e.clientX, y: e.clientY })}

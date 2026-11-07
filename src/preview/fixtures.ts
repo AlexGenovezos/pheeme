@@ -467,6 +467,17 @@ export function createFixtureThreads(): FixtureThread[] {
         me,
         { html: GARDEN_LETTER },
       ),
+      // A short reply: the speed reader reads it, then carries on into the letter it quotes.
+      message(
+        "p-18-m2",
+        me,
+        hoursAgo(1),
+        "Count me in for Saturday. I'll bring the spare trowels.",
+        ["Harriet Ames", "harriet@example.net"],
+        {
+          html: `<div dir="ltr">Count me in for Saturday. I'll bring the spare trowels.</div><div class="gmail_quote gmail_quote_container"><div class="gmail_attr">Earlier today, Harriet Ames &lt;harriet@example.net&gt; wrote:<br></div><blockquote class="gmail_quote">${GARDEN_LETTER}</blockquote></div>`,
+        },
+      ),
     ]),
 
     // ── Work ──
