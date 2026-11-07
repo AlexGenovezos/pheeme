@@ -236,6 +236,15 @@ export const trashThreads = (accountId: string, threadIds: string[]) =>
 /** Saves an attachment into the Downloads folder and resolves to the file's absolute path. */
 export const saveAttachment = (accountId: string, messageId: string, attachmentId: string) =>
   invoke<string>("save_attachment", { accountId, messageId, attachmentId });
+/** An attachment's bytes for the preview panel (from the disk cache, else Gmail). */
+export const readAttachment = (accountId: string, messageId: string, attachmentId: string) =>
+  invoke<ArrayBuffer>("read_attachment", { accountId, messageId, attachmentId });
+/** Starts caching the previewable attachments of these messages in the background; returns at once. */
+export const prefetchAttachments = (accountId: string, messageIds: string[]) =>
+  invoke<void>("prefetch_attachments", { accountId, messageIds });
+/** Opens an attachment in the default app for its type (documents and media only). */
+export const openAttachment = (accountId: string, messageId: string, attachmentId: string) =>
+  invoke<void>("open_attachment", { accountId, messageId, attachmentId });
 /** Shows a file saved by `saveAttachment` in the system file manager. */
 export const revealDownload = (path: string) => invoke<void>("reveal_download", { path });
 /** Opens an http, https or mailto link from an email; anything else is rejected. */

@@ -1,0 +1,302 @@
+/* ---- Attachment preview: a floating panel over the blurred app ------------ */
+
+.file-preview-scrim {
+  position: fixed;
+  inset: var(--space-0);
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--preview-margin);
+  /* Blurred, not dimmed: the app stays recognisable behind the file. */
+  -webkit-backdrop-filter: blur(var(--preview-backdrop-blur));
+  backdrop-filter: blur(var(--preview-backdrop-blur));
+  animation: file-preview-fade var(--duration-base) var(--ease-standard);
+}
+
+.file-preview {
+  display: flex;
+  flex-direction: column;
+  width: var(--preview-max-width);
+  max-width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-pane-bg);
+  color: var(--color-foreground);
+  box-shadow: var(--shadow-overlay);
+  animation: file-preview-in var(--duration-slow) var(--ease-out);
+}
+
+.file-preview__header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border-subtle);
+}
+
+.file-preview__title {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: var(--space-0);
+}
+
+.file-preview__name {
+  overflow: hidden;
+  margin: var(--space-0);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.file-preview__meta {
+  flex-shrink: 0;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.file-preview__nav {
+  display: flex;
+  gap: var(--space-0-5);
+}
+
+.file-preview__stage {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: var(--space-0);
+  overflow: auto;
+  background: var(--color-app-bg);
+}
+.file-preview__stage:focus-visible {
+  outline: none;
+}
+
+.file-preview__message {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  color: var(--color-foreground-muted);
+  text-align: center;
+}
+.file-preview__message p {
+  margin: var(--space-0);
+}
+
+.file-preview__spinner {
+  width: var(--waiting-mark-size);
+  height: var(--waiting-mark-size);
+  border-radius: var(--radius-full);
+  background: var(--color-foreground-subtle);
+  animation: file-preview-pulse var(--duration-pulse) ease-in-out infinite;
+}
+
+/* PDF: pages stacked down the middle. */
+.file-preview__pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.file-preview__page {
+  width: 100%;
+  max-width: var(--preview-page-max-width);
+  background: var(--color-pane-bg);
+  box-shadow: var(--shadow-popover);
+}
+.file-preview__page canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Word: the document's own pages, in a sandboxed frame that scrolls itself. */
+.file-preview__frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+}
+
+.file-preview__stage--image {
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.file-preview__image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.file-preview__text {
+  margin: var(--space-0);
+  padding: var(--space-4) var(--space-6);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Spreadsheets: a grid with sticky headers, sheet tabs underneath. */
+.file-preview__sheet {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: var(--space-0);
+}
+
+.file-preview__grid {
+  flex: 1;
+  overflow: auto;
+}
+.file-preview__grid:focus-visible {
+  outline: none;
+}
+
+.file-preview__grid table {
+  border-collapse: separate;
+  border-spacing: var(--space-0);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.file-preview__grid th,
+.file-preview__grid td {
+  max-width: var(--preview-cell-max-width);
+  padding: var(--space-1) var(--space-2);
+  overflow: hidden;
+  border-right: var(--border-width) solid var(--color-border-subtle);
+  border-bottom: var(--border-width) solid var(--color-border-subtle);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.file-preview__grid td {
+  background: var(--color-pane-bg);
+}
+.file-preview__grid td[data-numeric] {
+  text-align: right;
+}
+
+.file-preview__grid th {
+  position: sticky;
+  background: var(--color-app-bg);
+  color: var(--color-foreground-muted);
+  font-weight: var(--font-weight-medium);
+}
+.file-preview__grid thead th {
+  top: var(--space-0);
+  z-index: 1;
+  text-align: center;
+}
+.file-preview__grid tbody th {
+  left: var(--space-0);
+  text-align: right;
+}
+.file-preview__grid thead th:first-child {
+  left: var(--space-0);
+  z-index: 2;
+}
+
+.file-preview__clipped {
+  margin: var(--space-0);
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+
+.file-preview__tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-0-5);
+  padding: var(--space-1) var(--space-2);
+  overflow-x: auto;
+  border-top: var(--border-width) solid var(--color-border-subtle);
+  background: var(--color-pane-bg);
+}
+
+.file-preview__tab {
+  padding: var(--space-1) var(--space-2-5);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-foreground-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.file-preview__tab:hover {
+  background: var(--color-control-hover-bg);
+}
+.file-preview__tab[aria-selected="true"] {
+  background: var(--color-control-active-bg);
+  color: var(--color-foreground);
+  font-weight: var(--font-weight-medium);
+}
+
+/* No preview: the file's name and what can be done with it. */
+.file-preview__none {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  text-align: center;
+}
+.file-preview__none-icon {
+  width: var(--preview-none-icon-size);
+  height: var(--preview-none-icon-size);
+  color: var(--color-foreground-subtle);
+  stroke-width: 1;
+}
+.file-preview__none-name {
+  margin: var(--space-0);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+.file-preview__none-hint {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+}
+
+@keyframes file-preview-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes file-preview-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--enter-scale));
+  }
+}
+
+@keyframes file-preview-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}

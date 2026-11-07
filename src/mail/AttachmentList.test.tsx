@@ -71,3 +71,24 @@ test("a failed download explains the failure and can be retried", async () => {
   expect(await screen.findByText("Saved to Downloads")).toBeInTheDocument();
   expect(downloads).toBe(2);
 });
+
+test("clicking a file opens the preview on it, with the message's other files to flip through", async () => {
+  const { usePreviewStore } = await import("./preview/previewStore");
+  usePreviewStore.setState({ session: null });
+  render(
+    <AttachmentList
+      accountId="a1"
+      messageId="m1"
+      attachments={[
+        ...files,
+        { ...files[0], id: "logo", filename: "logo.png", isInline: true },
+        { ...files[0], id: "att2", filename: "budget.xlsx" },
+      ]}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Preview budget.xlsx" }));
+  const session = usePreviewStore.getState().session;
+  expect(session?.index).toBe(1);
+  expect(session?.files.map((f) => f.filename)).toEqual(["plan.pdf", "budget.xlsx"]);
+  expect(session).toMatchObject({ accountId: "a1", messageId: "m1" });
+});

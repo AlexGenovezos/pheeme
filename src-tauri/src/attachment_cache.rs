@@ -5,10 +5,10 @@
 
 use crate::db::{accounts, attachments};
 use sqlx::SqlitePool;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime};
 
 /// Size limit for cached attachment bytes.
@@ -28,6 +28,9 @@ pub struct AttachmentCache {
     /// Bytes written since the last sweep; a tenth of the limit starts another one.
     written: Arc<AtomicU64>,
     sweeping: Arc<tokio::sync::Mutex<()>>,
+    /// One lock per file being fetched, so a preview opened while a prefetch is downloading
+    /// the same attachment waits for it instead of downloading it again.
+    fetching: Arc<std::sync::Mutex<HashMap<PathBuf, Weak<tokio::sync::Mutex<()>>>>>,
 }
 
 impl AttachmentCache {
@@ -42,7 +45,30 @@ impl AttachmentCache {
             max_bytes,
             written: Arc::default(),
             sweeping: Arc::default(),
+            fetching: Arc::default(),
         }
+    }
+
+    /// Hold while checking for and fetching one file; see [`Self::fetching`].
+    pub async fn lock(&self, path: &Path) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = {
+            let mut map = self.fetching.lock().unwrap_or_else(|e| e.into_inner());
+            map.retain(|_, weak| weak.strong_count() > 0);
+            match map.get(path).and_then(Weak::upgrade) {
+                Some(lock) => lock,
+                None => {
+                    let lock = Arc::new(tokio::sync::Mutex::new(()));
+                    map.insert(path.to_owned(), Arc::downgrade(&lock));
+                    lock
+                }
+            }
+        };
+        lock.lock_owned().await
+    }
+
+    /// Whether the file is cached, without reading it or marking it used.
+    pub async fn contains(&self, path: &Path) -> bool {
+        tokio::fs::metadata(path).await.is_ok_and(|m| m.is_file())
     }
 
     pub fn path(&self, account_id: &str, message_id: &str, row_id: &str) -> PathBuf {

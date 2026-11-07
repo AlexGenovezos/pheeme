@@ -1,4 +1,5 @@
-//! Attachment commands: saving to Downloads and revealing the result.
+//! Attachment commands: previewing, prefetching, opening in the default app, saving to
+//! Downloads and revealing the result.
 
 use super::CommandError;
 use crate::AppState;
@@ -27,6 +28,67 @@ pub async fn save_attachment(
         .save_attachment(&account_id, &message_id, &attachment_id, &dir)
         .await?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// An attachment's bytes for the preview panel, sent as a raw binary response (an
+/// `ArrayBuffer` in the webview) rather than a JSON array of numbers.
+#[tauri::command]
+pub async fn read_attachment(
+    state: State<'_, AppState>,
+    account_id: String,
+    message_id: String,
+    attachment_id: String,
+) -> Result<tauri::ipc::Response, CommandError> {
+    let att = state
+        .mail
+        .attachment(&account_id, &message_id, &attachment_id)
+        .await?;
+    Ok(tauri::ipc::Response::new(att.bytes))
+}
+
+/// Starts downloading the previewable attachments of an opened thread's messages into the
+/// cache and returns at once; see [`crate::mail::MailService::prefetch_attachments`].
+#[tauri::command]
+pub fn prefetch_attachments(
+    state: State<'_, AppState>,
+    account_id: String,
+    message_ids: Vec<String>,
+) {
+    let mail = state.mail.clone();
+    tauri::async_runtime::spawn(async move {
+        let fetched = mail.prefetch_attachments(&account_id, &message_ids).await;
+        if fetched > 0 {
+            tracing::debug!(fetched, "prefetched attachments");
+        }
+    });
+}
+
+/// Opens an attachment in the user's default app for its type, from a private copy in the
+/// app's cache folder (documents and media only).
+#[tauri::command]
+pub async fn open_attachment(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    account_id: String,
+    message_id: String,
+    attachment_id: String,
+) -> Result<(), CommandError> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|_| CommandError {
+            code: "internal".into(),
+            message: "Couldn't find Pheeme's cache folder.".into(),
+        })?
+        .join("opened");
+    let path = state
+        .mail
+        .open_copy(&account_id, &message_id, &attachment_id, &dir)
+        .await?;
+    tauri_plugin_opener::open_path(path, None::<&str>).map_err(|error| CommandError {
+        code: "open_failed".into(),
+        message: format!("Couldn't open the file ({error})."),
+    })
 }
 
 /// `path` canonicalized, if it names an existing file strictly inside `dir`.
