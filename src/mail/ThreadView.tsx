@@ -7,7 +7,7 @@ import { type LabelInfo, prefetchAttachments, type ThreadDetail } from "../lib/t
 import { useReadingSettings } from "../settings/readingSettings";
 import { useMailStore } from "../store/mailStore";
 import { useLabelStore } from "../store/labelStore";
-import { useThreadStore } from "../store/threadStore";
+import { isComplete, useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { MessageCard } from "./MessageCard";
 import { ThreadLoading } from "./ThreadLoading";
@@ -141,10 +141,12 @@ export function ThreadView() {
   }, [openKey, load]);
 
   // Children wrote their email frames in layout effects, so the open conversation is in the DOM: time its paint
-  // and images (diagnostics). Later refreshes of the same open are ignored by the timer.
+  // and images (diagnostics) once every body is in, or the backend said why one isn't. Later refreshes of the
+  // same open are ignored by the timer.
   useEffect(() => {
     const root = scroller.current?.querySelector('.thread-view__retained[data-visible="true"]');
-    if (openKey && detail && root) openTimer().shown(openKey, root);
+    const ready = detail && (isComplete(detail) || detail.bodyError);
+    if (openKey && ready && root) openTimer().shown(openKey, root);
   }, [openKey, detail]);
 
   // Right moves into the conversation, where the arrows scroll it; Left (`list.focus`) goes back to the list.

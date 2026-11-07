@@ -1,5 +1,5 @@
 import { logThreadShown, type ShownTiming } from "../lib/tauri";
-import { useThreadStore } from "../store/threadStore";
+import { isComplete, useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 
 /**
@@ -37,7 +37,7 @@ export const SHOWN_TIMEOUT_MS = 30_000;
 export interface OpenTimer {
   /** The user picked a conversation (null: closed it). Ends the previous pick's timing. */
   picked(key: string | null): void;
-  /** The conversation's DOM is mounted with its data, under `root`. */
+  /** The conversation's DOM is mounted with all its data (or the reason a body is missing), under `root`. */
   shown(key: string, root: Element): void;
 }
 
@@ -144,7 +144,11 @@ export function openTimer(): OpenTimer {
       const id = setTimeout(fn, ms);
       return () => clearTimeout(id);
     },
-    isCached: (key) => useThreadStore.getState().details.has(key),
+    // Mirrors `threadStore.load`: a cached conversation missing a body still calls `get_thread`.
+    isCached: (key) => {
+      const cached = useThreadStore.getState().details.get(key);
+      return cached !== undefined && isComplete(cached);
+    },
     imagesIn: frameImages,
     report: (timing) => void logThreadShown(timing).catch(() => {}),
   });
