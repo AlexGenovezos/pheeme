@@ -3,13 +3,13 @@
 
 use crate::gmail::types::{
     Draft, DraftListResponse, HistoryListResponse, Label, Message, MessageListResponse, Thread,
-    ThreadListResponse,
+    ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailClient, GmailError, MessageFormat};
 
 #[async_trait::async_trait]
 pub trait MailApi: Send + Sync {
-    async fn profile_history_id(&self) -> Result<String, GmailError>;
+    async fn profile(&self) -> Result<UserProfile, GmailError>;
     async fn list_labels(&self) -> Result<Vec<Label>, GmailError>;
     async fn get_label(&self, id: &str) -> Result<Label, GmailError>;
     async fn list_threads(
@@ -102,8 +102,8 @@ pub trait MailApi: Send + Sync {
 
 #[async_trait::async_trait]
 impl MailApi for GmailClient {
-    async fn profile_history_id(&self) -> Result<String, GmailError> {
-        Ok(self.get_profile().await?.history_id)
+    async fn profile(&self) -> Result<UserProfile, GmailError> {
+        self.get_profile().await
     }
 
     async fn list_labels(&self) -> Result<Vec<Label>, GmailError> {

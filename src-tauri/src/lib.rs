@@ -306,6 +306,7 @@ pub fn run() {
             commands::search::add_recent_search,
             commands::search::remove_recent_search,
             commands::sync::sync_now,
+            commands::sync::get_sync_progress,
             commands::compose::compose_template,
             commands::compose::stage_attachment,
             commands::compose::discard_attachments,

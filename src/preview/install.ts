@@ -163,6 +163,19 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
+    get_sync_progress: () =>
+      accounts.map((account) => {
+        const count = threads
+          .filter((t) => t.accountId === account.id)
+          .reduce((total, thread) => total + thread.messages.length, 0);
+        return {
+          accountId: account.id,
+          syncedMessages: count,
+          totalMessages: count,
+          downloadedMessages: count,
+          complete: true,
+        };
+      }),
     desktop_settings: desktopSettings,
     set_account_notifications: (args) => {
       notificationChoices.set(String(args?.accountId), args?.enabled === true);

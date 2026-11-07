@@ -310,6 +310,17 @@ export const cancelSend = (opId: string) => invoke<boolean>("cancel_send", { opI
 export const syncNow = (accountId?: string | null) =>
   invoke<void>("sync_now", { accountId: accountId ?? null });
 
+export interface SyncProgress {
+  accountId: string;
+  syncedMessages: number;
+  totalMessages: number | null;
+  downloadedMessages: number;
+  /** The whole-mailbox backfill has finished, independently of inbox readiness. */
+  complete: boolean;
+}
+
+export const getSyncProgress = () => invoke<SyncProgress[]>("get_sync_progress");
+
 /** Call an event unlisten fn, ignoring failures (e.g. the IPC bridge is already gone). */
 export function stopQuietly(stop: () => void) {
   try {

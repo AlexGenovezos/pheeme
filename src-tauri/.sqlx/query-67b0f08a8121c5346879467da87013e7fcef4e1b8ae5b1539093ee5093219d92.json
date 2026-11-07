@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT mailbox_messages_total FROM sync_state WHERE account_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "mailbox_messages_total",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "67b0f08a8121c5346879467da87013e7fcef4e1b8ae5b1539093ee5093219d92"
+}

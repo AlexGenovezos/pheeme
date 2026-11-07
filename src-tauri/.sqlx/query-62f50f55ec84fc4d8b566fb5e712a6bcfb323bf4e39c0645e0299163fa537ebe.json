@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sync_state (account_id, mailbox_messages_total) VALUES (?, ?)\n         ON CONFLICT(account_id) DO UPDATE SET mailbox_messages_total = excluded.mailbox_messages_total",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "62f50f55ec84fc4d8b566fb5e712a6bcfb323bf4e39c0645e0299163fa537ebe"
+}

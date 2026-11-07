@@ -428,6 +428,10 @@ async fn rate_limited_backfill_keeps_what_it_fetched() {
         }
     }
     assert_eq!(cached, 3, "the successful fetches were saved");
+    let progress = crate::db::sync_state::progress(&h.pool).await.unwrap();
+    assert_eq!(progress[0].synced_messages, 3);
+    assert_eq!(progress[0].total_messages, Some(4));
+    assert!(!progress[0].complete);
 
     // The retry fetches only the message that failed, then finishes the page.
     assert_eq!(
@@ -438,6 +442,80 @@ async fn rate_limited_backfill_keeps_what_it_fetched() {
     let mut threads = listed(&h.pool, "SENT").await;
     threads.sort();
     assert_eq!(threads, s(&["ta", "tb", "tc", "td"]));
+    let progress = crate::db::sync_state::progress(&h.pool).await.unwrap();
+    assert_eq!(progress[0].synced_messages, 4);
+    assert_eq!(progress[0].downloaded_messages, 4);
+    assert!(progress[0].complete);
+}
+
+#[tokio::test]
+async fn sync_progress_survives_reopening_and_distinguishes_inbox_readiness() {
+    let h = harness().await;
+    h.fake.set_list_page_size(1);
+    h.fake.seed(FakeMsg::new("a", "ta", &["INBOX"]).days_ago(1));
+    h.fake
+        .seed(FakeMsg::new("b", "tb", &["SENT"]).days_ago(400));
+    h.fake
+        .seed(FakeMsg::new("c", "tc", &["TRASH"]).days_ago(500));
+    let before = crate::db::sync_state::progress(&h.pool).await.unwrap();
+    assert_eq!(before[0].total_messages, None);
+    assert_eq!(before[0].synced_messages, 0);
+    assert!(!before[0].complete);
+
+    h.engine.run_initial_sync().await.unwrap();
+    let progress = crate::db::sync_state::progress(&h.pool).await.unwrap();
+    assert_eq!(progress[0].total_messages, Some(3));
+    assert_eq!(progress[0].synced_messages, 1);
+    assert!(
+        !progress[0].complete,
+        "inbox readiness isn't mailbox completion"
+    );
+
+    // A fresh engine uses the saved size and cursor; it needs no new profile call.
+    let reopened = SyncEngine::new(
+        h.pool.clone(),
+        h.fake.clone(),
+        ACCT,
+        h.events.clone(),
+        Default::default(),
+    );
+    let profile_calls = h.fake.calls("profile_history_id");
+    while reopened.backfill_step().await.unwrap() == BackfillProgress::More {}
+    assert_eq!(h.fake.calls("profile_history_id"), profile_calls);
+    let progress = crate::db::sync_state::progress(&h.pool).await.unwrap();
+    assert_eq!(progress[0].synced_messages, 3);
+    assert_eq!(progress[0].downloaded_messages, 2);
+    assert!(progress[0].complete);
+
+    // Current totals stay correct as mail arrives after the backfill.
+    h.fake.add(FakeMsg::new("d", "td", &["INBOX"]));
+    reopened.run_incremental_sync().await.unwrap();
+    let progress = crate::db::sync_state::progress(&h.pool).await.unwrap();
+    assert_eq!(progress[0].total_messages, Some(4));
+}
+
+#[tokio::test]
+async fn upgraded_backfill_reads_missing_total_and_empty_mailbox_completes() {
+    let h = harness().await;
+    h.engine.run_initial_sync().await.unwrap();
+    sqlx::query("UPDATE sync_state SET mailbox_messages_total = NULL")
+        .execute(&h.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        h.engine.backfill_step().await.unwrap(),
+        BackfillProgress::Done
+    );
+    let progress = crate::db::sync_state::progress(&h.pool).await.unwrap();
+    assert_eq!(progress[0].total_messages, Some(0));
+    assert_eq!(progress[0].synced_messages, 0);
+    assert!(progress[0].complete);
+    assert_eq!(
+        crate::db::sync_state::mailbox_total(&h.pool, ACCT)
+            .await
+            .unwrap(),
+        Some(0)
+    );
 }
 
 #[tokio::test]
