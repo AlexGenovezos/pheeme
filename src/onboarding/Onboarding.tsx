@@ -412,7 +412,7 @@ function Footer({
 
 function useFlash(): [boolean, () => void] {
   const [on, setOn] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   return [
     on,
