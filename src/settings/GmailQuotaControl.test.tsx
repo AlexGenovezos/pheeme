@@ -62,3 +62,28 @@ test("editing while a save is pending keeps the new draft and doesn't save twice
   expect(input).toHaveValue("20000");
   expect(saved).toEqual([{ perMinute: 15000 }]);
 });
+
+test("a save asked for while another is pending runs after it", async () => {
+  const saved: unknown[] = [];
+  const pending: Array<(value: number) => void> = [];
+  mockIPC((command, args) => {
+    if (command === "gmail_quota") return 6000;
+    if (command === "set_gmail_quota") {
+      saved.push(args);
+      return new Promise<number>((resolve) => pending.push(resolve));
+    }
+  });
+  render(<GmailQuotaControl />);
+  const input = await screen.findByRole("textbox", { name: "Gmail API limit" });
+  await waitFor(() => expect(input).toHaveValue("6,000"));
+
+  fireEvent.change(input, { target: { value: "15000" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.change(input, { target: { value: "20000" } });
+  fireEvent.blur(input);
+  await waitFor(() => expect(saved).toHaveLength(1));
+  pending[0](15000);
+  await waitFor(() => expect(saved).toEqual([{ perMinute: 15000 }, { perMinute: 20000 }]));
+  pending[1](20000);
+  await waitFor(() => expect(input).toHaveValue("20,000"));
+});
