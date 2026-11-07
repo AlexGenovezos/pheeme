@@ -2,12 +2,18 @@ import { UserPlus } from "lucide-react";
 import { createContext, useContext, useState } from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { Button } from "../components/ui/Button";
-import { type AccountInfo, type CommandError, toCommandError } from "../lib/tauri";
+import {
+  type AccountInfo,
+  type CommandError,
+  type SyncProgress,
+  toCommandError,
+} from "../lib/tauri";
 import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
 import { useAccountStore } from "../store/accountStore";
 import { SendCredentials } from "../transfer/SendCredentials";
 import { SettingsRow, SettingsSection } from "./rows";
 import { matchesQuery } from "./schema";
+import { MailSyncProgress, useSyncProgress } from "./MailSyncProgress";
 
 /** How the Accounts page starts adding an account (onboarding lives outside the dialog). */
 export const AddAccountContext = createContext<(() => void) | undefined>(undefined);
@@ -20,6 +26,7 @@ export const accountsMatch = (query: string) =>
 export function AccountsSettings() {
   const accounts = useAccountStore((s) => s.accounts);
   const onAdd = useContext(AddAccountContext);
+  const { progress, unavailable } = useSyncProgress();
   return (
     <>
       <SettingsSection
@@ -33,7 +40,12 @@ export function AccountsSettings() {
         }
       >
         {accounts.map((account) => (
-          <AccountRow key={account.id} account={account} />
+          <AccountRow
+            key={account.id}
+            account={account}
+            progress={progress?.find((p) => p.accountId === account.id)}
+            progressUnavailable={unavailable}
+          />
         ))}
       </SettingsSection>
       <SettingsSection title="Other devices">
@@ -43,7 +55,15 @@ export function AccountsSettings() {
   );
 }
 
-function AccountRow({ account }: { account: AccountInfo }) {
+function AccountRow({
+  account,
+  progress,
+  progressUnavailable,
+}: {
+  account: AccountInfo;
+  progress?: SyncProgress;
+  progressUnavailable: boolean;
+}) {
   const remove = useAccountStore((s) => s.remove);
   const syncError = useAccountStore((s) => s.syncErrors[account.id]);
   const [confirming, setConfirming] = useState(false);
@@ -88,6 +108,11 @@ function AccountRow({ account }: { account: AccountInfo }) {
             </div>
           )
         }
+      />
+      <MailSyncProgress
+        email={account.email}
+        progress={progress}
+        unavailable={progressUnavailable}
       />
       {confirming && (
         <div className="settings-account__confirm">

@@ -8,3 +8,15 @@ use tauri::State;
 pub fn sync_now(state: State<'_, AppState>, account_id: Option<String>) {
     state.mail.sync_now(account_id);
 }
+
+#[tauri::command]
+pub async fn get_sync_progress(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::db::sync_state::SyncProgress>, super::CommandError> {
+    crate::db::sync_state::progress(&state.db)
+        .await
+        .map_err(|error| super::CommandError {
+            code: "internal".into(),
+            message: format!("Couldn't read mail sync progress: {error}"),
+        })
+}

@@ -6,7 +6,7 @@ use crate::gmail::mime::encode_base64url;
 use crate::gmail::types::{
     Draft, DraftListResponse, Header, HistoryLabelChange, HistoryListResponse, HistoryMessage,
     HistoryRecord, Label, Message, MessageListResponse, MessagePart, MessagePartBody, MessageRef,
-    Thread, ThreadListResponse,
+    Thread, ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailError, MessageFormat};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -561,9 +561,15 @@ impl FakeGmail {
 
 #[async_trait::async_trait]
 impl MailApi for FakeGmail {
-    async fn profile_history_id(&self) -> Result<String, GmailError> {
+    async fn profile(&self) -> Result<UserProfile, GmailError> {
         self.enter("profile_history_id")?;
-        Ok(self.lock().history_id.to_string())
+        let state = self.lock();
+        Ok(UserProfile {
+            email_address: "test@example.com".into(),
+            history_id: state.history_id.to_string(),
+            messages_total: state.messages.len() as u64,
+            threads_total: 0,
+        })
     }
 
     async fn list_labels(&self) -> Result<Vec<Label>, GmailError> {
