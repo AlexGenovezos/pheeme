@@ -42,10 +42,15 @@ jobs:
       - run: rustup toolchain install
         working-directory: head
       - uses: Swatinem/rust-cache@v2
+        id: rust-cache
         with:
           workspaces: head/src-tauri -> ../../target
           shared-key: ubuntu-24.04-bench
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Same as setup-build: a cache main saves must not carry crates from an older Cargo.lock.
+      - name: Start the Rust cache fresh after a Cargo.lock change
+        if: github.ref == 'refs/heads/main' && steps.rust-cache.outputs.cache-hit != 'true'
+        run: rm -rf "$CARGO_TARGET_DIR"
       - uses: taiki-e/install-action@v2
         with:
           tool: gungraun-runner@0.20.0
