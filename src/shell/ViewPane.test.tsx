@@ -20,6 +20,7 @@ const thread = (n: number, over: Partial<ThreadSummary> = {}): ThreadSummary => 
   starred: false,
   hasAttachment: false,
   messageCount: 1,
+  labelIds: [],
   ...over,
 });
 const key = (n: number) => threadKey("a1", `t${n}`);

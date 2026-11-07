@@ -424,14 +424,20 @@ async fn defer(
     Ok(())
 }
 
-async fn apply_op(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncError> {
+async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, SyncError> {
+    // The queue was read before earlier ops waited on Gmail; deleting a label meanwhile
+    // scrubs it from pending ops (and drops ops left empty), so work from the op as it is now.
+    let Some(op) = store::get(&engine.db, &queued.id).await? else {
+        return Ok(Step::Continue);
+    };
+    let op = &op;
     let payload = Payload::of(op)?;
     let recorded: BTreeSet<String> = store::messages_of(&engine.db, &op.id)
         .await?
         .into_iter()
         .map(|t| t.message_id)
         .collect();
-    let result = async {
+    let ids = async {
         // The thread as Gmail has it now: older messages we never cached are included,
         // mail that arrived after the user acted is not.
         let mut ids = Vec::new();
@@ -452,32 +458,52 @@ async fn apply_op(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, Sync
                 Err(e) => return Err(e),
             }
         }
-        if ids.is_empty() {
-            return Ok(());
-        }
-        if op.kind == KIND_TRASH {
-            for id in &ids {
-                match engine.api.trash_message(id).await {
-                    Ok(()) => {}
-                    Err(e) if e.is_not_found() => {}
-                    Err(e) => return Err(e),
-                }
-            }
-            Ok(())
-        } else {
-            engine
-                .api
-                .batch_modify(&ids, &payload.add, &payload.remove)
-                .await
-        }
+        Ok(ids)
     }
     .await;
+    let mut sent = None;
+    let result = match ids {
+        Ok(ids) if !ids.is_empty() => {
+            // Re-read once more: a label may have been deleted while the threads were read.
+            let Some(current) = store::get(&engine.db, &op.id).await? else {
+                return Ok(Step::Continue);
+            };
+            let payload = Payload::of(&current)?;
+            sent = Some(current.payload);
+            if op.kind == KIND_TRASH {
+                trash_all(engine, &ids).await
+            } else {
+                engine
+                    .api
+                    .batch_modify(&ids, &payload.add, &payload.remove)
+                    .await
+            }
+        }
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    };
     match result {
         Ok(()) => {
             store::delete(&engine.db, &op.id).await?;
             Ok(Step::Done)
         }
         Err(e) if is_rejection(&e) => {
+            // Maybe refused for a label being deleted: a delete scrubs it from this op, holding
+            // the label lock until then. Message sync never waits on a label change, so while
+            // one is running try again later; once none is, send the rest if it was scrubbed.
+            if let Some(sent) = sent {
+                let Ok(held) = engine.label_lock.try_lock() else {
+                    defer(engine, op, now, &e).await?;
+                    return Ok(Step::Blocked);
+                };
+                let scrubbed = store::get(&engine.db, &op.id)
+                    .await?
+                    .is_none_or(|now| now.payload != sent);
+                drop(held);
+                if scrubbed {
+                    return Box::pin(apply_op(engine, queued, now)).await;
+                }
+            }
             rollback(engine, op, &e).await?;
             Ok(Step::Continue)
         }
@@ -486,6 +512,17 @@ async fn apply_op(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, Sync
             Ok(Step::Blocked)
         }
     }
+}
+
+async fn trash_all(engine: &SyncEngine, ids: &[String]) -> Result<(), GmailError> {
+    for id in ids {
+        match engine.api.trash_message(id).await {
+            Ok(()) => {}
+            Err(e) if e.is_not_found() => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
 }
 
 /// Undo a rejected change: messages go back to Gmail's current labels (or, if those

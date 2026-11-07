@@ -8,6 +8,8 @@ import { useAccountStore } from "../store/accountStore";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
+import { useLabelDialogStore } from "../labels/dialogStore";
+import { usePickerStore } from "../labels/pickerStore";
 import { appCommands } from "./appCommands";
 import { createRegistry } from "./registry";
 
@@ -23,6 +25,7 @@ const thread = (n: number): ThreadSummary => ({
   starred: false,
   hasAttachment: false,
   messageCount: 1,
+  labelIds: [],
 });
 
 const last = <T>(items: T[]): T => items[items.length - 1];
@@ -157,4 +160,28 @@ test("r and f reply and forward the open conversation, and a lone u does not col
 test("c starts a new message from the account in view", () => {
   press("c");
   expect(useComposeStore.getState().windows).toMatchObject([{ kind: "new", accountId: "a1" }]);
+});
+
+test("v_opens_move_picker for the open conversation; l opens Label as…", async () => {
+  press("v");
+  expect(usePickerStore.getState().spec).toMatchObject({
+    mode: "move",
+    accountId: "a1",
+    keys: [threadKey("a1", "t1")],
+  });
+  usePickerStore.getState().close();
+  press("l");
+  await vi.waitFor(() => expect(usePickerStore.getState().spec?.mode).toBe("label"));
+  usePickerStore.getState().close();
+});
+
+test("Create label… opens the new-label dialog for the account in view", () => {
+  const create = reg.list().find((c) => c.id === "labels.create");
+  expect(create?.title).toBe("Create label…");
+  create?.run();
+  expect(useLabelDialogStore.getState().dialog).toMatchObject({
+    kind: "label",
+    spec: { mode: "create", accountId: "a1" },
+  });
+  useLabelDialogStore.getState().close();
 });

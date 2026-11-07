@@ -9,6 +9,7 @@ pub mod desktop;
 mod diagnostics;
 pub mod gmail;
 pub mod identity;
+pub mod labels;
 pub mod mail;
 pub mod mods;
 pub mod render;
@@ -33,6 +34,7 @@ pub struct AppState {
     pub db: SqlitePool,
     pub accounts: Arc<accounts::AccountService>,
     pub mail: mail::MailService,
+    pub labels: labels::LabelService,
     pub compose: compose::ComposeService,
     pub sync: Arc<SyncManager>,
     pub transfers: transfer::TransferService,
@@ -69,6 +71,7 @@ pub async fn build_state(
     });
     let sync = SyncManager::new(db.clone(), api_for, events);
     let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
+    let labels = labels::LabelService::new(db.clone(), sync.clone());
     let compose = compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir);
     compose.sweep_staging().await;
     tokio::spawn({
@@ -79,6 +82,7 @@ pub async fn build_state(
         db,
         accounts,
         mail,
+        labels,
         compose,
         sync,
         transfers: transfer::TransferService::default(),
@@ -308,6 +312,10 @@ pub fn run() {
             commands::labels::list_labels,
             commands::labels::mailbox_counts,
             commands::labels::label_counts,
+            commands::labels::create_label,
+            commands::labels::update_label,
+            commands::labels::delete_label,
+            commands::labels::delete_label_preview,
             commands::search::search_messages,
             commands::search::search_gmail,
             commands::search::recent_searches,

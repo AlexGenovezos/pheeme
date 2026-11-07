@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT json_group_array(json_array(tl.account_id, tl.thread_id, tl.label_id, l.name))\n                  AS \"found!: String\"\n           FROM thread_labels tl\n           JOIN labels l ON l.account_id = tl.account_id AND l.id = tl.label_id\n           WHERE tl.account_id IN (SELECT value FROM json_each(?))\n             AND tl.thread_id IN (SELECT value FROM json_each(?))\n             AND l.type = 'user'",
+  "describe": {
+    "columns": [
+      {
+        "name": "found!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "9906f553c08a8287bf20919a988dd57683e2bfc738c15c0458896a3c75e6363f"
+}

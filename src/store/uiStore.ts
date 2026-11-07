@@ -31,6 +31,10 @@ export interface NavPrefs {
   /** The account whose Favorites and labels the sidebar shows; `null` means the first account. */
   activeAccountId: string | null;
   collapsedAccounts: string[];
+  /** Per account, the label paths whose sublabels the sidebar folds away. */
+  foldedLabels: Record<string, string[]>;
+  /** Accounts whose Labels section has its More row (hidden labels) open. */
+  labelsMoreOpen: string[];
 }
 
 export const DEFAULT_MAILBOX: MailboxRef = { accountId: null, labelId: "INBOX" };
@@ -77,15 +81,22 @@ export function readLayout(
   };
 }
 
+const strings = (raw: unknown): string[] =>
+  Array.isArray(raw) ? raw.filter((s): s is string => typeof s === "string") : [];
+
 export function readNavPrefs(
   storage: Pick<Storage, "getItem"> | undefined = safeStorage(),
 ): NavPrefs {
   const raw = readStored(storage);
+  const folded = raw?.foldedLabels;
   return {
     activeAccountId: typeof raw?.activeAccountId === "string" ? raw.activeAccountId : null,
-    collapsedAccounts: Array.isArray(raw?.collapsedAccounts)
-      ? raw.collapsedAccounts.filter((id): id is string => typeof id === "string")
-      : [],
+    collapsedAccounts: strings(raw?.collapsedAccounts),
+    foldedLabels:
+      folded && typeof folded === "object" && !Array.isArray(folded)
+        ? Object.fromEntries(Object.entries(folded).map(([id, paths]) => [id, strings(paths)]))
+        : {},
+    labelsMoreOpen: strings(raw?.labelsMoreOpen),
   };
 }
 
@@ -140,6 +151,8 @@ interface UiState extends PaneLayout, NavPrefs {
   toggleSidebar(): void;
   /** Go to a mailbox: clears the open thread and selection. An account mailbox also becomes the active account. */
   setMailbox(ref: MailboxRef): void;
+  /** Show `accountId`'s Favorites and labels in the sidebar, leaving the mailbox as it is. */
+  setActiveAccount(accountId: string): void;
   setOpenThread(key: ThreadKey | null): void;
   toggleChecked(key: ThreadKey): void;
   /** Check every row from the anchor to `to` inclusive; `keys` is the list in display order. */
@@ -148,6 +161,9 @@ interface UiState extends PaneLayout, NavPrefs {
   checkAll(keys: ThreadKey[]): void;
   clearChecked(): void;
   toggleAccountCollapsed(accountId: string): void;
+  /** Fold or unfold a label's sublabels in the sidebar (`path` is the label's full name). */
+  toggleLabelFold(accountId: string, path: string): void;
+  toggleLabelsMore(accountId: string): void;
   /**
    * An account was removed: leave its mailbox for the home mailbox of the `remaining` accounts (All Inboxes, or the
    * last account's Primary), and drop its open and checked conversations and its stored navigation choices.
@@ -164,6 +180,8 @@ const persistedOf = (s: Persisted): Persisted => ({
   sidebarCollapsed: s.sidebarCollapsed,
   activeAccountId: s.activeAccountId,
   collapsedAccounts: s.collapsedAccounts,
+  foldedLabels: s.foldedLabels,
+  labelsMoreOpen: s.labelsMoreOpen,
 });
 
 const navReset = (): Pick<UiState, "mailbox" | "openThread" | "checked" | "anchor"> => ({
@@ -219,6 +237,7 @@ export const useUiStore = create<UiState>((set, get) => {
         ...(ref.accountId !== null && { activeAccountId: ref.accountId }),
       });
     },
+    setActiveAccount: (accountId) => persist({ activeAccountId: accountId }),
     setOpenThread: (key) => set({ openThread: key }),
     toggleChecked: (key) =>
       set((s) => ({
@@ -253,6 +272,10 @@ export const useUiStore = create<UiState>((set, get) => {
       persist({
         activeAccountId: s.activeAccountId === id ? null : s.activeAccountId,
         collapsedAccounts: s.collapsedAccounts.filter((a) => a !== id),
+        foldedLabels: Object.fromEntries(
+          Object.entries(s.foldedLabels).filter(([account]) => account !== id),
+        ),
+        labelsMoreOpen: s.labelsMoreOpen.filter((a) => a !== id),
       });
     },
     toggleAccountCollapsed: (id) => {
@@ -261,6 +284,23 @@ export const useUiStore = create<UiState>((set, get) => {
         collapsedAccounts: collapsedAccounts.includes(id)
           ? collapsedAccounts.filter((a) => a !== id)
           : [...collapsedAccounts, id],
+      });
+    },
+    toggleLabelFold: (id, path) => {
+      const folded = get().foldedLabels[id] ?? [];
+      persist({
+        foldedLabels: {
+          ...get().foldedLabels,
+          [id]: folded.includes(path) ? folded.filter((p) => p !== path) : [...folded, path],
+        },
+      });
+    },
+    toggleLabelsMore: (id) => {
+      const { labelsMoreOpen } = get();
+      persist({
+        labelsMoreOpen: labelsMoreOpen.includes(id)
+          ? labelsMoreOpen.filter((a) => a !== id)
+          : [...labelsMoreOpen, id],
       });
     },
   };

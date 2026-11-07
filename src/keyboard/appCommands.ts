@@ -4,11 +4,13 @@ import {
   labelMenuAnchor,
   openFocused,
   openLabelMenu,
+  openMoveMenu,
   respond,
   setRead,
   toggleStar,
   trash,
 } from "../mail/actions";
+import { openCreateLabel } from "../labels/create";
 import {
   CATEGORIES,
   categoryMailbox,
@@ -143,6 +145,21 @@ export function appCommands(): Command[] {
       shortcut: "l",
       keywords: ["tag"],
       run: () => void openLabelMenu(labelMenuAnchor()),
+    },
+    {
+      id: "conversation.move",
+      title: "Move to…",
+      group: "Conversation",
+      shortcut: "v",
+      keywords: ["folder", "label"],
+      run: () => openMoveMenu(labelMenuAnchor()),
+    },
+    {
+      id: "labels.create",
+      title: "Create label…",
+      group: "Labels",
+      keywords: ["new label", "tag"],
+      run: () => openCreateLabel(),
     },
     {
       id: "conversation.open",

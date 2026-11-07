@@ -15,6 +15,8 @@ const label = (id: string, name: string, type = "user", accountId = "a"): LabelI
   threadsUnread: 0,
   colorBackground: null,
   colorText: null,
+  messageListVisibility: "show",
+  labelListVisibility: "labelShow",
 });
 
 const store = () => useLabelStore.getState();

@@ -15,6 +15,7 @@ import { type ContextMenuItem, openContextMenuFromEvent } from "../lib/contextMe
 import type { ThreadSummary } from "../lib/tauri";
 import { useCommands } from "../keyboard/useCommands";
 import { useAccountStore } from "../store/accountStore";
+import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
 import { moveSelection, openAndMarkRead, openFocused } from "./actions";
@@ -139,6 +140,8 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const canLoadMore = !!next || remoteMore;
   const error = useMailStore((s) => s.error);
   const accounts = useAccountStore((s) => s.accounts);
+  useLabelStore((s) => s.labels); // re-render when any account's labels change; rows read the per-account maps
+  const labelsById = useLabelStore.getState().labelsById;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const keys = useMemo(() => threads.map((t) => threadKey(t.accountId, t.id)), [threads]);
@@ -312,6 +315,8 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
                   showAccountDot={showAccountDot}
                   accountColor={accountColorIndex(thread.accountId, accounts)}
                   accountEmail={accountEmail.get(thread.accountId) ?? thread.accountId}
+                  labels={labelsById(thread.accountId)}
+                  currentLabelId={mailbox.labelId}
                   onSelect={select}
                   onCheck={check}
                   onAction={onRowAction}

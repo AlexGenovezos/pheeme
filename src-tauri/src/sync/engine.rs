@@ -65,12 +65,65 @@ pub fn now_ms() -> i64 {
 /// backfill may still hold an older copy (tombstones), so backfill never resurrects them.
 pub type WriteLock = Arc<tokio::sync::Mutex<HashSet<String>>>;
 
+/// Label metadata changes of one account, serialized: [`SyncEngine::sync_labels`] holds it
+/// from `labels.list` through its commit, and every `LabelService` change holds it from
+/// reading the cache, through its Gmail calls, to its cache write, so a sync can't commit a
+/// label snapshot taken before a change that has since been cached. Sync only ever
+/// `try_lock`s it (and skips the label refresh if a change holds it), so message sync never
+/// waits on a label change; changes do wait for an in-flight label refresh.
+///
+/// Lock order: `label_lock` before `write_lock`; never take `label_lock` while holding
+/// `write_lock`.
+pub type LabelLock = Arc<tokio::sync::Mutex<()>>;
+
+/// How long colours fetched with `labels.get` are trusted when `labels.list` omits them.
+pub const COLOR_REFETCH: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+/// `labels.get` calls in flight at once while fetching colours.
+const COLOR_FETCHES: usize = 4;
+
+/// When an account last fetched label colours one by one (in memory, per launch), and the
+/// clock it reads (a field so tests can move time).
+pub struct ColorSync {
+    last_fetch: std::sync::Mutex<Option<std::time::Instant>>,
+    now: Box<dyn Fn() -> std::time::Instant + Send + Sync>,
+}
+
+impl Default for ColorSync {
+    fn default() -> Self {
+        Self::with_clock(std::time::Instant::now)
+    }
+}
+
+impl ColorSync {
+    pub fn with_clock(now: impl Fn() -> std::time::Instant + Send + Sync + 'static) -> Self {
+        Self {
+            last_fetch: Default::default(),
+            now: Box::new(now),
+        }
+    }
+
+    fn last(&self) -> Option<std::time::Instant> {
+        *self.last_fetch.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn stamp(&self) {
+        *self.last_fetch.lock().unwrap_or_else(|e| e.into_inner()) = Some((self.now)());
+    }
+
+    fn stale(&self) -> bool {
+        self.last()
+            .is_none_or(|t| (self.now)().saturating_duration_since(t) >= COLOR_REFETCH)
+    }
+}
+
 pub struct SyncEngine {
     pub db: SqlitePool,
     pub api: Arc<dyn MailApi>,
     pub account_id: String,
     pub events: Arc<dyn SyncEvents>,
     pub write_lock: WriteLock,
+    pub label_lock: LabelLock,
+    pub colors: Arc<ColorSync>,
 }
 
 /// What history says should happen to one message.
@@ -104,7 +157,21 @@ impl SyncEngine {
             account_id: account_id.into(),
             events,
             write_lock,
+            label_lock: Default::default(),
+            colors: Default::default(),
         }
+    }
+
+    /// Share the account's [`ColorSync`] (the manager does; a lone engine has its own).
+    pub fn with_color_sync(mut self, colors: Arc<ColorSync>) -> Self {
+        self.colors = colors;
+        self
+    }
+
+    /// Share the account's [`LabelLock`] (the manager does; a lone engine has its own).
+    pub fn with_label_lock(mut self, label_lock: LabelLock) -> Self {
+        self.label_lock = label_lock;
+        self
     }
 
     fn emit(&self, event: SyncEvent) {
@@ -685,7 +752,21 @@ impl SyncEngine {
     }
 
     /// Labels, plus fresh counters for Inbox and the category tabs.
-    async fn sync_labels(&self) -> Result<(), SyncError> {
+    /// Skipped while a label change holds `label_lock`: message sync never waits on one, the
+    /// change writes its own result to the cache, and the next sync refreshes labels.
+    pub(crate) async fn sync_labels(&self) -> Result<(), SyncError> {
+        let Ok(held) = self.label_lock.try_lock() else {
+            tracing::debug!(account = %self.account_id, "label change in progress; label refresh skipped");
+            return Ok(());
+        };
+        self.refresh_labels(&held).await
+    }
+
+    /// [`Self::sync_labels`] for a caller that already holds `label_lock` (`held`).
+    pub(crate) async fn refresh_labels(
+        &self,
+        _held: &tokio::sync::MutexGuard<'_, ()>,
+    ) -> Result<(), SyncError> {
         let list = self.api.list_labels().await?;
         let mut counted = Vec::new();
         for id in std::iter::once("INBOX").chain(CATEGORY_LABELS) {
@@ -693,12 +774,14 @@ impl SyncEngine {
                 counted.push(self.api.get_label(id).await?);
             }
         }
-        let rows: Vec<_> = list
+        let mut rows: Vec<_> = list
             .iter()
             .map(|l| convert::to_db_label(&self.account_id, l))
             .collect();
+        self.fill_missing_colors(&mut rows).await?;
         let mut tx = db::begin_write(&self.db).await?;
-        labels::replace_labels(&mut tx, &self.account_id, &rows).await?;
+        let purged = labels::replace_labels(&mut tx, &self.account_id, &rows).await?;
+        let result = threads::recompute_threads(&mut tx, &self.account_id, &purged).await?;
         for label in &counted {
             let row = convert::to_db_label(&self.account_id, label);
             let counts = labels::LabelCounts {
@@ -710,6 +793,86 @@ impl SyncEngine {
             labels::update_counts(&mut tx, &self.account_id, &label.id, counts).await?;
         }
         tx.commit().await?;
+        if !result.is_empty() {
+            self.emit(SyncEvent::messages_updated(&self.account_id, result));
+        }
+        Ok(())
+    }
+
+    /// `labels.list` sometimes omits colours. When it returns user labels and none has one,
+    /// fetch each with `labels.get` (a few at a time) if this launch hasn't yet, the set of
+    /// user labels (ids or names) differs from the cache, or the last fetch is 15 minutes
+    /// old; otherwise carry the cached colours over so the refresh doesn't wipe them.
+    async fn fill_missing_colors(&self, rows: &mut [labels::DbLabel]) -> Result<(), SyncError> {
+        let is_user = |l: &labels::DbLabel| l.label_type == "user";
+        let any_user = rows.iter().any(is_user);
+        if !any_user
+            || rows
+                .iter()
+                .any(|l| is_user(l) && l.color_background.is_some())
+        {
+            return Ok(());
+        }
+        let cached: std::collections::HashMap<String, labels::DbLabel> =
+            labels::get_labels(&self.db, &self.account_id)
+                .await?
+                .into_iter()
+                .filter(is_user)
+                .map(|l| (l.id.clone(), l))
+                .collect();
+        let same_set = cached.len() == rows.iter().filter(|l| is_user(l)).count()
+            && rows
+                .iter()
+                .filter(|l| is_user(l))
+                .all(|l| cached.get(&l.id).is_some_and(|c| c.name == l.name));
+        let fetch = !same_set || self.colors.stale();
+        let ids: Vec<String> = rows
+            .iter()
+            .filter(|l| is_user(l))
+            .map(|l| l.id.clone())
+            .collect();
+        let mut fetched = Vec::new();
+        if fetch {
+            for chunk in ids.chunks(COLOR_FETCHES) {
+                let results =
+                    futures::future::join_all(chunk.iter().map(|id| self.api.get_label(id))).await;
+                fetched.extend(chunk.iter().zip(results));
+            }
+        }
+        let mut failed = false;
+        let mut colors = std::collections::HashMap::new();
+        for (id, result) in fetched {
+            match result {
+                Ok(label) => {
+                    if let Some(c) = label.color {
+                        colors.insert(id.clone(), (c.background_color, c.text_color));
+                    }
+                }
+                // Deleted since the list: nothing to colour.
+                Err(e) if e.is_not_found() => {}
+                Err(e) => {
+                    tracing::warn!(account = %self.account_id, label = %id, error = %e, "couldn't fetch a label colour");
+                    failed = true;
+                }
+            }
+        }
+        if fetch && !failed {
+            self.colors.stamp();
+        }
+        for row in rows.iter_mut().filter(|l| is_user(l)) {
+            let fresh = fetch.then(|| colors.remove(&row.id)).flatten();
+            let (bg, text) = match fresh {
+                Some((bg, text)) => (Some(bg), Some(text)),
+                // Not fetched, or the fetch failed: keep what the cache has.
+                None if !fetch || failed => cached
+                    .get(&row.id)
+                    .map(|c| (c.color_background.clone(), c.color_text.clone()))
+                    .unwrap_or((None, None)),
+                None => (None, None),
+            };
+            row.color_background = bg;
+            row.color_text = text;
+        }
         Ok(())
     }
 

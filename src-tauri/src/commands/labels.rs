@@ -1,7 +1,9 @@
-//! Label commands: thin adapters over [`crate::mail::MailService`].
+//! Label commands: thin adapters over [`crate::mail::MailService`] (reads) and
+//! [`crate::labels::LabelService`] (create, edit, delete).
 
 use super::CommandError;
 use crate::diagnostics::{ms_since, PoolLoad, SLOW_READ};
+use crate::labels::{DeletePreviewDto, LabelColorDto, LabelEdit};
 use crate::mail::{CountDto, LabelCountDto, LabelDto};
 use crate::AppState;
 use std::time::Instant;
@@ -43,4 +45,49 @@ pub async fn label_counts(
         tracing::info!(elapsed_ms = ms_since(start), account = %account_id, %pool, "slow label counts");
     }
     Ok(result?)
+}
+
+/// Create a user label in Gmail (`name` is the full path, e.g. `Clients/Acme`).
+#[tauri::command]
+pub async fn create_label(
+    state: State<'_, AppState>,
+    account_id: String,
+    name: String,
+    color: Option<LabelColorDto>,
+) -> Result<LabelDto, CommandError> {
+    Ok(state.labels.create_label(&account_id, &name, color).await?)
+}
+
+/// Rename, re-nest, recolour or change a label's visibility; returns every label changed.
+#[tauri::command]
+pub async fn update_label(
+    state: State<'_, AppState>,
+    account_id: String,
+    label_id: String,
+    edit: LabelEdit,
+) -> Result<Vec<LabelDto>, CommandError> {
+    Ok(state
+        .labels
+        .update_label(&account_id, &label_id, edit)
+        .await?)
+}
+
+/// Delete a label and its sublabels in Gmail.
+#[tauri::command]
+pub async fn delete_label(
+    state: State<'_, AppState>,
+    account_id: String,
+    label_id: String,
+) -> Result<(), CommandError> {
+    Ok(state.labels.delete_label(&account_id, &label_id).await?)
+}
+
+/// What deleting a label would take with it, for the confirmation.
+#[tauri::command]
+pub async fn delete_label_preview(
+    state: State<'_, AppState>,
+    account_id: String,
+    label_id: String,
+) -> Result<DeletePreviewDto, CommandError> {
+    Ok(state.labels.delete_preview(&account_id, &label_id).await?)
 }

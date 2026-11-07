@@ -76,6 +76,8 @@ export interface ThreadSummary {
   starred: boolean;
   hasAttachment: boolean;
   messageCount: number;
+  /** The thread's user labels (not system labels), sorted by label name. */
+  labelIds: string[];
 }
 
 export interface ThreadPage {
@@ -150,6 +152,36 @@ export interface LabelInfo {
   threadsUnread: number;
   colorBackground: string | null;
   colorText: string | null;
+  /** Gmail's `show` | `hide` | `showIfUnread`; null when Gmail didn't say. */
+  messageListVisibility: string | null;
+  /** Gmail's `labelShow` | `labelShowIfUnread` | `labelHide`; null when Gmail didn't say. */
+  labelListVisibility: string | null;
+}
+
+/** A Gmail label colour pair; only values from Gmail's palette are accepted. */
+export interface LabelColor {
+  background: string;
+  text: string;
+}
+
+/** Changes to one label; fields left out stay as they are. */
+export interface LabelEdit {
+  /** The full new path (`Clients/Acme`); renaming a parent renames its sublabels too. */
+  name?: string;
+  color?: LabelColor;
+  clearColor?: boolean;
+  /** `labelShow` | `labelShowIfUnread` | `labelHide`. */
+  labelListVisibility?: string;
+  /** `show` | `hide`. */
+  messageListVisibility?: string;
+}
+
+/** What deleting a label takes with it. */
+export interface LabelDeletePreview {
+  /** Conversations with the label, per Gmail; null when Gmail couldn't be asked. */
+  threads: number | null;
+  /** Full names of the sublabels deleted with it. */
+  sublabels: string[];
 }
 
 export interface LabelCount {
@@ -183,6 +215,17 @@ export const mailboxCounts = (accountIds: string[]) =>
 /** Unread and total conversations per label of one account, counted from the local cache. */
 export const labelCounts = (accountId: string) =>
   invoke<LabelCount[]>("label_counts", { accountId });
+/** Creates a user label in Gmail (`name` is the full path) and caches it. */
+export const createLabel = (accountId: string, name: string, color: LabelColor | null) =>
+  invoke<LabelInfo>("create_label", { accountId, name, color });
+/** Edits a label in Gmail; resolves to every label changed (parent first, then sublabels). */
+export const updateLabel = (accountId: string, labelId: string, edit: LabelEdit) =>
+  invoke<LabelInfo[]>("update_label", { accountId, labelId, edit });
+/** Deletes a label and its sublabels in Gmail; the conversations stay. */
+export const deleteLabel = (accountId: string, labelId: string) =>
+  invoke<void>("delete_label", { accountId, labelId });
+export const deleteLabelPreview = (accountId: string, labelId: string) =>
+  invoke<LabelDeletePreview>("delete_label_preview", { accountId, labelId });
 export const modifyThreads = (
   accountId: string,
   threadIds: string[],

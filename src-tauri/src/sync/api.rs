@@ -2,8 +2,8 @@
 //! an in-memory mailbox ([`super::fake::FakeGmail`]).
 
 use crate::gmail::types::{
-    Draft, DraftListResponse, HistoryListResponse, Label, Message, MessageListResponse, Thread,
-    ThreadListResponse, UserProfile,
+    Draft, DraftListResponse, HistoryListResponse, Label, LabelColor, LabelUpdate, Message,
+    MessageListResponse, Thread, ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailClient, GmailError, MessageFormat};
 
@@ -12,6 +12,16 @@ pub trait MailApi: Send + Sync {
     async fn profile(&self) -> Result<UserProfile, GmailError>;
     async fn list_labels(&self) -> Result<Vec<Label>, GmailError>;
     async fn get_label(&self, id: &str) -> Result<Label, GmailError>;
+    async fn create_label(
+        &self,
+        name: &str,
+        color: Option<LabelColor>,
+    ) -> Result<Label, GmailError>;
+    /// Patch: only the `Some` fields of `update` change.
+    async fn update_label(&self, id: &str, update: LabelUpdate) -> Result<Label, GmailError>;
+    /// PUT the whole label; a `None` colour removes the label's colour.
+    async fn replace_label(&self, label: &Label) -> Result<Label, GmailError>;
+    async fn delete_label(&self, id: &str) -> Result<(), GmailError>;
     async fn list_threads(
         &self,
         label: &str,
@@ -112,6 +122,26 @@ impl MailApi for GmailClient {
 
     async fn get_label(&self, id: &str) -> Result<Label, GmailError> {
         GmailClient::get_label(self, id).await
+    }
+
+    async fn create_label(
+        &self,
+        name: &str,
+        color: Option<LabelColor>,
+    ) -> Result<Label, GmailError> {
+        GmailClient::create_label(self, name, color).await
+    }
+
+    async fn update_label(&self, id: &str, update: LabelUpdate) -> Result<Label, GmailError> {
+        GmailClient::update_label(self, id, update).await
+    }
+
+    async fn replace_label(&self, label: &Label) -> Result<Label, GmailError> {
+        GmailClient::replace_label(self, label).await
+    }
+
+    async fn delete_label(&self, id: &str) -> Result<(), GmailError> {
+        GmailClient::delete_label(self, id).await
     }
 
     async fn list_threads(

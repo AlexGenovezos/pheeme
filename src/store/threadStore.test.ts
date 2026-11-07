@@ -18,6 +18,7 @@ const detail = (id: string, accountId = "a", subject = `Subject ${id}`): ThreadD
     starred: false,
     hasAttachment: false,
     messageCount: 1,
+    labelIds: [],
   },
   messages: [],
   bodyError: null,
