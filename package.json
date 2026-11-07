@@ -43,7 +43,7 @@
     "dompurify": "^3",
     "lucide-react": "^0.577.0",
     "react": "^18",
-    "react-dom": "^18",
+    "react-dom": "^19",
     "zustand": "^4"
   },
   "devDependencies": {
@@ -55,7 +55,7 @@
     "@types/culori": "^4.0.1",
     "@types/dompurify": "^3",
     "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
     "@vitest/coverage-v8": "2.1.9",
     "cross-env": "^7",
