@@ -1,6 +1,7 @@
 // "Label as…" and "Move to…": a searchable popover over an account's labels.
 import { Check, Inbox, Minus, Plus, Search, Tags, Trash2 } from "lucide-react";
 import {
+  type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
   useEffect,
@@ -22,22 +23,48 @@ import { revealLabels } from "./reveal";
 import { buildLabelTree, type LabelNode } from "./tree";
 import "./labels.css";
 
+interface LabelOption {
+  kind: "label";
+  label: LabelInfo;
+  /** How far the row steps in: one level per listed ancestor. */
+  depth: number;
+  /** Dimmed context before the name (a search match's parent path, with its `/`), or empty. */
+  context: string;
+  /** The name shown: the path below the nearest listed ancestor, or the leaf of a search match. */
+  text: string;
+}
+
 type Option =
-  | { kind: "label"; label: LabelInfo }
+  | LabelOption
   | { kind: "inbox" | "trash" | "manage" }
   | { kind: "create"; name: string };
 
-/** User labels in sidebar order (parents before their sublabels), synthetic parents left out. */
-function inTreeOrder(labels: LabelInfo[]): LabelInfo[] {
-  const out: LabelInfo[] = [];
-  const walk = (nodes: LabelNode[]) => {
+/** User labels in sidebar order, leaving out `skip` and synthetic parents; each steps in under the nearest one listed. */
+function labelTreeOptions(labels: LabelInfo[], skip: string | null): LabelOption[] {
+  const out: LabelOption[] = [];
+  const walk = (nodes: LabelNode[], depth: number, under: string | null) => {
     for (const node of nodes) {
-      if (node.label) out.push(node.label);
-      walk(node.children);
+      if (node.label && node.label.id !== skip) {
+        const text = under === null ? node.path : node.path.slice(under.length + 1);
+        out.push({ kind: "label", label: node.label, depth, context: "", text });
+        walk(node.children, depth + 1, node.path);
+      } else walk(node.children, depth, under);
     }
   };
-  walk(buildLabelTree(labels));
+  walk(buildLabelTree(labels), 0, null);
   return out;
+}
+
+/** A search match: flat, its leaf after its dimmed parent path. */
+function searchOption(label: LabelInfo): LabelOption {
+  const cut = label.name.lastIndexOf("/");
+  return {
+    kind: "label",
+    label,
+    depth: 0,
+    context: label.name.slice(0, cut + 1),
+    text: label.name.slice(cut + 1),
+  };
 }
 
 const tick = (m: Membership) => (m === "all" ? "true" : m === "some" ? "mixed" : "false");
@@ -66,8 +93,8 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   const createOnly = keys.length === 0;
   const all = useLabelStore((s) => s.labels[accountId] ?? NO_LABELS);
   const userLabels = useLabelStore((s) => s.userLabels(accountId));
-  const ordered = useMemo(() => inTreeOrder(userLabels), [userLabels]);
   const [origin] = useState(() => (mode === "move" ? moveOrigin(accountId) : null));
+  const tree = useMemo(() => labelTreeOptions(userLabels, origin), [userLabels, origin]);
   const [membership, setMembership] = useState(() => new Map(spec.membership));
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -89,15 +116,15 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     const list: Option[] = [];
     if (!createOnly) {
       if (mode === "move" && origin !== "INBOX" && matches("Inbox")) list.push({ kind: "inbox" });
-      for (const label of ordered)
-        if (label.id !== origin && matches(label.name)) list.push({ kind: "label", label });
+      if (!q) list.push(...tree);
+      else for (const { label } of tree) if (matches(label.name)) list.push(searchOption(label));
       if (mode === "move" && matches("Trash")) list.push({ kind: "trash" });
     }
     const name = query.trim();
     if (name && !all.some((l) => l.name.toLowerCase() === q)) list.push({ kind: "create", name });
     list.push({ kind: "manage" });
     return list;
-  }, [all, createOnly, mode, ordered, origin, query]);
+  }, [all, createOnly, mode, origin, query, tree]);
 
   // Keep the popover inside the viewport once its size is known.
   useLayoutEffect(() => {
@@ -241,7 +268,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     const state = ticks ? (membership.get(option.label.id) ?? "none") : null;
     const text =
       option.kind === "label"
-        ? option.label.name
+        ? option.text
         : option.kind === "create"
           ? `Create "${option.name}"…`
           : option.kind === "inbox"
@@ -249,6 +276,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
             : option.kind === "trash"
               ? "Trash"
               : "Manage labels";
+    const context = option.kind === "label" ? option.context : "";
     const icon =
       option.kind === "label" ? (
         <LabelDot label={option.label} />
@@ -266,12 +294,18 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
         key={option.kind === "label" ? option.label.id : option.kind}
         id={`label-picker-option-${i}`}
         role="option"
+        aria-label={option.kind === "label" ? option.label.name : undefined}
         aria-selected={i === active}
         aria-checked={state ? tick(state) : undefined}
         aria-disabled={(option.kind === "label" && busy.has(option.label.id)) || undefined}
         data-index={i}
         title={option.kind === "label" ? option.label.name : undefined}
         className={cx("label-picker__option", option.kind === "manage" && "label-picker__footer")}
+        style={
+          option.kind === "label" && option.depth
+            ? ({ "--label-depth": option.depth } as CSSProperties)
+            : undefined
+        }
         onPointerMove={() => i !== active && setActive(i)}
         onClick={() => {
           setActive(i);
@@ -282,7 +316,10 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
           <span className="label-picker__check">{state && <TickIcon membership={state} />}</span>
         )}
         <span className="label-picker__icon">{icon}</span>
-        <span className="label-picker__name">{text}</span>
+        <span className={cx("label-picker__name", context && "label-picker__name--path")}>
+          {context && <span className="label-picker__context">{context}</span>}
+          {context ? <span className="label-picker__leaf">{text}</span> : text}
+        </span>
       </div>
     );
   };

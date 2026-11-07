@@ -19,11 +19,13 @@ import {
   type LabelDeletePreview,
   type LabelInfo,
   toCommandError,
-  updateLabel,
 } from "../lib/tauri";
 import { applyLabel, moveTo } from "../mail/actions";
 import { useLabelStore } from "../store/labelStore";
+import { ColorGrid } from "./ColorPopover";
 import { type LabelDialogSpec, useLabelDialogStore } from "./dialogStore";
+import { editLabel } from "./edit";
+import { labelColor } from "./palette";
 import "./labels.css";
 
 const FOCUSABLE =
@@ -150,6 +152,7 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
   const [leaf, setLeaf] = useState(initial.leaf);
   const [nested, setNested] = useState(initial.parent !== null);
   const [parent, setParent] = useState(initial.parent ?? parents[0] ?? "");
+  const [color, setColor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -171,9 +174,10 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
     setError(null);
     try {
       if (spec.mode === "edit") {
-        if (editing) await updateLabel(accountId, editing.id, { name: full });
+        // Shown at once; a refusal puts the names back and says why in a toast.
+        if (editing) void editLabel(accountId, editing.id, { name: full });
       } else {
-        const created = await createLabel(accountId, full, null);
+        const created = await createLabel(accountId, full, color ? labelColor(color) : null);
         useLabelStore.setState((s) => ({
           labels: {
             ...s.labels,
@@ -240,6 +244,19 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
           </option>
         ))}
       </select>
+      {spec.mode === "create" && (
+        <>
+          <span className="label-dialog__field label-dialog__field--gap" aria-hidden="true">
+            Colour
+          </span>
+          <div className="label-dialog__colour">
+            <ColorGrid value={color} onChoose={setColor} />
+            <Button variant="ghost" size="sm" disabled={!color} onClick={() => setColor(null)}>
+              No colour
+            </Button>
+          </div>
+        </>
+      )}
       <div className="label-dialog__actions">
         <Button onClick={onClose}>Cancel</Button>
         <Button type="submit" variant="primary" disabled={saving || gone}>

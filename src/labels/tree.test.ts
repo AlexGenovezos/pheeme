@@ -63,11 +63,11 @@ describe("visibility_rules", () => {
     expect(visibleInSidebar(label("a", { labelListVisibility: null }), 0)).toBe(true);
   });
 
-  test("a parent stays visible when a descendant is", () => {
+  test("a quiet show-if-unread parent stays visible when a descendant is", () => {
     const tree = buildLabelTree([
-      label("P", { labelListVisibility: "labelHide" }),
+      label("P", { labelListVisibility: "labelShowIfUnread" }),
       label("P/C"),
-      label("Q", { labelListVisibility: "labelHide" }),
+      label("Q", { labelListVisibility: "labelShowIfUnread" }),
       label("Q/D", { labelListVisibility: "labelHide" }),
       label("R/E"),
     ]);
@@ -75,6 +75,22 @@ describe("visibility_rules", () => {
     expect(shown.map((n) => n.path)).toEqual(["P", "R"]);
     expect(shown[0].children.map((n) => n.path)).toEqual(["P/C"]);
   });
+});
+
+test("hidden_parent_takes_its_subtree_under_more", () => {
+  const tree = buildLabelTree([
+    label("test", { labelListVisibility: "labelHide" }),
+    label("test/test 2"),
+    label("test/test 2/deep", { labelListVisibility: "labelHide" }),
+    label("test/news", { labelListVisibility: "labelShowIfUnread" }),
+    label("Travel"),
+  ]);
+  // Unread mail doesn't bring a show-if-unread sublabel of a hidden parent back into the main list.
+  expect(filterSidebarTree(tree, () => 5).map((n) => n.path)).toEqual(["Travel"]);
+  const hidden = hiddenSidebarTree(tree, () => 5);
+  expect(hidden.map((n) => n.path)).toEqual(["test"]);
+  expect(hidden[0].children.map((n) => n.path)).toEqual(["test/news", "test/test 2"]);
+  expect(hidden[0].children[1].children.map((n) => n.path)).toEqual(["test/test 2/deep"]);
 });
 
 test("hidden_tree_keeps_parents_of_hidden_labels", () => {

@@ -430,7 +430,7 @@ function LabelTreeRows({
 }
 
 /**
- * The shown tree with labels kept only as ancestors of shown sublabels (hidden, or show-if-unread with nothing unread)
+ * The shown tree with labels kept only as ancestors of shown sublabels (show-if-unread with nothing unread)
  * turned into context rows, like synthetic parents: their actionable row is under More.
  */
 function contextForHidden(nodes: LabelNode[], unreadOf: (label: LabelInfo) => number): LabelNode[] {

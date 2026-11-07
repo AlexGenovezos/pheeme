@@ -35,58 +35,21 @@ const closeColorPopover = () => useColorPopoverStore.setState({ spec: null });
 /** Swatches per row, as in Gmail's grid. */
 const COLUMNS = 8;
 
-export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClose(): void }) {
-  const { accountId, labelId, at, returnFocus } = spec;
-  const label = useLabelStore((s) => s.labels[accountId]?.find((l) => l.id === labelId));
-  const current = label?.colorBackground?.toLowerCase() ?? null;
-  const checked = current ? LABEL_BACKGROUNDS.indexOf(current) : -1;
+/**
+ * Gmail's 64-colour grid as one radio group (one tab stop, arrow keys between swatches), ticking `value`. Shared by
+ * the colour popover and the new-label dialog.
+ */
+export function ColorGrid({
+  value,
+  onChoose,
+}: {
+  /** The ticked background, or null for none. */
+  value: string | null;
+  onChoose(background: string): void;
+}) {
+  const checked = value ? LABEL_BACKGROUNDS.indexOf(value.toLowerCase()) : -1;
   const [focused, setFocused] = useState(Math.max(checked, 0));
-  const [pos, setPos] = useState(at);
-  const ref = useRef<HTMLDivElement>(null);
   const swatches = useRef<Array<HTMLButtonElement | null>>([]);
-  const removeRef = useRef<HTMLButtonElement>(null);
-
-  // Keep the popover inside the viewport once its size is known.
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    const x = Math.max(0, Math.min(at.x, window.innerWidth - width));
-    const y = Math.max(0, Math.min(at.y, window.innerHeight - height));
-    if (x !== at.x || y !== at.y) setPos({ x, y });
-  }, [at]);
-
-  useEffect(() => {
-    swatches.current[Math.max(checked, 0)]?.focus();
-    const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onBlur = () => onClose();
-    document.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("blur", onBlur);
-      returnFocus?.focus?.();
-    };
-    // oxlint-disable-next-line react/exhaustive-deps -- focus the ticked swatch once, on open
-  }, [onClose, returnFocus]);
-
-  // The label was deleted (here or in Gmail) while the popover was open.
-  useEffect(() => {
-    if (!label) onClose();
-  }, [label, onClose]);
-
-  const choose = (background: string) => {
-    onClose();
-    if (background !== current)
-      void editLabel(accountId, labelId, { color: labelColor(background) });
-  };
-
-  const remove = () => {
-    onClose();
-    if (current) void editLabel(accountId, labelId, { clearColor: true });
-  };
 
   const moveTo = (index: number) => {
     const next = Math.max(0, Math.min(LABEL_BACKGROUNDS.length - 1, index));
@@ -122,13 +85,98 @@ export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClos
     e.stopPropagation();
   };
 
+  return (
+    <div className="label-color__grid" role="radiogroup" aria-label="Colour" onKeyDown={onGridKey}>
+      {LABEL_BACKGROUNDS.map((background, i) => {
+        const on = i === checked;
+        return (
+          <button
+            key={background}
+            ref={(el) => {
+              swatches.current[i] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            aria-label={background}
+            title={background}
+            tabIndex={i === focused ? 0 : -1}
+            className={cx("label-color__swatch", on && "label-color__swatch--on")}
+            style={{ background, color: labelColor(background).text }}
+            onFocus={() => setFocused(i)}
+            onClick={() => {
+              setFocused(i);
+              onChoose(background);
+            }}
+          >
+            {on && <Check aria-hidden="true" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Focuses the grid's tab stop: the ticked swatch, else the first. */
+const focusGrid = (el: HTMLElement | null) =>
+  el?.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
+
+export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClose(): void }) {
+  const { accountId, labelId, at, returnFocus } = spec;
+  const label = useLabelStore((s) => s.labels[accountId]?.find((l) => l.id === labelId));
+  const current = label?.colorBackground?.toLowerCase() ?? null;
+  const [pos, setPos] = useState(at);
+  const ref = useRef<HTMLDivElement>(null);
+  const removeRef = useRef<HTMLButtonElement>(null);
+
+  // Keep the popover inside the viewport once its size is known.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const x = Math.max(0, Math.min(at.x, window.innerWidth - width));
+    const y = Math.max(0, Math.min(at.y, window.innerHeight - height));
+    if (x !== at.x || y !== at.y) setPos({ x, y });
+  }, [at]);
+
+  useEffect(() => {
+    focusGrid(ref.current);
+    const onPointerDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const onBlur = () => onClose();
+    document.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("blur", onBlur);
+      returnFocus?.focus?.();
+    };
+  }, [onClose, returnFocus]);
+
+  // The label was deleted (here or in Gmail) while the popover was open.
+  useEffect(() => {
+    if (!label) onClose();
+  }, [label, onClose]);
+
+  const choose = (background: string) => {
+    onClose();
+    if (background !== current)
+      void editLabel(accountId, labelId, { color: labelColor(background) });
+  };
+
+  const remove = () => {
+    onClose();
+    if (current) void editLabel(accountId, labelId, { clearColor: true });
+  };
+
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") onClose();
     else if (e.key === "Tab") {
       // Two stops, the grid and Remove colour; focus stays in the popover until it closes.
       const inGrid = document.activeElement !== removeRef.current;
       if (inGrid && !removeRef.current?.disabled) removeRef.current?.focus();
-      else swatches.current[focused]?.focus();
+      else focusGrid(ref.current);
     } else return;
     e.preventDefault();
     e.stopPropagation();
@@ -145,36 +193,7 @@ export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClos
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div
-        className="label-color__grid"
-        role="radiogroup"
-        aria-label="Colour"
-        onKeyDown={onGridKey}
-      >
-        {LABEL_BACKGROUNDS.map((background, i) => {
-          const on = i === checked;
-          return (
-            <button
-              key={background}
-              ref={(el) => {
-                swatches.current[i] = el;
-              }}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              aria-label={background}
-              title={background}
-              tabIndex={i === focused ? 0 : -1}
-              className={cx("label-color__swatch", on && "label-color__swatch--on")}
-              style={{ background, color: labelColor(background).text }}
-              onFocus={() => setFocused(i)}
-              onClick={() => choose(background)}
-            >
-              {on && <Check aria-hidden="true" />}
-            </button>
-          );
-        })}
-      </div>
+      <ColorGrid value={current} onChoose={choose} />
       <Button
         ref={removeRef}
         variant="ghost"

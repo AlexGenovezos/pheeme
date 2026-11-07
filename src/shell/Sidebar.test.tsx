@@ -570,7 +570,6 @@ describe("Labels section", () => {
   });
 
   for (const [mode, labelListVisibility] of [
-    ["hidden parent", "labelHide"],
     ["read show-if-unread parent", "labelShowIfUnread"],
   ] as const)
     test(`a ${mode} of a shown sublabel is only context above More`, () => {
@@ -660,11 +659,14 @@ describe("Labels section", () => {
     expect(menuItem("Delete label")).toHaveClass("ui-menu__item--danger");
 
     choose("Hide in label list");
+    // It goes under More at once, before Gmail answers.
+    expect(shownLinks()).not.toContain("Travel");
     await waitFor(() =>
       expect(updates()).toEqual([
         { accountId: "a1", labelId: "L_travel", edit: { labelListVisibility: "labelHide" } },
       ]),
     );
+    fireEvent.click(within(labelsRegion()).getByRole("button", { name: "More" }));
 
     await openMenu("Travel");
     choose("Show in message list");
@@ -678,7 +680,7 @@ describe("Labels section", () => {
 
     // Choosing the visibility it already has changes nothing.
     await openMenu("Travel");
-    choose("Show in label list");
+    choose("Hide in label list");
     expect(updates()).toHaveLength(2);
 
     await openMenu("Clients/Acme");

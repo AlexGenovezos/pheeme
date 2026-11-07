@@ -143,6 +143,25 @@ describe("Label as…", () => {
     expect(option("Clients/Acme")).toHaveAttribute("title", "Clients/Acme");
     type("CLIENTS");
     expect(optionNames()).toEqual(["Clients", "Clients/Acme", "Manage labels"]);
+    type("ents/ac");
+    expect(optionNames()).toEqual(["Clients/Acme", 'Create "ents/ac"…', "Manage labels"]);
+  });
+
+  test("lists labels as a tree by leaf name; a search match shows its dimmed parent path", async () => {
+    useLabelStore.setState((s) => ({
+      labels: { a1: [...s.labels.a1, label("Label_5", "Travel/2026")] },
+    }));
+    await openForBoth();
+    // Travel isn't a label: its sublabel shows the path from the top, not stepped in.
+    expect(optionNames()).toEqual(["Clients", "Acme", "Receipts", "Travel/2026", "Manage labels"]);
+    const depth = (name: string) => option(name).style.getPropertyValue("--label-depth");
+    expect(depth("Clients/Acme")).toBe("1");
+    expect(depth("Travel/2026")).toBe("");
+
+    type("acm");
+    const match = option("Clients/Acme");
+    expect(match.querySelector(".label-picker__context")).toHaveTextContent("Clients/");
+    expect(depth("Clients/Acme")).toBe("");
   });
 
   test("tri_state_ticks", async () => {
@@ -459,7 +478,7 @@ describe("Move to…", () => {
     render(<LabelPickerHost />);
     act(() => openMoveMenu({ x: 0, y: 0 }));
     expect(screen.getByRole("dialog", { name: "Move to" })).toBeInTheDocument();
-    expect(optionNames()).toEqual(["Inbox", "Clients", "Clients/Acme", "Trash", "Manage labels"]);
+    expect(optionNames()).toEqual(["Inbox", "Clients", "Acme", "Trash", "Manage labels"]);
     expect(option("Clients")).not.toHaveAttribute("aria-checked");
 
     fireEvent.click(option("Clients/Acme"));

@@ -12,6 +12,7 @@ import { __resetUiStoreForTests } from "../store/uiStore";
 import { openCreateLabel } from "./create";
 import { openDeleteLabel, openLabelDialog, useLabelDialogStore } from "./dialogStore";
 import { LabelDialogHost } from "./LabelDialog";
+import { labelColor } from "./palette";
 
 const label = (id: string, name: string, over: Partial<LabelInfo> = {}): LabelInfo => ({
   id,
@@ -94,6 +95,31 @@ test("create_sends_full_path", async () => {
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+test("create_with_colour: Gmail's grid, none by default", async () => {
+  render(<LabelDialogHost />);
+  act(() => openLabelDialog({ mode: "create", accountId: "a1" }));
+  expect(screen.queryByRole("radio", { checked: true })).toBeNull();
+  const none = screen.getByRole("button", { name: "No colour" });
+  const green = screen.getByRole("radio", { name: "#16a766" });
+  fireEvent.click(green);
+  expect(green).toHaveAttribute("aria-checked", "true");
+  fireEvent.click(none);
+  expect(green).toHaveAttribute("aria-checked", "false");
+  expect(none).toBeDisabled();
+
+  fireEvent.click(green);
+  // Arrow keys move between swatches without leaving the dialog.
+  fireEvent.keyDown(green, { key: "ArrowRight" });
+  expect(screen.getByRole("radio", { name: "#43d692" })).toHaveFocus();
+  expect(screen.getByRole("dialog", { name: "New label" })).toBeInTheDocument();
+  type("Travel");
+  fireEvent.click(screen.getByRole("button", { name: "Create" }));
+  await flush();
+  expect(callsOf("create_label")).toEqual([
+    { accountId: "a1", name: "Travel", color: labelColor("#16a766") },
+  ]);
+});
+
 test("create_applies_to_the_given_threads", async () => {
   render(<LabelDialogHost />);
   act(() =>
@@ -145,15 +171,32 @@ test("edit_prefills_and_excludes_descendants", () => {
   expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
 });
 
+const names = () => useLabelStore.getState().labels.a1.map((l) => l.name);
+
 test("edit sends the new full path", async () => {
   render(<LabelDialogHost />);
   act(() => openLabelDialog({ mode: "edit", accountId: "a1", labelId: "Label_2" }));
   fireEvent.click(nest()); // un-nest
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  // Shown at once, sublabels included, without waiting for Gmail.
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(names()).toEqual(["INBOX", "Clients", "Acme", "Acme/Q1", "Receipts"]);
   await flush();
   expect(callsOf("update_label")).toEqual([
     { accountId: "a1", labelId: "Label_2", edit: { name: "Acme" } },
   ]);
+});
+
+test("a rename Gmail refuses goes back and says why in a toast", async () => {
+  failWith = { code: "gmail", message: "Gmail is unreachable" };
+  render(<LabelDialogHost />);
+  act(() => openLabelDialog({ mode: "edit", accountId: "a1", labelId: "Label_1" }));
+  type("Customers");
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(names()).toContain("Customers/Acme/Q1");
+  await flush();
+  expect(names()).toEqual(["INBOX", "Clients", "Clients/Acme", "Clients/Acme/Q1", "Receipts"]);
+  expect(useToastStore.getState().toasts.map((t) => t.title)).toEqual(["Gmail is unreachable"]);
 });
 
 test("server_error_shown_inline_and_dialog_stays", async () => {

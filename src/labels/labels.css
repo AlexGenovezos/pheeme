@@ -157,6 +157,8 @@
   justify-content: center;
   flex-shrink: 0;
   width: var(--icon-size-sm);
+  /* Sublabels step in under their parent; the tick column stays put. */
+  margin-inline-start: calc(var(--label-depth, 0) * var(--space-4));
 }
 .label-picker__check svg,
 .label-picker__icon svg {
@@ -178,6 +180,27 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* A search match's dimmed parent path gives way before the name itself does. */
+.label-picker__name--path {
+  display: flex;
+}
+.label-picker__context,
+.label-picker__leaf {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.label-picker__context {
+  color: var(--color-foreground-subtle);
+}
+.label-picker__option[aria-selected="true"] .label-picker__context {
+  color: inherit;
+  opacity: 0.75;
+}
+.label-picker__leaf {
+  flex-shrink: 0;
+  max-width: 100%;
 }
 
 /* "Label colour…": Gmail's grid of label colours, opened from a sidebar label's menu. */
@@ -291,6 +314,14 @@
   gap: var(--space-2);
   margin-top: var(--space-1);
   font-size: var(--font-size-md);
+}
+.label-dialog__field--gap {
+  margin-top: var(--space-1);
+}
+.label-dialog__colour {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
 }
 .label-dialog__select {
   height: var(--control-height-md);

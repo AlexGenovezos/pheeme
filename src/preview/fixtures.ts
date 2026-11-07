@@ -23,6 +23,8 @@ export interface FixtureUserLabel {
   name: string;
   /** Gmail's label color, shown as a dot in the sidebar; none means uncolored. */
   color?: string;
+  /** Gmail's `labelShow` (the default) | `labelShowIfUnread` | `labelHide`. */
+  labelListVisibility?: string;
 }
 
 export interface FixtureMessage {
@@ -64,6 +66,10 @@ export const fixtureUserLabels: FixtureUserLabel[] = [
   { id: "Label_1", accountId: "acc-personal", name: "Receipts" },
   { id: "Label_2", accountId: "acc-personal", name: "Travel", color: "#16a766" },
   { id: "Label_3", accountId: "acc-personal", name: "Pheeme", color: "#4a86e8" },
+  // A sublabel, and a hidden parent whose sublabel goes under More with it.
+  { id: "Label_4", accountId: "acc-personal", name: "Travel/Lisbon" },
+  { id: "Label_5", accountId: "acc-personal", name: "Archive", labelListVisibility: "labelHide" },
+  { id: "Label_6", accountId: "acc-personal", name: "Archive/Old projects" },
   { id: "Label_10", accountId: "acc-work", name: "Customers", color: "#ffad47" },
   { id: "Label_11", accountId: "acc-work", name: "Invoices" },
 ];

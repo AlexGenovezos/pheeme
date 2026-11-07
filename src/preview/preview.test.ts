@@ -160,7 +160,14 @@ describe("preview IPC", () => {
           colorBackground: string | null;
         }[]
       ).filter((l) => l.type === "user");
-    expect(userLabels("acc-personal").map((l) => l.name)).toEqual(["Receipts", "Travel", "Pheeme"]);
+    expect(userLabels("acc-personal").map((l) => l.name)).toEqual([
+      "Receipts",
+      "Travel",
+      "Pheeme",
+      "Travel/Lisbon",
+      "Archive",
+      "Archive/Old projects",
+    ]);
     expect(userLabels("acc-work").map((l) => l.name)).toEqual(["Customers", "Invoices"]);
     expect(userLabels("acc-personal").some((l) => l.colorBackground)).toBe(true);
     expect(userLabels("acc-personal").some((l) => !l.colorBackground)).toBe(true);
@@ -517,6 +524,8 @@ describe("preview label CRUD", () => {
     ]);
     expect(userNames(handlers)).toEqual(
       [
+        "Archive",
+        "Archive/Old projects",
         "Clientsx",
         "Customers",
         "Customers/Acme",
@@ -524,6 +533,7 @@ describe("preview label CRUD", () => {
         "Pheeme",
         "Receipts",
         "Travel",
+        "Travel/Lisbon",
       ].sort(),
     );
     expect(errorOf(() => update(parent.id, { name: "Customers/Acme/Customers" })).code).toBe(

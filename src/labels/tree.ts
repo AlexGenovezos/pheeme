@@ -52,12 +52,16 @@ export function visibleInSidebar(label: LabelInfo, unread: number): boolean {
   return true;
 }
 
-/** The nodes the sidebar shows: a parent stays when any descendant is shown, even if hidden itself. */
+/** A label set to Hide takes its whole subtree under More, unlike a quiet show-if-unread one. */
+const hiddenWithSublabels = (node: LabelNode) => node.label?.labelListVisibility === "labelHide";
+
+/** The nodes the sidebar shows: a parent stays when any descendant is shown, unless it is hidden itself. */
 export function filterSidebarTree(
   nodes: LabelNode[],
   unreadOf: (label: LabelInfo) => number,
 ): LabelNode[] {
   return nodes.flatMap((node) => {
+    if (hiddenWithSublabels(node)) return [];
     const children = filterSidebarTree(node.children, unreadOf);
     const own = node.label !== null && visibleInSidebar(node.label, unreadOf(node.label));
     return own || children.length > 0 ? [{ ...node, children }] : [];
@@ -73,6 +77,7 @@ export function hiddenSidebarTree(
   unreadOf: (label: LabelInfo) => number,
 ): LabelNode[] {
   return nodes.flatMap((node) => {
+    if (hiddenWithSublabels(node)) return [node];
     const children = hiddenSidebarTree(node.children, unreadOf);
     const hidden = node.label !== null && !visibleInSidebar(node.label, unreadOf(node.label));
     return hidden || children.length > 0 ? [{ ...node, children }] : [];
