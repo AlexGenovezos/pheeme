@@ -389,13 +389,16 @@ fn openable_file_name(name: Option<&str>) -> String {
         .chars()
         .map(|c| if "<>\"|?*".contains(c) { '_' } else { c })
         .collect();
-    let stem = name.split('.').next().unwrap_or_default().trim_end();
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end()
+        .to_ascii_uppercase();
     let reserved = matches!(
-        stem.to_ascii_uppercase().as_str(),
+        stem.as_str(),
         "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
-    ) || (stem.len() == 4
-        && ["COM", "LPT"].contains(&stem[..3].to_ascii_uppercase().as_str())
-        && stem[3..].chars().all(|c| c.is_ascii_digit()));
+    ) || matches!(stem.as_bytes(), [b'C', b'O', b'M', d] | [b'L', b'P', b'T', d] if d.is_ascii_digit());
     if reserved {
         format!("_{name}")
     } else {
@@ -2158,6 +2161,8 @@ mod tests {
         assert_eq!(openable_file_name(Some("console.pdf")), "console.pdf");
         assert_eq!(openable_file_name(Some("com10.pdf")), "com10.pdf");
         assert_eq!(openable_file_name(Some("Plan.pdf")), "Plan.pdf");
+        assert_eq!(openable_file_name(Some("éé.pdf")), "éé.pdf");
+        assert_eq!(openable_file_name(Some("coméé.pdf")), "coméé.pdf");
     }
 
     #[test]
