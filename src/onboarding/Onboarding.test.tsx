@@ -40,7 +40,12 @@ function fillCredentials(id = CLIENT_ID, secret = "s3cret") {
 test("walks the guide in order and saves progress without the secret", () => {
   backend({});
   render(<Onboarding accounts={[]} onConnected={() => {}} />);
-  click("Get started");
+  expect(
+    screen.getByRole("heading", { name: "Free for good, and your mail stays yours." }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Setup steps" })).toBeNull();
+  expect(loadProgress().step).toBe("intro");
+  click("Set up my Google app");
   expect(screen.getByText("Create a Google Cloud project")).toBeInTheDocument();
   expect(loadProgress().step).toBe("project");
   for (const title of [
@@ -58,6 +63,22 @@ test("walks the guide in order and saves progress without the secret", () => {
   fillCredentials();
   expect(JSON.stringify(localStorage)).not.toContain("s3cret");
   expect(loadProgress().clientId).toBe(CLIENT_ID);
+});
+
+test("the intro opens the transfer screen and the setup doc, and the guide goes back to it", () => {
+  const calls = backend({});
+  render(<Onboarding accounts={[]} onConnected={() => {}} />);
+  click("How this works");
+  expect(calls).toContainEqual({
+    cmd: "open_external",
+    args: { url: "https://github.com/AlexGenovezos/pheeme/blob/main/docs/google-cloud-setup.md" },
+  });
+  click("Receive from another device");
+  expect(screen.queryByRole("heading", { name: /Free for good/ })).toBeNull();
+  click("Back");
+  click("Set up my Google app");
+  click("Back");
+  expect(screen.getByRole("heading", { name: /Free for good/ })).toBeInTheDocument();
 });
 
 test("resumes at the saved step, and after the form resumes at the form", () => {

@@ -18,6 +18,7 @@
   --font-size-lg: 15px;
   --font-size-xl: 18px;
   --font-size-2xl: 22px;
+  --font-size-display: 28px;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -26,6 +27,7 @@
   --line-height-reading: 1.6;
   --letter-spacing-tight: -0.012em;
   --letter-spacing-normal: 0;
+  --letter-spacing-caps: 0.08em;
   --measure-reading: 72ch;
 
   /* Spacing, 4 px grid. */
@@ -114,10 +116,15 @@
   --compose-editor-min-height: 160px;
   --compose-link-input-width: 220px;
   --compose-attachment-max-width: 240px;
-  --brand-mark-size: 48px;
   /* Onboarding and account screens. */
   --onboarding-rail-width: 220px;
   --onboarding-content-width: 560px;
+  --intro-art-column: 420px;
+  --intro-art-size: 360px;
+  --intro-copy-width: 430px;
+  --intro-icon-size: 32px;
+  --intro-backdrop-blur: 40px;
+  --intro-backdrop-bleed: 60px;
   --step-dot-size: 20px;
   --copy-field-label-width: 140px;
   --waiting-mark-size: 12px;

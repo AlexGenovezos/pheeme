@@ -8,7 +8,6 @@ export const GMAIL_SCOPES = [
 ];
 
 export type StepId =
-  | "welcome"
   | "project"
   | "gmail-api"
   | "calendar-api"
@@ -39,18 +38,29 @@ export interface GuideStep {
   screenshot?: string;
 }
 
+/** The first-run intro, shown before the guide: why Pheeme needs your own Google Cloud app. */
+export const INTRO = {
+  eyebrow: "Welcome to Pheeme",
+  title: "Free for good, and your mail stays yours.",
+  lead: "Before you sign in, you'll set up a small Google Cloud app of your own. It takes about 15 minutes, once, and it's what keeps Pheeme free and private.",
+  points: [
+    {
+      title: "Completely free",
+      body: "Google gives your own app Gmail access at no charge. There's no Pheeme server to pay for, so no subscription.",
+    },
+    {
+      title: "You own your data",
+      body: "Mail goes straight from Google to this computer. Nobody in between can read it, including us.",
+    },
+    {
+      title: "Set it up once",
+      body: "Every Google account you add can share the same app, and your other devices can copy it over.",
+    },
+  ],
+  guideUrl: "https://github.com/AlexGenovezos/pheeme/blob/main/docs/google-cloud-setup.md",
+} as const;
+
 export const STEPS: GuideStep[] = [
-  {
-    id: "welcome",
-    short: "Welcome",
-    title: "Connect Gmail with your own Google Cloud app",
-    actions: [
-      "Pheeme reaches Gmail through a Google Cloud app that you own. Setting it up takes about 15 minutes and costs nothing.",
-      "You do this once. Other Google accounts can share the same app later.",
-      "You can quit at any point: Pheeme picks up at the same step next time.",
-    ],
-    why: "There's no Pheeme server. Your mail goes straight from Google to this computer, and nobody has to pay Google for access.",
-  },
   {
     id: "project",
     short: "Create a project",

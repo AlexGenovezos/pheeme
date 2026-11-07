@@ -6,16 +6,19 @@ import { BROWSER_PROBLEMS, problemTitle } from "./troubleshooting";
 
 beforeEach(() => localStorage.clear());
 
-test("progress defaults to welcome and ignores junk", () => {
-  expect(loadProgress()).toEqual({ step: "welcome", clientId: "" });
+test("progress defaults to the intro and ignores junk", () => {
+  expect(loadProgress()).toEqual({ step: "intro", clientId: "" });
   localStorage.setItem("pheeme.onboarding.v1", "{not json");
-  expect(loadProgress().step).toBe("welcome");
+  expect(loadProgress().step).toBe("intro");
   localStorage.setItem("pheeme.onboarding.v1", JSON.stringify({ step: "nope" }));
-  expect(loadProgress().step).toBe("welcome");
+  expect(loadProgress().step).toBe("intro");
+  // Saved before the intro replaced the welcome step.
+  localStorage.setItem("pheeme.onboarding.v1", JSON.stringify({ step: "welcome" }));
+  expect(loadProgress().step).toBe("intro");
   saveProgress({ step: "consent", clientId: "x" });
   expect(loadProgress()).toEqual({ step: "consent", clientId: "x" });
   clearProgress();
-  expect(loadProgress().step).toBe("welcome");
+  expect(loadProgress().step).toBe("intro");
 });
 
 test("every console link is https on a host the backend allows", () => {
@@ -29,7 +32,6 @@ test("every console link is https on a host the backend allows", () => {
 
 test("the guide covers the steps the design requires, in order", () => {
   expect(STEPS.map((s) => s.id)).toEqual([
-    "welcome",
     "project",
     "gmail-api",
     "calendar-api",
