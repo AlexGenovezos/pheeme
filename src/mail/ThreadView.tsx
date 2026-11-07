@@ -1,8 +1,8 @@
 import { Forward, Mail, Reply, ReplyAll, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
-import { useKeybinding } from "../keyboard/useCommands";
+import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import type { LabelInfo, ThreadDetail } from "../lib/tauri";
 import { useLabelStore } from "../store/labelStore";
 import { useThreadStore } from "../store/threadStore";
@@ -18,6 +18,35 @@ interface Expansion {
   key: string | null;
   seen: ReadonlySet<string>;
   open: ReadonlySet<string>;
+}
+
+/** How far one arrow press scrolls the reading pane, about two lines of body text. */
+const LINE_STEP = 40;
+/** A page press keeps this much of the old view on screen, so the reader doesn't lose their place. */
+const PAGE_FRACTION = 0.9;
+
+/**
+ * Scroll the focused reading pane from the keyboard. WebKit doesn't reliably scroll a focused `overflow` div
+ * by itself, so the keys are handled here rather than left to the browser.
+ */
+function scrollFromKey(e: KeyboardEvent<HTMLDivElement>) {
+  if (e.target !== e.currentTarget || e.defaultPrevented) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const pane = e.currentTarget;
+  const behavior = e.repeat ? "auto" : "smooth";
+  const page = Math.round(pane.clientHeight * PAGE_FRACTION);
+  const by = {
+    ArrowDown: LINE_STEP,
+    ArrowUp: -LINE_STEP,
+    PageDown: page,
+    PageUp: -page,
+    " ": e.shiftKey ? -page : page,
+  }[e.key];
+  if (by !== undefined) pane.scrollBy({ top: by, behavior });
+  else if (e.key === "Home") pane.scrollTo({ top: 0, behavior });
+  else if (e.key === "End") pane.scrollTo({ top: pane.scrollHeight, behavior });
+  else return;
+  e.preventDefault();
 }
 
 /**
@@ -91,6 +120,19 @@ export function ThreadView() {
   useEffect(() => {
     if (openKey) void load(openKey);
   }, [openKey, load]);
+
+  // Right moves into the conversation, where the arrows scroll it; Left (`list.focus`) goes back to the list.
+  useCommands([
+    {
+      id: "view.focus",
+      title: "Focus conversation",
+      group: "Navigation",
+      shortcut: "right",
+      run: () => {
+        if (useUiStore.getState().openThread) scroller.current?.focus({ preventScroll: true });
+      },
+    },
+  ]);
 
   // A new conversation starts at the top.
   useEffect(() => {
@@ -179,7 +221,14 @@ export function ThreadView() {
   }
 
   return (
-    <div className="view-pane__scroll" ref={scroller}>
+    <div
+      className="view-pane__scroll"
+      ref={scroller}
+      role="region"
+      aria-label="Open conversation"
+      tabIndex={-1}
+      onKeyDown={scrollFromKey}
+    >
       {content}
     </div>
   );
