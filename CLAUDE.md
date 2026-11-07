@@ -104,7 +104,7 @@ Nine tables.
 - **Thread labels** live in the `thread_labels` table, derived from `messages.label_ids`: change message labels, then call `recompute_threads` in the same transaction.
 - **Mail changes** (archive, read, star, trash, send) go through `sync::outbox`, never straight to Gmail (drafts are the exception: saved straight to the drafts API). Write transactions use `db::begin_write` (`BEGIN IMMEDIATE`).
 - **Label metadata changes** (create, rename, delete, colour, visibility) go straight to Gmail through `LabelService` (`labels.rs`), not the outbox, and hold the per-account label lock. Label sync takes that lock with `try_lock`, so message sync never waits on it.
-- **User-initiated Gmail calls** run inside `gmail::user_action` (label, draft and search commands, outbox dispatch) or under a probe (opening a thread): they skip the quota queue and hold sync and the backfill back until sent. A new command that calls Gmail inline should wrap its service call the same way. Any rate limit keeps background requests off Gmail for `RATE_LIMIT_COOLDOWN` (60 s).
+- **User-initiated Gmail calls** (label, draft and search commands, outbox dispatch) run inside `gmail::user_action`, ahead of sync and the backfill: wrap any new command that calls Gmail the same way.
 - **Command errors** reject with `{ code, message }` (`CommandError` in `commands/mod.rs`): branch on `code`, show `message`.
 - **Onboarding guide text** lives in `src/onboarding/steps.ts` and is mirrored in `docs/google-cloud-setup.md`; change both together.
 - Tauri dev server runs on **port 1420** (HMR on 1421). Don't change these without updating `tauri.conf.json`.

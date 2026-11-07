@@ -77,7 +77,6 @@ winrt-notification = { package = "tauri-winrt-notification", version = "0.7" }
 [dev-dependencies]
 dhat = "0.3.3"
 tempfile = "3"
-# Paused clocks for deterministic quota-pacing tests.
 tokio = { version = "1", features = ["test-util"] }
 wiremock = "0.6"
 

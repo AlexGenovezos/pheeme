@@ -11,9 +11,7 @@ use crate::gmail::{GmailClient, GmailError, MessageFormat};
 pub trait MailApi: Send + Sync {
     async fn profile(&self) -> Result<UserProfile, GmailError>;
     /// [`Self::profile`] for the backfill (see [`Self::backfill_list_messages`]).
-    async fn backfill_profile(&self) -> Result<UserProfile, GmailError> {
-        self.profile().await
-    }
+    async fn backfill_profile(&self) -> Result<UserProfile, GmailError>;
     async fn list_labels(&self) -> Result<Vec<Label>, GmailError>;
     async fn get_label(&self, id: &str) -> Result<Label, GmailError>;
     async fn create_label(

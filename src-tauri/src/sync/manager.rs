@@ -25,10 +25,8 @@ pub const FOCUS_MIN_INTERVAL: Duration = Duration::from_secs(15);
 const SLOW_SYNC: Duration = Duration::from_secs(2);
 pub const BACKFILL_PAUSE: Duration = Duration::from_secs(1);
 
-/// Pause after Gmail rate-limits the backfill, unless it says how long to wait: the client's
-/// cooldown, so the backfill doesn't come back inside the same per-minute window (every 15 s it
-/// kept re-tripping the limit and taking the quota user actions needed). The page's progress is
-/// kept, so trying again costs nothing.
+/// Pause after Gmail rate-limits the backfill, unless it says how long to wait: the client keeps
+/// background requests off Gmail that long anyway. The page's progress is kept.
 pub const BACKFILL_RATE_LIMIT_PAUSE: Duration = RATE_LIMIT_COOLDOWN;
 
 /// Builds the Gmail API for an account (production: a `GmailClient` on the keychain).
