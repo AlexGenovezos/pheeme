@@ -19,7 +19,14 @@ import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
 import { moveSelection, openAndMarkRead, openFocused } from "./actions";
-import { accountColorIndex, mailboxKey, type MailboxRef, threadKey } from "./mailboxes";
+import {
+  accountColorIndex,
+  locationOf,
+  mailboxKey,
+  type MailboxRef,
+  showsLocation,
+  threadKey,
+} from "./mailboxes";
 import { type RowAction, rowId, ThreadRow } from "./ThreadRow";
 import "./mail.css";
 
@@ -147,6 +154,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const keys = useMemo(() => threads.map((t) => threadKey(t.accountId, t.id)), [threads]);
   const checkedSet = useMemo(() => new Set(checked), [checked]);
   const accountEmail = useMemo(() => new Map(accounts.map((a) => [a.id, a.email])), [accounts]);
+  const withLocation = showsLocation(mailbox, !!search);
 
   const openIndex = open === null ? -1 : keys.indexOf(open);
   // The active option must stay in the DOM wherever the user scrolls, or aria-activedescendant would name a missing element.
@@ -317,6 +325,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
                   accountEmail={accountEmail.get(thread.accountId) ?? thread.accountId}
                   labels={labelsById(thread.accountId)}
                   currentLabelId={mailbox.labelId}
+                  location={withLocation ? locationOf(thread.systemLabelIds) : null}
                   onSelect={select}
                   onCheck={check}
                   onAction={onRowAction}

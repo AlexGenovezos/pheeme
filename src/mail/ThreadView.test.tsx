@@ -55,6 +55,7 @@ const detail = (messages: MessageDetail[]): ThreadDetail => ({
     hasAttachment: false,
     messageCount: messages.length,
     labelIds: [],
+    systemLabelIds: [],
   },
   messages,
   bodyError: null,

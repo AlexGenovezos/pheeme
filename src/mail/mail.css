@@ -49,6 +49,18 @@
   vertical-align: baseline;
 }
 
+.thread-row__location {
+  display: inline-block;
+  margin-inline-end: var(--space-1-5);
+  padding: var(--space-0) var(--space-1-5);
+  border-radius: var(--radius-sm);
+  background: var(--color-badge-bg);
+  color: var(--color-badge-foreground);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  vertical-align: baseline;
+}
+
 .thread-row__stamp {
   display: inline-flex;
   align-items: center;

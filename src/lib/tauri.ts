@@ -78,6 +78,8 @@ export interface ThreadSummary {
   messageCount: number;
   /** The thread's user labels (not system labels), sorted by label name. */
   labelIds: string[];
+  /** The thread's system labels (INBOX, CATEGORY_*, SPAM, TRASH, SENT…), sorted. */
+  systemLabelIds: string[];
 }
 
 export interface ThreadPage {

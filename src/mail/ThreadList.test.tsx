@@ -35,6 +35,7 @@ const thread = (n: number, accountId = "a1"): ThreadSummary => ({
   hasAttachment: false,
   messageCount: 1,
   labelIds: [],
+  systemLabelIds: [],
 });
 
 const many = (count: number, accountId = "a1") =>
@@ -358,6 +359,30 @@ describe("account dot", () => {
     act(() => useUiStore.setState({ mailbox: categoryMailbox("a1", "CATEGORY_SOCIAL") }));
     render(<ThreadList {...props()} />);
     expect(screen.queryByRole("img", { name: /^Account / })).not.toBeInTheDocument();
+  });
+});
+
+describe("location tag", () => {
+  const placed = () => [
+    { ...thread(1), systemLabelIds: ["CATEGORY_UPDATES", "INBOX"] },
+    { ...thread(2), systemLabelIds: ["SPAM"] },
+    { ...thread(3), systemLabelIds: [] },
+  ];
+
+  test("All Mail rows say where each conversation sits", () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "ALL" } });
+    useMailStore.setState({ threads: placed() });
+    render(<ThreadList {...props()} />);
+    expect(within(row(1)).getByText("Updates")).toHaveClass("thread-row__location");
+    expect(within(row(2)).getByText("Spam")).toBeInTheDocument();
+    expect(within(row(3)).getByText("Archived")).toBeInTheDocument();
+  });
+
+  test("an inbox list doesn't repeat its own location", () => {
+    useUiStore.setState({ mailbox: categoryMailbox("a1", "CATEGORY_UPDATES") });
+    useMailStore.setState({ threads: placed() });
+    render(<ThreadList {...props()} />);
+    expect(document.querySelector(".thread-row__location")).toBeNull();
   });
 });
 

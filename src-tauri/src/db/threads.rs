@@ -201,6 +201,47 @@ pub async fn get_thread_label_ids(
     Ok(rows.into_iter().map(|r| r.label_id).collect())
 }
 
+/// System label ids (INBOX, CATEGORY_*, SPAM, TRASH, SENT…) of many threads in one query,
+/// keyed by `(account_id, thread_id)` and sorted ascending. Threads without any are absent.
+/// Seeks the primary key of `thread_labels` per thread.
+pub async fn system_label_ids_for(
+    pool: &SqlitePool,
+    keys: &[(String, String)],
+) -> Result<HashMap<(String, String), Vec<String>>> {
+    let mut out: HashMap<(String, String), Vec<String>> = HashMap::new();
+    if keys.is_empty() {
+        return Ok(out);
+    }
+    let keys = serde_json::to_string(keys)?;
+    // One row holding a JSON array, like `labels::user_label_ids_for`: sqlx copies every
+    // value of every row it returns.
+    let found = sqlx::query_scalar!(
+        r#"SELECT json_group_array(json_array(tl.account_id, tl.thread_id, tl.label_id))
+                  AS "found!: String"
+           FROM json_each(?1) k
+           JOIN thread_labels tl
+             ON tl.account_id = json_extract(k.value, '$[0]')
+            AND tl.thread_id = json_extract(k.value, '$[1]')
+           WHERE NOT EXISTS (
+                 SELECT 1 FROM labels l
+                 WHERE l.account_id = tl.account_id AND l.id = tl.label_id
+                   AND l.type = 'user')"#,
+        keys
+    )
+    .fetch_one(pool)
+    .await?;
+    let found: Vec<(String, String, String)> = serde_json::from_str(&found)?;
+    for (account_id, thread_id, label_id) in found {
+        out.entry((account_id, thread_id))
+            .or_default()
+            .push(label_id);
+    }
+    for ids in out.values_mut() {
+        ids.sort();
+    }
+    Ok(out)
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ThreadCursor {
     pub last_message_date: i64,

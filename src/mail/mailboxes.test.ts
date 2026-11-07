@@ -6,12 +6,14 @@ import {
   FAVORITES,
   formatCount,
   homeMailbox,
+  locationOf,
   mailboxExists,
   type MailboxRef,
   mailboxTitle,
   parseThreadKey,
   queryFor,
   resolveActiveAccount,
+  showsLocation,
   threadKey,
 } from "./mailboxes";
 
@@ -133,4 +135,33 @@ test("mailboxExists: gone accounts and deleted user labels don't, system mailbox
     mailboxExists(categoryMailbox("a1", "CATEGORY_SOCIAL"), accounts, { a1: [{ id: "Label_1" }] }),
   ).toBe(true);
   expect(mailboxExists({ accountId: "a1", labelId: "Label_2" }, accounts, {})).toBe(true);
+});
+
+test("locationOf names where a conversation sits", () => {
+  expect(locationOf(["INBOX", "CATEGORY_UPDATES", "UNREAD"])).toBe("Updates");
+  expect(locationOf(["INBOX", "CATEGORY_PERSONAL"])).toBe("Primary");
+  // Accounts without category labels: the inbox is Primary.
+  expect(locationOf(["INBOX", "IMPORTANT"])).toBe("Primary");
+  expect(locationOf(["CATEGORY_UPDATES", "Label_1"])).toBe("Archived");
+  expect(locationOf([])).toBe("Archived");
+  expect(locationOf(["SPAM", "CATEGORY_PROMOTIONS"])).toBe("Spam");
+  expect(locationOf(["TRASH", "INBOX"])).toBe("Trash");
+  expect(locationOf(["SENT"])).toBe("Sent");
+  expect(locationOf(["INBOX", "SENT", "CATEGORY_SOCIAL"])).toBe("Social");
+  expect(locationOf(["DRAFT"])).toBe("Drafts");
+});
+
+test("rows name their location only in views that mix locations", () => {
+  const at = (labelId: string, category?: string): MailboxRef => ({
+    accountId: "a1",
+    labelId,
+    category,
+  });
+  expect(showsLocation(at("ALL"), false)).toBe(true);
+  expect(showsLocation(at("STARRED"), false)).toBe(true);
+  expect(showsLocation(at("Label_1"), false)).toBe(true);
+  expect(showsLocation(at("INBOX"), false)).toBe(false);
+  expect(showsLocation(at("INBOX", "CATEGORY_UPDATES"), false)).toBe(false);
+  expect(showsLocation(at("SPAM"), false)).toBe(false);
+  expect(showsLocation(at("INBOX"), true)).toBe(true);
 });

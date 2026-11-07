@@ -101,6 +101,9 @@ pub struct ThreadSummaryDto {
     pub message_count: i64,
     /// The thread's user labels (not system labels), sorted by label name.
     pub label_ids: Vec<String>,
+    /// The thread's system labels (INBOX, CATEGORY_*, SPAM, TRASH, SENT…), sorted, so a row
+    /// can say where the conversation sits.
+    pub system_label_ids: Vec<String>,
 }
 
 impl From<DbThread> for ThreadSummaryDto {
@@ -118,6 +121,7 @@ impl From<DbThread> for ThreadSummaryDto {
             has_attachment: t.has_attachment != 0,
             message_count: t.message_count,
             label_ids: Vec::new(),
+            system_label_ids: Vec::new(),
         }
     }
 }
@@ -132,12 +136,14 @@ async fn summaries(
         .map(|t| (t.account_id.clone(), t.id.clone()))
         .collect();
     let mut by_thread = labels::user_label_ids_for(db, &keys).await?;
+    let mut system = threads::system_label_ids_for(db, &keys).await?;
     Ok(threads
         .into_iter()
         .map(|t| {
             let key = (t.account_id.clone(), t.id.clone());
             let mut dto = ThreadSummaryDto::from(t);
             dto.label_ids = by_thread.remove(&key).unwrap_or_default();
+            dto.system_label_ids = system.remove(&key).unwrap_or_default();
             dto
         })
         .collect())
@@ -1123,7 +1129,7 @@ mod tests {
             .map(String::as_str)
             .collect();
         keys.sort();
-        // FixtureThread (src/preview/fixtures.ts) minus `mailbox` and `body`.
+        // The preview's `toSummary` (src/preview/install.ts) returns the same keys.
         assert_eq!(
             keys,
             [
@@ -1138,6 +1144,7 @@ mod tests {
                 "snippet",
                 "starred",
                 "subject",
+                "systemLabelIds",
                 "unread"
             ]
         );
@@ -1231,6 +1238,18 @@ mod tests {
         assert!(by_id("t2").is_empty());
         let detail = mail.get_thread("a1", "t1", true).await.unwrap();
         assert_eq!(detail.thread.label_ids, ["Label_1", "Label_2"]);
+        // System labels travel separately, so a row can say where it sits.
+        let system = |id: &str| {
+            page.threads
+                .iter()
+                .find(|t| t.id == id)
+                .unwrap()
+                .system_label_ids
+                .clone()
+        };
+        assert_eq!(system("t1"), ["INBOX"]);
+        assert_eq!(system("t2"), ["INBOX"]);
+        assert_eq!(detail.thread.system_label_ids, ["INBOX"]);
     }
 
     #[tokio::test]
