@@ -1177,7 +1177,9 @@ async fn notifications_only_for_new_unread_primary_including_replies() {
         ("forums", vec!["INBOX", "UNREAD", "CATEGORY_FORUMS"]),
         ("spam", vec!["INBOX", "UNREAD", "SPAM"]),
         ("trash", vec!["INBOX", "UNREAD", "TRASH"]),
-        ("sent", vec!["INBOX", "UNREAD", "SENT"]),
+        ("self-sent", vec!["INBOX", "UNREAD", "SENT"]),
+        ("own-reply", vec!["UNREAD", "SENT"]),
+        ("sent-read", vec!["INBOX", "SENT"]),
         ("draft", vec!["INBOX", "UNREAD", "DRAFT"]),
         ("archive", vec!["UNREAD"]),
     ] {
@@ -1189,7 +1191,7 @@ async fn notifications_only_for_new_unread_primary_including_replies() {
     let mail = arrivals(&h.events);
     assert_eq!(
         sorted(mail.iter().map(|m| m.thread_id.clone()).collect()),
-        s(&["existing", "no-category", "primary"])
+        s(&["existing", "no-category", "primary", "self-sent"])
     );
     let primary = mail.iter().find(|m| m.thread_id == "primary").unwrap();
     assert_eq!(primary.sender, "Sender primary");
