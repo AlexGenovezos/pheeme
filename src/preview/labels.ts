@@ -28,7 +28,7 @@ export function createPreviewLabels(): PreviewLabel[] {
     name: l.name,
     colorBackground: l.color ?? null,
     colorText: null,
-    labelListVisibility: "labelShow",
+    labelListVisibility: l.labelListVisibility ?? "labelShow",
     messageListVisibility: "show",
   }));
 }

@@ -279,3 +279,48 @@ test("failed or cancelled reads restore cached counts, and mark-unread raises th
   store().settleUnread(2);
   await vi.waitFor(() => expect(store().allInboxUnread).toBe(5));
 });
+
+test("a label change waiting for Gmail shows at once and survives reloads until it settles", async () => {
+  const w = world();
+  backend(w);
+  await store().load(["a"]);
+  const hide = (labels: LabelInfo[]) =>
+    labels.map((l) => (l.id === "Label_2" ? { ...l, labelListVisibility: "labelHide" } : l));
+  const change = store().patchLabels("a", hide);
+  const travel = () => store().labels.a.find((l) => l.id === "Label_2");
+  expect(travel()?.labelListVisibility).toBe("labelHide");
+
+  // A sync refresh reads the cache, which doesn't have the change yet: it stays shown.
+  await store().load(["a"]);
+  expect(travel()?.labelListVisibility).toBe("labelHide");
+
+  // Gmail took it: its copy goes in, and later reloads read it from the cache.
+  const taken = { ...label("Label_2", "travel"), labelListVisibility: "labelHide" };
+  w.labels.a = w.labels.a.map((l) => (l.id === "Label_2" ? taken : l));
+  store().settleLabels(change, [taken]);
+  expect(travel()).toEqual(taken);
+  await store().load(["a"]);
+  expect(travel()).toEqual(taken);
+});
+
+test("a refused label change goes back, keeping a later change still waiting", async () => {
+  const w = world();
+  const calls = backend(w);
+  await store().load(["a"]);
+  const set = (patch: Partial<LabelInfo>) => (labels: LabelInfo[]) =>
+    labels.map((l) => (l.id === "Label_2" ? { ...l, ...patch } : l));
+  const hide = store().patchLabels("a", set({ labelListVisibility: "labelHide" }));
+  const colour = store().patchLabels("a", set({ colorBackground: "#16a766" }));
+  const travel = () => store().labels.a.find((l) => l.id === "Label_2");
+  expect(travel()).toMatchObject({ labelListVisibility: "labelHide", colorBackground: "#16a766" });
+
+  const reads = calls.length;
+  store().settleLabels(hide, null);
+  expect(travel()).toMatchObject({ labelListVisibility: "labelShow", colorBackground: "#16a766" });
+  // A refusal re-reads the labels, in case Gmail took part of it.
+  expect(calls.slice(reads).map(([cmd]) => cmd)).toContain("list_labels");
+  await vi.waitFor(() => expect(travel()?.colorBackground).toBe("#16a766"));
+
+  store().settleLabels(colour, null);
+  expect(travel()).toMatchObject({ labelListVisibility: "labelShow", colorBackground: null });
+});

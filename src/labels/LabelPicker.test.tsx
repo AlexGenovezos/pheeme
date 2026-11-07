@@ -145,6 +145,58 @@ describe("Label as…", () => {
     expect(optionNames()).toEqual(["Clients", "Clients/Acme", "Manage labels"]);
   });
 
+  test("lists labels as a tree: sublabels step in under their parent, by leaf name", async () => {
+    useLabelStore.setState({
+      labels: {
+        a1: [
+          label("Label_1", "test edit"),
+          label("Label_2", "test edit/test 3"),
+          label("Label_3", "test edit/test 2"),
+          label("Label_4", "Travel/2026"),
+          label("Label_5", "Receipts"),
+          label("Label_6", "Receipts/2026"),
+        ],
+      },
+    });
+    await openForBoth();
+    expect(optionNames()).toEqual([
+      "Receipts",
+      "2026",
+      "test edit",
+      "test 2",
+      "test 3",
+      "Travel/2026", // its parent isn't a label: the path from the top, not indented
+      "Manage labels",
+    ]);
+    const depth = (name: string) => option(name).style.getPropertyValue("--label-depth");
+    expect(depth("test edit/test 2")).toBe("1");
+    expect(depth("Receipts/2026")).toBe("1");
+    expect(depth("test edit")).toBe("");
+    expect(depth("Travel/2026")).toBe("");
+    // The full path names each row, for screen readers and the tooltip.
+    expect(option("test edit/test 2")).toHaveAttribute("title", "test edit/test 2");
+
+    // Searching matches full paths and lists matches flat, each leaf after its dimmed parent path.
+    type("2026");
+    expect(optionNames()).toEqual([
+      "Receipts/2026",
+      "Travel/2026",
+      'Create "2026"…',
+      "Manage labels",
+    ]);
+    const match = option("Receipts/2026");
+    expect(match.querySelector(".label-picker__context")).toHaveTextContent("Receipts/");
+    expect(match.querySelector(".label-picker__leaf")).toHaveTextContent("2026");
+    expect(match.style.getPropertyValue("--label-depth")).toBe("");
+    type("edit/test");
+    expect(optionNames()).toEqual([
+      "test edit/test 2",
+      "test edit/test 3",
+      'Create "edit/test"…',
+      "Manage labels",
+    ]);
+  });
+
   test("tri_state_ticks", async () => {
     await openForBoth();
     expect(option("Receipts")).toHaveAttribute("aria-checked", "mixed");
@@ -459,7 +511,7 @@ describe("Move to…", () => {
     render(<LabelPickerHost />);
     act(() => openMoveMenu({ x: 0, y: 0 }));
     expect(screen.getByRole("dialog", { name: "Move to" })).toBeInTheDocument();
-    expect(optionNames()).toEqual(["Inbox", "Clients", "Clients/Acme", "Trash", "Manage labels"]);
+    expect(optionNames()).toEqual(["Inbox", "Clients", "Acme", "Trash", "Manage labels"]);
     expect(option("Clients")).not.toHaveAttribute("aria-checked");
 
     fireEvent.click(option("Clients/Acme"));
@@ -468,6 +520,14 @@ describe("Move to…", () => {
       { accountId: "a1", threadIds: ["t1"], add: ["Label_2"], remove: ["Label_3"] },
     ]);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("viewing a parent label, its sublabels step in under the nearest label still listed", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "Label_1" }, checked: [key(1)] });
+    render(<LabelPickerHost />);
+    act(() => openMoveMenu({ x: 0, y: 0 }));
+    expect(optionNames()).toEqual(["Inbox", "Clients/Acme", "Receipts", "Trash", "Manage labels"]);
+    expect(option("Clients/Acme").style.getPropertyValue("--label-depth")).toBe("");
   });
 
   test("Trash uses the existing trash action", async () => {

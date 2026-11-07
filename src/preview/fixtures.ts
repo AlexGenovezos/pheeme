@@ -23,6 +23,8 @@ export interface FixtureUserLabel {
   name: string;
   /** Gmail's label color, shown as a dot in the sidebar; none means uncolored. */
   color?: string;
+  /** Gmail's `labelShow` (the default) | `labelShowIfUnread` | `labelHide`. */
+  labelListVisibility?: string;
 }
 
 export interface FixtureMessage {
@@ -64,6 +66,18 @@ export const fixtureUserLabels: FixtureUserLabel[] = [
   { id: "Label_1", accountId: "acc-personal", name: "Receipts" },
   { id: "Label_2", accountId: "acc-personal", name: "Travel", color: "#16a766" },
   { id: "Label_3", accountId: "acc-personal", name: "Pheeme", color: "#4a86e8" },
+  // Sublabels, two of them with the same leaf name, and a hidden parent whose sublabel goes under More with it.
+  { id: "Label_4", accountId: "acc-personal", name: "Travel/Lisbon" },
+  { id: "Label_5", accountId: "acc-personal", name: "Travel/2026" },
+  { id: "Label_6", accountId: "acc-personal", name: "Receipts/2026" },
+  { id: "Label_7", accountId: "acc-personal", name: "Archive", labelListVisibility: "labelHide" },
+  { id: "Label_8", accountId: "acc-personal", name: "Archive/Old projects" },
+  {
+    id: "Label_9",
+    accountId: "acc-personal",
+    name: "Newsletters",
+    labelListVisibility: "labelShowIfUnread",
+  },
   { id: "Label_10", accountId: "acc-work", name: "Customers", color: "#ffad47" },
   { id: "Label_11", accountId: "acc-work", name: "Invoices" },
 ];
@@ -295,7 +309,7 @@ export function createFixtureThreads(): FixtureThread[] {
         { unread: true, html: CI_HTML, remote: true },
       ),
     ]),
-    thread("p-03", P, ["INBOX", "STARRED", "Label_2"], "Re: Lisbon in March?", lisbon),
+    thread("p-03", P, ["INBOX", "STARRED", "Label_2", "Label_4"], "Re: Lisbon in March?", lisbon),
     thread("p-04", P, ["INBOX", "CATEGORY_UPDATES"], "Your October statement is ready", [
       message(
         "p-04-m1",
@@ -409,7 +423,7 @@ export function createFixtureThreads(): FixtureThread[] {
         me,
       ),
     ]),
-    thread("p-15", P, ["Label_2", "Label_1"], "Flight confirmation TP 1031", [
+    thread("p-15", P, ["Label_2", "Label_5", "Label_1"], "Flight confirmation TP 1031", [
       message(
         "p-15-m1",
         ["TAP Air Portugal", "booking@flytap.example"],
