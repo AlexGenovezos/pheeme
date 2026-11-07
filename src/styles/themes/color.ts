@@ -1,4 +1,13 @@
-import { converter, formatHex, formatHex8, parse, toGamut, wcagContrast, type Oklch } from "culori";
+import {
+  converter,
+  formatHex,
+  formatHex8,
+  interpolate,
+  parse,
+  toGamut,
+  wcagContrast,
+  type Oklch,
+} from "culori";
 
 /**
  * Color math for themes, in OKLCH so lightness steps look even across hues.
@@ -92,6 +101,22 @@ function flatten(value: Oklch, under: Oklch): Oklch {
     g: mix(top.g, base.g),
     b: mix(top.b, base.b),
   });
+}
+
+/** `value` composited over the opaque `base`, as an opaque color: what the eye sees. */
+export function flattenOnto(value: string, base: string): string {
+  return format(flatten(requireColor(value), requireColor(base)));
+}
+
+/** `amount` of the way from `from` to `to`, mixed in OKLab (0 gives `from`, 1 gives `to`). */
+export function mixColors(from: string, to: string, amount: number): string {
+  const t = Math.min(1, Math.max(0, amount));
+  return format(toOklch(interpolate([requireColor(from), requireColor(to)], "oklab")(t)));
+}
+
+/** Whether a color is see-through (alpha below 1). */
+export function isTranslucent(value: string): boolean {
+  return (requireColor(value).alpha ?? 1) < 1;
 }
 
 /**

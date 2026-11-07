@@ -3,13 +3,20 @@ import indexHtml from "../../index.html?raw";
 import tauriConf from "../../src-tauri/tauri.conf.json";
 import tauriMacConf from "../../src-tauri/tauri.macos.conf.json";
 import { darkTheme, lightTheme, THEME_TOKENS } from "../styles/themes";
+import { themeColorToHex, toCanonicalThemeColor } from "../styles/themes/color";
+import { contrastFailures, MAILBOX_TOKENS } from "../styles/themes/contrast";
+import { serializeThemeFile, type ThemeFile } from "../styles/themes/themeFile";
+import { CUSTOM_THEMES_KEY, parseThemeText } from "./customThemes";
 import {
-  contrastRatio,
-  themeColorToHex,
-  toCanonicalThemeColor,
-  withAlpha,
-} from "../styles/themes/color";
-import { initTheme, readThemeMode, resolveTheme, THEME_MODE_KEY, useThemeStore } from "./theme";
+  initTheme,
+  readThemeMode,
+  resolveTheme,
+  THEME_BOOT_KEY,
+  THEME_CHOICE_KEYS,
+  THEME_MODE_KEY,
+  themeOptions,
+  useThemeStore,
+} from "./theme";
 
 /** A controllable prefers-color-scheme media query. */
 function mockSystemDark(initial: boolean) {
@@ -98,6 +105,136 @@ describe("persistence", () => {
   });
 });
 
+describe("custom themes", () => {
+  const harbour = parseThemeText(
+    JSON.stringify({ version: 1, name: "Harbour", kind: "dark", colors: { "app-bg": "#10161c" } }),
+  );
+  const paper = parseThemeText(
+    JSON.stringify({ version: 1, name: "Paper", kind: "light", colors: { "app-bg": "#fdf6e3" } }),
+  );
+  const appBg = () => themeColorToHex(root.style.getPropertyValue("--color-app-bg"));
+
+  beforeEach(() =>
+    useThemeStore.setState({
+      mode: "system",
+      choices: { light: "pheeme-light", dark: "pheeme-dark" },
+      customThemes: [],
+    }),
+  );
+
+  test("installing a theme saves it, picks it for its kind and shows it", () => {
+    mockSystemDark(false);
+    const onChange = vi.fn();
+    const stop = initTheme(onChange);
+    useThemeStore.getState().installThemes([harbour]);
+    expect(useThemeStore.getState()).toMatchObject({ mode: "dark", resolved: "dark" });
+    expect(appBg()).toBe("#10161c");
+    expect(onChange).toHaveBeenLastCalledWith("dark", expect.objectContaining({ id: "harbour" }));
+    expect(JSON.parse(localStorage.getItem(CUSTOM_THEMES_KEY)!)).toEqual([harbour]);
+    expect(localStorage.getItem(THEME_CHOICE_KEYS.dark)).toBe("harbour");
+    expect(JSON.parse(localStorage.getItem(THEME_BOOT_KEY)!)).toEqual({
+      light: "#ffffff",
+      dark: "#10161c",
+    });
+    stop();
+  });
+
+  test("importing a light and a dark theme together picks both", () => {
+    mockSystemDark(false);
+    const stop = initTheme();
+    useThemeStore.getState().installThemes([paper, harbour]);
+    expect(useThemeStore.getState().choices).toEqual({ light: "paper", dark: "harbour" });
+    expect(useThemeStore.getState().mode).toBe("dark");
+    useThemeStore.getState().setMode("light");
+    expect(appBg()).toBe("#fdf6e3");
+    stop();
+  });
+
+  test("a theme for the kind already showing keeps the mode", () => {
+    mockSystemDark(false);
+    const stop = initTheme();
+    useThemeStore.getState().installThemes([paper]);
+    expect(useThemeStore.getState().mode).toBe("system");
+    expect(appBg()).toBe("#fdf6e3");
+    stop();
+  });
+
+  test("installed themes and choices come back on the next launch", () => {
+    mockSystemDark(true);
+    localStorage.setItem(CUSTOM_THEMES_KEY, JSON.stringify([harbour, paper]));
+    localStorage.setItem(THEME_CHOICE_KEYS.dark, "harbour");
+    const stop = initTheme();
+    expect(useThemeStore.getState().customThemes).toEqual([harbour, paper]);
+    expect(appBg()).toBe("#10161c");
+    expect(themeOptions("dark", useThemeStore.getState().customThemes)).toEqual([
+      { id: "pheeme-dark", name: "Pheeme Dark", custom: false },
+      { id: "harbour", name: "Harbour", custom: true },
+    ]);
+    stop();
+  });
+
+  test("a stored theme that no longer validates is skipped, and a missing choice falls back", () => {
+    mockSystemDark(true);
+    const broken = { ...harbour, id: "dark" } as ThemeFile;
+    localStorage.setItem(CUSTOM_THEMES_KEY, JSON.stringify([broken, paper]));
+    localStorage.setItem(THEME_CHOICE_KEYS.dark, "dark");
+    const stop = initTheme();
+    expect(useThemeStore.getState().customThemes).toEqual([paper]);
+    expect(root.style.getPropertyValue("--color-app-bg")).toBe(darkTheme.tokens["--color-app-bg"]);
+    stop();
+  });
+
+  test("re-importing a theme replaces it rather than adding a second", () => {
+    mockSystemDark(true);
+    const stop = initTheme();
+    useThemeStore.getState().installThemes([harbour]);
+    const updated = { ...harbour, colors: { "app-bg": "oklch(0.3 0 0)" } };
+    useThemeStore.getState().installThemes([updated]);
+    expect(useThemeStore.getState().customThemes).toEqual([updated]);
+    expect(root.style.getPropertyValue("--color-app-bg")).toBe("oklch(0.3 0 0)");
+    stop();
+  });
+
+  test("removing the theme in use goes back to the built-in theme", () => {
+    mockSystemDark(true);
+    const stop = initTheme();
+    useThemeStore.getState().installThemes([harbour]);
+    useThemeStore.getState().removeTheme("harbour");
+    expect(useThemeStore.getState().customThemes).toEqual([]);
+    expect(useThemeStore.getState().choices.dark).toBe("pheeme-dark");
+    expect(localStorage.getItem(THEME_CHOICE_KEYS.dark)).toBe("pheeme-dark");
+    expect(root.style.getPropertyValue("--color-app-bg")).toBe(darkTheme.tokens["--color-app-bg"]);
+    stop();
+  });
+
+  test("choosing a theme for the other kind doesn't change what's showing", () => {
+    mockSystemDark(false);
+    const stop = initTheme();
+    useThemeStore.setState({ customThemes: [harbour] });
+    useThemeStore.getState().chooseTheme("dark", "harbour");
+    expect(appBg()).toBe("#ffffff");
+    useThemeStore.getState().toggle();
+    expect(appBg()).toBe("#10161c");
+    stop();
+  });
+
+  test("a theme that can't be saved isn't installed", () => {
+    mockSystemDark(false);
+    const stop = initTheme();
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
+    expect(() => useThemeStore.getState().installThemes([harbour])).toThrow(/storage is full/);
+    expect(useThemeStore.getState().customThemes).toEqual([]);
+    vi.restoreAllMocks();
+    stop();
+  });
+
+  test("serialized files load back as the same theme", () => {
+    expect(parseThemeText(serializeThemeFile(harbour))).toEqual(harbour);
+  });
+});
+
 describe("live system changes", () => {
   test("System mode follows prefers-color-scheme as it changes", () => {
     const setDark = mockSystemDark(false);
@@ -135,120 +272,11 @@ describe("theme files", () => {
     }
   });
 
-  type Token = keyof typeof lightTheme.tokens;
-  // Every text color on each surface it is drawn on: WCAG AA, 4.5:1. Translucent surfaces sit on the pane.
-  const TEXT: [Token, Token[]][] = [
-    [
-      "--color-foreground",
-      [
-        "--color-app-bg",
-        "--color-list-hover-bg",
-        "--color-list-inactive-bg",
-        "--color-selection-bg",
-        "--color-control-hover-bg",
-        "--color-control-active-bg",
-      ],
-    ],
-    ["--color-sidebar-foreground", ["--color-sidebar-bg"]],
-    ...(["--color-foreground-muted", "--color-foreground-subtle"] as const).map(
-      (muted): [Token, Token[]] => [
-        muted,
-        [
-          "--color-pane-bg",
-          "--color-sidebar-bg",
-          "--color-badge-bg",
-          "--color-list-active-bg",
-          "--color-list-hover-bg",
-          "--color-list-inactive-bg",
-          "--color-menu-bg",
-        ],
-      ],
-    ),
-    ["--color-link", ["--color-pane-bg", "--color-list-active-bg"]],
-    ["--color-accent-foreground", ["--color-accent", "--color-accent-hover"]],
-    [
-      "--color-button-secondary-foreground",
-      ["--color-button-secondary-bg", "--color-button-secondary-hover-bg"],
-    ],
-    ["--color-input-foreground", ["--color-input-bg"]],
-    ["--color-input-placeholder", ["--color-input-bg"]],
-    ["--color-list-active-foreground", ["--color-list-active-bg"]],
-    ["--color-list-highlight-foreground", ["--color-pane-bg"]],
-    ["--color-badge-foreground", ["--color-badge-bg"]],
-    ["--color-badge-accent-foreground", ["--color-badge-accent-bg"]],
-    ["--color-kbd-foreground", ["--color-kbd-bg"]],
-    ["--color-menu-foreground", ["--color-menu-bg"]],
-    ["--color-menu-selection-foreground", ["--color-menu-selection-bg"]],
-    ["--color-palette-foreground", ["--color-palette-bg"]],
-    ["--color-palette-active-foreground", ["--color-palette-active-bg"]],
-    ["--color-toast-foreground", ["--color-toast-bg"]],
-    ["--color-toast-danger-foreground", ["--color-toast-bg"]],
-    ["--color-danger", ["--color-pane-bg", "--color-menu-bg"]],
-    ["--color-warning", ["--color-pane-bg"]],
-    ["--color-success", ["--color-pane-bg"]],
-    ["--color-info", ["--color-pane-bg"]],
-    ["--color-avatar-foreground", [1, 2, 3, 4, 5, 6].map((i) => `--color-avatar-${i}` as Token)],
-  ];
-  // Indicators that aren't text: 3:1 (WCAG non-text contrast).
-  const NON_TEXT: [Token, Token[]][] = [
-    ["--color-focus-border", ["--color-pane-bg"]],
-    ["--color-unread-indicator", ["--color-pane-bg", "--color-list-active-bg"]],
-    ...[1, 2, 3, 4, 5, 6].map((i): [Token, Token[]] => [
-      `--color-account-${i}` as Token,
-      ["--color-sidebar-bg"],
-    ]),
-  ];
-
-  test.each([lightTheme, darkTheme])("$name keeps every foreground readable", (theme) => {
-    const t = theme.tokens;
-    const failures = [
-      ...TEXT.map((p) => [...p, 4.5] as const),
-      ...NON_TEXT.map((p) => [...p, 3] as const),
-    ]
-      .flatMap(([fg, bgs, min]) =>
-        bgs.map((bg) => ({
-          pair: `${fg} on ${bg}`,
-          ratio: contrastRatio(t[fg], t[bg], t["--color-pane-bg"]),
-          min,
-        })),
-      )
-      .filter(({ ratio, min }) => ratio < min)
-      .map(({ pair, ratio }) => `${pair}: ${ratio.toFixed(2)}`);
-    expect(failures).toEqual([]);
-  });
-
   test.each([lightTheme, darkTheme])(
-    "$name keeps disabled controls dimmer than enabled secondary text",
+    "$name keeps every foreground readable (contrast.ts)",
     (theme) => {
-      const t = theme.tokens;
-      const onPane = (token: Token) => contrastRatio(t[token], t["--color-pane-bg"]);
-      expect(onPane("--color-foreground-muted")).toBeGreaterThanOrEqual(
-        onPane("--color-foreground-subtle"),
-      );
-      expect(onPane("--color-foreground-subtle")).toBeGreaterThan(
-        onPane("--color-foreground-disabled"),
-      );
-    },
-  );
-
-  test.each([lightTheme, darkTheme])(
-    "$name mailbox colors read as text on the sidebar, selected or not",
-    (theme) => {
-      const t = theme.tokens;
-      // --sidebar-selected-tint in tokens.css (vitest doesn't load CSS, so it is repeated here).
-      const tint = 0.12;
-      const tokens = Object.keys(THEME_TOKENS).filter((k): k is Token =>
-        k.startsWith("--color-mailbox-"),
-      );
-      expect(tokens).toHaveLength(11);
-      for (const token of tokens) {
-        const selected = withAlpha(t[token], tint);
-        expect(contrastRatio(t[token], t["--color-sidebar-bg"]), token).toBeGreaterThanOrEqual(4.5);
-        expect(
-          contrastRatio(t[token], selected, t["--color-sidebar-bg"]),
-          `${token} selected`,
-        ).toBeGreaterThanOrEqual(4.5);
-      }
+      expect(MAILBOX_TOKENS).toHaveLength(11);
+      expect(contrastFailures(theme.tokens)).toEqual([]);
     },
   );
 });
@@ -273,12 +301,30 @@ describe("no white flash", () => {
     expect(root.hasAttribute("data-theme")).toBe(false);
   });
 
+  test("boot script paints the chosen custom theme's background", () => {
+    localStorage.setItem(THEME_MODE_KEY, "dark");
+    localStorage.setItem(THEME_BOOT_KEY, JSON.stringify({ light: "#ffffff", dark: "#10161c" }));
+    new Function(bootScript)();
+    expect(root.style.getPropertyValue("--color-app-bg")).toBe("#10161c");
+  });
+
+  test("boot script follows the OS for System, and ignores a malformed color", () => {
+    mockSystemDark(false);
+    localStorage.setItem(THEME_BOOT_KEY, JSON.stringify({ light: "#fdf6e3", dark: "#10161c" }));
+    new Function(bootScript)();
+    expect(root.style.getPropertyValue("--color-app-bg")).toBe("#fdf6e3");
+    root.removeAttribute("style");
+    localStorage.setItem(THEME_BOOT_KEY, JSON.stringify({ light: "red; color: blue" }));
+    new Function(bootScript)();
+    expect(root.style.getPropertyValue("--color-app-bg")).toBe("");
+  });
+
   test("critical style colors match each theme's app background", () => {
     expect(criticalStyle).toContain(
-      `html[data-theme="light"] { background: ${themeColorToHex(lightTheme.tokens["--color-app-bg"])};`,
+      `html[data-theme="light"] { background: var(--color-app-bg, ${themeColorToHex(lightTheme.tokens["--color-app-bg"])});`,
     );
     expect(criticalStyle).toContain(
-      `html[data-theme="dark"] { background: ${themeColorToHex(darkTheme.tokens["--color-app-bg"])};`,
+      `html[data-theme="dark"] { background: var(--color-app-bg, ${themeColorToHex(darkTheme.tokens["--color-app-bg"])});`,
     );
   });
 

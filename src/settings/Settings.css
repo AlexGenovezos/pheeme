@@ -472,6 +472,20 @@
   color: var(--color-input-foreground);
 }
 
+/* A dropdown in a settings row (Appearance › Light theme). */
+.settings-select {
+  max-width: var(--settings-select-max-width);
+  padding: var(--space-0-5) var(--space-1);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+  color: var(--color-input-foreground);
+}
+.settings-select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--border-width) var(--color-focus-border);
+}
+
 .settings-diagnostics__actions {
   display: flex;
   flex-wrap: wrap;

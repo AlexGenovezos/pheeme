@@ -130,6 +130,8 @@
   --kbmap-tip-max-width: 280px;
   /* A numeric settings field, e.g. the Gmail API limit ("1,200,000 / min"). */
   --settings-number-width: 140px;
+  /* A dropdown in a settings row, e.g. Appearance › Light theme. */
+  --settings-select-max-width: 220px;
   --chord-hint-offset: 12px;
   /* Compose panels, docked to the bottom of the window. */
   --compose-width: 560px;

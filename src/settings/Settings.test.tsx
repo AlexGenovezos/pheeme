@@ -1,10 +1,11 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { KEYBINDINGS_KEY } from "../keyboard/bindings";
 import { registry } from "../keyboard/registry";
 import { useGlobalShortcuts } from "../keyboard/useCommands";
 import { useAccountStore } from "../store/accountStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
+import { useToastStore } from "../components/ui/Toast";
 import { useThemeStore } from "../theme/theme";
 import { SEQUENCE_WAIT_MS } from "./KeyboardSettings";
 import { Settings } from "./Settings";
@@ -107,6 +108,57 @@ test("Appearance sets the theme mode and the sidebar", () => {
 
   fireEvent.click(within(dialog()).getByRole("switch", { name: "Show sidebar" }));
   expect(useUiStore.getState().sidebarCollapsed).toBe(true);
+});
+
+test("Appearance imports a VS Code theme, picks it, and removes it", async () => {
+  useThemeStore.setState({
+    mode: "light",
+    resolved: "light",
+    choices: { light: "pheeme-light", dark: "pheeme-dark" },
+    customThemes: [],
+  });
+  render(<Harness />);
+  open("appearance");
+  const vsCode = new File(
+    [
+      `{ // VS Code themes allow comments
+        "name": "Night Harbour", "type": "dark",
+        "colors": { "editor.background": "#10161c", "button.background": "#3a7bd5", } }`,
+    ],
+    "night-harbour-color-theme.json",
+    { type: "application/json" },
+  );
+  const broken = new File(["{ nope"], "broken.json", { type: "application/json" });
+  await act(async () => {
+    fireEvent.change(within(dialog()).getByTestId("theme-file-input"), {
+      target: { files: [vsCode, broken] },
+    });
+  });
+
+  await waitFor(() =>
+    expect(useThemeStore.getState()).toMatchObject({ mode: "dark", resolved: "dark" }),
+  );
+  const darkSelect = within(dialog()).getByRole("combobox", { name: "Dark theme" });
+  expect(darkSelect).toHaveValue("night-harbour");
+  expect(
+    within(darkSelect)
+      .getAllByRole("option")
+      .map((o) => o.textContent),
+  ).toEqual(["Pheeme Dark", "Night Harbour"]);
+  const toasts = useToastStore.getState().toasts;
+  expect(toasts.map((t) => t.title)).toEqual(
+    expect.arrayContaining(["Installed Night Harbour", "Couldn't import the theme"]),
+  );
+  expect(toasts.find((t) => t.tone === "danger")?.description).toMatch(
+    /broken\.json isn't valid JSON/,
+  );
+
+  fireEvent.change(darkSelect, { target: { value: "pheeme-dark" } });
+  expect(useThemeStore.getState().choices.dark).toBe("pheeme-dark");
+  fireEvent.change(darkSelect, { target: { value: "night-harbour" } });
+  fireEvent.click(within(dialog()).getByRole("button", { name: "Remove Night Harbour" }));
+  expect(useThemeStore.getState().customThemes).toEqual([]);
+  expect(darkSelect).toHaveValue("pheeme-dark");
 });
 
 test("Appearance changes and persists the reading size", () => {
