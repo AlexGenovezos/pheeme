@@ -56,6 +56,7 @@ import { composeNew } from "../mail/actions";
 import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
 import { type SyncFailure, useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
+import { focusFromKeyboard } from "../keyboard/focus";
 import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import { useSettingsStore } from "../settings/settingsStore";
@@ -103,7 +104,7 @@ function onMailboxKeyDown(e: KeyboardEvent<HTMLElement>) {
     const next = at >= 0 ? rows[at + (down ? 1 : -1)] : nearest(rows, target, down);
     e.preventDefault();
     if (!next) return;
-    next.focus();
+    focusFromKeyboard(next);
     next.click();
   }
 }
@@ -114,7 +115,7 @@ function focusOpenMailbox(): boolean {
   const row =
     nav?.querySelector<HTMLElement>(`${MAILBOX_ROW}[data-selected]`) ??
     nav?.querySelector<HTMLElement>(MAILBOX_ROW);
-  row?.focus();
+  focusFromKeyboard(row);
   return Boolean(row);
 }
 

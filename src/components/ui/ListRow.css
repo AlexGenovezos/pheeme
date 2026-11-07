@@ -27,7 +27,8 @@
   background: var(--color-accent);
 }
 
-.ui-row:focus-visible {
+.ui-row:focus-visible,
+.ui-row[data-key-focus]:focus {
   outline: var(--focus-ring-width) solid var(--color-focus-border);
   outline-offset: var(--focus-ring-inset);
 }

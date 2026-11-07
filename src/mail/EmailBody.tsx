@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { Button } from "../components/ui/Button";
-import { registry, type CommandRegistry } from "../keyboard/registry";
+import { isEditableTarget, registry, type CommandRegistry } from "../keyboard/registry";
 import type { CommandError, MessageDetail, ThreadLoading as Loading } from "../lib/tauri";
 import { useThemeStore } from "../theme/theme";
 import { linkify, openLink } from "./linkify";
@@ -120,6 +120,9 @@ export function HtmlBody({ html, declaresDark }: HtmlBodyProps) {
     </div>
   );
 }
+
+/** The email frame the user last clicked into, whose selection mod+c copies. */
+let lastFocusedFrame: HTMLIFrameElement | null = null;
 
 const OPENABLE = new Set(["http:", "https:", "mailto:"]);
 
@@ -280,6 +283,36 @@ function watchFrame(
   doc.addEventListener("load", onContentLoad, true);
   doc.addEventListener("error", onContentLoad, true);
 
+  // WebKit (the macOS app) runs none of the listeners on `doc` while the frame is sandboxed without scripts,
+  // and a click into the email focuses the frame, after which no key reaches the app (Left, j/k, ...). There,
+  // focus goes straight back to the reading pane; a selection made in the frame survives that.
+  const host = iframe.ownerDocument;
+  let listenersRun = false;
+  const probe = () => (listenersRun = true);
+  doc.addEventListener("pheeme-probe", probe);
+  doc.dispatchEvent(new Event("pheeme-probe"));
+  doc.removeEventListener("pheeme-probe", probe);
+  const onHostBlur = () =>
+    setTimeout(() => {
+      if (host.activeElement !== iframe) return;
+      lastFocusedFrame = iframe;
+      iframe.parentElement?.closest<HTMLElement>("[tabindex]")?.focus({ preventScroll: true });
+    });
+  // With focus out of the frame, the native copy reads the app's selection; copy the email's instead.
+  const onHostKeyDown = (event: KeyboardEvent) => {
+    if (lastFocusedFrame !== iframe || event.altKey || event.shiftKey) return;
+    if (isEditableTarget(event.target)) return; // a text field's own selection
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "c") return;
+    if (doc.getSelection()?.isCollapsed !== false || host.getSelection()?.isCollapsed === false)
+      return;
+    if (doc.execCommand("copy")) event.preventDefault();
+  };
+
+  if (!listenersRun) {
+    host.defaultView?.addEventListener("blur", onHostBlur);
+    host.defaultView?.addEventListener("keydown", onHostKeyDown, true);
+  }
+
   let observer: ResizeObserver | null = null;
   if (typeof ResizeObserver === "function") {
     observer = new ResizeObserver(onResize);
@@ -295,6 +328,9 @@ function watchFrame(
     doc.removeEventListener("click", onClick, true);
     doc.removeEventListener("auxclick", onClick, true);
     doc.removeEventListener("keydown", onKeyDown);
+    host.defaultView?.removeEventListener("blur", onHostBlur);
+    host.defaultView?.removeEventListener("keydown", onHostKeyDown, true);
+    if (lastFocusedFrame === iframe) lastFocusedFrame = null;
     doc.removeEventListener("load", onContentLoad, true);
     doc.removeEventListener("error", onContentLoad, true);
   };

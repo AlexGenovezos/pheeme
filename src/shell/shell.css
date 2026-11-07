@@ -537,8 +537,10 @@ body[data-resizing] .shell__divider:active::after {
 .list-pane__scroll:focus-visible {
   outline: none;
 }
-.list-pane__scroll:focus-visible .thread-row[data-selected],
-.list-pane__scroll:focus-visible:not(:has(.thread-row[data-selected])) {
+.list-pane__scroll:is(:focus-visible, [data-key-focus]:focus) .thread-row[data-selected],
+.list-pane__scroll:is(:focus-visible, [data-key-focus]:focus):not(
+    :has(.thread-row[data-selected])
+  ) {
   outline: var(--focus-ring-width) solid var(--color-focus-border);
   outline-offset: var(--focus-ring-inset);
 }
@@ -574,7 +576,7 @@ body[data-resizing] .shell__divider:active::after {
 .view-pane__scroll:focus-visible {
   outline: none;
 }
-.view-pane__frame:has(> .view-pane__scroll:focus-visible)::after {
+.view-pane__frame:has(> .view-pane__scroll:is(:focus-visible, [data-key-focus]:focus))::after {
   content: "";
   position: absolute;
   z-index: 1;
