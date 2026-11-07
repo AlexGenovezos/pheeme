@@ -34,6 +34,8 @@ pub struct AppState {
     pub compose: compose::ComposeService,
     pub sync: Arc<SyncManager>,
     pub transfers: transfer::TransferService,
+    /// The Gmail per-user limit every account's client paces itself by (Settings › Sync).
+    pub gmail_quota: gmail::QuotaSetting,
 }
 
 /// Build application state: open the database in `data_dir` (attachment bytes are cached
@@ -50,10 +52,16 @@ pub async fn build_state(
         .await
         .with_context(|| format!("failed to initialize database in {}", data_dir.display()))?;
     let accounts = Arc::new(accounts::AccountService::new(db.clone(), secrets));
+    let gmail_quota = match db::settings::gmail_quota(&db).await? {
+        Some(per_minute) => gmail::QuotaSetting::new(per_minute),
+        None => gmail::QuotaSetting::default(),
+    };
     let tokens = accounts.clone();
+    let quota = gmail_quota.clone();
     let api_for: sync::manager::ApiFactory = Arc::new(move |account_id: &str| {
         let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
-        Arc::new(gmail::GmailClient::new(provider)) as Arc<dyn sync::MailApi>
+        Arc::new(gmail::GmailClient::new(provider).with_quota_setting(&quota))
+            as Arc<dyn sync::MailApi>
     });
     let sync = SyncManager::new(db.clone(), api_for, events);
     let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
@@ -66,6 +74,7 @@ pub async fn build_state(
         compose,
         sync,
         transfers: transfer::TransferService::default(),
+        gmail_quota,
     })
 }
 
@@ -251,6 +260,8 @@ pub fn run() {
             commands::settings::desktop_settings,
             commands::settings::set_account_notifications,
             commands::settings::take_notification_target,
+            commands::settings::gmail_quota,
+            commands::settings::set_gmail_quota,
             commands::mods::list_mods,
             commands::mods::prepare_mod_install,
             commands::mods::discard_mod_install,

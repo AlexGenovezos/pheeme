@@ -11,6 +11,7 @@ use rand::Rng;
 use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Semaphore;
@@ -28,16 +29,56 @@ pub(crate) const MAX_BACKGROUND_REQUESTS: usize = MAX_CONCURRENT_REQUESTS - 2;
 /// Slots bulk work (the mailbox backfill) may hold, so sync always has some of its own.
 pub(crate) const MAX_BULK_REQUESTS: usize = MAX_BACKGROUND_REQUESTS - 4;
 
-/// Quota units per second each client may spend. Gmail's per-user limit is 6,000 units per
-/// minute for current projects (it was 15,000), enforced per minute; beyond it Gmail answers
-/// 403 `rateLimitExceeded`. 80/s (4,800 a minute) leaves headroom for the user's other
-/// clients, and the limiter backs off further if Gmail still objects.
-pub const QUOTA_UNITS_PER_SEC: u32 = 80;
+/// Gmail's per-user limit in quota units per minute: 6,000 for current projects (it was
+/// 15,000), enforced per minute; beyond it Gmail answers 403 `rateLimitExceeded`. Google Cloud
+/// Console shows it as the Gmail API's "Units per minute per user" quota, and a user who has it
+/// raised enters the new value in Settings ([`QuotaSetting`]).
+pub const DEFAULT_QUOTA_PER_MINUTE: u32 = 6_000;
+/// The range Settings accepts: below 600 even sync crawls; above the project-wide quota
+/// (1,200,000) no single user gets more.
+pub const QUOTA_PER_MINUTE_RANGE: std::ops::RangeInclusive<u32> = 600..=1_200_000;
 
-/// The share of [`QUOTA_UNITS_PER_SEC`] bulk work may spend (2,400 units a minute). Kept well
-/// under Gmail's limit, the backfill doesn't trip it, so sync, sends and opening mail aren't
-/// refused for quota the backfill used up.
-pub const BULK_QUOTA_UNITS_PER_SEC: u32 = 40;
+/// The share of the limit each client spends (4,800 units a minute at the default). It leaves
+/// headroom for the user's other clients, and the limiter backs off further if Gmail still objects.
+const CLIENT_SHARE: f64 = 0.8;
+/// The share bulk work (the backfill) may spend (2,400 a minute at the default). Kept well under
+/// the limit, the backfill doesn't trip it, so sync, sends and opening mail aren't refused for
+/// quota the backfill used up.
+const BULK_SHARE: f64 = 0.4;
+
+/// The user's Gmail per-user limit (units per minute), shared by every account's client so a
+/// change in Settings applies at once.
+#[derive(Debug, Clone)]
+pub struct QuotaSetting(Arc<AtomicU32>);
+
+impl QuotaSetting {
+    /// `per_minute` is clamped to [`QUOTA_PER_MINUTE_RANGE`].
+    pub fn new(per_minute: u32) -> Self {
+        let setting = Self(Arc::new(AtomicU32::new(0)));
+        setting.set(per_minute);
+        setting
+    }
+
+    pub fn get(&self) -> u32 {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    /// Store `per_minute` clamped to [`QUOTA_PER_MINUTE_RANGE`]; returns what was stored.
+    pub fn set(&self, per_minute: u32) -> u32 {
+        let clamped = per_minute.clamp(
+            *QUOTA_PER_MINUTE_RANGE.start(),
+            *QUOTA_PER_MINUTE_RANGE.end(),
+        );
+        self.0.store(clamped, Ordering::Relaxed);
+        clamped
+    }
+}
+
+impl Default for QuotaSetting {
+    fn default() -> Self {
+        Self::new(DEFAULT_QUOTA_PER_MINUTE)
+    }
+}
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -98,7 +139,9 @@ fn jittered(delay: Duration) -> Duration {
 /// minute, so a fixed rate either wastes quota or keeps tripping it, and recovering much faster
 /// trips it again.
 struct QuotaLimiter {
-    max_rate: f64,
+    /// Units per second at full speed: `share` of a per-minute limit that may change.
+    limit: Arc<AtomicU32>,
+    share: f64,
     state: std::sync::Mutex<Pace>,
 }
 
@@ -113,14 +156,25 @@ const QUOTA_BURST: Duration = Duration::from_secs(1);
 const QUOTA_RECOVERY: Duration = Duration::from_secs(60);
 
 impl QuotaLimiter {
-    fn new(units_per_sec: u32) -> Self {
+    fn new(limit: &QuotaSetting, share: f64) -> Self {
         Self {
-            max_rate: f64::from(units_per_sec.max(1)),
+            limit: limit.0.clone(),
+            share,
             state: std::sync::Mutex::new(Pace {
                 next: Instant::now(),
                 cut: None,
             }),
         }
+    }
+
+    /// A fixed rate, for tests.
+    fn fixed(units_per_sec: u32) -> Self {
+        let limit = Arc::new(AtomicU32::new(units_per_sec.saturating_mul(60)));
+        Self::new(&QuotaSetting(limit), 1.0)
+    }
+
+    fn max_rate(&self) -> f64 {
+        (f64::from(self.limit.load(Ordering::Relaxed)) / 60.0 * self.share).max(0.1)
     }
 
     fn pace(&self) -> std::sync::MutexGuard<'_, Pace> {
@@ -131,12 +185,13 @@ impl QuotaLimiter {
 
     /// Units per second allowed at `now`.
     fn rate_at(&self, pace: &Pace, now: Instant) -> f64 {
+        let max_rate = self.max_rate();
         match pace.cut {
-            None => self.max_rate,
+            None => max_rate,
             Some((rate, at)) => {
-                let regained = self.max_rate * now.duration_since(at).as_secs_f64()
-                    / QUOTA_RECOVERY.as_secs_f64();
-                (rate + regained).min(self.max_rate)
+                let regained =
+                    max_rate * now.duration_since(at).as_secs_f64() / QUOTA_RECOVERY.as_secs_f64();
+                (rate + regained).min(max_rate)
             }
         }
     }
@@ -165,7 +220,7 @@ impl QuotaLimiter {
         {
             return;
         }
-        let rate = (self.rate_at(&pace, now) / 2.0).max(self.max_rate / 20.0);
+        let rate = (self.rate_at(&pace, now) / 2.0).max(self.max_rate() / 20.0);
         pace.cut = Some((rate, now));
         pace.next = pace.next.max(now) + QUOTA_BURST;
     }
@@ -340,8 +395,8 @@ impl GmailClient {
             permits: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
             background_permits: Arc::new(Semaphore::new(MAX_BACKGROUND_REQUESTS)),
             bulk_permits: Arc::new(Semaphore::new(MAX_BULK_REQUESTS)),
-            quota: Arc::new(QuotaLimiter::new(QUOTA_UNITS_PER_SEC)),
-            bulk_quota: Arc::new(QuotaLimiter::new(BULK_QUOTA_UNITS_PER_SEC)),
+            quota: Arc::new(QuotaLimiter::new(&QuotaSetting::default(), CLIENT_SHARE)),
+            bulk_quota: Arc::new(QuotaLimiter::new(&QuotaSetting::default(), BULK_SHARE)),
         }
     }
 
@@ -358,13 +413,20 @@ impl GmailClient {
 
     /// Change the quota pacing (tests use a low rate to observe it).
     pub fn with_quota(mut self, units_per_sec: u32) -> Self {
-        self.quota = Arc::new(QuotaLimiter::new(units_per_sec));
+        self.quota = Arc::new(QuotaLimiter::fixed(units_per_sec));
+        self
+    }
+
+    /// Pace by the user's Gmail limit, following later changes to it.
+    pub fn with_quota_setting(mut self, limit: &QuotaSetting) -> Self {
+        self.quota = Arc::new(QuotaLimiter::new(limit, CLIENT_SHARE));
+        self.bulk_quota = Arc::new(QuotaLimiter::new(limit, BULK_SHARE));
         self
     }
 
     /// Change the pacing of background requests (tests observe it at a low rate).
     pub fn with_background_quota(mut self, units_per_sec: u32) -> Self {
-        self.bulk_quota = Arc::new(QuotaLimiter::new(units_per_sec));
+        self.bulk_quota = Arc::new(QuotaLimiter::fixed(units_per_sec));
         self
     }
 
@@ -1016,7 +1078,7 @@ mod tests {
 
     #[test]
     fn rate_limits_halve_the_pace_and_time_restores_it() {
-        let limiter = QuotaLimiter::new(200);
+        let limiter = QuotaLimiter::fixed(200);
         limiter.rate_limited();
         assert!((limiter.rate() - 100.0).abs() < 1.0);
         limiter.rate_limited(); // same burst of rejections: no second cut
@@ -1109,5 +1171,43 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, GmailError::RateLimit { .. }), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn a_changed_quota_setting_applies_to_running_clients() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        // 750 a minute: the client's 80% is 10 units a second, as in the test above.
+        let setting = QuotaSetting::new(750);
+        let client = client_for(&server).0.with_quota_setting(&setting);
+        let gets = || async {
+            let started = Instant::now();
+            for _ in 0..4 {
+                let _: Value = client
+                    .send_json(ApiRequest::get(&["messages", "m1"]))
+                    .await
+                    .unwrap();
+            }
+            started.elapsed()
+        };
+        let slow = gets().await;
+        assert!(slow >= Duration::from_millis(450), "waited only {slow:?}");
+
+        setting.set(600_000);
+        // Let the slots already booked at the old rate pass.
+        tokio::time::sleep(Duration::from_millis(1600)).await;
+        let fast = gets().await;
+        assert!(fast < Duration::from_millis(400), "still paced: {fast:?}");
+    }
+
+    #[test]
+    fn quota_setting_stays_in_range() {
+        let setting = QuotaSetting::new(10);
+        assert_eq!(setting.get(), 600);
+        assert_eq!(setting.set(u32::MAX), 1_200_000);
+        assert_eq!(QuotaSetting::default().get(), 6_000);
     }
 }

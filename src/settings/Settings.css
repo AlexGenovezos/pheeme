@@ -239,6 +239,10 @@
   flex-shrink: 0;
 }
 
+.settings-quota {
+  width: var(--settings-number-width);
+}
+
 .settings-empty {
   margin: var(--space-0);
   padding: var(--space-2);

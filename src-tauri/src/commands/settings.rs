@@ -1,7 +1,8 @@
-//! Desktop preferences and queued notification navigation.
+//! Desktop preferences, the Gmail quota, and queued notification navigation.
 use super::CommandError;
 use crate::desktop::{self, DesktopSettings, ThreadTarget};
-use tauri::AppHandle;
+use crate::AppState;
+use tauri::{AppHandle, State};
 
 fn error(error: anyhow::Error) -> CommandError {
     CommandError {
@@ -29,4 +30,27 @@ pub async fn set_account_notifications(
 #[tauri::command]
 pub fn take_notification_target(app: AppHandle) -> Option<ThreadTarget> {
     desktop::take_target(&app)
+}
+
+/// The Gmail per-user limit (quota units per minute) sync paces itself by.
+#[tauri::command]
+pub fn gmail_quota(state: State<'_, AppState>) -> u32 {
+    state.gmail_quota.get()
+}
+
+/// Change the Gmail limit; every account's client follows at once. Out-of-range values are
+/// clamped, and the stored value is returned.
+#[tauri::command]
+pub async fn set_gmail_quota(
+    state: State<'_, AppState>,
+    per_minute: u32,
+) -> Result<u32, CommandError> {
+    let stored = crate::gmail::QuotaSetting::new(per_minute).get();
+    crate::db::settings::set_gmail_quota(&state.db, stored)
+        .await
+        .map_err(|e| CommandError {
+            code: "settings".into(),
+            message: e.to_string(),
+        })?;
+    Ok(state.gmail_quota.set(stored))
 }

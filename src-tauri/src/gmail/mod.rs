@@ -11,7 +11,7 @@ pub mod threads;
 pub mod types;
 pub mod user;
 
-pub use client::{GmailClient, RetryPolicy, TokenProvider};
+pub use client::{GmailClient, QuotaSetting, RetryPolicy, TokenProvider};
 pub use error::GmailError;
 pub use mime::{ParsedAttachment, ParsedMessage};
 pub use types::MessageFormat;
