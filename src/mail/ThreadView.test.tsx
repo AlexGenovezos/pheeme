@@ -153,6 +153,24 @@ test("clicking a collapsed card expands it, and the chevron collapses it", () =>
   expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
 });
 
+test("clicking an expanded card's header collapses it, but not its text or a drag", () => {
+  open(detail([message(1), message(2)]));
+  renderView();
+  const header = () => within(card(1)).getByRole("banner");
+
+  fireEvent.click(within(card(1)).getByRole("button"));
+  fireEvent.click(within(card(1)).getByText("Sender 1"));
+  expect(screen.getByText("Body 1")).toBeInTheDocument();
+
+  fireEvent.mouseDown(header(), { clientX: 10, clientY: 10 });
+  fireEvent.click(header(), { clientX: 80, clientY: 10 });
+  expect(screen.getByText("Body 1")).toBeInTheDocument();
+
+  fireEvent.mouseDown(header(), { clientX: 80, clientY: 10 });
+  fireEvent.click(header(), { clientX: 80, clientY: 10 });
+  expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
+});
+
 test("a collapsed HTML message only mounts its images when expanded", () => {
   open(
     detail([
