@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   CHECK_FOR_UPDATES_EVENT,
   CHECK_INTERVAL_MS,
+  RETRY_MS,
   __resetForTests,
   checkForUpdatesNow,
   displayVersion,
@@ -25,8 +26,13 @@ function fakeDeps(check: UpdaterDeps["check"]) {
   return { check: vi.fn(check), relaunch: vi.fn(async () => {}), report: vi.fn() };
 }
 
-function fakeUpdate(install: PendingUpdate["install"] = async () => {}) {
-  return { version: "0.2.0", install: vi.fn(install) };
+function fakeUpdate(install: PendingUpdate["install"] = async () => {}, version = "0.2.0") {
+  return { version, install: vi.fn(install), close: vi.fn(async () => {}) };
+}
+
+/** The computer sleeps: the clock moves on but no timers fire. */
+function sleepFor(ms: number) {
+  vi.setSystemTime(Date.now() + ms);
 }
 
 beforeEach(() => {
@@ -54,11 +60,112 @@ test("stores the available version", async () => {
   expect(useUpdateStore.getState().available).toBe("0.2.0");
 });
 
-test("stops checking once an update is available", async () => {
-  const deps = fakeDeps(async () => fakeUpdate());
+test("keeps checking after an update is found and offers a newer release", async () => {
+  const first = fakeUpdate(undefined, "0.2.0");
+  const newer = fakeUpdate(undefined, "0.3.0");
+  const deps = fakeDeps(async () => first);
   stop = startUpdateChecks(deps);
-  await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS * 3);
+  await vi.advanceTimersByTimeAsync(0);
+  deps.check.mockImplementation(async () => newer);
+  await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+  expect(deps.check).toHaveBeenCalledTimes(2);
+  expect(useUpdateStore.getState().available).toBe("0.3.0");
+  expect(first.close).toHaveBeenCalled();
+
+  await useUpdateStore.getState().apply();
+  expect(newer.install).toHaveBeenCalled();
+  expect(first.install).not.toHaveBeenCalled();
+});
+
+test("keeps the offered update when the same release comes back", async () => {
+  const first = fakeUpdate();
+  const again = fakeUpdate();
+  const deps = fakeDeps(async () => first);
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+  deps.check.mockImplementation(async () => again);
+  await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+  expect(again.close).toHaveBeenCalled();
+  expect(first.close).not.toHaveBeenCalled();
+  expect(deps.report.mock.calls).toEqual([["available", "0.2.0"]]);
+
+  await useUpdateStore.getState().apply();
+  expect(first.install).toHaveBeenCalled();
+});
+
+test("does not swap the update while it installs", async () => {
+  let finish!: () => void;
+  const first = fakeUpdate(() => new Promise<void>((r) => (finish = r)));
+  const deps = fakeDeps(async () => first);
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+  const applying = useUpdateStore.getState().apply();
+  deps.check.mockImplementation(async () => fakeUpdate(undefined, "0.3.0"));
+  await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
   expect(deps.check).toHaveBeenCalledTimes(1);
+  finish();
+  await applying;
+  expect(useUpdateStore.getState().available).toBe("0.2.0");
+});
+
+test("a check that finishes during an install leaves the update alone", async () => {
+  let resolve!: (u: PendingUpdate | null) => void;
+  const deps = fakeDeps(async () => fakeUpdate(() => new Promise<void>(() => {})));
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+  deps.check.mockImplementation(() => new Promise((r) => (resolve = r)));
+  await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+  void useUpdateStore.getState().apply();
+  const late = fakeUpdate(undefined, "0.3.0");
+  resolve(late);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(useUpdateStore.getState().available).toBe("0.2.0");
+  expect(late.close).toHaveBeenCalled();
+});
+
+test("catches up on the next tick after the computer wakes", async () => {
+  const deps = fakeDeps(async () => null);
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+  sleepFor(CHECK_INTERVAL_MS);
+  await vi.advanceTimersByTimeAsync(60 * 1000);
+  expect(deps.check).toHaveBeenCalledTimes(2);
+});
+
+test("checks when the window comes back if a check is due", async () => {
+  const deps = fakeDeps(async () => null);
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+  window.dispatchEvent(new Event("focus"));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deps.check).toHaveBeenCalledTimes(1);
+
+  sleepFor(CHECK_INTERVAL_MS);
+  window.dispatchEvent(new Event("focus"));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deps.check).toHaveBeenCalledTimes(2);
+
+  sleepFor(CHECK_INTERVAL_MS);
+  document.dispatchEvent(new Event("visibilitychange"));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deps.check).toHaveBeenCalledTimes(3);
+});
+
+test("retries a failed check when the network comes back", async () => {
+  const deps = fakeDeps(async () => {
+    throw new Error("offline");
+  });
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+  deps.check.mockImplementation(async () => null);
+  window.dispatchEvent(new Event("online"));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deps.check).toHaveBeenCalledTimes(2);
+
+  // Back online after a good check: nothing is due yet.
+  window.dispatchEvent(new Event("online"));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deps.check).toHaveBeenCalledTimes(2);
 });
 
 test("does not overlap checks", async () => {
@@ -76,7 +183,7 @@ test("swallows and logs check errors", async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(deps.report).toHaveBeenCalledWith("check_failed", undefined, new Error("offline"));
   expect(useUpdateStore.getState().available).toBeNull();
-  await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+  await vi.advanceTimersByTimeAsync(RETRY_MS);
   expect(deps.check).toHaveBeenCalledTimes(2);
 });
 
@@ -139,6 +246,9 @@ test("stop() cancels the interval", async () => {
   await vi.advanceTimersByTimeAsync(0);
   stop();
   await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS * 2);
+  window.dispatchEvent(new Event("focus"));
+  window.dispatchEvent(new Event("online"));
+  await vi.advanceTimersByTimeAsync(0);
   expect(deps.check).toHaveBeenCalledTimes(1);
 });
 
@@ -153,6 +263,7 @@ test("default deps adapt the tauri plugins", async () => {
   vi.mocked(check).mockResolvedValueOnce({ version: "0.3.0", downloadAndInstall } as never);
   stop = startUpdateChecks();
   await vi.advanceTimersByTimeAsync(0);
+  expect(check).toHaveBeenCalledWith({ timeout: 60 * 1000 });
   expect(useUpdateStore.getState().available).toBe("0.3.0");
 
   await useUpdateStore.getState().apply();
