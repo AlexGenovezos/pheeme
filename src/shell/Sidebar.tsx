@@ -35,6 +35,7 @@ import {
   filterSidebarTree,
   hiddenSidebarTree,
   type LabelNode,
+  visibleInSidebar,
 } from "../labels/tree";
 import { type ContextMenuItem, showContextMenu } from "../lib/contextMenu";
 import type { AccountInfo, LabelInfo } from "../lib/tauri";
@@ -428,6 +429,18 @@ function LabelTreeRows({
   });
 }
 
+/**
+ * The shown tree with labels kept only as ancestors of shown sublabels (hidden, or show-if-unread with nothing unread)
+ * turned into context rows, like synthetic parents: their actionable row is under More.
+ */
+function contextForHidden(nodes: LabelNode[], unreadOf: (label: LabelInfo) => number): LabelNode[] {
+  return nodes.map((node) => ({
+    ...node,
+    label: node.label && visibleInSidebar(node.label, unreadOf(node.label)) ? node.label : null,
+    children: contextForHidden(node.children, unreadOf),
+  }));
+}
+
 /** The account's user labels as a tree: shown ones first, then a More row holding the hidden ones. */
 function LabelsSection({ accountId }: { accountId: string }) {
   const labels = useLabelStore((s) => s.userLabels(accountId));
@@ -444,7 +457,7 @@ function LabelsSection({ accountId }: { accountId: string }) {
     const unreadOf = (l: LabelInfo) => counts[l.id]?.unread ?? 0;
     const tree = buildLabelTree(labels);
     return {
-      shown: filterSidebarTree(tree, unreadOf),
+      shown: contextForHidden(filterSidebarTree(tree, unreadOf), unreadOf),
       hidden: hiddenSidebarTree(tree, unreadOf),
       unreadOf,
     };

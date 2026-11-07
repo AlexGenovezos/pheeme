@@ -557,6 +557,40 @@ describe("Labels section", () => {
     expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "L_archive" });
   });
 
+  for (const [mode, labelListVisibility] of [
+    ["hidden parent", "labelHide"],
+    ["read show-if-unread parent", "labelShowIfUnread"],
+  ] as const)
+    test(`a ${mode} of a shown sublabel is only context above More`, () => {
+      useLabelStore.setState({
+        labels: {
+          a1: [
+            withVis(label("a1", "L_clients", "Clients"), labelListVisibility),
+            label("a1", "L_acme", "Clients/Acme"),
+          ],
+        },
+        counts: { a1: {} },
+      });
+      render(<Sidebar />);
+      expect(shownLinks()).toEqual(["Clients/Acme"]);
+      expect(within(labelsRegion()).getByText("Clients")).toBeInTheDocument();
+      expect(
+        within(labelsRegion()).queryByRole("button", { name: "Options for Clients" }),
+      ).not.toBeInTheDocument();
+      const fold = within(labelsRegion()).getByRole("button", { name: "Clients sublabels" });
+      fireEvent.click(fold);
+      expect(shownLinks()).toEqual([]);
+      fireEvent.click(fold);
+
+      fireEvent.click(within(labelsRegion()).getByRole("button", { name: "More" }));
+      expect(shownLinks()).toEqual(["Clients/Acme", "Clients"]);
+      expect(
+        within(labelsRegion()).getByRole("button", { name: "Options for Clients" }),
+      ).toBeInTheDocument();
+      fireEvent.click(link("Clients", labelsRegion()));
+      expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "L_clients" });
+    });
+
   test("no More row when every label is shown", () => {
     useLabelStore.setState({ labels: { a1: [label("a1", "L_travel", "Travel")] } });
     render(<Sidebar />);
