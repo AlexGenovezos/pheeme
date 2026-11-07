@@ -128,6 +128,8 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
   const { accountId } = spec;
   const all = useLabelStore((s) => s.labels[accountId] ?? NO_LABELS);
   const editing = spec.mode === "edit" ? all.find((l) => l.id === spec.labelId) : undefined;
+  // Deleted (here or elsewhere) while the dialog is open: there's nothing left to save.
+  const gone = spec.mode === "edit" && !editing;
   const id = useId();
 
   const parents = useMemo(() => {
@@ -157,7 +159,7 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (saving) return;
+    if (saving || gone) return;
     const trimmed = leaf.trim();
     const full = nested && parent ? `${parent}/${trimmed}` : trimmed;
     const problem = trimmed ? nameProblem(full) : nameProblem("");
@@ -168,8 +170,8 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
     setSaving(true);
     setError(null);
     try {
-      if (editing) {
-        await updateLabel(accountId, editing.id, { name: full });
+      if (spec.mode === "edit") {
+        if (editing) await updateLabel(accountId, editing.id, { name: full });
       } else {
         const created = await createLabel(accountId, full, null);
         useLabelStore.setState((s) => ({
@@ -181,9 +183,8 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
             ],
           },
         }));
-        if (spec.mode === "create" && spec.applyTo?.length && spec.move)
-          void moveTo(accountId, spec.applyTo, created.id);
-        else if (spec.mode === "create" && spec.applyTo?.length)
+        if (spec.applyTo?.length && spec.move) void moveTo(accountId, spec.applyTo, created.id);
+        else if (spec.applyTo?.length)
           void applyLabel(accountId, created.id, true, spec.applyTo, { evenIfGone: true });
       }
     } catch (err) {
@@ -195,6 +196,7 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
   };
 
   const verb = spec.mode === "edit" ? "Save" : "Create";
+  const problem = gone ? "This label no longer exists." : error;
   return (
     <form className="label-dialog__form" onSubmit={submit} noValidate>
       <label className="label-dialog__field" htmlFor={`${id}-name`}>
@@ -204,16 +206,16 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
         id={`${id}-name`}
         data-autofocus=""
         value={leaf}
-        invalid={error !== null}
-        aria-describedby={error ? `${id}-error` : undefined}
+        invalid={problem !== null}
+        aria-describedby={problem ? `${id}-error` : undefined}
         onChange={(e) => {
           setLeaf(e.target.value);
           setError(null);
         }}
       />
-      {error && (
+      {problem && (
         <p id={`${id}-error`} role="alert" className="label-dialog__error">
-          {error}
+          {problem}
         </p>
       )}
       <label className="label-dialog__check">
@@ -240,7 +242,7 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
       </select>
       <div className="label-dialog__actions">
         <Button onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={saving}>
+        <Button type="submit" variant="primary" disabled={saving || gone}>
           {verb}
         </Button>
       </div>
@@ -267,16 +269,25 @@ function DeleteForm({
   labelId: string;
   onClose(): void;
 }) {
+  const all = useLabelStore((s) => s.labels[accountId] ?? NO_LABELS);
+  // Until Gmail's count arrives (which can take a while), the sublabels from the cached labels and no count.
+  const cached = useMemo((): LabelDeletePreview => {
+    const name = all.find((l) => l.id === labelId)?.name;
+    const sublabels = name
+      ? all.filter((l) => l.type === "user" && l.name.startsWith(`${name}/`)).map((l) => l.name)
+      : [];
+    return { threads: null, sublabels };
+  }, [all, labelId]);
   const [preview, setPreview] = useState<LabelDeletePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let live = true;
+    // The count is a courtesy: deleting doesn't wait for it, and works without it.
     deleteLabelPreview(accountId, labelId).then(
       (p) => live && setPreview(p),
-      // The count is a courtesy: deleting still works without it.
-      () => live && setPreview({ threads: null, sublabels: [] }),
+      () => {},
     );
     return () => {
       live = false;
@@ -299,9 +310,7 @@ function DeleteForm({
 
   return (
     <div className="label-dialog__form">
-      <p className="label-dialog__body">
-        {preview ? deleteBody(preview) : "Counting conversations…"}
-      </p>
+      <p className="label-dialog__body">{deleteBody(preview ?? cached)}</p>
       {error && (
         <p role="alert" className="label-dialog__error">
           {error}
@@ -311,7 +320,7 @@ function DeleteForm({
         <Button data-autofocus="" onClick={onClose}>
           Cancel
         </Button>
-        <Button variant="danger" disabled={!preview || busy} onClick={() => void confirm()}>
+        <Button variant="danger" disabled={busy} onClick={() => void confirm()}>
           Delete
         </Button>
       </div>

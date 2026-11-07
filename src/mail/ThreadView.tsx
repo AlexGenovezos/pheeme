@@ -10,7 +10,7 @@ import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { useAccountStore } from "../store/accountStore";
 import { MessageCard } from "./MessageCard";
-import { archive, respond, toggleLabel } from "./actions";
+import { applyLabel, archive, respond } from "./actions";
 import { parseThreadKey } from "./mailboxes";
 import "./mail.css";
 
@@ -141,8 +141,8 @@ export function ThreadView() {
           labels={inbox ? [inbox, ...chips] : chips}
           onRemove={(label) =>
             void (label.id === "INBOX"
-              ? archive([openKey])
-              : toggleLabel(accountId, label.id, [openKey]))
+              ? archive([openKey], { evenIfGone: true })
+              : applyLabel(accountId, label.id, false, [openKey], { evenIfGone: true }))
           }
         />
         <div className="thread-view__messages">

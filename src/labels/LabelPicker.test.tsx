@@ -1,3 +1,4 @@
+import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -221,6 +222,7 @@ describe("Label as…", () => {
     await openForBoth();
     fireEvent.click(option("Manage labels"));
     expect(revealLabels).toHaveBeenCalledTimes(1);
+    expect(revealLabels).toHaveBeenCalledWith("a1"); // the picker's account, whatever the sidebar shows
     expect(screen.queryByRole("dialog")).toBeNull();
 
     await act(() => openLabelMenu({ x: 0, y: 0 }));
@@ -344,6 +346,54 @@ describe("after a click", () => {
       [["Label_1"], []],
     ]);
     expect(option("Clients")).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("a change Gmail refuses after it was queued goes back, keeping ticks still in flight", async () => {
+    // What the backend holds: the queued Clients add has been rolled back after Gmail refused it.
+    const backend = new Map([
+      ["t1", ["INBOX", "Label_3"]],
+      ["t2", ["INBOX"]],
+    ]);
+    let releaseAcme: () => void = () => {};
+    mockIPC(
+      (cmd, args) => {
+        const a = (args ?? {}) as Record<string, unknown>;
+        calls.push({ cmd, args: a });
+        if (cmd === "get_thread") {
+          const n = Number(String(a.threadId).slice(1));
+          return detail(n, backend.get(`t${n}`) ?? []);
+        }
+        if (cmd === "list_threads") return { threads: useMailStore.getState().threads, next: null };
+        if (cmd === "modify_threads" && (a.add as string[])[0] === "Label_2")
+          return new Promise<void>((resolve) => (releaseAcme = resolve));
+        return undefined;
+      },
+      { shouldMockEvents: true },
+    );
+    await openForBoth();
+    realClick(option("Clients"));
+    await flush();
+    expect(option("Clients")).toHaveAttribute("aria-checked", "true");
+    realClick(option("Clients/Acme")); // still on its way when the refusal arrives
+    await flush();
+
+    await act(() =>
+      emit("outbox:rejected", { accountId: "a1", opId: "op1", kind: "modify", message: "no" }),
+    );
+    await flush();
+    expect(option("Clients")).toHaveAttribute("aria-checked", "false");
+    expect(option("Clients/Acme")).toHaveAttribute("aria-checked", "true");
+    expect(option("Receipts")).toHaveAttribute("aria-checked", "mixed");
+
+    // Events for another account leave the picker alone.
+    backend.set("t2", ["INBOX", "Label_1"]);
+    await act(() =>
+      emit("sync:messages_updated", { accountId: "a2", added: [], removed: [], modified: [] }),
+    );
+    await flush();
+    expect(option("Clients")).toHaveAttribute("aria-checked", "false");
+    releaseAcme();
+    await flush();
   });
 
   test("unticking the label being viewed takes the rows out, and later ticks still reach them", async () => {

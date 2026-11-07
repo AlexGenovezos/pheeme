@@ -151,6 +151,8 @@ interface UiState extends PaneLayout, NavPrefs {
   toggleSidebar(): void;
   /** Go to a mailbox: clears the open thread and selection. An account mailbox also becomes the active account. */
   setMailbox(ref: MailboxRef): void;
+  /** Show `accountId`'s Favorites and labels in the sidebar, leaving the mailbox as it is. */
+  setActiveAccount(accountId: string): void;
   setOpenThread(key: ThreadKey | null): void;
   toggleChecked(key: ThreadKey): void;
   /** Check every row from the anchor to `to` inclusive; `keys` is the list in display order. */
@@ -235,6 +237,7 @@ export const useUiStore = create<UiState>((set, get) => {
         ...(ref.accountId !== null && { activeAccountId: ref.accountId }),
       });
     },
+    setActiveAccount: (accountId) => persist({ activeAccountId: accountId }),
     setOpenThread: (key) => set({ openThread: key }),
     toggleChecked: (key) =>
       set((s) => ({

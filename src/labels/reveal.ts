@@ -7,8 +7,13 @@ export const useRevealStore = create<{ pending: number }>(() => ({ pending: 0 })
 
 let seq = 0;
 
-/** Expands the sidebar if it's collapsed, scrolls the Labels section into view and focuses its first row. */
-export function revealLabels(): void {
-  if (useUiStore.getState().sidebarCollapsed) useUiStore.getState().toggleSidebar();
+/**
+ * Expands the sidebar if it's collapsed, scrolls the Labels section into view and focuses its first row. With
+ * `accountId`, the sidebar switches to that account's labels first (the mailbox shown stays as it is).
+ */
+export function revealLabels(accountId?: string): void {
+  const ui = useUiStore.getState();
+  if (accountId) ui.setActiveAccount(accountId);
+  if (ui.sidebarCollapsed) ui.toggleSidebar();
   useRevealStore.setState({ pending: ++seq });
 }

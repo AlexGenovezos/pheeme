@@ -361,6 +361,18 @@ describe("stacked layout", () => {
   });
 });
 
+test("revealing another account's labels switches the sidebar's account, not the mailbox", async () => {
+  seed([ONE, TWO]);
+  render(<Sidebar />);
+  const mailbox = useUiStore.getState().mailbox; // All Inboxes; the sidebar shows a1's labels
+  expect(within(region("Labels")).queryByRole("link", { name: "Clients" })).toBeNull();
+
+  act(() => revealLabels("a2"));
+  expect(useUiStore.getState().activeAccountId).toBe("a2");
+  expect(useUiStore.getState().mailbox).toEqual(mailbox);
+  await waitFor(() => expect(link("Clients", region("Labels"))).toHaveFocus());
+});
+
 describe("go-to commands", () => {
   const run = (shortcutOrTitle: string) => {
     const command = appCommands().find(

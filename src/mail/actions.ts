@@ -227,6 +227,7 @@ function nextOpenAfter(removed: Set<ThreadKey>): ThreadKey | null | undefined {
   if (open === null || !removed.has(open)) return undefined;
   const keys = mail().threads.map(keyOf);
   const at = keys.indexOf(open);
+  if (at < 0) return undefined; // not in the list: stays open
   const below = keys.slice(at + 1).find((k) => !removed.has(k));
   if (below !== undefined) return below;
   return (
@@ -334,7 +335,8 @@ async function revert(done: Map<string, string[]>, original: Change, inverse: Ch
 const inMailbox = (labelId: string) => !mail().query?.search && ui().mailbox.labelId === labelId;
 const inInbox = () => inMailbox("INBOX");
 
-export function archive(keys?: ThreadKey[]): Promise<void> {
+/** `evenIfGone`: the conversation view's own controls act on the open thread even when its row has left the list. */
+export function archive(keys?: ThreadKey[], { evenIfGone = false } = {}): Promise<void> {
   return apply(
     keys,
     modify([], ["INBOX"], { leavesList: inInbox(), detail: withLabel("INBOX", false) }),
@@ -344,6 +346,7 @@ export function archive(keys?: ThreadKey[]): Promise<void> {
         undo: modify(["INBOX"], [], { detail: withLabel("INBOX", true) }),
       },
       cancelsAutoRead: true,
+      evenIfGone,
     },
   );
 }
@@ -397,14 +400,16 @@ const readChange = (read: boolean): Change => ({
  * The labels each of `keys` carries, from the cached detail or else straight from the backend. Read once per action
  * and kept out of the detail cache, whose 30 entries a larger selection would push each other out of.
  */
-async function labelsOf(keys: ThreadKey[]): Promise<Map<ThreadKey, Set<string>>> {
+async function labelsOf(keys: ThreadKey[], fresh = false): Promise<Map<ThreadKey, Set<string>>> {
   const cached = useThreadStore.getState().details;
   const entries = await Promise.all(
     keys.map(async (key): Promise<[ThreadKey, Set<string>]> => {
-      let detail = cached.get(key);
+      let detail = fresh ? undefined : cached.get(key);
       if (!detail) {
         const { accountId, threadId } = parseThreadKey(key);
-        detail = await getThread(accountId, threadId).catch(() => undefined);
+        const read = getThread(accountId, threadId);
+        // A fresh read that fails rejects rather than passing for a conversation without labels.
+        detail = fresh ? await read : await read.catch(() => undefined);
       }
       return [key, new Set(detail?.messages.flatMap((m) => m.labelIds))];
     }),
@@ -514,13 +519,26 @@ export async function openLabelMenu(at: { x: number; y: number }): Promise<void>
   const targets = oneAccountTargets();
   if (!targets) return;
   const { accountId, keys } = targets;
-  const labels = [...(await labelsOf(keys)).values()];
+  const membership = await labelMembership(accountId, keys);
+  usePickerStore.getState().open({ mode: "label", accountId, keys, at, membership });
+}
+
+/**
+ * Whether all, some or none of `keys` carry each of the account's user labels. `fresh` reads them from the backend
+ * rather than the detail cache, which may still hold a change the backend has since undone; it rejects if a read fails.
+ */
+export async function labelMembership(
+  accountId: string,
+  keys: ThreadKey[],
+  { fresh = false } = {},
+): Promise<Map<string, Membership>> {
+  const labels = [...(await labelsOf(keys, fresh)).values()];
   const membership = new Map<string, Membership>();
   for (const label of useLabelStore.getState().userLabels(accountId)) {
     const count = labels.filter((ids) => ids.has(label.id)).length;
     membership.set(label.id, count === 0 ? "none" : count === labels.length ? "all" : "some");
   }
-  usePickerStore.getState().open({ mode: "label", accountId, keys, at, membership });
+  return membership;
 }
 
 /**

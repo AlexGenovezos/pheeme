@@ -184,7 +184,12 @@ test("esc_closes_and_restores_focus", () => {
 test("delete_copy_with_count_and_sublabels", async () => {
   render(<LabelDialogHost />);
   act(() => openDeleteLabel("a1", "Label_1"));
-  expect(screen.getByText("Counting conversations…")).toBeInTheDocument();
+  // Before Gmail's count arrives: the sublabels from the cached labels, no count.
+  expect(
+    screen.getByText(
+      "The conversations themselves aren't deleted. Its 2 sublabels are deleted too.",
+    ),
+  ).toBeInTheDocument();
   await flush();
   expect(screen.getByRole("dialog", { name: 'Delete "Clients"?' })).toBeInTheDocument();
   expect(
@@ -218,5 +223,58 @@ test("delete confirms through deleteLabel; failure stays inline", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Delete" }));
   await flush();
   expect(callsOf("delete_label")).toHaveLength(2);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("the edited label disappearing while the dialog is open never creates a new one", async () => {
+  render(<LabelDialogHost />);
+  act(() => openLabelDialog({ mode: "edit", accountId: "a1", labelId: "Label_3" }));
+  // Deleted elsewhere (another device, the sidebar) while the dialog is open.
+  act(() =>
+    useLabelStore.setState((s) => ({
+      labels: { a1: s.labels.a1.filter((l) => l.id !== "Label_3") },
+    })),
+  );
+  expect(screen.getByRole("alert")).toHaveTextContent("This label no longer exists.");
+  const save = screen.getByRole("button", { name: "Save" });
+  expect(save).toBeDisabled();
+  type("Receipts 2");
+  fireEvent.submit(save.closest("form")!);
+  await flush();
+  expect(callsOf("create_label")).toEqual([]);
+  expect(callsOf("update_label")).toEqual([]);
+});
+
+test("Delete works at once while Gmail's count is still coming, and the count fills in later", async () => {
+  let answer: (p: unknown) => void = () => {};
+  mockIPC(
+    (cmd, args) => {
+      calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "delete_label_preview") return new Promise((resolve) => (answer = resolve));
+      return undefined;
+    },
+    { shouldMockEvents: true },
+  );
+  render(<LabelDialogHost />);
+  act(() => openDeleteLabel("a1", "Label_2"));
+  expect(
+    screen.getByText("The conversations themselves aren't deleted. Its 1 sublabel is deleted too."),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
+
+  await act(async () => answer({ threads: 4, sublabels: ["Clients/Acme/Q1"] }));
+  expect(
+    screen.getByText(
+      "It comes off 4 conversations. The conversations themselves aren't deleted. Its 1 sublabel is deleted too.",
+    ),
+  ).toBeInTheDocument();
+
+  // A preview that never answers doesn't hold up the delete.
+  act(() => useLabelDialogStore.getState().close());
+  act(() => openDeleteLabel("a1", "Label_3"));
+  expect(screen.getByText("The conversations themselves aren't deleted.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+  await flush();
+  expect(callsOf("delete_label")).toEqual([{ accountId: "a1", labelId: "Label_3" }]);
   expect(screen.queryByRole("dialog")).toBeNull();
 });

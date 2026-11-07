@@ -309,6 +309,35 @@ test("inbox chip archives", async () => {
   );
 });
 
+test("chips act on the open conversation even when its row isn't in the list", async () => {
+  const calls: { cmd: string; args: unknown }[] = [];
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args });
+    return undefined;
+  });
+  useLabelStore.setState({
+    labels: { a1: [label("INBOX", "Inbox", "system"), label("Label_1", "Receipts", "user")] },
+  });
+  // The open conversation is a mixed-thread one: only one message has Receipts.
+  open(detail([message(1, { labelIds: ["INBOX", "Label_1"] }), message(2)]));
+  useMailStore.setState({ threads: [] }); // e.g. the search changed after it was opened
+  renderView();
+
+  fireEvent.click(screen.getByRole("button", { name: "Remove label Inbox" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove label Receipts" }));
+  await waitFor(() => {
+    expect(calls).toContainEqual({
+      cmd: "modify_threads",
+      args: { accountId: "a1", threadIds: ["t1"], add: [], remove: ["INBOX"] },
+    });
+    expect(calls).toContainEqual({
+      cmd: "modify_threads",
+      args: { accountId: "a1", threadIds: ["t1"], add: [], remove: ["Label_1"] },
+    });
+  });
+  expect(useUiStore.getState().openThread).toBe(KEY);
+});
+
 test('not_found shows "This conversation isn\'t available any more."', async () => {
   mockIPC((cmd) => {
     if (cmd === "get_thread")

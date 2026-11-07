@@ -9,9 +9,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { LabelInfo } from "../lib/tauri";
+import { listen } from "@tauri-apps/api/event";
+import { createSubscriptionScope } from "../lib/subscriptions";
+import { type LabelInfo, SYNC_EVENTS, type SyncAccountEvent } from "../lib/tauri";
 import { cx } from "../lib/utils";
-import { applyLabel, moveOrigin, moveTo } from "../mail/actions";
+import { applyLabel, labelMembership, moveOrigin, moveTo } from "../mail/actions";
 import { useLabelStore } from "../store/labelStore";
 import { openLabelDialog } from "./dialogStore";
 import { chipColors } from "./palette";
@@ -71,6 +73,8 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   const [active, setActive] = useState(0);
   // Labels whose tick is still on its way to Gmail; the ref guards synchronously, the state draws the row.
   const inFlight = useRef(new Set<string>());
+  // Ticks started so far, and per label the count when its latest began: a re-read that started earlier is stale for it.
+  const ticks = useRef({ count: 0, last: new Map<string, number>() });
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
   const [pos, setPos] = useState(at);
   const ref = useRef<HTMLDivElement>(null);
@@ -122,6 +126,37 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     };
   }, [onClose]);
 
+  // Gmail can refuse a tick after its command resolved: the backend undoes it and says so. Re-read the ticks then.
+  useEffect(() => {
+    if (mode !== "label" || createOnly) return;
+    let current = true;
+    const reread = async () => {
+      const since = ticks.current.count;
+      const fresh = await labelMembership(accountId, keys, { fresh: true }).catch(() => null);
+      if (!current || !fresh) return; // couldn't read them: keep the ticks shown
+      const keep = (id: string) =>
+        inFlight.current.has(id) || (ticks.current.last.get(id) ?? -1) >= since;
+      setMembership((m) => {
+        const next = new Map(fresh);
+        for (const [id, state] of m) if (keep(id)) next.set(id, state);
+        return next;
+      });
+    };
+    const scope = createSubscriptionScope();
+    for (const event of [SYNC_EVENTS.outboxRejected, SYNC_EVENTS.messagesUpdated])
+      scope
+        .add(() =>
+          listen<SyncAccountEvent>(event, ({ payload }) => {
+            if (payload.accountId === accountId) void reread();
+          }),
+        )
+        .catch((err: unknown) => console.warn("label picker listener failed", err));
+    return () => {
+      current = false;
+      scope.dispose();
+    };
+  }, [accountId, createOnly, keys, mode]);
+
   useEffect(() => {
     listRef.current
       ?.querySelector<HTMLElement>(`[data-index="${active}"]`)
@@ -136,6 +171,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   const setTick = (labelId: string, next: Membership, add: boolean) => {
     if (inFlight.current.has(labelId)) return;
     inFlight.current.add(labelId);
+    ticks.current.last.set(labelId, ticks.current.count++);
     setBusy(new Set(inFlight.current));
     const previous = membership.get(labelId) ?? "none";
     setMembership((m) => new Map(m).set(labelId, next));
@@ -179,7 +215,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
         return create(option.name);
       case "manage":
         onClose();
-        return revealLabels();
+        return revealLabels(accountId);
     }
   };
 
