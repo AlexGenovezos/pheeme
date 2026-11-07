@@ -54,3 +54,22 @@ test("light chips get a border; saturated ones do not", () => {
     false,
   );
 });
+
+test.each(["#3c78d8", "#8e63ce"])(
+  "chip text on %s reaches 4.5:1 even when Gmail's text does not",
+  (bg) => {
+    const c = chipColors(info({ colorBackground: bg, colorText: "#ffffff" }))!;
+    expect(contrastRatio(c.color, c.background)).toBeGreaterThanOrEqual(4.5);
+  },
+);
+
+test("every allowed background gets readable text, with or without Gmail's text colour", () => {
+  for (const bg of LABEL_ALLOWED) {
+    for (const colorText of [null, "#ffffff", "#000000"]) {
+      const c = chipColors(info({ colorBackground: bg, colorText }))!;
+      expect(contrastRatio(c.color, c.background), `${bg} / ${colorText}`).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    }
+  }
+});

@@ -149,9 +149,13 @@ export function chipColors(label: LabelInfo): ChipColors | null {
   if (!background) return null;
   let color = label.colorText?.toLowerCase() ?? labelColor(background).text;
   if (contrastRatio(color, background) < MIN_TEXT_CONTRAST) {
-    color = [DARK_TEXT, "#ffffff"].reduce((best, c) =>
-      contrastRatio(c, background) > contrastRatio(best, background) ? c : best,
-    );
+    const best = (options: string[]) =>
+      options.reduce((a, c) =>
+        contrastRatio(c, background) > contrastRatio(a, background) ? c : a,
+      );
+    // The theme's near-black or white first; pure black or white when neither reaches 4.5:1 (e.g. #3c78d8).
+    color = best([DARK_TEXT, "#ffffff"]);
+    if (contrastRatio(color, background) < MIN_TEXT_CONTRAST) color = best(["#000000", "#ffffff"]);
   }
   return {
     background,
