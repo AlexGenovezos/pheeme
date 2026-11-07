@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import type { ThreadKey } from "../mail/mailboxes";
 
-export type LabelDialogSpec =
+export type LabelDialogSpec = (
   | {
       mode: "create";
       accountId: string;
@@ -15,11 +15,21 @@ export type LabelDialogSpec =
       /** With `applyTo`: move them to the new label (the "Move to…" picker) instead of just labelling them. */
       move?: boolean;
     }
-  | { mode: "edit"; accountId: string; labelId: string };
+  | { mode: "edit"; accountId: string; labelId: string }
+) & {
+  /** Where focus goes when the dialog closes, if not whatever has it now (e.g. what a closing picker restores). */
+  returnFocus?: HTMLElement | null;
+};
 
 export type DialogState =
   | { kind: "label"; spec: LabelDialogSpec; seq: number }
-  | { kind: "delete"; accountId: string; labelId: string; seq: number }
+  | {
+      kind: "delete";
+      accountId: string;
+      labelId: string;
+      returnFocus?: HTMLElement | null;
+      seq: number;
+    }
   | null;
 
 interface DialogStore {
@@ -38,6 +48,12 @@ export function openLabelDialog(spec: LabelDialogSpec): void {
   useLabelDialogStore.setState({ dialog: { kind: "label", spec, seq: ++seq } });
 }
 
-export function openDeleteLabel(accountId: string, labelId: string): void {
-  useLabelDialogStore.setState({ dialog: { kind: "delete", accountId, labelId, seq: ++seq } });
+export function openDeleteLabel(
+  accountId: string,
+  labelId: string,
+  returnFocus?: HTMLElement | null,
+): void {
+  useLabelDialogStore.setState({
+    dialog: { kind: "delete", accountId, labelId, returnFocus, seq: ++seq },
+  });
 }

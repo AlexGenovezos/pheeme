@@ -43,23 +43,31 @@ function nameProblem(name: string): string | null {
 function Modal({
   title,
   titleId,
+  returnTo,
   onClose,
   children,
 }: {
   title: string;
   titleId: string;
+  returnTo?: HTMLElement | null;
   onClose(): void;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [returnFocus] = useState(() => document.activeElement as HTMLElement | null);
+  const [returnFocus] = useState(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    // A closing picker's own field is about to unmount: prefer what it saved, if it's still on the page.
+    return returnTo?.isConnected ? returnTo : opener?.isConnected ? opener : null;
+  });
 
   // While the dialog is open, keys belong to it.
   useEffect(() => registry.suspend(), []);
   useEffect(() => {
     const first = ref.current?.querySelector<HTMLElement>("[data-autofocus]");
     (first ?? ref.current)?.focus();
-    return () => returnFocus?.focus?.();
+    return () => {
+      if (returnFocus?.isConnected) returnFocus.focus();
+    };
   }, [returnFocus]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -325,7 +333,13 @@ export function LabelDialogHost() {
   if (dialog.kind === "label") {
     const title = dialog.spec.mode === "create" ? "New label" : "Edit label";
     return (
-      <Modal key={dialog.seq} title={title} titleId={titleId} onClose={close}>
+      <Modal
+        key={dialog.seq}
+        title={title}
+        titleId={titleId}
+        returnTo={dialog.spec.returnFocus}
+        onClose={close}
+      >
         <LabelForm spec={dialog.spec} onClose={close} />
       </Modal>
     );
@@ -333,7 +347,13 @@ export function LabelDialogHost() {
   const name = labels?.find((l) => l.id === dialog.labelId)?.name ?? "";
   const leaf = name.slice(name.lastIndexOf("/") + 1);
   return (
-    <Modal key={dialog.seq} title={`Delete "${leaf}"?`} titleId={titleId} onClose={close}>
+    <Modal
+      key={dialog.seq}
+      title={`Delete "${leaf}"?`}
+      titleId={titleId}
+      returnTo={dialog.returnFocus}
+      onClose={close}
+    >
       <DeleteForm accountId={dialog.accountId} labelId={dialog.labelId} onClose={close} />
     </Modal>
   );

@@ -12,6 +12,7 @@ import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { openCreateLabel } from "./create";
 import { LabelPickerHost } from "./LabelPicker";
+import { LabelDialogHost } from "./LabelDialog";
 import { useLabelDialogStore } from "./dialogStore";
 import { usePickerStore } from "./pickerStore";
 import { revealLabels } from "./reveal";
@@ -188,6 +189,26 @@ describe("Label as…", () => {
       },
     });
     expect(calls.find((c) => c.cmd === "create_label")).toBeUndefined();
+  });
+
+  describe.each([
+    ["Escape", () => fireEvent.keyDown(screen.getByLabelText("Name"), { key: "Escape" })],
+    ["Cancel", () => fireEvent.click(screen.getByRole("button", { name: "Cancel" }))],
+  ])("picker -> Create -> %s", (_name, dismiss) => {
+    test("focus returns to the original opener", async () => {
+      const opener = document.createElement("button");
+      document.body.append(opener);
+      opener.focus();
+      render(<LabelDialogHost />);
+      await openForBoth();
+      type("Travel");
+      press("Enter");
+      expect(screen.getByRole("dialog", { name: "New label" })).toBeInTheDocument();
+      dismiss();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(opener).toHaveFocus();
+      opener.remove();
+    });
   });
 
   test("an exact match (any case) offers no create row", async () => {

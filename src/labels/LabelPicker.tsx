@@ -75,6 +75,8 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   const [pos, setPos] = useState(at);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // What had focus before the picker opened; the dialog it hands over to gives focus back there.
+  const openerRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const options = useMemo((): Option[] => {
@@ -105,6 +107,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
+    openerRef.current = previous;
     inputRef.current?.focus();
     const onPointerDown = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
@@ -155,6 +158,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
       mode: "create",
       accountId,
       name,
+      returnFocus: openerRef.current,
       applyTo: createOnly ? undefined : keys,
       move: mode === "move",
     });
