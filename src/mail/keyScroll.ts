@@ -37,11 +37,10 @@ class KeyScroller {
   private written = 0;
   private frame = 0;
   private last = 0;
-  private releaseOnBlur: (() => void) | null = null;
 
   constructor(private readonly el: HTMLElement) {}
 
-  press(dir: -1 | 1, e: KeyboardEvent) {
+  press(dir: -1 | 1) {
     if (reducedMotion()) {
       this.stop();
       this.el.scrollTop += dir * STEP;
@@ -54,21 +53,19 @@ class KeyScroller {
     this.held = true;
     this.pressedAt = performance.now();
     this.target = this.clamp((running ? this.target : this.pos) + dir * STEP);
-    // A key released while the window is in the background never sends keyup.
-    const view = e.view ?? window;
-    this.releaseOnBlur?.();
-    const onBlur = () => this.release();
-    view.addEventListener("blur", onBlur);
-    this.releaseOnBlur = () => view.removeEventListener("blur", onBlur);
+    // Once focus leaves the pane (Left to the list, a click, the app in the background) its keyup goes
+    // elsewhere, so let go of the key now.
+    this.el.addEventListener("blur", this.onBlur, { once: true });
     this.start();
   }
 
   release(dir?: -1 | 1) {
     if (dir !== undefined && dir !== this.dir) return;
     this.held = false;
-    this.releaseOnBlur?.();
-    this.releaseOnBlur = null;
+    this.el.removeEventListener("blur", this.onBlur);
   }
+
+  private onBlur = () => this.release();
 
   stop() {
     if (this.frame) cancelAnimationFrame(this.frame);
@@ -120,7 +117,7 @@ export function handleScrollKeyDown(el: HTMLElement, e: KeyboardEvent): boolean 
   const dir = direction(e);
   if (!dir || e.defaultPrevented || isEditableTarget(e.target)) return false;
   e.preventDefault();
-  scrollerFor(el).press(dir, e);
+  scrollerFor(el).press(dir);
   return true;
 }
 

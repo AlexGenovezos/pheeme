@@ -122,3 +122,15 @@ test("stopKeyScroll halts a glide at once", () => {
   advance(1000);
   expect(el.scrollTop).toBe(stopped);
 });
+
+test("focus leaving the pane mid-glide lets go of the key, since its keyup goes elsewhere", () => {
+  const el = pane();
+  down(el, "ArrowDown");
+  advance(500);
+  el.dispatchEvent(new FocusEvent("blur"));
+  advance(1000);
+  const settled = el.scrollTop;
+  advance(1000);
+  expect(el.scrollTop).toBe(settled);
+  expect(frames.size).toBe(0);
+});
