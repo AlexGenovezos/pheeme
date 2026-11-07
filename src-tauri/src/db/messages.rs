@@ -49,8 +49,9 @@ pub async fn upsert_message_tx(conn: &mut SqliteConnection, msg: &DbMessage) -> 
             from_address, from_name, to_addresses, cc_addresses,
             subject, snippet, body_html, body_text,
             date, size_estimate, has_attachment, is_read, is_starred,
-            raw_headers, fully_fetched, rfc822_message_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            raw_headers, fully_fetched, rfc822_message_id, body_fetched_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                  CASE WHEN ? = 1 THEN unixepoch() * 1000 END)
         ON CONFLICT(id, account_id) DO UPDATE SET
             thread_id = excluded.thread_id,
             label_ids = excluded.label_ids,
@@ -68,6 +69,7 @@ pub async fn upsert_message_tx(conn: &mut SqliteConnection, msg: &DbMessage) -> 
             is_read = excluded.is_read,
             is_starred = excluded.is_starred,
             raw_headers = CASE WHEN excluded.fully_fetched = 1 THEN excluded.raw_headers ELSE messages.raw_headers END,
+            body_fetched_at = CASE WHEN excluded.fully_fetched = 1 THEN excluded.body_fetched_at ELSE messages.body_fetched_at END,
             fully_fetched = MAX(excluded.fully_fetched, messages.fully_fetched),
             rfc822_message_id = COALESCE(excluded.rfc822_message_id, messages.rfc822_message_id)
         "#,
@@ -91,6 +93,7 @@ pub async fn upsert_message_tx(conn: &mut SqliteConnection, msg: &DbMessage) -> 
         msg.raw_headers,
         msg.fully_fetched,
         msg.rfc822_message_id,
+        msg.fully_fetched,
     )
     .execute(&mut *conn)
     .await?;
@@ -264,7 +267,8 @@ pub async fn oldest_date(
 pub async fn set_body(conn: &mut SqliteConnection, msg: &DbMessage) -> Result<()> {
     sqlx::query!(
         r#"UPDATE messages SET body_html = ?, body_text = ?, raw_headers = ?, has_attachment = ?,
-                  fully_fetched = 1, rfc822_message_id = COALESCE(?, rfc822_message_id)
+                  fully_fetched = 1, rfc822_message_id = COALESCE(?, rfc822_message_id),
+                  body_fetched_at = unixepoch() * 1000
            WHERE account_id = ? AND id = ?"#,
         msg.body_html,
         msg.body_text,
@@ -277,6 +281,33 @@ pub async fn set_body(conn: &mut SqliteConnection, msg: &DbMessage) -> Result<()
     .execute(&mut *conn)
     .await?;
     Ok(())
+}
+
+/// Drop the cached bodies of up to `limit` messages sent before `sent_before` whose body
+/// was downloaded before `fetched_before` (both ms). They go back to metadata only, so
+/// opening one downloads the body again. Returns how many were trimmed.
+pub async fn trim_old_bodies<'e>(
+    ex: impl SqliteExecutor<'e>,
+    sent_before: i64,
+    fetched_before: i64,
+    limit: i64,
+) -> Result<u64> {
+    let done = sqlx::query!(
+        r#"UPDATE messages
+           SET body_html = NULL, body_text = NULL, raw_headers = NULL,
+               fully_fetched = 0, body_fetched_at = NULL
+           WHERE rowid IN (
+             SELECT rowid FROM messages
+             WHERE body_fetched_at IS NOT NULL AND body_fetched_at < ? AND date < ?
+             LIMIT ?
+           )"#,
+        fetched_before,
+        sent_before,
+        limit
+    )
+    .execute(ex)
+    .await?;
+    Ok(done.rows_affected())
 }
 
 pub async fn get_messages_for_thread<'e>(

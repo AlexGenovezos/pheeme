@@ -2,6 +2,7 @@ pub mod accounts;
 #[cfg(target_os = "macos")]
 mod app_menu;
 pub mod attachment_cache;
+pub mod body_retention;
 pub mod commands;
 pub mod compose;
 pub mod db;
@@ -78,6 +79,7 @@ pub async fn build_state(
         let mail = mail.clone();
         async move { mail.sweep_attachment_cache().await }
     });
+    tokio::spawn(body_retention::run(db.clone()));
     Ok(AppState {
         db,
         accounts,

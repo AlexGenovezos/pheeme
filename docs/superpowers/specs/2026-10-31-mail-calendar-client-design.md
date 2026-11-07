@@ -90,7 +90,7 @@ Business logic lives in Rust service modules that don't depend on Tauri (`db/`, 
 - **No spinners on common paths.** Lists are virtualized. While a thread is open, the next and previous threads are prefetched so `j`/`k` is instant. Skeletons are only acceptable on an account's very first sync.
 - **Instant launch.** The window shows the last view from cache immediately, then syncs. No blank white flash.
 - **Search is local-first.** *(Builder's call, overriding the plan's Gmail-only search.)* Typing searches cached mail instantly via SQLite FTS5; Gmail's `q=` search runs in parallel and merges in results that aren't cached yet. Gmail operators are passed through to the API.
-- **Cache depth.** *(Builder's call.)* Enough local mail that normal use never waits: label/thread metadata for the whole mailbox, and full bodies for recent mail (start with ~6 months or the latest few thousand threads per account, then tune). Older bodies fetch on open and are cached from then on.
+- **Cache depth.** *(Builder's call.)* Enough local mail that normal use never waits: label/thread metadata for the whole mailbox, and full bodies for recent mail (start with ~6 months or the latest few thousand threads per account, then tune). Older bodies fetch on open and stay cached for 30 days after they were downloaded; bodies of mail past the 6-month window are then dropped (metadata stays), so the cache stops growing with years of use.
 
 Treat a regression in any of these as a bug.
 

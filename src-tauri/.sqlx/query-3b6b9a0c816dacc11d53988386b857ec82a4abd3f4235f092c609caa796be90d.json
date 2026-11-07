@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE messages SET body_html = ?, body_text = ?, raw_headers = ?, has_attachment = ?,\n                  fully_fetched = 1, rfc822_message_id = COALESCE(?, rfc822_message_id),\n                  body_fetched_at = unixepoch() * 1000\n           WHERE account_id = ? AND id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "3b6b9a0c816dacc11d53988386b857ec82a4abd3f4235f092c609caa796be90d"
+}
