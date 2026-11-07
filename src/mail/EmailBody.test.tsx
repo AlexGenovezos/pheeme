@@ -2,6 +2,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { registry } from "../keyboard/registry";
+import { platform } from "../lib/platform";
 import type { MessageDetail } from "../lib/tauri";
 import { useThemeStore } from "../theme/theme";
 import { EmailBody, MAX_FRAME_HEIGHT } from "./EmailBody";
@@ -453,30 +454,34 @@ test("a fetched message with no body is empty", () => {
 
 test("where the frame's listeners don't run (macOS WebKit), focus leaves the frame and mod+c copies its selection", () => {
   vi.useFakeTimers();
-  render(
-    <div tabIndex={-1} aria-label="Pane">
-      <EmailBody message={message()} />
-    </div>,
-  );
-  const pane = screen.getByLabelText("Pane");
-  const doc = frame().contentDocument!;
-  // Rewrite the frame with listeners on its document blocked, as WebKit does for a script-less sandbox.
-  const dispatch = doc.dispatchEvent.bind(doc);
-  doc.dispatchEvent = (e: Event) => (e.type === "pheeme-probe" ? true : dispatch(e));
-  act(() => useThemeStore.setState({ resolved: "dark" }));
+  try {
+    render(
+      <div tabIndex={-1} aria-label="Pane">
+        <EmailBody message={message()} />
+      </div>,
+    );
+    const pane = screen.getByLabelText("Pane");
+    const doc = frame().contentDocument!;
+    // Rewrite the frame with listeners on its document blocked, as WebKit does for a script-less sandbox.
+    const dispatch = doc.dispatchEvent.bind(doc);
+    doc.dispatchEvent = (e: Event) => (e.type === "pheeme-probe" ? true : dispatch(e));
+    act(() => useThemeStore.setState({ resolved: "dark" }));
 
-  // A click into the email focuses the frame; focus comes straight back so keys reach the app.
-  frame().focus();
-  expect(document.activeElement).toBe(frame());
-  act(() => {
-    window.dispatchEvent(new Event("blur"));
-    vi.runAllTimers();
-  });
-  expect(pane).toHaveFocus();
+    // A click into the email focuses the frame; focus comes straight back so keys reach the app.
+    frame().focus();
+    expect(document.activeElement).toBe(frame());
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+      vi.runAllTimers();
+    });
+    expect(pane).toHaveFocus();
 
-  doc.execCommand = vi.fn(() => true);
-  doc.getSelection()!.selectAllChildren(doc.body);
-  expect(fireEvent.keyDown(pane, { key: "c", metaKey: true })).toBe(false);
-  expect(doc.execCommand).toHaveBeenCalledWith("copy");
-  vi.useRealTimers();
+    doc.execCommand = vi.fn(() => true);
+    doc.getSelection()!.selectAllChildren(doc.body);
+    const mod = platform === "macos" ? { metaKey: true } : { ctrlKey: true };
+    expect(fireEvent.keyDown(pane, { key: "c", ...mod })).toBe(false);
+    expect(doc.execCommand).toHaveBeenCalledWith("copy");
+  } finally {
+    vi.useRealTimers();
+  }
 });

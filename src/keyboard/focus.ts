@@ -5,7 +5,8 @@
  */
 export function focusFromKeyboard(el: HTMLElement | null | undefined, options?: FocusOptions) {
   if (!el) return;
+  el.focus(options);
+  if (el.ownerDocument.activeElement !== el) return; // hidden or not focusable: nothing to mark
   el.dataset.keyFocus = "";
   el.addEventListener("blur", () => delete el.dataset.keyFocus, { once: true });
-  el.focus(options);
 }

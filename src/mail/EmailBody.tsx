@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { Button } from "../components/ui/Button";
 import { isEditableTarget, registry, type CommandRegistry } from "../keyboard/registry";
+import { platform } from "../lib/platform";
 import type { CommandError, MessageDetail, ThreadLoading as Loading } from "../lib/tauri";
 import { useThemeStore } from "../theme/theme";
 import { linkify, openLink } from "./linkify";
@@ -287,6 +288,7 @@ function watchFrame(
   // and a click into the email focuses the frame, after which no key reaches the app (Left, j/k, ...). There,
   // focus goes straight back to the reading pane; a selection made in the frame survives that.
   const host = iframe.ownerDocument;
+  const pane = () => iframe.parentElement?.closest<HTMLElement>("[tabindex]");
   let listenersRun = false;
   const probe = () => (listenersRun = true);
   doc.addEventListener("pheeme-probe", probe);
@@ -296,13 +298,16 @@ function watchFrame(
     setTimeout(() => {
       if (host.activeElement !== iframe) return;
       lastFocusedFrame = iframe;
-      iframe.parentElement?.closest<HTMLElement>("[tabindex]")?.focus({ preventScroll: true });
+      pane()?.focus({ preventScroll: true });
     });
   // With focus out of the frame, the native copy reads the app's selection; copy the email's instead.
   const onHostKeyDown = (event: KeyboardEvent) => {
     if (lastFocusedFrame !== iframe || event.altKey || event.shiftKey) return;
     if (isEditableTarget(event.target)) return; // a text field's own selection
-    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "c") return;
+    // A conversation left behind stays mounted (inert); its old selection isn't what's being copied.
+    if (iframe.closest("[inert]") || !pane()?.contains(host.activeElement)) return;
+    const mod = platform === "macos" ? event.metaKey : event.ctrlKey;
+    if (!mod || event.key.toLowerCase() !== "c") return;
     if (doc.getSelection()?.isCollapsed !== false || host.getSelection()?.isCollapsed === false)
       return;
     if (doc.execCommand("copy")) event.preventDefault();
