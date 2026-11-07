@@ -39,7 +39,7 @@ tracing = "0.1"
 file-rotate = "0.8"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-sha2 = "0.10"
+sha2 = "0.11"
 hmac = "0.12"
 rand = "0.8"
 open = "5"
