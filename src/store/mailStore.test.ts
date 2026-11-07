@@ -511,3 +511,25 @@ test("another mailbox never borrows the unread rows of the last one", async () =
   void useMailStore.getState().load({ accountIds: ["a"], labelId: "SENT", unreadOnly: true });
   expect(useMailStore.getState().loadedQuery?.labelId).toBe("INBOX");
 });
+
+test("switching Unread only off keeps the rows past the unread page", async () => {
+  // 100 rows, 80 unread; the unread query answers with its first 50 only.
+  const all = rows(1, 100).map((t, i) => ({ ...t, unread: i % 5 !== 0 }));
+  let hold = false;
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") return;
+    if (hold) return new Promise<ThreadPage>(() => {});
+    if (!(args as { unreadOnly?: boolean }).unreadOnly) return { threads: all, next: null };
+    const unread = all.filter((t) => t.unread).slice(0, 50);
+    return { threads: unread, next: cursorAfter(unread[49].id) };
+  });
+  const inbox = { accountIds: ["a"], labelId: "INBOX" };
+  await useMailStore.getState().load(inbox);
+  await useMailStore.getState().load({ ...inbox, unreadOnly: true });
+  expect(ids()).toHaveLength(50);
+
+  hold = true;
+  void useMailStore.getState().load(inbox);
+  expect(ids()).toEqual(all.map((t) => t.id));
+  expect(useMailStore.getState().next).toBeNull();
+});

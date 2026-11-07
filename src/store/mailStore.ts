@@ -153,15 +153,16 @@ let unfiltered: {
   query: MailQuery;
   threads: ThreadSummary[];
   next: ThreadCursor | null;
-  unread: Set<ThreadKey>;
+  /** Rows removed from the unread list since (archived, deleted, moved). */
+  gone: Set<ThreadKey>;
 } | null = null;
 
 /**
  * The rows to show the moment Unread only is switched, before the query answers. Rows are paged by
  * keyset, so the unread rows of a list loaded down to cursor C are exactly the unread list down to C:
  * switching on shows them at once, and the query then adds the rest below. Switching off restores
- * the list from before, with the rows changed since in their current state, minus unread rows that
- * have since left the mailbox. `null` when the mailbox changes or nothing is loaded.
+ * the list from before, with the rows changed since in their current state, minus rows removed in
+ * the meantime. `null` when the mailbox changes or nothing is loaded.
  */
 function instantRows(
   shown: ThreadSummary[],
@@ -176,16 +177,16 @@ function instantRows(
       query: from,
       threads: shown,
       next,
-      unread: new Set(shown.filter((t) => t.unread).map(keyOf)),
+      gone: new Set(),
     };
     return { threads: shown.filter((t) => t.unread), next };
   }
   if (!to.unreadOnly && from.unreadOnly && unfiltered && sameQuery(unfiltered.query, to)) {
-    const { unread } = unfiltered;
+    const { gone } = unfiltered;
     const current = new Map(shown.map((t) => [keyOf(t), t]));
     return {
-      threads: unfiltered.threads.flatMap(
-        (t) => current.get(keyOf(t)) ?? (unread.has(keyOf(t)) ? [] : t),
+      threads: unfiltered.threads.flatMap((t) =>
+        gone.has(keyOf(t)) ? [] : (current.get(keyOf(t)) ?? t),
       ),
       next: unfiltered.next,
     };
@@ -476,7 +477,10 @@ export const useMailStore = create<MailState>((set, get) => {
       // The rows being removed are in the list on screen, which is the loaded query (else the one asked for).
       if (op !== undefined)
         register(keys, { op, fn: null, query: get().loadedQuery ?? get().query });
-      keys.forEach((key) => keptRead.delete(key));
+      keys.forEach((key) => {
+        keptRead.delete(key);
+        unfiltered?.gone.add(key);
+      });
       const gone = new Set(keys);
       set((s) => ({ threads: s.threads.filter((t) => !gone.has(keyOf(t))) }));
     },
