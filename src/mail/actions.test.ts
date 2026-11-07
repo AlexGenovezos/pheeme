@@ -80,7 +80,7 @@ const reloadWith = async (rows: ThreadSummary[]) => {
 };
 const realPrefetch = useThreadStore.getState().prefetch;
 const realWaitForDetail = useThreadStore.getState().waitForDetail;
-let reload: ReturnType<typeof vi.fn>;
+let reload: ReturnType<typeof vi.fn<typeof realReloadFn>>;
 
 const setList = (threads: ThreadSummary[]) => useMailStore.setState({ threads });
 const listKeys = () => useMailStore.getState().threads.map((t) => threadKey(t.accountId, t.id));
