@@ -381,6 +381,28 @@ pub fn safe_file_name(name: Option<&str>) -> String {
     }
 }
 
+/// [`safe_file_name`], also valid on Windows: `<>"|?*` become `_` and a reserved device name
+/// (`CON.pdf`, `com1.txt`) gets a leading `_`. Used for copies opened in the default app, which
+/// only need to keep the extension.
+fn openable_file_name(name: Option<&str>) -> String {
+    let name: String = safe_file_name(name)
+        .chars()
+        .map(|c| if "<>\"|?*".contains(c) { '_' } else { c })
+        .collect();
+    let stem = name.split('.').next().unwrap_or_default().trim_end();
+    let reserved = matches!(
+        stem.to_ascii_uppercase().as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || (stem.len() == 4
+        && ["COM", "LPT"].contains(&stem[..3].to_ascii_uppercase().as_str())
+        && stem[3..].chars().all(|c| c.is_ascii_digit()));
+    if reserved {
+        format!("_{name}")
+    } else {
+        name
+    }
+}
+
 /// `dir/name`, or `dir/name (1).ext`, `dir/name (2).ext`, … if that already exists.
 pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
     // `symlink_metadata` (not `exists`) so a dangling symlink counts as occupied.
@@ -964,7 +986,7 @@ impl MailService {
         let att = self.bytes_of(row).await?;
         let folder = dir.join(uuid::Uuid::new_v4().to_string());
         tokio::fs::create_dir_all(&folder).await.map_err(io_error)?;
-        let path = folder.join(safe_file_name(att.filename.as_deref()));
+        let path = folder.join(openable_file_name(att.filename.as_deref()));
         tokio::fs::write(&path, &att.bytes)
             .await
             .map_err(io_error)?;
@@ -2118,6 +2140,24 @@ mod tests {
         assert_eq!(safe_file_name(Some("dir/")), "attachment");
         assert_eq!(safe_file_name(Some(".hidden")), "hidden");
         assert_eq!(safe_file_name(Some("ok name.txt ")), "ok name.txt");
+    }
+
+    #[test]
+    fn openable_file_names_are_valid_on_windows() {
+        assert_eq!(
+            openable_file_name(Some("Q&A? <draft>*.pdf")),
+            "Q&A_ _draft__.pdf"
+        );
+        assert_eq!(
+            openable_file_name(Some("say \"hi\" | bye.txt")),
+            "say _hi_ _ bye.txt"
+        );
+        assert_eq!(openable_file_name(Some("CON.pdf")), "_CON.pdf");
+        assert_eq!(openable_file_name(Some("com1.tar.gz")), "_com1.tar.gz");
+        assert_eq!(openable_file_name(Some("lpt9")), "_lpt9");
+        assert_eq!(openable_file_name(Some("console.pdf")), "console.pdf");
+        assert_eq!(openable_file_name(Some("com10.pdf")), "com10.pdf");
+        assert_eq!(openable_file_name(Some("Plan.pdf")), "Plan.pdf");
     }
 
     #[test]
