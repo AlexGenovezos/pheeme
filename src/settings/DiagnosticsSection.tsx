@@ -11,7 +11,7 @@ export const NOTE_MAX_LENGTH = 2000;
 
 type Status = { kind: "done" | "failed"; text: string } | null;
 
-/** Settings › About › Diagnostics: send a scrubbed log bundle to the developer, or save it to a file. */
+/** Settings › Diagnostics: send a scrubbed log bundle to the developer, or save it to a file. */
 export function DiagnosticsSection() {
   const accounts = useAccountStore((s) => s.accounts);
   const [note, setNote] = useState("");

@@ -206,21 +206,37 @@ export function resolveActiveAccount(
 export const mailboxKey = (ref: MailboxRef): string =>
   JSON.stringify([ref.accountId, ref.labelId, ref.category ?? null]);
 
+/** A row's location tag: the name, and the sidebar color of the mailbox it names. */
+export interface Location {
+  name: string;
+  colorToken: string;
+}
+
+const ARCHIVED: Location = { name: "Archived", colorToken: "--color-mailbox-allmail" };
+const byLabel = new Map<string, Location>(
+  [...CATEGORIES, ...FAVORITES].map((row) => [
+    row.labelId,
+    { name: row.name, colorToken: row.colorToken },
+  ]),
+);
+
 /**
  * Where a conversation sits, from its labels: Trash, Spam, its inbox tab (Primary, Social, …),
- * Sent or Drafts when it left the inbox that way, otherwise Archived.
+ * Sent or Drafts when it left the inbox that way, otherwise Archived (in All Mail's color).
+ * Returns shared objects, so memoized rows don't re-render for an equal location.
  */
-export function locationOf(labelIds: readonly string[]): string {
+export function locationOf(labelIds: readonly string[]): Location {
   const has = new Set(labelIds);
-  if (has.has("TRASH")) return "Trash";
-  if (has.has("SPAM")) return "Spam";
+  const at = (labelId: string) => byLabel.get(labelId)!;
+  if (has.has("TRASH")) return at("TRASH");
+  if (has.has("SPAM")) return at("SPAM");
   if (has.has("INBOX")) {
     const tab = CATEGORIES.find((c) => c.labelId !== "CATEGORY_PERSONAL" && has.has(c.labelId));
-    return tab ? tab.name : "Primary";
+    return at(tab ? tab.labelId : "CATEGORY_PERSONAL");
   }
-  if (has.has("SENT")) return "Sent";
-  if (has.has("DRAFT")) return "Drafts";
-  return "Archived";
+  if (has.has("SENT")) return at("SENT");
+  if (has.has("DRAFT")) return at("DRAFT");
+  return ARCHIVED;
 }
 
 /** Rows name their location in views that mix locations: All Mail, Starred, user labels and search. */

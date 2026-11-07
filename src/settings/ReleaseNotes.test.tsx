@@ -38,6 +38,9 @@ test("renders headings, bullets and code, and opens links in the browser", () =>
   );
   const [v09, v08] = screen.getAllByRole("article");
   expect(v09).toHaveAccessibleName("Version 0.9");
+  // Each release is its own card, so one doesn't run into the next.
+  expect(v09).toHaveClass("settings-card");
+  expect(v09).not.toContainElement(v08);
   expect(within(v09).getByText("This version")).toBeInTheDocument();
   expect(within(v08).queryByText("This version")).not.toBeInTheDocument();
   expect(within(v09).getByRole("heading", { name: "Sending" })).toBeInTheDocument();

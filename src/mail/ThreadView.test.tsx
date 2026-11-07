@@ -15,6 +15,7 @@ import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { openAndMarkRead } from "./actions";
 import { threadKey } from "./mailboxes";
+import { ViewPane } from "../shell/ViewPane";
 import { ThreadView } from "./ThreadView";
 
 const KEY = threadKey("a1", "t1");
@@ -520,7 +521,18 @@ test("Reply all answers the latest message that isn't a draft", async () => {
       : undefined;
   });
   open(detail([message(1), message(2), message(3, { labelIds: ["DRAFT"] })]));
-  renderView();
+  // Reply, Reply all and Forward sit in the reading pane's toolbar, in reach however far the email scrolls.
+  render(
+    <ToastProvider>
+      <ViewPane />
+    </ToastProvider>,
+  );
+  expect(document.querySelector(".toolbar--view")).toContainElement(
+    screen.getByRole("button", { name: "Reply all" }),
+  );
+  expect(document.querySelector(".view-pane__scroll")).not.toContainElement(
+    screen.getByRole("button", { name: "Reply" }),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Reply all" }));
   await waitFor(() =>
     expect(calls.filter((c) => c.cmd === "compose_template").map((c) => c.args)).toEqual([
@@ -625,7 +637,7 @@ describe("keyboard focus", () => {
     // Modified arrows and keys typed in a child are left alone.
     scrollBy.mockClear();
     expect(press("ArrowDown", { metaKey: true })).toBe(true);
-    fireEvent.keyDown(screen.getByRole("button", { name: "Reply" }), { key: "ArrowDown" });
+    fireEvent.keyDown(within(card(1)).getAllByRole("button")[0], { key: "ArrowDown" });
     expect(scrollBy).not.toHaveBeenCalled();
     expect(view).toHaveFocus();
   });

@@ -1,6 +1,6 @@
 // One conversation in the list: selection checkbox, sender, subject, snippet, date and hover actions.
 import { Archive, Mail, MailOpen, Paperclip, Star, Trash2 } from "lucide-react";
-import { memo, type MouseEvent, useState } from "react";
+import { type CSSProperties, memo, type MouseEvent, useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { registry } from "../keyboard/registry";
 import { ListRow } from "../components/ui/ListRow";
@@ -8,7 +8,7 @@ import { cx } from "../lib/utils";
 import { formatListDate } from "../lib/dates";
 import { LabelChip } from "../labels/LabelChip";
 import type { LabelInfo, ThreadSummary } from "../lib/tauri";
-import { threadKey } from "./mailboxes";
+import { type Location, threadKey } from "./mailboxes";
 import "./mail.css";
 
 export type RowAction = "archive" | "delete" | "read";
@@ -42,7 +42,7 @@ export interface ThreadRowProps {
   /** The mailbox being viewed, whose own chip would be redundant. */
   currentLabelId: string;
   /** Where the conversation sits (Updates, Spam, Archived…), shown before the subject; null hides it. */
-  location: string | null;
+  location: Location | null;
   onSelect(e: MouseEvent, thread: ThreadSummary): void;
   onCheck(e: MouseEvent, thread: ThreadSummary): void;
   onAction(action: RowAction, thread: ThreadSummary): void;
@@ -177,7 +177,14 @@ export const ThreadRow = memo(function ThreadRow({
       }
       subtitle={
         <>
-          {location && <span className="thread-row__location">{location}</span>}
+          {location && (
+            <span
+              className="thread-row__location"
+              style={{ "--row-color": `var(${location.colorToken})` } as CSSProperties}
+            >
+              {location.name}
+            </span>
+          )}
           {chips.length > 0 && (
             <span className="label-chips">
               {chips.slice(0, MAX_ROW_CHIPS).map((label) => (

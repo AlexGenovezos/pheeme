@@ -62,7 +62,7 @@ export function ThreadLoading({
         <button
           type="button"
           className="link-button thread-loading__help"
-          onClick={() => useSettingsStore.getState().openSettings("about")}
+          onClick={() => useSettingsStore.getState().openSettings("diagnostics")}
         >
           Taking too long? Send diagnostics
         </button>

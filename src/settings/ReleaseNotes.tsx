@@ -33,40 +33,58 @@ function Inline({ content }: { content: NotesInline[] }) {
   });
 }
 
-/** Every release's notes, newest first; `current` is marked as the running version. */
+/** Every release's notes as its own card, newest first; `current` is marked as the running version. */
 export function ReleaseNotes({ releases, current }: { releases: Release[]; current: string }) {
-  return releases.map(({ version, blocks }) => (
-    <article key={version} className="release-notes" aria-label={`Version ${version}`}>
+  return (
+    <div className="release-notes-list">
+      {releases.map((release) => (
+        <ReleaseCard key={release.version} release={release} current={current} />
+      ))}
+    </div>
+  );
+}
+
+function ReleaseCard({
+  release: { version, blocks },
+  current,
+}: {
+  release: Release;
+  current: string;
+}) {
+  return (
+    <article className="settings-card release-notes" aria-label={`Version ${version}`}>
       <h4 className="release-notes__version">
         Version {version}
         {version === displayVersion(current) && <Badge tone="accent">This version</Badge>}
       </h4>
-      {blocks.map((block, i) => {
-        switch (block.type) {
-          case "heading":
-            return (
-              <h5 key={i} className="release-notes__heading">
-                {block.text}
-              </h5>
-            );
-          case "paragraph":
-            return (
-              <p key={i} className="release-notes__lead">
-                <Inline content={block.content} />
-              </p>
-            );
-          case "list":
-            return (
-              <ul key={i} className="release-notes__list">
-                {block.items.map((item, j) => (
-                  <li key={j}>
-                    <Inline content={item} />
-                  </li>
-                ))}
-              </ul>
-            );
-        }
-      })}
+      <div className="release-notes__body">
+        {blocks.map((block, i) => {
+          switch (block.type) {
+            case "heading":
+              return (
+                <h5 key={i} className="release-notes__heading">
+                  {block.text}
+                </h5>
+              );
+            case "paragraph":
+              return (
+                <p key={i} className="release-notes__lead">
+                  <Inline content={block.content} />
+                </p>
+              );
+            case "list":
+              return (
+                <ul key={i} className="release-notes__list">
+                  {block.items.map((item, j) => (
+                    <li key={j}>
+                      <Inline content={item} />
+                    </li>
+                  ))}
+                </ul>
+              );
+          }
+        })}
+      </div>
     </article>
-  ));
+  );
 }

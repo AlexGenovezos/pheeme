@@ -421,7 +421,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Settings › About › Diagnostics (DiagnosticsSection.tsx): an inline form under its row. */
+/* Settings › Diagnostics (DiagnosticsSection.tsx): an inline form under its row. */
 .settings-diagnostics {
   display: grid;
   gap: var(--space-3);
@@ -486,9 +486,14 @@
   color: var(--color-danger);
 }
 
-/* What's new: each release's notes (src/settings/ReleaseNotes.tsx). */
+/* What's new: each release is its own card (src/settings/ReleaseNotes.tsx), its version in a header strip. */
+.release-notes-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
 .release-notes {
-  padding: var(--space-3) var(--space-4) var(--space-4);
+  overflow: hidden;
   font-size: var(--font-size-md);
   line-height: var(--line-height-normal);
 }
@@ -498,12 +503,23 @@
   align-items: center;
   gap: var(--space-2);
   margin: var(--space-0);
-  font-size: var(--font-size-md);
+  padding: var(--space-2-5) var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border-subtle);
+  background: var(--color-list-inactive-bg);
+  font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.release-notes__body {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+.release-notes__body > :first-child {
+  margin-top: var(--space-0);
 }
 
 .release-notes__lead {
-  margin: var(--space-1) var(--space-0) var(--space-0);
+  margin: var(--space-0);
   color: var(--color-foreground-muted);
 }
 

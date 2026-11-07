@@ -1,6 +1,16 @@
 import { NotificationsSettings } from "./NotificationsSettings";
 import { ModsSettings } from "../mods/ModsSettings";
-import { Bell, Info, Keyboard, Palette, Puzzle, RefreshCw, SquarePen, Users } from "lucide-react";
+import {
+  Bell,
+  Info,
+  Keyboard,
+  LifeBuoy,
+  Palette,
+  Puzzle,
+  RefreshCw,
+  SquarePen,
+  Users,
+} from "lucide-react";
 import {
   UNDO_SEND_CHOICES,
   type UndoSendSeconds,
@@ -13,6 +23,7 @@ import { useUiStore } from "../store/uiStore";
 import { THEME_MODES, type ThemeMode, useThemeStore } from "../theme/theme";
 import { AboutSettings } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
+import { DiagnosticsSection } from "./DiagnosticsSection";
 import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
 import { READING_SIZES, type ReadingSize, useReadingSettings } from "./readingSettings";
@@ -229,6 +240,14 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     Component: ModsSettings,
   },
   {
+    id: "diagnostics",
+    title: "Diagnostics",
+    icon: LifeBuoy,
+    group: "App",
+    keywords: ["logs", "support", "send", "report", "problem", "slow", "bug", "help"],
+    Component: DiagnosticsSection,
+  },
+  {
     id: "about",
     title: "About",
     icon: Info,
@@ -240,10 +259,6 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       "what's new",
       "changelog",
       "release notes",
-      "diagnostics",
-      "logs",
-      "support",
-      "send",
     ],
     Component: AboutSettings,
   },

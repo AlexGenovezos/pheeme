@@ -1,14 +1,16 @@
 import type { ReactNode } from "react";
 import { cx } from "../lib/utils";
 
-/** A titled card of rows, the building block of every settings page. */
+/** A titled card of rows, the building block of every settings page. `card={false}` leaves the children to draw their own cards. */
 export function SettingsSection({
   title,
   action,
+  card = true,
   children,
 }: {
   title: string;
   action?: ReactNode;
+  card?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -17,7 +19,7 @@ export function SettingsSection({
         <h3 className="settings-section__title">{title}</h3>
         {action}
       </div>
-      <div className="settings-card">{children}</div>
+      {card ? <div className="settings-card">{children}</div> : children}
     </section>
   );
 }

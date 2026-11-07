@@ -1,4 +1,3 @@
-import { Forward, Reply, ReplyAll } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
@@ -12,7 +11,7 @@ import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { MessageCard } from "./MessageCard";
 import { ThreadLoading } from "./ThreadLoading";
-import { applyLabel, archive, respond } from "./actions";
+import { applyLabel, archive } from "./actions";
 import { parseThreadKey, threadKey } from "./mailboxes";
 import "./mail.css";
 
@@ -188,27 +187,30 @@ export function ThreadView() {
     content = <ThreadLoading key={openKey} loading={loading} />;
   }
 
+  // The focus ring is drawn by the frame, above the content: on the scroller itself, an email's iframe covers it.
   return (
-    <div
-      className="view-pane__scroll"
-      ref={scroller}
-      role="region"
-      aria-label="Open conversation"
-      tabIndex={-1}
-      onKeyDown={scrollFromKey}
-    >
-      {content}
-      {mounted.map((key) => (
-        <div
-          key={key}
-          className="thread-view__retained"
-          data-visible={key === openKey}
-          aria-hidden={key !== openKey || undefined}
-          {...(key !== openKey ? { inert: true } : {})}
-        >
-          <Conversation openKey={key} detail={details.get(key)!} />
-        </div>
-      ))}
+    <div className="view-pane__frame">
+      <div
+        className="view-pane__scroll"
+        ref={scroller}
+        role="region"
+        aria-label="Open conversation"
+        tabIndex={-1}
+        onKeyDown={scrollFromKey}
+      >
+        {content}
+        {mounted.map((key) => (
+          <div
+            key={key}
+            className="thread-view__retained"
+            data-visible={key === openKey}
+            aria-hidden={key !== openKey || undefined}
+            {...(key !== openKey ? { inert: true } : {})}
+          >
+            <Conversation openKey={key} detail={details.get(key)!} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -265,17 +267,6 @@ function Conversation({ openKey, detail }: { openKey: string; detail: ThreadDeta
             onToggle={() => toggle(m.id)}
           />
         ))}
-      </div>
-      <div className="thread-view__replies">
-        <Button icon={<Reply />} onClick={() => void respond("reply")}>
-          Reply
-        </Button>
-        <Button icon={<ReplyAll />} onClick={() => void respond("replyAll")}>
-          Reply all
-        </Button>
-        <Button icon={<Forward />} onClick={() => void respond("forward")}>
-          Forward
-        </Button>
       </div>
     </div>
   );
