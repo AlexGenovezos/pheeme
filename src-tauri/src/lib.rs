@@ -336,6 +336,7 @@ pub fn run() {
             commands::compose::cancel_send,
             commands::support::send_diagnostics,
             commands::support::save_diagnostics,
+            commands::updater::log_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

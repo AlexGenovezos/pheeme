@@ -330,6 +330,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     // Diagnostics: nothing leaves the browser; both just succeed.
     send_diagnostics: () => undefined,
     save_diagnostics: () => undefined,
+    log_update: () => undefined,
     "plugin:dialog|save": () => "/Users/you/Downloads/pheeme-diagnostics.zip",
     reveal_download: () => undefined,
     "plugin:updater|check": () => null,

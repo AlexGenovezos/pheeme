@@ -439,6 +439,18 @@ export interface OutboxSendStatus extends SyncAccountEvent {
  */
 export const sendDiagnostics = (note: string, replyTo: string | null) =>
   invoke<void>("send_diagnostics", { note, replyTo });
+/** Updater steps the UI saw; `log_update` in Rust writes them to the diagnostics log. */
+export type UpdateEvent =
+  | "available"
+  | "up_to_date"
+  | "check_failed"
+  | "installing"
+  | "installed"
+  | "install_failed"
+  | "listener_failed";
+/** Log one updater step with the version it concerns and any error, for Send diagnostics. */
+export const logUpdate = (event: UpdateEvent, version: string | null, error: string | null) =>
+  invoke<void>("log_update", { event, version, error });
 /** Write the same bundle to `path` (chosen in a save dialog). */
 export const saveDiagnostics = (note: string, replyTo: string | null, path: string) =>
   invoke<void>("save_diagnostics", { note, replyTo, path });

@@ -22,7 +22,7 @@ vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn(async () => {}) }
 let stop: () => void = () => {};
 
 function fakeDeps(check: UpdaterDeps["check"]) {
-  return { check: vi.fn(check), relaunch: vi.fn(async () => {}), log: vi.fn() };
+  return { check: vi.fn(check), relaunch: vi.fn(async () => {}), report: vi.fn() };
 }
 
 function fakeUpdate(install: PendingUpdate["install"] = async () => {}) {
@@ -74,7 +74,7 @@ test("swallows and logs check errors", async () => {
   });
   stop = startUpdateChecks(deps);
   await vi.advanceTimersByTimeAsync(0);
-  expect(deps.log).toHaveBeenCalledTimes(1);
+  expect(deps.report).toHaveBeenCalledWith("check_failed", undefined, new Error("offline"));
   expect(useUpdateStore.getState().available).toBeNull();
   await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
   expect(deps.check).toHaveBeenCalledTimes(2);
@@ -98,6 +98,18 @@ test("apply installs then relaunches, once", async () => {
   expect(update.install).toHaveBeenCalledTimes(1);
   expect(deps.relaunch).toHaveBeenCalledTimes(1);
   expect(order).toEqual(["install", "relaunch"]);
+  expect(deps.report.mock.calls).toEqual([
+    ["available", "0.2.0"],
+    ["installing", "0.2.0"],
+    ["installed", "0.2.0"],
+  ]);
+});
+
+test("reports an up-to-date check", async () => {
+  const deps = fakeDeps(async () => null);
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deps.report).toHaveBeenCalledWith("up_to_date");
 });
 
 test("apply failure keeps the banner", async () => {
@@ -111,7 +123,11 @@ test("apply failure keeps the banner", async () => {
 
   await useUpdateStore.getState().apply();
 
-  expect(deps.log).toHaveBeenCalledTimes(1);
+  expect(deps.report.mock.calls).toEqual([
+    ["available", "0.2.0"],
+    ["installing", "0.2.0"],
+    ["install_failed", "0.2.0", new Error("download failed")],
+  ]);
   expect(deps.relaunch).not.toHaveBeenCalled();
   expect(useUpdateStore.getState().applying).toBe(false);
   expect(useUpdateStore.getState().available).toBe("0.2.0");
@@ -141,6 +157,19 @@ test("default deps adapt the tauri plugins", async () => {
 
   await useUpdateStore.getState().apply();
   expect(order).toEqual(["install", "relaunch"]);
+});
+
+test("default deps write updater steps to the diagnostics log", async () => {
+  const logged: unknown[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd === "log_update") logged.push(args);
+  });
+  const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.mocked(check).mockRejectedValueOnce(new Error("offline"));
+  stop = startUpdateChecks();
+  await vi.advanceTimersByTimeAsync(0);
+  quiet.mockRestore();
+  expect(logged).toEqual([{ event: "check_failed", version: null, error: "offline" }]);
 });
 
 test("default deps leave the store empty when no update exists", async () => {

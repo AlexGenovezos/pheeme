@@ -3,6 +3,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { create } from "zustand";
 import { createSubscriptionScope } from "./subscriptions";
+import { logUpdate, type UpdateEvent } from "./tauri";
 
 export interface PendingUpdate {
   version: string;
@@ -13,7 +14,8 @@ export interface PendingUpdate {
 export interface UpdaterDeps {
   check(): Promise<PendingUpdate | null>;
   relaunch(): Promise<void>;
-  log(msg: string, err: unknown): void;
+  /** Record an updater step in the diagnostics log; must not throw. */
+  report(event: UpdateEvent, version?: string, err?: unknown): void;
 }
 
 /** Public versions are two-part; the files store a trailing `.0` patch. */
@@ -33,7 +35,11 @@ const tauriDeps: UpdaterDeps = {
     return update && { version: update.version, install: () => update.downloadAndInstall() };
   },
   relaunch,
-  log: (msg, err) => console.error(msg, err),
+  report: (event, version, err) => {
+    if (err !== undefined) console.error(`update ${event}`, err);
+    const error = err === undefined ? null : String(err instanceof Error ? err.message : err);
+    logUpdate(event, version ?? null, error).catch(() => {});
+  },
 };
 
 interface UpdateState {
@@ -61,11 +67,14 @@ const initialState: UpdateState = {
   apply: async () => {
     if (!pending || useUpdateStore.getState().applying) return;
     useUpdateStore.setState({ applying: true });
+    const { version } = pending;
     try {
+      deps.report("installing", version);
       await pending.install();
+      deps.report("installed", version);
       await deps.relaunch();
     } catch (err) {
-      deps.log("update install failed", err);
+      deps.report("install_failed", version, err);
       useUpdateStore.setState({ applying: false });
     }
   },
@@ -76,12 +85,16 @@ export const useUpdateStore = create<UpdateState>(() => initialState);
 async function doCheck(): Promise<CheckResult> {
   try {
     const update = await deps.check();
-    if (!update) return "none";
+    if (!update) {
+      deps.report("up_to_date");
+      return "none";
+    }
+    deps.report("available", update.version);
     pending = update;
     useUpdateStore.setState({ available: update.version });
     return "available";
   } catch (err) {
-    deps.log("update check failed", err);
+    deps.report("check_failed", undefined, err);
     return "failed";
   }
 }
@@ -107,7 +120,7 @@ export async function checkForUpdatesNow(): Promise<void> {
 
 /** Run a manual check whenever the app menu asks for one. Returns an unsubscribe. */
 export function listenForManualChecks(): () => void {
-  const log = (err: unknown) => deps.log("update menu listener failed", err);
+  const log = (err: unknown) => deps.report("listener_failed", undefined, err);
   const scope = createSubscriptionScope();
   scope.add(() => listen(CHECK_FOR_UPDATES_EVENT, () => void checkForUpdatesNow())).catch(log);
   return scope.dispose;
