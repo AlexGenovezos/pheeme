@@ -114,7 +114,10 @@
   --speed-reader-play-size: 52px;
   --speed-reader-progress-height: 4px;
   --speed-reader-thumb-size: 12px;
-  --speed-reader-preset-width: 44px;
+  --speed-reader-popover-width: 280px;
+  --speed-panel-width: 400px;
+  --speed-panel-thumb-size: 16px;
+  --speed-panel-chip-width: 52px;
   --speed-control-slider-width: 160px;
   --speed-control-value-width: 72px;
   /* Settings dialog: a floating window over the blurred app. */

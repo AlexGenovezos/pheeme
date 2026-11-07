@@ -185,13 +185,32 @@
   height: var(--icon-size-md);
 }
 
-.speed-reader__options {
+/* Header tools: word size, the options popover, close. */
+.speed-reader__tools {
+  position: relative;
+  display: flex;
+  gap: var(--space-1);
+}
+.speed-reader__tools .ui-icon-button[aria-pressed="true"] {
+  color: var(--color-accent);
+}
+.speed-reader__popover {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: var(--space-0);
+  z-index: var(--z-popover);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border: var(--border-width) solid var(--color-border-subtle);
+  width: var(--speed-reader-popover-width);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-menu-border);
   border-radius: var(--radius-md);
+  background: var(--color-menu-bg);
+  color: var(--color-menu-foreground);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--font-size-sm);
+  animation: speed-reader-in var(--duration-fast) var(--ease-out);
 }
 .speed-reader__option {
   display: flex;
@@ -199,39 +218,142 @@
   justify-content: space-between;
   gap: var(--space-3);
 }
-.speed-reader__option--speed {
-  flex-wrap: wrap;
+.speed-reader__more {
+  align-self: flex-start;
+  padding: var(--space-0);
+  border: none;
+  background: none;
+  color: var(--color-link);
+  font: inherit;
+  cursor: default;
 }
-.speed-reader__option-label {
-  color: var(--color-foreground);
+.speed-reader__more:hover {
+  text-decoration: underline;
+}
+.speed-reader__more:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* The speed card: the speed large, a slider between − and +, and named presets. */
+.speed-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-self: center;
+  width: var(--speed-panel-width);
+  max-width: 100%;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-app-bg);
+}
+.speed-panel__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.speed-panel__label {
+  color: var(--color-foreground-muted);
   font-size: var(--font-size-md);
 }
-.speed-reader__presets {
-  display: flex;
-  flex-basis: 100%;
-  justify-content: flex-end;
-  gap: var(--space-1-5);
+.speed-panel__value {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
 }
-.speed-reader__preset {
-  min-width: var(--speed-reader-preset-width);
+.speed-panel__unit {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+}
+.speed-panel__slider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.speed-panel__step {
+  border: var(--border-width) solid var(--color-border);
+}
+.speed-panel__range {
+  flex: 1;
+  height: var(--speed-reader-progress-height);
+  margin: var(--space-0);
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--fill),
+    var(--color-border) var(--fill)
+  );
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: default;
+}
+.speed-panel__range::-webkit-slider-thumb {
+  width: var(--speed-panel-thumb-size);
+  height: var(--speed-panel-thumb-size);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius-full);
+  background: var(--color-pane-bg);
+  box-shadow: var(--shadow-popover);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.speed-panel__range::-moz-range-thumb {
+  width: var(--speed-panel-thumb-size);
+  height: var(--speed-panel-thumb-size);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius-full);
+  background: var(--color-pane-bg);
+  box-shadow: var(--shadow-popover);
+}
+.speed-panel__range:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+}
+.speed-panel__presets {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+.speed-panel__preset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-0);
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+.speed-panel__chip {
+  min-width: var(--speed-panel-chip-width);
   padding: var(--space-0-5) var(--space-2);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-foreground-muted);
-  font: inherit;
+  background: var(--color-pane-bg);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   font-variant-numeric: tabular-nums;
-  cursor: default;
+  text-align: center;
 }
-.speed-reader__preset:hover {
+.speed-panel__preset:hover .speed-panel__chip {
   background: var(--color-control-hover-bg);
 }
-.speed-reader__preset[aria-pressed="true"] {
+.speed-panel__preset[aria-pressed="true"] .speed-panel__chip {
   border-color: var(--color-accent);
-  color: var(--color-foreground);
+  color: var(--color-accent);
 }
-.speed-reader__preset:focus-visible {
+.speed-panel__name {
+  color: var(--color-foreground-subtle);
+  font-size: var(--font-size-xs);
+}
+.speed-panel__preset:focus-visible {
+  outline: none;
+}
+.speed-panel__preset:focus-visible .speed-panel__chip {
   outline: var(--focus-ring-width) solid var(--color-focus-border);
   outline-offset: var(--focus-ring-offset);
 }
