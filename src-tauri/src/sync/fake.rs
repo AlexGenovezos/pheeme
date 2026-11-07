@@ -655,8 +655,13 @@ impl MailApi for FakeGmail {
         if let Some(c) = &color {
             check_color(c)?;
         }
-        s.next_label += 1;
-        let id = format!("Label_{}", s.next_label);
+        let id = loop {
+            s.next_label += 1;
+            let id = format!("Label_{}", s.next_label);
+            if !s.user_labels.contains_key(&id) {
+                break id;
+            }
+        };
         let label = Label {
             id: id.clone(),
             name: name.into(),
@@ -744,6 +749,9 @@ impl MailApi for FakeGmail {
         self.enter("get_label")?;
         let s = self.lock();
         let user = s.user_labels.get(id).cloned();
+        if user.is_none() && !SYSTEM_LABELS.contains(&id) {
+            return Err(not_found());
+        }
         let with: Vec<&FakeMsg> = s
             .messages
             .values()
@@ -1206,5 +1214,33 @@ mod tests {
             None
         );
         assert!(fake.get_label("Label_1").await.unwrap().color.is_some());
+    }
+
+    #[tokio::test]
+    async fn fake_create_label_skips_seeded_ids() {
+        let fake = FakeGmail::new();
+        fake.add_user_label("Label_1", "Existing", None);
+        let work = fake.create_label("Work", None).await.unwrap();
+        assert_ne!(work.id, "Label_1");
+        let listed = fake.list_labels().await.unwrap();
+        assert!(listed
+            .iter()
+            .any(|l| l.id == "Label_1" && l.name == "Existing"));
+        assert!(listed.iter().any(|l| l.id == work.id && l.name == "Work"));
+    }
+
+    #[tokio::test]
+    async fn fake_get_label_404s_for_unknown_and_deleted() {
+        let fake = FakeGmail::new();
+        assert!(fake.get_label("INBOX").await.is_ok());
+        assert!(fake
+            .get_label("Label_404")
+            .await
+            .unwrap_err()
+            .is_not_found());
+        let l = fake.create_label("Work", None).await.unwrap();
+        assert!(fake.get_label(&l.id).await.is_ok());
+        fake.delete_label(&l.id).await.unwrap();
+        assert!(fake.get_label(&l.id).await.unwrap_err().is_not_found());
     }
 }
