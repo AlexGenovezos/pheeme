@@ -33,7 +33,7 @@ test("typing keeps search results visible and mounted while the next query loads
   await page.screenshot({ path: "test-results/search-during-edit.png" });
   expect(visibleDuringLoad).toBe(1);
   expect(await original!.evaluate((element) => element.isConnected)).toBe(true);
-  await expect(page.getByRole("status")).toHaveText("Cached mail and Gmail");
+  await expect(page.locator("#search-status")).toHaveText("Cached mail and Gmail");
   await expect(match).toBeVisible();
   expect(await original!.evaluate((element) => element.isConnected)).toBe(true);
   await page.screenshot({ path: "test-results/search-after-edit.png" });
