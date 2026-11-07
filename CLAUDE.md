@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Source of truth:** [docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md) sets scope, priorities and the phase order, and overrides `Gmail client project plan.md` wherever they disagree (see its §9). The plan remains the detailed technical reference.
 
-**Current state:** Phases 1–8 of design §12 are built: foundation, OAuth + multi-account onboarding, the Gmail API client, the sync engine, the app shell, the mail UI (v0.6), compose (v0.8) and search (v0.9). Phases 1–5 and 7 have passed acceptance; mail UI and search still need Alex's real-Mac checks and the §6 UI review before their issues close (progress per phase: GitHub epic #21). v0.9 also includes encrypted Google Cloud client transfer between devices, offline release notes in Settings › About, and default-on persistent diagnostic logs.
+**Current state:** Phases 1–9 of design §12 are built: foundation, OAuth + multi-account onboarding, the Gmail API client, the sync engine, the app shell, the mail UI (v0.6), compose (v0.8), search (v0.9) and labels (Phase 9: create, edit, delete, colour and show/hide through Gmail's labels API, a nested Labels sidebar section, searchable Label as… (`l`) and Move to… (`v`), coloured chips in the list and conversation). Phases 1–5 and 7 have passed acceptance; mail UI and search still need Alex's real-Mac checks and the §6 UI review before their issues close, and Phase 9 needs real-account and Mac UI checks (progress per phase: GitHub epic #21). v0.9 also includes encrypted Google Cloud client transfer between devices, offline release notes in Settings › About, and default-on persistent diagnostic logs.
 
 ## Commands
 
@@ -63,6 +63,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `render.rs` | Email HTML sanitizer (`ammonia`) and signed `pheeme-att` URLs for inline `cid:` images |
 | `attachment_cache.rs` | Attachment bytes on disk (`{cache}/attachments/{account}/{message}/{row}`): a sweep at launch (and after every 50 MB of downloads) removes orphans, then the least recently used files past 500 MB |
 | `mail.rs` | Tauri-free mail service the commands call: cached list/thread/label reads, changes via the outbox |
+| `labels.rs` | Tauri-free label service: create, rename/re-nest (cascading to sublabels), colour, visibility and delete (with sublabels), straight to Gmail's labels API (not the outbox), then written to the cache |
 | `compose/` | Tauri-free compose service: MIME building (`lettre`), Reply/Reply All/Forward templates, staged attachments, Gmail drafts, sends (with undo window) via the outbox |
 | `accounts.rs` | Tauri-free account service: sign-in flow, list/remove, access tokens (cached in memory) |
 | `identity.rs` | App identifier and keychain service constants |
@@ -79,6 +80,8 @@ Six Zustand stores:
 - `composeStore` (`src/compose/`) — open compose panels (autosave, close prompt) and sends waiting out undo or Gmail's confirmation; a refused or undone send reopens its panel
 
 Settings is a dialog over the app (`src/settings/`). Pages, sections and rows are declared as data in `src/settings/pages.tsx`: a new setting is one `SettingDef` there. Keyboard shortcuts come from the command registry; user rebindings are overrides stored by `src/keyboard/bindings.ts`, so label a button with `useKeybinding(commandId)` rather than a literal key.
+
+Label UI lives in `src/labels/`: the label tree (nesting by `/` in names), palette and chip colours, the searchable picker behind Label as… and Move to…, and the create/edit/delete dialogs.
 
 Compose panels dock at the bottom of the window (`src/compose/ComposeHost.tsx`); the TipTap editor is lazy-loaded with the panel. A panel is a `data-owns-keys` region, so single-key shortcuts don't fire inside it. Mail actions (archive, trash, star, read, labels, reply, new message) live in `src/mail/actions.ts`, shared by buttons, menus and shortcuts. Browser preview (`npm run dev`) answers every command from `src/preview/` fixtures, which mutate and emit `sync:messages_updated` like the app.
 
@@ -100,6 +103,7 @@ Nine tables.
 - **DB queries:** Use `sqlx::query_as!` macros for compile-time checking. All queries go in `db/<entity>.rs`.
 - **Thread labels** live in the `thread_labels` table, derived from `messages.label_ids`: change message labels, then call `recompute_threads` in the same transaction.
 - **Mail changes** (archive, read, star, trash, send) go through `sync::outbox`, never straight to Gmail (drafts are the exception: saved straight to the drafts API). Write transactions use `db::begin_write` (`BEGIN IMMEDIATE`).
+- **Label metadata changes** (create, rename, delete, colour, visibility) go straight to Gmail through `LabelService` (`labels.rs`), not the outbox, and hold the per-account label lock. Label sync takes that lock with `try_lock`, so message sync never waits on it.
 - **Command errors** reject with `{ code, message }` (`CommandError` in `commands/mod.rs`): branch on `code`, show `message`.
 - **Onboarding guide text** lives in `src/onboarding/steps.ts` and is mirrored in `docs/google-cloud-setup.md`; change both together.
 - Tauri dev server runs on **port 1420** (HMR on 1421). Don't change these without updating `tauri.conf.json`.

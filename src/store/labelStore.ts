@@ -33,6 +33,8 @@ interface LabelState {
   subscribe(signal?: AbortSignal): Promise<() => void>;
   /** An account's own labels, sorted by name. The array is stable until the labels change. */
   userLabels(accountId: string): LabelInfo[];
+  /** An account's labels by id, for rows that look labels up. The map is stable until the labels change. */
+  labelsById(accountId: string): ReadonlyMap<string, LabelInfo>;
   /** The label's display name, or its id when unknown. */
   labelName(accountId: string, labelId: string): string;
 }
@@ -47,6 +49,8 @@ const pendingReads = new Set<number>();
 
 const NO_LABELS: LabelInfo[] = [];
 const sortedUserLabels = new WeakMap<LabelInfo[], LabelInfo[]>();
+const labelMaps = new WeakMap<LabelInfo[], Map<string, LabelInfo>>();
+const NO_LABEL_MAP: ReadonlyMap<string, LabelInfo> = new Map();
 
 const byName = (a: LabelInfo, b: LabelInfo) =>
   a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
@@ -186,6 +190,16 @@ export const useLabelStore = create<LabelState>((set, get) => ({
       sortedUserLabels.set(labels, sorted);
     }
     return sorted;
+  },
+  labelsById: (accountId) => {
+    const labels = get().labels[accountId];
+    if (!labels) return NO_LABEL_MAP;
+    let map = labelMaps.get(labels);
+    if (!map) {
+      map = new Map(labels.map((l) => [l.id, l]));
+      labelMaps.set(labels, map);
+    }
+    return map;
   },
   labelName: (accountId, labelId) =>
     get().labels[accountId]?.find((l) => l.id === labelId)?.name ?? labelId,

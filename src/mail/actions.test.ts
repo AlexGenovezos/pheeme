@@ -7,11 +7,15 @@ import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
+import { usePickerStore } from "../labels/pickerStore";
 import {
+  applyLabel,
   archive,
   moveSelection,
+  moveTo,
   openAndMarkRead,
   openLabelMenu,
+  openMoveMenu,
   setRead,
   setStarred,
   targets,
@@ -35,6 +39,7 @@ const thread = (n: number, accountId = "a1", over: Partial<ThreadSummary> = {}):
   starred: false,
   hasAttachment: false,
   messageCount: 1,
+  labelIds: [],
   ...over,
 });
 const key = (n: number, accountId = "a1") => threadKey(accountId, `t${n}`);
@@ -93,6 +98,7 @@ beforeEach(() => {
   __resetThreadStoreForTests();
   __resetLabelStoreForTests();
   useToastStore.setState({ toasts: [] });
+  usePickerStore.getState().close();
   calls = [];
   rejecting = new Set();
   reload = vi.fn(async () => {});
@@ -666,6 +672,8 @@ describe("labels", () => {
     threadsUnread: 0,
     colorBackground: null,
     colorText: null,
+    messageListVisibility: "show",
+    labelListVisibility: "labelShow",
   });
   const detail = (n: number, labelIds: string[]): ThreadDetail => ({
     thread: thread(n),
@@ -681,6 +689,17 @@ describe("labels", () => {
     useLabelStore.setState({
       labels: { a1: [label("Label_1", "Work"), label("Label_2", "Home")] },
     });
+  });
+
+  test("toggling patches the row's label ids at once, sorted by name", async () => {
+    setList([thread(1, "a1", { labelIds: ["Label_1"] })]);
+    cache(detail(1, ["INBOX", "Label_1"]));
+    const pending = toggleLabel("a1", "Label_2", [key(1)]);
+    await flush();
+    expect(useMailStore.getState().threads[0].labelIds).toEqual(["Label_2", "Label_1"]);
+    await pending;
+    await toggleLabel("a1", "Label_1", [key(1)]);
+    expect(useMailStore.getState().threads[0].labelIds).toEqual(["Label_2"]);
   });
 
   test("toggling adds the label unless every target has it", async () => {
@@ -735,17 +754,15 @@ describe("labels", () => {
     expect(modifyCalls()[0].threadIds).toHaveLength(count);
   });
 
-  test("the menu marks a label checked across a selection larger than the cache", async () => {
+  test("the picker marks a label all across a selection larger than the cache", async () => {
     const rows = Array.from({ length: 32 }, (_, i) => thread(i));
     setList(rows);
     for (let i = 0; i < 32; i++) details[key(i)] = detail(i, ["Label_1"]);
     useUiStore.setState({ checked: rows.map((t) => threadKey(t.accountId, t.id)) });
     await openLabelMenu({ x: 0, y: 0 });
-    const [items] = vi.mocked(showContextMenu).mock.calls[0];
-    expect(items.map((i) => (i.type === "separator" ? null : [i.label, i.checked]))).toEqual([
-      ["Home", false],
-      ["Work", true],
-    ]);
+    const spec = usePickerStore.getState().spec;
+    expect(spec?.membership?.get("Label_1")).toBe("all");
+    expect(spec?.membership?.get("Label_2")).toBe("none");
   });
 
   test("the chip goes at once, stays gone across a second toggle, and a refusal puts it back", async () => {
@@ -827,37 +844,205 @@ describe("labels", () => {
     await Promise.all([second, third]);
   });
 
-  test("the menu lists the account's labels, checked where every target has them", async () => {
+  test("tri_state membership: the picker opens with all, some or none per label", async () => {
     setList([thread(1), thread(2)]);
     cache(detail(1, ["Label_1"]), detail(2, ["Label_1", "Label_2"]));
     useUiStore.setState({ checked: [key(1), key(2)] });
     await openLabelMenu({ x: 4, y: 8 });
 
-    expect(showContextMenu).toHaveBeenCalledTimes(1);
-    const [items, at] = vi.mocked(showContextMenu).mock.calls[0];
-    expect(at).toEqual({ x: 4, y: 8 });
-    expect(items.map((i) => (i.type === "separator" ? null : [i.label, i.checked]))).toEqual([
-      ["Home", false],
-      ["Work", true],
-    ]);
-
-    // Choosing a checked item removes it from both.
-    const work = items.find((i) => i.type !== "separator" && i.label === "Work");
-    if (!work || work.type === "separator") throw new Error("no Work item");
-    work.onSelect();
-    await flush();
-    expect(modifyCalls()).toEqual([
-      { accountId: "a1", threadIds: ["t1", "t2"], add: [], remove: ["Label_1"] },
+    expect(showContextMenu).not.toHaveBeenCalled();
+    const spec = usePickerStore.getState().spec;
+    expect(spec).toMatchObject({ mode: "label", accountId: "a1", keys: [key(1), key(2)] });
+    expect(spec?.at).toEqual({ x: 4, y: 8 });
+    expect([...(spec?.membership ?? [])]).toEqual([
+      ["Label_2", "some"],
+      ["Label_1", "all"],
     ]);
   });
 
-  test("an account without labels says so instead of opening an empty menu", async () => {
+  test("applyLabel adds or removes as told, whatever the targets have", async () => {
+    setList([thread(1), thread(2)]);
+    cache(detail(1, ["Label_1"]), detail(2, []));
+    await applyLabel("a1", "Label_1", true, [key(1), key(2)]);
+    await applyLabel("a1", "Label_1", false, [key(1), key(2)]);
+    expect(modifyCalls().map((c) => [c.add, c.remove])).toEqual([
+      [["Label_1"], []],
+      [[], ["Label_1"]],
+    ]);
+  });
+
+  test("an account without labels still opens the picker, so one can be created", async () => {
     useLabelStore.setState({ labels: { a1: [] } });
     setList([thread(1)]);
     useUiStore.setState({ openThread: key(1) });
     await openLabelMenu({ x: 0, y: 0 });
-    expect(showContextMenu).not.toHaveBeenCalled();
-    expect(toasts()[0].title).toBe("No labels yet");
+    expect(usePickerStore.getState().spec?.mode).toBe("label");
+    expect(toasts()).toEqual([]);
+  });
+
+  test("mixed_accounts_toast: a selection spanning accounts opens neither menu", async () => {
+    setList([thread(1), thread(2, "a2")]);
+    useUiStore.setState({ checked: [key(1), key(2, "a2")] });
+    await openLabelMenu({ x: 0, y: 0 });
+    expect(usePickerStore.getState().spec).toBeNull();
+    expect(toasts().map((t) => t.title)).toEqual([
+      "Select conversations from one account to label them",
+    ]);
+    openMoveMenu({ x: 0, y: 0 });
+    expect(usePickerStore.getState().spec).toBeNull();
+    expect(toasts()).toHaveLength(2);
+  });
+});
+
+describe("move", () => {
+  const label = (id: string, name: string): LabelInfo => ({
+    id,
+    accountId: "a1",
+    name,
+    type: "user",
+    messagesTotal: 0,
+    messagesUnread: 0,
+    threadsTotal: 0,
+    threadsUnread: 0,
+    colorBackground: null,
+    colorText: null,
+    messageListVisibility: "show",
+    labelListVisibility: "labelShow",
+  });
+  const detail = (n: number, labelIds: string[]): ThreadDetail => ({
+    thread: thread(n),
+    messages: [{ id: `m${n}`, threadId: `t${n}`, labelIds } as MessageDetail],
+    bodyError: null,
+  });
+  const cache = (...ds: ThreadDetail[]) =>
+    useThreadStore.setState({
+      details: new Map(ds.map((d) => [threadKey(d.thread.accountId, d.thread.id), d])),
+    });
+  const undo = () => last(toasts()).action?.run();
+
+  beforeEach(() => {
+    useLabelStore.setState({
+      labels: { a1: [label("Label_1", "Work"), label("Label_2", "Clients/Acme")] },
+    });
+  });
+
+  test("moveTo_from_inbox_removes_inbox, takes the rows out and Undo puts it back", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "INBOX" }, openThread: key(1) });
+    setList([thread(1), thread(2)]);
+    cache(detail(1, ["INBOX"]));
+    const done = moveTo("a1", [key(1)], "Label_2");
+    await flush();
+    expect(listKeys()).toEqual([key(2)]);
+    await done;
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: ["Label_2"], remove: ["INBOX"] },
+    ]);
+    expect(last(toasts()).title).toBe('Moved to "Clients/Acme"');
+
+    undo();
+    await flush();
+    expect(modifyCalls()[1]).toEqual({
+      accountId: "a1",
+      threadIds: ["t1"],
+      add: ["INBOX"],
+      remove: ["Label_2"],
+    });
+    expect(reload).toHaveBeenCalled();
+  });
+
+  test("a category inbox counts as the Inbox", async () => {
+    useUiStore.setState({
+      mailbox: { accountId: "a1", labelId: "INBOX", category: "CATEGORY_SOCIAL" },
+    });
+    setList([thread(1)]);
+    await moveTo("a1", [key(1)], "Label_1");
+    expect(modifyCalls()[0]).toMatchObject({ add: ["Label_1"], remove: ["INBOX"] });
+    expect(listKeys()).toEqual([]);
+  });
+
+  test("moveTo_from_label_removes_that_label, including a move to Inbox", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "Label_1" } });
+    setList([
+      thread(1, "a1", { labelIds: ["Label_1"] }),
+      thread(2, "a1", { labelIds: ["Label_1"] }),
+    ]);
+    cache(detail(1, ["Label_1"]), detail(2, ["Label_1"]));
+    await moveTo("a1", [key(1)], "Label_2");
+    expect(modifyCalls()[0]).toEqual({
+      accountId: "a1",
+      threadIds: ["t1"],
+      add: ["Label_2"],
+      remove: ["Label_1"],
+    });
+    expect(listKeys()).toEqual([key(2)]);
+
+    await moveTo("a1", [key(2)], "INBOX");
+    expect(modifyCalls()[1]).toMatchObject({ add: ["INBOX"], remove: ["Label_1"] });
+    expect(last(toasts()).title).toBe('Moved to "Inbox"');
+  });
+
+  test("moveTo_from_all_mail_removes_inbox_only; the rows stay and Undo restores only what each had", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "ALL" } });
+    setList([thread(1), thread(2, "a1", { labelIds: ["Label_2"] })]);
+    cache(detail(1, ["INBOX"]), detail(2, ["Label_2"]));
+    await moveTo("a1", [key(1), key(2)], "Label_2");
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1", "t2"], add: ["Label_2"], remove: ["INBOX"] },
+    ]);
+    expect(listKeys()).toEqual([key(1), key(2)]);
+    expect(useMailStore.getState().threads.map((t) => t.labelIds)).toEqual([
+      ["Label_2"],
+      ["Label_2"],
+    ]);
+
+    undo();
+    await flush();
+    // t1 had INBOX and not the label; t2 had the label and no INBOX, so it is left alone.
+    expect(modifyCalls().slice(1)).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: ["INBOX"], remove: ["Label_2"] },
+    ]);
+    expect(useMailStore.getState().threads.map((t) => t.labelIds)).toEqual([[], ["Label_2"]]);
+  });
+
+  test("search results count as elsewhere, and moving to Inbox from there removes nothing", async () => {
+    useMailStore.setState({ query: { accountIds: ["a1"], labelId: "ALL", search: "invoice" } });
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "Label_1" } });
+    setList([thread(1)]);
+    cache(detail(1, ["Label_1"]));
+    await moveTo("a1", [key(1)], "INBOX");
+    expect(modifyCalls()[0]).toMatchObject({ add: ["INBOX"], remove: [] });
+    expect(listKeys()).toEqual([key(1)]);
+  });
+
+  test("moving to Trash trashes", async () => {
+    setList([thread(1)]);
+    await moveTo("a1", [key(1)], "TRASH");
+    expect(calls.filter((c) => c.cmd === "trash_threads")).toHaveLength(1);
+  });
+
+  test("in Spam and Trash, Move to says it isn't available yet", () => {
+    setList([thread(1)]);
+    for (const labelId of ["SPAM", "TRASH"]) {
+      useUiStore.setState({ mailbox: { accountId: "a1", labelId }, openThread: key(1) });
+      openMoveMenu({ x: 0, y: 0 });
+      expect(usePickerStore.getState().spec).toBeNull();
+    }
+    expect(toasts().map((t) => t.title)).toEqual([
+      "Move to isn't available in Spam or Trash yet",
+      "Move to isn't available in Spam or Trash yet",
+    ]);
+  });
+
+  test("Move to opens the picker in move mode for the targets", () => {
+    setList([thread(1)]);
+    useUiStore.setState({ openThread: key(1) });
+    openMoveMenu({ x: 1, y: 2 });
+    expect(usePickerStore.getState().spec).toMatchObject({
+      mode: "move",
+      accountId: "a1",
+      keys: [key(1)],
+      at: { x: 1, y: 2 },
+    });
   });
 });
 

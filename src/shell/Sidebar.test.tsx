@@ -1,13 +1,20 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { useToastStore } from "../components/ui/Toast";
 import { appCommands } from "../keyboard/appCommands";
+import { ColorPopoverHost } from "../labels/ColorPopover";
+import { useLabelDialogStore } from "../labels/dialogStore";
+import { LabelPickerHost } from "../labels/LabelPicker";
+import { usePickerStore } from "../labels/pickerStore";
+import { revealLabels } from "../labels/reveal";
 import { useSettingsStore } from "../settings/settingsStore";
 import type { AccountInfo, LabelInfo } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
 import { __resetUiStoreForTests, LAYOUT_KEY, useUiStore } from "../store/uiStore";
+import { ContextMenuHost } from "./ContextMenuHost";
 import { Sidebar } from "./Sidebar";
 
 const account = (id: string, email: string): AccountInfo => ({
@@ -34,6 +41,8 @@ const label = (
   threadsUnread: 0,
   colorBackground,
   colorText: null,
+  messageListVisibility: "show",
+  labelListVisibility: "labelShow",
 });
 
 const ONE = account("a1", "me@home.test");
@@ -146,23 +155,23 @@ describe("stacked layout", () => {
     expect(accountHeader(ONE.email)).toHaveAttribute("aria-expanded", "false");
   });
 
-  test("Favorites and Gmail follow the active account", () => {
+  test("Favorites and Labels follow the active account", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
     expect(count(link("Starred", region("Favorites")))).toBe("5");
-    expect(link("Receipts", region("Gmail"))).toBeInTheDocument();
+    expect(link("Receipts", region("Labels"))).toBeInTheDocument();
 
     fireEvent.click(link("Social", accountGroup(TWO.email)));
     expect(count(link("Starred", region("Favorites")))).toBe("8");
-    expect(link("Clients", region("Gmail"))).toBeInTheDocument();
+    expect(link("Clients", region("Labels"))).toBeInTheDocument();
     expect(
-      within(region("Gmail")).queryByRole("link", { name: "Receipts" }),
+      within(region("Labels")).queryByRole("link", { name: "Receipts" }),
     ).not.toBeInTheDocument();
 
     fireEvent.click(link("All Inboxes"));
     expect(useUiStore.getState().mailbox).toEqual({ accountId: null, labelId: "INBOX" });
     expect(count(link("Starred", region("Favorites")))).toBe("8");
-    expect(link("Clients", region("Gmail"))).toBeInTheDocument();
+    expect(link("Clients", region("Labels"))).toBeInTheDocument();
   });
 
   test("a stored active account that was removed falls back to the first account", () => {
@@ -171,7 +180,7 @@ describe("stacked layout", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
     expect(count(link("Starred", region("Favorites")))).toBe("5");
-    expect(link("Receipts", region("Gmail"))).toBeInTheDocument();
+    expect(link("Receipts", region("Labels"))).toBeInTheDocument();
   });
 
   test("a restored mailbox whose account or label is gone falls back to the home mailbox", () => {
@@ -195,7 +204,7 @@ describe("stacked layout", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
     expect(useUiStore.getState().mailbox).toEqual(mailbox);
-    expect(link("Travel", region("Gmail"))).toHaveAttribute("aria-current", "true");
+    expect(link("Travel", region("Labels"))).toHaveAttribute("aria-current", "true");
   });
 
   test("Starred and Drafts show totals, Spam shows unread", () => {
@@ -257,11 +266,13 @@ describe("stacked layout", () => {
   test("user label with colorBackground shows a dot with that color", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
-    const gmail = region("Gmail");
+    const gmail = region("Labels");
     expect(link("Travel", gmail).querySelector(".sidebar__label-dot")).toHaveStyle({
       backgroundColor: "#16a766",
     });
-    expect(link("Receipts", gmail).querySelector(".sidebar__label-dot")).toBeNull();
+    const plain = link("Receipts", gmail).querySelector(".sidebar__label-dot");
+    expect(plain).toHaveClass("sidebar__label-dot--none");
+    expect(plain).not.toHaveAttribute("style");
     expect(count(link("Travel", gmail))).toBe("4");
   });
 
@@ -350,6 +361,18 @@ describe("stacked layout", () => {
   });
 });
 
+test("revealing another account's labels switches the sidebar's account, not the mailbox", async () => {
+  seed([ONE, TWO]);
+  render(<Sidebar />);
+  const mailbox = useUiStore.getState().mailbox; // All Inboxes; the sidebar shows a1's labels
+  expect(within(region("Labels")).queryByRole("link", { name: "Clients" })).toBeNull();
+
+  act(() => revealLabels("a2"));
+  expect(useUiStore.getState().activeAccountId).toBe("a2");
+  expect(useUiStore.getState().mailbox).toEqual(mailbox);
+  await waitFor(() => expect(link("Clients", region("Labels"))).toHaveFocus());
+});
+
 describe("go-to commands", () => {
   const run = (shortcutOrTitle: string) => {
     const command = appCommands().find(
@@ -395,5 +418,417 @@ describe("go-to commands", () => {
       labelId: "INBOX",
       category: "CATEGORY_PROMOTIONS",
     });
+  });
+});
+
+describe("Labels section", () => {
+  let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
+  let refuse: string | null;
+  const updates = () => calls.filter((c) => c.cmd === "update_label").map((c) => c.args);
+
+  const withVis = (l: LabelInfo, labelListVisibility: string): LabelInfo => ({
+    ...l,
+    labelListVisibility,
+  });
+
+  function seedLabels() {
+    useAccountStore.setState({ accounts: [ONE], loaded: true, error: null, syncErrors: {} });
+    useLabelStore.setState({
+      labels: {
+        a1: [
+          label("a1", "L_globex", "Clients/Globex"),
+          label("a1", "L_clients", "Clients"),
+          label("a1", "L_acme", "Clients/Acme"),
+          label("a1", "L_travel", "Travel", "#16a766"),
+          label("a1", "L_thing", "Old/Thing"),
+          withVis(label("a1", "L_archive", "Archive"), "labelHide"),
+          withVis(label("a1", "L_news", "Newsletters"), "labelShowIfUnread"),
+          withVis(label("a1", "L_alerts", "Alerts"), "labelShowIfUnread"),
+        ],
+      },
+      counts: { a1: { L_acme: { unread: 3, total: 9 }, L_alerts: { unread: 2, total: 2 } } },
+      categoryCounts: { a1: { INBOX: 0 } },
+      allInboxUnread: 0,
+    });
+  }
+
+  const labelsRegion = () => region("Labels");
+  const shownLinks = () =>
+    within(labelsRegion())
+      .queryAllByRole("link")
+      .map((r) => r.getAttribute("aria-label"));
+  const menuItems = () =>
+    [
+      ...screen
+        .getByRole("menu")
+        .querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"], [role="separator"]'),
+    ].map((el) =>
+      el.getAttribute("role") === "separator"
+        ? "---"
+        : `${el.textContent}${el.getAttribute("aria-checked") === "true" ? " [x]" : ""}`,
+    );
+  const renderAll = () =>
+    render(
+      <>
+        <Sidebar />
+        <ContextMenuHost />
+        <ColorPopoverHost />
+      </>,
+    );
+  const openMenu = async (path: string) => {
+    fireEvent.click(within(labelsRegion()).getByRole("button", { name: `Options for ${path}` }));
+    await screen.findByRole("menu");
+  };
+  const menuItem = (name: string) =>
+    within(screen.getByRole("menu")).queryByRole("menuitem", { name }) ??
+    within(screen.getByRole("menu")).getByRole("menuitemcheckbox", { name });
+  const choose = (name: string) => fireEvent.click(menuItem(name));
+
+  beforeEach(() => {
+    calls = [];
+    refuse = null;
+    useLabelDialogStore.getState().close();
+    useToastStore.setState({ toasts: [] });
+    mockIPC(
+      (cmd, args) => {
+        const a = (args ?? {}) as Record<string, unknown>;
+        calls.push({ cmd, args: a });
+        if (cmd === "update_label") {
+          if (refuse) throw { code: "gmail", message: refuse };
+          return [];
+        }
+        return undefined;
+      },
+      { shouldMockEvents: true },
+    );
+    seedLabels();
+  });
+
+  test("nests_and_folds", () => {
+    const { unmount } = render(<Sidebar />);
+    expect(shownLinks()).toEqual([
+      "Alerts",
+      "Clients",
+      "Clients/Acme",
+      "Clients/Globex",
+      "Old/Thing",
+      "Travel",
+    ]);
+    const acme = link("Clients/Acme", labelsRegion());
+    expect(acme.closest(".sidebar__label")).toHaveStyle({ "--label-depth": "1" });
+    expect(link("Clients", labelsRegion()).closest(".sidebar__label")).toHaveStyle({
+      "--label-depth": "0",
+    });
+    expect(acme.textContent).toContain("Acme");
+    expect(acme.textContent).not.toContain("Clients");
+    expect(count(acme)).toBe("3");
+
+    // A sublabel whose parent doesn't exist sits under a synthetic parent that isn't a link but still folds.
+    const old = within(labelsRegion()).getByRole("button", { name: "Old sublabels" });
+    expect(old).toHaveAttribute("aria-expanded", "true");
+    expect(within(labelsRegion()).queryByRole("link", { name: "Old" })).not.toBeInTheDocument();
+    expect(within(labelsRegion()).getByText("Old")).toBeInTheDocument();
+    expect(
+      within(labelsRegion()).queryByRole("button", { name: "Options for Old" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(old);
+    expect(old).toHaveAttribute("aria-expanded", "false");
+    expect(shownLinks()).not.toContain("Old/Thing");
+
+    const clients = within(labelsRegion()).getByRole("button", { name: "Clients sublabels" });
+    expect(clients).toHaveAttribute("aria-expanded", "true");
+    expect(
+      within(labelsRegion()).queryByRole("button", { name: "Travel sublabels" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(clients);
+    expect(clients).toHaveAttribute("aria-expanded", "false");
+    expect(shownLinks()).toEqual(["Alerts", "Clients", "Travel"]);
+    expect(JSON.parse(localStorage.getItem(LAYOUT_KEY)!)).toMatchObject({
+      foldedLabels: { a1: ["Old", "Clients"] },
+    });
+
+    unmount();
+    __resetUiStoreForTests();
+    render(<Sidebar />);
+    expect(
+      within(labelsRegion()).getByRole("button", { name: "Clients sublabels" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(within(labelsRegion()).getByRole("button", { name: "Clients sublabels" }));
+    expect(shownLinks()).toContain("Clients/Acme");
+  });
+
+  test("hidden_labels_under_more", () => {
+    render(<Sidebar />);
+    expect(shownLinks()).not.toContain("Archive");
+    const more = within(labelsRegion()).getByRole("button", { name: "More" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(shownLinks().slice(-2)).toEqual(["Archive", "Newsletters"]);
+    fireEvent.click(link("Archive", labelsRegion()));
+    expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "L_archive" });
+  });
+
+  for (const [mode, labelListVisibility] of [
+    ["hidden parent", "labelHide"],
+    ["read show-if-unread parent", "labelShowIfUnread"],
+  ] as const)
+    test(`a ${mode} of a shown sublabel is only context above More`, () => {
+      useLabelStore.setState({
+        labels: {
+          a1: [
+            withVis(label("a1", "L_clients", "Clients"), labelListVisibility),
+            label("a1", "L_acme", "Clients/Acme"),
+          ],
+        },
+        counts: { a1: {} },
+      });
+      render(<Sidebar />);
+      expect(shownLinks()).toEqual(["Clients/Acme"]);
+      expect(within(labelsRegion()).getByText("Clients")).toBeInTheDocument();
+      expect(
+        within(labelsRegion()).queryByRole("button", { name: "Options for Clients" }),
+      ).not.toBeInTheDocument();
+      const fold = within(labelsRegion()).getByRole("button", { name: "Clients sublabels" });
+      fireEvent.click(fold);
+      expect(shownLinks()).toEqual([]);
+      fireEvent.click(fold);
+
+      fireEvent.click(within(labelsRegion()).getByRole("button", { name: "More" }));
+      expect(shownLinks()).toEqual(["Clients/Acme", "Clients"]);
+      expect(
+        within(labelsRegion()).getByRole("button", { name: "Options for Clients" }),
+      ).toBeInTheDocument();
+      fireEvent.click(link("Clients", labelsRegion()));
+      expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "L_clients" });
+    });
+
+  test("no More row when every label is shown", () => {
+    useLabelStore.setState({ labels: { a1: [label("a1", "L_travel", "Travel")] } });
+    render(<Sidebar />);
+    expect(within(labelsRegion()).queryByRole("button", { name: "More" })).not.toBeInTheDocument();
+  });
+
+  test("show_if_unread_hidden_when_read", () => {
+    render(<Sidebar />);
+    expect(shownLinks()).toContain("Alerts");
+    expect(shownLinks()).not.toContain("Newsletters");
+    act(() => {
+      const counts = useLabelStore.getState().counts;
+      useLabelStore.setState({
+        counts: {
+          a1: { ...counts.a1, L_news: { unread: 1, total: 1 }, L_alerts: { unread: 0, total: 2 } },
+        },
+      });
+    });
+    expect(shownLinks()).toContain("Newsletters");
+    expect(shownLinks()).not.toContain("Alerts");
+  });
+
+  test("plus_opens_create_dialog", () => {
+    render(<Sidebar />);
+    fireEvent.click(within(labelsRegion()).getByRole("button", { name: "Create label" }));
+    expect(useLabelDialogStore.getState().dialog).toMatchObject({
+      kind: "label",
+      spec: { mode: "create", accountId: "a1" },
+    });
+  });
+
+  test("the section and its + show for an account without labels", () => {
+    useLabelStore.setState({ labels: { a1: [] } });
+    render(<Sidebar />);
+    expect(
+      within(labelsRegion()).getByRole("button", { name: "Create label" }),
+    ).toBeInTheDocument();
+  });
+
+  test("menu_offers_label_actions", async () => {
+    renderAll();
+    await openMenu("Travel");
+    expect(menuItems()).toEqual([
+      "Label colour…",
+      "---",
+      "Show in label list [x]",
+      "Show if unread",
+      "Hide in label list",
+      "Show in message list [x]",
+      "---",
+      "Edit…",
+      "Add sublabel…",
+      "Delete label",
+    ]);
+    expect(menuItem("Delete label")).toHaveClass("ui-menu__item--danger");
+
+    choose("Hide in label list");
+    await waitFor(() =>
+      expect(updates()).toEqual([
+        { accountId: "a1", labelId: "L_travel", edit: { labelListVisibility: "labelHide" } },
+      ]),
+    );
+
+    await openMenu("Travel");
+    choose("Show in message list");
+    await waitFor(() =>
+      expect(updates()[1]).toEqual({
+        accountId: "a1",
+        labelId: "L_travel",
+        edit: { messageListVisibility: "hide" },
+      }),
+    );
+
+    // Choosing the visibility it already has changes nothing.
+    await openMenu("Travel");
+    choose("Show in label list");
+    expect(updates()).toHaveLength(2);
+
+    await openMenu("Clients/Acme");
+    choose("Add sublabel…");
+    expect(useLabelDialogStore.getState().dialog).toMatchObject({
+      kind: "label",
+      spec: { mode: "create", accountId: "a1", parent: "Clients/Acme" },
+    });
+
+    await openMenu("Travel");
+    choose("Edit…");
+    expect(useLabelDialogStore.getState().dialog).toMatchObject({
+      kind: "label",
+      spec: { mode: "edit", accountId: "a1", labelId: "L_travel" },
+    });
+
+    await openMenu("Travel");
+    choose("Delete label");
+    expect(useLabelDialogStore.getState().dialog).toMatchObject({
+      kind: "delete",
+      accountId: "a1",
+      labelId: "L_travel",
+    });
+  });
+
+  test("right-click and the context-menu key open the same menu, ticking the current visibility", async () => {
+    useLabelStore.setState({
+      labels: {
+        a1: [
+          {
+            ...withVis(label("a1", "L_alerts", "Alerts"), "labelShowIfUnread"),
+            messageListVisibility: "hide",
+          },
+        ],
+      },
+    });
+    renderAll();
+    fireEvent.contextMenu(link("Alerts", labelsRegion()), { clientX: 10, clientY: 20 });
+    await screen.findByRole("menu");
+    expect(menuItems()).toContain("Show if unread [x]");
+    expect(menuItems()).toContain("Show in message list");
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+
+    fireEvent.keyDown(link("Alerts", labelsRegion()), { key: "ContextMenu" });
+    await screen.findByRole("menu");
+    choose("Show in message list");
+    await waitFor(() =>
+      expect(updates()).toEqual([
+        { accountId: "a1", labelId: "L_alerts", edit: { messageListVisibility: "show" } },
+      ]),
+    );
+  });
+
+  test("color_popover_updates_label", async () => {
+    renderAll();
+    await openMenu("Clients/Acme");
+    choose("Label colour…");
+    const popover = await screen.findByRole("dialog", { name: "Label colour" });
+    const swatches = within(popover).getAllByRole("radio");
+    expect(swatches).toHaveLength(64);
+    expect(swatches.every((s) => s.getAttribute("aria-checked") === "false")).toBe(true);
+    fireEvent.click(within(popover).getByRole("radio", { name: "#16a766" }));
+    await waitFor(() =>
+      expect(updates()).toEqual([
+        {
+          accountId: "a1",
+          labelId: "L_acme",
+          edit: { color: { background: "#16a766", text: "#000000" } },
+        },
+      ]),
+    );
+    expect(screen.queryByRole("dialog", { name: "Label colour" })).not.toBeInTheDocument();
+  });
+
+  test("the colour popover ticks the current colour and works from the keyboard", async () => {
+    renderAll();
+    await openMenu("Travel");
+    choose("Label colour…");
+    const popover = await screen.findByRole("dialog", { name: "Label colour" });
+    const current = within(popover).getByRole("radio", { name: "#16a766" });
+    expect(current).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(current).toHaveFocus());
+    fireEvent.keyDown(current, { key: "ArrowRight" });
+    const next = within(popover).getByRole("radio", { name: "#43d692" });
+    expect(next).toHaveFocus();
+    fireEvent.keyDown(next, { key: "ArrowDown" });
+    const below = within(popover).getByRole("radio", { name: "#c6f3de" });
+    expect(below).toHaveFocus();
+    fireEvent.keyDown(below, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Label colour" })).not.toBeInTheDocument();
+    expect(updates()).toEqual([]);
+  });
+
+  test("remove_colour_clears", async () => {
+    renderAll();
+    await openMenu("Travel");
+    choose("Label colour…");
+    const popover = await screen.findByRole("dialog", { name: "Label colour" });
+    fireEvent.click(within(popover).getByRole("button", { name: "Remove colour" }));
+    await waitFor(() =>
+      expect(updates()).toEqual([
+        { accountId: "a1", labelId: "L_travel", edit: { clearColor: true } },
+      ]),
+    );
+  });
+
+  test("a refused change shows Gmail's message in a toast", async () => {
+    refuse = "Gmail didn't answer";
+    renderAll();
+    await openMenu("Travel");
+    choose("Hide in label list");
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.map((t) => t.title)).toEqual(["Gmail didn't answer"]),
+    );
+  });
+
+  test("reveal_labels_expands_collapsed_sidebar", async () => {
+    useUiStore.setState({ sidebarCollapsed: true });
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    render(<Sidebar />);
+    act(() => revealLabels());
+    expect(useUiStore.getState().sidebarCollapsed).toBe(false);
+    await waitFor(() => expect(link("Alerts", labelsRegion())).toHaveFocus());
+    expect(scrolled).toHaveBeenCalled();
+
+    // Already open: it stays open and still focuses the section.
+    link("Travel", labelsRegion()).focus();
+    act(() => revealLabels());
+    expect(useUiStore.getState().sidebarCollapsed).toBe(false);
+    await waitFor(() => expect(link("Alerts", labelsRegion())).toHaveFocus());
+  });
+
+  test("the picker's Manage labels opens the collapsed sidebar on the Labels section", async () => {
+    useUiStore.setState({ sidebarCollapsed: true });
+    render(
+      <>
+        <Sidebar />
+        <LabelPickerHost />
+      </>,
+    );
+    act(() =>
+      usePickerStore
+        .getState()
+        .open({ mode: "label", accountId: "a1", keys: [], at: { x: 0, y: 0 } }),
+    );
+    fireEvent.click(await screen.findByRole("option", { name: "Manage labels" }));
+    expect(usePickerStore.getState().spec).toBeNull();
+    expect(useUiStore.getState().sidebarCollapsed).toBe(false);
+    await waitFor(() => expect(link("Alerts", labelsRegion())).toHaveFocus());
   });
 });

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE outbox_messages\n           SET prior_label_ids = (SELECT json_group_array(value) FROM json_each(prior_label_ids)\n                                  WHERE value NOT IN (SELECT value FROM json_each(?1)))\n           WHERE account_id = ?2 AND EXISTS (\n               SELECT 1 FROM json_each(outbox_messages.prior_label_ids)\n               WHERE value IN (SELECT value FROM json_each(?1)))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "9699828f99b0ff8475554c9ef4607c3490f90d40e225c1894a09718dcc6ef921"
+}

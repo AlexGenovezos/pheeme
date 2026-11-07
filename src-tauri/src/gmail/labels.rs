@@ -31,13 +31,31 @@ impl GmailClient {
         if let Some(color) = color {
             body["color"] = json!(color);
         }
-        self.send_json(ApiRequest::post(&["labels"]).json(body))
+        // Not retried when the outcome is unknown: Gmail may already have created it.
+        self.send_json(ApiRequest::post(&["labels"]).json(body).non_idempotent())
             .await
     }
 
     /// Partial update (`labels.patch`): only the `Some` fields of `updates` change.
     pub async fn update_label(&self, id: &str, updates: LabelUpdate) -> Result<Label, GmailError> {
         self.send_json(ApiRequest::new(Method::PATCH, &["labels", id]).json(json!(updates)))
+            .await
+    }
+
+    /// Full replace (`labels.update`, PUT). Sends `id`, `name` and both visibilities, and
+    /// `color` only when set, so replacing with `color: None` removes a label's colour.
+    pub async fn replace_label(&self, label: &Label) -> Result<Label, GmailError> {
+        let mut body = json!({ "id": label.id, "name": label.name });
+        if let Some(v) = &label.label_list_visibility {
+            body["labelListVisibility"] = json!(v);
+        }
+        if let Some(v) = &label.message_list_visibility {
+            body["messageListVisibility"] = json!(v);
+        }
+        if let Some(color) = &label.color {
+            body["color"] = json!(color);
+        }
+        self.send_json(ApiRequest::new(Method::PUT, &["labels", &label.id]).json(body))
             .await
     }
 
@@ -91,6 +109,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_is_not_retried_after_ambiguous_5xx() {
+        // Gmail may have created the label before failing; a retry would make a duplicate.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/labels"))
+            .respond_with(ResponseTemplate::new(503))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let err = client.create_label("Work", None).await.unwrap_err();
+        assert!(matches!(err, GmailError::Api { status: 503, .. }));
+    }
+
+    #[tokio::test]
     async fn create_update_delete_label() {
         let server = MockServer::start().await;
         let label = json!({"id": "Label_9", "name": "Work", "type": "user"});
@@ -132,5 +165,35 @@ mod tests {
         };
         client.update_label("Label_9", update).await.unwrap();
         client.delete_label("Label_9").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn replace_label_puts_full_body_without_colour() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/labels/Label_9"))
+            .and(body_json(json!({
+                "id": "Label_9",
+                "name": "Work",
+                "labelListVisibility": "labelShow",
+                "messageListVisibility": "show",
+            })))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"id": "Label_9", "name": "Work", "type": "user"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+
+        let label = Label {
+            id: "Label_9".into(),
+            name: "Work".into(),
+            label_list_visibility: Some("labelShow".into()),
+            message_list_visibility: Some("show".into()),
+            ..Default::default()
+        };
+        client.replace_label(&label).await.unwrap();
     }
 }

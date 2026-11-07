@@ -148,6 +148,25 @@ describe("preview IPC", () => {
     expect(userLabels("acc-personal").some((l) => !l.colorBackground)).toBe(true);
   });
 
+  test("labels carry visibilities and rows carry only their user label ids", () => {
+    const handlers = createPreviewHandlers();
+    const labels = handlers.list_labels({ accountId: "acc-personal" }) as {
+      messageListVisibility: string | null;
+      labelListVisibility: string | null;
+    }[];
+    expect(labels.every((l) => l.messageListVisibility && l.labelListVisibility)).toBe(true);
+    const pages = ["INBOX", "SENT", "TRASH", "STARRED"].map(
+      (labelId) =>
+        handlers.list_threads({ accountIds: ["acc-personal"], labelId }) as {
+          threads: { labelIds: string[] }[];
+        },
+    );
+    const rows = pages.flatMap((p) => p.threads);
+    const userIds = new Set(["Label_1", "Label_2", "Label_3"]);
+    expect(rows.every((r) => r.labelIds.every((id) => userIds.has(id)))).toBe(true);
+    expect(rows.some((r) => r.labelIds.length > 0)).toBe(true);
+  });
+
   test("threads cover the long, HTML, remote-image, dark-mode, plain-URL and PDF cases", () => {
     const handlers = createPreviewHandlers();
     const detail = (threadId: string, accountId = "acc-personal") =>
@@ -397,5 +416,172 @@ test("?threads=N adds that many Inbox conversations that open", () => {
   expect(ids(handlers, "SENT")).toEqual(ids(plain, "SENT"));
   expect(handlers.get_thread({ accountId: "acc-personal", threadId: "gen-2" })).toMatchObject({
     thread: { id: "gen-2" },
+  });
+});
+
+describe("preview label CRUD", () => {
+  type Info = {
+    id: string;
+    name: string;
+    type: string;
+    colorBackground: string | null;
+    colorText: string | null;
+    labelListVisibility: string | null;
+    messageListVisibility: string | null;
+  };
+  const errorOf = (call: () => unknown) => {
+    try {
+      call();
+    } catch (error) {
+      return error as { code: string; message: string };
+    }
+    throw new Error("expected the call to throw");
+  };
+  const userNames = (handlers: ReturnType<typeof createPreviewHandlers>) =>
+    (handlers.list_labels({ accountId: "acc-personal" }) as Info[])
+      .filter((l) => l.type === "user")
+      .map((l) => l.name)
+      .sort();
+  const create = (handlers: ReturnType<typeof createPreviewHandlers>, name: string) =>
+    handlers.create_label({ accountId: "acc-personal", name, color: null }) as Info;
+
+  test("create validates names, duplicates and colours like the backend", () => {
+    const handlers = createPreviewHandlers();
+    for (const name of ["", "  ", "/a", "a/", "a//b"])
+      expect(errorOf(() => create(handlers, name)).code, name).toBe("invalid_input");
+    expect(errorOf(() => create(handlers, "receipts"))).toEqual({
+      code: "invalid_input",
+      message: 'A label named "receipts" already exists.',
+    });
+    expect(errorOf(() => create(handlers, "inbox")).code).toBe("invalid_input");
+    // A well-formed hex Gmail's palette doesn't have is refused too, for either colour.
+    for (const color of [
+      { background: "red", text: "#ffffff" },
+      { background: "#123456", text: "#ffffff" },
+      { background: "#16a766", text: "#123456" },
+    ]) {
+      const badColour = () =>
+        handlers.create_label({ accountId: "acc-personal", name: "Work", color });
+      expect(errorOf(badColour).code, color.background).toBe("invalid_input");
+    }
+    expect(userNames(handlers)).not.toContain("Work");
+
+    const label = handlers.create_label({
+      accountId: "acc-personal",
+      name: " Clients/Acme ",
+      color: { background: "#16a766", text: "#ffffff" },
+    }) as Info;
+    expect(label).toMatchObject({
+      name: "Clients/Acme",
+      type: "user",
+      colorBackground: "#16a766",
+      colorText: "#ffffff",
+    });
+    expect(userNames(handlers)).toContain("Clients/Acme");
+    expect(create(handlers, "Other").id).not.toBe(label.id);
+  });
+
+  test("renaming a parent renames its sublabels; edits validate", () => {
+    const handlers = createPreviewHandlers();
+    const parent = create(handlers, "Clients");
+    create(handlers, "Clients/Acme");
+    create(handlers, "Clients/Acme/Q4");
+    create(handlers, "Clientsx");
+    const update = (labelId: string, edit: Record<string, unknown>) =>
+      handlers.update_label({ accountId: "acc-personal", labelId, edit }) as Info[];
+
+    const changed = update(parent.id, { name: "Customers" });
+
+    expect(changed.map((l) => l.name)).toEqual([
+      "Customers",
+      "Customers/Acme",
+      "Customers/Acme/Q4",
+    ]);
+    expect(userNames(handlers)).toEqual(
+      [
+        "Clientsx",
+        "Customers",
+        "Customers/Acme",
+        "Customers/Acme/Q4",
+        "Pheeme",
+        "Receipts",
+        "Travel",
+      ].sort(),
+    );
+    expect(errorOf(() => update(parent.id, { name: "Customers/Acme/Customers" })).code).toBe(
+      "invalid_input",
+    );
+    expect(errorOf(() => update(parent.id, { name: "travel" })).message).toBe(
+      'A label named "travel" already exists.',
+    );
+    expect(errorOf(() => update(parent.id, { labelListVisibility: "show" })).code).toBe(
+      "invalid_input",
+    );
+    expect(errorOf(() => update("INBOX", { name: "Mine" })).code).toBe("invalid_input");
+    expect(errorOf(() => update("Nope", { name: "Mine" })).code).toBe("not_found");
+
+    const [shown] = update("Label_2", {
+      clearColor: true,
+      labelListVisibility: "labelShowIfUnread",
+      messageListVisibility: "hide",
+    });
+    expect(shown).toMatchObject({
+      name: "Travel",
+      colorBackground: null,
+      colorText: null,
+      labelListVisibility: "labelShowIfUnread",
+      messageListVisibility: "hide",
+    });
+  });
+
+  test("deleting a label deletes its sublabels, strips threads and fires events", async () => {
+    installPreview();
+    const updates: SyncMessagesUpdated[] = [];
+    const labelEvents: unknown[] = [];
+    const stops = [
+      await listen<SyncMessagesUpdated>(SYNC_EVENTS.messagesUpdated, (e) =>
+        updates.push(e.payload),
+      ),
+      await listen(SYNC_EVENTS.labelsUpdated, (e) => labelEvents.push(e.payload)),
+    ];
+    const parent = (await invoke("create_label", {
+      accountId: "acc-personal",
+      name: "Clients",
+      color: null,
+    })) as Info;
+    const child = (await invoke("create_label", {
+      accountId: "acc-personal",
+      name: "Clients/Acme",
+      color: null,
+    })) as Info;
+    await invoke("modify_threads", {
+      accountId: "acc-personal",
+      threadIds: ["p-01"],
+      add: [parent.id, child.id],
+      remove: [],
+    });
+    await expect(
+      invoke("delete_label_preview", { accountId: "acc-personal", labelId: parent.id }),
+    ).resolves.toEqual({ threads: 1, sublabels: ["Clients/Acme"] });
+    updates.length = 0;
+    labelEvents.length = 0;
+
+    await invoke("delete_label", { accountId: "acc-personal", labelId: parent.id });
+
+    const labels = (await invoke("list_labels", { accountId: "acc-personal" })) as Info[];
+    expect(labels.some((l) => l.name.startsWith("Clients"))).toBe(false);
+    const detail = (await invoke("get_thread", {
+      accountId: "acc-personal",
+      threadId: "p-01",
+    })) as ThreadDetail;
+    expect(detail.thread.labelIds).toEqual(["Label_3"]);
+    expect(detail.messages[0].labelIds).not.toContain(child.id);
+    await vi.waitFor(() => {
+      expect(updates).toEqual([
+        { accountId: "acc-personal", added: [], removed: [], modified: ["p-01"] },
+      ]);
+      expect(labelEvents).toEqual([{ accountId: "acc-personal" }]);
+    });
+    stops.forEach((stop) => stop());
   });
 });

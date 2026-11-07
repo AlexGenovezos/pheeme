@@ -54,6 +54,7 @@ const detail = (messages: MessageDetail[]): ThreadDetail => ({
     starred: false,
     hasAttachment: false,
     messageCount: messages.length,
+    labelIds: [],
   },
   messages,
   bodyError: null,
@@ -70,6 +71,8 @@ const label = (id: string, name: string, type: string): LabelInfo => ({
   threadsUnread: 0,
   colorBackground: null,
   colorText: null,
+  messageListVisibility: "show",
+  labelListVisibility: "labelShow",
 });
 
 const open = (d: ThreadDetail) => {
@@ -286,8 +289,58 @@ test("shows only user-label chips", () => {
 
   const chips = within(screen.getByRole("list", { name: "Labels" }));
   expect(chips.getByText("Receipts")).toBeInTheDocument();
-  expect(chips.queryByText("Inbox")).not.toBeInTheDocument();
+  expect(chips.getByText("Inbox")).toBeInTheDocument();
+  expect(chips.queryByText("Unread")).not.toBeInTheDocument();
   expect(chips.queryByText("Travel")).not.toBeInTheDocument();
+});
+
+test("inbox chip archives", async () => {
+  const calls: { cmd: string; args: unknown }[] = [];
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args });
+    return undefined;
+  });
+  useLabelStore.setState({ labels: { a1: [label("INBOX", "Inbox", "system")] } });
+  open(detail([message(1, { labelIds: ["INBOX"] })]));
+  useMailStore.setState({ threads: [detail([]).thread] });
+  renderView();
+
+  fireEvent.click(screen.getByRole("button", { name: "Remove label Inbox" }));
+  await waitFor(() =>
+    expect(calls).toContainEqual({
+      cmd: "modify_threads",
+      args: { accountId: "a1", threadIds: ["t1"], add: [], remove: ["INBOX"] },
+    }),
+  );
+});
+
+test("chips act on the open conversation even when its row isn't in the list", async () => {
+  const calls: { cmd: string; args: unknown }[] = [];
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args });
+    return undefined;
+  });
+  useLabelStore.setState({
+    labels: { a1: [label("INBOX", "Inbox", "system"), label("Label_1", "Receipts", "user")] },
+  });
+  // The open conversation is a mixed-thread one: only one message has Receipts.
+  open(detail([message(1, { labelIds: ["INBOX", "Label_1"] }), message(2)]));
+  useMailStore.setState({ threads: [] }); // e.g. the search changed after it was opened
+  renderView();
+
+  fireEvent.click(screen.getByRole("button", { name: "Remove label Inbox" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove label Receipts" }));
+  await waitFor(() => {
+    expect(calls).toContainEqual({
+      cmd: "modify_threads",
+      args: { accountId: "a1", threadIds: ["t1"], add: [], remove: ["INBOX"] },
+    });
+    expect(calls).toContainEqual({
+      cmd: "modify_threads",
+      args: { accountId: "a1", threadIds: ["t1"], add: [], remove: ["Label_1"] },
+    });
+  });
+  expect(useUiStore.getState().openThread).toBe(KEY);
 });
 
 test('not_found shows "This conversation isn\'t available any more."', async () => {

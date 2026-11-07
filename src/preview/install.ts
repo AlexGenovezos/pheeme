@@ -4,7 +4,6 @@ import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import {
   type AccountInfo,
   type LabelCount,
-  type LabelInfo,
   type MailboxCount,
   type MessageDetail,
   SYNC_EVENTS,
@@ -17,16 +16,15 @@ import {
   CATEGORY_IDS,
   createFixtureThreads,
   fixtureAccounts,
-  fixtureUserLabels,
   type FixtureThread,
   generatedThreads,
   hasLabel,
   lastMessage,
-  SYSTEM_LABELS,
   threadDate,
   threadsIn,
 } from "./fixtures";
 import { createComposeHandlers } from "./compose";
+import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel } from "./labels";
 import { createTransferHandlers } from "./transfer";
 
 type Args = Record<string, unknown> | undefined;
@@ -35,38 +33,16 @@ const accountIdsOf = (args: Args): string[] =>
   Array.isArray(args?.accountIds) ? args.accountIds.map(String) : [];
 const stringsOf = (value: unknown): string[] => (Array.isArray(value) ? value.map(String) : []);
 
-/** The account's system labels and user labels, shaped like `list_labels`. */
-function labelsFor(accountId: string): LabelInfo[] {
-  const base = {
-    accountId,
-    messagesTotal: 0,
-    messagesUnread: 0,
-    threadsTotal: 0,
-    threadsUnread: 0,
-    colorText: null,
-  };
-  return [
-    ...SYSTEM_LABELS.map((l) => ({
-      ...base,
-      id: l.id,
-      name: l.name,
-      type: "system",
-      colorBackground: null,
-    })),
-    ...fixtureUserLabels
-      .filter((l) => l.accountId === accountId)
-      .map((l) => ({
-        ...base,
-        id: l.id,
-        name: l.name,
-        type: "user",
-        colorBackground: l.color ?? null,
-      })),
-  ];
+/** The thread's user labels, sorted by name like the backend's rows. */
+function userLabelIds(t: FixtureThread, labels: PreviewLabel[]): string[] {
+  return labels
+    .filter((l) => l.accountId === t.accountId && t.labelIds.includes(l.id))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((l) => l.id);
 }
 
 /** A fixture thread as `list_threads` returns it. */
-export function toSummary(t: FixtureThread): ThreadSummary {
+export function toSummary(t: FixtureThread, labels: PreviewLabel[]): ThreadSummary {
   const last = lastMessage(t);
   return {
     id: t.id,
@@ -80,11 +56,12 @@ export function toSummary(t: FixtureThread): ThreadSummary {
     starred: hasLabel(t, "STARRED"),
     hasAttachment: t.messages.some((m) => m.attachments.some((a) => !a.isInline)),
     messageCount: t.messages.length,
+    labelIds: userLabelIds(t, labels),
   };
 }
 
 /** A fixture thread as `get_thread` returns it: copies, so later fixture changes don't alias what a store holds. */
-function toDetail(t: FixtureThread): ThreadDetail {
+function toDetail(t: FixtureThread, labels: PreviewLabel[]): ThreadDetail {
   const messages: MessageDetail[] = t.messages.map((m) => ({
     id: m.id,
     threadId: t.id,
@@ -106,7 +83,7 @@ function toDetail(t: FixtureThread): ThreadDetail {
     hasAttachment: m.attachments.length > 0,
     attachments: m.attachments.map((a) => ({ ...a })),
   }));
-  return { thread: toSummary(t), messages, bodyError: null };
+  return { thread: toSummary(t, labels), messages, bodyError: null };
 }
 
 /** One stateful backend for both onboarding and the shell in browser preview. */
@@ -130,6 +107,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     ...createFixtureThreads(),
     ...generatedThreads(Number(params.get("threads")) || 0),
   ];
+  const labels = createPreviewLabels();
+  const summary = (t: FixtureThread) => toSummary(t, labels);
 
   /** Apply `change` to the named threads, then tell the stores, as the backend does after a cache write. */
   const changeThreads = (args: Args, change: (t: FixtureThread) => void): void => {
@@ -187,7 +166,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       gmailQuota = Math.min(1_200_000, Math.max(600, Number(args?.perMinute) || 6000));
       return gmailQuota;
     },
-    list_labels: (args) => labelsFor(String(args?.accountId)),
+    list_labels: (args) => labelsFor(labels, String(args?.accountId)),
+    ...createLabelHandlers(labels, threads),
     list_threads: (args): ThreadPage => ({
       threads: threadsIn(
         threads,
@@ -204,13 +184,13 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
                 (pair) => Array.isArray(pair) && pair[0] === t.accountId && pair[1] === t.id,
               )),
         )
-        .map(toSummary),
+        .map(summary),
       next: null,
     }),
     get_thread: (args) => {
       const t = threads.find((f) => f.id === args?.threadId && f.accountId === args?.accountId);
       if (!t) throw { code: "not_found", message: "That conversation isn't on this device." };
-      return toDetail(t);
+      return toDetail(t, labels);
     },
     // Unread inbox conversations, overall and per category, for the accounts asked about.
     mailbox_counts: (args): MailboxCount[] => {
@@ -252,8 +232,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
         .split(/\s+/)
         .filter(Boolean);
       const hit = (t: FixtureThread) => {
-        const summary = toSummary(t);
-        const text = [summary.subject, summary.fromName, summary.fromAddress, summary.snippet]
+        const row = summary(t);
+        const text = [row.subject, row.fromName, row.fromAddress, row.snippet]
           .join(" ")
           .toLowerCase();
         return words.length > 0 && words.every((w) => text.includes(w));
@@ -264,7 +244,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
             (t) =>
               (!accountIdsOf(args).length || accountIdsOf(args).includes(t.accountId)) && hit(t),
           )
-          .map(toSummary),
+          .map(summary),
         next: null,
         local: true,
       };
