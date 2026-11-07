@@ -68,7 +68,9 @@ pub type WriteLock = Arc<tokio::sync::Mutex<HashSet<String>>>;
 /// Label metadata changes of one account, serialized: [`SyncEngine::sync_labels`] holds it
 /// from `labels.list` through its commit, and every `LabelService` change holds it from
 /// reading the cache, through its Gmail calls, to its cache write, so a sync can't commit a
-/// label snapshot taken before a change that has since been cached.
+/// label snapshot taken before a change that has since been cached. Sync only ever
+/// `try_lock`s it (and skips the label refresh if a change holds it), so message sync never
+/// waits on a label change; changes do wait for an in-flight label refresh.
 ///
 /// Lock order: `label_lock` before `write_lock`; never take `label_lock` while holding
 /// `write_lock`.
@@ -686,8 +688,13 @@ impl SyncEngine {
     }
 
     /// Labels, plus fresh counters for Inbox and the category tabs.
+    /// Skipped while a label change holds `label_lock`: message sync never waits on one, the
+    /// change writes its own result to the cache, and the next sync refreshes labels.
     pub(crate) async fn sync_labels(&self) -> Result<(), SyncError> {
-        let held = self.label_lock.lock().await;
+        let Ok(held) = self.label_lock.try_lock() else {
+            tracing::debug!(account = %self.account_id, "label change in progress; label refresh skipped");
+            return Ok(());
+        };
         self.refresh_labels(&held).await
     }
 

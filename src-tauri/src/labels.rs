@@ -58,11 +58,19 @@ pub struct DeletePreviewDto {
 pub struct LabelService {
     db: SqlitePool,
     sync: Arc<SyncManager>,
+    /// Signalled when a change has to wait for the label lock (tests sequence on it).
+    #[cfg(test)]
+    contended: Arc<tokio::sync::Notify>,
 }
 
 impl LabelService {
     pub fn new(db: SqlitePool, sync: Arc<SyncManager>) -> Self {
-        Self { db, sync }
+        Self {
+            db,
+            sync,
+            #[cfg(test)]
+            contended: Default::default(),
+        }
     }
 
     /// Create a user label in Gmail and cache it. `name` is the full path (`Clients/Acme`).
@@ -75,7 +83,7 @@ impl LabelService {
         let name = clean_name(name)?;
         let color = color.map(gmail_color).transpose()?;
         let engine = self.sync.engine(account_id);
-        let _held = engine.label_lock.lock().await;
+        let _held = self.hold_labels(&engine).await;
         let all = db_labels::get_labels(&self.db, account_id).await?;
         if is_taken(&all, &name, &[]) {
             return Err(duplicate(&name));
@@ -101,7 +109,7 @@ impl LabelService {
         edit: LabelEdit,
     ) -> Result<Vec<LabelDto>, MailError> {
         let engine = self.sync.engine(account_id);
-        let held = engine.label_lock.lock().await;
+        let held = self.hold_labels(&engine).await;
         let (all, label) = self.user_label(account_id, label_id).await?;
         check_visibility(&edit.label_list_visibility, &LABEL_LIST_VISIBILITIES)?;
         check_visibility(&edit.message_list_visibility, &MESSAGE_LIST_VISIBILITIES)?;
@@ -178,7 +186,7 @@ impl LabelService {
     /// cache (and its conversations) as soon as Gmail confirms it.
     pub async fn delete_label(&self, account_id: &str, label_id: &str) -> Result<(), MailError> {
         let engine = self.sync.engine(account_id);
-        let _held = engine.label_lock.lock().await;
+        let _held = self.hold_labels(&engine).await;
         let (all, label) = self.user_label(account_id, label_id).await?;
         let mut doomed = sublabels(&all, &label.name);
         doomed.sort_by(|a, b| depth(b).cmp(&depth(a)).then_with(|| b.name.cmp(&a.name)));
@@ -224,6 +232,17 @@ impl LabelService {
             }
         };
         Ok(DeletePreviewDto { threads, sublabels })
+    }
+
+    /// The account's label lock, waiting for a label sync that holds it (that's short: one
+    /// `labels.list` and a few counter requests).
+    async fn hold_labels<'a>(&self, engine: &'a SyncEngine) -> tokio::sync::MutexGuard<'a, ()> {
+        if let Ok(held) = engine.label_lock.try_lock() {
+            return held;
+        }
+        #[cfg(test)]
+        self.contended.notify_one();
+        engine.label_lock.lock().await
     }
 
     /// The account's cached labels and the user label `label_id` among them.
@@ -550,25 +569,63 @@ mod tests {
         let counted = h.fake.calls("get_label");
         let sync = h.sync.clone();
         let syncing = tokio::spawn(async move { sync.engine("a1").sync_labels().await });
-        // The sync has its (old) list and waits in the counter requests.
+        // Wait until the sync has its (old) list and is parked in the counter requests.
         while h.fake.calls("get_label") == counted {
             tokio::task::yield_now().await;
         }
         let labels = LabelService::new(h.pool.clone(), h.sync.clone());
-        let creating = tokio::spawn(async move { labels.create_label("a1", "Work", None).await });
-        for _ in 0..50 {
-            tokio::task::yield_now().await;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let raced_ahead = h.fake.calls("create_label");
+        let contended = labels.contended.clone();
+        let mut creating =
+            tokio::spawn(async move { labels.create_label("a1", "Work", None).await });
 
+        // Either the create queues behind the sync, or it finishes while the sync still
+        // holds its stale list: that is the bug.
+        tokio::select! {
+            _ = contended.notified() => {}
+            done = &mut creating => panic!("the create didn't wait for the label sync: {done:?}"),
+        }
+        assert_eq!(h.fake.calls("create_label"), 0);
         gate.add_permits(1);
         syncing.await.unwrap().unwrap();
         let created = creating.await.unwrap().unwrap();
 
         assert_eq!(cached(&h.pool).await, [(created.id, "Work".into())]);
         assert_eq!(cached(&h.pool).await, in_gmail(&h.fake).await);
-        assert_eq!(raced_ahead, 0, "the create waits for the label sync");
+    }
+
+    /// Message sync never waits on a label change: one paused inside its Gmail call doesn't
+    /// hold up incoming mail; the label refresh is skipped for that run.
+    #[tokio::test]
+    async fn sync_does_not_wait_for_a_label_change() {
+        let h = setup(with_labels(&[("L1", "Clients"), ("L2", "Clients/Acme")])).await;
+        let gate = h.fake.hold_label_writes();
+        let labels = LabelService::new(h.pool.clone(), h.sync.clone());
+        let renaming =
+            tokio::spawn(async move { labels.update_label("a1", "L1", named("Customers")).await });
+        while h.fake.calls("update_label") == 0 {
+            tokio::task::yield_now().await;
+        }
+        h.fake.add(FakeMsg::new("m1", "t1", &["INBOX"]));
+
+        // Only a guard against hanging: with the bug the sync never finishes.
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            h.sync.sync_account("a1"),
+        )
+        .await
+        .expect("message sync waited for the label change")
+        .unwrap();
+
+        let threads: Vec<String> = sqlx::query_scalar("SELECT id FROM threads")
+            .fetch_all(&h.pool)
+            .await
+            .unwrap();
+        assert_eq!(threads, ["t1"]);
+        gate.add_permits(1);
+        renaming.await.unwrap().unwrap();
+        let names: Vec<String> = cached(&h.pool).await.into_iter().map(|l| l.1).collect();
+        assert_eq!(names, ["Customers", "Customers/Acme"]);
+        assert_eq!(cached(&h.pool).await, in_gmail(&h.fake).await);
     }
 
     #[tokio::test]

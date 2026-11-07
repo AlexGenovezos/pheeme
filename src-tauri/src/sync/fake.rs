@@ -264,6 +264,7 @@ struct State {
     batch_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     draft_delete_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     label_get_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
+    label_write_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     list_page: Option<usize>,
     next_sent: u64,
     /// `(message id, attachment id)` → bytes.
@@ -395,6 +396,21 @@ impl FakeGmail {
         let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
         self.lock().label_get_gate = Some(gate.clone());
         gate
+    }
+
+    /// Make every later label create, update, replace and delete wait (after being counted,
+    /// before changing anything) until the returned semaphore gets a permit.
+    pub fn hold_label_writes(&self) -> std::sync::Arc<tokio::sync::Semaphore> {
+        let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+        self.lock().label_write_gate = Some(gate.clone());
+        gate
+    }
+
+    async fn label_write_gate(&self) {
+        let gate = self.lock().label_write_gate.clone();
+        if let Some(gate) = gate {
+            let _permit = gate.acquire().await.expect("gate open");
+        }
     }
 
     /// The next send is delivered, then answered with `error` (an ambiguous failure).
@@ -653,6 +669,7 @@ impl MailApi for FakeGmail {
         color: Option<LabelColor>,
     ) -> Result<Label, GmailError> {
         self.enter("create_label")?;
+        self.label_write_gate().await;
         let mut s = self.lock();
         if name_taken(&s, name, None) {
             return Err(api_error(
@@ -686,6 +703,7 @@ impl MailApi for FakeGmail {
 
     async fn update_label(&self, id: &str, update: LabelUpdate) -> Result<Label, GmailError> {
         self.enter("update_label")?;
+        self.label_write_gate().await;
         let mut s = self.lock();
         if !s.user_labels.contains_key(id) {
             return Err(not_found());
@@ -720,6 +738,7 @@ impl MailApi for FakeGmail {
 
     async fn replace_label(&self, new: &Label) -> Result<Label, GmailError> {
         self.enter("replace_label")?;
+        self.label_write_gate().await;
         let mut s = self.lock();
         if !s.user_labels.contains_key(&new.id) {
             return Err(not_found());
@@ -744,6 +763,7 @@ impl MailApi for FakeGmail {
 
     async fn delete_label(&self, id: &str) -> Result<(), GmailError> {
         self.enter("delete_label")?;
+        self.label_write_gate().await;
         let mut s = self.lock();
         if s.user_labels.remove(id).is_none() {
             return Err(not_found());
