@@ -533,3 +533,24 @@ test("switching Unread only off keeps the rows past the unread page", async () =
   expect(ids()).toEqual(all.map((t) => t.id));
   expect(useMailStore.getState().next).toBeNull();
 });
+
+test("a row restored in the unread list comes back with the full list", async () => {
+  const all = rows(1, 3).map((t) => ({ ...t, unread: true }));
+  let hold = false;
+  mockIPC((cmd) => {
+    if (cmd !== "list_threads") return;
+    if (hold) return new Promise<ThreadPage>(() => {});
+    return { threads: all, next: null };
+  });
+  const inbox = { accountIds: ["a"], labelId: "INBOX" };
+  await useMailStore.getState().load(inbox);
+  await useMailStore.getState().load({ ...inbox, unreadOnly: true });
+  // Archived, then undone: the reload brings it back.
+  useMailStore.getState().remove([threadKey("a", "t1")]);
+  await useMailStore.getState().reload(true);
+  expect(ids()).toEqual(["t1", "t2", "t3"]);
+
+  hold = true;
+  void useMailStore.getState().load(inbox);
+  expect(ids()).toEqual(["t1", "t2", "t3"]);
+});
