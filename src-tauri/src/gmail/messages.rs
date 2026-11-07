@@ -1,6 +1,8 @@
 //! `users.messages`: list, get, modify, trash, delete, send, attachments, and parallel batch get.
 
-use super::client::{ApiRequest, GmailClient, MAX_CONCURRENT_REQUESTS};
+use super::client::{
+    ApiRequest, GmailClient, Priority, MAX_BULK_REQUESTS, MAX_CONCURRENT_REQUESTS,
+};
 use super::error::GmailError;
 use super::mime::{decode_base64url, encode_base64url, is_body_part};
 use super::types::{AttachmentBody, Message, MessageFormat, MessageListResponse, MessagePart};
@@ -9,6 +11,14 @@ use serde_json::json;
 
 /// Gmail's cap on ids per `messages.batchModify` call.
 pub const BATCH_MODIFY_LIMIT: usize = 1000;
+
+/// One page of every message id, spam and trash included.
+fn all_messages_page(page_token: Option<&str>, max_results: u32) -> ApiRequest {
+    ApiRequest::get(&["messages"])
+        .query("maxResults", max_results.to_string())
+        .query("includeSpamTrash", "true")
+        .query_opt("pageToken", page_token)
+}
 
 impl GmailClient {
     /// One page of message ids. Pass the previous page's `next_page_token` to continue.
@@ -31,11 +41,18 @@ impl GmailClient {
         page_token: Option<&str>,
         max_results: u32,
     ) -> Result<MessageListResponse, GmailError> {
-        let req = ApiRequest::get(&["messages"])
-            .query("maxResults", max_results.to_string())
-            .query("includeSpamTrash", "true")
-            .query_opt("pageToken", page_token);
-        self.send_json(req).await
+        self.send_json(all_messages_page(page_token, max_results))
+            .await
+    }
+
+    /// [`Self::list_all_messages`] as background work: see [`Priority::Background`].
+    pub async fn backfill_list_messages(
+        &self,
+        page_token: Option<&str>,
+        max_results: u32,
+    ) -> Result<MessageListResponse, GmailError> {
+        self.send_json(all_messages_page(page_token, max_results).background())
+            .await
     }
 
     /// One page of message ids matching a Gmail search (`q`), e.g. `rfc822msgid:<id@host>`.
@@ -79,11 +96,21 @@ impl GmailClient {
         id: &str,
         format: MessageFormat,
     ) -> Result<Message, GmailError> {
-        let mut msg: Message = self
-            .send_json(ApiRequest::get(&["messages", id]).query("format", format.as_str()))
-            .await?;
+        self.get_message_as(id, format, Priority::Sync).await
+    }
+
+    async fn get_message_as(
+        &self,
+        id: &str,
+        format: MessageFormat,
+        priority: Priority,
+    ) -> Result<Message, GmailError> {
+        let req = ApiRequest::get(&["messages", id])
+            .query("format", format.as_str())
+            .with_priority(priority);
+        let mut msg: Message = self.send_json(req).await?;
         if let Some(payload) = msg.payload.as_mut() {
-            self.fill_external_bodies(id, payload).await?;
+            self.fill_external_bodies(id, payload, priority).await?;
         }
         Ok(msg)
     }
@@ -94,19 +121,25 @@ impl GmailClient {
         &'a self,
         message_id: &'a str,
         part: &'a mut MessagePart,
+        priority: Priority,
     ) -> futures::future::BoxFuture<'a, Result<(), GmailError>> {
         Box::pin(async move {
             for child in &mut part.parts {
-                self.fill_external_bodies(message_id, child).await?;
+                self.fill_external_bodies(message_id, child, priority)
+                    .await?;
             }
             if let (true, None, Some(attachment_id)) = (
                 is_body_part(part),
                 &part.body.data,
                 &part.body.attachment_id,
             ) {
-                // Body backfill is background work too; it must leave the download slots free.
+                // Fetching a body is never the reader's download: it must leave those slots free.
+                let priority = match priority {
+                    Priority::Interactive => Priority::Sync,
+                    p => p,
+                };
                 let bytes = self
-                    .fetch_attachment(message_id, attachment_id, false)
+                    .fetch_attachment(message_id, attachment_id, priority)
                     .await?;
                 part.body.data = Some(encode_base64url(&bytes));
             }
@@ -130,6 +163,37 @@ impl GmailClient {
                 (id, result)
             })
             .buffer_unordered(MAX_CONCURRENT_REQUESTS)
+            .collect()
+            .await
+    }
+
+    /// [`Self::batch_get_messages`] as background work (see [`Priority::Background`]). Once
+    /// Gmail rate-limits one request, the ids not yet sent come back rate-limited too without
+    /// being sent: the caller pauses, and spending more quota now only takes it from sync.
+    pub async fn backfill_get_messages(
+        &self,
+        ids: &[String],
+        format: MessageFormat,
+    ) -> Vec<(String, Result<Message, GmailError>)> {
+        // The first refusal's `retry_after`, once there is one.
+        let refused = std::sync::Mutex::new(None);
+        let refusal = || *refused.lock().unwrap_or_else(|e| e.into_inner());
+        stream::iter(ids.iter().cloned())
+            .map(|id| async {
+                if let Some(retry_after) = refusal() {
+                    return (id, Err(GmailError::RateLimit { retry_after }));
+                }
+                let result = self.get_message_as(&id, format, Priority::Background).await;
+                if let Err(GmailError::RateLimit { retry_after }) = &result {
+                    refused
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get_or_insert(*retry_after);
+                }
+                (id, result)
+            })
+            // No more than it has slots for, so a refusal stops the rest before they're sent.
+            .buffer_unordered(MAX_BULK_REQUESTS)
             .collect()
             .await
     }
@@ -181,19 +245,19 @@ impl GmailClient {
         message_id: &str,
         attachment_id: &str,
     ) -> Result<Vec<u8>, GmailError> {
-        self.fetch_attachment(message_id, attachment_id, true).await
+        self.fetch_attachment(message_id, attachment_id, Priority::Interactive)
+            .await
     }
 
     async fn fetch_attachment(
         &self,
         message_id: &str,
         attachment_id: &str,
-        interactive: bool,
+        priority: Priority,
     ) -> Result<Vec<u8>, GmailError> {
-        let req = ApiRequest::get(&["messages", message_id, "attachments", attachment_id]);
-        let body: AttachmentBody = self
-            .send_json(if interactive { req.interactive() } else { req })
-            .await?;
+        let req = ApiRequest::get(&["messages", message_id, "attachments", attachment_id])
+            .with_priority(priority);
+        let body: AttachmentBody = self.send_json(req).await?;
         decode_base64url(&body.data)
     }
 }
@@ -639,5 +703,113 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(page.messages[0].id, "m1");
+    }
+
+    fn rate_limited() -> ResponseTemplate {
+        ResponseTemplate::new(403).set_body_json(json!({"error": {"code": 403,
+            "message": "Quota exceeded",
+            "errors": [{"message": "Quota exceeded", "domain": "usageLimits",
+                        "reason": "rateLimitExceeded"}]}}))
+    }
+
+    #[tokio::test]
+    async fn backfill_fetch_stops_at_the_first_rate_limit() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(wiremock::matchers::path_regex(r"^/messages/m[0-9]+$"))
+            .respond_with(rate_limited())
+            .mount(&server)
+            .await;
+        let client = client_for(&server).0.with_quota(100_000);
+
+        let ids: Vec<String> = (0..40).map(|i| format!("m{i}")).collect();
+        let results = client
+            .backfill_get_messages(&ids, MessageFormat::Metadata)
+            .await;
+
+        assert_eq!(results.len(), ids.len());
+        assert!(results
+            .iter()
+            .all(|(_, r)| matches!(r, Err(GmailError::RateLimit { .. }))));
+        // No retries, and nothing new is sent once Gmail has refused: at most the requests
+        // already in flight reach it.
+        let sent = server.received_requests().await.unwrap().len();
+        assert!(
+            sent <= MAX_BULK_REQUESTS,
+            "sent {sent} requests after a refusal"
+        );
+    }
+
+    #[tokio::test]
+    async fn backfill_list_does_not_retry_a_rate_limit() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/messages"))
+            .respond_with(rate_limited())
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+
+        let err = client.backfill_list_messages(None, 500).await.unwrap_err();
+        assert!(matches!(err, GmailError::RateLimit { .. }), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn sync_requests_do_not_wait_for_slow_backfill_requests() {
+        use std::sync::Arc;
+        use std::time::Duration;
+        use tokio::sync::Semaphore;
+
+        let server = MockServer::start().await;
+        let started = Arc::new(Semaphore::new(0));
+        let arrivals = started.clone();
+        Mock::given(method("GET"))
+            .and(wiremock::matchers::path_regex(r"^/messages/old[0-9]+$"))
+            .respond_with(move |_: &wiremock::Request| {
+                arrivals.add_permits(1);
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"id": "old", "threadId": "t1"}))
+                    .set_delay(Duration::from_secs(10))
+            })
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/messages/new"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"id": "new", "threadId": "t2"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = client_for(&server).0.with_quota(100_000);
+        let backfill = client.clone();
+        let task = tokio::spawn(async move {
+            let ids = (0..2 * MAX_CONCURRENT_REQUESTS)
+                .map(|i| format!("old{i}"))
+                .collect::<Vec<_>>();
+            backfill
+                .backfill_get_messages(&ids, MessageFormat::Full)
+                .await
+        });
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            started.acquire_many(MAX_BULK_REQUESTS as u32),
+        )
+        .await
+        .expect("backfill requests reached Gmail")
+        .unwrap()
+        .forget();
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            client.get_message("new", MessageFormat::Full),
+        )
+        .await;
+        task.abort();
+        assert_eq!(
+            result.expect("sync waited behind the backfill").unwrap().id,
+            "new"
+        );
     }
 }

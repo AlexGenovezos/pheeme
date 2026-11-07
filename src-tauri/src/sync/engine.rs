@@ -476,7 +476,7 @@ impl SyncEngine {
         }
         let page = self
             .api
-            .list_messages(state.backfill_page_token.as_deref(), BACKFILL_PAGE)
+            .backfill_list_messages(state.backfill_page_token.as_deref(), BACKFILL_PAGE)
             .await?;
         let ids: Vec<String> = page.messages.iter().map(|m| m.id.clone()).collect();
         let mut conn = self.db.acquire().await?;
@@ -497,7 +497,7 @@ impl SyncEngine {
         // One failed fetch (usually a rate limit) mustn't throw away the rest of the page:
         // what arrived is saved, the page stays current, and the retry skips cached ids.
         let mut failure = None;
-        for (_, result) in self.api.batch_get_messages(&wanted, format).await {
+        for (_, result) in self.api.backfill_get_messages(&wanted, format).await {
             match result {
                 Ok(msg) => fetched.push(msg),
                 Err(e) if e.is_not_found() => {}

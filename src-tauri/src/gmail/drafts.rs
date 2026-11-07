@@ -3,7 +3,7 @@
 //! Draft content goes through the media upload endpoint (like sends), so drafts with large
 //! attachments work.
 
-use super::client::{ApiRequest, GmailClient};
+use super::client::{ApiRequest, GmailClient, Priority};
 use super::error::GmailError;
 use super::types::{Draft, DraftListResponse, Message, MessageFormat};
 use reqwest::Method;
@@ -42,7 +42,8 @@ impl GmailClient {
             .await?;
         if let Some(msg) = draft.message.as_mut() {
             if let Some(payload) = msg.payload.as_mut() {
-                self.fill_external_bodies(&msg.id, payload).await?;
+                self.fill_external_bodies(&msg.id, payload, Priority::Sync)
+                    .await?;
             }
         }
         Ok(draft)

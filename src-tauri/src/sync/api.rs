@@ -40,6 +40,23 @@ pub trait MailApi: Send + Sync {
         ids: &[String],
         format: MessageFormat,
     ) -> Vec<(String, Result<Message, GmailError>)>;
+    /// [`Self::list_messages`] for the backfill: bulk work that yields to everything else and
+    /// returns Gmail's first rate limit instead of retrying it.
+    async fn backfill_list_messages(
+        &self,
+        page_token: Option<&str>,
+        max: u32,
+    ) -> Result<MessageListResponse, GmailError> {
+        self.list_messages(page_token, max).await
+    }
+    /// [`Self::batch_get_messages`] for the backfill (see [`Self::backfill_list_messages`]).
+    async fn backfill_get_messages(
+        &self,
+        ids: &[String],
+        format: MessageFormat,
+    ) -> Vec<(String, Result<Message, GmailError>)> {
+        self.batch_get_messages(ids, format).await
+    }
     async fn list_history(
         &self,
         start: &str,
@@ -134,6 +151,22 @@ impl MailApi for GmailClient {
         format: MessageFormat,
     ) -> Vec<(String, Result<Message, GmailError>)> {
         GmailClient::batch_get_messages(self, ids, format).await
+    }
+
+    async fn backfill_list_messages(
+        &self,
+        page_token: Option<&str>,
+        max: u32,
+    ) -> Result<MessageListResponse, GmailError> {
+        GmailClient::backfill_list_messages(self, page_token, max).await
+    }
+
+    async fn backfill_get_messages(
+        &self,
+        ids: &[String],
+        format: MessageFormat,
+    ) -> Vec<(String, Result<Message, GmailError>)> {
+        GmailClient::backfill_get_messages(self, ids, format).await
     }
 
     async fn list_history(
