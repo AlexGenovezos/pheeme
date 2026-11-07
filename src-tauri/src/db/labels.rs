@@ -2,7 +2,7 @@ use crate::db::{messages, outbox};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqliteExecutor, SqlitePool};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
 pub struct DbLabel {
@@ -188,23 +188,40 @@ pub async fn user_label_ids_for<'e>(
     if rows.is_empty() {
         return Ok(out);
     }
-    let pairs = serde_json::to_string(rows)?;
-    let found = sqlx::query!(
-        r#"SELECT tl.account_id AS "account_id!", tl.thread_id AS "thread_id!",
-                  tl.label_id AS "label_id!"
-           FROM json_each(?) p
-           JOIN thread_labels tl ON tl.account_id = p.value ->> 0 AND tl.thread_id = p.value ->> 1
+    let wanted: HashSet<(&str, &str)> =
+        rows.iter().map(|(a, t)| (a.as_str(), t.as_str())).collect();
+    let accounts = serde_json::to_string(&wanted.iter().map(|k| k.0).collect::<BTreeSet<_>>())?;
+    let thread_ids = serde_json::to_string(&wanted.iter().map(|k| k.1).collect::<BTreeSet<_>>())?;
+    // Accounts and thread ids are matched separately so SQLite can walk the primary key of
+    // `thread_labels`; a thread id that exists in another account too is filtered out below.
+    // One row holding a JSON array: sqlx copies every value of every row it returns, which
+    // costs more than the lookup itself on a page of 50.
+    let found = sqlx::query_scalar!(
+        r#"SELECT json_group_array(json_array(tl.account_id, tl.thread_id, tl.label_id, l.name))
+                  AS "found!: String"
+           FROM thread_labels tl
            JOIN labels l ON l.account_id = tl.account_id AND l.id = tl.label_id
-           WHERE l.type = 'user'
-           ORDER BY l.name, l.id"#,
-        pairs
+           WHERE tl.account_id IN (SELECT value FROM json_each(?))
+             AND tl.thread_id IN (SELECT value FROM json_each(?))
+             AND l.type = 'user'"#,
+        accounts,
+        thread_ids
     )
-    .fetch_all(ex)
+    .fetch_one(ex)
     .await?;
-    for r in found {
-        out.entry((r.account_id, r.thread_id))
-            .or_default()
-            .push(r.label_id);
+    let found: Vec<(String, String, String, String)> = serde_json::from_str(&found)?;
+    let mut named: HashMap<(String, String), Vec<(String, String)>> = HashMap::new();
+    for (account_id, thread_id, label_id, name) in found {
+        if wanted.contains(&(account_id.as_str(), thread_id.as_str())) {
+            named
+                .entry((account_id, thread_id))
+                .or_default()
+                .push((name, label_id));
+        }
+    }
+    for (key, mut labels) in named {
+        labels.sort();
+        out.insert(key, labels.into_iter().map(|(_, id)| id).collect());
     }
     Ok(out)
 }

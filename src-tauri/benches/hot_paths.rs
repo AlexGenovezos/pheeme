@@ -9,7 +9,7 @@ use gungraun::client_requests::callgrind;
 use gungraun::{
     library_benchmark, library_benchmark_group, main, Callgrind, EntryPoint, LibraryBenchmarkConfig,
 };
-use pheeme_lib::db::{self, accounts, messages, search, threads};
+use pheeme_lib::db::{self, accounts, labels as db_labels, messages, search, threads};
 use pheeme_lib::mail::{MailService, ThreadDetailDto};
 use pheeme_lib::sync::engine::SyncEngine;
 use pheeme_lib::sync::fake::{FakeGmail, FakeMsg};
@@ -126,6 +126,25 @@ fn seed_fixture() {
         let pool = db::init_db(&dir).await.unwrap();
         insert_account(&pool).await;
         let mut tx = db::begin_write(&pool).await.unwrap();
+        db_labels::upsert_label_tx(
+            &mut tx,
+            &db_labels::DbLabel {
+                id: "Label_1".into(),
+                account_id: ACCT.into(),
+                name: "Clients".into(),
+                label_type: "user".into(),
+                message_list_visibility: Some("show".into()),
+                label_list_visibility: Some("labelShow".into()),
+                color_background: None,
+                color_text: None,
+                messages_total: 0,
+                messages_unread: 0,
+                threads_total: 0,
+                threads_unread: 0,
+            },
+        )
+        .await
+        .unwrap();
         let mut ids: Vec<String> = Vec::with_capacity(THREADS + 1);
         for i in 0..THREADS {
             let m = message(format!("m{i:05}"), thread_id(i), labels(i), date(i));
@@ -520,10 +539,102 @@ fn get_thread((ctx, mail): (Ctx, MailService)) -> ThreadDetailDto {
     thread
 }
 
+/// A page of 50 threads that all carry the user label `Label_1`, listed through the database
+/// layer alone and through the mail service, which also looks up each row's user label ids.
+/// The difference is the cost of the label lookup.
+fn label_page_query() -> threads::ThreadQuery<'static> {
+    static ACCOUNTS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    threads::ThreadQuery {
+        account_ids: ACCOUNTS.get_or_init(|| vec![ACCT.to_string()]),
+        label_id: "Label_1",
+        also_label_id: None,
+        exclude_label_ids: &[],
+        read_filter: None,
+        before: None,
+        limit: PAGE,
+    }
+}
+
+fn warm_label_page() -> Ctx {
+    let ctx = open_fixture();
+    ctx.rt.block_on(async {
+        threads::list_threads(&ctx.pool, &label_page_query())
+            .await
+            .unwrap()
+    });
+    ctx
+}
+
+#[library_benchmark]
+#[bench::label_page_db_only(setup = warm_label_page)]
+fn list_label_page_db(ctx: Ctx) -> threads::ThreadPage {
+    let page = measured(
+        &ctx.rt,
+        threads::list_threads(&ctx.pool, &label_page_query()),
+    )
+    .unwrap();
+    assert_eq!(page.threads.len(), PAGE as usize);
+    page
+}
+
+fn warm_label_page_service() -> (Ctx, MailService) {
+    let ctx = open_fixture();
+    let fake: Arc<dyn MailApi> = Arc::new(FakeGmail::new());
+    let _rt = ctx.rt.enter();
+    let sync = SyncManager::new(
+        ctx.pool.clone(),
+        Arc::new(move |_| fake.clone()),
+        Arc::new(NoopEvents),
+    );
+    let mail = MailService::new(ctx.pool.clone(), sync, fixture_dir());
+    ctx.rt
+        .block_on(mail.list_threads(&[ACCT.to_string()], "Label_1", None, None, Some(PAGE), None))
+        .unwrap();
+    (ctx, mail)
+}
+
+#[library_benchmark]
+#[bench::label_page_with_label_ids(setup = warm_label_page_service)]
+fn list_label_page_service((ctx, mail): (Ctx, MailService)) -> pheeme_lib::mail::ThreadPageDto {
+    let page = measured(
+        &ctx.rt,
+        mail.list_threads(&[ACCT.to_string()], "Label_1", None, None, Some(PAGE), None),
+    )
+    .unwrap();
+    assert_eq!(page.threads.len(), PAGE as usize);
+    assert!(page.threads.iter().all(|t| t.label_ids == ["Label_1"]));
+    page
+}
+
+fn warm_inbox_page_service() -> (Ctx, MailService) {
+    let (ctx, mail) = warm_label_page_service();
+    ctx.rt
+        .block_on(mail.list_threads(&[ACCT.to_string()], "INBOX", None, None, Some(PAGE), None))
+        .unwrap();
+    (ctx, mail)
+}
+
+// The first Inbox page through the mail service: compare with `list_threads first_page`
+// (the database layer alone). Inbox rows here carry no user label, the common case.
+#[library_benchmark]
+#[bench::inbox_page_with_label_ids(setup = warm_inbox_page_service)]
+fn list_inbox_page_service((ctx, mail): (Ctx, MailService)) -> pheeme_lib::mail::ThreadPageDto {
+    let page = measured(
+        &ctx.rt,
+        mail.list_threads(&[ACCT.to_string()], "INBOX", None, None, Some(PAGE), None),
+    )
+    .unwrap();
+    assert_eq!(page.threads.len(), PAGE as usize);
+    page
+}
+
 library_benchmark_group!(
     name = hot_paths,
     benchmarks = [
         list_threads,
+        list_label_page_db,
+        list_label_page_service,
+        list_inbox_page_service,
         list_unread_threads,
         unread_counts,
         label_counts,
