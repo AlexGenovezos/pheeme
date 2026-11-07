@@ -71,6 +71,22 @@ describe("speedReadText: HTML", () => {
     expect(paragraphs?.join(" ")).not.toContain("wrote");
   });
 
+  test("leaves out an Outlook reply's quoted original, which follows its marker", () => {
+    const html = `<div><p>${prose(90)}</p><div id="appendonsend"></div><hr><div id="divRplyFwdMsg">From: Matt</div><div>${prose(200, 500)}</div></div>`;
+    const text = speedReadText(msg({ html }))?.join(" ") ?? "";
+    expect(text).toContain("word89");
+    expect(text).not.toContain("Matt");
+    expect(text).not.toContain("word500");
+  });
+
+  test("leaves out signatures, which don't count toward the length either", () => {
+    const signature = `<div class="gmail_signature">${prose(60, 900)}</div>`;
+    expect(
+      speedReadText(msg({ html: `<p>${prose(90)}</p>${signature}` }))?.join(" "),
+    ).not.toContain("word900");
+    expect(speedReadText(msg({ html: `<p>${prose(40)}</p>${signature}` }))).toBeNull();
+  });
+
   test("ignores styles and scripts", () => {
     const html = `<style>p { color: red }</style><p>${prose(90)}</p>`;
     expect(speedReadText(msg({ html }))?.join(" ")).not.toContain("color");
@@ -90,8 +106,10 @@ describe("speedReadText: plain text", () => {
   test("stops at the signature and at the quoted original", () => {
     const text = `${prose(90)}\n\nOn Mon, Matt wrote:\n> old text\n`;
     expect(speedReadText(msg({ text }))?.join(" ")).not.toContain("old");
-    const signed = `${prose(90)}\n-- \nMatt Smith\n555 0100`;
-    expect(speedReadText(msg({ text: signed }))?.join(" ")).not.toContain("Smith");
+    for (const marker of ["-- ", "--"]) {
+      const signed = `${prose(90)}\n${marker}\nMatt Smith\n555 0100`;
+      expect(speedReadText(msg({ text: signed }))?.join(" ")).not.toContain("Smith");
+    }
   });
 
   test("prefers the HTML body when there is one", () => {

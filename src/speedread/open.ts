@@ -40,8 +40,8 @@ export function readableMessage(
 }
 
 /** The readable message in the open conversation, if there is one; re-renders as the conversation loads. */
-export function useReadableMessage() {
-  const key = useUiStore((s) => s.openThread);
+export function useReadableMessage(enabled = true) {
+  const key = useUiStore((s) => (enabled ? s.openThread : null));
   const detail = useThreadStore((s) => (key ? s.details.get(key) : undefined));
   return useMemo(() => readableMessage(detail), [detail]);
 }

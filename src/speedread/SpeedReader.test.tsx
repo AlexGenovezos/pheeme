@@ -57,6 +57,15 @@ describe("SpeedReader", () => {
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
   });
 
+  test("Space on another button presses that button rather than playing", () => {
+    render(<SpeedReaderHost />);
+    openReader();
+    fireEvent.keyDown(screen.getByRole("button", { name: "450" }), { key: " " });
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Play" }), { key: " " });
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  });
+
   test("arrow keys step through words and change the speed, which is remembered", () => {
     render(<SpeedReaderHost />);
     openReader();

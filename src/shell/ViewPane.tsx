@@ -96,7 +96,7 @@ export function ViewPane() {
   };
   // Offered only on simple prose emails; the shortcut still says so when there's nothing to read.
   const offerSpeedRead = useSpeedReaderSettings((s) => s.offer);
-  const readable = useReadableMessage();
+  const readable = useReadableMessage(offerSpeedRead);
 
   const openMore = (e: MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect();

@@ -49,9 +49,19 @@ const BLOCK = new Set([
   "ul",
 ]);
 const SKIP = new Set(["head", "script", "style", "template", "title", "noscript"]);
-/** Quoted earlier messages in replies: Gmail, Apple Mail, Outlook, Yahoo. */
-const QUOTES =
-  'blockquote, .gmail_quote, .gmail_attr, [type="cite"], #divRplyFwdMsg, #appendonsend, .yahoo_quoted';
+/** Quoted earlier messages in replies (Gmail, Apple Mail, Yahoo) and signatures: not what was just written. */
+const LEFT_OUT =
+  'blockquote, .gmail_quote, .gmail_attr, [type="cite"], .yahoo_quoted, .gmail_signature, .moz-signature';
+/** Outlook marks only where the quoted original starts; everything after the marker is the original. */
+const OUTLOOK_QUOTE_START = "#divRplyFwdMsg, #appendonsend";
+
+/** Remove `el` and everything after it in the document. */
+function cutFrom(el: Element, body: HTMLElement) {
+  for (let node: Element | null = el; node && node !== body; node = node.parentElement) {
+    while (node.nextSibling) node.nextSibling.remove();
+  }
+  el.remove();
+}
 
 const countWords = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
@@ -78,7 +88,9 @@ function paragraphsOf(root: Node): string[] {
 function fromHtml(html: string): string[] | null {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const body = doc.body;
-  body.querySelectorAll(QUOTES).forEach((q) => q.remove());
+  const outlook = body.querySelector(OUTLOOK_QUOTE_START);
+  if (outlook) cutFrom(outlook, body);
+  body.querySelectorAll(LEFT_OUT).forEach((q) => q.remove());
 
   const images = [...body.querySelectorAll("img")].filter((img) => {
     const w = Number(img.getAttribute("width"));
@@ -108,7 +120,7 @@ function fromPlainText(text: string): string[] | null {
   // A signature starts at "-- "; the quoted original at its "On …, … wrote:" line or the first "> ".
   const kept: string[] = [];
   for (const line of lines) {
-    if (line === "-- " || line.startsWith(">")) break;
+    if (/^--\s*$/.test(line) || line.startsWith(">")) break;
     if (/^On .+wrote:\s*$/.test(line)) break;
     kept.push(line);
   }

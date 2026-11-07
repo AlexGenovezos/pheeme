@@ -121,6 +121,12 @@ const ownsArrows = (target: EventTarget) => {
   return el.matches?.('input[type="range"], [role="radio"]') ?? false;
 };
 
+/** A control Space activates natively: any button but Play (the stage and sliders don't take Space). */
+const pressesItself = (target: EventTarget, dialog: HTMLElement) => {
+  const el = target as HTMLElement;
+  return el !== dialog && el.localName === "button" && !el.classList.contains("speed-reader__play");
+};
+
 export function SpeedReader({ session, onClose }: { session: SpeedReadSession; onClose(): void }) {
   const words = useMemo(() => toWords(session.paragraphs), [session.paragraphs]);
   const { wpm, pauses, size, update } = useSpeedReaderSettings();
@@ -162,7 +168,8 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
     const arrows = !ownsArrows(e.target);
     let handled = true;
     if (e.key === "Escape") onClose();
-    else if (e.key === " ") toggle();
+    // Space plays and pauses, except on another button or switch, which it presses as usual.
+    else if (e.key === " " && !pressesItself(e.target, e.currentTarget)) toggle();
     else if (arrows && e.key === "ArrowLeft") step(-1);
     else if (arrows && e.key === "ArrowRight") step(1);
     else if (arrows && e.key === "ArrowUp") update({ wpm: wpm + WPM_STEP });
