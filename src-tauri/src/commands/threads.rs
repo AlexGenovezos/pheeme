@@ -60,11 +60,16 @@ pub async fn get_thread(
     account_id: String,
     thread_id: String,
     opened: Option<bool>,
+    preload: Option<bool>,
 ) -> Result<ThreadDetailDto, CommandError> {
-    Ok(state
-        .mail
-        .get_thread(&account_id, &thread_id, opened.unwrap_or(false))
-        .await?)
+    Ok(if preload.unwrap_or(false) && !opened.unwrap_or(false) {
+        state.mail.preload_thread(&account_id, &thread_id).await?
+    } else {
+        state
+            .mail
+            .get_thread(&account_id, &thread_id, opened.unwrap_or(false))
+            .await?
+    })
 }
 
 #[tauri::command]

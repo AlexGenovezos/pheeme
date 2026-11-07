@@ -597,25 +597,11 @@ describe("opening", () => {
     });
   });
 
-  test("an already-read thread sends nothing", async () => {
+  test("an already-read thread sends no mutation", async () => {
     setList([thread(1)]);
     openAndMarkRead(key(1));
     await flush();
-    expect(calls).toEqual([]);
-  });
-
-  test("j prefetches the neighbours of the new row", () => {
-    const prefetch = vi.fn();
-    useThreadStore.setState({ prefetch });
-    setList([thread(1), thread(2), thread(3), thread(4)]);
-    useUiStore.setState({ openThread: key(1) });
-    moveSelection(1);
-    expect(useUiStore.getState().openThread).toBe(key(2));
-    expect(prefetch).toHaveBeenLastCalledWith([key(1), key(3)]);
-    moveSelection(1);
-    moveSelection(1);
-    expect(useUiStore.getState().openThread).toBe(key(4));
-    expect(prefetch).toHaveBeenLastCalledWith([key(3)]);
+    expect(modifyCalls()).toEqual([]);
   });
 
   test("j and k stop at the ends, and start from the ends when nothing is open", () => {

@@ -524,12 +524,23 @@ impl MailService {
         let start = Instant::now();
         let mut fetch = None;
         let result = self
-            .read_thread(account_id, thread_id, opened, &mut fetch)
+            .read_thread(account_id, thread_id, opened, false, &mut fetch)
             .await;
         if opened {
             self.record_open(account_id, start, fetch, &result);
         }
         result
+    }
+
+    /// A speculative read for preloading: missing bodies come from bulk quota and a failure
+    /// is returned rather than shown, so the caller can stop; nothing is refreshed.
+    pub async fn preload_thread(
+        &self,
+        account_id: &str,
+        thread_id: &str,
+    ) -> Result<ThreadDetailDto, MailError> {
+        self.read_thread(account_id, thread_id, false, true, &mut None)
+            .await
     }
 
     /// [`Self::get_thread`]. `fetch` is set when an open had to fetch missing bodies.
@@ -538,6 +549,7 @@ impl MailService {
         account_id: &str,
         thread_id: &str,
         opened: bool,
+        preload: bool,
         fetch: &mut Option<BodyFetch>,
     ) -> Result<ThreadDetailDto, MailError> {
         let mut messages =
@@ -553,9 +565,17 @@ impl MailService {
                 emit_loading(&self.sync, account_id, thread_id, None);
                 (result, Some((probe.snapshot(), sync_busy)))
             } else {
-                (engine.load_thread_bodies(thread_id).await, None)
+                (
+                    engine
+                        .load_thread_bodies_with_priority(thread_id, preload)
+                        .await,
+                    None,
+                )
             };
             if let Err(e) = result {
+                if preload {
+                    return Err(e.into());
+                }
                 tracing::info!(thread = thread_id, error = %e, "showing cached thread without bodies");
                 body_error = Some(BodyErrorDto::from(&e));
             }
@@ -568,7 +588,7 @@ impl MailService {
                     sync_busy,
                 });
             }
-        } else if messages.iter().any(|m| m.fully_fetched == 0) {
+        } else if !preload && messages.iter().any(|m| m.fully_fetched == 0) {
             let engine = self.sync.engine(account_id);
             let thread = thread_id.to_owned();
             tokio::spawn(async move {
@@ -1377,7 +1397,8 @@ mod tests {
             Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
             events.clone(),
         );
-        sync.sync_account("a1").await.unwrap();
+        // Sync without the manager's background backfill, which would race tests that clear bodies.
+        sync.engine("a1").run_incremental_sync().await.unwrap();
         let mail = MailService::new(pool, sync, db.dir().join("cache"));
         (db, fake, events, mail)
     }
@@ -1470,6 +1491,70 @@ mod tests {
         let online = mail.get_thread("a1", "t1", true).await.unwrap();
         assert!(online.messages[0].body_available);
         assert_eq!(online.messages[0].body_text.as_deref(), Some("Body of m1"));
+    }
+
+    #[tokio::test]
+    async fn preload_cached_thread_never_requests_gmail() {
+        let (_dir, fake, _events, mail) =
+            events_fixture(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"])).await;
+        sqlx::query("UPDATE messages SET fully_fetched = 0")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        let calls = fake.calls("get_message");
+        let detail = mail.preload_thread("a1", "t1").await.unwrap();
+        assert!(detail.thread.unread);
+        assert_eq!(fake.calls("get_message"), calls);
+        assert_eq!(fully_fetched(&mail, "m1").await, 0);
+    }
+
+    #[tokio::test]
+    async fn preload_missing_body_uses_bulk_and_preserves_labels() {
+        let (_dir, fake, events, mail) =
+            events_fixture(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"])).await;
+        sqlx::query("UPDATE messages SET fully_fetched = 0, body_text = NULL, body_html = NULL")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        // An optimistic label differs from Gmail; body loading must preserve it.
+        let mut row = messages::get_message(&mail.db, "a1", "m1")
+            .await
+            .unwrap()
+            .unwrap();
+        row.label_ids = Some("[\"INBOX\",\"UNREAD\",\"STARRED\"]".into());
+        row.is_starred = 1;
+        messages::upsert_message(&mail.db, &row).await.unwrap();
+        events.take();
+        let calls = fake.calls("backfill_get_messages");
+        let detail = mail.preload_thread("a1", "t1").await.unwrap();
+        assert_eq!(detail.messages[0].body_text.as_deref(), Some("Body of m1"));
+        assert!(detail.thread.unread);
+        assert_eq!(detail.body_error, None);
+        assert!(events.take().is_empty(), "a preload announces nothing");
+        assert!(mail.recent_opens().is_empty());
+        assert_eq!(fake.calls("backfill_get_messages"), calls + 1);
+        assert!(detail.messages[0].label_ids.contains(&"INBOX".to_owned()));
+        assert!(detail.messages[0].starred);
+        assert!(detail.messages[0].label_ids.contains(&"STARRED".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn preload_rate_limit_propagates_without_retry() {
+        let (_dir, fake, _events, mail) =
+            events_fixture(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"])).await;
+        sqlx::query("UPDATE messages SET fully_fetched = 0, body_text = NULL, body_html = NULL")
+            .execute(&mail.db)
+            .await
+            .unwrap();
+        fake.fail_next(
+            "backfill_get_messages",
+            GmailError::RateLimit { retry_after: None },
+        );
+        let calls = fake.calls("backfill_get_messages");
+        let error = mail.preload_thread("a1", "t1").await.unwrap_err();
+        assert_eq!(error.code(), "rate_limit");
+        assert_eq!(fake.calls("backfill_get_messages"), calls + 1);
+        assert_eq!(fully_fetched(&mail, "m1").await, 0);
     }
 
     #[tokio::test]

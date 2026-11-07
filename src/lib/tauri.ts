@@ -205,12 +205,9 @@ export const listThreads = (
     keepRead?: [string, string][];
   },
 ) => invoke<ThreadPage>("list_threads", { ...query });
-/**
- * `opened` is a user-initiated open (not a prefetch): missing bodies are fetched ahead of background sync and
- * `mail:thread_loading` reports what the fetch is waiting on.
- */
-export const getThread = (accountId: string, threadId: string, opened = false) =>
-  invoke<ThreadDetail>("get_thread", { accountId, threadId, opened });
+/** User opens report fetch diagnostics; speculative preloads use bulk quota and stay silent. */
+export const getThread = (accountId: string, threadId: string, opened = false, preload = false) =>
+  invoke<ThreadDetail>("get_thread", { accountId, threadId, opened, preload });
 export const listLabels = (accountId: string) => invoke<LabelInfo[]>("list_labels", { accountId });
 export const mailboxCounts = (accountIds: string[]) =>
   invoke<MailboxCount[]>("mailbox_counts", { accountIds });

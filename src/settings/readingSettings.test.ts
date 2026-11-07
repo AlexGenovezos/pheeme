@@ -25,3 +25,10 @@ test("a missing or invalid stored choice restores standard reading text", () => 
   expect(useReadingSettings.getState().size).toBe("standard");
   expect(document.documentElement.dataset.readingSize).toBe("standard");
 });
+
+test("image preloading defaults on and persists an opt-out", () => {
+  expect(useReadingSettings.getState().preloadImages).toBe(true);
+  useReadingSettings.getState().setPreloadImages(false);
+  initReadingSize();
+  expect(useReadingSettings.getState().preloadImages).toBe(false);
+});

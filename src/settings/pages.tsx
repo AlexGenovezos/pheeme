@@ -41,6 +41,12 @@ function SidebarControl() {
   );
 }
 
+function PreloadImagesControl() {
+  const checked = useReadingSettings((s) => s.preloadImages);
+  const onChange = useReadingSettings((s) => s.setPreloadImages);
+  return <Switch label="Preload images" checked={checked} onChange={onChange} />;
+}
+
 function ReadingSizeControl() {
   const size = useReadingSettings((s) => s.size);
   const setSize = useReadingSettings((s) => s.setSize);
@@ -105,6 +111,14 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             description: "For plain-text messages and the messages you write.",
             keywords: ["font", "larger", "accessibility", "compose", "zoom"],
             Control: ReadingSizeControl,
+          },
+          {
+            id: "reading.preloadImages",
+            title: "Preload images",
+            description:
+              "Preloading images lets senders see that an email was opened, along with your IP address and approximate location, even for emails you skip. Turning it off keeps text preloading, and loads images only when you open an email.",
+            keywords: ["privacy", "images", "tracking"],
+            Control: PreloadImagesControl,
           },
         ],
       },

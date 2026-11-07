@@ -994,6 +994,20 @@ impl MailApi for FakeGmail {
         out
     }
 
+    async fn backfill_get_messages(
+        &self,
+        ids: &[String],
+        format: MessageFormat,
+    ) -> Vec<(String, Result<Message, GmailError>)> {
+        if let Err(error) = self.enter("backfill_get_messages") {
+            return ids
+                .first()
+                .map(|id| vec![(id.clone(), Err(error))])
+                .unwrap_or_default();
+        }
+        self.batch_get_messages(ids, format).await
+    }
+
     async fn list_history(
         &self,
         start: &str,

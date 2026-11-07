@@ -288,3 +288,14 @@ test("Accounts can remove an account after confirming", async () => {
   fireEvent.click(within(dialog()).getByRole("button", { name: "Remove" }));
   expect(remove).toHaveBeenCalledWith("a1");
 });
+
+test("Reading exposes the exact image-preloading privacy description", () => {
+  render(<Harness />);
+  open("appearance");
+  expect(screen.getByRole("switch", { name: "Preload images" })).toBeChecked();
+  expect(
+    screen.getByText(
+      "Preloading images lets senders see that an email was opened, along with your IP address and approximate location, even for emails you skip. Turning it off keeps text preloading, and loads images only when you open an email.",
+    ),
+  ).toBeInTheDocument();
+});

@@ -28,6 +28,8 @@ import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel 
 import { createTransferHandlers } from "./transfer";
 
 type Args = Record<string, unknown> | undefined;
+/** Browser-test hook installed before startup, so speculative reads see the same fixtures as opens. */
+export type PreviewInvoke = (cmd: string, args: Args, next: typeof handlePreviewCommand) => unknown;
 
 const accountIdsOf = (args: Args): string[] =>
   Array.isArray(args?.accountIds) ? args.accountIds.map(String) : [];
@@ -337,5 +339,14 @@ export function handlePreviewCommand(cmd: string, args?: unknown): unknown {
 export function installPreview() {
   previewHandlers = createPreviewHandlers(location.search);
   mockWindows("main");
-  mockIPC(handlePreviewCommand, { shouldMockEvents: true });
+  const intercept = (window as unknown as { __PHEEME_PREVIEW_INVOKE__?: PreviewInvoke })
+    .__PHEEME_PREVIEW_INVOKE__;
+  mockIPC(
+    intercept
+      ? (cmd, args) => intercept(cmd, args as Args, handlePreviewCommand)
+      : handlePreviewCommand,
+    {
+      shouldMockEvents: true,
+    },
+  );
 }

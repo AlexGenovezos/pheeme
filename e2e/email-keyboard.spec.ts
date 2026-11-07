@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { PreviewInvoke } from "../src/preview/install";
 import type { ThreadDetail } from "../src/lib/tauri";
 
 test.use({ video: "on" });
@@ -7,19 +8,12 @@ for (const html of [false, true]) {
   test(`Left returns from a ${html ? "HTML" : "plain-text"} email to Up/Down navigation`, async ({
     page,
   }, testInfo) => {
-    await page.goto("/");
     const list = page.getByRole("listbox", { name: /conversations$/ });
     const rows = list.getByRole("option");
-    await expect(rows.first()).toBeVisible();
-    await page.evaluate((html) => {
-      const ipc = (
-        window as unknown as {
-          __TAURI_INTERNALS__: { invoke(cmd: string, args?: unknown): Promise<unknown> };
-        }
-      ).__TAURI_INTERNALS__;
-      const invoke = ipc.invoke;
-      ipc.invoke = async (cmd, args) => {
-        const result = await invoke(cmd, args);
+    await page.addInitScript((html) => {
+      const win = window as unknown as { __PHEEME_PREVIEW_INVOKE__: PreviewInvoke };
+      win.__PHEEME_PREVIEW_INVOKE__ = async (cmd, args, next) => {
+        const result = await next(cmd, args);
         if (cmd !== "get_thread") return result;
         const detail = result as ThreadDetail;
         return {
@@ -34,6 +28,8 @@ for (const html of [false, true]) {
         };
       };
     }, html);
+    await page.goto("/");
+    await expect(rows.first()).toBeVisible();
 
     const firstId = await rows.nth(0).getAttribute("id");
     const secondId = await rows.nth(1).getAttribute("id");
@@ -42,8 +38,12 @@ for (const html of [false, true]) {
     await expect(list).toHaveAttribute("aria-activedescendant", secondId!);
 
     const body = html
-      ? page.frameLocator('iframe[title="Message body"]').getByText("Keyboard navigation email")
-      : page.getByText("Keyboard navigation email", { exact: true });
+      ? page
+          .frameLocator('iframe[title="Message body"]:visible')
+          .getByText("Keyboard navigation email")
+      : page
+          .locator('.thread-view__retained[data-visible="true"]')
+          .getByText("Keyboard navigation email", { exact: true });
     await body.click();
     await expect(list).not.toBeFocused();
     await page.screenshot({ path: testInfo.outputPath("before-returning-to-list.png") });
@@ -62,19 +62,12 @@ for (const html of [false, true]) {
 test("Right focuses the open email so the arrows scroll it, and Left goes back", async ({
   page,
 }) => {
-  await page.goto("/");
   const list = page.getByRole("listbox", { name: /conversations$/ });
   const rows = list.getByRole("option");
-  await expect(rows.first()).toBeVisible();
-  await page.evaluate(() => {
-    const ipc = (
-      window as unknown as {
-        __TAURI_INTERNALS__: { invoke(cmd: string, args?: unknown): Promise<unknown> };
-      }
-    ).__TAURI_INTERNALS__;
-    const invoke = ipc.invoke;
-    ipc.invoke = async (cmd, args) => {
-      const result = await invoke(cmd, args);
+  await page.addInitScript(() => {
+    const win = window as unknown as { __PHEEME_PREVIEW_INVOKE__: PreviewInvoke };
+    win.__PHEEME_PREVIEW_INVOKE__ = async (cmd, args, next) => {
+      const result = await next(cmd, args);
       if (cmd !== "get_thread") return result;
       const detail = result as ThreadDetail;
       const long = Array.from({ length: 200 }, (_, i) => `Line ${i}`).join("\n");
@@ -86,12 +79,16 @@ test("Right focuses the open email so the arrows scroll it, and Left goes back",
       };
     };
   });
+  await page.goto("/");
+  await expect(rows.first()).toBeVisible();
 
   const secondId = await rows.nth(1).getAttribute("id");
   await rows.nth(1).click();
   await expect(list).toBeFocused();
   const pane = page.getByRole("region", { name: "Open conversation" });
-  await expect(pane.getByText("Line 199")).toBeAttached();
+  await expect(
+    pane.locator('.thread-view__retained[data-visible="true"]').getByText("Line 199"),
+  ).toBeAttached();
 
   await page.keyboard.press("ArrowRight");
   await expect(pane).toBeFocused();

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { PreviewInvoke } from "../src/preview/install";
 import type { ThreadDetail } from "../src/lib/tauri";
 
 for (const fixed of [true, false]) {
@@ -6,20 +7,13 @@ for (const fixed of [true, false]) {
     page,
   }) => {
     await page.setViewportSize({ width: 1600, height: 1000 });
-    await page.goto("/");
     const rows = page.getByRole("listbox", { name: /conversations$/ }).getByRole("option");
-    await expect(rows.first()).toBeVisible();
     // Exercise the real email renderer with a representative legacy promotional layout. The original
     // reported Steam HTML is unavailable; fixed table/min widths and inline image dimensions reproduce it.
-    await page.evaluate((fixed) => {
-      const ipc = (
-        window as unknown as {
-          __TAURI_INTERNALS__: { invoke(cmd: string, args?: unknown): Promise<unknown> };
-        }
-      ).__TAURI_INTERNALS__;
-      const invoke = ipc.invoke;
-      ipc.invoke = async (cmd, args) => {
-        const result = await invoke(cmd, args);
+    await page.addInitScript((fixed) => {
+      const win = window as unknown as { __PHEEME_PREVIEW_INVOKE__: PreviewInvoke };
+      win.__PHEEME_PREVIEW_INVOKE__ = async (cmd, args, next) => {
+        const result = await next(cmd, args);
         if (cmd !== "get_thread") return result;
         const detail = result as ThreadDetail;
         return {
@@ -40,8 +34,10 @@ for (const fixed of [true, false]) {
         };
       };
     }, fixed);
+    await page.goto("/");
+    await expect(rows.first()).toBeVisible();
     await rows.first().click();
-    const iframe = page.locator('iframe[title="Message body"]');
+    const iframe = page.locator('iframe[title="Message body"]:visible');
     await expect(iframe).toBeVisible();
     const layout = () =>
       iframe.evaluate((el: HTMLIFrameElement) => {
