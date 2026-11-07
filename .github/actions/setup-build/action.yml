@@ -49,7 +49,15 @@ runs:
         COMPONENTS: ${{ inputs.rust-components }}
       run: rustup component add $COMPONENTS
     - uses: Swatinem/rust-cache@v2
+      id: rust-cache
       with:
         workspaces: src-tauri
         shared-key: ${{ inputs.cache-key }}
         save-if: ${{ inputs.save-if }}
+    # A cache restored for another Cargo.lock keeps every replaced crate version (rust-cache
+    # prunes by crate name only), so caches saved from it grow with each dependency bump.
+    # Caches that get saved start clean instead; PR runs keep the partial restore.
+    - name: Start the Rust cache fresh after a Cargo.lock change
+      if: inputs.save-if == 'true' && steps.rust-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: rm -rf "${CARGO_TARGET_DIR:-src-tauri/target}"
