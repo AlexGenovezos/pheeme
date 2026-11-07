@@ -226,6 +226,11 @@
   gap: var(--space-1);
 }
 
+.label-color__grid--wide {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: var(--space-1-5);
+}
+
 .label-color__swatch {
   display: inline-flex;
   align-items: center;
@@ -246,6 +251,10 @@
 .label-color__swatch:focus-visible {
   outline: var(--focus-ring-width) solid var(--color-focus-border);
   outline-offset: var(--focus-ring-offset);
+}
+.label-color__grid--wide .label-color__swatch {
+  width: 100%;
+  height: var(--label-swatch-wide-height);
 }
 .label-color__swatch svg {
   width: var(--icon-size-sm);
@@ -315,13 +324,14 @@
   margin-top: var(--space-1);
   font-size: var(--font-size-md);
 }
-.label-dialog__field--gap {
+.label-dialog__colour-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin-top: var(--space-1);
 }
-.label-dialog__colour {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
+.label-dialog__no-colour {
+  margin-inline-start: auto;
 }
 .label-dialog__select {
   height: var(--control-height-md);
