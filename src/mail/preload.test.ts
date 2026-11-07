@@ -1,5 +1,5 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, type Mock, test, vi } from "vitest";
 import type { ThreadSummary } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { __resetMailStoreForTests, type MailQuery, useMailStore } from "../store/mailStore";
@@ -14,7 +14,7 @@ const keys = (from: number, count: number, step = 1) =>
   Array.from({ length: count }, (_, i) => `a:${from + i * step}`);
 const inbox = { accountIds: ["a"], labelId: "INBOX" };
 
-let prefetch: ReturnType<typeof vi.fn>;
+let prefetch: Mock<(keys: string[]) => void>;
 let stop: () => void;
 beforeEach(() => {
   __resetMailStoreForTests();
@@ -22,7 +22,7 @@ beforeEach(() => {
   __resetUiStoreForTests();
   useAccountStore.setState({ accounts: [] });
   setTravelDirection(1);
-  prefetch = vi.fn();
+  prefetch = vi.fn<(keys: string[]) => void>();
   useThreadStore.setState({ prefetch });
   mockIPC((cmd) => {
     throw new Error(`unexpected ${cmd}`);

@@ -1397,7 +1397,8 @@ mod tests {
             Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
             events.clone(),
         );
-        sync.sync_account("a1").await.unwrap();
+        // Sync without the manager's background backfill, which would race tests that clear bodies.
+        sync.engine("a1").run_incremental_sync().await.unwrap();
         let mail = MailService::new(pool, sync, db.dir().join("cache"));
         (db, fake, events, mail)
     }
