@@ -1,6 +1,7 @@
 pub mod accounts;
 #[cfg(target_os = "macos")]
 mod app_menu;
+pub mod attachment_cache;
 pub mod commands;
 pub mod compose;
 pub mod db;
@@ -67,6 +68,10 @@ pub async fn build_state(
     let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
     let compose = compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir);
     compose.sweep_staging().await;
+    tokio::spawn({
+        let mail = mail.clone();
+        async move { mail.sweep_attachment_cache().await }
+    });
     Ok(AppState {
         db,
         accounts,

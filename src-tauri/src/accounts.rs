@@ -436,7 +436,8 @@ impl AccountService {
             .collect())
     }
 
-    /// Revokes Google access (best effort), then deletes the secrets and all cached data.
+    /// Revokes Google access (best effort), then deletes the secrets and cached mail.
+    /// Attachment files on disk are the mail service's ([`crate::mail::MailService::forget_account`]).
     pub async fn remove_account(&self, account_id: &str) -> Result<(), AccountError> {
         self.account(account_id).await?;
         let id = account_id.to_owned();
