@@ -1,0 +1,47 @@
+# Weekly version updates. Security updates are enabled in the repo settings and
+# open as soon as an advisory lands, independent of this schedule.
+#
+# Minor and patch bumps are grouped into one PR per ecosystem; majors arrive one
+# per PR so each breaking change is reviewed on its own. Tauri is its own group
+# in both npm and cargo because the CLI refuses to build when @tauri-apps/* and
+# the tauri crates drift apart by minor version: merge the two Tauri PRs together.
+# The Tauri groups take majors too, so a Tauri major still moves in lockstep.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: build(deps)
+    groups:
+      tauri:
+        patterns: ["@tauri-apps/*"]
+      npm-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: build(deps)
+    groups:
+      tauri:
+        patterns: ["tauri", "tauri-*"]
+        exclude-patterns: ["tauri-winrt-notification"]
+      cargo-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/*"]
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      actions:
+        update-types: [minor, patch]
