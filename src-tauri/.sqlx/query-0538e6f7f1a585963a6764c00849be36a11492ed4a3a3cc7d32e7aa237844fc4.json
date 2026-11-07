@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT json_group_array(json_array(tl.account_id, tl.thread_id, tl.label_id))\n                  AS \"found!: String\"\n           FROM json_each(?1) k\n           JOIN thread_labels tl\n             ON tl.account_id = json_extract(k.value, '$[0]')\n            AND tl.thread_id = json_extract(k.value, '$[1]')\n           WHERE NOT EXISTS (\n                 SELECT 1 FROM labels l\n                 WHERE l.account_id = tl.account_id AND l.id = tl.label_id\n                   AND l.type = 'user')",
+  "describe": {
+    "columns": [
+      {
+        "name": "found!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "0538e6f7f1a585963a6764c00849be36a11492ed4a3a3cc7d32e7aa237844fc4"
+}

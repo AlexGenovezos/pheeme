@@ -40,6 +40,7 @@ const thread = (n: number, accountId = "a1", over: Partial<ThreadSummary> = {}):
   hasAttachment: false,
   messageCount: 1,
   labelIds: [],
+  systemLabelIds: [],
   ...over,
 });
 const key = (n: number, accountId = "a1") => threadKey(accountId, `t${n}`);

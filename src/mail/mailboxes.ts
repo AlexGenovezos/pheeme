@@ -205,3 +205,26 @@ export function resolveActiveAccount(
 /** Session filter identity, including account and category. */
 export const mailboxKey = (ref: MailboxRef): string =>
   JSON.stringify([ref.accountId, ref.labelId, ref.category ?? null]);
+
+/**
+ * Where a conversation sits, from its labels: Trash, Spam, its inbox tab (Primary, Social, …),
+ * Sent or Drafts when it left the inbox that way, otherwise Archived.
+ */
+export function locationOf(labelIds: readonly string[]): string {
+  const has = new Set(labelIds);
+  if (has.has("TRASH")) return "Trash";
+  if (has.has("SPAM")) return "Spam";
+  if (has.has("INBOX")) {
+    const tab = CATEGORIES.find((c) => c.labelId !== "CATEGORY_PERSONAL" && has.has(c.labelId));
+    return tab ? tab.name : "Primary";
+  }
+  if (has.has("SENT")) return "Sent";
+  if (has.has("DRAFT")) return "Drafts";
+  return "Archived";
+}
+
+/** Rows name their location in views that mix locations: All Mail, Starred, user labels and search. */
+export function showsLocation(mailbox: MailboxRef, searching: boolean): boolean {
+  if (searching) return true;
+  return !["INBOX", "SPAM", "TRASH", "SENT", "DRAFT"].includes(mailbox.labelId);
+}

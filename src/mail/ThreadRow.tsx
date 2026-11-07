@@ -41,6 +41,8 @@ export interface ThreadRowProps {
   labels: ReadonlyMap<string, LabelInfo>;
   /** The mailbox being viewed, whose own chip would be redundant. */
   currentLabelId: string;
+  /** Where the conversation sits (Updates, Spam, Archived…), shown before the subject; null hides it. */
+  location: string | null;
   onSelect(e: MouseEvent, thread: ThreadSummary): void;
   onCheck(e: MouseEvent, thread: ThreadSummary): void;
   onAction(action: RowAction, thread: ThreadSummary): void;
@@ -58,6 +60,7 @@ export const ThreadRow = memo(function ThreadRow({
   accountEmail,
   labels,
   currentLabelId,
+  location,
   onSelect,
   onCheck,
   onAction,
@@ -174,6 +177,7 @@ export const ThreadRow = memo(function ThreadRow({
       }
       subtitle={
         <>
+          {location && <span className="thread-row__location">{location}</span>}
           {chips.length > 0 && (
             <span className="label-chips">
               {chips.slice(0, MAX_ROW_CHIPS).map((label) => (

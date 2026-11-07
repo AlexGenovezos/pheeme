@@ -30,6 +30,7 @@ const row = (id: string, accountId = "a"): ThreadSummary => ({
   hasAttachment: false,
   messageCount: 1,
   labelIds: [],
+  systemLabelIds: [],
 });
 const cached = (...threads: ThreadSummary[]): SearchPage => ({ threads, next: null, local: true });
 const gmail = (...threads: ThreadSummary[]): GmailSearchPage => ({ threads, next: {}, failed: [] });

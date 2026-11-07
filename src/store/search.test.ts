@@ -17,6 +17,7 @@ const row = (id: string, accountId = "a", date = 1): ThreadSummary => ({
   hasAttachment: false,
   messageCount: 1,
   labelIds: [],
+  systemLabelIds: [],
 });
 const local = (...threads: ThreadSummary[]): SearchPage => ({ threads, next: null, local: true });
 const remote = (...threads: ThreadSummary[]): GmailSearchPage => ({

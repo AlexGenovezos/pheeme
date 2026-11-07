@@ -26,6 +26,7 @@ const thread = (n: number): ThreadSummary => ({
   hasAttachment: false,
   messageCount: 1,
   labelIds: [],
+  systemLabelIds: [],
 });
 
 const last = <T>(items: T[]): T => items[items.length - 1];

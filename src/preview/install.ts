@@ -57,6 +57,10 @@ export function toSummary(t: FixtureThread, labels: PreviewLabel[]): ThreadSumma
     hasAttachment: t.messages.some((m) => m.attachments.some((a) => !a.isInline)),
     messageCount: t.messages.length,
     labelIds: userLabelIds(t, labels),
+    systemLabelIds: [
+      ...t.labelIds.filter((id) => !labels.some((l) => l.accountId === t.accountId && l.id === id)),
+      ...(hasLabel(t, "UNREAD") ? ["UNREAD"] : []),
+    ].sort(),
   };
 }
 
