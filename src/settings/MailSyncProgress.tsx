@@ -7,7 +7,7 @@ export function useSyncProgress() {
   const [unavailable, setUnavailable] = useState(false);
   useEffect(() => {
     let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
+    const timer: { id?: ReturnType<typeof setTimeout> } = {};
     async function refresh() {
       try {
         const value = await getSyncProgress();
@@ -18,13 +18,13 @@ export function useSyncProgress() {
       } catch {
         if (!stopped) setUnavailable(true);
       } finally {
-        if (!stopped) timer = setTimeout(() => void refresh(), 2000);
+        if (!stopped) timer.id = setTimeout(() => void refresh(), 2000);
       }
     }
     void refresh();
     return () => {
       stopped = true;
-      clearTimeout(timer);
+      clearTimeout(timer.id);
     };
   }, []);
   return { progress, unavailable };
