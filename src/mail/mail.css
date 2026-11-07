@@ -303,6 +303,7 @@
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-3) var(--space-2);
+  cursor: pointer;
 }
 
 .message-card__from {

@@ -153,6 +153,23 @@ test("clicking a collapsed card expands it, and the chevron collapses it", () =>
   expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
 });
 
+test("clicking an expanded card's header collapses it, unless text is being selected", () => {
+  open(detail([message(1), message(2)]));
+  renderView();
+
+  fireEvent.click(within(card(1)).getByRole("button"));
+  fireEvent.click(within(card(1)).getByText("to me"));
+  expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
+
+  fireEvent.click(within(card(1)).getByRole("button"));
+  const getSelection = vi
+    .spyOn(window, "getSelection")
+    .mockReturnValue({ isCollapsed: false } as Selection);
+  fireEvent.click(within(card(1)).getByText("Sender 1"));
+  getSelection.mockRestore();
+  expect(screen.getByText("Body 1")).toBeInTheDocument();
+});
+
 test("a collapsed HTML message only mounts its images when expanded", () => {
   open(
     detail([

@@ -1,4 +1,5 @@
 import { ChevronUp, Pencil } from "lucide-react";
+import type { MouseEvent } from "react";
 import { useComposeStore } from "../compose/composeStore";
 import { Button } from "../components/ui/Button";
 import { formatFullDate, formatListDate } from "../lib/dates";
@@ -78,13 +79,21 @@ export function MessageCard({
     );
   }
 
+  /** The whole header collapses the card, like the summary row expands it; the chevron
+   *  stays the keyboard route. A click that ends a text selection is left alone. */
+  const collapseFromHeader = (e: MouseEvent) => {
+    if ((e.target as Element).closest("button, a")) return;
+    if (window.getSelection()?.isCollapsed === false) return;
+    onToggle();
+  };
+
   const lines = [
     recipientLine("to", message.to, myAddress),
     recipientLine("cc", message.cc, myAddress),
   ].filter(Boolean);
   return (
     <article className="message-card" aria-label={`Message from ${name}`}>
-      <header className="message-card__header">
+      <header className="message-card__header" onClick={collapseFromHeader}>
         <div className="message-card__from">
           <div className="message-card__identity">
             <span className="message-card__name selectable" data-draft={isDraft || undefined}>
