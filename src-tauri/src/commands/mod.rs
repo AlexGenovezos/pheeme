@@ -11,6 +11,7 @@ pub mod support;
 pub mod sync;
 pub mod threads;
 pub mod transfer;
+pub mod updater;
 
 use crate::accounts::AccountError;
 use crate::mail::MailError;
