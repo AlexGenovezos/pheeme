@@ -416,6 +416,10 @@ body[data-resizing] .shell__divider:active::after {
   min-height: var(--space-0);
   overflow-y: auto;
 }
+/* Right arrow focuses the pane so Up/Down scroll it; draw the ring inside, where the pane can't clip it. */
+.view-pane__scroll:focus-visible {
+  outline-offset: var(--focus-ring-inset);
+}
 
 /* ---- Empty states and the chord hint ------------------------------------ */
 

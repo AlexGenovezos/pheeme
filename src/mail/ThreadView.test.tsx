@@ -1,9 +1,11 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { __resetComposeStoreForTests, useComposeStore } from "../compose/composeStore";
 import { dismissToast, ToastProvider, useToastStore } from "../components/ui/Toast";
+import { registry } from "../keyboard/registry";
+import { useGlobalShortcuts } from "../keyboard/useCommands";
 import type { AttachmentInfo, LabelInfo, MessageDetail, ThreadDetail } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
@@ -85,6 +87,7 @@ const card = (n: number) => screen.getByRole("article", { name: `Message from Se
 
 beforeEach(() => {
   localStorage.clear();
+  registry.clear();
   __resetUiStoreForTests();
   __resetThreadStoreForTests();
   __resetLabelStoreForTests();
@@ -425,4 +428,72 @@ test("a draft in the conversation says so and opens in compose", async () => {
     ]),
   );
   expect(calls).toContain("open_draft");
+});
+
+describe("keyboard focus", () => {
+  function Shortcuts() {
+    useGlobalShortcuts();
+    return <button>List</button>;
+  }
+  const renderWithShortcuts = () =>
+    render(
+      <ToastProvider>
+        <Shortcuts />
+        <ThreadView />
+      </ToastProvider>,
+    );
+  const pane = () => screen.getByRole("region", { name: "Open conversation" });
+
+  test("Right moves focus from elsewhere into the open conversation", () => {
+    open(detail([message(1)]));
+    renderWithShortcuts();
+    const list = screen.getByRole("button", { name: "List" });
+    list.focus();
+    fireEvent.keyDown(list, { key: "ArrowRight" });
+    expect(pane()).toHaveFocus();
+  });
+
+  test("Right does nothing with no conversation open", () => {
+    renderWithShortcuts();
+    const list = screen.getByRole("button", { name: "List" });
+    list.focus();
+    fireEvent.keyDown(list, { key: "ArrowRight" });
+    expect(list).toHaveFocus();
+  });
+
+  test("arrow, page and Home/End keys scroll the focused conversation", () => {
+    open(detail([message(1)]));
+    renderWithShortcuts();
+    const view = pane();
+    const scrollBy = vi.fn();
+    const scrollTo = vi.fn();
+    Object.assign(view, { scrollBy, scrollTo });
+    Object.defineProperty(view, "clientHeight", { value: 500 });
+    Object.defineProperty(view, "scrollHeight", { value: 3000 });
+    view.focus();
+
+    const press = (key: string, extra: object = {}) => {
+      const event = fireEvent.keyDown(view, { key, ...extra });
+      return event; // false when the default was prevented
+    };
+    expect(press("ArrowDown")).toBe(false);
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: 40, behavior: "smooth" });
+    press("ArrowUp", { repeat: true });
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: -40, behavior: "auto" });
+    press("PageDown");
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: 450, behavior: "smooth" });
+    press(" ", { shiftKey: true });
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: -450, behavior: "smooth" });
+    press("End");
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 3000, behavior: "smooth" });
+    press("Home");
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "smooth" });
+
+    // Modified arrows and keys typed in a child are left alone.
+    scrollBy.mockClear();
+    expect(press("ArrowDown", { metaKey: true })).toBe(true);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Reply" }), { key: "ArrowDown" });
+    expect(scrollBy).not.toHaveBeenCalled();
+    expect(view).toHaveFocus();
+  });
 });
