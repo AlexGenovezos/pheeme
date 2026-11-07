@@ -8,7 +8,7 @@
 
 use super::error::GmailError;
 use super::probe::{self, ProbeStage, RetryReason};
-use rand::Rng;
+use rand::RngExt;
 use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -128,7 +128,7 @@ impl RetryPolicy {
 /// A random delay in `[delay / 2, delay]`, so requests throttled together don't all retry in
 /// the same instant and get throttled together again.
 fn jittered(delay: Duration) -> Duration {
-    delay.mul_f64(rand::thread_rng().gen_range(0.5..=1.0))
+    delay.mul_f64(rand::rng().random_range(0.5..=1.0))
 }
 
 /// Paces requests by Gmail quota units, adapting to the limit Gmail actually enforces.

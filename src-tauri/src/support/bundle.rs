@@ -181,9 +181,9 @@ mod tests {
 
     #[test]
     fn bundle_trims_to_max_bytes() {
-        use rand::RngCore;
+        use rand::Rng;
         let dir = tempfile::tempdir().unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut log = String::new();
         let mut bytes = [0u8; 50];
         while log.len() < 10 * 1024 * 1024 {
