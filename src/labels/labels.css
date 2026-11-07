@@ -58,3 +58,131 @@
   color: var(--color-foreground-muted);
   font-size: var(--font-size-xs);
 }
+
+/* "Label as…" / "Move to…": a menu-styled popover with a search field. */
+.label-picker {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  width: var(--label-picker-width);
+  max-width: calc(100% - var(--space-4));
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-menu-border);
+  border-radius: var(--radius-md);
+  background: var(--color-menu-bg);
+  color: var(--color-menu-foreground);
+  box-shadow: var(--shadow-popover);
+  animation: label-picker-in var(--duration-fast) var(--ease-out);
+  transform-origin: top left;
+}
+
+.label-picker__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-0) var(--space-2);
+  border-bottom: var(--border-width) solid var(--color-menu-separator);
+  color: var(--color-foreground-subtle);
+}
+.label-picker__search svg {
+  flex-shrink: 0;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.label-picker__input {
+  flex: 1;
+  min-width: var(--space-0);
+  height: var(--control-height-md);
+  border: none;
+  background: transparent;
+  color: var(--color-menu-foreground);
+}
+.label-picker__input:focus-visible {
+  outline: none;
+}
+.label-picker__input::placeholder {
+  color: var(--color-input-placeholder);
+}
+
+.label-picker__list {
+  max-height: var(--label-picker-list-max-height);
+  overflow-y: auto;
+  padding: var(--space-1);
+  overscroll-behavior: contain;
+}
+
+.label-picker__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: var(--control-height-sm);
+  padding: var(--space-0) var(--space-2) var(--space-0) var(--space-1);
+  border-radius: var(--radius-sm);
+  cursor: default;
+}
+.label-picker__option[aria-selected="true"] {
+  background: var(--color-menu-selection-bg);
+  color: var(--color-menu-selection-foreground);
+}
+.label-picker__option[aria-disabled="true"] {
+  color: var(--color-foreground-disabled);
+}
+
+/* "Manage labels" sits apart from the list, like a menu's last group. */
+.label-picker__footer {
+  position: relative;
+  margin-top: var(--space-2);
+}
+.label-picker__footer::before {
+  content: "";
+  position: absolute;
+  inset-inline: var(--space-1);
+  top: calc(var(--space-1) * -1);
+  height: var(--border-width);
+  background: var(--color-menu-separator);
+}
+.label-picker__footer:first-child {
+  margin-top: var(--space-0);
+}
+.label-picker__footer:first-child::before {
+  display: none;
+}
+
+.label-picker__check,
+.label-picker__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--icon-size-sm);
+}
+.label-picker__check svg,
+.label-picker__icon svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.label-picker__dot {
+  width: var(--label-dot-size);
+  height: var(--label-dot-size);
+  border-radius: var(--radius-full);
+}
+.label-picker__dot--none {
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-foreground-subtle);
+}
+
+.label-picker__name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@keyframes label-picker-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--enter-scale));
+  }
+}

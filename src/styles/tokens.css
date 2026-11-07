@@ -78,6 +78,8 @@
   --label-dot-size: 6px;
   --label-chip-max-width: 160px;
   --label-chip-line-height: 16px;
+  --label-picker-width: 280px;
+  --label-picker-list-max-height: 320px;
   --hairline: 1px;
   --badge-min-width: 18px;
   --kbd-min-width: 18px;

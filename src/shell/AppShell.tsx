@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { LabelPickerHost } from "../labels/LabelPicker";
 import { PANE, useUiStore } from "../store/uiStore";
 import { ChordHint } from "./ChordHint";
 import { overlayTitleBar } from "./chrome";
@@ -91,6 +92,7 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
         <ViewPane />
       </main>
       <ChordHint />
+      <LabelPickerHost />
     </div>
   );
 }
