@@ -202,7 +202,7 @@ fn heap_levels_off_over_a_long_session() {
                 .await
                 .unwrap();
             let newest = page.threads[0].id.clone();
-            mail.get_thread(ACCT, &newest).await.unwrap();
+            mail.get_thread(ACCT, &newest, true).await.unwrap();
             let target = format!("t{}", cycle % threads);
             let inbox = ["INBOX".to_string()];
             let (add, remove): (&[String], &[String]) = if cycle % 2 == 0 {

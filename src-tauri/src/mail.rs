@@ -8,8 +8,10 @@ use crate::db::messages::{parse_labels, DbMessage};
 use crate::db::search::{self as search_db, ThreadSearch, LABEL_KEY_SEP};
 use crate::db::threads::{self, DbThread, ThreadCursor, ThreadQuery};
 use crate::db::{labels, messages};
+use crate::diagnostics::{ms_since, OpenTiming, OpenTimings};
 use crate::gmail::mime::EmailAddress;
-use crate::gmail::MessageFormat;
+use crate::gmail::probe::{with_probe, ProbeStage, ProbeStats, RequestProbe};
+use crate::gmail::{GmailError, MessageFormat};
 use crate::render;
 use crate::search;
 use crate::sync::engine::now_ms;
@@ -22,6 +24,7 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 pub const DEFAULT_PAGE: i64 = 50;
 
@@ -200,6 +203,42 @@ impl From<DbMessage> for MessageDetailDto {
 pub struct ThreadDetailDto {
     pub thread: ThreadSummaryDto,
     pub messages: Vec<MessageDetailDto>,
+    /// Set when some bodies weren't cached and fetching them failed.
+    pub body_error: Option<BodyErrorDto>,
+}
+
+/// Why a thread's missing bodies couldn't be fetched: the error `code` (as commands report
+/// it) and a plain message for the reader, free of URLs and request details.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BodyErrorDto {
+    pub code: String,
+    pub message: String,
+}
+
+impl From<&SyncError> for BodyErrorDto {
+    fn from(e: &SyncError) -> Self {
+        let message = match e {
+            SyncError::Gmail(GmailError::Network(_) | GmailError::Offline(_)) => {
+                "Couldn't reach Gmail. You may be offline."
+            }
+            SyncError::Gmail(GmailError::RateLimit { .. }) => {
+                "Gmail asked Pheeme to slow down. Try again in a minute."
+            }
+            SyncError::Gmail(GmailError::Auth(_) | GmailError::SignedOut(_)) => {
+                "Gmail didn't accept this account's sign-in. Sign in again from Settings."
+            }
+            SyncError::Gmail(GmailError::Api { status, .. }) if *status >= 500 => {
+                "Gmail had a problem. Try again in a moment."
+            }
+            SyncError::Gmail(_) => "Gmail wouldn't return this message.",
+            SyncError::Db(_) => "Pheeme couldn't save this message on this computer.",
+        };
+        Self {
+            code: e.code().to_owned(),
+            message: message.to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -324,6 +363,7 @@ pub struct MailService {
     db: SqlitePool,
     sync: Arc<SyncManager>,
     attachments: AttachmentCache,
+    opens: Arc<OpenTimings>,
 }
 
 impl MailService {
@@ -333,7 +373,13 @@ impl MailService {
             db,
             sync,
             attachments,
+            opens: Arc::default(),
         }
+    }
+
+    /// Timings of the most recent opened threads, oldest first.
+    pub fn recent_opens(&self) -> Vec<OpenTiming> {
+        self.opens.recent()
     }
 
     /// Bound the attachment cache (see [`AttachmentCache::sweep`]).
@@ -401,27 +447,66 @@ impl MailService {
     }
 
     /// A thread with its messages. A message with no cached body is fetched first when
-    /// Gmail is reachable (otherwise the cached copy is returned as is). Messages that
-    /// have a body but are not fully fetched (attachment metadata cached before
-    /// migration 003) are returned at once and refreshed in the background; that refresh
-    /// emits `sync:messages_updated` for the thread.
+    /// Gmail is reachable (otherwise the cached copy is returned as is, with `body_error`
+    /// saying why). Messages that have a body but are not fully fetched (attachment metadata
+    /// cached before migration 003) are returned at once and refreshed in the background;
+    /// that refresh emits `sync:messages_updated` for the thread.
+    ///
+    /// `opened`: the reader opened the thread (not a prefetch). Its fetch then goes ahead of
+    /// sync and reports progress as `mail:thread_loading` events, and the open is timed.
     pub async fn get_thread(
         &self,
         account_id: &str,
         thread_id: &str,
+        opened: bool,
+    ) -> Result<ThreadDetailDto, MailError> {
+        let start = Instant::now();
+        let mut fetch = None;
+        let result = self
+            .read_thread(account_id, thread_id, opened, &mut fetch)
+            .await;
+        if opened {
+            self.record_open(account_id, start, fetch, &result);
+        }
+        result
+    }
+
+    /// [`Self::get_thread`]. `fetch` is set when an open had to fetch missing bodies.
+    async fn read_thread(
+        &self,
+        account_id: &str,
+        thread_id: &str,
+        opened: bool,
+        fetch: &mut Option<BodyFetch>,
     ) -> Result<ThreadDetailDto, MailError> {
         let mut messages =
             messages::get_messages_for_thread(&self.db, account_id, thread_id).await?;
-        if messages.iter().any(|m| !has_body(m)) {
-            if let Err(e) = self
-                .sync
-                .engine(account_id)
-                .load_thread_bodies(thread_id)
-                .await
-            {
+        let mut body_error = None;
+        let missing = messages.iter().filter(|m| !has_body(m)).count();
+        if missing > 0 {
+            let engine = self.sync.engine(account_id);
+            let (result, probed) = if opened {
+                let sync_busy = self.sync.sync_busy(account_id);
+                let probe = self.loading_probe(account_id, thread_id);
+                let result = with_probe(probe.clone(), engine.load_thread_bodies(thread_id)).await;
+                emit_loading(&self.sync, account_id, thread_id, None);
+                (result, Some((probe.snapshot(), sync_busy)))
+            } else {
+                (engine.load_thread_bodies(thread_id).await, None)
+            };
+            if let Err(e) = result {
                 tracing::info!(thread = thread_id, error = %e, "showing cached thread without bodies");
+                body_error = Some(BodyErrorDto::from(&e));
             }
             messages = messages::get_messages_for_thread(&self.db, account_id, thread_id).await?;
+            if let Some((stats, sync_busy)) = probed {
+                let still_missing = messages.iter().filter(|m| !has_body(m)).count();
+                *fetch = Some(BodyFetch {
+                    stats,
+                    fetched: missing.saturating_sub(still_missing),
+                    sync_busy,
+                });
+            }
         } else if messages.iter().any(|m| m.fully_fetched == 0) {
             let engine = self.sync.engine(account_id);
             let thread = thread_id.to_owned();
@@ -451,7 +536,69 @@ impl MailService {
         Ok(ThreadDetailDto {
             thread: thread.into(),
             messages: details,
+            body_error,
         })
+    }
+
+    /// A probe that reports an opened thread's fetch as `mail:thread_loading` events.
+    fn loading_probe(&self, account_id: &str, thread_id: &str) -> Arc<RequestProbe> {
+        let sync = self.sync.clone();
+        let (account_id, thread_id) = (account_id.to_owned(), thread_id.to_owned());
+        RequestProbe::new(move |stage| emit_loading(&sync, &account_id, &thread_id, Some(stage)))
+    }
+
+    /// Keep the open's timing and log it: at `info` when it went to Gmail or was slow.
+    fn record_open(
+        &self,
+        account_id: &str,
+        start: Instant,
+        fetch: Option<BodyFetch>,
+        result: &Result<ThreadDetailDto, MailError>,
+    ) {
+        let outcome = match result {
+            Ok(detail) => detail.body_error.as_ref().map_or("ok", |e| e.code.as_str()),
+            Err(e) => e.code(),
+        };
+        let stats = fetch.as_ref().map(|f| f.stats.clone()).unwrap_or_default();
+        let timing = OpenTiming {
+            at_ms: now_ms(),
+            source: if fetch.is_some() { "gmail" } else { "cache" },
+            total_ms: ms_since(start),
+            slot_wait_ms: stats.slot_wait_ms,
+            quota_wait_ms: stats.quota_wait_ms,
+            gmail_ms: stats.gmail_ms,
+            retries: stats.retries,
+            last_status: stats.last_status,
+            last_reason: stats.last_reason,
+            messages_fetched: fetch.as_ref().map_or(0, |f| f.fetched),
+            sync_busy: fetch.map_or_else(|| self.sync.sync_busy(account_id), |f| f.sync_busy),
+            outcome: outcome.to_owned(),
+        };
+        macro_rules! log_open {
+            ($level:expr) => {
+                tracing::event!(
+                    $level,
+                    source = timing.source,
+                    total_ms = timing.total_ms,
+                    slot_wait_ms = timing.slot_wait_ms,
+                    quota_wait_ms = timing.quota_wait_ms,
+                    gmail_ms = timing.gmail_ms,
+                    retries = timing.retries,
+                    last_status = ?timing.last_status,
+                    last_reason = ?timing.last_reason,
+                    messages_fetched = timing.messages_fetched,
+                    sync_busy = timing.sync_busy,
+                    outcome = %timing.outcome,
+                    "thread opened"
+                )
+            };
+        }
+        if timing.source == "gmail" || timing.total_ms > 1000 {
+            log_open!(tracing::Level::INFO);
+        } else {
+            log_open!(tracing::Level::DEBUG);
+        }
+        self.opens.record(timing);
     }
 
     pub async fn list_labels(&self, account_id: &str) -> Result<Vec<LabelDto>, MailError> {
@@ -824,6 +971,42 @@ impl MailService {
     }
 }
 
+/// What fetching an opened thread's missing bodies took.
+struct BodyFetch {
+    stats: ProbeStats,
+    /// Bodies it stored.
+    fetched: usize,
+    sync_busy: bool,
+}
+
+/// Emit `mail:thread_loading` for an opened thread; `None` is `done`.
+fn emit_loading(sync: &SyncManager, account_id: &str, thread_id: &str, stage: Option<ProbeStage>) {
+    let (stage, attempt, retry_in_ms, reason) = match stage {
+        Some(ProbeStage::Queued) => ("queued", None, None, None),
+        Some(ProbeStage::Fetching) => ("fetching", None, None, None),
+        Some(ProbeStage::Retrying {
+            attempt,
+            retry_in,
+            reason,
+        }) => (
+            "retrying",
+            Some(attempt),
+            Some(retry_in.as_millis() as u64),
+            Some(reason.as_str()),
+        ),
+        None => ("done", None, None, None),
+    };
+    sync.emit(SyncEvent::ThreadLoading {
+        account_id: account_id.to_owned(),
+        thread_id: thread_id.to_owned(),
+        stage,
+        attempt,
+        retry_in_ms,
+        reason,
+        sync_busy: sync.sync_busy(account_id),
+    });
+}
+
 /// Bytes of an attachment that has no Gmail attachment id, from the full message.
 async fn embedded_bytes(api: &dyn MailApi, row: &DbAttachment) -> Result<Vec<u8>, MailError> {
     let index: usize = row.id.parse().map_err(|_| MailError::NotFound)?;
@@ -1064,7 +1247,7 @@ mod tests {
         sync.sync_account("a1").await.unwrap();
         let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
 
-        let detail = mail.get_thread("a1", "t1").await.unwrap();
+        let detail = mail.get_thread("a1", "t1", true).await.unwrap();
 
         assert_eq!(
             detail.messages[0].attachments,
@@ -1123,7 +1306,7 @@ mod tests {
 
         let detail = tokio::time::timeout(
             std::time::Duration::from_secs(2),
-            mail.get_thread("a1", "t1"),
+            mail.get_thread("a1", "t1", true),
         )
         .await
         .expect("cached bodies don't wait for Gmail")
@@ -1180,11 +1363,11 @@ mod tests {
             .unwrap();
         fake.fail_next("get_message", GmailError::Offline("no route".into()));
 
-        let offline = mail.get_thread("a1", "t1").await.unwrap();
+        let offline = mail.get_thread("a1", "t1", true).await.unwrap();
         assert_eq!(offline.messages[0].body_text, None);
         assert!(!offline.messages[0].body_available, "not an empty message");
 
-        let online = mail.get_thread("a1", "t1").await.unwrap();
+        let online = mail.get_thread("a1", "t1", true).await.unwrap();
         assert!(online.messages[0].body_available);
         assert_eq!(online.messages[0].body_text.as_deref(), Some("Body of m1"));
     }
@@ -1198,10 +1381,128 @@ mod tests {
             .await
             .unwrap();
 
-        let detail = mail.get_thread("a1", "t1").await.unwrap();
+        let detail = mail.get_thread("a1", "t1", true).await.unwrap();
 
         assert_eq!(detail.messages[0].body_text.as_deref(), Some("Body of m1"));
         assert_eq!(fully_fetched(&mail, "m1").await, 1);
+    }
+
+    /// `events_fixture` with `m1`'s body dropped from the cache, as for mail outside the
+    /// initial sync.
+    async fn missing_body_fixture() -> (TestDb, Arc<FakeGmail>, Arc<RecordingEvents>, MailService) {
+        let fixture = events_fixture(FakeMsg::new("m1", "t1", &["INBOX"])).await;
+        sqlx::query("UPDATE messages SET fully_fetched = 0, body_text = NULL, body_html = NULL")
+            .execute(&fixture.3.db)
+            .await
+            .unwrap();
+        fixture.2.take();
+        fixture
+    }
+
+    /// The `mail:thread_loading` stages among `events`.
+    fn loading_stages(events: &[SyncEvent]) -> Vec<&'static str> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                SyncEvent::ThreadLoading {
+                    account_id,
+                    thread_id,
+                    stage,
+                    ..
+                } => {
+                    assert_eq!((account_id.as_str(), thread_id.as_str()), ("a1", "t1"));
+                    Some(*stage)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn opened_get_thread_emits_loading_events_and_records_timing() {
+        let (_dir, _fake, events, mail) = missing_body_fixture().await;
+
+        let detail = mail.get_thread("a1", "t1", true).await.unwrap();
+
+        assert!(detail.messages[0].body_available);
+        assert_eq!(detail.body_error, None);
+        let events = events.take();
+        let stages = loading_stages(&events);
+        let fetching = stages.iter().position(|s| *s == "fetching");
+        assert!(fetching.is_some(), "{stages:?}");
+        assert_eq!(stages.last(), Some(&"done"), "{stages:?}");
+        let loading = events
+            .iter()
+            .find(|e| e.name() == "mail:thread_loading")
+            .unwrap();
+        let json = serde_json::to_value(loading).unwrap();
+        let mut keys: Vec<_> = json.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "accountId",
+                "attempt",
+                "reason",
+                "retryInMs",
+                "stage",
+                "syncBusy",
+                "threadId"
+            ]
+        );
+
+        let opens = mail.recent_opens();
+        assert_eq!(opens.len(), 1);
+        assert_eq!(opens[0].source, "gmail");
+        assert_eq!(opens[0].messages_fetched, 1);
+        assert_eq!(opens[0].outcome, "ok");
+    }
+
+    #[tokio::test]
+    async fn cached_get_thread_emits_nothing() {
+        let (_dir, _fake, events, mail) =
+            events_fixture(FakeMsg::new("m1", "t1", &["INBOX"])).await;
+        events.take();
+
+        mail.get_thread("a1", "t1", true).await.unwrap();
+
+        assert_eq!(loading_stages(&events.take()), Vec::<&str>::new());
+        let opens = mail.recent_opens();
+        assert_eq!(opens.len(), 1);
+        assert_eq!(opens[0].source, "cache");
+        assert_eq!(opens[0].messages_fetched, 0);
+    }
+
+    #[tokio::test]
+    async fn prefetch_get_thread_emits_nothing() {
+        let (_dir, _fake, events, mail) = missing_body_fixture().await;
+
+        let detail = mail.get_thread("a1", "t1", false).await.unwrap();
+
+        assert!(detail.messages[0].body_available, "prefetch still fetches");
+        assert_eq!(loading_stages(&events.take()), Vec::<&str>::new());
+        assert!(mail.recent_opens().is_empty(), "only opens are timed");
+    }
+
+    #[tokio::test]
+    async fn get_thread_reports_body_error_offline() {
+        let (_dir, fake, events, mail) = missing_body_fixture().await;
+        fake.fail_next(
+            "get_message",
+            GmailError::Offline("error sending request for url (https://x/?q=secret)".into()),
+        );
+
+        let offline = mail.get_thread("a1", "t1", true).await.unwrap();
+
+        assert!(!offline.messages[0].body_available);
+        let error = offline.body_error.expect("the reason is reported");
+        assert_eq!(error.code, "network");
+        assert!(error.message.contains("offline"), "{}", error.message);
+        assert!(!error.message.contains("http"), "{}", error.message);
+        assert_eq!(loading_stages(&events.take()).last(), Some(&"done"));
+        assert_eq!(mail.recent_opens()[0].outcome, "network");
+        let json = serde_json::to_value(mail.get_thread("a1", "t1", true).await.unwrap()).unwrap();
+        assert_eq!(json["bodyError"], serde_json::Value::Null);
     }
 
     #[tokio::test]
@@ -1230,7 +1531,7 @@ mod tests {
             .unwrap();
         let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
 
-        let detail = mail.get_thread("a1", "t1").await.unwrap();
+        let detail = mail.get_thread("a1", "t1", true).await.unwrap();
 
         let html = detail.messages.iter().find(|m| m.id == "m1").unwrap();
         let body = html.body_html.as_deref().unwrap();

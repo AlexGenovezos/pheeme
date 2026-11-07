@@ -210,6 +210,20 @@ pub async fn unfetched_in_thread<'e>(
     .await?)
 }
 
+/// The account's cached messages and how many of them have a body (for diagnostics).
+pub async fn body_counts<'e>(ex: impl SqliteExecutor<'e>, account_id: &str) -> Result<(i64, i64)> {
+    let row = sqlx::query!(
+        r#"SELECT COUNT(*) AS "total!: i64",
+                  COALESCE(SUM(fully_fetched != 0 OR body_html IS NOT NULL OR body_text IS NOT NULL), 0)
+                    AS "with_bodies!: i64"
+           FROM messages WHERE account_id = ?"#,
+        account_id
+    )
+    .fetch_one(ex)
+    .await?;
+    Ok((row.total, row.with_bodies))
+}
+
 /// A cached message in Sent with this `Message-ID` (drafts with the same id don't count).
 pub async fn find_sent_by_rfc822<'e>(
     ex: impl SqliteExecutor<'e>,

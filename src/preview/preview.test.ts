@@ -56,6 +56,17 @@ describe("preview IPC", () => {
     await expect(invoke("greet", { name: "Avery" })).resolves.toContain("Avery");
   });
 
+  test("sending and saving diagnostics succeed without leaving the browser", async () => {
+    installPreview();
+    await expect(
+      invoke("send_diagnostics", { note: "Slow", replyTo: "you@example.com" }),
+    ).resolves.toBeUndefined();
+    const path = await invoke<string>("plugin:dialog|save", { options: {} });
+    await expect(
+      invoke("save_diagnostics", { note: "", replyTo: null, path }),
+    ).resolves.toBeUndefined();
+  });
+
   test("list_threads honours All Mail and the category inboxes", () => {
     const handlers = createPreviewHandlers();
     const ids = (args: Record<string, unknown>) =>

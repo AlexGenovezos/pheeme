@@ -56,6 +56,7 @@ const detail = (messages: MessageDetail[]): ThreadDetail => ({
     messageCount: messages.length,
   },
   messages,
+  bodyError: null,
 });
 
 const label = (id: string, name: string, type: string): LabelInfo => ({
@@ -301,6 +302,82 @@ test('not_found shows "This conversation isn\'t available any more."', async () 
   expect(
     await screen.findByText("This conversation isn't available any more."),
   ).toBeInTheDocument();
+});
+
+test("a quick open shows no loading state at all", async () => {
+  vi.useFakeTimers();
+  try {
+    mockIPC((cmd) =>
+      cmd === "get_thread"
+        ? new Promise((resolve) => setTimeout(() => resolve(detail([message(1)])), 250))
+        : undefined,
+    );
+    useUiStore.setState({ openThread: KEY });
+    const { container } = renderView();
+    await act(() => vi.advanceTimersByTimeAsync(249));
+    expect(container.querySelector(".view-pane__scroll")).toBeEmptyDOMElement();
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(screen.getByText("Body 1")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(20_000));
+    expect(screen.queryByRole("status")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a slow open says what it is waiting on", async () => {
+  vi.useFakeTimers();
+  try {
+    mockIPC((cmd) => (cmd === "get_thread" ? new Promise(() => {}) : undefined));
+    useUiStore.setState({ openThread: KEY });
+    renderView();
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(screen.getByRole("status")).toHaveTextContent("Downloading this message from Gmail…");
+    act(() =>
+      useThreadStore.setState({
+        loading: {
+          [KEY]: {
+            accountId: "a1",
+            threadId: "t1",
+            stage: "queued",
+            attempt: null,
+            retryInMs: null,
+            reason: null,
+            syncBusy: true,
+          },
+        },
+      }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Pheeme is still downloading your mailbox for the first time. This message is next in line.",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("opened offline: cached headers show, the body says why, and Try again fetches it", async () => {
+  const offline = detail([message(1, { bodyText: null, bodyAvailable: false })]);
+  offline.bodyError = { code: "offline", message: "You're offline. Pheeme will try again." };
+  const answers = [offline, detail([message(1)])];
+  const requests: unknown[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "get_thread") return undefined;
+    requests.push(args);
+    return answers.shift();
+  });
+  useUiStore.setState({ openThread: KEY });
+  renderView();
+
+  expect(await screen.findByText("You're offline. Pheeme will try again.")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Quarterly plan" })).toBeInTheDocument();
+  expect(screen.getByText("Sender 1")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(await screen.findByText("Body 1")).toBeInTheDocument();
+  expect(requests).toEqual([
+    { accountId: "a1", threadId: "t1", opened: true },
+    { accountId: "a1", threadId: "t1", opened: true },
+  ]);
 });
 
 test("plain text renders escaped with link buttons; HTML bodies render in the sandboxed frame", () => {

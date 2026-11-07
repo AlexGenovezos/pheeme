@@ -2,7 +2,7 @@ import { ChevronUp, Pencil } from "lucide-react";
 import { useComposeStore } from "../compose/composeStore";
 import { Button } from "../components/ui/Button";
 import { formatFullDate, formatListDate } from "../lib/dates";
-import type { EmailAddress, MessageDetail } from "../lib/tauri";
+import type { CommandError, EmailAddress, MessageDetail, ThreadLoading } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useThreadStore } from "../store/threadStore";
 import { AttachmentList } from "./AttachmentList";
@@ -15,6 +15,10 @@ export interface MessageCardProps {
   accountId: string;
   expanded: boolean;
   onToggle(): void;
+  /** Why the thread's missing bodies couldn't be fetched, if they couldn't. */
+  bodyError?: CommandError | null;
+  /** What a fetch of the thread's bodies is waiting on, while one runs. */
+  loading?: ThreadLoading;
 }
 
 const senderName = (m: MessageDetail) => m.fromName || m.fromAddress || "Unknown sender";
@@ -32,7 +36,14 @@ function recipientLine(
   return `${prefix} ${names.join(", ")}`;
 }
 
-export function MessageCard({ message, accountId, expanded, onToggle }: MessageCardProps) {
+export function MessageCard({
+  message,
+  accountId,
+  expanded,
+  onToggle,
+  bodyError,
+  loading,
+}: MessageCardProps) {
   const myAddress = useAccountStore((s) =>
     s.accounts.find((a) => a.id === accountId)?.email.toLowerCase(),
   );
@@ -104,6 +115,8 @@ export function MessageCard({ message, accountId, expanded, onToggle }: MessageC
       </header>
       <EmailBody
         message={message}
+        bodyError={bodyError}
+        loading={loading}
         onRetry={() => void useThreadStore.getState().load(threadKey(accountId, message.threadId))}
       />
       <AttachmentList

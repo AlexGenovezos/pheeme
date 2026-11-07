@@ -7,6 +7,7 @@ pub mod history;
 pub mod labels;
 pub mod messages;
 pub mod mime;
+pub mod probe;
 pub mod threads;
 pub mod types;
 pub mod user;

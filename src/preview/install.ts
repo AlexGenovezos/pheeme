@@ -106,7 +106,7 @@ function toDetail(t: FixtureThread): ThreadDetail {
     hasAttachment: m.attachments.length > 0,
     attachments: m.attachments.map((a) => ({ ...a })),
   }));
-  return { thread: toSummary(t), messages };
+  return { thread: toSummary(t), messages, bodyError: null };
 }
 
 /** One stateful backend for both onboarding and the shell in browser preview. */
@@ -329,6 +329,10 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     open_external: () => undefined,
     open_mail_link: () => undefined,
     save_attachment: () => "/Users/you/Downloads/attachment.pdf",
+    // Diagnostics: nothing leaves the browser; both just succeed.
+    send_diagnostics: () => undefined,
+    save_diagnostics: () => undefined,
+    "plugin:dialog|save": () => "/Users/you/Downloads/pheeme-diagnostics.zip",
     reveal_download: () => undefined,
     "plugin:updater|check": () => null,
     ...createComposeHandlers(threads, () => accounts),

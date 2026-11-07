@@ -412,6 +412,40 @@ test("a body that couldn't be fetched offers to try again instead of claiming th
   expect(retry).toHaveBeenCalledTimes(1);
 });
 
+test("a body that couldn't be fetched says why when the backend knows", () => {
+  render(
+    <EmailBody
+      message={message({ bodyHtml: null, bodyText: null, bodyAvailable: false })}
+      bodyError={{ code: "offline", message: "You're offline. Pheeme will try again." }}
+      onRetry={() => {}}
+    />,
+  );
+  expect(screen.getByText("You're offline. Pheeme will try again.")).toBeInTheDocument();
+  expect(screen.queryByText("Couldn't load this message — you may be offline.")).toBeNull();
+  expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+});
+
+test("a body being fetched again shows what it's waiting on instead of the failure", () => {
+  render(
+    <EmailBody
+      message={message({ bodyHtml: null, bodyText: null, bodyAvailable: false })}
+      bodyError={{ code: "offline", message: "You're offline. Pheeme will try again." }}
+      loading={{
+        accountId: "a1",
+        threadId: "t1",
+        stage: "fetching",
+        attempt: null,
+        retryInMs: null,
+        reason: null,
+        syncBusy: false,
+      }}
+      onRetry={() => {}}
+    />,
+  );
+  expect(screen.getByText("Downloading this message from Gmail…")).toBeInTheDocument();
+  expect(screen.queryByText("You're offline. Pheeme will try again.")).toBeNull();
+});
+
 test("a fetched message with no body is empty", () => {
   render(<EmailBody message={message({ bodyHtml: null, bodyText: null })} />);
   expect(screen.getByText("This message is empty.")).toBeInTheDocument();

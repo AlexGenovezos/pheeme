@@ -22,7 +22,10 @@ pub async fn init_db(data_dir: &Path) -> Result<SqlitePool> {
     tokio::fs::create_dir_all(data_dir).await?;
 
     let db_path = data_dir.join("db.sqlite");
-    info!("Opening database at {}", db_path.display());
+    info!(
+        "Opening database at {}",
+        crate::support::scrub::display_path(&db_path)
+    );
 
     let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", db_path.display()))?
         .create_if_missing(true)

@@ -87,6 +87,7 @@ function cacheOpenThread() {
               attachments: [],
             },
           ],
+          bodyError: null,
         },
       ],
     ]),

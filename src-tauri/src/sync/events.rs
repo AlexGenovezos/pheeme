@@ -92,6 +92,19 @@ pub enum SyncEvent {
         op_id: String,
         status: String,
     },
+    /// Where fetching a thread the reader opened has got to: `queued`, `fetching`,
+    /// `retrying` (with `attempt`, `retry_in_ms` and `reason`) or `done`.
+    ThreadLoading {
+        account_id: String,
+        thread_id: String,
+        stage: &'static str,
+        attempt: Option<u32>,
+        retry_in_ms: Option<u64>,
+        /// `rate_limited`, `network` or `server`, while retrying.
+        reason: Option<&'static str>,
+        /// The account's first sync or backfill is running, competing for Gmail.
+        sync_busy: bool,
+    },
 }
 
 impl SyncEvent {
@@ -105,6 +118,7 @@ impl SyncEvent {
             SyncEvent::Error { .. } => "sync:error",
             SyncEvent::OpRejected { .. } => "outbox:rejected",
             SyncEvent::SendStatus { .. } => "outbox:send_status",
+            SyncEvent::ThreadLoading { .. } => "mail:thread_loading",
         }
     }
 
@@ -175,5 +189,20 @@ mod tests {
         };
         assert_eq!(e.name(), "outbox:rejected");
         assert_eq!(serde_json::to_value(&e).unwrap()["opId"], "o");
+        let e = SyncEvent::ThreadLoading {
+            account_id: "a".into(),
+            thread_id: "t".into(),
+            stage: "retrying",
+            attempt: Some(0),
+            retry_in_ms: Some(8000),
+            reason: Some("rate_limited"),
+            sync_busy: true,
+        };
+        assert_eq!(e.name(), "mail:thread_loading");
+        assert_eq!(
+            serde_json::to_value(&e).unwrap(),
+            serde_json::json!({"accountId": "a", "threadId": "t", "stage": "retrying",
+                "attempt": 0, "retryInMs": 8000, "reason": "rate_limited", "syncBusy": true})
+        );
     }
 }

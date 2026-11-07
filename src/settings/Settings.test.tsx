@@ -147,6 +147,18 @@ describe("search", () => {
     expect(useSettingsStore.getState().open).toBe(true);
   });
 
+  test("finds Send diagnostics on the About page", () => {
+    render(<Harness />);
+    open();
+    const search = screen.getByRole("searchbox", { name: "Search settings" });
+    const nav = within(screen.getByRole("navigation", { name: "Settings sections" }));
+    fireEvent.change(search, { target: { value: "diagnostics" } });
+    expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["About"]);
+    expect(
+      within(dialog()).getByText("Send diagnostics", { selector: ".settings-row__title" }),
+    ).toBeVisible();
+  });
+
   test("/ focuses the search", () => {
     render(<Harness />);
     open();

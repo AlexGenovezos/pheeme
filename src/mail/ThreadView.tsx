@@ -8,6 +8,7 @@ import { useLabelStore } from "../store/labelStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { MessageCard } from "./MessageCard";
+import { ThreadLoading } from "./ThreadLoading";
 import { respond, toggleLabel } from "./actions";
 import { parseThreadKey } from "./mailboxes";
 import "./mail.css";
@@ -105,6 +106,7 @@ export function ThreadView() {
   const openKey = useUiStore((s) => s.openThread);
   const detail = useThreadStore((s) => (openKey ? s.details.get(openKey) : undefined));
   const error = useThreadStore((s) => (openKey ? s.errors[openKey] : undefined));
+  const loading = useThreadStore((s) => (openKey ? s.loading[openKey] : undefined));
   const load = useThreadStore((s) => s.load);
   const accountId = openKey ? parseThreadKey(openKey).accountId : "";
   const userLabels = useLabelStore((s) => s.userLabels(accountId));
@@ -177,6 +179,8 @@ export function ThreadView() {
               accountId={detail.thread.accountId}
               expanded={current.open.has(m.id)}
               onToggle={() => toggle(m.id)}
+              bodyError={detail.bodyError}
+              loading={loading}
             />
           ))}
         </div>
@@ -209,7 +213,8 @@ export function ThreadView() {
       </div>
     );
   } else {
-    content = null; // Reads from the local cache, so this is a blink. No spinner.
+    // Usually a blink from the local cache: ThreadLoading stays blank for that long, then says what it waits on.
+    content = <ThreadLoading key={openKey} loading={loading} />;
   }
 
   return (

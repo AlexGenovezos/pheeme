@@ -565,14 +565,16 @@ fn long_thread() -> (Ctx, MailService) {
         Arc::new(NoopEvents),
     );
     let mail = MailService::new(ctx.pool.clone(), sync, fixture_dir());
-    ctx.rt.block_on(mail.get_thread(ACCT, LONG_THREAD)).unwrap();
+    ctx.rt
+        .block_on(mail.get_thread(ACCT, LONG_THREAD, true))
+        .unwrap();
     (ctx, mail)
 }
 
 #[library_benchmark]
 #[bench::long_conversation(setup = long_thread)]
 fn get_thread((ctx, mail): (Ctx, MailService)) -> ThreadDetailDto {
-    let thread = measured(&ctx.rt, mail.get_thread(ACCT, LONG_THREAD)).unwrap();
+    let thread = measured(&ctx.rt, mail.get_thread(ACCT, LONG_THREAD, true)).unwrap();
     assert_eq!(thread.messages.len(), LONG_THREAD_MESSAGES);
     thread
 }
