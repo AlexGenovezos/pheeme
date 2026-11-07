@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { registry } from "../keyboard/registry";
 import type { MessageDetail, ThreadDetail } from "../lib/tauri";
+import { useSettingsStore } from "../settings/settingsStore";
 import { useThreadStore } from "../store/threadStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { speedReadOpenConversation, useSpeedReader } from "./open";
@@ -60,7 +61,7 @@ describe("SpeedReader", () => {
   test("Space on another button presses that button rather than playing", () => {
     render(<SpeedReaderHost />);
     openReader();
-    fireEvent.keyDown(screen.getByRole("button", { name: "450" }), { key: " " });
+    fireEvent.keyDown(screen.getByRole("button", { name: /^450 words per minute/ }), { key: " " });
     expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("button", { name: "Play" }), { key: " " });
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
@@ -83,12 +84,36 @@ describe("SpeedReader", () => {
   test("speed presets and options change the settings while reading", () => {
     render(<SpeedReaderHost />);
     openReader();
-    fireEvent.click(screen.getByRole("button", { name: "450" }));
+    fireEvent.click(screen.getByRole("button", { name: "450 words per minute, Advanced" }));
     expect(useSpeedReaderSettings.getState().wpm).toBe(450);
+    expect(screen.getByRole("button", { name: /^450 words/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Smaller words" }));
+    expect(useSpeedReaderSettings.getState().size).toBe("medium");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reading options" }));
     fireEvent.click(screen.getByRole("switch", { name: "Pause at punctuation" }));
     expect(useSpeedReaderSettings.getState().pauses).toBe(true);
-    fireEvent.click(screen.getByRole("radio", { name: "Medium" }));
-    expect(useSpeedReaderSettings.getState().size).toBe("medium");
+    fireEvent.click(screen.getByRole("radio", { name: "Large" }));
+    expect(useSpeedReaderSettings.getState().size).toBe("large");
+  });
+
+  test("Escape closes the options first, then the reader; the options link opens Settings", () => {
+    render(<SpeedReaderHost />);
+    openReader();
+    fireEvent.click(screen.getByRole("button", { name: "Reading options" }));
+    fireEvent.keyDown(screen.getByRole("switch", { name: "Pause at punctuation" }), {
+      key: "Escape",
+    });
+    expect(screen.queryByRole("group", { name: "Reading options" })).toBeNull();
+    expect(dialog()).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reading options" }));
+    fireEvent.click(screen.getByRole("button", { name: "All speed reader settings…" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useSettingsStore.getState()).toMatchObject({ open: true, page: "appearance" });
   });
 
   test("Escape closes it, and app shortcuts are paused while it's open", () => {

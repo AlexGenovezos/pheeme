@@ -1,17 +1,35 @@
-import { ChevronLeft, ChevronRight, Minus, Pause, Play, Plus, RotateCcw, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Minus,
+  Pause,
+  Play,
+  Plus,
+  RotateCcw,
+  Settings2,
+  Type,
+  X,
+} from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Switch } from "../components/ui/Switch";
 import { registry } from "../keyboard/registry";
+import { useSettingsStore } from "../settings/settingsStore";
 import { type SpeedReadSession, useSpeedReader } from "./open";
 import { useSpeedReaderSettings, WORD_SIZES, type WordSize } from "./settings";
 import { MAX_WPM, MIN_WPM, timeLeft, toWords, type Word, wordDuration, WPM_STEP } from "./words";
 import "./speedread.css";
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
-export const SPEED_PRESETS = [200, 250, 300, 450, 600] as const;
+export const SPEED_PRESETS = [
+  { wpm: 200, label: "Beginner" },
+  { wpm: 250, label: "Average" },
+  { wpm: 300, label: "Fast" },
+  { wpm: 450, label: "Advanced" },
+  { wpm: 500, label: "Expert" },
+] as const;
 const SIZE_LABELS: Record<WordSize, string> = { medium: "Medium", large: "Large" };
 
 /** Mounted once at the app root; shows the reader while a session is open. */
@@ -115,6 +133,67 @@ function FlashWord({ word }: { word: Word | undefined }) {
   );
 }
 
+/** The reader's speed card: the speed large, a slider between − and +, and named presets. */
+function SpeedPanel() {
+  const wpm = useSpeedReaderSettings((s) => s.wpm);
+  const update = useSpeedReaderSettings((s) => s.update);
+  return (
+    <section className="speed-panel" aria-label="Reading speed">
+      <div className="speed-panel__top">
+        <span className="speed-panel__label">Reading speed</span>
+        <span className="speed-panel__value">
+          {wpm} <span className="speed-panel__unit">wpm</span>
+        </span>
+      </div>
+      <div className="speed-panel__slider">
+        <IconButton
+          size="sm"
+          label="Slower"
+          icon={<Minus />}
+          className="speed-panel__step"
+          disabled={wpm <= MIN_WPM}
+          onClick={() => update({ wpm: wpm - WPM_STEP })}
+        />
+        <input
+          type="range"
+          className="speed-panel__range"
+          aria-label="Reading speed"
+          aria-valuetext={`${wpm} words per minute`}
+          min={MIN_WPM}
+          max={MAX_WPM}
+          step={WPM_STEP}
+          value={wpm}
+          style={{ "--fill": `${((wpm - MIN_WPM) / (MAX_WPM - MIN_WPM)) * 100}%` } as object}
+          onChange={(e) => update({ wpm: Number(e.target.value) })}
+        />
+        <IconButton
+          size="sm"
+          label="Faster"
+          icon={<Plus />}
+          className="speed-panel__step"
+          disabled={wpm >= MAX_WPM}
+          onClick={() => update({ wpm: wpm + WPM_STEP })}
+        />
+      </div>
+      <div className="speed-panel__presets" role="group" aria-label="Speed presets">
+        {SPEED_PRESETS.map((preset) => (
+          <button
+            key={preset.wpm}
+            type="button"
+            className="speed-panel__preset"
+            aria-pressed={wpm === preset.wpm}
+            aria-label={`${preset.wpm} words per minute, ${preset.label}`}
+            onClick={() => update({ wpm: preset.wpm })}
+          >
+            <span className="speed-panel__chip">{preset.wpm}</span>
+            <span className="speed-panel__name">{preset.label}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 /** Keys the focused control needs for itself (arrows on a slider or radio group). */
 const ownsArrows = (target: EventTarget) => {
   const el = target as HTMLElement;
@@ -138,6 +217,9 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
   const finished = index >= last;
   const playing = play && !finished;
   const [returnFocus] = useState(() => document.activeElement as HTMLElement | null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsButton = useRef<HTMLButtonElement>(null);
+  const options = useRef<HTMLDivElement>(null);
 
   // While the reader is open, keys belong to it.
   useEffect(() => registry.suspend(), []);
@@ -167,7 +249,10 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const arrows = !ownsArrows(e.target);
     let handled = true;
-    if (e.key === "Escape") onClose();
+    if (e.key === "Escape" && optionsOpen) {
+      setOptionsOpen(false);
+      optionsButton.current?.focus();
+    } else if (e.key === "Escape") onClose();
     // Space plays and pauses, except on another button or switch, which it presses as usual.
     else if (e.key === " " && !pressesItself(e.target, e.currentTarget)) toggle();
     else if (arrows && e.key === "ArrowLeft") step(-1);
@@ -212,6 +297,12 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
         tabIndex={-1}
         data-owns-keys=""
         onKeyDown={onKeyDown}
+        onPointerDown={(e) => {
+          // A click anywhere else closes the options popover.
+          const target = e.target as Node;
+          if (!options.current?.contains(target) && !optionsButton.current?.contains(target))
+            setOptionsOpen(false);
+        }}
       >
         <header className="speed-reader__header">
           <div className="speed-reader__heading">
@@ -220,7 +311,50 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
               {Math.min(index + 1, words.length)} / {words.length} words · {formatLeft(left)}
             </p>
           </div>
-          <IconButton label="Close speed reader" icon={<X />} onClick={onClose} />
+          <div className="speed-reader__tools">
+            <IconButton
+              label={size === "large" ? "Smaller words" : "Larger words"}
+              icon={<Type />}
+              aria-pressed={size === "large"}
+              onClick={() => update({ size: size === "large" ? "medium" : "large" })}
+            />
+            <IconButton
+              ref={optionsButton}
+              label="Reading options"
+              icon={<Settings2 />}
+              aria-expanded={optionsOpen}
+              aria-haspopup="dialog"
+              onClick={() => setOptionsOpen((open) => !open)}
+            />
+            <IconButton label="Close speed reader" icon={<X />} onClick={onClose} />
+            {optionsOpen && (
+              <div
+                ref={options}
+                className="speed-reader__popover"
+                role="group"
+                aria-label="Reading options"
+              >
+                <label className="speed-reader__option">
+                  <span>Pause at punctuation</span>
+                  <PausesControl />
+                </label>
+                <div className="speed-reader__option">
+                  <span>Word size</span>
+                  <WordSizeControl />
+                </div>
+                <button
+                  type="button"
+                  className="speed-reader__more"
+                  onClick={() => {
+                    onClose();
+                    useSettingsStore.getState().openSettings("appearance");
+                  }}
+                >
+                  All speed reader settings…
+                </button>
+              </div>
+            )}
+          </div>
         </header>
 
         <div className="speed-reader__stage" data-size={size} aria-hidden="true">
@@ -271,33 +405,7 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
           />
         </div>
 
-        <div className="speed-reader__options">
-          <div className="speed-reader__option speed-reader__option--speed">
-            <span className="speed-reader__option-label">Speed</span>
-            <SpeedControl />
-            <div className="speed-reader__presets" role="group" aria-label="Speed presets">
-              {SPEED_PRESETS.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className="speed-reader__preset"
-                  aria-pressed={wpm === n}
-                  onClick={() => update({ wpm: n })}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-          <label className="speed-reader__option">
-            <span className="speed-reader__option-label">Pause at punctuation</span>
-            <PausesControl />
-          </label>
-          <div className="speed-reader__option">
-            <span className="speed-reader__option-label">Word size</span>
-            <WordSizeControl />
-          </div>
-        </div>
+        <SpeedPanel />
 
         <p className="speed-reader__keys">
           <span>
