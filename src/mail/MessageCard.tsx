@@ -98,7 +98,8 @@ export function MessageCard({
     <article
       className="message-card"
       aria-label={`Message from ${name}`}
-      data-message-id={message.id}
+      // The speed reader reads the message on screen; drafts aren't read.
+      data-message-id={isDraft ? undefined : message.id}
     >
       <header
         className="message-card__header"

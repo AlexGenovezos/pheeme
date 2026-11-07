@@ -242,13 +242,19 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
     };
   }, [returnFocus]);
 
-  // Remember the place whenever reading stops: a pause, a step, or closing the reader mid-way.
+  // Remember the place whenever reading stops: a pause, a step, or closing the reader mid-way. Not where it
+  // reopened: saving the rewound spot would back up further each time it's opened and closed unread.
   const at = useRef(index);
   useEffect(() => {
     at.current = index;
-    if (!playing) savePosition(session.id, index, words.length);
-  }, [playing, index, session.id, words.length]);
-  useEffect(() => () => savePosition(session.id, at.current, words.length), [session.id, words]);
+    if (!playing && index !== resumedAt) savePosition(session.id, index, words.length);
+  }, [playing, index, resumedAt, session.id, words.length]);
+  useEffect(
+    () => () => {
+      if (at.current !== resumedAt) savePosition(session.id, at.current, words.length);
+    },
+    [resumedAt, session.id, words],
+  );
 
   // One word at a time.
   useEffect(() => {

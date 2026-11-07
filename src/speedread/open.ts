@@ -49,6 +49,9 @@ export function useCanSpeedRead(enabled = true) {
   return useMemo(() => !!detail?.messages.some((m) => notDraft(m) && speedReadText(m)), [detail]);
 }
 
+/** How much of a card must still show for it to count as on screen, not just its bottom edge. */
+const IN_VIEW_MIN = 48;
+
 /**
  * The expanded message the reader is looking at in the reading pane: the first whose card is still on screen,
  * so scrolling down into a long one keeps it.
@@ -62,7 +65,9 @@ export function messageInView(): string | null {
   );
   for (const card of cards) {
     const box = card.getBoundingClientRect();
-    if (box.bottom > view.top && box.top < view.bottom) return card.dataset.messageId ?? null;
+    if (box.bottom > view.top + IN_VIEW_MIN && box.top < view.bottom) {
+      return card.dataset.messageId ?? null;
+    }
   }
   return null;
 }

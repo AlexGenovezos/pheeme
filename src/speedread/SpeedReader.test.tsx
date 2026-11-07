@@ -53,6 +53,19 @@ describe("SpeedReader", () => {
     expect(dialog()).toHaveTextContent("Press Space to continue where you left off");
   });
 
+  test("opening and closing without reading keeps the saved place", () => {
+    const long = Array.from({ length: 50 }, (_, i) => `w${i}`).join(" ");
+    render(<SpeedReaderHost />);
+    openReader([long]);
+    for (let i = 0; i < 45; i++) fireEvent.keyDown(dialog(), { key: "ArrowRight" });
+    act(() => useSpeedReader.getState().close());
+    openReader([long]);
+    expect(word()).toBe("w25");
+    act(() => useSpeedReader.getState().close());
+    openReader([long]);
+    expect(word()).toBe("w25");
+  });
+
   test("starts over once an email has been read to the end", () => {
     render(<SpeedReaderHost />);
     openReader();
@@ -219,6 +232,11 @@ describe("speedReadOpenConversation", () => {
     vi.spyOn(m2, "getBoundingClientRect").mockReturnValue(box(300, 1500));
     speedReadOpenConversation();
     expect(useSpeedReader.getState().session).toMatchObject({ id: "m1" });
+    // Only its bottom edge showing: that's scrolled past.
+    act(() => useSpeedReader.getState().close());
+    vi.spyOn(m1, "getBoundingClientRect").mockReturnValue(box(-400, 120));
+    speedReadOpenConversation();
+    expect(useSpeedReader.getState().session).toMatchObject({ id: "m2" });
     document.body.innerHTML = "";
   });
 
