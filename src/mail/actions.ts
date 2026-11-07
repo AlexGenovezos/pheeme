@@ -28,6 +28,7 @@ import {
   threadKey,
 } from "./mailboxes";
 import { rowId } from "./ThreadRow";
+import { setTravelDirection } from "./preload";
 
 /** The message a Reply, Reply all or Forward answers: the conversation's latest that isn't a draft. */
 export function replyTarget(detail: ThreadDetail | undefined): string | null {
@@ -644,15 +645,6 @@ export async function moveTo(accountId: string, keys: ThreadKey[], target: strin
   );
 }
 
-/** Warm the details of the rows above and below `key`, so the next j or k opens instantly (Builder's call 17). */
-function prefetchAround(key: ThreadKey) {
-  const keys = mail().threads.map(keyOf);
-  const at = keys.indexOf(key);
-  if (at < 0) return;
-  const near = [keys[at - 1], keys[at + 1]].filter((k): k is ThreadKey => k !== undefined);
-  if (near.length > 0) useThreadStore.getState().prefetch(near);
-}
-
 /** Automatic mark-reads waiting for their conversation's detail. An explicit change to the conversation drops one. */
 const autoReads = new Map<ThreadKey, object>();
 
@@ -663,7 +655,10 @@ const autoReads = new Map<ThreadKey, object>();
  * or kept being superseded), or the user marks it unread (or archives or deletes it) in the meantime, the automatic
  * read is dropped rather than sent.
  */
-export function openAndMarkRead(key: ThreadKey): void {
+export function openAndMarkRead(key: ThreadKey, direction: 1 | -1 = 1): void {
+  // Ask for it before the preload window moves, so preloads queue behind it.
+  void useThreadStore.getState().load(key);
+  setTravelDirection(direction);
   ui().setOpenThread(key);
   const row = present([key])[0];
   if (row?.thread.unread) {
@@ -680,7 +675,6 @@ export function openAndMarkRead(key: ThreadKey): void {
       });
     void apply([key], readChange(true), { keepChecked: true, after: wanted });
   }
-  prefetchAround(key);
 }
 
 /** j / k and the arrow keys: open the next or previous row, or the first/last when none is open. */
@@ -696,7 +690,7 @@ export function moveSelection(delta: 1 | -1): void {
         : keys.length - 1
       : Math.min(Math.max(at + delta, 0), keys.length - 1);
   if (to === at) return;
-  openAndMarkRead(keys[to]);
+  openAndMarkRead(keys[to], delta);
 }
 
 /** `o` / Enter: open the focused conversation, or the first one when nothing is. */

@@ -5,13 +5,15 @@ import { Kbd } from "../components/ui/Kbd";
 import { LabelChip } from "../labels/LabelChip";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import type { LabelInfo, ThreadDetail } from "../lib/tauri";
+import { useReadingSettings } from "../settings/readingSettings";
+import { useMailStore } from "../store/mailStore";
 import { useLabelStore } from "../store/labelStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { MessageCard } from "./MessageCard";
 import { ThreadLoading } from "./ThreadLoading";
 import { applyLabel, archive, respond } from "./actions";
-import { parseThreadKey } from "./mailboxes";
+import { parseThreadKey, threadKey } from "./mailboxes";
 import "./mail.css";
 
 /** Which messages are open. `seen` is every message already given its starting state. */
@@ -110,15 +112,29 @@ export function ThreadView() {
   const error = useThreadStore((s) => (openKey ? s.errors[openKey] : undefined));
   const loading = useThreadStore((s) => (openKey ? s.loading[openKey] : undefined));
   const load = useThreadStore((s) => s.load);
-  const accountId = openKey ? parseThreadKey(openKey).accountId : "";
-  const userLabels = useLabelStore((s) => s.userLabels(accountId));
-  const labelsById = useLabelStore((s) => s.labelsById(accountId));
+  const details = useThreadStore((s) => s.details);
+  const rows = useMailStore((s) => s.threads);
+  const preloadImages = useReadingSettings((s) => s.preloadImages);
   const scroller = useRef<HTMLDivElement>(null);
-  const [expansion, setExpansion] = useState<Expansion>({
-    key: null,
-    seen: new Set(),
-    open: new Set(),
-  });
+  const [mounted, setMounted] = useState<string[]>([]);
+  // The open conversation, plus (with Preload images on) two rows either side rendered out of sight, so the next
+  // arrow shows a finished email. Images a server won't let us cache only survive in a live document.
+  const keys = rows.map((row) => threadKey(row.accountId, row.id));
+  const at = openKey ? keys.indexOf(openKey) : -1;
+  const nearby = !preloadImages
+    ? []
+    : at < 0
+      ? keys.slice(0, 2)
+      : keys.slice(Math.max(0, at - 2), at + 3);
+  const wanted = new Set(
+    [...nearby, ...(openKey ? [openKey] : [])].filter((key) => details.has(key)),
+  );
+  // Survivors keep their place: moving an iframe in the DOM throws its document away.
+  const next = [
+    ...mounted.filter((key) => wanted.has(key)),
+    ...[...wanted].filter((key) => !mounted.includes(key)),
+  ];
+  if (next.join() !== mounted.join()) setMounted(next);
 
   useEffect(() => {
     if (openKey) void load(openKey);
@@ -142,19 +158,6 @@ export function ThreadView() {
     scroller.current?.scrollTo?.({ top: 0 });
   }, [openKey]);
 
-  let current = expansion;
-  if (openKey && detail) {
-    current = withNewMessages(expansion, openKey, detail);
-    if (current !== expansion) setExpansion(current);
-  }
-
-  const toggle = (id: string) =>
-    setExpansion((s) => {
-      const open = new Set(s.open);
-      if (!open.delete(id)) open.add(id);
-      return { ...s, open };
-    });
-
   let content;
   if (!openKey) {
     content = (
@@ -164,49 +167,7 @@ export function ThreadView() {
       </div>
     );
   } else if (detail) {
-    const onThread = new Set(detail.messages.flatMap((m) => m.labelIds));
-    const chips = userLabels.filter((l) => onThread.has(l.id));
-    const inbox = onThread.has("INBOX")
-      ? (labelsById.get("INBOX") ?? INBOX_FALLBACK(accountId))
-      : null;
-    const subject = detail.thread.subject || "(no subject)";
-    content = (
-      <div className="thread-view">
-        <h2 className="thread-view__subject selectable">{subject}</h2>
-        <LabelChips
-          labels={inbox ? [inbox, ...chips] : chips}
-          onRemove={(label) =>
-            void (label.id === "INBOX"
-              ? archive([openKey], { evenIfGone: true })
-              : applyLabel(accountId, label.id, false, [openKey], { evenIfGone: true }))
-          }
-        />
-        <div className="thread-view__messages">
-          {detail.messages.map((m) => (
-            <MessageCard
-              key={m.id}
-              message={m}
-              accountId={detail.thread.accountId}
-              expanded={current.open.has(m.id)}
-              onToggle={() => toggle(m.id)}
-              bodyError={detail.bodyError}
-              loading={loading}
-            />
-          ))}
-        </div>
-        <div className="thread-view__replies">
-          <Button icon={<Reply />} onClick={() => void respond("reply")}>
-            Reply
-          </Button>
-          <Button icon={<ReplyAll />} onClick={() => void respond("replyAll")}>
-            Reply all
-          </Button>
-          <Button icon={<Forward />} onClick={() => void respond("forward")}>
-            Forward
-          </Button>
-        </div>
-      </div>
-    );
+    content = null;
   } else if (error) {
     content = (
       <div className="pane-empty">
@@ -237,6 +198,85 @@ export function ThreadView() {
       onKeyDown={scrollFromKey}
     >
       {content}
+      {mounted.map((key) => (
+        <div
+          key={key}
+          className="thread-view__retained"
+          data-visible={key === openKey}
+          aria-hidden={key !== openKey || undefined}
+          {...(key !== openKey ? { inert: true } : {})}
+        >
+          <Conversation openKey={key} detail={details.get(key)!} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Conversation({ openKey, detail }: { openKey: string; detail: ThreadDetail }) {
+  const loading = useThreadStore((s) => s.loading[openKey]);
+  const accountId = parseThreadKey(openKey).accountId;
+  const userLabels = useLabelStore((s) => s.userLabels(accountId));
+  const labelsById = useLabelStore((s) => s.labelsById(accountId));
+  const [expansion, setExpansion] = useState<Expansion>({
+    key: null,
+    seen: new Set(),
+    open: new Set(),
+  });
+  let current = expansion;
+  if (openKey && detail) {
+    current = withNewMessages(expansion, openKey, detail);
+    if (current !== expansion) setExpansion(current);
+  }
+
+  const toggle = (id: string) =>
+    setExpansion((s) => {
+      const open = new Set(s.open);
+      if (!open.delete(id)) open.add(id);
+      return { ...s, open };
+    });
+
+  const onThread = new Set(detail.messages.flatMap((m) => m.labelIds));
+  const chips = userLabels.filter((l) => onThread.has(l.id));
+  const inbox = onThread.has("INBOX")
+    ? (labelsById.get("INBOX") ?? INBOX_FALLBACK(accountId))
+    : null;
+  const subject = detail.thread.subject || "(no subject)";
+  return (
+    <div className="thread-view">
+      <h2 className="thread-view__subject selectable">{subject}</h2>
+      <LabelChips
+        labels={inbox ? [inbox, ...chips] : chips}
+        onRemove={(label) =>
+          void (label.id === "INBOX"
+            ? archive([openKey], { evenIfGone: true })
+            : applyLabel(accountId, label.id, false, [openKey], { evenIfGone: true }))
+        }
+      />
+      <div className="thread-view__messages">
+        {detail.messages.map((m) => (
+          <MessageCard
+            key={m.id}
+            message={m}
+            accountId={detail.thread.accountId}
+            expanded={current.open.has(m.id)}
+            bodyError={detail.bodyError}
+            loading={loading}
+            onToggle={() => toggle(m.id)}
+          />
+        ))}
+      </div>
+      <div className="thread-view__replies">
+        <Button icon={<Reply />} onClick={() => void respond("reply")}>
+          Reply
+        </Button>
+        <Button icon={<ReplyAll />} onClick={() => void respond("replyAll")}>
+          Reply all
+        </Button>
+        <Button icon={<Forward />} onClick={() => void respond("forward")}>
+          Forward
+        </Button>
+      </div>
     </div>
   );
 }

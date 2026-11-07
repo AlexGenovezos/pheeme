@@ -652,12 +652,28 @@ impl SyncEngine {
     /// Fetch bodies the cache doesn't have yet for one thread (older mail outside the
     /// body window). Labels and flags are left to sync and the outbox.
     pub async fn load_thread_bodies(&self, thread_id: &str) -> Result<(), SyncError> {
+        self.load_thread_bodies_with_priority(thread_id, false)
+            .await
+    }
+
+    pub async fn load_thread_bodies_with_priority(
+        &self,
+        thread_id: &str,
+        preload: bool,
+    ) -> Result<(), SyncError> {
         let ids = messages::unfetched_in_thread(&self.db, &self.account_id, thread_id).await?;
         if ids.is_empty() {
             return Ok(());
         }
         let mut fetched = Vec::new();
-        for (_, result) in self.api.batch_get_messages(&ids, MessageFormat::Full).await {
+        let results = if preload {
+            self.api
+                .backfill_get_messages(&ids, MessageFormat::Full)
+                .await
+        } else {
+            self.api.batch_get_messages(&ids, MessageFormat::Full).await
+        };
+        for (_, result) in results {
             match result {
                 Ok(msg) => fetched.push(msg),
                 Err(e) if e.is_not_found() => {}
@@ -680,7 +696,11 @@ impl SyncEngine {
             threads::recompute_threads(&mut tx, &self.account_id, &[thread_id.to_owned()]).await?;
         tx.commit().await?;
         drop(guard);
-        self.emit_write(result, Vec::new());
+        // A preload's caller gets the bodies in its answer. Announcing them would make the
+        // app evict that answer and reload the list for every thread preloaded cold.
+        if !preload {
+            self.emit_write(result, Vec::new());
+        }
         Ok(())
     }
 

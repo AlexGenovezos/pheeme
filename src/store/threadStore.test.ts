@@ -59,23 +59,16 @@ test("load fetches once, caches, and dedupes a request already in flight", async
   expect(store().details.get("a:t1")?.thread.id).toBe("t1");
 });
 
-test("LRU keeps 30", async () => {
+test("LRU stays bounded and protects the open thread", async () => {
   const all = Object.fromEntries(
-    Array.from({ length: 35 }, (_, i) => [`a:t${i}`, detail(`t${i}`)]),
+    Array.from({ length: DETAIL_CACHE_SIZE + 5 }, (_, i) => [`a:t${i}`, detail(`t${i}`)]),
   );
   backend(all);
-  expect(DETAIL_CACHE_SIZE).toBe(30);
-  for (let i = 0; i < 30; i++) await store().load(`a:t${i}`);
-  // Touching t0 makes it the most recent, so t1 is the oldest and goes first.
-  await store().load("a:t0");
-  await store().load("a:t30");
-  expect(cached()).toHaveLength(30);
+  useUiStore.getState().setOpenThread("a:t0");
+  for (let i = 0; i < DETAIL_CACHE_SIZE + 5; i++) await store().load(`a:t${i}`);
+  expect(cached()).toHaveLength(DETAIL_CACHE_SIZE);
   expect(cached()).toContain("a:t0");
   expect(cached()).not.toContain("a:t1");
-  for (let i = 31; i < 35; i++) await store().load(`a:t${i}`);
-  expect(cached()).toHaveLength(30);
-  expect(cached()).toContain("a:t34");
-  expect(cached()).toContain("a:t0");
 });
 
 test("not_found keeps a per-key error and no detail", async () => {
@@ -392,15 +385,19 @@ test("an open asks Gmail as the user's request; a prefetch asks as background wo
   mockIPC((cmd, args) => {
     if (cmd !== "get_thread") return undefined;
     const { threadId } = args as { threadId: string };
-    opened.push([threadId, (args as { opened?: boolean }).opened]);
+    opened.push([
+      threadId,
+      (args as { opened?: boolean }).opened,
+      (args as { preload?: boolean }).preload,
+    ]);
     return detail(threadId);
   });
   await store().load("a:t1");
   store().prefetch(["a:t2"]);
   await vi.waitFor(() => expect(store().details.has("a:t2")).toBe(true));
   expect(opened).toEqual([
-    ["t1", true],
-    ["t2", false],
+    ["t1", true, false],
+    ["t2", false, true],
   ]);
 });
 
@@ -480,4 +477,140 @@ test("a done stage clears the loading state, and a stage arriving after the fetc
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(store().loading["a:t1"]).toBeUndefined();
   stop();
+});
+
+test("preloads run two at a time, and an open asks again as the user's request", async () => {
+  const calls: Array<{ threadId: string; preload?: boolean }> = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "get_thread") return;
+    const request = args as { threadId: string; preload?: boolean };
+    calls.push(request);
+    return request.preload ? new Promise(() => {}) : detail(request.threadId);
+  });
+  store().prefetch(["a:t1", "a:t2", "a:t3"]);
+  expect(calls).toHaveLength(2);
+  await store().load("a:t1");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  // The superseded preload of t1 is still running, so t3 waits for a slot.
+  expect(calls).toHaveLength(3);
+  expect(calls[2]).toMatchObject({ threadId: "t1", preload: false });
+  expect(store().details.has("a:t1")).toBe(true);
+});
+
+test("replacing and evicting queued work drops stale responses without retrying", async () => {
+  const resolves = new Map<string, (value: ThreadDetail) => void>();
+  const requests: string[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "get_thread") return;
+    const id = (args as { threadId: string }).threadId;
+    requests.push(id);
+    return new Promise<ThreadDetail>((resolve) => resolves.set(id, resolve));
+  });
+  store().prefetch(["a:old1", "a:old2", "a:queued"]);
+  store().evict("a", ["old1", "queued"]);
+  store().prefetch(["a:new"]);
+  resolves.get("old1")!(detail("old1"));
+  resolves.get("old2")!(detail("old2"));
+  await vi.waitFor(() => expect(requests).toEqual(["old1", "old2", "new"]));
+  expect(cached()).toEqual([]);
+  resolves.get("new")!(detail("new"));
+  await vi.waitFor(() => expect(cached()).toEqual(["a:new"]));
+});
+
+test("a rate limit stops speculation silently", async () => {
+  const calls: string[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "get_thread") throw new Error(`Unexpected mutation: ${cmd}`);
+    calls.push((args as { threadId: string }).threadId);
+    throw { code: "rate_limit", message: "quota" };
+  });
+  store().prefetch(["a:1", "a:2", "a:3"]);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(calls).toEqual(["1", "2"]);
+  expect(store().errors).toEqual({});
+  store().prefetch(["a:3", "a:4"]);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(calls).toHaveLength(2);
+});
+
+test("foreground supersedes a slow quiet response and pending patches still apply", async () => {
+  let finish: (value: ThreadDetail) => void = () => {};
+  mockIPC((cmd, args) => {
+    if (cmd !== "get_thread") return;
+    return (args as { preload?: boolean }).preload
+      ? new Promise<ThreadDetail>((resolve) => {
+          finish = resolve;
+        })
+      : detail("t1", "a", "foreground");
+  });
+  store().prefetch(["a:t1"]);
+  store().patchDetail("a:t1", (d) => ({ ...d, thread: { ...d.thread, starred: true } }), 42);
+  await store().load("a:t1");
+  finish(detail("t1", "a", "stale"));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(store().details.get("a:t1")?.thread).toMatchObject({
+    subject: "foreground",
+    starred: true,
+  });
+});
+
+test("oversized speculative windows remain bounded and never evict the open detail", async () => {
+  const all = Object.fromEntries(
+    Array.from({ length: 350 }, (_, i) => [`a:t${i}`, detail(`t${i}`)]),
+  );
+  const requests = backend(all);
+  await store().load("a:t349");
+  useUiStore.getState().setOpenThread("a:t349");
+  store().prefetch(Array.from({ length: 300 }, (_, i) => `a:t${i}`));
+  await vi.waitFor(() => expect(requests).toHaveLength(141));
+  expect(cached()).toHaveLength(141);
+  expect(cached()).toContain("a:t349");
+  store().prefetch(Array.from({ length: 140 }, (_, i) => `a:t${140 + i}`));
+  await vi.waitFor(() => expect(requests).toHaveLength(281));
+  expect(cached()).toHaveLength(DETAIL_CACHE_SIZE);
+  expect(cached()).toContain("a:t349");
+  // Opening something else evicts an old detail, never one of the window.
+  await store().load("a:t300");
+  expect(cached()).toEqual(
+    expect.arrayContaining(Array.from({ length: 140 }, (_, i) => `a:t${140 + i}`)),
+  );
+});
+
+test("explicit eviction permits the same window to request a fresh detail", async () => {
+  const finishes: Array<(value: ThreadDetail) => void> = [];
+  mockIPC((cmd) =>
+    cmd === "get_thread"
+      ? new Promise<ThreadDetail>((resolve) => finishes.push(resolve))
+      : undefined,
+  );
+  store().prefetch(["a:t1"]);
+  store().evict("a", ["t1"]);
+  store().prefetch(["a:t1"]);
+  expect(finishes).toHaveLength(2);
+  finishes[0](detail("t1", "a", "obsolete"));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(store().details.has("a:t1")).toBe(false);
+  finishes[1](detail("t1", "a", "fresh"));
+  await vi.waitFor(() => expect(store().details.get("a:t1")?.thread.subject).toBe("fresh"));
+});
+
+test("obsolete scope rate limits cannot stop the next account window", async () => {
+  let fail!: (reason: unknown) => void;
+  const requests: string[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "get_thread") return;
+    const account = (args as { accountId: string }).accountId;
+    requests.push(account);
+    return account === "old"
+      ? new Promise((_, reject) => {
+          fail = reject;
+        })
+      : detail("t1", account);
+  });
+  store().prefetch(["old:t1"]);
+  store().prefetch([]);
+  store().prefetch(["new:t1", "new:t2", "new:t3"]);
+  fail({ code: "rate_limit", message: "old account quota" });
+  await vi.waitFor(() => expect(requests).toEqual(["old", "new", "new", "new"]));
+  expect(store().errors).toEqual({});
 });

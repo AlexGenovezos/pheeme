@@ -97,7 +97,7 @@ listeners with where they started:
 Keeping a copy of every loaded thread list, for example, adds over 100 MiB and fails it.
 Small leaks stay below its noise: the generated conversations are tiny, so even a detail
 cache that never evicts adds only about 0.1 MiB over the run. Unit tests cover bounds like
-that one (`threadStore.test.ts` checks the cache keeps 30).
+that one (`threadStore.test.ts` checks the cache keeps 160).
 Chromium stands in for the real webviews (WebKitGTK, WKWebView, WebView2): it catches JS
 leaks (stores, listeners, detached DOM), not engine-specific ones.
 
@@ -146,3 +146,28 @@ home=$(mktemp -d)
 xvfb-run -a dbus-run-session -- node scripts/perf/app-run.mjs \
   --app src-tauri/target/release/pheeme --home "$home" --session-minutes 2
 ```
+
+## Preloading ahead of the reader
+
+`src/mail/preload.ts` keeps the conversations the user is about to read loaded, so
+arrowing through a list never lands on a blank or half-loaded email (design:
+`docs/superpowers/specs/2026-11-06-preload-ahead-design.md`).
+
+| Limit | Why |
+| --- | --- |
+| First 20 rows on arrival, and of Inbox and each category | Alex's figure; switching lists is instant without warming whole mailboxes |
+| 16 ahead / 4 behind the open row, flipped when moving up | 3.2 s of runway at five arrows a second, plus a small window for reversing |
+| 2 body preloads at once, on bulk Gmail quota | Bodies are usually local; when not, sync, sends and opens keep their quota |
+| 160 cached details | Six 20-row category windows plus the moving window and the open thread |
+| 256 image URLs, 4 downloads at once | Warms the HTTP cache for ~20 newsletters; leaves connections for the open email |
+| 5 rendered conversations (open ± 2) | Hidden iframes keep `no-store` images and layout, which the HTTP cache can't |
+
+The image warmer fetches `http(s)` `img`/`srcset`/`background` URLs only. Inline
+`cid:` images load when a conversation is rendered, including the hidden neighbours.
+With **Preload images** off, neither the warmer nor the hidden neighbours run.
+
+`e2e/preload.spec.ts` serves 32 Updates receipts (80 ms bodies, 90 ms cacheable and
+`no-store` images from a real HTTP server, since Playwright routing disables the
+cache), then holds Down through 22 rows at five a second. A `requestAnimationFrame`
+observer fails on any frame where the shown email is blank, loading, stale or has an
+unfinished image. CI runs it in Chromium; the real check is on the Mac (WKWebView).

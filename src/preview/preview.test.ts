@@ -1,7 +1,9 @@
+import { mockIPC } from "@tauri-apps/api/mocks";
 import { invoke } from "@tauri-apps/api/core";
 import { describe, expect, test, vi } from "vitest";
 import { listen } from "@tauri-apps/api/event";
 import {
+  getThread,
   type ThreadDetail,
   type ThreadPage,
   SYNC_EVENTS,
@@ -65,6 +67,22 @@ describe("preview IPC", () => {
     await expect(
       invoke("save_diagnostics", { note: "", replyTo: null, path }),
     ).resolves.toBeUndefined();
+  });
+
+  test("getThread accepts preload without changing read state", async () => {
+    installPreview();
+    const ipc = vi.fn(handlePreviewCommand);
+    mockIPC(ipc, { shouldMockEvents: true });
+    const before = await getThread("acc-personal", "p-01");
+    expect(await getThread("acc-personal", "p-01", false, true)).toEqual(before);
+    expect(ipc).toHaveBeenLastCalledWith("get_thread", {
+      accountId: "acc-personal",
+      threadId: "p-01",
+      opened: false,
+      preload: true,
+    });
+    expect(await getThread("acc-personal", "p-01", false)).toEqual(before);
+    installPreview();
   });
 
   test("list_threads honours All Mail and the category inboxes", () => {

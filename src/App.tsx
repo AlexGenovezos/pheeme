@@ -24,6 +24,7 @@ import { ContextMenuHost } from "./shell/ContextMenuHost";
 import { useLabelStore } from "./store/labelStore";
 import { useMailStore } from "./store/mailStore";
 import { useThreadStore } from "./store/threadStore";
+import { startPreloading } from "./mail/preload";
 
 /** Hide the webview's own menu (Reload, Inspect…) outside text; dev builds keep it for devtools. */
 function useNativeContextMenuOnly() {
@@ -71,6 +72,7 @@ function useLabelsAndCounts() {
 }
 
 function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
+  useEffect(startPreloading, []);
   useGlobalShortcuts();
   useAppCommands();
   useModCommands();

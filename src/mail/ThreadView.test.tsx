@@ -7,6 +7,7 @@ import { dismissToast, ToastProvider, useToastStore } from "../components/ui/Toa
 import { registry } from "../keyboard/registry";
 import { useGlobalShortcuts } from "../keyboard/useCommands";
 import type { AttachmentInfo, LabelInfo, MessageDetail, ThreadDetail } from "../lib/tauri";
+import { initReadingSize, useReadingSettings } from "../settings/readingSettings";
 import { useAccountStore } from "../store/accountStore";
 import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
@@ -92,6 +93,7 @@ const card = (n: number) => screen.getByRole("article", { name: `Message from Se
 
 beforeEach(() => {
   localStorage.clear();
+  initReadingSize();
   registry.clear();
   __resetUiStoreForTests();
   __resetThreadStoreForTests();
@@ -429,8 +431,8 @@ test("opened offline: cached headers show, the body says why, and Try again fetc
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   expect(await screen.findByText("Body 1")).toBeInTheDocument();
   expect(requests).toEqual([
-    { accountId: "a1", threadId: "t1", opened: true },
-    { accountId: "a1", threadId: "t1", opened: true },
+    { accountId: "a1", threadId: "t1", opened: true, preload: false },
+    { accountId: "a1", threadId: "t1", opened: true, preload: false },
   ]);
 });
 
@@ -627,4 +629,85 @@ describe("keyboard focus", () => {
     expect(scrollBy).not.toHaveBeenCalled();
     expect(view).toHaveFocus();
   });
+});
+
+test("nearby cached conversations keep their iframe documents through navigation and reversal", () => {
+  const calls: string[] = [];
+  mockIPC((cmd) => {
+    calls.push(cmd);
+    return undefined;
+  });
+  const ds = Array.from({ length: 6 }, (_, i) => {
+    const d = detail([message(i, { bodyHtml: `<img src="https://example.com/${i}.png">` })]);
+    return { ...d, thread: { ...d.thread, id: `t${i}` } };
+  });
+  useMailStore.setState({ threads: ds.map((d) => d.thread) });
+  useThreadStore.setState({ details: new Map(ds.map((d) => [threadKey("a1", d.thread.id), d])) });
+  const { container } = renderView();
+  expect(container.querySelectorAll("iframe")).toHaveLength(2);
+  expect(calls).toEqual([]);
+  const frame = container.querySelector("iframe")!;
+  const doc = frame.contentDocument;
+  const root = doc!.documentElement;
+  act(() => useUiStore.setState({ openThread: threadKey("a1", "t1") }));
+  act(() => useUiStore.setState({ openThread: threadKey("a1", "t2") }));
+  act(() => useUiStore.setState({ openThread: threadKey("a1", "t0") }));
+  expect(container.querySelector("iframe")).toBe(frame);
+  expect(frame.contentDocument).toBe(doc);
+  expect(frame.contentDocument!.documentElement).toBe(root);
+  expect(container.querySelectorAll("iframe").length).toBeLessThanOrEqual(5);
+});
+
+test("opting out releases hidden frames, keeping current images and text cache", () => {
+  const d = detail([
+    message(1, { bodyHtml: '<img src="pheeme-att://localhost/a1/m1/logo?t=signed">' }),
+  ]);
+  const other = { ...d, thread: { ...d.thread, id: "t2" } };
+  useMailStore.setState({ threads: [d.thread, other.thread] });
+  useThreadStore.setState({
+    details: new Map([
+      [KEY, d],
+      [threadKey("a1", "t2"), other],
+    ]),
+  });
+  useUiStore.setState({ openThread: KEY });
+  const load = vi.spyOn(useThreadStore.getState(), "load");
+  const { container } = renderView();
+  expect(load.mock.calls.map((args) => args[0])).toEqual([KEY]);
+  const frame = container.querySelector("iframe")!;
+  expect(container.querySelectorAll("iframe")).toHaveLength(2);
+  act(() => useReadingSettings.getState().setPreloadImages(false));
+  expect(container.querySelectorAll("iframe")).toHaveLength(1);
+  expect(container.querySelector("iframe")).toBe(frame);
+  expect(frame.contentDocument!.querySelector("img")!.src).toBe(
+    "pheeme-att://localhost/a1/m1/logo?t=signed",
+  );
+  expect(useThreadStore.getState().details.size).toBe(2);
+  load.mockRestore();
+});
+
+test("a refresh of the same list keeps the nearby documents", () => {
+  const ds = Array.from({ length: 6 }, (_, i) => ({
+    ...detail([message(i, { bodyHtml: `<img src="https://example.com/${i}.png">` })]),
+    thread: { ...detail([]).thread, id: `t${i}` },
+  }));
+  const query = { accountIds: ["a1"], labelId: "INBOX", alsoLabelId: "CATEGORY_UPDATES" };
+  useMailStore.setState({ threads: ds.map((d) => d.thread), query, loadedQuery: query });
+  useThreadStore.setState({ details: new Map(ds.map((d) => [threadKey("a1", d.thread.id), d])) });
+  useUiStore.setState({
+    openThread: threadKey("a1", "t1"),
+    mailbox: { accountId: "a1", labelId: "INBOX", category: "CATEGORY_UPDATES" },
+  });
+  const { container } = renderView();
+  const frames = [...container.querySelectorAll("iframe")];
+  const roots = frames.map((frame) => frame.contentDocument!.documentElement);
+  expect(frames).toHaveLength(4);
+
+  // Auto-read triggers a sync/list refresh: the neighbours keep their documents through it.
+  act(() => useMailStore.setState({ loading: true, query: { ...query } }));
+  expect([...container.querySelectorAll("iframe")]).toEqual(frames);
+  act(() => useUiStore.setState({ openThread: threadKey("a1", "t2") }));
+  act(() => useMailStore.setState({ loading: false }));
+  expect(container.querySelectorAll("iframe")).toHaveLength(5);
+  frames.forEach((frame, i) => expect(frame.contentDocument!.documentElement).toBe(roots[i]));
 });

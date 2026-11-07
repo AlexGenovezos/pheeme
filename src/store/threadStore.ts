@@ -15,8 +15,10 @@ import {
   toCommandError,
 } from "../lib/tauri";
 import { useUiStore } from "./uiStore";
+import { useMailStore } from "./mailStore";
 
-export const DETAIL_CACHE_SIZE = 30;
+// 20 active rows + six 20-row Inbox/category windows, with room for the open detail and recent rows.
+export const DETAIL_CACHE_SIZE = 160;
 
 /** Optimistic detail changes the cache hasn't caught up with, per thread, in the order they were made. */
 let pendingDetails = new Map<
@@ -37,7 +39,7 @@ interface ThreadState {
   /** What an open still fetching from Gmail is waiting on (`mail:thread_loading`), until the fetch settles. */
   loading: Record<ThreadKey, ThreadLoading>;
   /**
-   * Make the detail available: complete cached details are just touched, a request already in flight is joined,
+   * Make the detail available: complete cached details are touched, foreground requests in flight are joined,
    * and a cached detail missing a body is shown while it is requested again.
    */
   load(key: ThreadKey): Promise<void>;
@@ -47,7 +49,7 @@ interface ThreadState {
    * Resolves to whether the detail is cached.
    */
   waitForDetail(key: ThreadKey): Promise<boolean>;
-  /** Warm the cache for neighbours of the open thread. Failures are ignored. */
+  /** Replace the bounded, priority-ordered speculative window. Empty cancels it; failures are silent. */
   prefetch(keys: ThreadKey[]): void;
   /**
    * Rewrite a cached detail in place (optimistic label changes). With an `op` (from `newOp`) the change is also
@@ -67,9 +69,20 @@ interface ThreadState {
 }
 
 // A request is current while it is the entry here; evicting or re-requesting a key supersedes it.
-// `quiet` requests (prefetch) swallow failures; a foreground `load` that finds one asks again (see `joinOrFetch`).
+// Foreground requests supersede quiet work: bulk may be waiting for quota.
 const inflight = new Map<ThreadKey, { ticket: number; promise: Promise<void>; quiet: boolean }>();
 let tickets = 0;
+/** The list window plus six 20-row category windows; below the cache size, so preloads don't evict each other. */
+const PREFETCH_LIMIT = 140;
+const PREFETCHES_AT_ONCE = 2;
+/** After Gmail refuses a preload for quota, the rest wait out the rate window. */
+const RATE_LIMIT_PAUSE_MS = 60_000;
+let wanted: ThreadKey[] = [];
+/** Wanted keys already requested once, so a failure isn't retried in a loop. */
+let tried = new Set<ThreadKey>();
+let rateLimited = false;
+/** Preloads still running, including ones that left the window: their answers are ignored, but they still cost. */
+let preloading = 0;
 
 export const useThreadStore = create<ThreadState>((set, get) => {
   const clearLoading = (key: ThreadKey) =>
@@ -80,28 +93,59 @@ export const useThreadStore = create<ThreadState>((set, get) => {
       return { loading };
     });
 
+  /** Start wanted preloads, two at a time, while nothing the user is waiting for (an open, the list) is loading. */
+  const pump = () => {
+    if (
+      rateLimited ||
+      useMailStore.getState().loading ||
+      [...inflight.values()].some((r) => !r.quiet)
+    )
+      return;
+    for (const key of wanted) {
+      if (preloading >= PREFETCHES_AT_ONCE) return;
+      if (tried.has(key) || inflight.has(key) || get().details.has(key)) continue;
+      tried.add(key);
+      preloading++;
+      void fetchDetail(key, true).finally(() => {
+        preloading = Math.max(0, preloading - 1);
+        pump();
+      });
+    }
+  };
   const fetchDetail = (key: ThreadKey, quiet = false): Promise<void> => {
     const ticket = ++tickets;
     const { accountId, threadId } = parseThreadKey(key);
     const current = () => inflight.get(key)?.ticket === ticket;
     const promise = (async () => {
       try {
-        // A prefetch is background work; anything else is someone waiting to read it.
-        const detail = await getThread(accountId, threadId, !quiet);
+        const detail = await getThread(accountId, threadId, !quiet, quiet);
         if (!current()) return;
         set((s) => {
           const details = new Map(s.details);
           details.delete(key); // re-insert as the most recent
           details.set(key, withPending(key, detail));
-          while (details.size > DETAIL_CACHE_SIZE)
-            details.delete(details.keys().next().value as ThreadKey);
+          // Evict the least recent detail that is neither open nor preloaded on purpose. The preload window is
+          // smaller than the cache, so there is always one, and preloads never push each other out.
+          const keep = new Set([...wanted, useUiStore.getState().openThread]);
+          while (details.size > DETAIL_CACHE_SIZE) {
+            const oldest = [...details.keys()].find((k) => !keep.has(k));
+            if (oldest === undefined) break;
+            details.delete(oldest);
+          }
           const errors = { ...s.errors };
           delete errors[key];
           return { details, errors };
         });
       } catch (error) {
-        if (!current() || inflight.get(key)?.quiet) return;
         const failure = toCommandError(error);
+        if (current() && quiet && failure.code === "rate_limit" && !rateLimited) {
+          rateLimited = true;
+          setTimeout(() => {
+            rateLimited = false;
+            pump();
+          }, RATE_LIMIT_PAUSE_MS);
+        }
+        if (!current() || quiet) return;
         set((s) => {
           const errors = { ...s.errors, [key]: failure };
           // Gone is gone; any other failure keeps what we already show.
@@ -114,6 +158,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         if (current()) inflight.delete(key);
         // A newer request for the key reports its own progress.
         if (!inflight.has(key)) clearLoading(key);
+        if (!quiet) queueMicrotask(pump);
       }
     })();
     inflight.set(key, { ticket, promise, quiet });
@@ -161,9 +206,13 @@ export const useThreadStore = create<ThreadState>((set, get) => {
       return get().details.has(key);
     },
     prefetch: (keys) => {
-      for (const key of keys) {
-        if (!get().details.has(key) && !inflight.has(key)) void fetchDetail(key, true);
-      }
+      wanted = [...new Set(keys)].slice(0, PREFETCH_LIMIT);
+      const keep = new Set(wanted);
+      // Preloads that left the window are dropped; their answers are ignored.
+      for (const [key, request] of inflight)
+        if (request.quiet && !keep.has(key)) inflight.delete(key);
+      tried = new Set([...tried].filter((key) => keep.has(key)));
+      pump();
     },
     settleDetails: (op, keys) => {
       for (const key of keys) {
@@ -185,7 +234,10 @@ export const useThreadStore = create<ThreadState>((set, get) => {
     },
     evict: (accountId, threadIds) => {
       const keys = threadIds.map((id) => threadKey(accountId, id));
-      keys.forEach((key) => inflight.delete(key));
+      keys.forEach((key) => {
+        inflight.delete(key);
+        tried.delete(key);
+      });
       set((s) => {
         const hit = keys.filter((k) => s.details.has(k) || k in s.errors);
         if (hit.length === 0) return {};
@@ -241,6 +293,10 @@ export const useThreadStore = create<ThreadState>((set, get) => {
 
 /** Test helper. */
 export function __resetThreadStoreForTests() {
+  wanted = [];
+  tried.clear();
+  rateLimited = false;
+  preloading = 0;
   inflight.clear();
   pendingDetails = new Map();
   useThreadStore.setState({ details: new Map(), errors: {}, loading: {} });

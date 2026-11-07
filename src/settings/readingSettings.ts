@@ -13,12 +13,32 @@ function readSize(): ReadingSize {
   }
 }
 
+const IMAGE_KEY = "pheeme.preload-images";
+function readImages(): boolean {
+  try {
+    return localStorage.getItem(IMAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
 interface ReadingSettings {
+  preloadImages: boolean;
+  setPreloadImages(value: boolean): void;
   size: ReadingSize;
   setSize(size: ReadingSize): void;
 }
 
 export const useReadingSettings = create<ReadingSettings>((set) => ({
+  preloadImages: readImages(),
+  setPreloadImages(preloadImages) {
+    try {
+      localStorage.setItem(IMAGE_KEY, String(preloadImages));
+    } catch {
+      /* Session choice still applies. */
+    }
+    set({ preloadImages });
+  },
   size: readSize(),
   setSize(size) {
     try {
@@ -35,5 +55,5 @@ export const useReadingSettings = create<ReadingSettings>((set) => ({
 export function initReadingSize() {
   const size = readSize();
   document.documentElement.dataset.readingSize = size;
-  useReadingSettings.setState({ size });
+  useReadingSettings.setState({ size, preloadImages: readImages() });
 }

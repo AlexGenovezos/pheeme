@@ -272,7 +272,9 @@ test("All Mail lists every cached thread through the ALL pseudo-label", async ()
   act(() => useUiStore.getState().setMailbox({ accountId: null, labelId: "ALL" }));
   const list = await screen.findByRole("listbox", { name: "All Mail conversations" });
   await vi.waitFor(() => expect(within(list).getAllByRole("option").length).toBeGreaterThan(0));
-  expect(queries).toEqual([{ accountIds: ["a1"], labelId: "ALL" }]);
+  expect(queries.filter((query) => !(query as { limit?: number }).limit)).toEqual([
+    { accountIds: ["a1"], labelId: "ALL" },
+  ]);
 });
 
 test("the shell loads labels and counts for the connected accounts and marks accounts synced", async () => {
