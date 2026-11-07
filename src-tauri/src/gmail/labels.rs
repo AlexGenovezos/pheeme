@@ -41,6 +41,23 @@ impl GmailClient {
             .await
     }
 
+    /// Full replace (`labels.update`, PUT). Sends `id`, `name` and both visibilities, and
+    /// `color` only when set, so replacing with `color: None` removes a label's colour.
+    pub async fn replace_label(&self, label: &Label) -> Result<Label, GmailError> {
+        let mut body = json!({ "id": label.id, "name": label.name });
+        if let Some(v) = &label.label_list_visibility {
+            body["labelListVisibility"] = json!(v);
+        }
+        if let Some(v) = &label.message_list_visibility {
+            body["messageListVisibility"] = json!(v);
+        }
+        if let Some(color) = &label.color {
+            body["color"] = json!(color);
+        }
+        self.send_json(ApiRequest::new(Method::PUT, &["labels", &label.id]).json(body))
+            .await
+    }
+
     pub async fn delete_label(&self, id: &str) -> Result<(), GmailError> {
         self.send_empty(ApiRequest::new(Method::DELETE, &["labels", id]))
             .await
@@ -132,5 +149,35 @@ mod tests {
         };
         client.update_label("Label_9", update).await.unwrap();
         client.delete_label("Label_9").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn replace_label_puts_full_body_without_colour() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/labels/Label_9"))
+            .and(body_json(json!({
+                "id": "Label_9",
+                "name": "Work",
+                "labelListVisibility": "labelShow",
+                "messageListVisibility": "show",
+            })))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"id": "Label_9", "name": "Work", "type": "user"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+
+        let label = Label {
+            id: "Label_9".into(),
+            name: "Work".into(),
+            label_list_visibility: Some("labelShow".into()),
+            message_list_visibility: Some("show".into()),
+            ..Default::default()
+        };
+        client.replace_label(&label).await.unwrap();
     }
 }

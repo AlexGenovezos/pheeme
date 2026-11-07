@@ -5,8 +5,8 @@ use super::api::MailApi;
 use crate::gmail::mime::encode_base64url;
 use crate::gmail::types::{
     Draft, DraftListResponse, Header, HistoryLabelChange, HistoryListResponse, HistoryMessage,
-    HistoryRecord, Label, Message, MessageListResponse, MessagePart, MessagePartBody, MessageRef,
-    Thread, ThreadListResponse,
+    HistoryRecord, Label, LabelColor, LabelUpdate, Message, MessageListResponse, MessagePart,
+    MessagePartBody, MessageRef, Thread, ThreadListResponse,
 };
 use crate::gmail::{GmailError, MessageFormat};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -267,6 +267,10 @@ struct State {
     next_sent: u64,
     /// `(message id, attachment id)` → bytes.
     attachment_bytes: HashMap<(String, String), Vec<u8>>,
+    /// User labels by id (system labels are fixed).
+    user_labels: BTreeMap<String, Label>,
+    next_label: u64,
+    list_omits_color: bool,
 }
 
 pub struct FakeGmail {
@@ -294,6 +298,31 @@ const SYSTEM_LABELS: &[&str] = &[
     "CATEGORY_UPDATES",
     "CATEGORY_FORUMS",
 ];
+
+fn api_error(status: u16, reason: &str, message: &str) -> GmailError {
+    GmailError::Api {
+        status,
+        reason: Some(reason.into()),
+        message: message.into(),
+    }
+}
+
+fn check_color(color: &LabelColor) -> Result<(), GmailError> {
+    let ok = crate::gmail::palette::is_allowed(&color.background_color)
+        && crate::gmail::palette::is_allowed(&color.text_color);
+    if ok {
+        Ok(())
+    } else {
+        Err(api_error(400, "invalidArgument", "Invalid label color."))
+    }
+}
+
+fn name_taken(s: &State, name: &str, except: Option<&str>) -> bool {
+    SYSTEM_LABELS.iter().any(|n| n.eq_ignore_ascii_case(name))
+        || s.user_labels
+            .values()
+            .any(|l| Some(l.id.as_str()) != except && l.name.eq_ignore_ascii_case(name))
+}
 
 fn not_found() -> GmailError {
     GmailError::Api {
@@ -423,6 +452,31 @@ impl FakeGmail {
 
     pub fn set_history_page_size(&self, n: usize) {
         self.lock().history_page = n;
+    }
+
+    /// Seed a user label as if it already existed in the mailbox.
+    pub fn add_user_label(&self, id: &str, name: &str, color: Option<(&str, &str)>) {
+        self.lock().user_labels.insert(
+            id.into(),
+            Label {
+                id: id.into(),
+                name: name.into(),
+                label_type: Some("user".into()),
+                label_list_visibility: Some("labelShow".into()),
+                message_list_visibility: Some("show".into()),
+                color: color.map(|(text, background)| LabelColor {
+                    text_color: text.into(),
+                    background_color: background.into(),
+                }),
+                ..Default::default()
+            },
+        );
+    }
+
+    /// While set, `list_labels` leaves user labels' colour out (as Gmail's list can);
+    /// `get_label` still returns it.
+    pub fn set_list_omits_color(&self, omit: bool) {
+        self.lock().list_omits_color = omit;
     }
 
     pub fn set_list_page_size(&self, n: usize) {
@@ -568,20 +622,128 @@ impl MailApi for FakeGmail {
 
     async fn list_labels(&self) -> Result<Vec<Label>, GmailError> {
         self.enter("list_labels")?;
-        Ok(SYSTEM_LABELS
-            .iter()
-            .map(|id| Label {
-                id: (*id).into(),
-                name: (*id).into(),
-                label_type: Some("system".into()),
-                ..Default::default()
-            })
-            .collect())
+        let s = self.lock();
+        let system = SYSTEM_LABELS.iter().map(|id| Label {
+            id: (*id).into(),
+            name: (*id).into(),
+            label_type: Some("system".into()),
+            ..Default::default()
+        });
+        let user = s.user_labels.values().cloned().map(|mut l| {
+            if s.list_omits_color {
+                l.color = None;
+            }
+            l
+        });
+        Ok(system.chain(user).collect())
+    }
+
+    async fn create_label(
+        &self,
+        name: &str,
+        color: Option<LabelColor>,
+    ) -> Result<Label, GmailError> {
+        self.enter("create_label")?;
+        let mut s = self.lock();
+        if name_taken(&s, name, None) {
+            return Err(api_error(
+                409,
+                "conflict",
+                "Label name exists or conflicts.",
+            ));
+        }
+        if let Some(c) = &color {
+            check_color(c)?;
+        }
+        s.next_label += 1;
+        let id = format!("Label_{}", s.next_label);
+        let label = Label {
+            id: id.clone(),
+            name: name.into(),
+            label_type: Some("user".into()),
+            label_list_visibility: Some("labelShow".into()),
+            message_list_visibility: Some("show".into()),
+            color,
+            ..Default::default()
+        };
+        s.user_labels.insert(id, label.clone());
+        Ok(label)
+    }
+
+    async fn update_label(&self, id: &str, update: LabelUpdate) -> Result<Label, GmailError> {
+        self.enter("update_label")?;
+        let mut s = self.lock();
+        if !s.user_labels.contains_key(id) {
+            return Err(not_found());
+        }
+        if let Some(name) = &update.name {
+            if name_taken(&s, name, Some(id)) {
+                return Err(api_error(
+                    409,
+                    "conflict",
+                    "Label name exists or conflicts.",
+                ));
+            }
+        }
+        if let Some(c) = &update.color {
+            check_color(c)?;
+        }
+        let label = s.user_labels.get_mut(id).unwrap();
+        if let Some(name) = update.name {
+            label.name = name;
+        }
+        if update.message_list_visibility.is_some() {
+            label.message_list_visibility = update.message_list_visibility;
+        }
+        if update.label_list_visibility.is_some() {
+            label.label_list_visibility = update.label_list_visibility;
+        }
+        if update.color.is_some() {
+            label.color = update.color;
+        }
+        Ok(label.clone())
+    }
+
+    async fn replace_label(&self, new: &Label) -> Result<Label, GmailError> {
+        self.enter("replace_label")?;
+        let mut s = self.lock();
+        if !s.user_labels.contains_key(&new.id) {
+            return Err(not_found());
+        }
+        if name_taken(&s, &new.name, Some(&new.id)) {
+            return Err(api_error(
+                409,
+                "conflict",
+                "Label name exists or conflicts.",
+            ));
+        }
+        if let Some(c) = &new.color {
+            check_color(c)?;
+        }
+        let label = s.user_labels.get_mut(&new.id).unwrap();
+        label.name = new.name.clone();
+        label.label_list_visibility = new.label_list_visibility.clone();
+        label.message_list_visibility = new.message_list_visibility.clone();
+        label.color = new.color.clone();
+        Ok(label.clone())
+    }
+
+    async fn delete_label(&self, id: &str) -> Result<(), GmailError> {
+        self.enter("delete_label")?;
+        let mut s = self.lock();
+        if s.user_labels.remove(id).is_none() {
+            return Err(not_found());
+        }
+        for msg in s.messages.values_mut() {
+            msg.labels.retain(|l| l != id);
+        }
+        Ok(())
     }
 
     async fn get_label(&self, id: &str) -> Result<Label, GmailError> {
         self.enter("get_label")?;
         let s = self.lock();
+        let user = s.user_labels.get(id).cloned();
         let with: Vec<&FakeMsg> = s
             .messages
             .values()
@@ -596,15 +758,18 @@ impl MailApi for FakeGmail {
         };
         let unread_msgs: Vec<&&FakeMsg> = with.iter().filter(unread).collect();
         let all: Vec<&&FakeMsg> = with.iter().collect();
-        Ok(Label {
+        let base = user.unwrap_or_else(|| Label {
             id: id.into(),
             name: id.into(),
             label_type: Some("system".into()),
+            ..Default::default()
+        });
+        Ok(Label {
             messages_total: Some(with.len() as u32),
             messages_unread: Some(unread_msgs.len() as u32),
             threads_total: Some(threads(&all)),
             threads_unread: Some(threads(&unread_msgs)),
-            ..Default::default()
+            ..base
         })
     }
 
@@ -970,5 +1135,76 @@ mod tests {
         assert_eq!(fake.get_attachment("m1", "g1").await.unwrap(), b"pdf");
         assert!(fake.get_attachment("m1", "other").await.is_err());
         assert_eq!(fake.attachment_fetches(), 2);
+    }
+
+    #[tokio::test]
+    async fn fake_label_crud() {
+        let fake = FakeGmail::new();
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+        let color = |bg: &str| LabelColor {
+            text_color: "#000000".into(),
+            background_color: bg.into(),
+        };
+        let work = fake
+            .create_label("Work", Some(color("#16a766")))
+            .await
+            .unwrap();
+        let listed = fake.list_labels().await.unwrap();
+        let found = listed.iter().find(|l| l.id == work.id).unwrap();
+        assert_eq!(found.label_type.as_deref(), Some("user"));
+        assert_eq!(found.color, Some(color("#16a766")));
+
+        let dup = fake.create_label("work", None).await.unwrap_err();
+        assert!(matches!(dup, GmailError::Api { status: 409, .. }));
+        let bad = fake
+            .create_label("Other", Some(color("#123456")))
+            .await
+            .unwrap_err();
+        assert!(matches!(bad, GmailError::Api { status: 400, .. }));
+        let missing = fake.delete_label("nope").await.unwrap_err();
+        assert!(missing.is_not_found());
+
+        let update = LabelUpdate {
+            name: Some("Job".into()),
+            ..Default::default()
+        };
+        fake.update_label(&work.id, update).await.unwrap();
+        let listed = fake.list_labels().await.unwrap();
+        assert_eq!(listed.iter().find(|l| l.id == work.id).unwrap().name, "Job");
+
+        let mut plain = listed.iter().find(|l| l.id == work.id).unwrap().clone();
+        plain.color = None;
+        fake.replace_label(&plain).await.unwrap();
+        let listed = fake.list_labels().await.unwrap();
+        assert_eq!(listed.iter().find(|l| l.id == work.id).unwrap().color, None);
+
+        fake.relabel("m1", &[&work.id], &[]);
+        let history_id = fake.history_id();
+        fake.delete_label(&work.id).await.unwrap();
+        assert!(fake
+            .list_labels()
+            .await
+            .unwrap()
+            .iter()
+            .all(|l| l.id != work.id));
+        let msg = fake
+            .get_thread("t1", MessageFormat::Metadata)
+            .await
+            .unwrap();
+        assert!(!msg.messages[0].label_ids.contains(&work.id));
+        assert_eq!(fake.history_id(), history_id);
+    }
+
+    #[tokio::test]
+    async fn fake_list_can_omit_colour() {
+        let fake = FakeGmail::new();
+        fake.add_user_label("Label_1", "Work", Some(("#000000", "#16a766")));
+        fake.set_list_omits_color(true);
+        let listed = fake.list_labels().await.unwrap();
+        assert_eq!(
+            listed.iter().find(|l| l.id == "Label_1").unwrap().color,
+            None
+        );
+        assert!(fake.get_label("Label_1").await.unwrap().color.is_some());
     }
 }
