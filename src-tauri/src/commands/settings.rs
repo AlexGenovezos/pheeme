@@ -27,6 +27,20 @@ pub async fn set_account_notifications(
         .map_err(error)
 }
 
+/// Answer the "turn on notifications?" prompt for accounts that haven't been asked.
+#[tauri::command]
+pub async fn answer_notification_prompt(
+    app: AppHandle,
+    enable: bool,
+) -> Result<DesktopSettings, CommandError> {
+    desktop::answer_prompt(&app, enable).await.map_err(error)
+}
+
+#[tauri::command]
+pub async fn set_tray_icon(app: AppHandle, shown: bool) -> Result<DesktopSettings, CommandError> {
+    desktop::set_tray_icon(&app, shown).await.map_err(error)
+}
+
 #[tauri::command]
 pub fn take_notification_target(app: AppHandle) -> Option<ThreadTarget> {
     desktop::take_target(&app)

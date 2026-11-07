@@ -4,11 +4,16 @@ export interface NotificationAccount {
   accountId: string;
   email: string;
   enabled: boolean;
+  /** Answered via the prompt or Settings; unanswered accounts get the prompt. */
+  asked: boolean;
 }
 export interface DesktopSettings {
   accounts: NotificationAccount[];
   permission: "notDetermined" | "denied" | "granted" | "system";
+  /** Closing the window keeps Pheeme running in the tray. */
   trayAvailable: boolean;
+  /** The user wants the menu bar / notification area icon. */
+  trayEnabled: boolean;
 }
 export interface ThreadTarget {
   accountId: string;
@@ -17,4 +22,7 @@ export interface ThreadTarget {
 export const getDesktopSettings = () => invoke<DesktopSettings>("desktop_settings");
 export const setAccountNotifications = (accountId: string, enabled: boolean) =>
   invoke<DesktopSettings>("set_account_notifications", { accountId, enabled });
+export const answerNotificationPrompt = (enable: boolean) =>
+  invoke<DesktopSettings>("answer_notification_prompt", { enable });
+export const setTrayIcon = (shown: boolean) => invoke<DesktopSettings>("set_tray_icon", { shown });
 export const takeNotificationTarget = () => invoke<ThreadTarget | null>("take_notification_target");
