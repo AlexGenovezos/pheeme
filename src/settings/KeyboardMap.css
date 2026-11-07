@@ -1,0 +1,170 @@
+.kbmap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.kbmap__layers {
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+
+.kbmap__board {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  user-select: none;
+}
+
+.kbmap__row {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.kbmap__key {
+  display: flex;
+  flex: var(--kbmap-width) 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: var(--kbmap-key-height);
+  padding: var(--space-0);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-foreground-disabled);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: default;
+}
+
+.kbmap__key[data-kind] {
+  color: var(--color-foreground);
+  font-weight: var(--font-weight-semibold);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.kbmap__key[data-kind="used"] {
+  border-color: color-mix(in srgb, var(--kbmap-color) 65%, transparent);
+  background: color-mix(in srgb, var(--kbmap-color) 20%, transparent);
+}
+.kbmap__key[data-kind="used"]:hover {
+  background: color-mix(in srgb, var(--kbmap-color) 36%, transparent);
+}
+
+.kbmap__key[data-kind="opens"] {
+  border: var(--border-width) dashed var(--color-focus-border);
+}
+.kbmap__key[data-kind="opens"]:hover,
+.kbmap__key[data-kind="held"]:hover {
+  background: var(--color-control-hover-bg);
+}
+
+.kbmap__key[data-kind="held"] {
+  border-color: var(--color-focus-border);
+  background: var(--color-button-secondary-bg);
+}
+
+.kbmap__tip {
+  position: absolute;
+  z-index: var(--z-popover);
+  max-width: var(--kbmap-tip-max-width);
+  padding: var(--space-2) var(--space-2-5);
+  border: var(--border-width) solid var(--color-menu-border);
+  border-radius: var(--radius-md);
+  background: var(--color-menu-bg);
+  color: var(--color-menu-foreground);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--font-size-sm);
+  pointer-events: none;
+  translate: var(--kbmap-tip-x, -50%) var(--kbmap-tip-y, 0);
+}
+.kbmap__tip[data-placement="above"] {
+  --kbmap-tip-y: calc(-100% - var(--space-1));
+}
+.kbmap__tip[data-placement="below"] {
+  --kbmap-tip-y: var(--space-1);
+}
+.kbmap__tip[data-align="start"] {
+  --kbmap-tip-x: 0;
+}
+.kbmap__tip[data-align="end"] {
+  --kbmap-tip-x: -100%;
+}
+
+.kbmap__tip-heading {
+  margin: var(--space-0) var(--space-0) var(--space-1);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}
+.kbmap__tip-heading:last-child {
+  margin-bottom: var(--space-0);
+}
+
+.kbmap__tip-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+.kbmap__tip-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  white-space: nowrap;
+}
+
+.kbmap__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}
+
+.kbmap__swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.kbmap__swatch::before {
+  content: "";
+  width: var(--space-2-5);
+  height: var(--space-2-5);
+  border: var(--border-width) solid color-mix(in srgb, var(--kbmap-color) 65%, transparent);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--kbmap-color) 20%, transparent);
+}
+.kbmap__swatch--free::before {
+  border-color: var(--color-border);
+  background: transparent;
+}
+
+.kbmap__off-board {
+  flex-basis: 100%;
+}
+
+.kbmap-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* "Showing ⌘K · Show all" above the list after clicking a key on the map. */
+.kbmap-picked {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}

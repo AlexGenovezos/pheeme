@@ -245,6 +245,20 @@ describe("keyboard shortcuts", () => {
     expect(registry.get("conversation.star")?.shortcut).toBeUndefined();
   });
 
+  test("clicking a key on the keyboard map narrows the list to its command", () => {
+    render(<Harness />);
+    open("keyboard");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "E: Archive" }));
+    expect(within(dialog()).getByText("Showing E")).toBeInTheDocument();
+    expect(recorder("Archive")).toBeInTheDocument();
+    expect(
+      within(dialog()).queryByRole("button", { name: /shortcut for Star or unstar/ }),
+    ).toBeNull();
+
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Show all" }));
+    expect(recorder("Star or unstar")).toBeInTheDocument();
+  });
+
   test("reset puts one shortcut back; Reset all puts them all back", () => {
     render(<Harness />);
     open("keyboard");
