@@ -9,6 +9,7 @@ import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { stubLayout } from "../test/layout";
+import { Sidebar } from "../shell/Sidebar";
 import { HtmlBody } from "./EmailBody";
 import { ALL_INBOXES, categoryMailbox, threadKey } from "./mailboxes";
 import { ThreadList, type ThreadListProps } from "./ThreadList";
@@ -229,6 +230,54 @@ describe("focus and selection semantics", () => {
     input.focus();
     fireEvent.keyDown(input, { key: "ArrowLeft" });
     expect(input).toHaveFocus();
+  });
+
+  test("Left goes on from the list to the open mailbox, Up/Down open mailboxes, Right comes back", () => {
+    function Mail() {
+      useGlobalShortcuts();
+      return (
+        <>
+          <Sidebar />
+          <ThreadList {...props()} />
+        </>
+      );
+    }
+    useMailStore.setState({ threads: many(3) });
+    useUiStore.setState({ openThread: key(1) });
+    render(<Mail />);
+    const list = screen.getByRole("listbox");
+    const mailboxes = screen.getByRole("navigation", { name: "Mailboxes" });
+    const allInboxes = within(mailboxes).getByRole("link", { name: "All Inboxes" });
+    list.focus();
+
+    fireEvent.keyDown(list, { key: "ArrowLeft" });
+    expect(allInboxes).toHaveFocus();
+
+    // Left has nowhere further to go; it must not bounce back to the list.
+    fireEvent.keyDown(allInboxes, { key: "ArrowLeft" });
+    expect(allInboxes).toHaveFocus();
+    fireEvent.keyDown(allInboxes, { key: "ArrowUp" });
+    expect(allInboxes).toHaveFocus();
+    expect(useUiStore.getState().mailbox).toEqual(ALL_INBOXES);
+
+    fireEvent.keyDown(allInboxes, { key: "ArrowDown" });
+    const primary = within(mailboxes).getAllByRole("link", { name: "Primary" })[0];
+    expect(primary).toHaveFocus();
+    expect(useUiStore.getState().mailbox).toEqual(categoryMailbox("a1", "CATEGORY_PERSONAL"));
+    fireEvent.keyDown(primary, { key: "ArrowDown" });
+    expect(useUiStore.getState().mailbox).toEqual(categoryMailbox("a1", "CATEGORY_SOCIAL"));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(primary).toHaveFocus();
+    expect(useUiStore.getState().mailbox).toEqual(categoryMailbox("a1", "CATEGORY_PERSONAL"));
+
+    // From an account header, Down lands on that account's first mailbox.
+    const header = screen.getByRole("button", { name: /a2@example\.com/ });
+    header.focus();
+    fireEvent.keyDown(header, { key: "ArrowDown" });
+    expect(useUiStore.getState().mailbox).toEqual(categoryMailbox("a2", "CATEGORY_PERSONAL"));
+
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(screen.getByRole("listbox"));
   });
 
   test("Left returns from an HTML email iframe and arrows resume at the open conversation", () => {

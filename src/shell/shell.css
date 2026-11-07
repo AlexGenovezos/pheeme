@@ -530,9 +530,19 @@ body[data-resizing] .shell__divider:active::after {
   overflow-y: auto;
   padding: var(--space-0) var(--space-1-5) var(--space-2);
 }
-/* The list is focused for its arrow keys; the open row's highlight already shows where they act. */
+/*
+ * The list is focused for its arrow keys. The ring goes on the open row, where they act; with nothing
+ * open, around the list. Without it, Left from an email looked like it did nothing.
+ */
 .list-pane__scroll:focus-visible {
   outline: none;
+}
+.list-pane__scroll:is(:focus-visible, [data-key-focus]:focus) .thread-row[data-selected],
+.list-pane__scroll:is(:focus-visible, [data-key-focus]:focus):not(
+    :has(.thread-row[data-selected])
+  ) {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-inset);
 }
 
 .list-pane__glyph {
@@ -566,7 +576,7 @@ body[data-resizing] .shell__divider:active::after {
 .view-pane__scroll:focus-visible {
   outline: none;
 }
-.view-pane__frame:has(> .view-pane__scroll:focus-visible)::after {
+.view-pane__frame:has(> .view-pane__scroll:is(:focus-visible, [data-key-focus]:focus))::after {
   content: "";
   position: absolute;
   z-index: 1;

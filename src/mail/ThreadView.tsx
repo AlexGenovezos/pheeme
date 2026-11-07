@@ -12,6 +12,7 @@ import { useUiStore } from "../store/uiStore";
 import { MessageCard } from "./MessageCard";
 import { ThreadLoading } from "./ThreadLoading";
 import { applyLabel, archive } from "./actions";
+import { focusFromKeyboard } from "../keyboard/focus";
 import { handleScrollKeyDown, handleScrollKeyUp, stopKeyScroll } from "./keyScroll";
 import { parseThreadKey, threadKey } from "./mailboxes";
 import "./mail.css";
@@ -146,7 +147,8 @@ export function ThreadView() {
       group: "Navigation",
       shortcut: "right",
       run: () => {
-        if (useUiStore.getState().openThread) scroller.current?.focus({ preventScroll: true });
+        if (useUiStore.getState().openThread)
+          focusFromKeyboard(scroller.current, { preventScroll: true });
       },
     },
   ]);
