@@ -80,6 +80,8 @@
   --label-dot-size: 6px;
   --sidebar-label-dot-size: 8px;
   --label-swatch-size: 20px;
+  /* The new-label dialog's swatches stretch to the dialog's width at this height. */
+  --label-swatch-wide-height: 24px;
   --label-chip-max-width: 160px;
   --label-chip-line-height: 16px;
   --label-picker-width: 280px;

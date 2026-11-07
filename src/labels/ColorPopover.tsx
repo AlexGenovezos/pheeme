@@ -42,10 +42,13 @@ const COLUMNS = 8;
 export function ColorGrid({
   value,
   onChoose,
+  wide = false,
 }: {
   /** The ticked background, or null for none. */
   value: string | null;
   onChoose(background: string): void;
+  /** Stretches the swatches across the container's width instead of fixed squares. */
+  wide?: boolean;
 }) {
   const checked = value ? LABEL_BACKGROUNDS.indexOf(value.toLowerCase()) : -1;
   const [focused, setFocused] = useState(Math.max(checked, 0));
@@ -86,7 +89,12 @@ export function ColorGrid({
   };
 
   return (
-    <div className="label-color__grid" role="radiogroup" aria-label="Colour" onKeyDown={onGridKey}>
+    <div
+      className={cx("label-color__grid", wide && "label-color__grid--wide")}
+      role="radiogroup"
+      aria-label="Colour"
+      onKeyDown={onGridKey}
+    >
       {LABEL_BACKGROUNDS.map((background, i) => {
         const on = i === checked;
         return (

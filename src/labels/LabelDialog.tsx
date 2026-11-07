@@ -25,6 +25,7 @@ import { useLabelStore } from "../store/labelStore";
 import { ColorGrid } from "./ColorPopover";
 import { type LabelDialogSpec, useLabelDialogStore } from "./dialogStore";
 import { editLabel } from "./edit";
+import { LabelChip } from "./LabelChip";
 import { labelColor } from "./palette";
 import "./labels.css";
 
@@ -32,6 +33,24 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const NO_LABELS: LabelInfo[] = [];
+
+/** A stand-in label so the dialog can preview the chip a new label will draw as. */
+function previewLabel(name: string, background: string | null): LabelInfo {
+  return {
+    id: "preview",
+    accountId: "",
+    name,
+    type: "user",
+    messagesTotal: 0,
+    messagesUnread: 0,
+    threadsTotal: 0,
+    threadsUnread: 0,
+    colorBackground: background,
+    colorText: background ? labelColor(background).text : null,
+    messageListVisibility: null,
+    labelListVisibility: null,
+  };
+}
 
 /** Why `name` (a full path) can't be a label name, or null. */
 function nameProblem(name: string): string | null {
@@ -246,15 +265,22 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
       </select>
       {spec.mode === "create" && (
         <>
-          <span className="label-dialog__field label-dialog__field--gap" aria-hidden="true">
-            Colour
-          </span>
-          <div className="label-dialog__colour">
-            <ColorGrid value={color} onChoose={setColor} />
-            <Button variant="ghost" size="sm" disabled={!color} onClick={() => setColor(null)}>
+          <div className="label-dialog__colour-head">
+            <span className="label-dialog__field" aria-hidden="true">
+              Colour
+            </span>
+            <LabelChip label={previewLabel(leaf.trim() || "Label", color)} />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="label-dialog__no-colour"
+              disabled={!color}
+              onClick={() => setColor(null)}
+            >
               No colour
             </Button>
           </div>
+          <ColorGrid value={color} onChoose={setColor} wide />
         </>
       )}
       <div className="label-dialog__actions">

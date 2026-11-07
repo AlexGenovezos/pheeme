@@ -113,6 +113,8 @@ test("create_with_colour: Gmail's grid, none by default", async () => {
   expect(screen.getByRole("radio", { name: "#43d692" })).toHaveFocus();
   expect(screen.getByRole("dialog", { name: "New label" })).toBeInTheDocument();
   type("Travel");
+  // A chip previews the label in the chosen colour.
+  expect(screen.getByTitle("Travel")).toHaveStyle({ backgroundColor: "#16a766" });
   fireEvent.click(screen.getByRole("button", { name: "Create" }));
   await flush();
   expect(callsOf("create_label")).toEqual([
