@@ -12,6 +12,7 @@ import { useUiStore } from "../store/uiStore";
 import { MessageCard } from "./MessageCard";
 import { ThreadLoading } from "./ThreadLoading";
 import { applyLabel, archive } from "./actions";
+import { handleScrollKeyDown, handleScrollKeyUp, stopKeyScroll } from "./keyScroll";
 import { parseThreadKey, threadKey } from "./mailboxes";
 import "./mail.css";
 
@@ -22,8 +23,6 @@ interface Expansion {
   open: ReadonlySet<string>;
 }
 
-/** How far one arrow press scrolls the reading pane, about two lines of body text. */
-const LINE_STEP = 40;
 /** A page press keeps this much of the old view on screen, so the reader doesn't lose their place. */
 const PAGE_FRACTION = 0.9;
 
@@ -35,11 +34,11 @@ function scrollFromKey(e: KeyboardEvent<HTMLDivElement>) {
   if (e.target !== e.currentTarget || e.defaultPrevented) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const pane = e.currentTarget;
+  // Arrows glide, including while held; the rest jump a page (or to an end), smoothly when pressed once.
+  if (handleScrollKeyDown(pane, e.nativeEvent)) return;
   const behavior = e.repeat ? "auto" : "smooth";
   const page = Math.round(pane.clientHeight * PAGE_FRACTION);
   const by = {
-    ArrowDown: LINE_STEP,
-    ArrowUp: -LINE_STEP,
     PageDown: page,
     PageUp: -page,
     " ": e.shiftKey ? -page : page,
@@ -154,6 +153,7 @@ export function ThreadView() {
 
   // A new conversation starts at the top.
   useEffect(() => {
+    if (scroller.current) stopKeyScroll(scroller.current);
     scroller.current?.scrollTo?.({ top: 0 });
   }, [openKey]);
 
@@ -197,6 +197,7 @@ export function ThreadView() {
         aria-label="Open conversation"
         tabIndex={-1}
         onKeyDown={scrollFromKey}
+        onKeyUp={(e) => handleScrollKeyUp(e.currentTarget, e.nativeEvent)}
       >
         {content}
         {mounted.map((key) => (

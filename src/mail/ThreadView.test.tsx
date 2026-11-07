@@ -621,10 +621,12 @@ describe("keyboard focus", () => {
       const event = fireEvent.keyDown(view, { key, ...extra });
       return event; // false when the default was prevented
     };
+    // Arrows glide by animating scrollTop themselves (keyScroll.test.ts), held or not.
     expect(press("ArrowDown")).toBe(false);
-    expect(scrollBy).toHaveBeenLastCalledWith({ top: 40, behavior: "smooth" });
-    press("ArrowUp", { repeat: true });
-    expect(scrollBy).toHaveBeenLastCalledWith({ top: -40, behavior: "auto" });
+    fireEvent.keyUp(view, { key: "ArrowDown" });
+    expect(press("ArrowUp", { repeat: true })).toBe(false);
+    fireEvent.keyUp(view, { key: "ArrowUp" });
+    expect(scrollBy).not.toHaveBeenCalled();
     press("PageDown");
     expect(scrollBy).toHaveBeenLastCalledWith({ top: 450, behavior: "smooth" });
     press(" ", { shiftKey: true });
