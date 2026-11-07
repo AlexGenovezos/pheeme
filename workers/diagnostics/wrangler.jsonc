@@ -1,0 +1,29 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "pheeme-diagnostics",
+  "account_id": "16ff14fb0430f18bc095f18a64b11c7e",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // Receives "Send diagnostics" uploads from the app. Setup: README.md.
+  "routes": [{ "pattern": "diagnostics.pheeme.email", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "r2_buckets": [{ "binding": "BUNDLES", "bucket_name": "pheeme-diagnostics" }],
+  // Per-IP burst limit. Counts are per Cloudflare location and approximate;
+  // the daily cap below is the exact backstop. period must be 10 or 60.
+  "ratelimits": [
+    {
+      "name": "PER_IP",
+      "namespace_id": "2001",
+      "simple": { "limit": 2, "period": 60 },
+    },
+  ],
+  // One Durable Object counts accepted uploads per UTC day (cap in handler.ts).
+  "durable_objects": {
+    "bindings": [{ "name": "DAILY_CAP", "class_name": "DailyCap" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DailyCap"] }],
+  // Notifications go only to this verified Email Routing destination.
+  "send_email": [{ "name": "NOTIFY", "destination_address": "ajg0360@gmail.com" }],
+}
