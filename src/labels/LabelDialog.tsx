@@ -46,7 +46,7 @@ function previewLabel(name: string, background: string | null): LabelInfo {
     threadsTotal: 0,
     threadsUnread: 0,
     colorBackground: background,
-    colorText: background ? labelColor(background).text : null,
+    colorText: null,
     messageListVisibility: null,
     labelListVisibility: null,
   };
@@ -219,6 +219,7 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
   };
 
   const verb = spec.mode === "edit" ? "Save" : "Create";
+  const previewName = (nested && parent ? `${parent}/` : "") + (leaf.trim() || "Label");
   const problem = gone ? "This label no longer exists." : error;
   return (
     <form className="label-dialog__form" onSubmit={submit} noValidate>
@@ -269,7 +270,9 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
             <span className="label-dialog__field" aria-hidden="true">
               Colour
             </span>
-            <LabelChip label={previewLabel(leaf.trim() || "Label", color)} />
+            <span aria-hidden="true">
+              <LabelChip label={previewLabel(previewName, color)} />
+            </span>
             <Button
               variant="ghost"
               size="sm"
