@@ -143,6 +143,8 @@ describe("Label as…", () => {
     expect(option("Clients/Acme")).toHaveAttribute("title", "Clients/Acme");
     type("CLIENTS");
     expect(optionNames()).toEqual(["Clients", "Clients/Acme", "Manage labels"]);
+    type("ents/ac");
+    expect(optionNames()).toEqual(["Clients/Acme", 'Create "ents/ac"…', "Manage labels"]);
   });
 
   test("lists labels as a tree by leaf name; a search match shows its dimmed parent path", async () => {

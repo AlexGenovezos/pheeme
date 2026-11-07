@@ -108,6 +108,10 @@ test("create_with_colour: Gmail's grid, none by default", async () => {
   expect(none).toBeDisabled();
 
   fireEvent.click(green);
+  // Arrow keys move between swatches without leaving the dialog.
+  fireEvent.keyDown(green, { key: "ArrowRight" });
+  expect(screen.getByRole("radio", { name: "#43d692" })).toHaveFocus();
+  expect(screen.getByRole("dialog", { name: "New label" })).toBeInTheDocument();
   type("Travel");
   fireEvent.click(screen.getByRole("button", { name: "Create" }));
   await flush();
