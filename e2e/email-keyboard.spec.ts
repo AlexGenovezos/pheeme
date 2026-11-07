@@ -103,3 +103,68 @@ test("Right focuses the open email so the arrows scroll it, and Left goes back",
   await page.keyboard.press("ArrowDown");
   await expect(list).not.toHaveAttribute("aria-activedescendant", secondId!);
 });
+
+test("holding an arrow glides the open email instead of jumping a step per key repeat", async ({
+  page,
+}) => {
+  const list = page.getByRole("listbox", { name: /conversations$/ });
+  const rows = list.getByRole("option");
+  await page.addInitScript(() => {
+    const win = window as unknown as { __PHEEME_PREVIEW_INVOKE__: PreviewInvoke };
+    win.__PHEEME_PREVIEW_INVOKE__ = async (cmd, args, next) => {
+      const result = await next(cmd, args);
+      if (cmd !== "get_thread") return result;
+      const detail = result as ThreadDetail;
+      const long = Array.from({ length: 400 }, (_, i) => `Line ${i}`).join("\n");
+      return {
+        ...detail,
+        messages: [
+          { ...detail.messages[detail.messages.length - 1], bodyHtml: null, bodyText: long },
+        ],
+      };
+    };
+  });
+  await page.goto("/");
+  await rows.nth(1).click();
+  const pane = page.getByRole("region", { name: "Open conversation" });
+  await expect(
+    pane.locator('.thread-view__retained[data-visible="true"]').getByText("Line 399"),
+  ).toBeAttached();
+  await page.keyboard.press("ArrowRight");
+  await expect(pane).toBeFocused();
+
+  // Record the pane's scroll position every frame while the key is held, with a key repeat every 33ms.
+  await pane.evaluate((el) => {
+    const win = window as unknown as { __tops: number[]; __recording: boolean };
+    win.__tops = [];
+    win.__recording = true;
+    const sample = () => {
+      win.__tops.push(el.scrollTop);
+      if (win.__recording) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await page.keyboard.down("ArrowDown");
+  for (let i = 0; i < 24; i++) {
+    await page.waitForTimeout(33);
+    await page.keyboard.down("ArrowDown"); // a repeat: the key is still down
+  }
+  await page.keyboard.up("ArrowDown");
+  await page.waitForTimeout(400);
+  const tops = await page.evaluate(() => {
+    const win = window as unknown as { __tops: number[]; __recording: boolean };
+    win.__recording = false;
+    return win.__tops;
+  });
+  const steps = tops.slice(1).map((top, i) => top - tops[i]);
+  // The frames from the first movement to the last.
+  const held = steps.slice(steps.findIndex((s) => s > 0));
+  while (held.length && held[held.length - 1] === 0) held.pop();
+  const end = tops[tops.length - 1];
+  console.log(`scrolled ${end}px over ${held.length} frames: ${held.join(",")}`);
+
+  expect(end).toBeGreaterThan(300);
+  // Smooth: it never goes backwards, and moves on nearly every frame rather than in bursts.
+  expect(steps.every((s) => s >= 0)).toBe(true);
+  expect(held.filter((s) => s === 0).length).toBeLessThanOrEqual(held.length / 10);
+});
