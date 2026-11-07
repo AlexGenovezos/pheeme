@@ -1,6 +1,7 @@
 /** Label create/edit/delete for browser preview, with the backend's checks and cascades (`src-tauri/src/labels.rs`). */
 
 import { emit } from "@tauri-apps/api/event";
+import { isAllowedColor } from "../labels/palette";
 import { type LabelInfo, SYNC_EVENTS, type SyncMessagesUpdated } from "../lib/tauri";
 import { fixtureUserLabels, type FixtureThread, SYSTEM_LABELS } from "./fixtures";
 
@@ -75,13 +76,12 @@ function cleanName(raw: unknown): string {
   return name;
 }
 
-/** Gmail only accepts its palette; Task 5's palette module isn't here yet, so check the shape. */
+/** Gmail only accepts colours from its palette, for the background and the text. */
 function colourOf(value: unknown): { background: string; text: string } | null {
   if (value == null) return null;
   const c = value as { background?: unknown; text?: unknown };
-  const hex = (v: unknown) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
-  if (!hex(c.background) || !hex(c.text))
-    throw invalid("Pick a colour from Gmail's label palette.");
+  const ok = (v: unknown) => typeof v === "string" && isAllowedColor(v);
+  if (!ok(c.background) || !ok(c.text)) throw invalid("Pick a colour from Gmail's label palette.");
   return { background: String(c.background), text: String(c.text) };
 }
 

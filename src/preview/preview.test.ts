@@ -443,13 +443,17 @@ describe("preview label CRUD", () => {
       message: 'A label named "receipts" already exists.',
     });
     expect(errorOf(() => create(handlers, "inbox")).code).toBe("invalid_input");
-    const badColour = () =>
-      handlers.create_label({
-        accountId: "acc-personal",
-        name: "Work",
-        color: { background: "red", text: "#ffffff" },
-      });
-    expect(errorOf(badColour).code).toBe("invalid_input");
+    // A well-formed hex Gmail's palette doesn't have is refused too, for either colour.
+    for (const color of [
+      { background: "red", text: "#ffffff" },
+      { background: "#123456", text: "#ffffff" },
+      { background: "#16a766", text: "#123456" },
+    ]) {
+      const badColour = () =>
+        handlers.create_label({ accountId: "acc-personal", name: "Work", color });
+      expect(errorOf(badColour).code, color.background).toBe("invalid_input");
+    }
+    expect(userNames(handlers)).not.toContain("Work");
 
     const label = handlers.create_label({
       accountId: "acc-personal",

@@ -3,7 +3,7 @@
 //! background backfill per account.
 
 use super::api::MailApi;
-use super::engine::{now_ms, BackfillProgress, SyncEngine, SyncError, WriteLock};
+use super::engine::{now_ms, BackfillProgress, LabelLock, SyncEngine, SyncError, WriteLock};
 use super::events::{SyncEvent, SyncEvents};
 use super::outbox;
 use crate::db::accounts;
@@ -34,6 +34,7 @@ pub type ApiFactory = Arc<dyn Fn(&str) -> Arc<dyn MailApi> + Send + Sync>;
 struct AccountSync {
     api: Arc<dyn MailApi>,
     write_lock: WriteLock,
+    label_lock: LabelLock,
     run_lock: tokio::sync::Mutex<()>,
     outbox_lock: tokio::sync::Mutex<()>,
     running: AtomicBool,
@@ -94,6 +95,7 @@ impl SyncManager {
                 Arc::new(AccountSync {
                     api: (self.api_for)(id),
                     write_lock: Default::default(),
+                    label_lock: Default::default(),
                     run_lock: Default::default(),
                     outbox_lock: Default::default(),
                     running: AtomicBool::new(false),
@@ -114,6 +116,7 @@ impl SyncManager {
             self.events.clone(),
             a.write_lock.clone(),
         )
+        .with_label_lock(a.label_lock.clone())
     }
 
     pub fn emit(&self, event: SyncEvent) {

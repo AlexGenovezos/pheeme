@@ -53,6 +53,8 @@ pub struct DeletePreviewDto {
     pub sublabels: Vec<String>,
 }
 
+/// Every change holds the account's [`crate::sync::engine::LabelLock`] from reading the cache
+/// through its cache write, so a label sync can't commit a snapshot from before it.
 pub struct LabelService {
     db: SqlitePool,
     sync: Arc<SyncManager>,
@@ -72,11 +74,12 @@ impl LabelService {
     ) -> Result<LabelDto, MailError> {
         let name = clean_name(name)?;
         let color = color.map(gmail_color).transpose()?;
+        let engine = self.sync.engine(account_id);
+        let _held = engine.label_lock.lock().await;
         let all = db_labels::get_labels(&self.db, account_id).await?;
         if is_taken(&all, &name, &[]) {
             return Err(duplicate(&name));
         }
-        let engine = self.sync.engine(account_id);
         let created = engine
             .api
             .create_label(&name, color)
@@ -97,6 +100,8 @@ impl LabelService {
         label_id: &str,
         edit: LabelEdit,
     ) -> Result<Vec<LabelDto>, MailError> {
+        let engine = self.sync.engine(account_id);
+        let held = engine.label_lock.lock().await;
         let (all, label) = self.user_label(account_id, label_id).await?;
         check_visibility(&edit.label_list_visibility, &LABEL_LIST_VISIBILITIES)?;
         check_visibility(&edit.message_list_visibility, &MESSAGE_LIST_VISIBILITIES)?;
@@ -111,7 +116,6 @@ impl LabelService {
             None => Vec::new(),
         };
         let new_name = renames.first().map(|r| r.new.clone());
-        let engine = self.sync.engine(account_id);
 
         let parent = if edit.clear_color {
             // Only a full replace (PUT) can remove a colour; start from Gmail's copy so
@@ -156,7 +160,7 @@ impl LabelService {
                 Ok(renamed) => done.push(to_db_label(account_id, &renamed)),
                 Err(e) => {
                     let left: Vec<&str> = renames[i..].iter().map(|r| r.old.as_str()).collect();
-                    return Err(self.cascade_failed(&engine, &done, &left, e).await);
+                    return Err(self.cascade_failed(&engine, &held, &done, &left, e).await);
                 }
             }
         }
@@ -173,11 +177,12 @@ impl LabelService {
     /// Delete a user label and its sublabels in Gmail, deepest first, dropping each from the
     /// cache (and its conversations) as soon as Gmail confirms it.
     pub async fn delete_label(&self, account_id: &str, label_id: &str) -> Result<(), MailError> {
+        let engine = self.sync.engine(account_id);
+        let _held = engine.label_lock.lock().await;
         let (all, label) = self.user_label(account_id, label_id).await?;
         let mut doomed = sublabels(&all, &label.name);
         doomed.sort_by(|a, b| depth(b).cmp(&depth(a)).then_with(|| b.name.cmp(&a.name)));
         doomed.push(&label);
-        let engine = self.sync.engine(account_id);
         for (i, target) in doomed.iter().enumerate() {
             match engine.api.delete_label(&target.id).await {
                 // Already gone in Gmail: drop it here too.
@@ -246,6 +251,7 @@ impl LabelService {
     async fn cascade_failed(
         &self,
         engine: &SyncEngine,
+        held: &tokio::sync::MutexGuard<'_, ()>,
         done: &[DbLabel],
         left: &[&str],
         error: GmailError,
@@ -253,7 +259,7 @@ impl LabelService {
         if let Err(e) = store(engine, done).await {
             tracing::warn!(error = %e, "couldn't cache the labels Gmail renamed");
         }
-        if let Err(e) = engine.sync_labels().await {
+        if let Err(e) = engine.refresh_labels(held).await {
             tracing::warn!(error = %e, "couldn't re-read labels after a failed rename");
         }
         self.labels_updated(&engine.account_id);
@@ -431,6 +437,7 @@ mod tests {
     struct Harness {
         _db: TestDb,
         pool: SqlitePool,
+        sync: Arc<SyncManager>,
         fake: Arc<FakeGmail>,
         events: Arc<RecordingEvents>,
         labels: LabelService,
@@ -452,7 +459,8 @@ mod tests {
         events.take();
         Harness {
             _db: db,
-            labels: LabelService::new(pool.clone(), sync),
+            labels: LabelService::new(pool.clone(), sync.clone()),
+            sync,
             pool,
             fake,
             events,
@@ -531,6 +539,36 @@ mod tests {
         assert_eq!(row.color_text.as_deref(), Some("#ffffff"));
         assert_eq!(in_gmail(&h.fake).await, cached(&h.pool).await);
         assert_eq!(h.events.names(), ["sync:labels_updated"]);
+    }
+
+    /// A label sync that read `labels.list` before a create mustn't commit after it and
+    /// purge the new label: the create waits for the sync, then writes.
+    #[tokio::test]
+    async fn create_survives_a_concurrent_label_sync() {
+        let h = setup(FakeGmail::new()).await;
+        let gate = h.fake.hold_get_labels();
+        let counted = h.fake.calls("get_label");
+        let sync = h.sync.clone();
+        let syncing = tokio::spawn(async move { sync.engine("a1").sync_labels().await });
+        // The sync has its (old) list and waits in the counter requests.
+        while h.fake.calls("get_label") == counted {
+            tokio::task::yield_now().await;
+        }
+        let labels = LabelService::new(h.pool.clone(), h.sync.clone());
+        let creating = tokio::spawn(async move { labels.create_label("a1", "Work", None).await });
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let raced_ahead = h.fake.calls("create_label");
+
+        gate.add_permits(1);
+        syncing.await.unwrap().unwrap();
+        let created = creating.await.unwrap().unwrap();
+
+        assert_eq!(cached(&h.pool).await, [(created.id, "Work".into())]);
+        assert_eq!(cached(&h.pool).await, in_gmail(&h.fake).await);
+        assert_eq!(raced_ahead, 0, "the create waits for the label sync");
     }
 
     #[tokio::test]

@@ -65,12 +65,22 @@ pub fn now_ms() -> i64 {
 /// backfill may still hold an older copy (tombstones), so backfill never resurrects them.
 pub type WriteLock = Arc<tokio::sync::Mutex<HashSet<String>>>;
 
+/// Label metadata changes of one account, serialized: [`SyncEngine::sync_labels`] holds it
+/// from `labels.list` through its commit, and every `LabelService` change holds it from
+/// reading the cache, through its Gmail calls, to its cache write, so a sync can't commit a
+/// label snapshot taken before a change that has since been cached.
+///
+/// Lock order: `label_lock` before `write_lock`; never take `label_lock` while holding
+/// `write_lock`.
+pub type LabelLock = Arc<tokio::sync::Mutex<()>>;
+
 pub struct SyncEngine {
     pub db: SqlitePool,
     pub api: Arc<dyn MailApi>,
     pub account_id: String,
     pub events: Arc<dyn SyncEvents>,
     pub write_lock: WriteLock,
+    pub label_lock: LabelLock,
 }
 
 /// What history says should happen to one message.
@@ -104,7 +114,14 @@ impl SyncEngine {
             account_id: account_id.into(),
             events,
             write_lock,
+            label_lock: Default::default(),
         }
+    }
+
+    /// Share the account's [`LabelLock`] (the manager does; a lone engine has its own).
+    pub fn with_label_lock(mut self, label_lock: LabelLock) -> Self {
+        self.label_lock = label_lock;
+        self
     }
 
     fn emit(&self, event: SyncEvent) {
@@ -670,6 +687,15 @@ impl SyncEngine {
 
     /// Labels, plus fresh counters for Inbox and the category tabs.
     pub(crate) async fn sync_labels(&self) -> Result<(), SyncError> {
+        let held = self.label_lock.lock().await;
+        self.refresh_labels(&held).await
+    }
+
+    /// [`Self::sync_labels`] for a caller that already holds `label_lock` (`held`).
+    pub(crate) async fn refresh_labels(
+        &self,
+        _held: &tokio::sync::MutexGuard<'_, ()>,
+    ) -> Result<(), SyncError> {
         let list = self.api.list_labels().await?;
         let mut counted = Vec::new();
         for id in std::iter::once("INBOX").chain(CATEGORY_LABELS) {
