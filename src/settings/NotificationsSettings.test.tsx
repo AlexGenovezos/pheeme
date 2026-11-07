@@ -101,3 +101,32 @@ test("answering in Settings dismisses a visible first-run prompt", async () => {
   fireEvent.click(await screen.findByRole("switch", { name: "Notifications for a@example.com" }));
   await waitFor(() => expect(useToastStore.getState().toasts).toEqual([]));
 });
+
+test("a blocked permission in Settings also dismisses the first-run prompt", async () => {
+  let asked = false;
+  mockIPC((command) => {
+    if (command === "desktop_settings")
+      return { ...snapshot, accounts: [{ ...snapshot.accounts[0], asked }] };
+    if (command === "set_account_notifications") {
+      asked = true;
+      throw { code: "desktop_settings", message: "Notifications are blocked." };
+    }
+  });
+  useAccountStore.setState({ accounts: [{ id: "a", email: "a@example.com" }] as never });
+  function Prompt() {
+    useNotificationPrompt();
+    return null;
+  }
+  render(
+    <>
+      <Prompt />
+      <NotificationsSettings />
+    </>,
+  );
+  await waitFor(() =>
+    expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Turn on notifications?"),
+  );
+  fireEvent.click(await screen.findByRole("switch", { name: "Notifications for a@example.com" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Notifications are blocked.");
+  await waitFor(() => expect(useToastStore.getState().toasts).toEqual([]));
+});

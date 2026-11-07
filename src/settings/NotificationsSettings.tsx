@@ -41,16 +41,20 @@ export function NotificationsSettings() {
   async function change(update: () => Promise<DesktopSettings>) {
     setBusy(true);
     setError(null);
+    let next: DesktopSettings | null = null;
     try {
-      const next = await update();
-      setSettings(next);
-      // Answering here makes a visible first-run prompt moot.
-      if (next.accounts.every((a) => a.asked)) resetNotificationPrompt();
+      next = await update();
     } catch (raw) {
       setError(toCommandError(raw).message);
+      // A refused change can still be saved as answered (blocked permission records "off").
+      next = await getDesktopSettings().catch(() => null);
     } finally {
       setBusy(false);
     }
+    if (!next) return;
+    setSettings(next);
+    // Answering here makes a visible first-run prompt moot.
+    if (next.accounts.every((a) => a.asked)) resetNotificationPrompt();
   }
 
   return (
