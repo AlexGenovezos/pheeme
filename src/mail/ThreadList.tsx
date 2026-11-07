@@ -13,6 +13,7 @@ import { ListRow } from "../components/ui/ListRow";
 import { Skeleton } from "../components/ui/Skeleton";
 import { type ContextMenuItem, openContextMenuFromEvent } from "../lib/contextMenu";
 import type { ThreadSummary } from "../lib/tauri";
+import { registry } from "../keyboard/registry";
 import { useCommands } from "../keyboard/useCommands";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
@@ -215,6 +216,10 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       moveSelection(e.key === "ArrowDown" ? 1 : -1);
+    } else if (e.key === "ArrowLeft" && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      // On to the mailboxes; handled here so the global Left (`list.focus`) doesn't keep focus in place.
+      e.preventDefault();
+      registry.run("sidebar.focus");
     } else if (e.key === "Enter") {
       e.preventDefault();
       openFocused();

@@ -56,7 +56,8 @@ import { composeNew } from "../mail/actions";
 import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
 import { type SyncFailure, useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
-import { useKeybinding } from "../keyboard/useCommands";
+import { registry } from "../keyboard/registry";
+import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import { useSettingsStore } from "../settings/settingsStore";
 import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
@@ -69,6 +70,53 @@ const sameMailbox = (a: MailboxRef, b: MailboxRef) =>
   a.accountId === b.accountId &&
   a.labelId === b.labelId &&
   (a.category ?? null) === (b.category ?? null);
+
+/** A mailbox or label row that opens something (synthetic label parents have no role). */
+const MAILBOX_ROW = '.sidebar__row[role="link"]';
+
+const plainKey = (e: KeyboardEvent) => !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+
+/** The first row after `from` (down) or the last one before it (up). */
+function nearest(rows: HTMLElement[], from: HTMLElement, down: boolean): HTMLElement | undefined {
+  const side = down ? Node.DOCUMENT_POSITION_FOLLOWING : Node.DOCUMENT_POSITION_PRECEDING;
+  const beyond = rows.filter((r) => from.compareDocumentPosition(r) & side);
+  return down ? beyond[0] : beyond[beyond.length - 1];
+}
+
+/**
+ * Arrow keys inside the mailbox list: Up/Down step to the next mailbox and open it, Right moves on to the
+ * conversation list. Left stops here, so it doesn't bounce back to the list (`list.focus`).
+ */
+function onMailboxKeyDown(e: KeyboardEvent<HTMLElement>) {
+  if (!plainKey(e) || !(e.target instanceof HTMLElement)) return;
+  if (e.key === "ArrowLeft") {
+    e.preventDefault();
+  } else if (e.key === "ArrowRight") {
+    e.preventDefault();
+    registry.run("list.focus");
+  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    const target = e.target;
+    const rows = Array.from(e.currentTarget.querySelectorAll<HTMLElement>(MAILBOX_ROW));
+    const down = e.key === "ArrowDown";
+    const at = rows.indexOf(target);
+    // From a header, ⋮ or fold button: the nearest row in that direction.
+    const next = at >= 0 ? rows[at + (down ? 1 : -1)] : nearest(rows, target, down);
+    e.preventDefault();
+    if (!next) return;
+    next.focus();
+    next.click();
+  }
+}
+
+/** Focus the open mailbox's row (or the first row when it isn't shown). False when there are none. */
+function focusOpenMailbox(): boolean {
+  const nav = document.querySelector<HTMLElement>(".sidebar__scroll");
+  const row =
+    nav?.querySelector<HTMLElement>(`${MAILBOX_ROW}[data-selected]`) ??
+    nav?.querySelector<HTMLElement>(MAILBOX_ROW);
+  row?.focus();
+  return Boolean(row);
+}
 
 function activateOnKey(e: KeyboardEvent, run: () => void) {
   if (e.key === "Enter" || e.key === " ") {
@@ -549,6 +597,16 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
       useUiStore.getState().setMailbox(home);
   }, [mailbox, accounts, labels]);
 
+  // Left from the conversation list lands here.
+  useCommands([
+    {
+      id: "sidebar.focus",
+      title: "Focus mailboxes",
+      group: "Navigation",
+      run: focusOpenMailbox,
+    },
+  ]);
+
   return (
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
@@ -575,7 +633,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
         </Button>
       </div>
 
-      <nav className="sidebar__scroll" aria-label="Mailboxes">
+      <nav className="sidebar__scroll" aria-label="Mailboxes" onKeyDown={onMailboxKeyDown}>
         <Section title="Inboxes">
           {single ? (
             <>
