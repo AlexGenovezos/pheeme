@@ -670,6 +670,7 @@ describe("labels", () => {
   const detail = (n: number, labelIds: string[]): ThreadDetail => ({
     thread: thread(n),
     messages: [{ id: `m${n}`, threadId: `t${n}`, labelIds } as MessageDetail],
+    bodyError: null,
   });
   const cache = (...details: ThreadDetail[]) =>
     useThreadStore.setState({

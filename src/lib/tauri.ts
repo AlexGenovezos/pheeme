@@ -135,6 +135,8 @@ export interface MessageDetail {
 export interface ThreadDetail {
   thread: ThreadSummary;
   messages: MessageDetail[];
+  /** Set when bodies were missing and fetching them failed: why, in words for the user (no URLs). */
+  bodyError: CommandError | null;
 }
 
 export interface LabelInfo {
@@ -169,8 +171,12 @@ export const listThreads = (
     keepRead?: [string, string][];
   },
 ) => invoke<ThreadPage>("list_threads", { ...query });
-export const getThread = (accountId: string, threadId: string) =>
-  invoke<ThreadDetail>("get_thread", { accountId, threadId });
+/**
+ * `opened` is a user-initiated open (not a prefetch): missing bodies are fetched ahead of background sync and
+ * `mail:thread_loading` reports what the fetch is waiting on.
+ */
+export const getThread = (accountId: string, threadId: string, opened = false) =>
+  invoke<ThreadDetail>("get_thread", { accountId, threadId, opened });
 export const listLabels = (accountId: string) => invoke<LabelInfo[]>("list_labels", { accountId });
 export const mailboxCounts = (accountIds: string[]) =>
   invoke<MailboxCount[]>("mailbox_counts", { accountIds });
@@ -340,6 +346,22 @@ export const SYNC_EVENTS = {
   outboxSendStatus: "outbox:send_status",
 } as const;
 
+/** Emitted while an opened thread's bodies are fetched from Gmail; cached opens emit nothing. */
+export const THREAD_LOADING_EVENT = "mail:thread_loading";
+
+export interface ThreadLoading {
+  accountId: string;
+  threadId: string;
+  /** `queued`: waiting for a request slot or quota. `done`: the bodies are stored, or fetching them failed. */
+  stage: "queued" | "fetching" | "retrying" | "done";
+  /** Retries so far (0 for the first retry), while `retrying`. */
+  attempt: number | null;
+  retryInMs: number | null;
+  reason: "rate_limited" | "network" | "server" | null;
+  /** The account's initial sync or backfill is running. */
+  syncBusy: boolean;
+}
+
 export interface SyncAccountEvent {
   accountId: string;
 }
@@ -366,3 +388,15 @@ export interface OutboxSendStatus extends SyncAccountEvent {
   opId: string;
   status: string;
 }
+
+// ── Support ──────────────────────────────────────────────────────────────────
+
+/**
+ * Upload a scrubbed diagnostics bundle with the user's note (sent as typed). Rejects with `rate_limited`,
+ * `network`, `rejected` or `too_large`.
+ */
+export const sendDiagnostics = (note: string, replyTo: string | null) =>
+  invoke<void>("send_diagnostics", { note, replyTo });
+/** Write the same bundle to `path` (chosen in a save dialog). */
+export const saveDiagnostics = (note: string, replyTo: string | null, path: string) =>
+  invoke<void>("save_diagnostics", { note, replyTo, path });

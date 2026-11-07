@@ -104,6 +104,63 @@
   text-wrap: balance;
 }
 
+/* An open still fetching from Gmail (ThreadLoading.tsx): a quiet line, centred like .pane-empty. */
+.thread-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-8);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-reading);
+  text-align: center;
+}
+
+/* Inside a message card, in place of its body. */
+.thread-loading--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  height: auto;
+  padding: var(--space-2) var(--space-4) var(--space-4);
+  text-align: start;
+}
+
+.thread-loading__text {
+  max-width: var(--menu-max-width);
+  text-wrap: balance;
+}
+
+.thread-loading__mark {
+  flex-shrink: 0;
+  width: var(--waiting-mark-size);
+  height: var(--waiting-mark-size);
+  border-radius: var(--radius-full);
+  background: var(--color-foreground-subtle);
+  animation: thread-loading-pulse var(--duration-pulse) ease-in-out infinite;
+}
+
+@keyframes thread-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread-loading__mark {
+    animation: none;
+  }
+}
+
 .thread-view {
   padding: var(--space-6) var(--space-8) var(--space-10);
 }

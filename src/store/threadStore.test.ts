@@ -1,7 +1,7 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { beforeEach, expect, test, vi } from "vitest";
-import type { ThreadDetail } from "../lib/tauri";
+import type { ThreadDetail, ThreadLoading } from "../lib/tauri";
 import { __resetThreadStoreForTests, DETAIL_CACHE_SIZE, useThreadStore } from "./threadStore";
 import { __resetUiStoreForTests, useUiStore } from "./uiStore";
 
@@ -20,6 +20,7 @@ const detail = (id: string, accountId = "a", subject = `Subject ${id}`): ThreadD
     messageCount: 1,
   },
   messages: [],
+  bodyError: null,
 });
 
 const store = () => useThreadStore.getState();
@@ -382,4 +383,79 @@ test("waitForDetail resolves on a failure, and at once for a cached detail", asy
   await store().load("a:t2");
   expect(await store().waitForDetail("a:t2")).toBe(true);
   expect(requests).toEqual(["a:missing", "a:t2"]);
+});
+
+test("an open asks Gmail as the user's request; a prefetch asks as background work", async () => {
+  const opened: unknown[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "get_thread") return undefined;
+    const { threadId } = args as { threadId: string };
+    opened.push([threadId, (args as { opened?: boolean }).opened]);
+    return detail(threadId);
+  });
+  await store().load("a:t1");
+  store().prefetch(["a:t2"]);
+  await vi.waitFor(() => expect(store().details.has("a:t2")).toBe(true));
+  expect(opened).toEqual([
+    ["t1", true],
+    ["t2", false],
+  ]);
+});
+
+test("mail:thread_loading tracks what an open is waiting on until the fetch settles", async () => {
+  let answer: (d: ThreadDetail) => void = () => {};
+  mockIPC(
+    (cmd) =>
+      cmd === "get_thread" ? new Promise<ThreadDetail>((resolve) => (answer = resolve)) : undefined,
+    { shouldMockEvents: true },
+  );
+  const stop = await store().subscribe();
+  const loading = store().load("a:t1");
+  const retrying: ThreadLoading = {
+    accountId: "a",
+    threadId: "t1",
+    stage: "retrying",
+    attempt: 0,
+    retryInMs: 8000,
+    reason: "rate_limited",
+    syncBusy: false,
+  };
+  await emit("mail:thread_loading", retrying);
+  await vi.waitFor(() => expect(store().loading["a:t1"]).toEqual(retrying));
+
+  answer(detail("t1"));
+  await loading;
+  expect(store().loading["a:t1"]).toBeUndefined();
+  stop();
+});
+
+test("a done stage clears the loading state, and a stage arriving after the fetch settled is ignored", async () => {
+  let answer: (d: ThreadDetail) => void = () => {};
+  mockIPC(
+    (cmd) =>
+      cmd === "get_thread" ? new Promise<ThreadDetail>((resolve) => (answer = resolve)) : undefined,
+    { shouldMockEvents: true },
+  );
+  const stop = await store().subscribe();
+  const loading = store().load("a:t1");
+  const base: ThreadLoading = {
+    accountId: "a",
+    threadId: "t1",
+    stage: "fetching",
+    attempt: null,
+    retryInMs: null,
+    reason: null,
+    syncBusy: true,
+  };
+  await emit("mail:thread_loading", base);
+  await vi.waitFor(() => expect(store().loading["a:t1"]?.stage).toBe("fetching"));
+  await emit("mail:thread_loading", { ...base, stage: "done" });
+  await vi.waitFor(() => expect(store().loading["a:t1"]).toBeUndefined());
+
+  answer(detail("t1"));
+  await loading;
+  await emit("mail:thread_loading", { ...base, stage: "retrying" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(store().loading["a:t1"]).toBeUndefined();
+  stop();
 });

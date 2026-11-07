@@ -9,7 +9,9 @@ import {
   SYNC_EVENTS,
   type SyncAccountEvent,
   type SyncMessagesUpdated,
+  THREAD_LOADING_EVENT,
   type ThreadDetail,
+  type ThreadLoading,
   toCommandError,
 } from "../lib/tauri";
 import { useUiStore } from "./uiStore";
@@ -32,6 +34,8 @@ interface ThreadState {
   details: Map<ThreadKey, ThreadDetail>;
   /** The last failure to load each thread. A thread that isn't there any more is `not_found`. */
   errors: Record<ThreadKey, CommandError>;
+  /** What an open still fetching from Gmail is waiting on (`mail:thread_loading`), until the fetch settles. */
+  loading: Record<ThreadKey, ThreadLoading>;
   /**
    * Make the detail available: complete cached details are just touched, a request already in flight is joined,
    * and a cached detail missing a body is shown while it is requested again.
@@ -57,7 +61,7 @@ interface ThreadState {
   evict(accountId: string, threadIds: string[]): void;
   /**
    * Evict on `sync:messages_updated` and refresh the open thread if it changed; on `sync:completed` re-request the
-   * open thread if it is missing a body. Resolves to the unsubscribe function.
+   * open thread if it is missing a body; track `mail:thread_loading`. Resolves to the unsubscribe function.
    */
   subscribe(signal?: AbortSignal): Promise<() => void>;
 }
@@ -68,13 +72,22 @@ const inflight = new Map<ThreadKey, { ticket: number; promise: Promise<void>; qu
 let tickets = 0;
 
 export const useThreadStore = create<ThreadState>((set, get) => {
+  const clearLoading = (key: ThreadKey) =>
+    set((s) => {
+      if (!(key in s.loading)) return {};
+      const loading = { ...s.loading };
+      delete loading[key];
+      return { loading };
+    });
+
   const fetchDetail = (key: ThreadKey, quiet = false): Promise<void> => {
     const ticket = ++tickets;
     const { accountId, threadId } = parseThreadKey(key);
     const current = () => inflight.get(key)?.ticket === ticket;
     const promise = (async () => {
       try {
-        const detail = await getThread(accountId, threadId);
+        // A prefetch is background work; anything else is someone waiting to read it.
+        const detail = await getThread(accountId, threadId, !quiet);
         if (!current()) return;
         set((s) => {
           const details = new Map(s.details);
@@ -99,6 +112,8 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         });
       } finally {
         if (current()) inflight.delete(key);
+        // A newer request for the key reports its own progress.
+        if (!inflight.has(key)) clearLoading(key);
       }
     })();
     inflight.set(key, { ticket, promise, quiet });
@@ -108,6 +123,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
   return {
     details: new Map(),
     errors: {},
+    loading: {},
     load: (key) => {
       const cached = get().details.get(key);
       if (cached && !isComplete(cached)) {
@@ -208,6 +224,13 @@ export const useThreadStore = create<ThreadState>((set, get) => {
               const cached = get().details.get(open);
               if (cached && !isComplete(cached)) void get().load(open);
             }),
+          () =>
+            listen<ThreadLoading>(THREAD_LOADING_EVENT, ({ payload }) => {
+              const key = threadKey(payload.accountId, payload.threadId);
+              // Events travel apart from the reply: one that lands after the fetch settled is stale.
+              if (payload.stage === "done" || !inflight.has(key)) clearLoading(key);
+              else set((s) => ({ loading: { ...s.loading, [key]: payload } }));
+            }),
         ],
         signal,
       ),
@@ -218,5 +241,5 @@ export const useThreadStore = create<ThreadState>((set, get) => {
 export function __resetThreadStoreForTests() {
   inflight.clear();
   pendingDetails = new Map();
-  useThreadStore.setState({ details: new Map(), errors: {} });
+  useThreadStore.setState({ details: new Map(), errors: {}, loading: {} });
 }

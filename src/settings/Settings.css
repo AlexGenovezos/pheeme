@@ -421,6 +421,71 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Settings › About › Diagnostics (DiagnosticsSection.tsx): an inline form under its row. */
+.settings-diagnostics {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  font-size: var(--font-size-md);
+}
+
+.settings-diagnostics__field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.settings-diagnostics__label {
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-diagnostics__note {
+  min-height: var(--control-height-lg);
+  padding: var(--space-1-5) var(--space-2);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+  color: var(--color-input-foreground);
+  font: inherit;
+  line-height: var(--line-height-normal);
+  resize: vertical;
+}
+.settings-diagnostics__note:focus-visible {
+  outline: none;
+  border-color: var(--color-focus-border);
+  box-shadow: 0 0 0 var(--border-width) var(--color-focus-border);
+}
+.settings-diagnostics__note::placeholder {
+  color: var(--color-input-placeholder);
+}
+
+.settings-diagnostics__sender {
+  color: var(--color-foreground-muted);
+  overflow-wrap: anywhere;
+}
+
+.settings-diagnostics__select {
+  max-width: 100%;
+  padding: var(--space-0-5) var(--space-1);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+  color: var(--color-input-foreground);
+}
+
+.settings-diagnostics__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.settings-diagnostics__status {
+  color: var(--color-foreground-muted);
+  overflow-wrap: anywhere;
+}
+.settings-diagnostics__status[data-failed] {
+  color: var(--color-danger);
+}
+
 /* What's new: each release's notes (src/settings/ReleaseNotes.tsx). */
 .release-notes {
   padding: var(--space-3) var(--space-4) var(--space-4);
