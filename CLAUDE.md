@@ -62,6 +62,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `sync/` | `engine.rs` initial/incremental (`history.list`)/expiry-reconcile/backfill; `outbox.rs` optimistic ops + safe sends; `manager.rs` per-account scheduling and triggers; `api.rs` the `MailApi` trait (`fake.rs` is the in-memory Gmail for tests) |
 | `render.rs` | Email HTML sanitizer (`ammonia`) and signed `pheeme-att` URLs for inline `cid:` images |
 | `mail.rs` | Tauri-free mail service the commands call: cached list/thread/label reads, changes via the outbox |
+| `labels.rs` | Tauri-free label service: create, rename/re-nest (cascading to sublabels), colour, visibility and delete (with sublabels), straight to Gmail's labels API (not the outbox), then written to the cache |
 | `compose/` | Tauri-free compose service: MIME building (`lettre`), Reply/Reply All/Forward templates, staged attachments, Gmail drafts, sends (with undo window) via the outbox |
 | `accounts.rs` | Tauri-free account service: sign-in flow, list/remove, access tokens (cached in memory) |
 | `identity.rs` | App identifier and keychain service constants |

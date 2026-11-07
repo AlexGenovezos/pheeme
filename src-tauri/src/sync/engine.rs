@@ -669,7 +669,7 @@ impl SyncEngine {
     }
 
     /// Labels, plus fresh counters for Inbox and the category tabs.
-    async fn sync_labels(&self) -> Result<(), SyncError> {
+    pub(crate) async fn sync_labels(&self) -> Result<(), SyncError> {
         let list = self.api.list_labels().await?;
         let mut counted = Vec::new();
         for id in std::iter::once("INBOX").chain(CATEGORY_LABELS) {

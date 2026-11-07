@@ -40,10 +40,20 @@ pub const MAX_PAGE: i64 = 500;
 pub enum MailError {
     #[error("That conversation isn't available any more.")]
     NotFound,
+    #[error("That label isn't available any more.")]
+    LabelNotFound,
     #[error("{0}")]
     Invalid(String),
     #[error(transparent)]
     Sync(#[from] SyncError),
+    /// Gmail made only part of a change (a label cascade stopped part-way); `message` names
+    /// what's left, `cause` is why it stopped.
+    #[error("{message}")]
+    Incomplete {
+        message: String,
+        #[source]
+        cause: SyncError,
+    },
 }
 
 impl From<anyhow::Error> for MailError {
@@ -55,9 +65,9 @@ impl From<anyhow::Error> for MailError {
 impl MailError {
     pub fn code(&self) -> &str {
         match self {
-            MailError::NotFound => "not_found",
+            MailError::NotFound | MailError::LabelNotFound => "not_found",
             MailError::Invalid(_) => "invalid_input",
-            MailError::Sync(e) => e.code(),
+            MailError::Sync(e) | MailError::Incomplete { cause: e, .. } => e.code(),
         }
     }
 }
@@ -241,6 +251,25 @@ pub struct LabelDto {
     pub color_text: Option<String>,
     pub message_list_visibility: Option<String>,
     pub label_list_visibility: Option<String>,
+}
+
+impl From<labels::DbLabel> for LabelDto {
+    fn from(l: labels::DbLabel) -> Self {
+        Self {
+            id: l.id,
+            account_id: l.account_id,
+            name: l.name,
+            label_type: l.label_type,
+            messages_total: l.messages_total,
+            messages_unread: l.messages_unread,
+            threads_total: l.threads_total,
+            threads_unread: l.threads_unread,
+            color_background: l.color_background,
+            color_text: l.color_text,
+            message_list_visibility: l.message_list_visibility,
+            label_list_visibility: l.label_list_visibility,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -473,20 +502,7 @@ impl MailService {
         Ok(labels::get_labels(&self.db, account_id)
             .await?
             .into_iter()
-            .map(|l| LabelDto {
-                id: l.id,
-                account_id: l.account_id,
-                name: l.name,
-                label_type: l.label_type,
-                messages_total: l.messages_total,
-                messages_unread: l.messages_unread,
-                threads_total: l.threads_total,
-                threads_unread: l.threads_unread,
-                color_background: l.color_background,
-                color_text: l.color_text,
-                message_list_visibility: l.message_list_visibility,
-                label_list_visibility: l.label_list_visibility,
-            })
+            .map(LabelDto::from)
             .collect())
     }
 
