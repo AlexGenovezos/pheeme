@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO messages (\n            id, account_id, thread_id, label_ids,\n            from_address, from_name, to_addresses, cc_addresses,\n            subject, snippet, body_html, body_text,\n            date, size_estimate, has_attachment, is_read, is_starred,\n            raw_headers, fully_fetched, rfc822_message_id, body_fetched_at\n        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,\n                  CASE WHEN ? = 1 THEN unixepoch() * 1000 END)\n        ON CONFLICT(id, account_id) DO UPDATE SET\n            thread_id = excluded.thread_id,\n            label_ids = excluded.label_ids,\n            from_address = excluded.from_address,\n            from_name = excluded.from_name,\n            to_addresses = excluded.to_addresses,\n            cc_addresses = excluded.cc_addresses,\n            subject = excluded.subject,\n            snippet = excluded.snippet,\n            body_html = CASE WHEN excluded.fully_fetched = 1 THEN excluded.body_html ELSE messages.body_html END,\n            body_text = CASE WHEN excluded.fully_fetched = 1 THEN excluded.body_text ELSE messages.body_text END,\n            date = excluded.date,\n            size_estimate = excluded.size_estimate,\n            has_attachment = excluded.has_attachment,\n            is_read = excluded.is_read,\n            is_starred = excluded.is_starred,\n            raw_headers = CASE WHEN excluded.fully_fetched = 1 THEN excluded.raw_headers ELSE messages.raw_headers END,\n            body_fetched_at = CASE WHEN excluded.fully_fetched = 1 THEN excluded.body_fetched_at ELSE messages.body_fetched_at END,\n            fully_fetched = MAX(excluded.fully_fetched, messages.fully_fetched),\n            rfc822_message_id = COALESCE(excluded.rfc822_message_id, messages.rfc822_message_id)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 21
+    },
+    "nullable": []
+  },
+  "hash": "05df37b37969be9e68e0d94a03be0c053c977682e45759cdacf3f66fd5096eb0"
+}
