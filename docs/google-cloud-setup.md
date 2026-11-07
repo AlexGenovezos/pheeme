@@ -2,10 +2,19 @@
 
 Pheeme reaches Gmail through a Google Cloud app that you own ("bring your own
 client"). Setup takes about 15 minutes, costs nothing, and you only do it once:
-other Google accounts can share the same app.
+other Google accounts can share the same app, and your other devices can copy it
+over.
 
-Pheeme walks you through these steps itself on first launch. This page mirrors
-that guide (`src/onboarding/steps.ts`); keep the two in step.
+This is what keeps Pheeme free and private:
+
+- **Completely free.** Google gives your own app Gmail access at no charge.
+  There's no Pheeme server to pay for, so no subscription.
+- **You own your data.** Mail goes straight from Google to your computer.
+  Nobody in between can read it, including us.
+
+Pheeme explains this on first launch, then walks you through these steps
+itself. This page mirrors that intro and guide (`src/onboarding/steps.ts`); keep
+the two in step.
 
 ## 1. Create a project
 

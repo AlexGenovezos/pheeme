@@ -1,18 +1,19 @@
+import { Lock, RefreshCw, Wallet } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { TextInput } from "../components/ui/TextInput";
 import { type AccountInfo, type ClientChoice, type CommandError, openExternal } from "../lib/tauri";
 import { parseClientJson } from "./clientJson";
 import { clearProgress, loadProgress, saveProgress } from "./progress";
-import { type GuideStep, STEPS, type StepId, stepById, stepIndex } from "./steps";
+import { type GuideStep, INTRO, STEPS, type StepId, stepById, stepIndex } from "./steps";
 import { BROWSER_PROBLEMS, isCredentialProblem, problemTitle } from "./troubleshooting";
 import { type SignInState, useSignIn } from "./useSignIn";
 import { ReceiveCredentials } from "../transfer/ReceiveCredentials";
 import "./onboarding.css";
 
-type View = StepId | "choose" | "error" | "done" | "receive" | "receiving";
+type View = StepId | "intro" | "choose" | "error" | "done" | "receive" | "receiving";
 
-type SetupView = StepId | "choose" | "receive";
+type SetupView = StepId | "intro" | "choose" | "receive";
 
 function currentView(state: SignInState, setup: SetupView): View {
   switch (state.phase) {
@@ -60,15 +61,8 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect }: Props)
   const connected = state.phase === "connected" ? state.account : null;
 
   useEffect(() => {
-    if (
-      firstRun &&
-      view !== "choose" &&
-      view !== "error" &&
-      view !== "done" &&
-      view !== "receive" &&
-      view !== "receiving"
-    ) {
-      saveProgress({ step: view, clientId });
+    if (firstRun && (view === "intro" || stepIndex(view as StepId) !== -1)) {
+      saveProgress({ step: view as StepId | "intro", clientId });
     }
   }, [firstRun, view, clientId]);
 
@@ -104,6 +98,20 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect }: Props)
     setView(step);
   }
 
+  function receive() {
+    cancel();
+    setGuide(false);
+    setView("receive");
+  }
+
+  if (view === "intro") {
+    return (
+      <div className="onboarding onboarding--single">
+        <Intro onStart={() => setView(STEPS[0].id)} onReceive={receive} />
+      </div>
+    );
+  }
+
   const showRail = guide && view !== "choose" && view !== "receive" && view !== "receiving";
 
   return (
@@ -118,7 +126,7 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect }: Props)
                 onBack={() => {
                   cancel();
                   setGuide(firstRun);
-                  setView(firstRun ? "welcome" : "choose");
+                  setView(firstRun ? "intro" : "choose");
                 }}
               />
               {error && <p role="alert">{error.message}</p>}
@@ -202,32 +210,23 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect }: Props)
                       onClick: () => choice && void startSignIn(choice),
                     }
                   : {
-                      label: view === "welcome" ? "Get started" : "Next",
+                      label: "Next",
                       onClick: () => setView(STEPS[stepIndex(view as StepId) + 1].id),
                     }
               }
               onBack={
-                view === "welcome"
-                  ? undefined
-                  : () =>
-                      setView(
-                        view === "unverified"
-                          ? "credentials"
-                          : STEPS[stepIndex(view as StepId) - 1].id,
-                      )
+                view === "unverified"
+                  ? () => setView("credentials")
+                  : view === STEPS[0].id
+                    ? firstRun
+                      ? () => setView("intro")
+                      : undefined
+                    : () => setView(STEPS[stepIndex(view as StepId) - 1].id)
               }
             />
           )}
-          {["welcome", "credentials", "choose"].includes(view) && !reconnect && (
-            <Button
-              variant="ghost"
-              size="lg"
-              onClick={() => {
-                cancel();
-                setGuide(false);
-                setView("receive");
-              }}
-            >
+          {["credentials", "choose"].includes(view) && !reconnect && (
+            <Button variant="ghost" size="lg" onClick={receive}>
               Receive from another device
             </Button>
           )}
@@ -239,6 +238,62 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect }: Props)
         )}
       </main>
     </div>
+  );
+}
+
+const INTRO_ICONS = [Wallet, Lock, RefreshCw];
+
+/** First-run welcome: why setup asks for your own Google Cloud app, before the guide starts. */
+function Intro({ onStart, onReceive }: { onStart: () => void; onReceive: () => void }) {
+  const icon = `${import.meta.env.BASE_URL}pheeme-icon.png`;
+  return (
+    <main className="intro">
+      <div className="intro__backdrop" aria-hidden>
+        <img src={icon} alt="" />
+      </div>
+      <div className="intro__art">
+        <img src={icon} alt="" />
+      </div>
+      <div className="intro__copy">
+        <p className="intro__eyebrow">{INTRO.eyebrow}</p>
+        <h1>{INTRO.title}</h1>
+        <p className="intro__lead">{INTRO.lead}</p>
+        <ul className="intro__points">
+          {INTRO.points.map((point, index) => {
+            const Icon = INTRO_ICONS[index];
+            return (
+              <li key={point.title}>
+                <span className="intro__icon" aria-hidden>
+                  <Icon />
+                </span>
+                <div>
+                  <strong>{point.title}</strong>
+                  <p>{point.body}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="button-row">
+          <Button variant="primary" size="lg" onClick={onStart}>
+            Set up my Google app
+          </Button>
+          <Button size="lg" onClick={onReceive}>
+            Receive from another device
+          </Button>
+        </div>
+        <p className="intro__fine">
+          Pheeme is open source under the MIT license.{" "}
+          <button
+            type="button"
+            className="link"
+            onClick={() => void openExternal(INTRO.guideUrl).catch(() => {})}
+          >
+            How this works
+          </button>
+        </p>
+      </div>
+    </main>
   );
 }
 
@@ -289,16 +344,9 @@ function GuidePage({
   primary: { label: string; onClick: () => void };
   onBack?: () => void;
 }) {
-  const numbered = step.id !== "welcome" && step.id !== "unverified";
+  const numbered = step.id !== "unverified";
   return (
     <>
-      {step.id === "welcome" && (
-        <img
-          className="onboarding-mark"
-          src={`${import.meta.env.BASE_URL}pheeme-mark.svg`}
-          alt=""
-        />
-      )}
       <h1>{step.title}</h1>
       {numbered ? (
         <ol className="guide-actions">

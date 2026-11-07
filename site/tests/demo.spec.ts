@@ -41,9 +41,9 @@ test("the website embeds the real app, including actions and lazy-loaded compose
 
 test("onboarding assets load from the app's subdirectory", async ({ page }) => {
   await page.goto("/demo/?accounts=0");
-  await expect(page.getByRole("heading", { name: "Connect Gmail with your own Google Cloud app" })).toBeVisible();
-  const mark = page.locator(".onboarding-mark");
-  await expect(mark).toHaveAttribute("src", "/demo/pheeme-mark.svg");
+  await expect(page.getByRole("heading", { name: "Free for good, and your mail stays yours." })).toBeVisible();
+  const mark = page.locator(".intro__art img");
+  await expect(mark).toHaveAttribute("src", "/demo/pheeme-icon.png");
   await expect.poll(() => mark.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
 });
 
