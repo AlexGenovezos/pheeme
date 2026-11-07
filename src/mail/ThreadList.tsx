@@ -62,7 +62,7 @@ export function ThreadList(props: ThreadListProps) {
   if (threads.length > 0)
     return (
       <Rows
-        key={`${mailbox.accountId}/${mailbox.labelId}/${mailbox.category}/${searchText}`}
+        key={`${mailbox.accountId}/${mailbox.labelId}/${mailbox.category}/${!!searchText}`}
         {...props}
       />
     );

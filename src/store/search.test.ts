@@ -90,6 +90,67 @@ test("typing searches locally on each edit but only sends the final query to Gma
   ]);
 });
 
+test("editing keeps the last search page until its replacement arrives without paging the old cursor", async () => {
+  const cached = deferred<SearchPage>();
+  const cursor = { lastMessageDate: 1, accountId: "a", threadId: "old" };
+  mockIPC((cmd, args) => {
+    if (cmd === "search_gmail") return remote();
+    return (args as { query: string }).query === "inv"
+      ? { ...local(row("old")), next: cursor }
+      : cached.promise;
+  });
+  const first = store().load(query("inv"));
+  await startGmail();
+  await first;
+
+  const edited = store().load(query("invoice"));
+  expect(keys()).toEqual(["a:old"]);
+  expect(store().loadedQuery).toEqual(query("inv"));
+  expect(store().next).toBeNull();
+  await store().loadMore();
+  cached.resolve(local(row("new")));
+  await startGmail();
+  await edited;
+  expect(keys()).toEqual(["a:new"]);
+  expect(store().loadedQuery).toEqual(query("invoice"));
+});
+
+test("a failed replacement search clears old matches before showing Gmail results", async () => {
+  mockIPC((cmd, args) => {
+    const old = (args as { query: string }).query === "inv";
+    if (cmd === "search_gmail") return old ? remote() : remote(row("new"));
+    if (old) return local(row("old"));
+    throw { code: "internal", message: "Cache unavailable" };
+  });
+  const first = store().load(query("inv"));
+  await startGmail();
+  await first;
+  const edited = store().load(query("invoice"));
+  await startGmail();
+  await edited;
+  expect(keys()).toEqual(["a:new"]);
+  expect(store().error?.message).toBe("Cache unavailable");
+});
+
+test("changing search accounts clears old matches while the new scope loads", async () => {
+  const cached = deferred<SearchPage>();
+  mockIPC((cmd, args) => {
+    if (cmd === "search_gmail") return remote();
+    return (args as { accountIds: string[] }).accountIds.includes("a")
+      ? local(row("old"))
+      : cached.promise;
+  });
+  const first = store().load(query());
+  await startGmail();
+  await first;
+  const scoped = store().load(query("invoice", ["b"]));
+  expect(keys()).toEqual([]);
+  cached.resolve(local(row("new", "b")));
+  await startGmail();
+  await scoped;
+  expect(keys()).toEqual(["b:new"]);
+});
+
 test("late responses cannot replace a newer query or a mailbox after leaving search", async () => {
   const cached = deferred<SearchPage>();
   const gmail = deferred<GmailSearchPage>();
