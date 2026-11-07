@@ -150,6 +150,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
 
   let recent: string[] = [];
   const notificationChoices = new Map<string, boolean>();
+  let gmailQuota = 6000;
   const desktopSettings = () => ({
     accounts: accounts.map((a) => ({
       accountId: a.id,
@@ -168,6 +169,11 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       return desktopSettings();
     },
     take_notification_target: () => null,
+    gmail_quota: () => gmailQuota,
+    set_gmail_quota: (args) => {
+      gmailQuota = Math.min(1_200_000, Math.max(600, Number(args?.perMinute) || 6000));
+      return gmailQuota;
+    },
     list_labels: (args) => labelsFor(String(args?.accountId)),
     list_threads: (args): ThreadPage => ({
       threads: threadsIn(

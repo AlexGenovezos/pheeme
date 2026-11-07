@@ -101,6 +101,8 @@
   --settings-content-width: 680px;
   --settings-backdrop-blur: 6px;
   --settings-recorder-min-width: 120px;
+  /* A numeric settings field, e.g. the Gmail API limit ("1,200,000 / min"). */
+  --settings-number-width: 140px;
   --chord-hint-offset: 12px;
   /* Compose panels, docked to the bottom of the window. */
   --compose-width: 560px;

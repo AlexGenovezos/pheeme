@@ -49,6 +49,12 @@ export const removeAccount = (accountId: string) => invoke<void>("remove_account
 /** Opens an allow-listed https URL (Google, Pheeme) in the default browser. */
 export const openExternal = (url: string) => invoke<void>("open_external", { url });
 
+/** Gmail's per-user limit (quota units per minute) that sync paces itself by. */
+export const getGmailQuota = () => invoke<number>("gmail_quota");
+/** Change the Gmail limit; returns the stored value (out-of-range values are clamped). */
+export const setGmailQuota = (perMinute: number) =>
+  invoke<number>("set_gmail_quota", { perMinute });
+
 // ── Mail (Phase 4 sync engine) ───────────────────────────────────────────────
 
 export interface ThreadCursor {

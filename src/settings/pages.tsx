@@ -1,6 +1,6 @@
 import { NotificationsSettings } from "./NotificationsSettings";
 import { ModsSettings } from "../mods/ModsSettings";
-import { Bell, Info, Keyboard, Palette, Puzzle, SquarePen, Users } from "lucide-react";
+import { Bell, Info, Keyboard, Palette, Puzzle, RefreshCw, SquarePen, Users } from "lucide-react";
 import {
   UNDO_SEND_CHOICES,
   type UndoSendSeconds,
@@ -13,6 +13,7 @@ import { useUiStore } from "../store/uiStore";
 import { THEME_MODES, type ThemeMode, useThemeStore } from "../theme/theme";
 import { AboutSettings } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
+import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
 import { READING_SIZES, type ReadingSize, useReadingSettings } from "./readingSettings";
 import type { SettingsPageDef } from "./schema";
@@ -165,6 +166,28 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             description: "How long a sent message waits, so you can take it back.",
             keywords: ["delay", "cancel", "unsend"],
             Control: UndoSendControl,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "sync",
+    title: "Sync",
+    icon: RefreshCw,
+    group: "Mail",
+    keywords: ["gmail", "api", "quota", "rate limit", "speed", "google cloud"],
+    sections: [
+      {
+        title: "Gmail API",
+        settings: [
+          {
+            id: "sync.gmailQuota",
+            title: "Gmail API limit",
+            description:
+              "Units per minute per user, as shown under Google Cloud Console › Gmail API › Quotas. If you raise it there, enter the new limit here. Pheeme uses up to 80% of it and downloads older mail with at most 40%, so new mail and sending stay quick.",
+            keywords: ["throttle", "rate limited", "units per minute", "slow"],
+            Control: GmailQuotaControl,
           },
         ],
       },
