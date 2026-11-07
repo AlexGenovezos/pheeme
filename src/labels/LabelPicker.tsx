@@ -83,6 +83,9 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [creating, setCreating] = useState(false);
+  // Labels whose tick is still on its way to Gmail; the ref guards synchronously, the state draws the row.
+  const inFlight = useRef(new Set<string>());
+  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
   const [pos, setPos] = useState(at);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -138,14 +141,19 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
 
   /**
    * Ticks `labelId` to `next` now and applies it to the conversations the picker opened for, even those its own
-   * changes have since taken out of the list. A refusal puts the tick back, unless another tick has replaced it.
+   * changes have since taken out of the list. One tick per label at a time: the row is disabled until Gmail's queue
+   * answers, so a refusal can put back exactly the state before it.
    */
   const setTick = (labelId: string, next: Membership, add: boolean) => {
+    if (inFlight.current.has(labelId)) return;
+    inFlight.current.add(labelId);
+    setBusy(new Set(inFlight.current));
     const previous = membership.get(labelId) ?? "none";
     setMembership((m) => new Map(m).set(labelId, next));
     void applyLabel(accountId, labelId, add, keys, { evenIfGone: true }).then((ok) => {
-      if (!ok)
-        setMembership((m) => (m.get(labelId) === next ? new Map(m).set(labelId, previous) : m));
+      inFlight.current.delete(labelId);
+      setBusy(new Set(inFlight.current));
+      if (!ok) setMembership((m) => new Map(m).set(labelId, previous));
     });
   };
 
@@ -246,7 +254,11 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
         role="option"
         aria-selected={i === active}
         aria-checked={state ? tick(state) : undefined}
-        aria-disabled={(option.kind === "create" && creating) || undefined}
+        aria-disabled={
+          (option.kind === "create" && creating) ||
+          (option.kind === "label" && busy.has(option.label.id)) ||
+          undefined
+        }
         data-index={i}
         title={option.kind === "label" ? option.label.name : undefined}
         className={cx("label-picker__option", option.kind === "manage" && "label-picker__footer")}

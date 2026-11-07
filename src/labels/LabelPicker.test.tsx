@@ -298,6 +298,57 @@ describe("after a click", () => {
     expect(option("Receipts")).toHaveAttribute("aria-checked", "true");
   });
 
+  test("a second click while the first tick is pending is ignored, so two refusals leave it unticked", async () => {
+    const releases: Array<() => void> = [];
+    // A refusal reloads the labels from the backend, which still has them.
+    const labels = useLabelStore.getState().labels.a1;
+    useAccountStore.setState({
+      accounts: [
+        { id: "a1", email: "a@example.com", displayName: null, clientId: "c", synced: true },
+      ],
+    });
+    let refuse = true;
+    mockIPC(
+      (cmd, args) => {
+        const a = (args ?? {}) as Record<string, unknown>;
+        calls.push({ cmd, args: a });
+        if (cmd === "list_labels") return labels;
+        if (cmd === "list_threads") return { threads: useMailStore.getState().threads, next: null };
+        if (cmd !== "modify_threads") return undefined;
+        return new Promise<void>((resolve, reject) =>
+          releases.push(() =>
+            refuse ? reject({ code: "gmail", message: "Gmail refused" }) : resolve(),
+          ),
+        );
+      },
+      { shouldMockEvents: true },
+    );
+    await openForBoth();
+    realClick(option("Clients"));
+    realClick(option("Clients"));
+    await flush();
+    expect(option("Clients")).toHaveAttribute("aria-checked", "true");
+    expect(option("Clients")).toHaveAttribute("aria-disabled", "true");
+    expect(modifyCalls()).toHaveLength(1);
+
+    releases.forEach((release) => release());
+    await flush();
+    expect(option("Clients")).toHaveAttribute("aria-checked", "false");
+    expect(option("Clients")).not.toHaveAttribute("aria-disabled");
+
+    // Once it has settled the row works again, and ticking it sends the add again.
+    refuse = false;
+    realClick(option("Clients"));
+    await flush();
+    releases.slice(1).forEach((release) => release());
+    await flush();
+    expect(modifyCalls().map((c) => [c.add, c.remove])).toEqual([
+      [["Label_1"], []],
+      [["Label_1"], []],
+    ]);
+    expect(option("Clients")).toHaveAttribute("aria-checked", "true");
+  });
+
   test("unticking the label being viewed takes the rows out, and later ticks still reach them", async () => {
     useLabelStore.setState((s) => ({ labels: { a1: [...s.labels.a1, label("Label_4", "Work")] } }));
     useThreadStore.setState({
