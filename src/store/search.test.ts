@@ -262,7 +262,7 @@ test("Gmail-only syntax works, and sync reload retains those hits without anothe
   expect(gmailCalls).toBe(1);
 });
 
-test("a local failure doesn't prevent Gmail results from being shown", async () => {
+test("a local failure doesn't prevent Gmail results from being shown or retained on reload", async () => {
   mockIPC((cmd) => {
     if (cmd === "search_messages") throw { code: "internal", message: "Cache unavailable" };
     return remote(row("gmail"));
@@ -272,6 +272,8 @@ test("a local failure doesn't prevent Gmail results from being shown", async () 
   await loading;
   expect(keys()).toEqual(["a:gmail"]);
   expect(store().error?.message).toBe("Cache unavailable");
+  await store().reload();
+  expect(keys()).toEqual(["a:gmail"]);
 });
 
 test("optimistic flags and removals survive late Gmail results and local reloads", async () => {

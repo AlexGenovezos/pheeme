@@ -251,7 +251,7 @@ export const useMailStore = create<MailState>((set, get) => {
     } catch (error) {
       if (ticket === latest && version === localVersion)
         set({
-          ...(!sameQuery(get().loadedQuery, query)
+          ...(get().loadedQuery && !sameQuery(get().loadedQuery, query)
             ? { threads: [], next: null, loadedQuery: null }
             : {}),
           loading: false,
