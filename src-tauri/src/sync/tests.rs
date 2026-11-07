@@ -1204,3 +1204,120 @@ async fn sync_purges_labels_deleted_in_gmail_and_announces_the_threads() {
         .is_none());
     assert!(h.events.names().contains(&"sync:messages_updated"));
 }
+
+/// `get_label` calls one `sync_labels` makes.
+async fn gets_during_label_sync(h: &H) -> usize {
+    let before = h.fake.calls("get_label");
+    h.engine.sync_labels().await.unwrap();
+    h.fake.calls("get_label") - before
+}
+
+async fn cached_color(h: &H, id: &str) -> Option<String> {
+    labels::get_label(&h.pool, ACCT, id)
+        .await
+        .unwrap()
+        .unwrap()
+        .color_background
+}
+
+/// The `get_label` calls a label sync makes for system labels alone.
+async fn system_gets(h: &H) -> usize {
+    gets_during_label_sync(h).await
+}
+
+fn clocked_harness_engine(h: &mut H) -> Arc<std::sync::Mutex<std::time::Instant>> {
+    let clock = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+    let c = clock.clone();
+    h.engine.colors = Arc::new(super::engine::ColorSync::with_clock(move || {
+        *c.lock().unwrap()
+    }));
+    clock
+}
+
+#[tokio::test]
+async fn colors_survive_when_list_omits_them() {
+    let h = harness().await;
+    let base = system_gets(&h).await;
+    h.fake
+        .add_user_label("Label_1", "work", Some(("#ffffff", "#16a766")));
+    h.fake
+        .add_user_label("Label_2", "home", Some(("#ffffff", "#4986e7")));
+    h.fake.set_list_omits_color(true);
+    assert_eq!(gets_during_label_sync(&h).await, base + 2);
+    assert_eq!(
+        cached_color(&h, "Label_1").await.as_deref(),
+        Some("#16a766")
+    );
+    assert_eq!(gets_during_label_sync(&h).await, base);
+    assert_eq!(
+        cached_color(&h, "Label_1").await.as_deref(),
+        Some("#16a766")
+    );
+    assert_eq!(
+        cached_color(&h, "Label_2").await.as_deref(),
+        Some("#4986e7")
+    );
+}
+
+#[tokio::test]
+async fn colors_refetched_after_label_set_changes() {
+    let h = harness().await;
+    let base = system_gets(&h).await;
+    h.fake
+        .add_user_label("Label_1", "work", Some(("#ffffff", "#16a766")));
+    h.fake.set_list_omits_color(true);
+    assert_eq!(gets_during_label_sync(&h).await, base + 1);
+    assert_eq!(gets_during_label_sync(&h).await, base);
+    // A new label.
+    h.fake
+        .add_user_label("Label_2", "home", Some(("#ffffff", "#4986e7")));
+    assert_eq!(gets_during_label_sync(&h).await, base + 2);
+    assert_eq!(
+        cached_color(&h, "Label_2").await.as_deref(),
+        Some("#4986e7")
+    );
+    assert_eq!(gets_during_label_sync(&h).await, base);
+    // A rename (same ids).
+    h.fake
+        .add_user_label("Label_2", "house", Some(("#ffffff", "#ff7537")));
+    assert_eq!(gets_during_label_sync(&h).await, base + 2);
+    assert_eq!(
+        cached_color(&h, "Label_2").await.as_deref(),
+        Some("#ff7537")
+    );
+}
+
+#[tokio::test]
+async fn colors_refetched_after_15_minutes() {
+    let mut h = harness().await;
+    let clock = clocked_harness_engine(&mut h);
+    let base = system_gets(&h).await;
+    h.fake
+        .add_user_label("Label_1", "work", Some(("#ffffff", "#16a766")));
+    h.fake.set_list_omits_color(true);
+    assert_eq!(gets_during_label_sync(&h).await, base + 1);
+    *clock.lock().unwrap() += std::time::Duration::from_secs(14 * 60);
+    assert_eq!(gets_during_label_sync(&h).await, base);
+    *clock.lock().unwrap() += std::time::Duration::from_secs(60);
+    assert_eq!(gets_during_label_sync(&h).await, base + 1);
+    assert_eq!(
+        cached_color(&h, "Label_1").await.as_deref(),
+        Some("#16a766")
+    );
+}
+
+#[tokio::test]
+async fn list_with_colors_skips_get() {
+    let h = harness().await;
+    let base = system_gets(&h).await;
+    h.fake
+        .add_user_label("Label_1", "work", Some(("#ffffff", "#16a766")));
+    h.fake.add_user_label("Label_2", "home", None);
+    assert_eq!(gets_during_label_sync(&h).await, base);
+    assert_eq!(gets_during_label_sync(&h).await, base);
+    assert_eq!(
+        cached_color(&h, "Label_1").await.as_deref(),
+        Some("#16a766")
+    );
+    assert_eq!(cached_color(&h, "Label_2").await, None);
+}
