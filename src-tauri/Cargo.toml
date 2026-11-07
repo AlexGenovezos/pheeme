@@ -28,7 +28,7 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "rustls-tls"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "migrate"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 base64 = "0.22"
@@ -58,6 +58,9 @@ snow = "0.10"
 if-addrs = "0.13"
 zeroize = "1"
 rquickjs = "0.14"
+regex = "1"
+# Diagnostics bundles: deflate only (flate2's Rust backend, as file-rotate already uses).
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 # Valgrind only runs on Linux. Optional so that plain builds don't need libclang.
 [target.'cfg(target_os = "linux")'.dependencies]

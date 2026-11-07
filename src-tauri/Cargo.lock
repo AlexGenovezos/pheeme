@@ -3588,6 +3588,7 @@ dependencies = [
  "open",
  "percent-encoding",
  "rand 0.8.5",
+ "regex",
  "reqwest 0.12.28",
  "rquickjs",
  "security-framework 3.7.0",
@@ -3615,6 +3616,7 @@ dependencies = [
  "wiremock",
  "zbus 5.14.0",
  "zeroize",
+ "zip",
 ]
 
 [[package]]
@@ -4221,6 +4223,7 @@ dependencies = [
  "bytes",
  "encoding_rs",
  "futures-core",
+ "futures-util",
  "h2",
  "http",
  "http-body",
@@ -4232,6 +4235,7 @@ dependencies = [
  "js-sys",
  "log",
  "mime",
+ "mime_guess",
  "native-tls",
  "percent-encoding",
  "pin-project-lite",
@@ -7916,6 +7920,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "711e8c9646791c49b7eb799a19c4ae70a9b8372ddc6a1fa4778defd1e2aa5d5e"
 dependencies = [
  "crc32fast",
+ "flate2",
  "indexmap 2.13.0",
  "memchr",
  "typed-path",

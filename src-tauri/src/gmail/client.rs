@@ -540,6 +540,8 @@ impl GmailClient {
             let (status, retry_after, body) = match response {
                 Ok(parts) => parts,
                 Err(e) => {
+                    // The URL can carry a search (`q=from:bob@x.com`); keep it out of logs and errors.
+                    let e = e.without_url();
                     if let Some(p) = &probe {
                         p.failed(None, Some("network"));
                     }
@@ -1078,6 +1080,26 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, GmailError::Offline(_)), "{err:?}");
         assert_eq!(err.code(), "network");
+    }
+
+    #[tokio::test]
+    async fn reqwest_errors_are_logged_without_urls() {
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let client = GmailClient::new(Arc::new(CountingTokens::default()))
+            .with_base_url(format!("http://127.0.0.1:{port}"))
+            .with_retry_policy(fast_retry());
+
+        let err = client
+            .send_json::<Value>(ApiRequest::get(&["x"]).query("q", "secret"))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, GmailError::Offline(_)), "{err:?}");
+        assert!(!err.to_string().contains("secret"), "{err}");
+        assert!(!format!("{err:?}").contains("secret"), "{err:?}");
     }
 
     #[tokio::test]

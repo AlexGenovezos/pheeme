@@ -14,6 +14,7 @@ pub mod mods;
 pub mod render;
 pub mod search;
 pub mod secrets;
+pub mod support;
 pub mod sync;
 mod text;
 pub mod transfer;
@@ -21,7 +22,7 @@ pub mod transfer;
 use anyhow::Context;
 use secrets::SecretStore;
 use sqlx::SqlitePool;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use sync::manager::SyncManager;
 use sync::{SyncEvent, SyncEvents};
@@ -37,6 +38,8 @@ pub struct AppState {
     pub transfers: transfer::TransferService,
     /// The Gmail per-user limit every account's client paces itself by (Settings › Sync).
     pub gmail_quota: gmail::QuotaSetting,
+    /// Where the logs are written (for Send diagnostics); `None` when there is no log dir.
+    pub log_dir: Option<PathBuf>,
 }
 
 /// Build application state: open the database in `data_dir` (attachment bytes are cached
@@ -80,6 +83,7 @@ pub async fn build_state(
         sync,
         transfers: transfer::TransferService::default(),
         gmail_quota,
+        log_dir: None,
     })
 }
 
@@ -176,7 +180,7 @@ pub fn run() {
                 version = env!("CARGO_PKG_VERSION"),
                 os = std::env::consts::OS,
                 arch = std::env::consts::ARCH,
-                directory = ?log_path,
+                directory = ?log_path.as_deref().map(support::scrub::display_path),
                 "Pheeme starting"
             );
             #[cfg(desktop)]
@@ -186,16 +190,20 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             let cache_dir = app.path().app_cache_dir()?;
 
-            info!("App data directory: {}", data_dir.display());
+            info!(
+                "App data directory: {}",
+                support::scrub::display_path(&data_dir)
+            );
 
             // Block until the database is ready so commands never run without state.
             let events = Arc::new(TauriEvents(app.handle().clone()));
-            let state = tauri::async_runtime::block_on(build_state(
+            let mut state = tauri::async_runtime::block_on(build_state(
                 &data_dir,
                 &cache_dir,
                 Arc::new(secrets::KeyringStore::new()),
                 events,
             ))?;
+            state.log_dir = log_path;
             let sync = state.sync.clone();
             app.manage(state);
             desktop::install(app.handle());
@@ -316,6 +324,8 @@ pub fn run() {
             commands::compose::delete_draft,
             commands::compose::send_email,
             commands::compose::cancel_send,
+            commands::support::send_diagnostics,
+            commands::support::save_diagnostics,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
