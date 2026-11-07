@@ -21,6 +21,7 @@ import {
 import { describeShortcut } from "../keyboard/format";
 import { type Command, registry } from "../keyboard/registry";
 import { useCommandList } from "../keyboard/useCommands";
+import { KeyboardMap } from "./KeyboardMap";
 import { SettingsRow, SettingsSection } from "./rows";
 import { matchesQuery } from "./schema";
 
@@ -63,6 +64,8 @@ export function KeyboardSettings({ query }: { query: string }) {
   const commands = useCommandList();
   const overrides = useOverrides();
   const [filter, setFilter] = useState(query);
+  /** Commands picked on the keyboard map; while set, the list shows only these. */
+  const [picked, setPicked] = useState<{ ids: string[]; label: string } | null>(null);
   const [recording, setRecording] = useState<string | null>(null);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   // A new search in the dialog's search box replaces this page's filter.
@@ -70,17 +73,19 @@ export function KeyboardSettings({ query }: { query: string }) {
   if (query !== seenQuery) {
     setSeenQuery(query);
     setFilter(query);
+    setPicked(null);
   }
 
   const groups = useMemo(() => {
     const byGroup = new Map<string, Command[]>();
     for (const c of commands) {
-      if (filter.trim() && !commandMatches(c, filter)) continue;
+      if (picked ? !picked.ids.includes(c.id) : filter.trim() && !commandMatches(c, filter))
+        continue;
       const group = c.group ?? "Other";
       byGroup.set(group, [...(byGroup.get(group) ?? []), c]);
     }
     return [...byGroup];
-  }, [commands, filter]);
+  }, [commands, filter, picked]);
 
   const commit = (id: string, shortcut: string) => {
     setRecording(null);
@@ -99,15 +104,37 @@ export function KeyboardSettings({ query }: { query: string }) {
 
   return (
     <div className="settings-keyboard">
-      <input
-        className="settings-filter"
-        type="search"
-        aria-label="Filter shortcuts"
-        placeholder="Filter by command or key"
-        spellCheck={false}
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
+      <KeyboardMap
+        commands={commands}
+        onPick={(list) =>
+          setPicked({
+            ids: list.map((c) => c.id),
+            label: describeShortcut(list[0].shortcut!),
+          })
+        }
       />
+      <div className="kbmap-filter">
+        <input
+          className="settings-filter"
+          type="search"
+          aria-label="Filter shortcuts"
+          placeholder="Filter by command or key"
+          spellCheck={false}
+          value={filter}
+          onChange={(e) => {
+            setPicked(null);
+            setFilter(e.target.value);
+          }}
+        />
+        {picked && (
+          <p className="kbmap-picked">
+            <span>Showing {picked.label}</span>
+            <Button size="sm" variant="ghost" onClick={() => setPicked(null)}>
+              Show all
+            </Button>
+          </p>
+        )}
+      </div>
       {groups.length === 0 && <p className="settings-empty">No commands match “{filter.trim()}”</p>}
       {groups.map(([group, list]) => (
         <SettingsSection key={group} title={group}>

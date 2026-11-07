@@ -5,6 +5,8 @@ import "./SegmentedControl.css";
 export interface Segment<T extends string> {
   value: T;
   label: string;
+  /** A muted number after the label, e.g. how many items the choice shows. */
+  count?: number;
 }
 
 /**
@@ -55,6 +57,12 @@ export function SegmentedControl<T extends string>({
           onClick={() => onChange(o.value)}
         >
           {o.label}
+          {o.count !== undefined && (
+            <>
+              {" "}
+              <span className="ui-segmented__count">{o.count}</span>
+            </>
+          )}
         </button>
       ))}
     </div>

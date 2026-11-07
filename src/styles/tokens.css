@@ -111,6 +111,9 @@
   --settings-content-width: 680px;
   --settings-backdrop-blur: 6px;
   --settings-recorder-min-width: 120px;
+  /* Keyboard map on the Keyboard shortcuts page. */
+  --kbmap-key-height: 32px;
+  --kbmap-tip-max-width: 280px;
   /* A numeric settings field, e.g. the Gmail API limit ("1,200,000 / min"). */
   --settings-number-width: 140px;
   --chord-hint-offset: 12px;

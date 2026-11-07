@@ -31,3 +31,9 @@
   background: var(--color-button-secondary-bg);
   color: var(--color-foreground);
 }
+
+.ui-segmented__count {
+  margin-left: var(--space-1);
+  color: var(--color-foreground-subtle);
+  font-variant-numeric: tabular-nums;
+}
