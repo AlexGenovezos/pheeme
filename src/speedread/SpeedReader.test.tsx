@@ -42,6 +42,36 @@ describe("SpeedReader", () => {
     expect(dialog()).toHaveTextContent("Press Space to start");
   });
 
+  test("picks up where the email was left, from the start of that sentence", () => {
+    render(<SpeedReaderHost />);
+    openReader(["One two three. Four five six seven", "Eight nine"]);
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(dialog(), { key: "ArrowRight" });
+    expect(word()).toBe("six");
+    act(() => useSpeedReader.getState().close());
+    openReader(["One two three. Four five six seven", "Eight nine"]);
+    expect(word()).toBe("Four");
+    expect(dialog()).toHaveTextContent("Press Space to continue where you left off");
+  });
+
+  test("starts over once an email has been read to the end", () => {
+    render(<SpeedReaderHost />);
+    openReader();
+    for (let i = 0; i < 4; i++) fireEvent.keyDown(dialog(), { key: "ArrowRight" });
+    expect(word()).toBe("five");
+    act(() => useSpeedReader.getState().close());
+    openReader();
+    expect(word()).toBe("One");
+  });
+
+  test("starts over when the email's text has changed", () => {
+    render(<SpeedReaderHost />);
+    openReader(["One. Two three four five six"]);
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(dialog(), { key: "ArrowRight" });
+    act(() => useSpeedReader.getState().close());
+    openReader(["One. Two three four five six seven"]);
+    expect(word()).toBe("One.");
+  });
+
   test("Space plays word by word at the chosen speed, and stops on the last word", () => {
     vi.useFakeTimers();
     render(<SpeedReaderHost />);
@@ -165,14 +195,37 @@ describe("speedReadOpenConversation", () => {
     useUiStore.setState({ openThread: "a1:t1" });
   }
 
-  test("opens the newest message that is simple prose", () => {
-    const long = Array.from({ length: 100 }, (_, i) => `w${i}`).join(" ");
-    openThread([message("m1", long), message("m2", "Thanks!")]);
+  const long = (from = 0) => Array.from({ length: 100 }, (_, i) => `w${from + i}`).join(" ");
+
+  test("opens the newest message when none is in view", () => {
+    openThread([message("m1", long()), message("m2", long(100))]);
     speedReadOpenConversation();
     expect(useSpeedReader.getState().session).toMatchObject({
-      id: "m1",
+      id: "m2",
       title: "Interesting read",
     });
+  });
+
+  test("opens the expanded message on screen, not the newest", () => {
+    openThread([message("m1", long()), message("m2", long(100))]);
+    document.body.innerHTML = `<div class="view-pane__scroll"><div class="thread-view__retained" data-visible="true"><article data-message-id="m1"></article><article data-message-id="m2"></article></div></div>`;
+    const [m1, m2] = document.querySelectorAll("article");
+    const box = (top: number, bottom: number) => ({ top, bottom }) as DOMRect;
+    vi.spyOn(
+      document.querySelector(".view-pane__scroll")!,
+      "getBoundingClientRect",
+    ).mockReturnValue(box(100, 900));
+    vi.spyOn(m1, "getBoundingClientRect").mockReturnValue(box(-400, 300));
+    vi.spyOn(m2, "getBoundingClientRect").mockReturnValue(box(300, 1500));
+    speedReadOpenConversation();
+    expect(useSpeedReader.getState().session).toMatchObject({ id: "m1" });
+    document.body.innerHTML = "";
+  });
+
+  test("doesn't fall back to an older message when the one to read can't be", () => {
+    openThread([message("m1", long()), message("m2", "Thanks!")]);
+    speedReadOpenConversation();
+    expect(useSpeedReader.getState().session).toBeNull();
   });
 
   test("says so when there's nothing simple enough to read", () => {

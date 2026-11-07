@@ -95,7 +95,11 @@ export function MessageCard({
     recipientLine("cc", message.cc, myAddress),
   ].filter(Boolean);
   return (
-    <article className="message-card" aria-label={`Message from ${name}`}>
+    <article
+      className="message-card"
+      aria-label={`Message from ${name}`}
+      data-message-id={message.id}
+    >
       <header
         className="message-card__header"
         onMouseDown={(e) => (pressedAt.current = { x: e.clientX, y: e.clientY })}

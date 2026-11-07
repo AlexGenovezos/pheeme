@@ -30,7 +30,7 @@ import {
 } from "../mail/actions";
 import { threadKey } from "../mail/mailboxes";
 import { ThreadView } from "../mail/ThreadView";
-import { speedReadOpenConversation, useReadableMessage } from "../speedread/open";
+import { speedReadOpenConversation, useCanSpeedRead } from "../speedread/open";
 import { useSpeedReaderSettings } from "../speedread/settings";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
@@ -96,7 +96,7 @@ export function ViewPane() {
   };
   // Offered only on simple prose emails; the shortcut still says so when there's nothing to read.
   const offerSpeedRead = useSpeedReaderSettings((s) => s.offer);
-  const readable = useReadableMessage(offerSpeedRead);
+  const readable = useCanSpeedRead(offerSpeedRead);
 
   const openMore = (e: MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
