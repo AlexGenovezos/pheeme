@@ -112,10 +112,39 @@ pub fn open_mail_link(url: String) -> Result<(), CommandError> {
             message: "Pheeme only opens web and email links.".into(),
         });
     };
+    open_in_default_app(&url)
+}
+
+fn open_in_default_app(url: &Url) -> Result<(), CommandError> {
     open::that_detached(url.as_str()).map_err(|error| CommandError {
         code: "open_failed".into(),
         message: format!("Couldn't open that link ({error}). Copy it instead."),
     })
+}
+
+/// A navigation that leaves the app: a web or email link anywhere but the app's own `localhost` origins
+/// (`tauri.localhost`, the dev server, `pheeme-att.localhost`).
+///
+/// WebKit (macOS, Linux) never runs the email frame's click handler: the frame is sandboxed without
+/// scripts, and WebKit skips event listeners in a script-less document even when the parent added them.
+/// A clicked link arrives as a navigation instead, so the webview cancels these and opens them here.
+pub fn is_external_navigation(url: &Url) -> bool {
+    parse_mail_link(url.as_str()).is_some()
+        && !url
+            .host_str()
+            .is_some_and(|host| host == "localhost" || host.ends_with(".localhost"))
+}
+
+/// The webview's navigation hook: keeps external links out of the app and opens them in the default app.
+/// Returns whether the navigation may go ahead.
+pub fn allow_navigation(url: &Url) -> bool {
+    if !is_external_navigation(url) {
+        return true;
+    }
+    if let Err(error) = open_in_default_app(url) {
+        tracing::warn!("couldn't open a link from the app: {}", error.message);
+    }
+    false
 }
 
 #[cfg(test)]
@@ -165,6 +194,34 @@ mod tests {
             "",
         ] {
             assert!(!is_allowed_mail_link(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn external_navigations_leave_the_app() {
+        for external in [
+            "https://search.app/1fX35K7LMcx7WJH86",
+            "http://example.com/a?b=c",
+            "mailto:a@b",
+        ] {
+            assert!(
+                is_external_navigation(&Url::parse(external).unwrap()),
+                "{external}"
+            );
+        }
+        for internal in [
+            "tauri://localhost/index.html",
+            "http://tauri.localhost/",
+            "https://tauri.localhost/",
+            "http://localhost:1420/",
+            "http://pheeme-att.localhost/x",
+            "about:srcdoc",
+            "about:blank",
+        ] {
+            assert!(
+                !is_external_navigation(&Url::parse(internal).unwrap()),
+                "{internal}"
+            );
         }
     }
 

@@ -158,6 +158,11 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("external-links")
+                .on_navigation(|_webview, url| commands::allow_navigation(url))
+                .build(),
+        )
         .register_asynchronous_uri_scheme_protocol(
             render::ATTACHMENT_SCHEME,
             |ctx, request, responder| {
