@@ -136,14 +136,17 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   let recent: string[] = [];
   const notificationChoices = new Map<string, boolean>();
   let gmailQuota = 6000;
+  let trayIcon = true;
   const desktopSettings = () => ({
     accounts: accounts.map((a) => ({
       accountId: a.id,
       email: a.email,
       enabled: notificationChoices.get(a.id) ?? false,
+      asked: notificationChoices.has(a.id),
     })),
     permission: "system",
     trayAvailable: false,
+    trayEnabled: trayIcon,
   });
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
@@ -164,6 +167,15 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     desktop_settings: desktopSettings,
     set_account_notifications: (args) => {
       notificationChoices.set(String(args?.accountId), args?.enabled === true);
+      return desktopSettings();
+    },
+    answer_notification_prompt: (args) => {
+      for (const a of accounts)
+        if (!notificationChoices.has(a.id)) notificationChoices.set(a.id, args?.enable === true);
+      return desktopSettings();
+    },
+    set_tray_icon: (args) => {
+      trayIcon = args?.shown === true;
       return desktopSettings();
     },
     take_notification_target: () => null,

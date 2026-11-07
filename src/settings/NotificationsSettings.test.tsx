@@ -1,12 +1,16 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { useToastStore } from "../components/ui/Toast";
+import { useNotificationPrompt } from "../desktop/prompt";
+import { useAccountStore } from "../store/accountStore";
 import { NotificationsSettings } from "./NotificationsSettings";
 
 const snapshot = {
-  accounts: [{ accountId: "a", email: "a@example.com", enabled: false }],
+  accounts: [{ accountId: "a", email: "a@example.com", enabled: false, asked: false }],
   permission: "system",
   trayAvailable: true,
+  trayEnabled: true,
 };
 
 test("notification choices are per account and reflect the persisted backend value", async () => {
@@ -38,10 +42,91 @@ test("denied permission keeps the choice disabled and explains how to recover", 
       };
   });
   render(<NotificationsSettings />);
-  const toggle = await screen.findByRole("switch");
+  const toggle = await screen.findByRole("switch", { name: "Notifications for a@example.com" });
   expect(screen.getByText("Notifications are blocked")).toBeInTheDocument();
   fireEvent.click(toggle);
   expect(await screen.findByRole("alert")).toHaveTextContent("Allow Pheeme");
   expect(toggle).toHaveAttribute("aria-checked", "false");
   expect(toggle).not.toBeDisabled();
+});
+
+test("the tray icon can be turned off, and then closing the window quits", async () => {
+  const calls: unknown[] = [];
+  mockIPC((command, args) => {
+    if (command === "desktop_settings") return snapshot;
+    if (command === "set_tray_icon") {
+      calls.push(args);
+      return { ...snapshot, trayEnabled: false, trayAvailable: false };
+    }
+  });
+  render(<NotificationsSettings />);
+  const toggle = await screen.findByRole("switch", {
+    name: "Show icon in the menu bar or notification area",
+  });
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
+  expect(calls).toEqual([{ shown: false }]);
+  expect(screen.getByText("Closing the window quits Pheeme")).toBeInTheDocument();
+});
+
+test("Settings no longer mentions marking mail read from the tray", async () => {
+  mockIPC((command) => (command === "desktop_settings" ? snapshot : undefined));
+  render(<NotificationsSettings />);
+  await screen.findByRole("switch", { name: "Notifications for a@example.com" });
+  expect(screen.queryByText(/mark .* read/i)).not.toBeInTheDocument();
+});
+
+test("answering in Settings dismisses a visible first-run prompt", async () => {
+  mockIPC((command) => {
+    if (command === "desktop_settings") return snapshot;
+    if (command === "set_account_notifications")
+      return { ...snapshot, accounts: [{ ...snapshot.accounts[0], enabled: true, asked: true }] };
+    if (command === "answer_notification_prompt") return snapshot;
+  });
+  useAccountStore.setState({ accounts: [{ id: "a", email: "a@example.com" }] as never });
+  function Prompt() {
+    useNotificationPrompt();
+    return null;
+  }
+  render(
+    <>
+      <Prompt />
+      <NotificationsSettings />
+    </>,
+  );
+  await waitFor(() =>
+    expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Turn on notifications?"),
+  );
+  fireEvent.click(await screen.findByRole("switch", { name: "Notifications for a@example.com" }));
+  await waitFor(() => expect(useToastStore.getState().toasts).toEqual([]));
+});
+
+test("a blocked permission in Settings also dismisses the first-run prompt", async () => {
+  let asked = false;
+  mockIPC((command) => {
+    if (command === "desktop_settings")
+      return { ...snapshot, accounts: [{ ...snapshot.accounts[0], asked }] };
+    if (command === "set_account_notifications") {
+      asked = true;
+      throw { code: "desktop_settings", message: "Notifications are blocked." };
+    }
+  });
+  useAccountStore.setState({ accounts: [{ id: "a", email: "a@example.com" }] as never });
+  function Prompt() {
+    useNotificationPrompt();
+    return null;
+  }
+  render(
+    <>
+      <Prompt />
+      <NotificationsSettings />
+    </>,
+  );
+  await waitFor(() =>
+    expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Turn on notifications?"),
+  );
+  fireEvent.click(await screen.findByRole("switch", { name: "Notifications for a@example.com" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Notifications are blocked.");
+  await waitFor(() => expect(useToastStore.getState().toasts).toEqual([]));
 });

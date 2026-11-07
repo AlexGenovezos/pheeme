@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO notification_settings(account_id, enabled)\n         SELECT id, ? FROM accounts WHERE id NOT IN (SELECT account_id FROM notification_settings)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "361a9c572af5f90d1d6f20b0b8799defc8223d4c7ee471b1c8abd2106b611690"
+}

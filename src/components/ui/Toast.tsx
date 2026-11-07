@@ -9,6 +9,8 @@ export interface ToastOptions {
   description?: string;
   tone?: "neutral" | "danger";
   action?: { label: string; run(): void };
+  /** Runs when the user closes the toast with its dismiss button (not on timeout or action). */
+  onDismiss?(): void;
   /** ms before auto-dismiss; 0 keeps it until dismissed. */
   duration?: number;
 }
@@ -83,7 +85,10 @@ function ToastViewport({ pinned }: { pinned?: ReactNode }) {
             type="button"
             className="ui-toast__close"
             aria-label="Dismiss"
-            onClick={() => dismissToast(t.id)}
+            onClick={() => {
+              t.onDismiss?.();
+              dismissToast(t.id);
+            }}
           >
             <X />
           </button>

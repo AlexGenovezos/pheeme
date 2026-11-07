@@ -1,4 +1,5 @@
 import { useDesktopEvents } from "./desktop/events";
+import { useNotificationPrompt } from "./desktop/prompt";
 import { useModCommands, useModEvents } from "./mods/lifecycle";
 import { ModPanel } from "./mods/ModSurfaces";
 import { listen } from "@tauri-apps/api/event";
@@ -79,6 +80,7 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
   useNativeContextMenuOnly();
   useSyncEvents();
   useLabelsAndCounts();
+  useNotificationPrompt();
 
   return (
     <>

@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Switch } from "../components/ui/Switch";
-import { getDesktopSettings, setAccountNotifications, type DesktopSettings } from "../desktop/api";
+import {
+  getDesktopSettings,
+  setAccountNotifications,
+  setTrayIcon,
+  type DesktopSettings,
+} from "../desktop/api";
+import { resetNotificationPrompt } from "../desktop/prompt";
 import { toCommandError } from "../lib/tauri";
 import { SettingsRow, SettingsSection } from "./rows";
 
@@ -32,16 +38,23 @@ export function NotificationsSettings() {
     };
   }, []);
 
-  async function toggle(accountId: string, enabled: boolean) {
+  async function change(update: () => Promise<DesktopSettings>) {
     setBusy(true);
     setError(null);
+    let next: DesktopSettings | null = null;
     try {
-      setSettings(await setAccountNotifications(accountId, enabled));
+      next = await update();
     } catch (raw) {
       setError(toCommandError(raw).message);
+      // A refused change can still be saved as answered (blocked permission records "off").
+      next = await getDesktopSettings().catch(() => null);
     } finally {
       setBusy(false);
     }
+    if (!next) return;
+    setSettings(next);
+    // Answering here makes a visible first-run prompt moot.
+    if (next.accounts.every((a) => a.asked)) resetNotificationPrompt();
   }
 
   return (
@@ -71,7 +84,9 @@ export function NotificationsSettings() {
                 label={`Notifications for ${account.email}`}
                 checked={account.enabled}
                 disabled={busy}
-                onChange={(enabled) => void toggle(account.accountId, enabled)}
+                onChange={(enabled) =>
+                  void change(() => setAccountNotifications(account.accountId, enabled))
+                }
               />
             }
           />
@@ -83,15 +98,29 @@ export function NotificationsSettings() {
       </SettingsSection>
       <SettingsSection title="Tray and background sync">
         <SettingsRow
+          title="Show icon in the menu bar or notification area"
+          description="Shows your unread inbox count, with a menu to open or quit Pheeme. While the icon is shown, closing the window keeps Pheeme running so sync and notifications continue."
+          control={
+            <Switch
+              label="Show icon in the menu bar or notification area"
+              checked={settings?.trayEnabled ?? false}
+              disabled={busy || !settings}
+              onChange={(shown) => void change(() => setTrayIcon(shown))}
+            />
+          }
+        />
+        <SettingsRow
           title={
             settings?.trayAvailable
               ? "Pheeme keeps running when you close its window"
-              : "Background access"
+              : "Closing the window quits Pheeme"
           }
           description={
             settings?.trayAvailable
-              ? "The menu bar or tray shows your unread inbox count. Use its menu to open Pheeme, mark an account's mail read or quit. Quitting stops sync and notifications."
-              : "Keep Pheeme open for sync and notifications. On Linux, tray support requires a desktop with an AppIndicator / StatusNotifier host."
+              ? "Choose Quit Pheeme from the icon's menu to stop sync and notifications."
+              : settings?.trayEnabled
+                ? "Keep Pheeme open for sync and notifications. On Linux, the icon needs a desktop with an AppIndicator / StatusNotifier host."
+                : "Keep Pheeme open for sync and notifications, or show the icon to keep it running in the background."
           }
         />
       </SettingsSection>

@@ -34,7 +34,10 @@ pub struct Desktop {
 pub struct DesktopSettings {
     pub accounts: Vec<AccountDesktop>,
     pub permission: String,
+    /// Closing the window keeps Pheeme running in the tray.
     pub tray_available: bool,
+    /// The user wants the menu bar / notification area icon.
+    pub tray_enabled: bool,
 }
 
 #[cfg(target_os = "linux")]
@@ -142,6 +145,7 @@ pub async fn settings(app: &AppHandle) -> anyhow::Result<DesktopSettings> {
         accounts: db::desktop::accounts(&state.db).await?,
         permission: platform::permission(false).await?,
         tray_available: app.state::<Arc<Desktop>>().can_hide.load(Ordering::Relaxed),
+        tray_enabled: db::settings::tray_icon(&state.db).await?,
     })
 }
 
@@ -160,6 +164,8 @@ pub async fn set_notifications(
     if enabled {
         let permission = platform::permission(true).await?;
         if permission == "denied" {
+            // Still counts as answered, so the first-run prompt doesn't come back.
+            db::desktop::set_enabled(&app.state::<AppState>().db, account_id, false).await?;
             anyhow::bail!("Notifications are blocked. Allow Pheeme in your system notification settings, then try again.");
         }
     }
@@ -167,29 +173,41 @@ pub async fn set_notifications(
     settings(app).await
 }
 
-pub async fn mark_all_read(app: &AppHandle, account_id: &str) -> anyhow::Result<()> {
-    let state = app.state::<AppState>();
-    mark_account_read(&state.db, &state.mail, account_id).await
-}
-
-async fn mark_account_read(
-    pool: &sqlx::SqlitePool,
-    mail: &crate::mail::MailService,
-    account_id: &str,
-) -> anyhow::Result<()> {
-    let ids = db::desktop::unread_threads(pool, account_id).await?;
-    for chunk in ids.chunks(500) {
-        mail.modify_threads(account_id, chunk, &[], &["UNREAD".into()])
-            .await?;
+/// Answer the first-run prompt for every account that hasn't been asked yet.
+pub async fn answer_prompt(app: &AppHandle, enable: bool) -> anyhow::Result<DesktopSettings> {
+    let pool = &app.state::<AppState>().db;
+    if enable && platform::permission(true).await? == "denied" {
+        // Don't ask again; Settings explains how to allow them later.
+        db::desktop::answer_unasked(pool, false).await?;
+        anyhow::bail!("Notifications are blocked. Allow Pheeme in your system notification settings, then turn them on in Settings.");
     }
-    Ok(())
+    db::desktop::answer_unasked(pool, enable).await?;
+    settings(app).await
 }
 
-fn menu(
-    app: &AppHandle,
-    accounts: &[AccountDesktop],
-    unread: i64,
-) -> tauri::Result<Menu<tauri::Wry>> {
+/// Show or hide the menu bar / notification area icon. Without it, closing the window quits.
+pub async fn set_tray_icon(app: &AppHandle, shown: bool) -> anyhow::Result<DesktopSettings> {
+    db::settings::set_tray_icon(&app.state::<AppState>().db, shown).await?;
+    let desktop = app.state::<Arc<Desktop>>();
+    if shown {
+        if app.tray_by_id(TRAY).is_none() {
+            build_tray(app)?;
+            // The refresh loop fills in the count and, on Linux, checks for a tray host.
+            desktop
+                .can_hide
+                .store(!cfg!(target_os = "linux"), Ordering::Relaxed);
+            refresh(app);
+        }
+    } else {
+        desktop.can_hide.store(false, Ordering::Relaxed);
+        if let Some(tray) = app.remove_tray_by_id(TRAY) {
+            let _ = tray.set_visible(false);
+        }
+    }
+    settings(app).await
+}
+
+fn menu(app: &AppHandle, unread: i64) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
     menu.append(&MenuItem::with_id(
         app,
@@ -205,18 +223,6 @@ fn menu(
         None::<&str>,
     )?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    for account in accounts {
-        menu.append(&MenuItem::with_id(
-            app,
-            format!("desktop:read:{}", account.account_id),
-            format!("Mark all read — {}", account.email.replace('&', "&&")),
-            true,
-            None::<&str>,
-        )?)?;
-    }
-    if !accounts.is_empty() {
-        menu.append(&PredefinedMenuItem::separator(app)?)?;
-    }
     menu.append(&MenuItem::with_id(
         app,
         "desktop:quit",
@@ -227,6 +233,44 @@ fn menu(
     Ok(menu)
 }
 
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let menu = menu(app, 0)?;
+    TrayIconBuilder::with_id(TRAY)
+        .icon(icon::image(0))
+        .icon_as_template(cfg!(target_os = "macos"))
+        .tooltip("Pheeme")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                }
+            ) {
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window("main") {
+                    if window.is_visible().unwrap_or(false)
+                        && !window.is_minimized().unwrap_or(false)
+                    {
+                        let _ = window.hide();
+                    } else {
+                        show_window(app);
+                    }
+                }
+            }
+        })
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "desktop:open" => show_window(app),
+            "desktop:quit" => app.exit(0),
+            _ => {}
+        })
+        .build(app)?;
+    Ok(())
+}
+
 pub fn install(app: &AppHandle) {
     let desktop = Arc::new(Desktop {
         refresh: Notify::new(),
@@ -235,61 +279,20 @@ pub fn install(app: &AppHandle) {
     });
     app.manage(desktop.clone());
     platform::init(app);
-    let tray = (|| -> tauri::Result<_> {
-        let menu = menu(app, &[], 0)?;
-        TrayIconBuilder::with_id(TRAY)
-            .icon(icon::image(0))
-            .icon_as_template(cfg!(target_os = "macos"))
-            .tooltip("Pheeme")
-            .menu(&menu)
-            .show_menu_on_left_click(false)
-            .on_tray_icon_event(|tray, event| {
-                if matches!(
-                    event,
-                    TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    }
-                ) {
-                    let app = tray.app_handle();
-                    if let Some(window) = app.get_webview_window("main") {
-                        if window.is_visible().unwrap_or(false)
-                            && !window.is_minimized().unwrap_or(false)
-                        {
-                            let _ = window.hide();
-                        } else {
-                            show_window(app);
-                        }
-                    }
-                }
-            })
-            .on_menu_event(|app, event| match event.id().as_ref() {
-                "desktop:open" => show_window(app),
-                "desktop:quit" => app.exit(0),
-                id => {
-                    if let Some(account) = id.strip_prefix("desktop:read:") {
-                        let app = app.clone();
-                        let account = account.to_owned();
-                        tauri::async_runtime::spawn(async move {
-                            if mark_all_read(&app, &account).await.is_err() {
-                                report_error(
-                                    &app,
-                                    "Couldn't mark all mail read. Open Pheeme and try again.",
-                                );
-                            }
-                        });
-                    }
-                }
-            })
-            .build(app)
-    })();
-    match tray {
-        Ok(_) => desktop
-            .can_hide
-            .store(!cfg!(target_os = "linux"), Ordering::Relaxed),
-        Err(error) => {
-            tracing::warn!(%error, "Tray unavailable; closing the window will exit normally")
+    let shown =
+        tauri::async_runtime::block_on(db::settings::tray_icon(&app.state::<AppState>().db))
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "Could not read the tray setting; showing the icon");
+                true
+            });
+    if shown {
+        match build_tray(app) {
+            Ok(()) => desktop
+                .can_hide
+                .store(!cfg!(target_os = "linux"), Ordering::Relaxed),
+            Err(error) => {
+                tracing::warn!(%error, "Tray unavailable; closing the window will exit normally")
+            }
         }
     }
     let app = app.clone();
@@ -332,7 +335,7 @@ pub fn install(app: &AppHandle) {
                     } else {
                         String::new()
                     }))?;
-                    tray.set_menu(Some(menu(&app, &accounts, unread)?))?;
+                    tray.set_menu(Some(menu(&app, unread)?))?;
                     #[cfg(target_os = "linux")]
                     desktop
                         .can_hide
@@ -356,73 +359,5 @@ mod tests {
     fn notification_text_is_bounded_and_has_no_controls() {
         assert_eq!(clean_text("Subject\n\0\u{1b}hi", 9), "Subjecthi");
         assert_eq!(clean_text("éééé", 2), "éé");
-    }
-}
-
-#[cfg(test)]
-mod mail_tests {
-    use super::*;
-    use crate::db::test_support::TestDb;
-    use crate::sync::fake::{FakeGmail, FakeMsg};
-    use crate::sync::manager::SyncManager;
-    use crate::sync::{MailApi, NoopEvents};
-
-    #[tokio::test]
-    async fn tray_mark_all_read_uses_outbox_and_preserves_other_account() {
-        let db = TestDb::with_account("a").await;
-        let mut other = db::accounts::get_account(&db.pool, "a")
-            .await
-            .unwrap()
-            .unwrap();
-        other.id = "b".into();
-        other.email = "other@example.com".into();
-        db::accounts::insert_account(&db.pool, &other)
-            .await
-            .unwrap();
-        let first = Arc::new(FakeGmail::new());
-        let second = Arc::new(FakeGmail::new());
-        first.seed(FakeMsg::new("same-id", "same-thread", &["INBOX", "UNREAD"]));
-        first.seed(FakeMsg::new("archived", "archived", &["UNREAD"]));
-        second.seed(FakeMsg::new("same-id", "same-thread", &["INBOX", "UNREAD"]));
-        let (a, b) = (first.clone(), second.clone());
-        let sync = SyncManager::new(
-            db.pool.clone(),
-            Arc::new(move |id| {
-                if id == "a" {
-                    a.clone() as Arc<dyn MailApi>
-                } else {
-                    b.clone() as Arc<dyn MailApi>
-                }
-            }),
-            Arc::new(NoopEvents),
-        );
-        for id in ["a", "b"] {
-            sync.engine(id).run_initial_sync().await.unwrap();
-        }
-        while sync.engine("a").backfill_step().await.unwrap()
-            != crate::sync::engine::BackfillProgress::Done
-        {}
-        let mail =
-            crate::mail::MailService::new(db.pool.clone(), sync.clone(), db.dir().join("cache"));
-        mark_account_read(&db.pool, &mail, "a").await.unwrap();
-        assert!(db::desktop::unread_threads(&db.pool, "a")
-            .await
-            .unwrap()
-            .is_empty());
-        assert_eq!(
-            db::desktop::unread_threads(&db.pool, "b").await.unwrap(),
-            ["same-thread"]
-        );
-        // The same operation reaches Gmail, rather than changing just the badge locally.
-        sync.sync_account("a").await.unwrap();
-        for id in ["same-id", "archived"] {
-            assert!(!first.message(id).unwrap().labels.contains(&"UNREAD".into()));
-        }
-        assert!(second
-            .message("same-id")
-            .unwrap()
-            .labels
-            .contains(&"UNREAD".into()));
-        mark_account_read(&db.pool, &mail, "a").await.unwrap(); // no unread mail is a successful no-op
     }
 }

@@ -276,6 +276,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::settings::desktop_settings,
             commands::settings::set_account_notifications,
+            commands::settings::answer_notification_prompt,
+            commands::settings::set_tray_icon,
             commands::settings::take_notification_target,
             commands::settings::gmail_quota,
             commands::settings::set_gmail_quota,
