@@ -35,6 +35,7 @@ const thread = (n: number, accountId = "a1", over: Partial<ThreadSummary> = {}):
   starred: false,
   hasAttachment: false,
   messageCount: 1,
+  labelIds: [],
   ...over,
 });
 const key = (n: number, accountId = "a1") => threadKey(accountId, `t${n}`);
@@ -666,6 +667,8 @@ describe("labels", () => {
     threadsUnread: 0,
     colorBackground: null,
     colorText: null,
+    messageListVisibility: "show",
+    labelListVisibility: "labelShow",
   });
   const detail = (n: number, labelIds: string[]): ThreadDetail => ({
     thread: thread(n),

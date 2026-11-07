@@ -23,6 +23,7 @@ const thread = (n: number): ThreadSummary => ({
   starred: false,
   hasAttachment: false,
   messageCount: 1,
+  labelIds: [],
 });
 
 const last = <T>(items: T[]): T => items[items.length - 1];

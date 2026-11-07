@@ -1181,3 +1181,26 @@ async fn notification_waits_for_successful_commit_and_uses_final_labels() {
     h.engine.run_incremental_sync().await.unwrap();
     assert!(arrivals(&h.events).is_empty());
 }
+
+#[tokio::test]
+async fn sync_purges_labels_deleted_in_gmail_and_announces_the_threads() {
+    let h = harness().await;
+    h.fake.add_user_label("Label_1", "work", None);
+    h.fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "Label_1"]));
+    h.engine.run_initial_sync().await.unwrap();
+    assert_eq!(listed(&h.pool, "Label_1").await, s(&["t1"]));
+
+    crate::sync::api::MailApi::delete_label(&*h.fake, "Label_1")
+        .await
+        .unwrap();
+    h.events.names();
+    h.engine.run_incremental_sync().await.unwrap();
+
+    assert_eq!(cached_labels(&h.pool, "m1").await, Some(s(&["INBOX"])));
+    assert!(listed(&h.pool, "Label_1").await.is_empty());
+    assert!(labels::get_label(&h.pool, ACCT, "Label_1")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(h.events.names().contains(&"sync:messages_updated"));
+}

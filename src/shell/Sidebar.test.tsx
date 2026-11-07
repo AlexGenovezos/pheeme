@@ -34,6 +34,8 @@ const label = (
   threadsUnread: 0,
   colorBackground,
   colorText: null,
+  messageListVisibility: "show",
+  labelListVisibility: "labelShow",
 });
 
 const ONE = account("a1", "me@home.test");

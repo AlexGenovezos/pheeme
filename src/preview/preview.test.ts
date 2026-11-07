@@ -137,6 +137,25 @@ describe("preview IPC", () => {
     expect(userLabels("acc-personal").some((l) => !l.colorBackground)).toBe(true);
   });
 
+  test("labels carry visibilities and rows carry only their user label ids", () => {
+    const handlers = createPreviewHandlers();
+    const labels = handlers.list_labels({ accountId: "acc-personal" }) as {
+      messageListVisibility: string | null;
+      labelListVisibility: string | null;
+    }[];
+    expect(labels.every((l) => l.messageListVisibility && l.labelListVisibility)).toBe(true);
+    const pages = ["INBOX", "SENT", "TRASH", "STARRED"].map(
+      (labelId) =>
+        handlers.list_threads({ accountIds: ["acc-personal"], labelId }) as {
+          threads: { labelIds: string[] }[];
+        },
+    );
+    const rows = pages.flatMap((p) => p.threads);
+    const userIds = new Set(["Label_1", "Label_2", "Label_3"]);
+    expect(rows.every((r) => r.labelIds.every((id) => userIds.has(id)))).toBe(true);
+    expect(rows.some((r) => r.labelIds.length > 0)).toBe(true);
+  });
+
   test("threads cover the long, HTML, remote-image, dark-mode, plain-URL and PDF cases", () => {
     const handlers = createPreviewHandlers();
     const detail = (threadId: string, accountId = "acc-personal") =>

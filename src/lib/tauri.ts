@@ -76,6 +76,8 @@ export interface ThreadSummary {
   starred: boolean;
   hasAttachment: boolean;
   messageCount: number;
+  /** The thread's user labels (not system labels), sorted by label name. */
+  labelIds: string[];
 }
 
 export interface ThreadPage {
@@ -148,6 +150,10 @@ export interface LabelInfo {
   threadsUnread: number;
   colorBackground: string | null;
   colorText: string | null;
+  /** Gmail's `show` | `hide` | `showIfUnread`; null when Gmail didn't say. */
+  messageListVisibility: string | null;
+  /** Gmail's `labelShow` | `labelShowIfUnread` | `labelHide`; null when Gmail didn't say. */
+  labelListVisibility: string | null;
 }
 
 export interface LabelCount {

@@ -85,6 +85,8 @@ pub struct ThreadSummaryDto {
     pub starred: bool,
     pub has_attachment: bool,
     pub message_count: i64,
+    /// The thread's user labels (not system labels), sorted by label name.
+    pub label_ids: Vec<String>,
 }
 
 impl From<DbThread> for ThreadSummaryDto {
@@ -101,8 +103,30 @@ impl From<DbThread> for ThreadSummaryDto {
             starred: t.is_starred != 0,
             has_attachment: t.has_attachment != 0,
             message_count: t.message_count,
+            label_ids: Vec::new(),
         }
     }
+}
+
+/// Summaries of `threads`, each with its user label ids, from one query for the whole page.
+async fn summaries(
+    db: &SqlitePool,
+    threads: Vec<DbThread>,
+) -> anyhow::Result<Vec<ThreadSummaryDto>> {
+    let keys: Vec<(String, String)> = threads
+        .iter()
+        .map(|t| (t.account_id.clone(), t.id.clone()))
+        .collect();
+    let mut by_thread = labels::user_label_ids_for(db, &keys).await?;
+    Ok(threads
+        .into_iter()
+        .map(|t| {
+            let key = (t.account_id.clone(), t.id.clone());
+            let mut dto = ThreadSummaryDto::from(t);
+            dto.label_ids = by_thread.remove(&key).unwrap_or_default();
+            dto
+        })
+        .collect())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -215,6 +239,8 @@ pub struct LabelDto {
     pub threads_unread: i64,
     pub color_background: Option<String>,
     pub color_text: Option<String>,
+    pub message_list_visibility: Option<String>,
+    pub label_list_visibility: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -380,7 +406,7 @@ impl MailService {
             .await?
         };
         Ok(ThreadPageDto {
-            threads: page.threads.into_iter().map(Into::into).collect(),
+            threads: summaries(&self.db, page.threads).await?,
             next: page.next.map(|c| ThreadCursorDto {
                 last_message_date: c.last_message_date,
                 account_id: c.account_id,
@@ -438,7 +464,7 @@ impl MailService {
             details.push(dto);
         }
         Ok(ThreadDetailDto {
-            thread: thread.into(),
+            thread: summaries(&self.db, vec![thread]).await?.remove(0),
             messages: details,
         })
     }
@@ -458,6 +484,8 @@ impl MailService {
                 threads_unread: l.threads_unread,
                 color_background: l.color_background,
                 color_text: l.color_text,
+                message_list_visibility: l.message_list_visibility,
+                label_list_visibility: l.label_list_visibility,
             })
             .collect())
     }
@@ -721,7 +749,7 @@ impl MailService {
         )
         .await?;
         Ok(SearchPageDto {
-            threads: page.threads.into_iter().map(Into::into).collect(),
+            threads: summaries(&self.db, page.threads).await?,
             next: page.next.map(|c| ThreadCursorDto {
                 last_message_date: c.last_message_date,
                 account_id: c.account_id,
@@ -764,13 +792,14 @@ impl MailService {
             failed: Vec::new(),
         };
         let mut first_error = None;
+        let mut found = Vec::new();
         let tried = results.len();
         for (account, result) in results {
             match result {
                 Ok((thread_ids, next)) => {
                     for id in thread_ids {
                         if let Some(t) = threads::get_thread(&self.db, &account, &id).await? {
-                            out.threads.push(t.into());
+                            found.push(t);
                         }
                     }
                     if let Some(token) = next {
@@ -787,6 +816,7 @@ impl MailService {
         if let Some(e) = first_error.filter(|_| out.failed.len() == tried) {
             return Err(e.into());
         }
+        out.threads = summaries(&self.db, found).await?;
         out.threads
             .sort_by(|a, b| (b.date, &b.account_id, &b.id).cmp(&(a.date, &a.account_id, &a.id)));
         Ok(out)
@@ -908,6 +938,7 @@ mod tests {
                 "fromName",
                 "hasAttachment",
                 "id",
+                "labelIds",
                 "messageCount",
                 "snippet",
                 "starred",
@@ -971,6 +1002,40 @@ mod tests {
             mail.modify_threads("a1", &[], &[], &["INBOX".into()]).await,
             Err(MailError::Invalid(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn list_threads_rows_carry_user_label_ids() {
+        let db = TestDb::with_account("a1").await;
+        let fake = Arc::new(FakeGmail::new());
+        fake.add_user_label("Label_1", "alpha", None);
+        fake.add_user_label("Label_2", "beta", None);
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "Label_2", "Label_1"]));
+        fake.seed(FakeMsg::new("m2", "t2", &["INBOX"]));
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            db.pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            Arc::new(RecordingEvents::default()),
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(db.pool.clone(), sync, db.dir().join("cache"));
+        let page = mail
+            .list_threads(&["a1".to_owned()], "INBOX", None, None, None, None)
+            .await
+            .unwrap();
+        let by_id = |id: &str| {
+            page.threads
+                .iter()
+                .find(|t| t.id == id)
+                .unwrap()
+                .label_ids
+                .clone()
+        };
+        assert_eq!(by_id("t1"), ["Label_1", "Label_2"]);
+        assert!(by_id("t2").is_empty());
+        let detail = mail.get_thread("a1", "t1").await.unwrap();
+        assert_eq!(detail.thread.label_ids, ["Label_1", "Label_2"]);
     }
 
     #[tokio::test]

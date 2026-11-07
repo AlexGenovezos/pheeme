@@ -33,6 +33,7 @@ const thread = (n: number, accountId = "a1"): ThreadSummary => ({
   starred: false,
   hasAttachment: false,
   messageCount: 1,
+  labelIds: [],
 });
 
 const many = (count: number, accountId = "a1") =>

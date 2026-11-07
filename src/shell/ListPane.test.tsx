@@ -22,6 +22,7 @@ const rows: ThreadSummary[] = Array.from({ length: 50 }, (_, i) => ({
   starred: false,
   hasAttachment: false,
   messageCount: 1,
+  labelIds: [],
 }));
 
 beforeEach(() => {

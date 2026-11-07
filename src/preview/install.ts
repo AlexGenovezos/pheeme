@@ -44,6 +44,8 @@ function labelsFor(accountId: string): LabelInfo[] {
     threadsTotal: 0,
     threadsUnread: 0,
     colorText: null,
+    messageListVisibility: "show",
+    labelListVisibility: "labelShow",
   };
   return [
     ...SYSTEM_LABELS.map((l) => ({
@@ -65,6 +67,14 @@ function labelsFor(accountId: string): LabelInfo[] {
   ];
 }
 
+/** The thread's user labels, sorted by name like the backend's rows. */
+function userLabelIds(t: FixtureThread): string[] {
+  return fixtureUserLabels
+    .filter((l) => l.accountId === t.accountId && t.labelIds.includes(l.id))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((l) => l.id);
+}
+
 /** A fixture thread as `list_threads` returns it. */
 export function toSummary(t: FixtureThread): ThreadSummary {
   const last = lastMessage(t);
@@ -80,6 +90,7 @@ export function toSummary(t: FixtureThread): ThreadSummary {
     starred: hasLabel(t, "STARRED"),
     hasAttachment: t.messages.some((m) => m.attachments.some((a) => !a.isInline)),
     messageCount: t.messages.length,
+    labelIds: userLabelIds(t),
   };
 }
 

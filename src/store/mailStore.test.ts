@@ -17,6 +17,7 @@ const summary = (id: string, accountId = "a"): ThreadSummary => ({
   starred: false,
   hasAttachment: false,
   messageCount: 1,
+  labelIds: [],
 });
 const page = (...ids: string[]): ThreadPage => ({
   threads: ids.map((id) => summary(id)),

@@ -52,6 +52,7 @@ const detail = (messages: MessageDetail[]): ThreadDetail => ({
     starred: false,
     hasAttachment: false,
     messageCount: messages.length,
+    labelIds: [],
   },
   messages,
 });
@@ -67,6 +68,8 @@ const label = (id: string, name: string, type: string): LabelInfo => ({
   threadsUnread: 0,
   colorBackground: null,
   colorText: null,
+  messageListVisibility: "show",
+  labelListVisibility: "labelShow",
 });
 
 const open = (d: ThreadDetail) => {

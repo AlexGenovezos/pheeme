@@ -682,7 +682,8 @@ impl SyncEngine {
             .map(|l| convert::to_db_label(&self.account_id, l))
             .collect();
         let mut tx = db::begin_write(&self.db).await?;
-        labels::replace_labels(&mut tx, &self.account_id, &rows).await?;
+        let purged = labels::replace_labels(&mut tx, &self.account_id, &rows).await?;
+        let result = threads::recompute_threads(&mut tx, &self.account_id, &purged).await?;
         for label in &counted {
             let row = convert::to_db_label(&self.account_id, label);
             let counts = labels::LabelCounts {
@@ -694,6 +695,9 @@ impl SyncEngine {
             labels::update_counts(&mut tx, &self.account_id, &label.id, counts).await?;
         }
         tx.commit().await?;
+        if !result.is_empty() {
+            self.emit(SyncEvent::messages_updated(&self.account_id, result));
+        }
         Ok(())
     }
 
