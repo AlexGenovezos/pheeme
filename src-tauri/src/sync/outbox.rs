@@ -488,19 +488,21 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
             Ok(Step::Done)
         }
         Err(e) if is_rejection(&e) => {
-            // Maybe refused for a label being deleted right now: once that delete has
-            // scrubbed it from this op (it holds the label lock until then), send the rest.
-            let scrubbed = match sent {
-                Some(sent) => {
-                    let _held = engine.label_lock.lock().await;
-                    store::get(&engine.db, &op.id)
-                        .await?
-                        .is_none_or(|now| now.payload != sent)
+            // Maybe refused for a label being deleted: a delete scrubs it from this op, holding
+            // the label lock until then. Message sync never waits on a label change, so while
+            // one is running try again later; once none is, send the rest if it was scrubbed.
+            if let Some(sent) = sent {
+                let Ok(held) = engine.label_lock.try_lock() else {
+                    defer(engine, op, now, &e).await?;
+                    return Ok(Step::Blocked);
+                };
+                let scrubbed = store::get(&engine.db, &op.id)
+                    .await?
+                    .is_none_or(|now| now.payload != sent);
+                drop(held);
+                if scrubbed {
+                    return Box::pin(apply_op(engine, queued, now)).await;
                 }
-                None => false,
-            };
-            if scrubbed {
-                return Box::pin(apply_op(engine, queued, now)).await;
             }
             rollback(engine, op, &e).await?;
             Ok(Step::Continue)

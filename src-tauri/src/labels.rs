@@ -1055,7 +1055,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn refusal_caused_by_a_delete_in_progress_retries_what_is_left() {
+    async fn refusal_during_a_label_change_defers_without_holding_up_sync() {
         let fake = with_labels(&[("L1", "Old"), ("L2", "New")]);
         fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "L1"]));
         let h = setup(fake).await;
@@ -1072,17 +1072,29 @@ mod tests {
         let engine = h.sync.engine("a1");
         let held = engine.label_lock.lock().await;
         h.fake.delete_label("L1").await.unwrap();
-        let worker_engine = h.sync.engine("a1");
-        let worker = tokio::spawn(async move {
-            crate::sync::outbox::process(&worker_engine, crate::sync::fake::now_ms()).await
-        });
-        while h.fake.calls("batch_modify") == 0 {
-            tokio::task::yield_now().await;
-        }
+
+        // Gmail refuses the move; the sync run neither waits for the delete nor rolls back.
+        tokio::time::timeout(std::time::Duration::from_secs(5), h.sync.sync_account("a1"))
+            .await
+            .expect("message sync waited on a label change")
+            .unwrap();
+        assert_eq!(h.fake.calls("batch_modify"), 1);
+        let ops: Vec<(i64, Option<String>)> =
+            sqlx::query_as("SELECT attempts, last_error FROM outbox")
+                .fetch_all(&h.pool)
+                .await
+                .unwrap();
+        assert_eq!(ops.len(), 1, "deferred, still queued");
+        assert_eq!(ops[0].0, 1);
+        let names = h.events.names();
+        assert!(!names.contains(&"outbox:rejected"), "{names:?}");
+
+        // The delete finishes; the next attempt sends what is left.
         h.labels.purge(&engine, "L1").await.unwrap();
         drop(held);
-        worker.await.unwrap().unwrap();
-
+        crate::sync::outbox::process(&engine, crate::sync::fake::now_ms() + 3_600_000)
+            .await
+            .unwrap();
         let mut labels = h.fake.message("m1").unwrap().labels;
         labels.sort();
         assert_eq!(labels, ["INBOX", "L2"]);
