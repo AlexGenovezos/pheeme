@@ -85,6 +85,8 @@ Label UI lives in `src/labels/`: the label tree (nesting by `/` in names), palet
 
 Compose panels dock at the bottom of the window (`src/compose/ComposeHost.tsx`); the TipTap editor is lazy-loaded with the panel. A panel is a `data-owns-keys` region, so single-key shortcuts don't fire inside it. Mail actions (archive, trash, star, read, labels, reply, new message) live in `src/mail/actions.ts`, shared by buttons, menus and shortcuts. Browser preview (`npm run dev`) answers every command from `src/preview/` fixtures, which mutate and emit `sync:messages_updated` like the app.
 
+The speed reader (`src/speedread/`) flashes one word at a time from emails that are mostly prose. `text.ts` decides which emails qualify and extracts their paragraphs, `words.ts` holds the focus-letter and pause rules, and its settings (`settings.ts`) are shared by the reader dialog and Settings › Appearance.
+
 ### Database Schema Summary
 
 Nine tables.

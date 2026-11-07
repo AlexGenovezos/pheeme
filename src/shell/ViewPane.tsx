@@ -8,6 +8,7 @@ import {
   ReplyAll,
   Star,
   Trash2,
+  Zap,
 } from "lucide-react";
 import { type MouseEvent, type ReactNode, useMemo, useRef } from "react";
 import { Button } from "../components/ui/Button";
@@ -29,6 +30,8 @@ import {
 } from "../mail/actions";
 import { threadKey } from "../mail/mailboxes";
 import { ThreadView } from "../mail/ThreadView";
+import { speedReadOpenConversation, useReadableMessage } from "../speedread/open";
+import { useSpeedReaderSettings } from "../speedread/settings";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
@@ -89,7 +92,11 @@ export function ViewPane() {
     reply: useKeybinding("conversation.reply", "r"),
     replyAll: useKeybinding("conversation.reply-all", "a"),
     forward: useKeybinding("conversation.forward", "f"),
+    speedRead: useKeybinding("conversation.speed-read", "shift+r"),
   };
+  // Offered only on simple prose emails; the shortcut still says so when there's nothing to read.
+  const offerSpeedRead = useSpeedReaderSettings((s) => s.offer);
+  const readable = useReadableMessage();
 
   const openMore = (e: MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -170,6 +177,16 @@ export function ViewPane() {
           disabled={off}
           onClick={() => void respond("forward")}
         />
+        {offerSpeedRead && readable && (
+          <ReplyButton
+            label="Speed read"
+            shortcut={keys.speedRead}
+            icon={<Zap />}
+            compact={compact}
+            disabled={false}
+            onClick={speedReadOpenConversation}
+          />
+        )}
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton
           label="More actions"

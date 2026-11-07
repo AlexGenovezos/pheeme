@@ -154,6 +154,16 @@ const SECURITY_HTML = `
   <p><a href="https://example.com/security">Check activity</a></p>
 </div>`;
 
+const GARDEN_LETTER = `<div>
+<p>Avery, I promised to write up what we talked about on Saturday, so here it is while it is still fresh.</p>
+<p>The tomatoes along the south fence did better than anyone expected. We think the difference was the mulch. Last year we left the soil bare, it dried out by noon, and the plants spent the whole summer sulking. This year Tom spread straw two inches deep in May, and we watered half as often.</p>
+<p>The beans were another story. Something ate the first planting down to the stems in a single night, and the second planting came up thin. Rabbits, probably, though Margaret still blames the neighbour's chickens. Next spring we will put up the low wire fence before anything goes in the ground.</p>
+<p>A few of us would like to try a winter crop this year. Garlic goes in around the middle of October and sits quietly until spring, so it would not need much looking after. If you have room in the shed for two bags of compost, that would save us a trip.</p>
+<p>The next meeting is the first Sunday of the month at ten. Bring a chair, and bring your seed catalogues if you still have them. We will sort out who is growing what before anyone orders.</p>
+<p>Thank you again for lending the hose. It has never worked so well.</p>
+<p>Harriet</p>
+</div>`;
+
 const pdf = (id: string, filename: string, size: number): AttachmentInfo => ({
   id,
   filename,
@@ -444,6 +454,18 @@ export function createFixtureThreads(): FixtureThread[] {
         daysAgo(9),
         "Nothing to see here.",
         me,
+      ),
+    ]),
+
+    // A long, plain letter: the kind of email the speed reader offers itself for.
+    thread("p-18", P, ["INBOX"], "Notes from the garden club", [
+      message(
+        "p-18-m1",
+        ["Harriet Ames", "harriet@example.net"],
+        hoursAgo(3),
+        GARDEN_LETTER.replace(/<[^>]+>/g, "\n").replace(/\n{2,}/g, "\n\n"),
+        me,
+        { html: GARDEN_LETTER },
       ),
     ]),
 

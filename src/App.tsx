@@ -26,6 +26,7 @@ import { useLabelStore } from "./store/labelStore";
 import { useMailStore } from "./store/mailStore";
 import { useThreadStore } from "./store/threadStore";
 import { startPreloading } from "./mail/preload";
+import { SpeedReaderHost } from "./speedread/SpeedReader";
 
 /** Hide the webview's own menu (Reload, Inspect…) outside text; dev builds keep it for devtools. */
 function useNativeContextMenuOnly() {
@@ -89,6 +90,7 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
       <CommandPalette />
       <Settings onAddAccount={onAddAccount} />
       <ContextMenuHost />
+      <SpeedReaderHost />
       <ModPanel />
     </>
   );
