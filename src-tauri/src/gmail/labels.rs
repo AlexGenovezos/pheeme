@@ -31,7 +31,8 @@ impl GmailClient {
         if let Some(color) = color {
             body["color"] = json!(color);
         }
-        self.send_json(ApiRequest::post(&["labels"]).json(body))
+        // Not retried when the outcome is unknown: Gmail may already have created it.
+        self.send_json(ApiRequest::post(&["labels"]).json(body).non_idempotent())
             .await
     }
 
@@ -105,6 +106,21 @@ mod tests {
             .any(|l| l.id == "Label_17" && l.name == "Receipts"));
         let inbox = client.get_label("INBOX").await.unwrap();
         assert!(inbox.messages_total.is_some());
+    }
+
+    #[tokio::test]
+    async fn create_is_not_retried_after_ambiguous_5xx() {
+        // Gmail may have created the label before failing; a retry would make a duplicate.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/labels"))
+            .respond_with(ResponseTemplate::new(503))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let err = client.create_label("Work", None).await.unwrap_err();
+        assert!(matches!(err, GmailError::Api { status: 503, .. }));
     }
 
     #[tokio::test]

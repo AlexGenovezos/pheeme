@@ -1016,6 +1016,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_during_send_keeps_the_rest_of_a_queued_move() {
+        let fake = with_labels(&[("L1", "Old"), ("L2", "New")]);
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "L1"]));
+        let h = setup(fake).await;
+        crate::sync::outbox::enqueue_modify(
+            &h.pool,
+            "a1",
+            &["t1".into()],
+            &["L2".into()],
+            &["L1".into()],
+        )
+        .await
+        .unwrap();
+        // The worker loads the queue and stalls reading the thread; meanwhile L1 is deleted.
+        let gate = h.fake.hold_get_threads();
+        let engine = h.sync.engine("a1");
+        let worker = tokio::spawn(async move {
+            crate::sync::outbox::process(&engine, crate::sync::fake::now_ms()).await
+        });
+        while h.fake.calls("get_thread") == 0 {
+            tokio::task::yield_now().await;
+        }
+        h.labels.delete_label("a1", "L1").await.unwrap();
+        gate.add_permits(1);
+        worker.await.unwrap().unwrap();
+
+        let mut labels = h.fake.message("m1").unwrap().labels;
+        labels.sort();
+        assert_eq!(labels, ["INBOX", "L2"]);
+        let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM outbox")
+            .fetch_one(&h.pool)
+            .await
+            .unwrap();
+        assert_eq!(left, 0);
+        let names = h.events.names();
+        assert!(!names.contains(&"outbox:rejected"), "{names:?}");
+    }
+
+    #[tokio::test]
+    async fn refusal_caused_by_a_delete_in_progress_retries_what_is_left() {
+        let fake = with_labels(&[("L1", "Old"), ("L2", "New")]);
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "L1"]));
+        let h = setup(fake).await;
+        crate::sync::outbox::enqueue_modify(
+            &h.pool,
+            "a1",
+            &["t1".into()],
+            &["L2".into()],
+            &["L1".into()],
+        )
+        .await
+        .unwrap();
+        // A delete holds the label lock: Gmail has deleted L1, the cache isn't purged yet.
+        let engine = h.sync.engine("a1");
+        let held = engine.label_lock.lock().await;
+        h.fake.delete_label("L1").await.unwrap();
+        let worker_engine = h.sync.engine("a1");
+        let worker = tokio::spawn(async move {
+            crate::sync::outbox::process(&worker_engine, crate::sync::fake::now_ms()).await
+        });
+        while h.fake.calls("batch_modify") == 0 {
+            tokio::task::yield_now().await;
+        }
+        h.labels.purge(&engine, "L1").await.unwrap();
+        drop(held);
+        worker.await.unwrap().unwrap();
+
+        let mut labels = h.fake.message("m1").unwrap().labels;
+        labels.sort();
+        assert_eq!(labels, ["INBOX", "L2"]);
+        let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM outbox")
+            .fetch_one(&h.pool)
+            .await
+            .unwrap();
+        assert_eq!(left, 0);
+        let names = h.events.names();
+        assert!(!names.contains(&"outbox:rejected"), "{names:?}");
+    }
+
+    #[tokio::test]
     async fn delete_deletes_deepest_first_and_stops_on_failure() {
         let h = setup(with_labels(&[
             ("L1", "Clients"),

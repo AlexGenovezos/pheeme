@@ -263,6 +263,7 @@ struct State {
     /// While set, every `batch_get_messages` waits for a permit (see [`FakeGmail::hold_batch_gets`]).
     batch_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     draft_delete_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
+    thread_get_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     label_get_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     label_write_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     list_page: Option<usize>,
@@ -387,6 +388,14 @@ impl FakeGmail {
     pub fn hold_draft_deletes(&self) -> std::sync::Arc<tokio::sync::Semaphore> {
         let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
         self.lock().draft_delete_gate = Some(gate.clone());
+        gate
+    }
+
+    /// Make every later `get_thread` wait (after being counted) until the returned semaphore
+    /// gets a permit: pauses the outbox between reading a thread and changing its labels.
+    pub fn hold_get_threads(&self) -> std::sync::Arc<tokio::sync::Semaphore> {
+        let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+        self.lock().thread_get_gate = Some(gate.clone());
         gate
     }
 
@@ -850,6 +859,10 @@ impl MailApi for FakeGmail {
 
     async fn get_thread(&self, id: &str, format: MessageFormat) -> Result<Thread, GmailError> {
         self.enter("get_thread")?;
+        let gate = self.lock().thread_get_gate.clone();
+        if let Some(gate) = gate {
+            let _permit = gate.acquire().await.expect("gate open");
+        }
         let s = self.lock();
         let mut msgs: Vec<&FakeMsg> = s.messages.values().filter(|m| m.thread_id == id).collect();
         if msgs.is_empty() {
@@ -1009,6 +1022,14 @@ impl MailApi for FakeGmail {
     ) -> Result<(), GmailError> {
         self.enter("batch_modify")?;
         let mut s = self.lock();
+        // Gmail refuses the whole request if any label doesn't exist.
+        let unknown = add
+            .iter()
+            .chain(remove)
+            .any(|l| !SYSTEM_LABELS.contains(&l.as_str()) && !s.user_labels.contains_key(l));
+        if unknown {
+            return Err(api_error(400, "invalidArgument", "Invalid label"));
+        }
         for id in ids {
             Self::apply_labels(&mut s, id, add, remove);
         }
