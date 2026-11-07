@@ -440,3 +440,118 @@ test("reading during a background load replaces the query that did not yet retai
   expect(ids()).toEqual(["t1"]);
   expect(useMailStore.getState().threads[0].unread).toBe(false);
 });
+
+test("switching Unread only on shows the loaded unread rows before the query answers", async () => {
+  const all = rows(1, 6).map((t, i) => ({ ...t, unread: i % 2 === 0 }));
+  const pending: ((page: ThreadPage) => void)[] = [];
+  const calls: Record<string, unknown>[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") return;
+    calls.push(args as Record<string, unknown>);
+    if (!(args as { unreadOnly?: boolean }).unreadOnly)
+      return { threads: all, next: cursorAfter("t6") };
+    return new Promise<ThreadPage>((resolve) => pending.push(resolve));
+  });
+  const inbox = { accountIds: ["a"], labelId: "INBOX" };
+  await useMailStore.getState().load(inbox);
+
+  const loading = useMailStore.getState().load({ ...inbox, unreadOnly: true });
+  // Newest first, as the query will list them, and paged on from the same cursor.
+  expect(ids()).toEqual(["t1", "t3", "t5"]);
+  expect(useMailStore.getState().next).toEqual(cursorAfter("t6"));
+  expect(useMailStore.getState().loading).toBe(true);
+  // Reading one of them while the query runs keeps it, as in a loaded unread list.
+  useMailStore.getState().patch([threadKey("a", "t3")], (t) => ({ ...t, unread: false }));
+  await vi.waitFor(() => expect(calls).toHaveLength(3));
+  expect(calls[2]).toMatchObject({ keepRead: [["a", "t3"]] });
+
+  // The first answer predates the read, so the store waits for the one that keeps t3.
+  pending[0]({ threads: rows(1, 1).map((t) => ({ ...t, unread: true })), next: null });
+  await loading;
+  pending[1]({
+    threads: [...rows(1, 1), ...rows(3, 1), ...rows(5, 1), ...rows(9, 1)].map((t) => ({
+      ...t,
+      unread: t.id !== "t3",
+    })),
+    next: null,
+  });
+  await vi.waitFor(() => expect(ids()).toEqual(["t1", "t3", "t5", "t9"]));
+});
+
+test("switching Unread only off restores the full list at once, as it is now", async () => {
+  const all = rows(1, 4).map((t, i) => ({ ...t, unread: i < 2 }));
+  let hold = false;
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") return;
+    if (hold) return new Promise<ThreadPage>(() => {});
+    return (args as { unreadOnly?: boolean }).unreadOnly
+      ? { threads: all.filter((t) => t.unread), next: null }
+      : { threads: all, next: null };
+  });
+  const inbox = { accountIds: ["a"], labelId: "INBOX" };
+  await useMailStore.getState().load(inbox);
+  await useMailStore.getState().load({ ...inbox, unreadOnly: true });
+  expect(ids()).toEqual(["t1", "t2"]);
+  // In the unread list: t1 is read, t2 archived.
+  useMailStore.getState().patch([threadKey("a", "t1")], (t) => ({ ...t, unread: false }));
+  useMailStore.getState().remove([threadKey("a", "t2")]);
+
+  hold = true;
+  void useMailStore.getState().load(inbox);
+  expect(ids()).toEqual(["t1", "t3", "t4"]);
+  expect(useMailStore.getState().threads[0].unread).toBe(false);
+});
+
+test("another mailbox never borrows the unread rows of the last one", async () => {
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") return;
+    if ((args as { labelId: string }).labelId === "SENT") return new Promise<ThreadPage>(() => {});
+    return { threads: rows(1, 2).map((t) => ({ ...t, unread: true })), next: null };
+  });
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
+  void useMailStore.getState().load({ accountIds: ["a"], labelId: "SENT", unreadOnly: true });
+  expect(useMailStore.getState().loadedQuery?.labelId).toBe("INBOX");
+});
+
+test("switching Unread only off keeps the rows past the unread page", async () => {
+  // 100 rows, 80 unread; the unread query answers with its first 50 only.
+  const all = rows(1, 100).map((t, i) => ({ ...t, unread: i % 5 !== 0 }));
+  let hold = false;
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") return;
+    if (hold) return new Promise<ThreadPage>(() => {});
+    if (!(args as { unreadOnly?: boolean }).unreadOnly) return { threads: all, next: null };
+    const unread = all.filter((t) => t.unread).slice(0, 50);
+    return { threads: unread, next: cursorAfter(unread[49].id) };
+  });
+  const inbox = { accountIds: ["a"], labelId: "INBOX" };
+  await useMailStore.getState().load(inbox);
+  await useMailStore.getState().load({ ...inbox, unreadOnly: true });
+  expect(ids()).toHaveLength(50);
+
+  hold = true;
+  void useMailStore.getState().load(inbox);
+  expect(ids()).toEqual(all.map((t) => t.id));
+  expect(useMailStore.getState().next).toBeNull();
+});
+
+test("a row restored in the unread list comes back with the full list", async () => {
+  const all = rows(1, 3).map((t) => ({ ...t, unread: true }));
+  let hold = false;
+  mockIPC((cmd) => {
+    if (cmd !== "list_threads") return;
+    if (hold) return new Promise<ThreadPage>(() => {});
+    return { threads: all, next: null };
+  });
+  const inbox = { accountIds: ["a"], labelId: "INBOX" };
+  await useMailStore.getState().load(inbox);
+  await useMailStore.getState().load({ ...inbox, unreadOnly: true });
+  // Archived, then undone: the reload brings it back.
+  useMailStore.getState().remove([threadKey("a", "t1")]);
+  await useMailStore.getState().reload(true);
+  expect(ids()).toEqual(["t1", "t2", "t3"]);
+
+  hold = true;
+  void useMailStore.getState().load(inbox);
+  expect(ids()).toEqual(["t1", "t2", "t3"]);
+});

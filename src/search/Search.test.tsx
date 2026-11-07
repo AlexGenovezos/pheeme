@@ -101,6 +101,26 @@ test("typing shows cached rows without waiting for Gmail, then appends Gmail row
   expect(within(list()).getAllByRole("option")[0]).toBe(originalRow);
 });
 
+test("editing a search keeps matching rows mounted until the new cached results arrive", async () => {
+  render(<Harness />);
+  type("inv");
+  await screen.findByText("Cached invoice");
+  const originalList = list();
+  const originalRow = within(originalList).getByRole("option");
+  let resolve!: (page: SearchPage) => void;
+  mockIPC((cmd) => {
+    if (cmd === "search_messages") return new Promise<SearchPage>((done) => (resolve = done));
+    if (cmd === "search_gmail") return gmail();
+  });
+
+  type("invoice");
+  expect(list()).toBe(originalList);
+  expect(within(list()).getByRole("option")).toBe(originalRow);
+  await act(async () => resolve(cached(row("Cached invoice"), row("Another invoice"))));
+  expect(await screen.findByText("Another invoice")).toBeInTheDocument();
+  expect(within(list()).getAllByRole("option")[0]).toBe(originalRow);
+});
+
 test("search is account-wide; changing scope clears selection, and clear returns to the previous folder", async () => {
   useUiStore.getState().setMailbox({ accountId: "a", labelId: "SENT" });
   render(<Harness />);

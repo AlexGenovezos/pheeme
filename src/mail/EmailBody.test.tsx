@@ -74,19 +74,28 @@ afterEach(() => {
 
 const frame = () => screen.getByTitle("Message body") as HTMLIFrameElement;
 
-/** jsdom doesn't load srcdoc, so put the body in the frame by hand and fire the load the browser would. */
+/**
+ * Swap the written body for test content (jsdom has no layout, so `scrollHeight` comes from the test) and
+ * tell the frame its content changed, as an image arriving would.
+ */
 function loadFrame(html: string, scrollHeight?: () => number) {
-  const iframe = frame();
-  const doc = iframe.contentDocument!;
+  const doc = frame().contentDocument!;
   doc.body.innerHTML = html;
   if (scrollHeight)
     Object.defineProperty(doc.documentElement, "scrollHeight", {
       configurable: true,
       get: scrollHeight,
     });
-  fireEvent.load(iframe);
+  act(() => {
+    doc.body.dispatchEvent(new doc.defaultView!.Event("load"));
+  });
   return doc;
 }
+
+const csp = () =>
+  frame()
+    .contentDocument!.querySelector('meta[http-equiv="Content-Security-Policy"]')
+    ?.getAttribute("content");
 
 function click(doc: Document, selector: string) {
   const target = doc.querySelector(selector)!;
@@ -115,8 +124,37 @@ test("uses sandbox allow-same-origin only", () => {
   render(<EmailBody message={message()} />);
   const iframe = frame();
   expect(iframe.getAttribute("sandbox")).toBe("allow-same-origin");
-  expect(iframe.getAttribute("srcdoc")).toContain("<body><p>Hello <b>there</b></p></body>");
-  expect(iframe.getAttribute("srcdoc")).toContain('http-equiv="Content-Security-Policy"');
+  expect(iframe.contentDocument!.body.innerHTML).toBe("<p>Hello <b>there</b></p>");
+  expect(csp()).toContain("default-src 'none'");
+});
+
+test("writes the body into the frame before the browser paints, not a load later", () => {
+  // A srcdoc loads a task after mount, so the frame painted at zero height first: switching threads
+  // flashed the reply bar up under the header before the body popped in.
+  render(<EmailBody message={message()} />);
+  const iframe = frame();
+  expect(iframe.hasAttribute("srcdoc")).toBe(false);
+  expect(iframe.contentDocument!.body.innerHTML).toBe("<p>Hello <b>there</b></p>");
+  // Already followed (and so measured), with no load event.
+  const root = iframe.contentDocument!.documentElement;
+  expect(FakeResizeObserver.instances.some((o) => o.targets.has(root))).toBe(true);
+
+  // A later `load` for the same document leaves it alone.
+  const doc = iframe.contentDocument!;
+  doc.body.insertAdjacentHTML("beforeend", "<p id='kept'></p>");
+  fireEvent.load(iframe);
+  expect(doc.querySelector("#kept")).not.toBeNull();
+});
+
+test("a frame that comes back with a blank document is written again", () => {
+  render(<EmailBody message={message()} />);
+  const iframe = frame();
+  const wrapper = iframe.parentElement!;
+  // Re-inserting an iframe gives it a fresh about:blank, as React moving it would.
+  iframe.remove();
+  wrapper.append(iframe);
+  fireEvent.load(iframe);
+  expect(iframe.contentDocument!.body.innerHTML).toBe("<p>Hello <b>there</b></p>");
 });
 
 test("opening an HTML email loads remote images without another click", () => {
@@ -128,9 +166,7 @@ test("opening an HTML email loads remote images without another click", () => {
       })}
     />,
   );
-  expect(frame().getAttribute("srcdoc")).toContain(
-    "img-src data: pheeme-att: http://pheeme-att.localhost https: http:",
-  );
+  expect(csp()).toContain("img-src data: pheeme-att: http://pheeme-att.localhost https: http:");
   expect(screen.queryByRole("button", { name: "Load images" })).toBeNull();
   expect(frame().getAttribute("sandbox")).toBe("allow-same-origin");
   expect(frame().getAttribute("referrerpolicy")).toBe("no-referrer");
@@ -329,17 +365,21 @@ test("Enter on a focused link inside the frame activates it through the link int
   }
 });
 
-test("theme changes re-render the srcdoc", () => {
+const frameStyles = () =>
+  Array.from(frame().contentDocument!.querySelectorAll("style"), (el) => el.textContent).join("\n");
+
+test("theme changes rewrite the frame document", () => {
   render(<EmailBody message={message()} />);
-  expect(frame().getAttribute("srcdoc")).not.toContain("invert(");
+  expect(frameStyles()).not.toContain("invert(");
   act(() => useThemeStore.setState({ resolved: "dark" }));
-  expect(frame().getAttribute("srcdoc")).toContain("invert(1) hue-rotate(180deg)");
+  expect(frameStyles()).toContain("invert(1) hue-rotate(180deg)");
+  expect(frame().contentDocument!.body.innerHTML).toBe("<p>Hello <b>there</b></p>");
 });
 
-test("lets go of the old frame document when the srcdoc is rebuilt or the body unmounts", async () => {
+test("lets go of the old frame document when it is rewritten or the body unmounts", async () => {
   const { unmount } = render(<EmailBody message={message()} />);
   loadFrame('<a id="web" href="https://example.com/">go</a>');
-  // jsdom keeps the same document across a srcdoc change, so a leaked listener would open the link twice.
+  // The rewrite keeps the same Document object, so a leaked listener would open the link twice.
   act(() => useThemeStore.setState({ resolved: "dark" }));
   const doc = loadFrame('<a id="web" href="https://example.com/">go</a>');
   click(doc, "#web");
@@ -370,6 +410,40 @@ test("a body that couldn't be fetched offers to try again instead of claiming th
   expect(screen.getByText("Couldn't load this message — you may be offline.")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   expect(retry).toHaveBeenCalledTimes(1);
+});
+
+test("a body that couldn't be fetched says why when the backend knows", () => {
+  render(
+    <EmailBody
+      message={message({ bodyHtml: null, bodyText: null, bodyAvailable: false })}
+      bodyError={{ code: "offline", message: "You're offline. Pheeme will try again." }}
+      onRetry={() => {}}
+    />,
+  );
+  expect(screen.getByText("You're offline. Pheeme will try again.")).toBeInTheDocument();
+  expect(screen.queryByText("Couldn't load this message — you may be offline.")).toBeNull();
+  expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+});
+
+test("a body being fetched again shows what it's waiting on instead of the failure", () => {
+  render(
+    <EmailBody
+      message={message({ bodyHtml: null, bodyText: null, bodyAvailable: false })}
+      bodyError={{ code: "offline", message: "You're offline. Pheeme will try again." }}
+      loading={{
+        accountId: "a1",
+        threadId: "t1",
+        stage: "fetching",
+        attempt: null,
+        retryInMs: null,
+        reason: null,
+        syncBusy: false,
+      }}
+      onRetry={() => {}}
+    />,
+  );
+  expect(screen.getByText("Downloading this message from Gmail…")).toBeInTheDocument();
+  expect(screen.queryByText("You're offline. Pheeme will try again.")).toBeNull();
 });
 
 test("a fetched message with no body is empty", () => {

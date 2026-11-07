@@ -6,12 +6,19 @@
       {
         "name": "label_id!",
         "ordinal": 0,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "thread_labels",
+            "name": "label_id"
+          }
+        }
       },
       {
         "name": "total!: i64",
         "ordinal": 1,
-        "type_info": "Null"
+        "type_info": "Integer",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -19,7 +26,7 @@
     },
     "nullable": [
       false,
-      null
+      false
     ]
   },
   "hash": "454c06327c3479c8ee12427bf8a24a56a330994a7a4ed4d265c382135c9ae94b"

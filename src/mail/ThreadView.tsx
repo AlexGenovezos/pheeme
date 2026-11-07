@@ -1,15 +1,15 @@
-import { Forward, Mail, Reply, ReplyAll } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Forward, Reply, ReplyAll } from "lucide-react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
 import { LabelChip } from "../labels/LabelChip";
-import { useKeybinding } from "../keyboard/useCommands";
+import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import type { LabelInfo, ThreadDetail } from "../lib/tauri";
 import { useLabelStore } from "../store/labelStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
-import { useAccountStore } from "../store/accountStore";
 import { MessageCard } from "./MessageCard";
+import { ThreadLoading } from "./ThreadLoading";
 import { applyLabel, archive, respond } from "./actions";
 import { parseThreadKey } from "./mailboxes";
 import "./mail.css";
@@ -19,6 +19,35 @@ interface Expansion {
   key: string | null;
   seen: ReadonlySet<string>;
   open: ReadonlySet<string>;
+}
+
+/** How far one arrow press scrolls the reading pane, about two lines of body text. */
+const LINE_STEP = 40;
+/** A page press keeps this much of the old view on screen, so the reader doesn't lose their place. */
+const PAGE_FRACTION = 0.9;
+
+/**
+ * Scroll the focused reading pane from the keyboard. WebKit doesn't reliably scroll a focused `overflow` div
+ * by itself, so the keys are handled here rather than left to the browser.
+ */
+function scrollFromKey(e: KeyboardEvent<HTMLDivElement>) {
+  if (e.target !== e.currentTarget || e.defaultPrevented) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const pane = e.currentTarget;
+  const behavior = e.repeat ? "auto" : "smooth";
+  const page = Math.round(pane.clientHeight * PAGE_FRACTION);
+  const by = {
+    ArrowDown: LINE_STEP,
+    ArrowUp: -LINE_STEP,
+    PageDown: page,
+    PageUp: -page,
+    " ": e.shiftKey ? -page : page,
+  }[e.key];
+  if (by !== undefined) pane.scrollBy({ top: by, behavior });
+  else if (e.key === "Home") pane.scrollTo({ top: 0, behavior });
+  else if (e.key === "End") pane.scrollTo({ top: pane.scrollHeight, behavior });
+  else return;
+  e.preventDefault();
 }
 
 /**
@@ -79,9 +108,9 @@ export function ThreadView() {
   const openKey = useUiStore((s) => s.openThread);
   const detail = useThreadStore((s) => (openKey ? s.details.get(openKey) : undefined));
   const error = useThreadStore((s) => (openKey ? s.errors[openKey] : undefined));
+  const loading = useThreadStore((s) => (openKey ? s.loading[openKey] : undefined));
   const load = useThreadStore((s) => s.load);
   const accountId = openKey ? parseThreadKey(openKey).accountId : "";
-  const accountEmail = useAccountStore((s) => s.accounts.find((a) => a.id === accountId)?.email);
   const userLabels = useLabelStore((s) => s.userLabels(accountId));
   const labelsById = useLabelStore((s) => s.labelsById(accountId));
   const scroller = useRef<HTMLDivElement>(null);
@@ -94,6 +123,19 @@ export function ThreadView() {
   useEffect(() => {
     if (openKey) void load(openKey);
   }, [openKey, load]);
+
+  // Right moves into the conversation, where the arrows scroll it; Left (`list.focus`) goes back to the list.
+  useCommands([
+    {
+      id: "view.focus",
+      title: "Focus conversation",
+      group: "Navigation",
+      shortcut: "right",
+      run: () => {
+        if (useUiStore.getState().openThread) scroller.current?.focus({ preventScroll: true });
+      },
+    },
+  ]);
 
   // A new conversation starts at the top.
   useEffect(() => {
@@ -130,12 +172,6 @@ export function ThreadView() {
     const subject = detail.thread.subject || "(no subject)";
     content = (
       <div className="thread-view">
-        {accountEmail && (
-          <p className="thread-view__account selectable">
-            <Mail aria-hidden="true" />
-            <span>{accountEmail}</span>
-          </p>
-        )}
         <h2 className="thread-view__subject selectable">{subject}</h2>
         <LabelChips
           labels={inbox ? [inbox, ...chips] : chips}
@@ -153,6 +189,8 @@ export function ThreadView() {
               accountId={detail.thread.accountId}
               expanded={current.open.has(m.id)}
               onToggle={() => toggle(m.id)}
+              bodyError={detail.bodyError}
+              loading={loading}
             />
           ))}
         </div>
@@ -185,11 +223,19 @@ export function ThreadView() {
       </div>
     );
   } else {
-    content = null; // Reads from the local cache, so this is a blink. No spinner.
+    // Usually a blink from the local cache: ThreadLoading stays blank for that long, then says what it waits on.
+    content = <ThreadLoading key={openKey} loading={loading} />;
   }
 
   return (
-    <div className="view-pane__scroll" ref={scroller}>
+    <div
+      className="view-pane__scroll"
+      ref={scroller}
+      role="region"
+      aria-label="Open conversation"
+      tabIndex={-1}
+      onKeyDown={scrollFromKey}
+    >
       {content}
     </div>
   );

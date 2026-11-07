@@ -1,6 +1,6 @@
 [package]
 name = "pheeme"
-version = "0.11.0"
+version = "0.12.0"
 description = "Pheeme: an open-source desktop Gmail client"
 authors = []
 edition = "2021"
@@ -28,10 +28,10 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "migrate"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "rustls-tls"] }
+sqlx = { version = "0.9", features = ["sqlite", "runtime-tokio", "migrate"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
-base64 = "0.22"
+base64 = "0.23"
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1"
 thiserror = "1"
@@ -39,14 +39,14 @@ tracing = "0.1"
 file-rotate = "0.8"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-sha2 = "0.10"
-hmac = "0.12"
-rand = "0.8"
+sha2 = "0.11"
+hmac = "0.13"
+rand = "0.10"
 open = "5"
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-mailparse = "0.15"
+mailparse = "0.18"
 futures = "0.3"
 async-trait = "0.1"
 ammonia = "4"
@@ -58,6 +58,9 @@ snow = "0.10"
 if-addrs = "0.13"
 zeroize = "1"
 rquickjs = "0.14"
+regex = "1"
+# Diagnostics bundles: deflate only (flate2's Rust backend, as file-rotate already uses).
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 # Valgrind only runs on Linux. Optional so that plain builds don't need libclang.
 [target.'cfg(target_os = "linux")'.dependencies]

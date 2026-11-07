@@ -1,0 +1,28 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"total!: i64\",\n                  COALESCE(SUM(fully_fetched != 0 OR body_html IS NOT NULL OR body_text IS NOT NULL), 0)\n                    AS \"with_bodies!: i64\"\n           FROM messages WHERE account_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "total!: i64",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "with_bodies!: i64",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "e1d2428dfe7d094b600ab8cfda7e076cad259bb0eb0c4a901bc14e04ee0ebe67"
+}

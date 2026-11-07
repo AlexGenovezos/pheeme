@@ -83,7 +83,7 @@ function toDetail(t: FixtureThread, labels: PreviewLabel[]): ThreadDetail {
     hasAttachment: m.attachments.length > 0,
     attachments: m.attachments.map((a) => ({ ...a })),
   }));
-  return { thread: toSummary(t, labels), messages };
+  return { thread: toSummary(t, labels), messages, bodyError: null };
 }
 
 /** One stateful backend for both onboarding and the shell in browser preview. */
@@ -142,6 +142,19 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
+    get_sync_progress: () =>
+      accounts.map((account) => {
+        const count = threads
+          .filter((t) => t.accountId === account.id)
+          .reduce((total, thread) => total + thread.messages.length, 0);
+        return {
+          accountId: account.id,
+          syncedMessages: count,
+          totalMessages: count,
+          downloadedMessages: count,
+          complete: true,
+        };
+      }),
     desktop_settings: desktopSettings,
     set_account_notifications: (args) => {
       notificationChoices.set(String(args?.accountId), args?.enabled === true);
@@ -296,6 +309,10 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     open_external: () => undefined,
     open_mail_link: () => undefined,
     save_attachment: () => "/Users/you/Downloads/attachment.pdf",
+    // Diagnostics: nothing leaves the browser; both just succeed.
+    send_diagnostics: () => undefined,
+    save_diagnostics: () => undefined,
+    "plugin:dialog|save": () => "/Users/you/Downloads/pheeme-diagnostics.zip",
     reveal_download: () => undefined,
     "plugin:updater|check": () => null,
     ...createComposeHandlers(threads, () => accounts),

@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: .github/scripts
       - name: Ensure managed issue labels exist
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const { ensureLabels } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/labels.cjs`);

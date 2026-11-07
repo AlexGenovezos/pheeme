@@ -189,7 +189,8 @@ impl SyncEngine {
         });
         // Read the cursor before anything else: every later change is then replayed by
         // history.list, and replaying is idempotent.
-        let history_id = self.api.profile_history_id().await?;
+        let profile = self.api.profile().await?;
+        let history_id = profile.history_id;
         self.sync_labels().await?;
         let messages = self.inbox_first_page().await?;
 
@@ -200,6 +201,7 @@ impl SyncEngine {
         accounts::update_history_id(&mut *tx, &self.account_id, &history_id, now_ms() / 1000)
             .await?;
         sync_state::reset_backfill(&mut tx, &self.account_id).await?;
+        sync_state::set_mailbox_total(&mut tx, &self.account_id, profile.messages_total).await?;
         sync_state::touch(&mut tx, &self.account_id, now_ms()).await?;
         tx.commit().await?;
         drop(guard);
@@ -448,7 +450,8 @@ impl SyncEngine {
         self.emit(SyncEvent::Started {
             account_id: self.account(),
         });
-        let history_id = self.api.profile_history_id().await?;
+        let profile = self.api.profile().await?;
+        let history_id = profile.history_id;
         self.sync_labels().await?;
         let inbox = self.inbox_first_page().await?;
 
@@ -520,6 +523,7 @@ impl SyncEngine {
         accounts::update_history_id(&mut *tx, &self.account_id, &history_id, now_ms() / 1000)
             .await?;
         sync_state::reset_backfill(&mut tx, &self.account_id).await?;
+        sync_state::set_mailbox_total(&mut tx, &self.account_id, profile.messages_total).await?;
         sync_state::touch(&mut tx, &self.account_id, now_ms()).await?;
         tx.commit().await?;
         drop(guard);
@@ -541,6 +545,15 @@ impl SyncEngine {
         if state.backfill_complete {
             return Ok(BackfillProgress::Done);
         }
+        // Accounts upgraded during a backfill have no saved mailbox size yet.
+        let total = if sync_state::mailbox_total(&self.db, &self.account_id)
+            .await?
+            .is_none()
+        {
+            Some(self.api.profile().await?.messages_total)
+        } else {
+            None
+        };
         let page = self
             .api
             .backfill_list_messages(state.backfill_page_token.as_deref(), BACKFILL_PAGE)
@@ -580,6 +593,9 @@ impl SyncEngine {
         let now_state = sync_state::get(&mut *tx, &self.account_id).await?;
         if now_state.backfill_generation != state.backfill_generation {
             return Ok(BackfillProgress::More);
+        }
+        if let Some(total) = total {
+            sync_state::set_mailbox_total(&mut tx, &self.account_id, total).await?;
         }
         let mut touched = Vec::new();
         let mut oldest = messages::oldest_date(&mut tx, &self.account_id, &ids).await?;

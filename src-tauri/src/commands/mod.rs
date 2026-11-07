@@ -7,12 +7,14 @@ pub mod messages;
 pub mod mods;
 pub mod search;
 pub mod settings;
+pub mod support;
 pub mod sync;
 pub mod threads;
 pub mod transfer;
 
 use crate::accounts::AccountError;
 use crate::mail::MailError;
+use crate::support::SupportError;
 use reqwest::Url;
 use serde::Serialize;
 
@@ -35,6 +37,15 @@ impl From<AccountError> for CommandError {
 
 impl From<MailError> for CommandError {
     fn from(error: MailError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<SupportError> for CommandError {
+    fn from(error: SupportError) -> Self {
         Self {
             code: error.code().to_owned(),
             message: error.to_string(),

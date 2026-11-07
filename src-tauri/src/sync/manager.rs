@@ -33,6 +33,15 @@ pub const BACKFILL_RATE_LIMIT_PAUSE: Duration = Duration::from_secs(15);
 /// Builds the Gmail API for an account (production: a `GmailClient` on the keychain).
 pub type ApiFactory = Arc<dyn Fn(&str) -> Arc<dyn MailApi> + Send + Sync>;
 
+/// Clears `first_sync` however the sync ends.
+struct FirstSyncDone<'a>(&'a AtomicBool);
+
+impl Drop for FirstSyncDone<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 struct AccountSync {
     api: Arc<dyn MailApi>,
     write_lock: WriteLock,
@@ -43,6 +52,8 @@ struct AccountSync {
     running: AtomicBool,
     dirty: AtomicBool,
     backfilling: AtomicBool,
+    /// The account's first sync (no history cursor yet) is running.
+    first_sync: AtomicBool,
 }
 
 pub struct SyncManager {
@@ -105,6 +116,7 @@ impl SyncManager {
                     running: AtomicBool::new(false),
                     dirty: AtomicBool::new(false),
                     backfilling: AtomicBool::new(false),
+                    first_sync: AtomicBool::new(false),
                 })
             })
             .clone()
@@ -126,6 +138,13 @@ impl SyncManager {
 
     pub fn emit(&self, event: SyncEvent) {
         self.events.emit(event);
+    }
+
+    /// The account's mailbox is still being downloaded (its first sync or the backfill), so
+    /// those requests compete with anything the reader opens. Routine syncs don't count.
+    pub fn sync_busy(&self, account_id: &str) -> bool {
+        let a = self.account(account_id);
+        a.backfilling.load(Ordering::SeqCst) || a.first_sync.load(Ordering::SeqCst)
     }
 
     /// Drop an account's sync state (it was removed).
@@ -159,6 +178,12 @@ impl SyncManager {
         }
         let a = self.account(account_id);
         let _running = a.run_lock.lock().await;
+        let first = matches!(
+            accounts::get_account(&self.db, account_id).await,
+            Ok(Some(account)) if account.history_id.is_none()
+        );
+        a.first_sync.store(first, Ordering::SeqCst);
+        let _first_done = FirstSyncDone(&a.first_sync);
         let engine = self.engine(account_id);
         let start = Instant::now();
         let result = async {
@@ -344,9 +369,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn first_sync_busy_flag_clears_when_the_first_sync_fails() {
+        let (_dir, _pool, fake, _events, manager) = setup().await;
+        fake.fail_next("list_threads", GmailError::Network("down".into()));
+        assert!(manager.sync_account("a1").await.is_err());
+        assert!(!manager.sync_busy("a1"));
+    }
+
+    #[tokio::test]
     async fn undo_deadline_dispatches_during_a_blocked_mail_fetch() {
         let (_dir, pool, fake, events, manager) = setup().await;
         manager.engine("a1").run_initial_sync().await.unwrap();
+        assert!(!manager.sync_busy("a1"));
         fake.add(FakeMsg::new("new", "new-thread", &["INBOX"]));
         let gate = fake.hold_batch_gets();
         let sync = manager.run_coalesced("a1");
@@ -389,6 +423,10 @@ mod tests {
         .expect("send waited for the blocked mail fetch");
         assert_eq!(fake.sent().len(), 1);
         assert!(manager.account("a1").run_lock.try_lock().is_err());
+        assert!(
+            !manager.sync_busy("a1"),
+            "a routine sync isn't the mailbox's first download"
+        );
 
         // Finish the fetch and its coalesced follow-up; neither may dispatch the message again.
         gate.add_permits(10);

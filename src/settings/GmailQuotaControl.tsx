@@ -42,6 +42,7 @@ export function GmailQuotaControl() {
       },
     );
     return () => {
+      // oxlint-disable-next-line react/immutability -- This flag belongs to this effect invocation.
       stopped = true;
     };
   }, []);

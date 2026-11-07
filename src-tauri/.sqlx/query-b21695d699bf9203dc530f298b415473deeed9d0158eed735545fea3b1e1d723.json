@@ -1,0 +1,170 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT u.thread_id AS \"id!\", u.account_id AS \"account_id!\", t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count AS \"message_count!\",\n               t.unread_count AS \"unread_count!\", t.has_attachment AS \"has_attachment!\",\n               t.from_name, t.from_address, t.is_starred AS \"is_starred!\",\n               u.last_message_date AS \"cursor_date!\"\n        FROM thread_labels u INDEXED BY idx_thread_labels_listing\n        CROSS JOIN thread_labels tl\n            ON tl.account_id = u.account_id AND tl.thread_id = u.thread_id AND tl.label_id = ?1\n        CROSS JOIN threads t ON t.account_id = u.account_id AND t.id = u.thread_id\n        WHERE u.label_id = 'UNREAD'\n          AND u.account_id IN (SELECT value FROM json_each(?2))\n          AND (u.last_message_date, u.account_id, u.thread_id) < (?3, ?4, ?5)\n          AND t.unread_count > 0\n          AND (?6 IS NULL OR EXISTS (\n                SELECT 1 FROM thread_labels x\n                WHERE x.account_id = u.account_id AND x.thread_id = u.thread_id\n                  AND x.label_id = ?6))\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = u.account_id AND e.thread_id = u.thread_id\n                  AND e.label_id IN (SELECT value FROM json_each(?7)))\n        UNION ALL\n        SELECT tl.thread_id, tl.account_id, t.subject, t.snippet,\n               t.history_id, t.last_message_date, t.message_count,\n               t.unread_count, t.has_attachment,\n               t.from_name, t.from_address, t.is_starred,\n               tl.last_message_date\n        FROM json_each(?9) k\n        CROSS JOIN thread_labels tl\n            ON tl.account_id = k.value ->> 0 AND tl.thread_id = k.value ->> 1\n           AND tl.label_id = ?1\n        CROSS JOIN threads t ON t.account_id = tl.account_id AND t.id = tl.thread_id\n        WHERE tl.account_id IN (SELECT value FROM json_each(?2))\n          AND (tl.last_message_date, tl.account_id, tl.thread_id) < (?3, ?4, ?5)\n          AND (?6 IS NULL OR EXISTS (\n                SELECT 1 FROM thread_labels x\n                WHERE x.account_id = tl.account_id AND x.thread_id = tl.thread_id\n                  AND x.label_id = ?6))\n          AND NOT EXISTS (\n                SELECT 1 FROM thread_labels e\n                WHERE e.account_id = tl.account_id AND e.thread_id = tl.thread_id\n                  AND e.label_id IN (SELECT value FROM json_each(?7)))\n          AND NOT (t.unread_count > 0 AND EXISTS (\n                SELECT 1 FROM thread_labels r\n                WHERE r.account_id = tl.account_id AND r.thread_id = tl.thread_id\n                  AND r.label_id = 'UNREAD'))\n        ORDER BY 13 DESC, 2 DESC, 1 DESC\n        LIMIT ?8\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "thread_labels",
+            "name": "thread_id"
+          }
+        }
+      },
+      {
+        "name": "account_id!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "thread_labels",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "name": "subject",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "name": "snippet",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "snippet"
+          }
+        }
+      },
+      {
+        "name": "history_id",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "history_id"
+          }
+        }
+      },
+      {
+        "name": "last_message_date",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "last_message_date"
+          }
+        }
+      },
+      {
+        "name": "message_count!",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "message_count"
+          }
+        }
+      },
+      {
+        "name": "unread_count!",
+        "ordinal": 7,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "unread_count"
+          }
+        }
+      },
+      {
+        "name": "has_attachment!",
+        "ordinal": 8,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "has_attachment"
+          }
+        }
+      },
+      {
+        "name": "from_name",
+        "ordinal": 9,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "from_name"
+          }
+        }
+      },
+      {
+        "name": "from_address",
+        "ordinal": 10,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "from_address"
+          }
+        }
+      },
+      {
+        "name": "is_starred!",
+        "ordinal": 11,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "is_starred"
+          }
+        }
+      },
+      {
+        "name": "cursor_date!",
+        "ordinal": 12,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "thread_labels",
+            "name": "last_message_date"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "b21695d699bf9203dc530f298b415473deeed9d0158eed735545fea3b1e1d723"
+}

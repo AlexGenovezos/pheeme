@@ -54,6 +54,7 @@ const key = (n: number) => threadKey("a1", `t${n}`);
 const detail = (n: number, labelIds: string[]): ThreadDetail => ({
   thread: thread(n),
   messages: [{ id: `m${n}`, threadId: `t${n}`, labelIds } as MessageDetail],
+  bodyError: null,
 });
 
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;

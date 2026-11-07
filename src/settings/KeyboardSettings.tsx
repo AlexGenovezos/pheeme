@@ -209,7 +209,7 @@ function ShortcutRecorder({
 }) {
   const ref = useRef<HTMLButtonElement>(null);
   const [steps, setSteps] = useState<string[]>([]);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Each recording starts from no keys.
   const [wasRecording, setWasRecording] = useState(recording);

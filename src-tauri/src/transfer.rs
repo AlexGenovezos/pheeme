@@ -2,7 +2,7 @@
 //! The 256-bit invitation key is shared out of band, never over the LAN socket.
 //! Only OAuth client credentials cross the connection; no account tokens or mail.
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use rand::RngCore;
+use rand::TryRng;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -252,7 +252,9 @@ impl TransferService {
             .map_err(|_| TransferError::Connection)?;
         let id = uuid::Uuid::new_v4().to_string();
         let mut key = Zeroizing::new([0; 32]);
-        rand::rngs::OsRng.fill_bytes(key.as_mut());
+        rand::rngs::SysRng
+            .try_fill_bytes(key.as_mut())
+            .map_err(|_| TransferError::Connection)?;
         let invitation = format!(
             "pheeme-transfer-v1:{address}/{}",
             URL_SAFE_NO_PAD.encode(key.as_ref())

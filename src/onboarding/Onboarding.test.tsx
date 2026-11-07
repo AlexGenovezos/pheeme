@@ -1,5 +1,5 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { AccountInfo } from "../lib/tauri";
 import { Onboarding } from "./Onboarding";
@@ -40,7 +40,12 @@ function fillCredentials(id = CLIENT_ID, secret = "s3cret") {
 test("walks the guide in order and saves progress without the secret", () => {
   backend({});
   render(<Onboarding accounts={[]} onConnected={() => {}} />);
-  click("Get started");
+  expect(
+    screen.getByRole("heading", { name: "Free for good, and your mail stays yours." }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Setup steps" })).toBeNull();
+  expect(loadProgress().step).toBe("intro");
+  click("Set up my Google app");
   expect(screen.getByText("Create a Google Cloud project")).toBeInTheDocument();
   expect(loadProgress().step).toBe("project");
   for (const title of [
@@ -58,6 +63,22 @@ test("walks the guide in order and saves progress without the secret", () => {
   fillCredentials();
   expect(JSON.stringify(localStorage)).not.toContain("s3cret");
   expect(loadProgress().clientId).toBe(CLIENT_ID);
+});
+
+test("the intro opens the transfer screen and the setup doc, and the guide goes back to it", () => {
+  const calls = backend({});
+  render(<Onboarding accounts={[]} onConnected={() => {}} />);
+  click("How this works");
+  expect(calls).toContainEqual({
+    cmd: "open_external",
+    args: { url: "https://github.com/AlexGenovezos/pheeme/blob/main/docs/google-cloud-setup.md" },
+  });
+  click("Receive from another device");
+  expect(screen.queryByRole("heading", { name: /Free for good/ })).toBeNull();
+  click("Back");
+  click("Set up my Google app");
+  click("Back");
+  expect(screen.getByRole("heading", { name: /Free for good/ })).toBeInTheDocument();
 });
 
 test("resumes at the saved step, and after the form resumes at the form", () => {
@@ -131,7 +152,7 @@ test("signs in: explains the warning, opens Google, and confirms the account", a
     client: { kind: "new", clientId: CLIENT_ID, clientSecret: "s3cret" },
   });
   expect(calls.map((c) => c.cmd)).toContain("open_external");
-  expect(localStorage.getItem("pheeme.onboarding.v1")).toBeNull();
+  await waitFor(() => expect(localStorage.getItem("pheeme.onboarding.v1")).toBeNull());
   click("Continue");
   expect(onConnected).toHaveBeenCalledWith(account);
 });

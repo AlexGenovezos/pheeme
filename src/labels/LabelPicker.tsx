@@ -129,14 +129,13 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   // Gmail can refuse a tick after its command resolved: the backend undoes it and says so. Re-read the ticks then.
   useEffect(() => {
     if (mode !== "label" || createOnly) return;
-    let current = true;
     // Re-reads can overlap: only the latest one applies, so a slower older one can't overwrite it.
-    let latest = 0;
+    const seq = { latest: 0, live: true };
     const reread = async () => {
-      const read = ++latest;
+      const read = ++seq.latest;
       const since = ticks.current.count;
       const fresh = await labelMembership(accountId, keys, { fresh: true }).catch(() => null);
-      if (!current || read !== latest || !fresh) return; // stale, or couldn't read: keep the ticks shown
+      if (!seq.live || read !== seq.latest || !fresh) return; // stale, or couldn't read: keep the ticks shown
       const keep = (id: string) =>
         inFlight.current.has(id) || (ticks.current.last.get(id) ?? -1) >= since;
       setMembership((m) => {
@@ -155,7 +154,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
         )
         .catch((err: unknown) => console.warn("label picker listener failed", err));
     return () => {
-      current = false;
+      seq.live = false;
       scope.dispose();
     };
   }, [accountId, createOnly, keys, mode]);

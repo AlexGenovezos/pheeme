@@ -6,7 +6,7 @@ use crate::gmail::mime::encode_base64url;
 use crate::gmail::types::{
     Draft, DraftListResponse, Header, HistoryLabelChange, HistoryListResponse, HistoryMessage,
     HistoryRecord, Label, LabelColor, LabelUpdate, Message, MessageListResponse, MessagePart,
-    MessagePartBody, MessageRef, Thread, ThreadListResponse,
+    MessagePartBody, MessageRef, Thread, ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailError, MessageFormat};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -649,9 +649,15 @@ impl FakeGmail {
 
 #[async_trait::async_trait]
 impl MailApi for FakeGmail {
-    async fn profile_history_id(&self) -> Result<String, GmailError> {
+    async fn profile(&self) -> Result<UserProfile, GmailError> {
         self.enter("profile_history_id")?;
-        Ok(self.lock().history_id.to_string())
+        let state = self.lock();
+        Ok(UserProfile {
+            email_address: "test@example.com".into(),
+            history_id: state.history_id.to_string(),
+            messages_total: state.messages.len() as u64,
+            threads_total: 0,
+        })
     }
 
     async fn list_labels(&self) -> Result<Vec<Label>, GmailError> {
@@ -963,10 +969,13 @@ impl MailApi for FakeGmail {
         ids: &[String],
         format: MessageFormat,
     ) -> Vec<(String, Result<Message, GmailError>)> {
+        // Like `GmailClient`, tell an opened thread's probe where its fetch has got to.
+        crate::gmail::probe::report(crate::gmail::probe::ProbeStage::Queued);
         let gate = self.lock().batch_gate.clone();
         if let Some(gate) = gate {
             let _permit = gate.acquire().await.expect("gate open");
         }
+        crate::gmail::probe::report(crate::gmail::probe::ProbeStage::Fetching);
         let hook = self.lock().before_batch_get.take();
         if let Some(hook) = hook {
             hook();

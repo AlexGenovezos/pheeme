@@ -1,9 +1,11 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { __resetComposeStoreForTests, useComposeStore } from "../compose/composeStore";
 import { dismissToast, ToastProvider, useToastStore } from "../components/ui/Toast";
+import { registry } from "../keyboard/registry";
+import { useGlobalShortcuts } from "../keyboard/useCommands";
 import type { AttachmentInfo, LabelInfo, MessageDetail, ThreadDetail } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
@@ -55,6 +57,7 @@ const detail = (messages: MessageDetail[]): ThreadDetail => ({
     labelIds: [],
   },
   messages,
+  bodyError: null,
 });
 
 const label = (id: string, name: string, type: string): LabelInfo => ({
@@ -88,6 +91,7 @@ const card = (n: number) => screen.getByRole("article", { name: `Message from Se
 
 beforeEach(() => {
   localStorage.clear();
+  registry.clear();
   __resetUiStoreForTests();
   __resetThreadStoreForTests();
   __resetLabelStoreForTests();
@@ -159,9 +163,10 @@ test("a collapsed HTML message only mounts its images when expanded", () => {
   expect(screen.queryByTitle("Message body")).toBeNull();
 
   fireEvent.click(within(card(1)).getByRole("button"));
-  expect(screen.getByTitle("Message body").getAttribute("srcdoc")).toContain(
-    "img-src data: pheeme-att: http://pheeme-att.localhost https: http:",
-  );
+  const doc = (screen.getByTitle("Message body") as HTMLIFrameElement).contentDocument!;
+  expect(
+    doc.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute("content"),
+  ).toContain("img-src data: pheeme-att: http://pheeme-att.localhost https: http:");
   expect(screen.queryByRole("button", { name: "Load images" })).toBeNull();
 });
 
@@ -352,6 +357,82 @@ test('not_found shows "This conversation isn\'t available any more."', async () 
   ).toBeInTheDocument();
 });
 
+test("a quick open shows no loading state at all", async () => {
+  vi.useFakeTimers();
+  try {
+    mockIPC((cmd) =>
+      cmd === "get_thread"
+        ? new Promise((resolve) => setTimeout(() => resolve(detail([message(1)])), 250))
+        : undefined,
+    );
+    useUiStore.setState({ openThread: KEY });
+    const { container } = renderView();
+    await act(() => vi.advanceTimersByTimeAsync(249));
+    expect(container.querySelector(".view-pane__scroll")).toBeEmptyDOMElement();
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(screen.getByText("Body 1")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(20_000));
+    expect(screen.queryByRole("status")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a slow open says what it is waiting on", async () => {
+  vi.useFakeTimers();
+  try {
+    mockIPC((cmd) => (cmd === "get_thread" ? new Promise(() => {}) : undefined));
+    useUiStore.setState({ openThread: KEY });
+    renderView();
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(screen.getByRole("status")).toHaveTextContent("Downloading this message from Gmail…");
+    act(() =>
+      useThreadStore.setState({
+        loading: {
+          [KEY]: {
+            accountId: "a1",
+            threadId: "t1",
+            stage: "queued",
+            attempt: null,
+            retryInMs: null,
+            reason: null,
+            syncBusy: true,
+          },
+        },
+      }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Pheeme is still downloading your mailbox for the first time. This message is next in line.",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("opened offline: cached headers show, the body says why, and Try again fetches it", async () => {
+  const offline = detail([message(1, { bodyText: null, bodyAvailable: false })]);
+  offline.bodyError = { code: "offline", message: "You're offline. Pheeme will try again." };
+  const answers = [offline, detail([message(1)])];
+  const requests: unknown[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "get_thread") return undefined;
+    requests.push(args);
+    return answers.shift();
+  });
+  useUiStore.setState({ openThread: KEY });
+  renderView();
+
+  expect(await screen.findByText("You're offline. Pheeme will try again.")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Quarterly plan" })).toBeInTheDocument();
+  expect(screen.getByText("Sender 1")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(await screen.findByText("Body 1")).toBeInTheDocument();
+  expect(requests).toEqual([
+    { accountId: "a1", threadId: "t1", opened: true },
+    { accountId: "a1", threadId: "t1", opened: true },
+  ]);
+});
+
 test("plain text renders escaped with link buttons; HTML bodies render in the sandboxed frame", () => {
   open(detail([message(1, { bodyText: "See <b>this</b> https://example.com now" })]));
   const { container, unmount } = renderView();
@@ -362,9 +443,8 @@ test("plain text renders escaped with link buttons; HTML bodies render in the sa
   act(() => open(detail([message(1, { bodyHtml: "<p>hi</p>", bodyText: "plain alt" })])));
   renderView();
   expect(screen.queryByText("plain alt")).toBeNull();
-  expect(screen.getByTitle("Message body").getAttribute("srcdoc")).toContain(
-    "<body><p>hi</p></body>",
-  );
+  const frame = screen.getByTitle("Message body") as HTMLIFrameElement;
+  expect(frame.contentDocument!.body.innerHTML).toBe("<p>hi</p>");
 });
 
 test("attachments list hides inline images and downloads with a toast", async () => {
@@ -478,4 +558,72 @@ test("a draft in the conversation says so and opens in compose", async () => {
     ]),
   );
   expect(calls).toContain("open_draft");
+});
+
+describe("keyboard focus", () => {
+  function Shortcuts() {
+    useGlobalShortcuts();
+    return <button>List</button>;
+  }
+  const renderWithShortcuts = () =>
+    render(
+      <ToastProvider>
+        <Shortcuts />
+        <ThreadView />
+      </ToastProvider>,
+    );
+  const pane = () => screen.getByRole("region", { name: "Open conversation" });
+
+  test("Right moves focus from elsewhere into the open conversation", () => {
+    open(detail([message(1)]));
+    renderWithShortcuts();
+    const list = screen.getByRole("button", { name: "List" });
+    list.focus();
+    fireEvent.keyDown(list, { key: "ArrowRight" });
+    expect(pane()).toHaveFocus();
+  });
+
+  test("Right does nothing with no conversation open", () => {
+    renderWithShortcuts();
+    const list = screen.getByRole("button", { name: "List" });
+    list.focus();
+    fireEvent.keyDown(list, { key: "ArrowRight" });
+    expect(list).toHaveFocus();
+  });
+
+  test("arrow, page and Home/End keys scroll the focused conversation", () => {
+    open(detail([message(1)]));
+    renderWithShortcuts();
+    const view = pane();
+    const scrollBy = vi.fn();
+    const scrollTo = vi.fn();
+    Object.assign(view, { scrollBy, scrollTo });
+    Object.defineProperty(view, "clientHeight", { value: 500 });
+    Object.defineProperty(view, "scrollHeight", { value: 3000 });
+    view.focus();
+
+    const press = (key: string, extra: object = {}) => {
+      const event = fireEvent.keyDown(view, { key, ...extra });
+      return event; // false when the default was prevented
+    };
+    expect(press("ArrowDown")).toBe(false);
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: 40, behavior: "smooth" });
+    press("ArrowUp", { repeat: true });
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: -40, behavior: "auto" });
+    press("PageDown");
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: 450, behavior: "smooth" });
+    press(" ", { shiftKey: true });
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: -450, behavior: "smooth" });
+    press("End");
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 3000, behavior: "smooth" });
+    press("Home");
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "smooth" });
+
+    // Modified arrows and keys typed in a child are left alone.
+    scrollBy.mockClear();
+    expect(press("ArrowDown", { metaKey: true })).toBe(true);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Reply" }), { key: "ArrowDown" });
+    expect(scrollBy).not.toHaveBeenCalled();
+    expect(view).toHaveFocus();
+  });
 });

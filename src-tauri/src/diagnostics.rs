@@ -1,6 +1,7 @@
 //! Local diagnostics survive normal desktop launches, where stdout is discarded.
 
 use file_rotate::{compression::Compression, suffix::AppendCount, ContentLimit, FileRotate};
+use std::collections::VecDeque;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -115,6 +116,56 @@ pub fn ms_since(start: Instant) -> u64 {
     start.elapsed().as_millis() as u64
 }
 
+/// How long one opened thread took and what it waited on, for the log and the diagnostics
+/// bundle. No ids, subjects or addresses.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenTiming {
+    /// Milliseconds since the epoch.
+    pub at_ms: i64,
+    /// `cache` when every body was cached, `gmail` when some had to be fetched.
+    pub source: &'static str,
+    pub total_ms: u64,
+    pub slot_wait_ms: u64,
+    pub quota_wait_ms: u64,
+    pub gmail_ms: u64,
+    pub retries: u32,
+    pub last_status: Option<u16>,
+    pub last_reason: Option<String>,
+    pub messages_fetched: usize,
+    pub sync_busy: bool,
+    /// `ok`, or the error code of the fetch that failed.
+    pub outcome: String,
+}
+
+/// The most recent [`OPEN_TIMINGS`] opens, oldest first.
+#[derive(Debug, Default)]
+pub struct OpenTimings(Mutex<VecDeque<OpenTiming>>);
+
+pub const OPEN_TIMINGS: usize = 50;
+
+impl OpenTimings {
+    pub fn record(&self, timing: OpenTiming) {
+        let mut timings = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if timings.len() == OPEN_TIMINGS {
+            timings.pop_front();
+        }
+        timings.push_back(timing);
+    }
+
+    pub fn recent(&self) -> Vec<OpenTiming> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .cloned()
+            .collect()
+    }
+}
+
 /// Warn when the async runtime falls behind: a tick that should come every 100 ms arriving
 /// late means its worker threads were busy (blocking work on the runtime), so every command
 /// and query result waited too. A machine that slept shows up as one long stall.
@@ -172,6 +223,31 @@ mod tests {
                 0o700
             );
         }
+    }
+
+    #[test]
+    fn open_timings_keep_the_newest() {
+        let timings = OpenTimings::default();
+        for n in 0..OPEN_TIMINGS as u64 + 5 {
+            timings.record(OpenTiming {
+                at_ms: 0,
+                source: "cache",
+                total_ms: n,
+                slot_wait_ms: 0,
+                quota_wait_ms: 0,
+                gmail_ms: 0,
+                retries: 0,
+                last_status: None,
+                last_reason: None,
+                messages_fetched: 0,
+                sync_busy: false,
+                outcome: "ok".into(),
+            });
+        }
+        let recent = timings.recent();
+        assert_eq!(recent.len(), OPEN_TIMINGS);
+        assert_eq!(recent[0].total_ms, 5);
+        assert_eq!(recent.last().unwrap().total_ms, OPEN_TIMINGS as u64 + 4);
     }
 
     #[test]

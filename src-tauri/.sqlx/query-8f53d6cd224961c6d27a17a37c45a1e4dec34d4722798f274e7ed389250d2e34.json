@@ -1,0 +1,54 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT a.id AS account_id, COUNT(m.id) AS \"synced_messages!: i64\",\n                CASE WHEN s.backfill_complete = 1 THEN COUNT(m.id)\n                     ELSE MAX(s.mailbox_messages_total, COUNT(m.id)) END AS \"total_messages?: i64\",\n                COALESCE(SUM(m.fully_fetched != 0), 0) AS \"downloaded_messages!: i64\",\n                COALESCE(s.backfill_complete, 0) AS \"complete!: bool\"\n         FROM accounts a\n         LEFT JOIN sync_state s ON s.account_id = a.id\n         LEFT JOIN messages m ON m.account_id = a.id\n         GROUP BY a.id",
+  "describe": {
+    "columns": [
+      {
+        "name": "account_id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "synced_messages!: i64",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "total_messages?: i64",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "downloaded_messages!: i64",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "complete!: bool",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8f53d6cd224961c6d27a17a37c45a1e4dec34d4722798f274e7ed389250d2e34"
+}

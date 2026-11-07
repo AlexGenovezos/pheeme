@@ -70,12 +70,13 @@ test("renders nothing until accounts load", () => {
   expect(container.querySelector(".onboarding")).toBeNull();
 });
 
-test("first run with no accounts opens the setup guide", async () => {
+test("first run with no accounts opens the intro, then the setup guide", async () => {
   mockIPC((cmd) => (cmd === "list_accounts" ? [] : undefined));
   render(<App />);
   expect(
-    await screen.findByText("Connect Gmail with your own Google Cloud app"),
+    await screen.findByRole("heading", { name: "Free for good, and your mail stays yours." }),
   ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Set up my Google app" }));
   expect(screen.getByRole("navigation", { name: "Setup steps" })).toBeInTheDocument();
 });
 
@@ -240,7 +241,7 @@ test("settings opens over the inbox, holds the keyboard, and Escape closes it", 
 test("mail shortcuts do not run during onboarding", async () => {
   mockIPC((cmd) => (cmd === "list_accounts" ? [] : undefined));
   render(<App />);
-  await screen.findByRole("navigation", { name: "Setup steps" });
+  await screen.findByRole("heading", { name: "Free for good, and your mail stays yours." });
   fireEvent.keyDown(window, { key: "b", ctrlKey: true });
   fireEvent.keyDown(window, { key: "k", ctrlKey: true });
   expect(useUiStore.getState().sidebarCollapsed).toBe(false);
