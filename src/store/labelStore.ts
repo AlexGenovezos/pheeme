@@ -56,9 +56,9 @@ const pendingReads = new Set<number>();
 
 interface PendingLabelChange {
   accountId: string;
-  /** Per label it changed, the fields it changed as they were before (so undoing it leaves other changes alone). */
-  before: Map<string, Partial<LabelInfo>>;
-  /** The same fields as this change set them. Reapplied over reloads; a refusal only undoes fields still holding them. */
+  /** The labels it changed, as they were before it. */
+  before: Map<string, LabelInfo>;
+  /** Per label, the fields it changed, as it set them: set again over reloads until Gmail answers. */
   after: Map<string, Partial<LabelInfo>>;
 }
 /** Label changes waiting for Gmail, oldest first. */
@@ -75,35 +75,20 @@ function withPending(accountId: string, labels: LabelInfo[]): LabelInfo[] {
 
 /** `labels` with `patches` (per id, fields to set) applied. */
 function patchById(labels: LabelInfo[], patches: ReadonlyMap<string, Partial<LabelInfo>>) {
-  return patches.size
-    ? labels.map((l) => (patches.has(l.id) ? { ...l, ...patches.get(l.id) } : l))
-    : labels;
+  return labels.map((l) => (patches.has(l.id) ? { ...l, ...patches.get(l.id) } : l));
 }
 
-/** Of `before`, the fields whose value in `labels` is still the one `after` set. */
-function stillSet(
-  labels: LabelInfo[],
-  before: ReadonlyMap<string, Partial<LabelInfo>>,
-  after: ReadonlyMap<string, Partial<LabelInfo>>,
-) {
-  const out = new Map<string, Partial<LabelInfo>>();
-  for (const l of labels) {
+/** `labels` with `change` undone, except fields a later change has set since. */
+function undo(labels: LabelInfo[], { before, after }: PendingLabelChange): LabelInfo[] {
+  return labels.map((l) => {
+    const set = after.get(l.id);
     const old = before.get(l.id);
-    if (!old) continue;
-    const fields: Record<string, unknown> = {};
-    for (const key of Object.keys(old) as (keyof LabelInfo)[])
-      if (l[key] === after.get(l.id)?.[key]) fields[key] = old[key];
-    if (Object.keys(fields).length) out.set(l.id, fields as Partial<LabelInfo>);
-  }
-  return out;
-}
-
-/** The fields of `old` that `next` changed, with their old values. */
-function changedFields(old: LabelInfo, next: LabelInfo): Partial<LabelInfo> {
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(next) as (keyof LabelInfo)[])
-    if (next[key] !== old[key]) out[key] = old[key];
-  return out as Partial<LabelInfo>;
+    if (!set || !old) return l;
+    const back: Record<string, unknown> = {};
+    for (const key of Object.keys(set) as (keyof LabelInfo)[])
+      if (l[key] === set[key]) back[key] = old[key];
+    return { ...l, ...back };
+  });
 }
 
 const NO_LABELS: LabelInfo[] = [];
@@ -222,14 +207,16 @@ export const useLabelStore = create<LabelState>((set, get) => ({
       const current = s.labels[accountId] ?? NO_LABELS;
       const next = apply(current);
       const was = new Map(current.map((l) => [l.id, l]));
-      const before = new Map<string, Partial<LabelInfo>>();
+      const before = new Map<string, LabelInfo>();
       const after = new Map<string, Partial<LabelInfo>>();
       for (const l of next) {
         const old = was.get(l.id);
-        if (old && old !== l) {
-          before.set(l.id, changedFields(old, l));
-          after.set(l.id, changedFields(l, old));
-        }
+        if (!old || old === l) continue;
+        const fields: Record<string, unknown> = {};
+        for (const key of Object.keys(l) as (keyof LabelInfo)[])
+          if (l[key] !== old[key]) fields[key] = l[key];
+        before.set(l.id, old);
+        after.set(l.id, fields);
       }
       pendingLabels.set(id, { accountId, before, after });
       return { labels: { ...s.labels, [accountId]: next } };
@@ -246,20 +233,14 @@ export const useLabelStore = create<LabelState>((set, get) => ({
       for (const [older, waiting] of pendingLabels)
         if (older < change && waiting.accountId === accountId)
           for (const [labelId, fields] of done.after)
-            for (const key of Object.keys(fields) as (keyof LabelInfo)[]) {
-              delete waiting.after.get(labelId)?.[key];
-              delete waiting.before.get(labelId)?.[key];
-            }
+            for (const key of Object.keys(fields))
+              delete waiting.after.get(labelId)?.[key as keyof LabelInfo];
     set((s) => {
       const current = s.labels[accountId] ?? NO_LABELS;
-      // Gmail's copy (or, refused, the labels as they were where nothing later changed them),
-      // then any later changes still waiting on top.
-      const base = patchById(
-        current,
-        changed
-          ? new Map(changed.map((l) => [l.id, l]))
-          : stillSet(current, done.before, done.after),
-      );
+      // Gmail's copy (or, refused, the labels as they were), then later changes still waiting on top.
+      const base = changed
+        ? patchById(current, new Map(changed.map((l) => [l.id, l])))
+        : undo(current, done);
       return { labels: { ...s.labels, [accountId]: withPending(accountId, base) } };
     });
     // A refusal can come after Gmail took part of it (a rename stopped half-way): read back what it holds.

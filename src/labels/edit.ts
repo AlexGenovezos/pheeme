@@ -4,7 +4,7 @@ import { type LabelEdit, type LabelInfo, toCommandError, updateLabel } from "../
 import { useLabelStore } from "../store/labelStore";
 
 /** `labels` as they'll be once Gmail takes `edit` on `labelId`; a rename carries its sublabels' paths along. */
-export function applyLabelEdit(labels: LabelInfo[], labelId: string, edit: LabelEdit): LabelInfo[] {
+function applyLabelEdit(labels: LabelInfo[], labelId: string, edit: LabelEdit): LabelInfo[] {
   const target = labels.find((l) => l.id === labelId);
   if (!target) return labels;
   const oldPath = `${target.name}/`;
@@ -24,7 +24,7 @@ export function applyLabelEdit(labels: LabelInfo[], labelId: string, edit: Label
       if (edit.messageListVisibility) next.messageListVisibility = edit.messageListVisibility;
       return next;
     }
-    if (edit.name != null && edit.name !== target.name && l.name.startsWith(oldPath))
+    if (edit.name != null && l.name.startsWith(oldPath))
       return { ...l, name: `${edit.name}/${l.name.slice(oldPath.length)}` };
     return l;
   });

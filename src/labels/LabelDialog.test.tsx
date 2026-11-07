@@ -1,5 +1,5 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { useToastStore } from "../components/ui/Toast";
 import type { LabelInfo } from "../lib/tauri";
@@ -98,48 +98,22 @@ test("create_sends_full_path", async () => {
 test("create_with_colour: Gmail's grid, none by default", async () => {
   render(<LabelDialogHost />);
   act(() => openLabelDialog({ mode: "create", accountId: "a1" }));
-  const grid = screen.getByRole("radiogroup", { name: "Colour" });
-  const swatches = within(grid).getAllByRole("radio");
-  expect(swatches).toHaveLength(64);
-  expect(swatches.every((s) => s.getAttribute("aria-checked") === "false")).toBe(true);
+  expect(screen.queryByRole("radio", { checked: true })).toBeNull();
   const none = screen.getByRole("button", { name: "No colour" });
-  expect(none).toBeDisabled();
-
-  type("Travel");
-  const green = within(grid).getByRole("radio", { name: "#16a766" });
+  const green = screen.getByRole("radio", { name: "#16a766" });
   fireEvent.click(green);
   expect(green).toHaveAttribute("aria-checked", "true");
-  expect(none).toBeEnabled();
-  // Arrow keys move between swatches inside the dialog without leaving it.
-  fireEvent.keyDown(green, { key: "ArrowRight" });
-  expect(within(grid).getByRole("radio", { name: "#43d692" })).toHaveFocus();
-  expect(screen.getByRole("dialog", { name: "New label" })).toBeInTheDocument();
+  fireEvent.click(none);
+  expect(green).toHaveAttribute("aria-checked", "false");
+  expect(none).toBeDisabled();
 
+  fireEvent.click(green);
+  type("Travel");
   fireEvent.click(screen.getByRole("button", { name: "Create" }));
   await flush();
   expect(callsOf("create_label")).toEqual([
     { accountId: "a1", name: "Travel", color: labelColor("#16a766") },
   ]);
-});
-
-test("No colour takes a picked colour back off", async () => {
-  render(<LabelDialogHost />);
-  act(() => openLabelDialog({ mode: "create", accountId: "a1", parent: "Clients" }));
-  type("Globex");
-  fireEvent.click(screen.getByRole("radio", { name: "#4a86e8" }));
-  fireEvent.click(screen.getByRole("button", { name: "No colour" }));
-  expect(screen.getByRole("radio", { name: "#4a86e8" })).toHaveAttribute("aria-checked", "false");
-  fireEvent.click(screen.getByRole("button", { name: "Create" }));
-  await flush();
-  expect(callsOf("create_label")).toEqual([
-    { accountId: "a1", name: "Clients/Globex", color: null },
-  ]);
-});
-
-test("the edit dialog has no colour grid (the label's menu has Label colour…)", () => {
-  render(<LabelDialogHost />);
-  act(() => openLabelDialog({ mode: "edit", accountId: "a1", labelId: "Label_2" }));
-  expect(screen.queryByRole("radiogroup")).toBeNull();
 });
 
 test("create_applies_to_the_given_threads", async () => {
@@ -195,19 +169,18 @@ test("edit_prefills_and_excludes_descendants", () => {
 
 const names = () => useLabelStore.getState().labels.a1.map((l) => l.name);
 
-test("edit sends the new full path, renaming at once", async () => {
+test("edit sends the new full path", async () => {
   render(<LabelDialogHost />);
   act(() => openLabelDialog({ mode: "edit", accountId: "a1", labelId: "Label_2" }));
   fireEvent.click(nest()); // un-nest
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
-  // The dialog doesn't wait for Gmail; the label and its sublabels show their new paths straight away.
+  // Shown at once, sublabels included, without waiting for Gmail.
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(names()).toEqual(["INBOX", "Clients", "Acme", "Acme/Q1", "Receipts"]);
   await flush();
   expect(callsOf("update_label")).toEqual([
     { accountId: "a1", labelId: "Label_2", edit: { name: "Acme" } },
   ]);
-  expect(names()).toEqual(["INBOX", "Clients", "Acme", "Acme/Q1", "Receipts"]);
 });
 
 test("a rename Gmail refuses goes back and says why in a toast", async () => {

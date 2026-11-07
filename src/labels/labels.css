@@ -157,6 +157,8 @@
   justify-content: center;
   flex-shrink: 0;
   width: var(--icon-size-sm);
+  /* Sublabels step in under their parent; the tick column stays put. */
+  margin-inline-start: calc(var(--label-depth, 0) * var(--space-4));
 }
 .label-picker__check svg,
 .label-picker__icon svg {
@@ -180,15 +182,9 @@
   text-overflow: ellipsis;
 }
 
-/* Sublabels step in under their parent (each row sets --label-depth); the tick column stays put. */
-.label-picker__option .label-picker__icon {
-  margin-inline-start: calc(var(--label-depth, 0) * var(--space-4));
-}
-
-/* A label's name: the dimmed parent path of a search match gives way before the name itself does. */
+/* A search match's dimmed parent path gives way before the name itself does. */
 .label-picker__name--path {
   display: flex;
-  min-width: var(--space-0);
 }
 .label-picker__context,
 .label-picker__leaf {
@@ -196,8 +192,6 @@
   text-overflow: ellipsis;
 }
 .label-picker__context {
-  flex: 0 1 auto;
-  min-width: var(--space-0);
   color: var(--color-foreground-subtle);
 }
 .label-picker__option[aria-selected="true"] .label-picker__context {
@@ -205,7 +199,7 @@
   opacity: 0.75;
 }
 .label-picker__leaf {
-  flex: 0 0 auto;
+  flex-shrink: 0;
   max-width: 100%;
 }
 

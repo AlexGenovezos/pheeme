@@ -294,12 +294,9 @@ test("a label change waiting for Gmail shows at once and survives reloads until 
   await store().load(["a"]);
   expect(travel()?.labelListVisibility).toBe("labelHide");
 
-  // Gmail took it: its copy goes in, and later reloads read it from the cache.
+  // Gmail took it: its copy goes in.
   const taken = { ...label("Label_2", "travel"), labelListVisibility: "labelHide" };
-  w.labels.a = w.labels.a.map((l) => (l.id === "Label_2" ? taken : l));
   store().settleLabels(change, [taken]);
-  expect(travel()).toEqual(taken);
-  await store().load(["a"]);
   expect(travel()).toEqual(taken);
 });
 

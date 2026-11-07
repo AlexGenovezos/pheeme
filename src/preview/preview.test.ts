@@ -165,11 +165,8 @@ describe("preview IPC", () => {
       "Travel",
       "Pheeme",
       "Travel/Lisbon",
-      "Travel/2026",
-      "Receipts/2026",
       "Archive",
       "Archive/Old projects",
-      "Newsletters",
     ]);
     expect(userLabels("acc-work").map((l) => l.name)).toEqual(["Customers", "Invoices"]);
     expect(userLabels("acc-personal").some((l) => l.colorBackground)).toBe(true);
@@ -190,7 +187,7 @@ describe("preview IPC", () => {
         },
     );
     const rows = pages.flatMap((p) => p.threads);
-    const userIds = new Set(["Label_1", "Label_2", "Label_3", "Label_4", "Label_5"]);
+    const userIds = new Set(["Label_1", "Label_2", "Label_3"]);
     expect(rows.every((r) => r.labelIds.every((id) => userIds.has(id)))).toBe(true);
     expect(rows.some((r) => r.labelIds.length > 0)).toBe(true);
   });
@@ -533,12 +530,9 @@ describe("preview label CRUD", () => {
         "Customers",
         "Customers/Acme",
         "Customers/Acme/Q4",
-        "Newsletters",
         "Pheeme",
         "Receipts",
-        "Receipts/2026",
         "Travel",
-        "Travel/2026",
         "Travel/Lisbon",
       ].sort(),
     );

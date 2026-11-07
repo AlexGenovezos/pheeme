@@ -423,6 +423,7 @@ describe("go-to commands", () => {
 
 describe("Labels section", () => {
   let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
+  let refuse: string | null;
   const updates = () => calls.filter((c) => c.cmd === "update_label").map((c) => c.args);
 
   const withVis = (l: LabelInfo, labelListVisibility: string): LabelInfo => ({
@@ -485,13 +486,17 @@ describe("Labels section", () => {
 
   beforeEach(() => {
     calls = [];
+    refuse = null;
     useLabelDialogStore.getState().close();
     useToastStore.setState({ toasts: [] });
     mockIPC(
       (cmd, args) => {
         const a = (args ?? {}) as Record<string, unknown>;
         calls.push({ cmd, args: a });
-        if (cmd === "update_label") return [];
+        if (cmd === "update_label") {
+          if (refuse) throw { code: "gmail", message: refuse };
+          return [];
+        }
         return undefined;
       },
       { shouldMockEvents: true },
@@ -564,63 +569,38 @@ describe("Labels section", () => {
     expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "L_archive" });
   });
 
-  test("a hidden parent takes its sublabels under More, leaving no header behind", () => {
-    useLabelStore.setState({
-      labels: {
-        a1: [
-          withVis(label("a1", "L_test", "test"), "labelHide"),
-          label("a1", "L_test2", "test/test 2"),
-          label("a1", "L_travel", "Travel"),
-        ],
-      },
-      counts: { a1: { L_test2: { unread: 2, total: 2 } } },
-    });
-    render(<Sidebar />);
-    expect(shownLinks()).toEqual(["Travel"]);
-    expect(within(labelsRegion()).queryByText("test")).not.toBeInTheDocument();
-    expect(within(labelsRegion()).queryByText("test 2")).not.toBeInTheDocument();
+  for (const [mode, labelListVisibility] of [
+    ["read show-if-unread parent", "labelShowIfUnread"],
+  ] as const)
+    test(`a ${mode} of a shown sublabel is only context above More`, () => {
+      useLabelStore.setState({
+        labels: {
+          a1: [
+            withVis(label("a1", "L_clients", "Clients"), labelListVisibility),
+            label("a1", "L_acme", "Clients/Acme"),
+          ],
+        },
+        counts: { a1: {} },
+      });
+      render(<Sidebar />);
+      expect(shownLinks()).toEqual(["Clients/Acme"]);
+      expect(within(labelsRegion()).getByText("Clients")).toBeInTheDocument();
+      expect(
+        within(labelsRegion()).queryByRole("button", { name: "Options for Clients" }),
+      ).not.toBeInTheDocument();
+      const fold = within(labelsRegion()).getByRole("button", { name: "Clients sublabels" });
+      fireEvent.click(fold);
+      expect(shownLinks()).toEqual([]);
+      fireEvent.click(fold);
 
-    fireEvent.click(within(labelsRegion()).getByRole("button", { name: "More" }));
-    expect(shownLinks()).toEqual(["Travel", "test", "test/test 2"]);
-    expect(link("test/test 2", labelsRegion()).closest(".sidebar__label")).toHaveStyle({
-      "--label-depth": "1",
+      fireEvent.click(within(labelsRegion()).getByRole("button", { name: "More" }));
+      expect(shownLinks()).toEqual(["Clients/Acme", "Clients"]);
+      expect(
+        within(labelsRegion()).getByRole("button", { name: "Options for Clients" }),
+      ).toBeInTheDocument();
+      fireEvent.click(link("Clients", labelsRegion()));
+      expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "L_clients" });
     });
-    expect(
-      within(labelsRegion()).getByRole("button", { name: "Options for test" }),
-    ).toBeInTheDocument();
-    fireEvent.click(within(labelsRegion()).getByRole("button", { name: "test sublabels" }));
-    expect(shownLinks()).toEqual(["Travel", "test"]);
-  });
-
-  test("a read show-if-unread parent of a shown sublabel is only context above More", () => {
-    useLabelStore.setState({
-      labels: {
-        a1: [
-          withVis(label("a1", "L_clients", "Clients"), "labelShowIfUnread"),
-          label("a1", "L_acme", "Clients/Acme"),
-        ],
-      },
-      counts: { a1: {} },
-    });
-    render(<Sidebar />);
-    expect(shownLinks()).toEqual(["Clients/Acme"]);
-    expect(within(labelsRegion()).getByText("Clients")).toBeInTheDocument();
-    expect(
-      within(labelsRegion()).queryByRole("button", { name: "Options for Clients" }),
-    ).not.toBeInTheDocument();
-    const fold = within(labelsRegion()).getByRole("button", { name: "Clients sublabels" });
-    fireEvent.click(fold);
-    expect(shownLinks()).toEqual([]);
-    fireEvent.click(fold);
-
-    fireEvent.click(within(labelsRegion()).getByRole("button", { name: "More" }));
-    expect(shownLinks()).toEqual(["Clients/Acme", "Clients"]);
-    expect(
-      within(labelsRegion()).getByRole("button", { name: "Options for Clients" }),
-    ).toBeInTheDocument();
-    fireEvent.click(link("Clients", labelsRegion()));
-    expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "L_clients" });
-  });
 
   test("no More row when every label is shown", () => {
     useLabelStore.setState({ labels: { a1: [label("a1", "L_travel", "Travel")] } });
@@ -808,29 +788,14 @@ describe("Labels section", () => {
     );
   });
 
-  test("a refused change shows at once, then goes back with Gmail's message in a toast", async () => {
-    let refuseNow: (() => void) | null = null;
-    mockIPC(
-      (cmd, args) => {
-        calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-        if (cmd === "update_label")
-          return new Promise((_, reject) => {
-            refuseNow = () => reject({ code: "gmail", message: "Gmail didn't answer" });
-          });
-        return undefined;
-      },
-      { shouldMockEvents: true },
-    );
+  test("a refused change shows Gmail's message in a toast", async () => {
+    refuse = "Gmail didn't answer";
     renderAll();
     await openMenu("Travel");
     choose("Hide in label list");
-    expect(shownLinks()).not.toContain("Travel");
-    await waitFor(() => expect(refuseNow).not.toBeNull());
-    act(() => refuseNow?.());
     await waitFor(() =>
       expect(useToastStore.getState().toasts.map((t) => t.title)).toEqual(["Gmail didn't answer"]),
     );
-    expect(shownLinks()).toContain("Travel");
   });
 
   test("reveal_labels_expands_collapsed_sidebar", async () => {

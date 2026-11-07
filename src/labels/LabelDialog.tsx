@@ -152,7 +152,6 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
   const [leaf, setLeaf] = useState(initial.leaf);
   const [nested, setNested] = useState(initial.parent !== null);
   const [parent, setParent] = useState(initial.parent ?? parents[0] ?? "");
-  /** A new label's colour (Gmail's background), none by default. */
   const [color, setColor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -171,30 +170,32 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
     if (all.some((l) => l.id !== editing?.id && l.name.toLowerCase() === full.toLowerCase()))
       return setError(`A label named "${full}" already exists.`);
     if (editing && full === editing.name) return onClose();
-    if (spec.mode === "edit") {
-      // Shown at once; a refusal puts the names back and says why in a toast.
-      if (editing) void editLabel(accountId, editing.id, { name: full });
-      return onClose();
-    }
     setSaving(true);
     setError(null);
-    let created: LabelInfo;
     try {
-      created = await createLabel(accountId, full, color ? labelColor(color) : null);
+      if (spec.mode === "edit") {
+        // Shown at once; a refusal puts the names back and says why in a toast.
+        if (editing) void editLabel(accountId, editing.id, { name: full });
+      } else {
+        const created = await createLabel(accountId, full, color ? labelColor(color) : null);
+        useLabelStore.setState((s) => ({
+          labels: {
+            ...s.labels,
+            [accountId]: [
+              ...(s.labels[accountId] ?? []).filter((l) => l.id !== created.id),
+              created,
+            ],
+          },
+        }));
+        if (spec.applyTo?.length && spec.move) void moveTo(accountId, spec.applyTo, created.id);
+        else if (spec.applyTo?.length)
+          void applyLabel(accountId, created.id, true, spec.applyTo, { evenIfGone: true });
+      }
     } catch (err) {
       setSaving(false);
       setError(toCommandError(err).message);
       return;
     }
-    useLabelStore.setState((s) => ({
-      labels: {
-        ...s.labels,
-        [accountId]: [...(s.labels[accountId] ?? []).filter((l) => l.id !== created.id), created],
-      },
-    }));
-    if (spec.applyTo?.length && spec.move) void moveTo(accountId, spec.applyTo, created.id);
-    else if (spec.applyTo?.length)
-      void applyLabel(accountId, created.id, true, spec.applyTo, { evenIfGone: true });
     onClose();
   };
 

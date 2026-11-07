@@ -39,10 +39,7 @@ type Option =
   | { kind: "inbox" | "trash" | "manage" }
   | { kind: "create"; name: string };
 
-/**
- * User labels in sidebar order (parents before their sublabels), leaving out `skip` and synthetic parents: each
- * steps in under the nearest label still listed and shows its path below it, like the sidebar.
- */
+/** User labels in sidebar order, leaving out `skip` and synthetic parents; each steps in under the nearest one listed. */
 function labelTreeOptions(labels: LabelInfo[], skip: string | null): LabelOption[] {
   const out: LabelOption[] = [];
   const walk = (nodes: LabelNode[], depth: number, under: string | null) => {
@@ -58,7 +55,7 @@ function labelTreeOptions(labels: LabelInfo[], skip: string | null): LabelOption
   return out;
 }
 
-/** A search match: flat, its leaf after its dimmed parent path, so same-named sublabels can be told apart. */
+/** A search match: flat, its leaf after its dimmed parent path. */
 function searchOption(label: LabelInfo): LabelOption {
   const cut = label.name.lastIndexOf("/");
   return {
@@ -270,20 +267,16 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     const ticks = mode === "label" && !createOnly && option.kind === "label";
     const state = ticks ? (membership.get(option.label.id) ?? "none") : null;
     const text =
-      option.kind === "label" ? (
-        <>
-          {option.context && <span className="label-picker__context">{option.context}</span>}
-          <span className="label-picker__leaf">{option.text}</span>
-        </>
-      ) : option.kind === "create" ? (
-        `Create "${option.name}"…`
-      ) : option.kind === "inbox" ? (
-        "Inbox"
-      ) : option.kind === "trash" ? (
-        "Trash"
-      ) : (
-        "Manage labels"
-      );
+      option.kind === "label"
+        ? option.text
+        : option.kind === "create"
+          ? `Create "${option.name}"…`
+          : option.kind === "inbox"
+            ? "Inbox"
+            : option.kind === "trash"
+              ? "Trash"
+              : "Manage labels";
+    const context = option.kind === "label" ? option.context : "";
     const icon =
       option.kind === "label" ? (
         <LabelDot label={option.label} />
@@ -323,13 +316,9 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
           <span className="label-picker__check">{state && <TickIcon membership={state} />}</span>
         )}
         <span className="label-picker__icon">{icon}</span>
-        <span
-          className={cx(
-            "label-picker__name",
-            option.kind === "label" && "label-picker__name--path",
-          )}
-        >
-          {text}
+        <span className={cx("label-picker__name", context && "label-picker__name--path")}>
+          {context && <span className="label-picker__context">{context}</span>}
+          {context ? <span className="label-picker__leaf">{text}</span> : text}
         </span>
       </div>
     );

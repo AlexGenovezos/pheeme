@@ -1,7 +1,7 @@
 // "Label colour…": Gmail's 64-colour grid for one label, plus Remove colour. Opened from a sidebar label's menu,
 // which can't hold the grid itself (native menus have no swatches).
 import { Check } from "lucide-react";
-import { type KeyboardEvent, type Ref, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { Button } from "../components/ui/Button";
 import { cx } from "../lib/utils";
@@ -42,12 +42,10 @@ const COLUMNS = 8;
 export function ColorGrid({
   value,
   onChoose,
-  gridRef,
 }: {
   /** The ticked background, or null for none. */
   value: string | null;
   onChoose(background: string): void;
-  gridRef?: Ref<HTMLDivElement>;
 }) {
   const checked = value ? LABEL_BACKGROUNDS.indexOf(value.toLowerCase()) : -1;
   const [focused, setFocused] = useState(Math.max(checked, 0));
@@ -88,13 +86,7 @@ export function ColorGrid({
   };
 
   return (
-    <div
-      ref={gridRef}
-      className="label-color__grid"
-      role="radiogroup"
-      aria-label="Colour"
-      onKeyDown={onGridKey}
-    >
+    <div className="label-color__grid" role="radiogroup" aria-label="Colour" onKeyDown={onGridKey}>
       {LABEL_BACKGROUNDS.map((background, i) => {
         const on = i === checked;
         return (
@@ -125,9 +117,9 @@ export function ColorGrid({
   );
 }
 
-/** The grid's swatch that takes focus: the ticked one, else the first. */
-const focusGrid = (grid: HTMLElement | null) =>
-  grid?.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
+/** Focuses the grid's tab stop: the ticked swatch, else the first. */
+const focusGrid = (el: HTMLElement | null) =>
+  el?.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
 
 export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClose(): void }) {
   const { accountId, labelId, at, returnFocus } = spec;
@@ -135,7 +127,6 @@ export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClos
   const current = label?.colorBackground?.toLowerCase() ?? null;
   const [pos, setPos] = useState(at);
   const ref = useRef<HTMLDivElement>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
   const removeRef = useRef<HTMLButtonElement>(null);
 
   // Keep the popover inside the viewport once its size is known.
@@ -149,7 +140,7 @@ export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClos
   }, [at]);
 
   useEffect(() => {
-    focusGrid(gridRef.current);
+    focusGrid(ref.current);
     const onPointerDown = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
     };
@@ -185,7 +176,7 @@ export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClos
       // Two stops, the grid and Remove colour; focus stays in the popover until it closes.
       const inGrid = document.activeElement !== removeRef.current;
       if (inGrid && !removeRef.current?.disabled) removeRef.current?.focus();
-      else focusGrid(gridRef.current);
+      else focusGrid(ref.current);
     } else return;
     e.preventDefault();
     e.stopPropagation();
@@ -202,7 +193,7 @@ export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClos
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <ColorGrid value={current} onChoose={choose} gridRef={gridRef} />
+      <ColorGrid value={current} onChoose={choose} />
       <Button
         ref={removeRef}
         variant="ghost"
