@@ -118,15 +118,46 @@ jobs:
       - name: Bundle (nsis)
         if: matrix.os == 'windows-latest'
         run: npx tauri build --debug --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      # Runs the installer the way a user does (no flags). Our template
+      # (src-tauri/windows/installer.nsi) makes that a one-click install, so it
+      # must finish with no input and open Pheeme; a wizard page would wait forever.
+      - name: Install (one-click)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Save-Screen($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("src-tauri/target/debug/bundle/nsis/$name.png")
+          }
+          $setup = Get-ChildItem src-tauri/target/debug/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $p = Start-Process $setup.FullName -PassThru
+          Start-Sleep -Milliseconds 1500
+          Save-Screen 'installing'
+          if (-not $p.WaitForExit(120000)) {
+            Save-Screen 'stuck'
+            Stop-Process $p -Force
+            throw 'The installer is waiting for input: a wizard page is showing.'
+          }
+          if ($p.ExitCode -ne 0) { throw "The installer exited with $($p.ExitCode)." }
+          if (-not (Test-Path "$env:LOCALAPPDATA\Pheeme\pheeme.exe")) { throw 'Pheeme was not installed.' }
+          Start-Sleep -Seconds 10
+          Save-Screen 'opened'
+          if (-not (Get-Process pheeme -ErrorAction SilentlyContinue)) { throw 'Pheeme did not open after installing.' }
+          Stop-Process -Name pheeme -Force
       - name: Bundle (dmg)
         if: matrix.os == 'macos-latest'
         run: npx tauri build --debug --bundles dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
         with:
           name: pheeme-${{ matrix.os }}
           path: |
             src-tauri/target/debug/bundle/deb/*.deb
             src-tauri/target/debug/bundle/nsis/*.exe
+            src-tauri/target/debug/bundle/nsis/*.png
             src-tauri/target/debug/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 7
