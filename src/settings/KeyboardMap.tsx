@@ -177,7 +177,6 @@ export function KeyboardMap({
         className="kbmap__board"
         role="group"
         aria-label={`Keyboard map, ${active.label}`}
-        onMouseLeave={() => setTip(null)}
       >
         {rows.map((row, r) => (
           <div key={r} className="kbmap__row">
@@ -210,6 +209,7 @@ export function KeyboardMap({
                   style={style}
                   aria-label={name}
                   onMouseEnter={(e) => point(key, r, e.currentTarget)}
+                  onMouseLeave={() => setTip(null)}
                   onFocus={(e) => point(key, r, e.currentTarget)}
                   onBlur={() => setTip(null)}
                   onClick={() => {

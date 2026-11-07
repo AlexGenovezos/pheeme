@@ -40,7 +40,7 @@ test("hovering a key says what it does", () => {
   setup();
   fireEvent.mouseEnter(key("E: Archive"));
   expect(document.querySelector(".kbmap__tip")).toHaveTextContent("Archive");
-  fireEvent.mouseLeave(screen.getByRole("group"));
+  fireEvent.mouseLeave(key("E: Archive"));
   expect(document.querySelector(".kbmap__tip")).toBeNull();
 });
 
