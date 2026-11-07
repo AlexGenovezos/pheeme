@@ -11,7 +11,9 @@ Windows and Linux use the notification preferences supplied by the desktop.
 
 Alerts contain the sender, subject and a short preview of newly delivered unread
 **Primary** mail. They include replies to existing conversations. Promotions,
-Social, Updates, Forums, read mail, Spam, Trash, sent mail and drafts do not alert.
+Social, Updates, Forums, read mail, Spam, Trash and drafts do not alert. Mail you
+send to yourself alerts when it arrives unread in the Inbox; your own replies and
+other sent mail (not in the Inbox, or already read) do not.
 Initial downloads, background cache filling, search downloads, label changes and
 expired-history resyncs stay silent. History replay does not repeat an alert.
 Multiple messages arriving in one conversation during one sync produce one alert.
@@ -44,6 +46,9 @@ identity. Plain browser preview supports the settings UI without sending alerts.
 
 - Connect an account: the "Turn on notifications?" prompt appears once. Turn on
   and dismiss both persist across restarts; adding another account asks again.
+- Send test mail from a different address, or mail yourself: a message to your own
+  address alerts when it arrives unread in the Inbox. Check the diagnostic log for
+  `notification permission at startup` and `desktop alerts delivered`.
 - Enable one of two accounts and send a new Primary message to each. Only the
   enabled account alerts, with the expected sender, subject and preview.
 - Close the window, then click a new alert. The window returns to the correct

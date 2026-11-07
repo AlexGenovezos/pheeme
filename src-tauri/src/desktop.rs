@@ -106,6 +106,7 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
                         .into_iter()
                         .map(|m| (m.thread_id.clone(), m))
                         .collect();
+                    let (mut shown, mut failed) = (0usize, 0usize);
                     for (thread_id, mail) in by_thread {
                         let target = ThreadTarget {
                             account_id: account_id.clone(),
@@ -116,10 +117,20 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
                             clean_text(&mail.subject, 160),
                             clean_text(&mail.snippet, 240)
                         );
-                        platform::show(&app, target, clean_text(&mail.sender, 120), body).await;
+                        if platform::show(&app, target, clean_text(&mail.sender, 120), body).await {
+                            shown += 1;
+                        } else {
+                            failed += 1;
+                        }
                     }
+                    // Counts only: never the sender, subject or snippet.
+                    tracing::info!(%account_id, alerts = shown + failed, shown, failed, "desktop alerts delivered");
                 }
-                Ok(_) => {}
+                Ok(_) => tracing::info!(
+                    %account_id,
+                    alerts = messages.len(),
+                    "new mail not alerted: notifications are off for this account"
+                ),
                 Err(error) => tracing::warn!(%error, "Could not read notification preferences"),
             }
         });
@@ -296,6 +307,12 @@ pub fn install(app: &AppHandle) {
         }
     }
     let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match platform::permission(false).await {
+            Ok(permission) => tracing::info!(%permission, "notification permission at startup"),
+            Err(error) => tracing::warn!(%error, "Could not read notification permission"),
+        }
+    });
     tauri::async_runtime::spawn(async move {
         loop {
             // Initial snapshot, then only existing sync/account events; no extra mail polling.

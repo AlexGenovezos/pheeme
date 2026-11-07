@@ -17,13 +17,14 @@ impl NewMail {
     pub fn from_message(message: &crate::db::messages::DbMessage) -> Option<Self> {
         let labels = message.labels();
         let has = |label: &str| labels.iter().any(|l| l == label);
+        // SENT is allowed: mail you send yourself lands unread in the Inbox. Your own replies
+        // carry neither INBOX nor UNREAD, so the checks above already keep them silent.
         if message.is_read != 0
             || !has("INBOX")
             || [
                 "TRASH",
                 "SPAM",
                 "DRAFT",
-                "SENT",
                 "CATEGORY_SOCIAL",
                 "CATEGORY_PROMOTIONS",
                 "CATEGORY_UPDATES",
