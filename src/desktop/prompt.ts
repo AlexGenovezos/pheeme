@@ -24,8 +24,8 @@ export function useNotificationPrompt() {
   useEffect(() => {
     if (!accountIds) return;
     let stopped = false;
-    getDesktopSettings().then(
-      (settings) => {
+    getDesktopSettings()
+      .then((settings) => {
         const unasked = settings.accounts.filter((a) => !a.asked);
         if (stopped || unasked.length === 0 || showing()) return;
         shown = toast({
@@ -47,9 +47,9 @@ export function useNotificationPrompt() {
             void answer(false);
           },
         });
-      },
-      (error) => console.warn("Could not read notification settings", error),
-    );
+      })
+      // Includes a malformed reply, so a failure here never surfaces as an unhandled rejection.
+      .catch((error) => console.warn("Could not read notification settings", error));
     return () => {
       stopped = true;
     };
