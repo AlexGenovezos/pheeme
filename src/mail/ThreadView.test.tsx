@@ -159,9 +159,10 @@ test("a collapsed HTML message only mounts its images when expanded", () => {
   expect(screen.queryByTitle("Message body")).toBeNull();
 
   fireEvent.click(within(card(1)).getByRole("button"));
-  expect(screen.getByTitle("Message body").getAttribute("srcdoc")).toContain(
-    "img-src data: pheeme-att: http://pheeme-att.localhost https: http:",
-  );
+  const doc = (screen.getByTitle("Message body") as HTMLIFrameElement).contentDocument!;
+  expect(
+    doc.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute("content"),
+  ).toContain("img-src data: pheeme-att: http://pheeme-att.localhost https: http:");
   expect(screen.queryByRole("button", { name: "Load images" })).toBeNull();
 });
 
@@ -312,9 +313,8 @@ test("plain text renders escaped with link buttons; HTML bodies render in the sa
   act(() => open(detail([message(1, { bodyHtml: "<p>hi</p>", bodyText: "plain alt" })])));
   renderView();
   expect(screen.queryByText("plain alt")).toBeNull();
-  expect(screen.getByTitle("Message body").getAttribute("srcdoc")).toContain(
-    "<body><p>hi</p></body>",
-  );
+  const frame = screen.getByTitle("Message body") as HTMLIFrameElement;
+  expect(frame.contentDocument!.body.innerHTML).toBe("<p>hi</p>");
 });
 
 test("attachments list hides inline images and downloads with a toast", async () => {

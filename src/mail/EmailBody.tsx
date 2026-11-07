@@ -9,7 +9,7 @@ import "./mail.css";
 
 /**
  * A message body. Plain text renders in the main document (React-escaped, URLs linkified); HTML renders in
- * a script-less sandboxed iframe (Builder's calls 10–13) that the parent sizes and whose links it opens.
+ * a script-less sandboxed iframe (Builder's calls 10–13) that the parent writes, sizes and opens links for.
  */
 export function EmailBody({ message, onRetry }: { message: MessageDetail; onRetry?(): void }) {
   if (message.bodyHtml) {
@@ -44,6 +44,7 @@ export function HtmlBody({ html, declaresDark }: HtmlBodyProps) {
   const wrapper = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const stopWatching = useRef<(() => void) | null>(null);
+  const written = useRef<{ doc: Document; srcDoc: string } | null>(null);
 
   // The theme writes its tokens onto :root before the store changes, so they're current on re-render.
   const srcDoc = useMemo(() => {
@@ -63,27 +64,40 @@ export function HtmlBody({ html, declaresDark }: HtmlBodyProps) {
     stopWatching.current = null;
   }, []);
 
-  // A new srcdoc replaces the document: let go of the old one now, not when the new one loads.
-  useLayoutEffect(() => detach, [srcDoc, detach]);
-
-  const onLoad = useCallback(() => {
-    detach();
+  // The document is written into the frame synchronously rather than set as `srcdoc`: WebKit loads a srcdoc
+  // a task later, so the browser painted the frame at zero height first. Switching threads flashed the
+  // reply bar up under the header, then the body popped in. Written here, it is measured before any paint.
+  const show = useCallback(() => {
     const iframe = frame.current;
     const doc = iframe?.contentDocument;
-    if (!iframe || !wrapper.current || !doc?.documentElement) return;
+    if (!iframe || !doc || !wrapper.current) return;
+    const current = written.current?.doc === doc && written.current.srcDoc === srcDoc;
+    if (current && stopWatching.current) return;
+    detach();
+    if (!current) {
+      doc.open();
+      doc.write(srcDoc);
+      doc.close();
+      written.current = { doc, srcDoc };
+    }
     stopWatching.current = watchFrame(iframe, wrapper.current, doc);
-  }, [detach]);
+  }, [srcDoc, detach]);
 
+  useLayoutEffect(() => {
+    show();
+    return detach;
+  }, [show, detach]);
+
+  // `onLoad`: a frame moved in the DOM starts over with a blank document and fires `load`; write it again.
   return (
     <div className="email-body" ref={wrapper}>
       <iframe
         ref={frame}
         className="email-body__frame"
         sandbox="allow-same-origin"
-        srcDoc={srcDoc}
         title="Message body"
         referrerPolicy="no-referrer"
-        onLoad={onLoad}
+        onLoad={show}
       />
     </div>
   );
@@ -119,7 +133,7 @@ const closestLink = (target: EventTarget | null) => {
 };
 
 /**
- * Follow a loaded frame document: size the iframe to its content, route link clicks to the OS and keys
+ * Follow a written frame document: size the iframe to its content, route link clicks to the OS and keys
  * to the app's shortcuts. The frame can't run scripts, so all of this runs in the parent against the
  * same-origin document. Returns a function that stops it.
  */
