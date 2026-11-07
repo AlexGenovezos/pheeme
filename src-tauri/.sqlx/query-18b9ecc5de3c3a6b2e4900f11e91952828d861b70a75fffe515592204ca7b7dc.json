@@ -6,7 +6,13 @@
       {
         "name": "last_message_date",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "last_message_date"
+          }
+        }
       }
     ],
     "parameters": {

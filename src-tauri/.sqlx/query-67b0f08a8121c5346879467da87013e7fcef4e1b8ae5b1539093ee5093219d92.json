@@ -6,7 +6,13 @@
       {
         "name": "mailbox_messages_total",
         "ordinal": 0,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "sync_state",
+            "name": "mailbox_messages_total"
+          }
+        }
       }
     ],
     "parameters": {

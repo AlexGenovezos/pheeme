@@ -6,27 +6,57 @@
       {
         "name": "backfill_page_token",
         "ordinal": 0,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_state",
+            "name": "backfill_page_token"
+          }
+        }
       },
       {
         "name": "backfill_complete",
         "ordinal": 1,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "sync_state",
+            "name": "backfill_complete"
+          }
+        }
       },
       {
         "name": "backfill_bodies_done",
         "ordinal": 2,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "sync_state",
+            "name": "backfill_bodies_done"
+          }
+        }
       },
       {
         "name": "backfill_generation",
         "ordinal": 3,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "sync_state",
+            "name": "backfill_generation"
+          }
+        }
       },
       {
         "name": "last_synced_at",
         "ordinal": 4,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "sync_state",
+            "name": "last_synced_at"
+          }
+        }
       }
     ],
     "parameters": {

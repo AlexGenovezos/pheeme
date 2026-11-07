@@ -1,5 +1,5 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { AccountInfo } from "../lib/tauri";
 import { Onboarding } from "./Onboarding";
@@ -152,7 +152,7 @@ test("signs in: explains the warning, opens Google, and confirms the account", a
     client: { kind: "new", clientId: CLIENT_ID, clientSecret: "s3cret" },
   });
   expect(calls.map((c) => c.cmd)).toContain("open_external");
-  expect(localStorage.getItem("pheeme.onboarding.v1")).toBeNull();
+  await waitFor(() => expect(localStorage.getItem("pheeme.onboarding.v1")).toBeNull());
   click("Continue");
   expect(onConnected).toHaveBeenCalledWith(account);
 });
