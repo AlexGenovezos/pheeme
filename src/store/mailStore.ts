@@ -148,6 +148,52 @@ const EMPTY = {
   error: null,
 };
 
+/** The unfiltered list as it was when Unread only went on, shown again at once when it goes off. */
+let unfiltered: {
+  query: MailQuery;
+  threads: ThreadSummary[];
+  next: ThreadCursor | null;
+  /** Rows removed from the unread list since (archived, deleted, moved). */
+  gone: Set<ThreadKey>;
+} | null = null;
+
+/**
+ * The rows to show the moment Unread only is switched, before the query answers. Rows are paged by
+ * keyset, so the unread rows of a list loaded down to cursor C are exactly the unread list down to C:
+ * switching on shows them at once, and the query then adds the rest below. Switching off restores
+ * the list from before, with the rows shown now in their current state, minus rows removed in the
+ * meantime and not since restored (Undo). `null` when the mailbox changes or nothing is loaded.
+ */
+function instantRows(
+  shown: ThreadSummary[],
+  next: ThreadCursor | null,
+  from: MailQuery | null,
+  to: MailQuery,
+): { threads: ThreadSummary[]; next: ThreadCursor | null } | null {
+  if (!from || from.search || to.search || !sameQuery(from, { ...to, unreadOnly: from.unreadOnly }))
+    return null;
+  if (to.unreadOnly && !from.unreadOnly) {
+    unfiltered = {
+      query: from,
+      threads: shown,
+      next,
+      gone: new Set(),
+    };
+    return { threads: shown.filter((t) => t.unread), next };
+  }
+  if (!to.unreadOnly && from.unreadOnly && unfiltered && sameQuery(unfiltered.query, to)) {
+    const { gone } = unfiltered;
+    const current = new Map(shown.map((t) => [keyOf(t), t]));
+    return {
+      threads: unfiltered.threads.flatMap(
+        (t) => current.get(keyOf(t)) ?? (gone.has(keyOf(t)) ? [] : t),
+      ),
+      next: unfiltered.next,
+    };
+  }
+  return null;
+}
+
 /** Preserve existing row positions as Gmail adds matches; identity always includes the account. */
 function appendUnique(existing: ThreadSummary[], incoming: ThreadSummary[]): ThreadSummary[] {
   const have = new Set(existing.map(keyOf));
@@ -324,7 +370,18 @@ export const useMailStore = create<MailState>((set, get) => {
       remoteRows.clear();
       removedFromSearch.clear();
       remoteUpdates.clear();
-      set({ query, loading: true, search: null });
+      const before = get();
+      // A failed query keeps rows only if they were already this query's, not the instant ones.
+      const hadRows = sameQuery(before.loadedQuery, query);
+      const instant = instantRows(before.threads, before.next, before.loadedQuery, query);
+      if (!instant && !hadRows) unfiltered = null;
+      set({
+        query,
+        loading: true,
+        search: null,
+        // Rows on screen already carry the pending changes.
+        ...(instant ? { ...instant, loadedQuery: query } : {}),
+      });
       try {
         const page = await listThreads({
           accountIds: query.accountIds,
@@ -344,9 +401,7 @@ export const useMailStore = create<MailState>((set, get) => {
       } catch (error) {
         if (ticket !== latest) return;
         // The previous mailbox's rows and cursor mustn't masquerade as this one's; a failed reload of the same query keeps its rows.
-        const stale = sameQuery(get().loadedQuery, query)
-          ? {}
-          : { threads: [], next: null, loadedQuery: null };
+        const stale = hadRows ? {} : { threads: [], next: null, loadedQuery: null };
         set({ ...stale, loading: false, error: toCommandError(error) });
       }
     },
@@ -422,7 +477,10 @@ export const useMailStore = create<MailState>((set, get) => {
       // The rows being removed are in the list on screen, which is the loaded query (else the one asked for).
       if (op !== undefined)
         register(keys, { op, fn: null, query: get().loadedQuery ?? get().query });
-      keys.forEach((key) => keptRead.delete(key));
+      keys.forEach((key) => {
+        keptRead.delete(key);
+        unfiltered?.gone.add(key);
+      });
       const gone = new Set(keys);
       set((s) => ({ threads: s.threads.filter((t) => !gone.has(keyOf(t))) }));
     },
@@ -450,6 +508,7 @@ export const useMailStore = create<MailState>((set, get) => {
     clear: () => {
       latest++;
       keptRead.clear();
+      unfiltered = null;
       remoteRows.clear();
       removedFromSearch.clear();
       set({ ...EMPTY, query: null });
@@ -519,5 +578,6 @@ export function __resetMailStoreForTests() {
   latest++;
   pending = new Map();
   keptRead.clear();
+  unfiltered = null;
   useMailStore.setState({ ...EMPTY, query: null });
 }

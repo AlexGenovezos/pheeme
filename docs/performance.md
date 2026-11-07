@@ -13,6 +13,7 @@ grow with the mailbox, against a seeded 50,000-thread SQLite cache and the in-me
 |-----------|--------------|
 | `list_threads::first_page` / `deep_page` | One Inbox page at the top, and 90% of the way down |
 | `list_unread_threads::first_page` | The first Inbox page with Unread only on |
+| `list_unread_tab::few_unread` | A tab's first page with Unread only on, when the tab has fewer unread threads than a page |
 | `unread_counts::inbox_and_tabs` / `label_counts::every_label` | The sidebar and tray counts, rerun on every sync event |
 | `search_threads::first_letter` / `rare_word` | A local search page for one typed letter (matches every message), and for a word in only the oldest message |
 | `recompute_threads::batch` | Rebuilding 200 threads after their labels changed |
