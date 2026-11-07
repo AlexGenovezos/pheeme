@@ -2,6 +2,7 @@
 //! the SQLite cache; changes go through the outbox. Tauri-free; commands are thin
 //! adapters over [`MailService`].
 
+use crate::attachment_cache::AttachmentCache;
 use crate::db::attachments::{self, DbAttachment};
 use crate::db::messages::{parse_labels, DbMessage};
 use crate::db::search::{self as search_db, ThreadSearch, LABEL_KEY_SEP};
@@ -322,17 +323,27 @@ pub struct GmailSearchPageDto {
 pub struct MailService {
     db: SqlitePool,
     sync: Arc<SyncManager>,
-    /// Attachment bytes live under `cache_dir/attachments/{account}/{message}/{row id}`.
-    cache_dir: PathBuf,
+    attachments: AttachmentCache,
 }
 
 impl MailService {
     pub fn new(db: SqlitePool, sync: Arc<SyncManager>, cache_dir: PathBuf) -> Self {
+        let attachments = AttachmentCache::new(db.clone(), &cache_dir);
         Self {
             db,
             sync,
-            cache_dir,
+            attachments,
         }
+    }
+
+    /// Bound the attachment cache (see [`AttachmentCache::sweep`]).
+    pub async fn sweep_attachment_cache(&self) {
+        self.attachments.sweep().await;
+    }
+
+    /// Drop a removed account's cached attachment bytes.
+    pub async fn forget_account(&self, account_id: &str) {
+        self.attachments.remove_account(account_id).await;
     }
 
     /// Threads under `label_id` (and `also_label_id`, for a category tab) across
@@ -628,14 +639,11 @@ impl MailService {
             .clone()
             .unwrap_or_else(|| "application/octet-stream".to_owned());
         let cached = self
-            .cache_dir
-            .join("attachments")
-            .join(&row.account_id)
-            .join(&row.message_id)
-            .join(&row.id);
-        let bytes = match tokio::fs::read(&cached).await {
-            Ok(bytes) => bytes,
-            Err(_) => {
+            .attachments
+            .path(&row.account_id, &row.message_id, &row.id);
+        let bytes = match self.attachments.read(&cached).await {
+            Some(bytes) => bytes,
+            None => {
                 let api = self.sync.engine(&row.account_id).api;
                 let bytes = match row.attachment_id.as_deref() {
                     Some(gmail_id) => api
@@ -646,7 +654,7 @@ impl MailService {
                     // at this row's index (rows are numbered in parse order).
                     None => embedded_bytes(api.as_ref(), &row).await?,
                 };
-                if let Err(e) = write_cache(&cached, &bytes).await {
+                if let Err(e) = self.attachments.write(&cached, &bytes).await {
                     tracing::warn!(error = %e, "couldn't cache an attachment");
                 }
                 bytes
@@ -850,18 +858,6 @@ fn is_header_safe(value: &str) -> bool {
 
 fn io_error(e: std::io::Error) -> MailError {
     MailError::Sync(SyncError::Db(anyhow::Error::new(e)))
-}
-
-/// Atomic: a half-written file is never read back as the attachment.
-async fn write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-    let mut tmp_name = path.file_name().unwrap_or_default().to_owned();
-    tmp_name.push(format!(".tmp-{}", uuid::Uuid::new_v4()));
-    let tmp = path.with_file_name(tmp_name);
-    tokio::fs::write(&tmp, bytes).await?;
-    tokio::fs::rename(&tmp, path).await
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ pub async fn remove_account(
 ) -> Result<(), CommandError> {
     state.accounts.remove_account(&account_id).await?;
     state.sync.forget(&account_id);
+    state.mail.forget_account(&account_id).await;
     crate::desktop::refresh(&app);
     Ok(())
 }
