@@ -344,6 +344,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     send_diagnostics: () => undefined,
     save_diagnostics: () => undefined,
     log_update: () => undefined,
+    log_thread_shown: () => undefined,
     "plugin:dialog|save": () => "/Users/you/Downloads/pheeme-diagnostics.zip",
     reveal_download: () => undefined,
     "plugin:updater|check": () => null,

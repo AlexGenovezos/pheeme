@@ -10,6 +10,7 @@ import { isPreview, isTauri } from "./preview/runtime";
 import { syncNativeWindow, vibrancy } from "./theme/nativeWindow";
 import { initTheme } from "./theme/theme";
 import { initReadingSize } from "./settings/readingSettings";
+import { openTimer } from "./mail/openTiming";
 
 const root = document.documentElement;
 root.dataset.platform = platform;
@@ -20,6 +21,8 @@ if (vibrancy) root.dataset.vibrancy = "";
 initTheme(isTauri() ? syncNativeWindow : undefined);
 initReadingSize();
 loadBindings();
+// From the first click: how long each conversation takes to show goes to the diagnostics log.
+openTimer();
 
 function render() {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

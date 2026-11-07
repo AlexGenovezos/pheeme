@@ -15,6 +15,7 @@ import { applyLabel, archive } from "./actions";
 import { focusFromKeyboard } from "../keyboard/focus";
 import { handleScrollKeyDown, handleScrollKeyUp, stopKeyScroll } from "./keyScroll";
 import { parseThreadKey, threadKey } from "./mailboxes";
+import { openTimer } from "./openTiming";
 import "./mail.css";
 
 /** Which messages are open. `seen` is every message already given its starting state. */
@@ -138,6 +139,13 @@ export function ThreadView() {
   useEffect(() => {
     if (openKey) void load(openKey);
   }, [openKey, load]);
+
+  // Children wrote their email frames in layout effects, so the open conversation is in the DOM: time its paint
+  // and images (diagnostics). Later refreshes of the same open are ignored by the timer.
+  useEffect(() => {
+    const root = scroller.current?.querySelector('.thread-view__retained[data-visible="true"]');
+    if (openKey && detail && root) openTimer().shown(openKey, root);
+  }, [openKey, detail]);
 
   // Right moves into the conversation, where the arrows scroll it; Left (`list.focus`) goes back to the list.
   useCommands([

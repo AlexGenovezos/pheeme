@@ -8,7 +8,7 @@ pub mod upload;
 
 use crate::accounts::AccountInfo;
 use crate::db::{messages, sync_state};
-use crate::diagnostics::OpenTiming;
+use crate::diagnostics::{OpenTiming, ShownOutcome, ShownTiming};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -26,6 +26,9 @@ pub const MAX_NOTE_CHARS: usize = 2000;
 
 /// Slowest recent opens listed in the notification email.
 const HIGHLIGHTS: usize = 5;
+/// Conversations that took longer than [`SLOW_SHOWN_MS`] to show, listed after them.
+const SHOWN_HIGHLIGHTS: usize = 3;
+const SLOW_SHOWN_MS: u64 = 1000;
 
 pub fn diagnostics_url() -> String {
     std::env::var("PHEEME_DIAGNOSTICS_URL").unwrap_or_else(|_| DIAGNOSTICS_URL.to_owned())
@@ -101,7 +104,12 @@ pub async fn account_summaries(
 }
 
 /// `summary.json`, less the note and reply address (the bundle adds those).
-pub fn summary(accounts: &[AccountSummary], quota_per_minute: u32, opens: &[OpenTiming]) -> Value {
+pub fn summary(
+    accounts: &[AccountSummary],
+    quota_per_minute: u32,
+    opens: &[OpenTiming],
+    shown: &[ShownTiming],
+) -> Value {
     json!({
         "version": env!("CARGO_PKG_VERSION"),
         "os": std::env::consts::OS,
@@ -110,12 +118,64 @@ pub fn summary(accounts: &[AccountSummary], quota_per_minute: u32, opens: &[Open
         "accounts": accounts,
         "quotaPerMinute": quota_per_minute,
         "recentOpens": opens,
+        "recentShown": shown,
     })
 }
 
 /// The slowest recent opens, one line each, e.g.
-/// `38.2 s from Gmail, 3 retries (429 rateLimitExceeded), sync busy`.
-pub fn highlights(opens: &[OpenTiming]) -> Vec<String> {
+/// `38.2 s from Gmail, 3 retries (429 rateLimitExceeded), sync busy`, then the conversations
+/// slowest to show in the window, e.g.
+/// `12.3 s to show, from memory: data 0.0 s, painted 0.4 s, 14 images 12.3 s (2 failed)`.
+pub fn highlights(opens: &[OpenTiming], shown: &[ShownTiming]) -> Vec<String> {
+    let mut lines = open_highlights(opens);
+    let mut slow: Vec<&ShownTiming> = shown
+        .iter()
+        .filter(|t| t.total_ms > SLOW_SHOWN_MS)
+        .collect();
+    slow.sort_by_key(|t| std::cmp::Reverse(t.total_ms));
+    lines.extend(slow.into_iter().take(SHOWN_HIGHLIGHTS).map(shown_line));
+    lines
+}
+
+fn secs(ms: u64) -> String {
+    format!("{:.1} s", ms as f64 / 1000.0)
+}
+
+fn shown_line(t: &ShownTiming) -> String {
+    let at = |ms: Option<u64>| ms.map_or_else(|| "-".to_owned(), secs);
+    let what = match t.outcome {
+        ShownOutcome::Shown => "to show",
+        ShownOutcome::Left => "and left before it showed",
+        ShownOutcome::TimedOut => "and still not shown (gave up)",
+    };
+    let source = if t.from_memory {
+        "from memory"
+    } else {
+        "from get_thread"
+    };
+    let mut line = format!(
+        "{} {what}, {source}: data {}, painted {}",
+        secs(t.total_ms),
+        at(t.data_ms),
+        at(t.paint_ms)
+    );
+    if t.images > 0 {
+        line.push_str(&format!(", {} images {}", t.images, at(t.images_ms)));
+        let mut why = Vec::new();
+        if t.images_failed > 0 {
+            why.push(format!("{} failed", t.images_failed));
+        }
+        if t.images_pending > 0 {
+            why.push(format!("{} still loading", t.images_pending));
+        }
+        if !why.is_empty() {
+            line.push_str(&format!(" ({})", why.join(", ")));
+        }
+    }
+    line
+}
+
+fn open_highlights(opens: &[OpenTiming]) -> Vec<String> {
     let mut slowest: Vec<&OpenTiming> = opens.iter().collect();
     slowest.sort_by_key(|t| std::cmp::Reverse(t.total_ms));
     slowest
@@ -204,6 +264,7 @@ pub struct Sources<'a> {
     pub accounts: &'a [AccountInfo],
     pub quota_per_minute: u32,
     pub opens: Vec<OpenTiming>,
+    pub shown: Vec<ShownTiming>,
     pub log_dir: Option<PathBuf>,
 }
 
@@ -223,12 +284,17 @@ pub async fn prepare(
         arch: std::env::consts::ARCH.to_owned(),
         reply_to: reply_to.clone(),
         note: note.clone(),
-        highlights: highlights(&sources.opens),
+        highlights: highlights(&sources.opens, &sources.shown),
     };
     let input = bundle::BundleInput {
         note,
         reply_to,
-        summary: summary(&summaries, sources.quota_per_minute, &sources.opens),
+        summary: summary(
+            &summaries,
+            sources.quota_per_minute,
+            &sources.opens,
+            &sources.shown,
+        ),
         log_dir: sources.log_dir,
         own_addresses,
         max_bytes: MAX_ZIP_BYTES,
@@ -276,7 +342,7 @@ mod tests {
         opens.push(failed);
         opens.push(slow);
 
-        let lines = highlights(&opens);
+        let lines = highlights(&opens, &[]);
 
         assert_eq!(lines.len(), HIGHLIGHTS);
         assert_eq!(
@@ -285,6 +351,49 @@ mod tests {
         );
         assert_eq!(lines[1], "0.9 s from cache, failed: network");
         assert_eq!(lines[2], "0.1 s from Gmail");
+    }
+
+    fn shown(total_ms: u64) -> ShownTiming {
+        ShownTiming {
+            outcome: ShownOutcome::Shown,
+            data_ms: Some(0),
+            paint_ms: Some(40),
+            total_ms,
+            ..ShownTiming::default()
+        }
+    }
+
+    #[test]
+    fn highlights_add_conversations_slow_to_show_and_what_held_them() {
+        let mut images = shown(12_300);
+        images.from_memory = true;
+        images.paint_ms = Some(400);
+        images.images_ms = Some(12_300);
+        images.images = 14;
+        images.images_failed = 2;
+        let mut left = shown(4_100);
+        left.outcome = ShownOutcome::Left;
+        left.data_ms = None;
+        left.paint_ms = None;
+        let fast = shown(300);
+
+        let lines = highlights(&[timing(10)], &[fast, left, images]);
+
+        assert_eq!(
+            lines,
+            [
+                "0.0 s from Gmail",
+                "12.3 s to show, from memory: data 0.0 s, painted 0.4 s, 14 images 12.3 s (2 failed)",
+                "4.1 s and left before it showed, from get_thread: data -, painted -",
+            ]
+        );
+    }
+
+    #[test]
+    fn summary_lists_recent_shown_timings() {
+        let value = summary(&[], 6000, &[], &[shown(1500)]);
+        assert_eq!(value["recentShown"][0]["totalMs"], 1500);
+        assert_eq!(value["recentShown"][0]["outcome"], "shown");
     }
 
     #[test]
@@ -402,6 +511,7 @@ mod tests {
                 accounts: &accounts,
                 quota_per_minute: 6000,
                 opens: vec![timing(1500)],
+                shown: vec![],
                 log_dir: Some(logs.path().to_path_buf()),
             },
             " it hangs ",

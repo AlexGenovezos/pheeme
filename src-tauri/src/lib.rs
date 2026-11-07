@@ -348,6 +348,7 @@ pub fn run() {
             commands::support::send_diagnostics,
             commands::support::save_diagnostics,
             commands::updater::log_update,
+            commands::support::log_thread_shown,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

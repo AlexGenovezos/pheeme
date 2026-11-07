@@ -9,7 +9,7 @@ use crate::db::messages::{parse_labels, DbMessage};
 use crate::db::search::{self as search_db, ThreadSearch, LABEL_KEY_SEP};
 use crate::db::threads::{self, DbThread, ThreadCursor, ThreadQuery};
 use crate::db::{labels, messages};
-use crate::diagnostics::{ms_since, OpenTiming, OpenTimings};
+use crate::diagnostics::{ms_since, OpenTiming, OpenTimings, ShownTiming, ShownTimings};
 use crate::gmail::mime::EmailAddress;
 use crate::gmail::probe::{with_probe, ProbeStage, ProbeStats, RequestProbe};
 use crate::gmail::{GmailError, MessageFormat};
@@ -451,6 +451,7 @@ pub struct MailService {
     sync: Arc<SyncManager>,
     attachments: AttachmentCache,
     opens: Arc<OpenTimings>,
+    shown: Arc<ShownTimings>,
 }
 
 impl MailService {
@@ -461,12 +462,25 @@ impl MailService {
             sync,
             attachments,
             opens: Arc::default(),
+            shown: Arc::default(),
         }
     }
 
     /// Timings of the most recent opened threads, oldest first.
     pub fn recent_opens(&self) -> Vec<OpenTiming> {
         self.opens.recent()
+    }
+
+    /// Log how long a picked conversation took to show in the window, and keep it for diagnostics.
+    pub fn record_shown(&self, mut timing: ShownTiming) {
+        timing.at_ms = now_ms();
+        timing.log();
+        self.shown.record(timing);
+    }
+
+    /// The most recent [`Self::record_shown`] timings, oldest first.
+    pub fn recent_shown(&self) -> Vec<ShownTiming> {
+        self.shown.recent()
     }
 
     /// Bound the attachment cache (see [`AttachmentCache::sweep`]).

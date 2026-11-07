@@ -12,8 +12,13 @@ stays on during normal use.
 
 The active file is `pheeme.log`, with older files numbered `.1` through `.6`
 (`.1` is newest). Timestamps use UTC. The files contain startup
-version/platform details, sync errors, and Gmail retry diagnostics (HTTP status,
-rate-limit reason, retry attempts and delays). Requests' authorization headers,
+version/platform details, sync errors, Gmail retry diagnostics (HTTP status,
+rate-limit reason, retry attempts and delays), and how long opened conversations
+took: `thread opened` times the backend read (logged when over 1 s or fetched
+from Gmail), and `thread shown` times the window from the click until the
+conversation painted and every image in it loaded or failed (logged when over
+1 s). The last 50 of each are also kept in memory for Send diagnostics
+(`recentOpens` and `recentShown` in `summary.json`). Requests' authorization headers,
 OAuth secrets, and message bodies are not added to the logs. Error messages and
 local paths can still contain personal information; review logs before sharing.
 

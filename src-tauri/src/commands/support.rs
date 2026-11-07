@@ -1,6 +1,7 @@
 //! Send diagnostics: thin adapters over [`crate::support`].
 
 use super::CommandError;
+use crate::diagnostics::ShownTiming;
 use crate::support::{self, Sources};
 use crate::AppState;
 use tauri::State;
@@ -16,6 +17,7 @@ async fn prepare(
         accounts: &accounts,
         quota_per_minute: state.gmail_quota.get(),
         opens: state.mail.recent_opens(),
+        shown: state.mail.recent_shown(),
         log_dir: state.log_dir.clone(),
     };
     Ok(support::prepare(sources, note, reply_to).await?)
@@ -48,4 +50,10 @@ pub async fn save_diagnostics(
         .await
         .map_err(support::SupportError::from)?;
     Ok(())
+}
+
+/// How long a picked conversation took to show in the window (`src/mail/openTiming.ts`).
+#[tauri::command]
+pub fn log_thread_shown(state: State<'_, AppState>, timing: ShownTiming) {
+    state.mail.record_shown(timing);
 }

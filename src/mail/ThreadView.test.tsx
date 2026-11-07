@@ -400,6 +400,22 @@ test("a quick open shows no loading state at all", async () => {
   }
 });
 
+test("reports how long the open conversation took to show", async () => {
+  const shown: unknown[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd === "log_thread_shown") shown.push((args as { timing: unknown }).timing);
+    return cmd === "get_thread" ? detail([message(1)]) : undefined;
+  });
+  useUiStore.setState({ openThread: KEY });
+  renderView();
+  expect(await screen.findByText("Body 1")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(shown).toEqual([
+      expect.objectContaining({ outcome: "shown", fromMemory: false, images: 0 }),
+    ]),
+  );
+});
+
 test("a slow open says what it is waiting on", async () => {
   vi.useFakeTimers();
   try {
