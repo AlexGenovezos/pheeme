@@ -8,37 +8,50 @@
     <title>Pheeme</title>
     <!--
       Critical paint: the theme background before any CSS or JS loads, so launch
-      never flashes white. Colors must equal --color-app-bg in
-      src/styles/themes/{light,dark}.ts (theme.test.ts checks).
+      never flashes white. Fallback colors must equal --color-app-bg in
+      src/styles/themes/{light,dark}.ts (theme.test.ts checks); a custom theme's
+      background comes from the boot script below.
     -->
     <style>
       html {
-        background: #ffffff;
+        background: var(--color-app-bg, #ffffff);
         color-scheme: light;
       }
       @media (prefers-color-scheme: dark) {
         html {
-          background: #15191a;
+          background: var(--color-app-bg, #15191a);
           color-scheme: dark;
         }
       }
       html[data-theme="light"] {
-        background: #ffffff;
+        background: var(--color-app-bg, #ffffff);
         color-scheme: light;
       }
       html[data-theme="dark"] {
-        background: #15191a;
+        background: var(--color-app-bg, #15191a);
         color-scheme: dark;
       }
     </style>
     <script>
       // Apply an explicit Light/Dark choice before first paint (System needs no JS:
-      // the media query above handles it). Key mirrors THEME_MODE_KEY in src/theme/theme.ts.
+      // the media query above handles it), and the chosen theme's background, which
+      // differs from the fallbacks above for a custom theme. Keys mirror THEME_MODE_KEY
+      // and THEME_BOOT_KEY in src/theme/theme.ts.
       (function () {
         try {
+          var root = document.documentElement;
           var mode = localStorage.getItem("pheeme.theme-mode");
-          if (mode === "light" || mode === "dark")
-            document.documentElement.setAttribute("data-theme", mode);
+          if (mode === "light" || mode === "dark") root.setAttribute("data-theme", mode);
+          var boot = JSON.parse(localStorage.getItem("pheeme.theme-boot") || "null");
+          var kind =
+            mode === "light" || mode === "dark"
+              ? mode
+              : matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          var bg = boot && boot[kind];
+          if (typeof bg === "string" && /^#[0-9a-f]{6}$/i.test(bg))
+            root.style.setProperty("--color-app-bg", bg);
         } catch (e) {}
       })();
     </script>

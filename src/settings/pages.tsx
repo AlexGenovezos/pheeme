@@ -26,6 +26,7 @@ import { AccountsSettings, accountsMatch } from "./AccountsSettings";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
+import { ImportThemeControl, ThemeChoiceControl } from "./ThemeSettings";
 import { READING_SIZES, type ReadingSize, useReadingSettings } from "./readingSettings";
 import {
   OfferControl,
@@ -49,6 +50,9 @@ function ThemeModeControl() {
     />
   );
 }
+
+const LightThemeControl = () => <ThemeChoiceControl kind="light" />;
+const DarkThemeControl = () => <ThemeChoiceControl kind="dark" />;
 
 function SidebarControl() {
   const shown = useUiStore((s) => !s.sidebarCollapsed);
@@ -116,6 +120,28 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             description: "Follow your system, or always use light or dark.",
             keywords: ["dark mode", "light mode", "appearance"],
             Control: ThemeModeControl,
+          },
+          {
+            id: "theme.light",
+            title: "Light theme",
+            description: "Used in Light mode, and in System mode when your system is light.",
+            keywords: ["color scheme", "custom theme"],
+            Control: LightThemeControl,
+          },
+          {
+            id: "theme.dark",
+            title: "Dark theme",
+            description: "Used in Dark mode, and in System mode when your system is dark.",
+            keywords: ["color scheme", "custom theme"],
+            Control: DarkThemeControl,
+          },
+          {
+            id: "theme.import",
+            title: "Import a theme",
+            description:
+              "Add a VS Code color theme or a Pheeme theme file (.json). Pheeme adjusts imported colors so text stays readable.",
+            keywords: ["vs code", "vscode", "custom theme", "color scheme", "install"],
+            Control: ImportThemeControl,
           },
         ],
       },

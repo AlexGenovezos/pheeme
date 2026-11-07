@@ -8,7 +8,7 @@ import { buildTheme, type ThemeSource } from "./build";
  * Keep --color-app-bg in sync with the critical style in index.html
  * (theme.test.ts checks it).
  */
-const source: ThemeSource = {
+export const lightSource: ThemeSource = {
   id: "pheeme-light",
   name: "Pheeme Light",
   kind: "light",
@@ -102,4 +102,4 @@ const source: ThemeSource = {
   },
 };
 
-export const lightTheme = buildTheme(source);
+export const lightTheme = buildTheme(lightSource);

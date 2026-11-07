@@ -5,7 +5,7 @@ import { buildTheme, type ThemeSource } from "./build";
  * verdigris accent. Keep --color-app-bg in sync with the critical style in
  * index.html and the window backgroundColor in tauri.conf.json.
  */
-const source: ThemeSource = {
+export const darkSource: ThemeSource = {
   id: "pheeme-dark",
   name: "Pheeme Dark",
   kind: "dark",
@@ -99,4 +99,4 @@ const source: ThemeSource = {
   },
 };
 
-export const darkTheme = buildTheme(source);
+export const darkTheme = buildTheme(darkSource);
