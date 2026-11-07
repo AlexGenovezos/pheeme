@@ -324,3 +324,19 @@ test("a refused label change goes back, keeping a later change still waiting", a
   store().settleLabels(colour, null);
   expect(travel()).toMatchObject({ labelListVisibility: "labelShow", colorBackground: null });
 });
+
+test("a refused label change doesn't undo a later change Gmail already took", async () => {
+  const w = world();
+  backend(w);
+  await store().load(["a"]);
+  const colour = (c: string) => (labels: LabelInfo[]) =>
+    labels.map((l) => (l.id === "Label_2" ? { ...l, colorBackground: c } : l));
+  const first = store().patchLabels("a", colour("#16a766"));
+  const second = store().patchLabels("a", colour("#4986e7"));
+  const travel = () => store().labels.a.find((l) => l.id === "Label_2");
+
+  const taken = { ...label("Label_2", "travel"), colorBackground: "#4986e7" };
+  store().settleLabels(second, [taken]);
+  store().settleLabels(first, null);
+  expect(travel()?.colorBackground).toBe("#4986e7");
+});
