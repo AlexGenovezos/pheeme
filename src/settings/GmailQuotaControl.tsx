@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TextInput } from "../components/ui/TextInput";
 import { getGmailQuota, setGmailQuota, toCommandError } from "../lib/tauri";
 
@@ -9,6 +9,13 @@ export function GmailQuotaControl() {
   const [saved, setSaved] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The field's latest text, and whether a save is in flight (Enter then blur sends one).
+  const draft = useRef("");
+  const saving = useRef(false);
+  const edit = (next: string) => {
+    draft.current = next;
+    setText(next);
+  };
 
   useEffect(() => {
     let stopped = false;
@@ -16,7 +23,7 @@ export function GmailQuotaControl() {
       (value) => {
         if (stopped) return;
         setSaved(value);
-        setText(format(value));
+        edit(format(value));
       },
       (raw) => {
         if (!stopped) setError(toCommandError(raw).message);
@@ -31,17 +38,23 @@ export function GmailQuotaControl() {
   const value = /^\d+$/.test(typed) ? Number(typed) : null;
 
   async function save() {
+    if (saving.current) return;
     if (value === null || value === saved) {
-      if (value !== null && saved !== null) setText(format(saved));
+      if (value !== null && saved !== null) edit(format(saved));
       return;
     }
+    const submitted = text;
+    saving.current = true;
     setError(null);
     try {
       const stored = await setGmailQuota(value);
       setSaved(stored);
-      setText(format(stored));
+      // Typed over while saving: keep the new draft for the next save.
+      if (draft.current === submitted) edit(format(stored));
     } catch (raw) {
       setError(toCommandError(raw).message);
+    } finally {
+      saving.current = false;
     }
   }
 
@@ -54,7 +67,7 @@ export function GmailQuotaControl() {
       disabled={saved === null && error === null}
       invalid={(text !== "" && value === null) || error !== null}
       trailing="/ min"
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => edit(e.target.value)}
       onBlur={() => void save()}
       onKeyDown={(e) => {
         if (e.key === "Enter") void save();
