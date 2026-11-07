@@ -1,5 +1,5 @@
 import { ChevronUp, Pencil } from "lucide-react";
-import type { MouseEvent } from "react";
+import { type MouseEvent, useRef } from "react";
 import { useComposeStore } from "../compose/composeStore";
 import { Button } from "../components/ui/Button";
 import { formatFullDate, formatListDate } from "../lib/dates";
@@ -51,6 +51,7 @@ export function MessageCard({
   const isDraft = message.labelIds.includes("DRAFT");
   const name = isDraft ? "Draft" : senderName(message);
   const when = message.date > 0 ? new Date(message.date) : null;
+  const pressedAt = useRef<{ x: number; y: number } | null>(null);
 
   if (!expanded) {
     return (
@@ -79,11 +80,13 @@ export function MessageCard({
     );
   }
 
-  /** The whole header collapses the card, like the summary row expands it; the chevron
-   *  stays the keyboard route. A click that ends a text selection is left alone. */
+  /** A click on the header's empty space collapses the card, like the summary row expands
+   *  it; the chevron stays the keyboard route. Its text keeps selecting (double-click a
+   *  word), and a press that drags (selecting text) is left alone. */
   const collapseFromHeader = (e: MouseEvent) => {
-    if ((e.target as Element).closest("button, a")) return;
-    if (window.getSelection()?.isCollapsed === false) return;
+    const from = pressedAt.current;
+    if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
+    if ((e.target as Element).closest("button, a, .selectable")) return;
     onToggle();
   };
 
@@ -93,7 +96,11 @@ export function MessageCard({
   ].filter(Boolean);
   return (
     <article className="message-card" aria-label={`Message from ${name}`}>
-      <header className="message-card__header" onClick={collapseFromHeader}>
+      <header
+        className="message-card__header"
+        onMouseDown={(e) => (pressedAt.current = { x: e.clientX, y: e.clientY })}
+        onClick={collapseFromHeader}
+      >
         <div className="message-card__from">
           <div className="message-card__identity">
             <span className="message-card__name selectable" data-draft={isDraft || undefined}>
