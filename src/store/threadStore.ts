@@ -67,7 +67,7 @@ interface ThreadState {
 }
 
 // A request is current while it is the entry here; evicting or re-requesting a key supersedes it.
-// `quiet` requests (prefetch) swallow failures; a foreground `load` that joins one makes it loud.
+// `quiet` requests (prefetch) swallow failures; a foreground `load` that finds one asks again (see `joinOrFetch`).
 const inflight = new Map<ThreadKey, { ticket: number; promise: Promise<void>; quiet: boolean }>();
 let tickets = 0;
 
@@ -120,6 +120,14 @@ export const useThreadStore = create<ThreadState>((set, get) => {
     return promise;
   };
 
+  // A prefetch asked Gmail as background work; the user's open asks again so it isn't queued
+  // behind sync (the new request supersedes the prefetch).
+  const joinOrFetch = (key: ThreadKey): Promise<void> => {
+    const joined = inflight.get(key);
+    if (!joined || joined.quiet) return fetchDetail(key);
+    return joined.promise;
+  };
+
   return {
     details: new Map(),
     errors: {},
@@ -127,10 +135,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
     load: (key) => {
       const cached = get().details.get(key);
       if (cached && !isComplete(cached)) {
-        const joined = inflight.get(key);
-        if (!joined) return fetchDetail(key);
-        joined.quiet = false;
-        return joined.promise;
+        return joinOrFetch(key);
       }
       if (cached) {
         // Touch: move to the most recent position.
@@ -142,10 +147,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         });
         return Promise.resolve();
       }
-      const joined = inflight.get(key);
-      if (!joined) return fetchDetail(key);
-      joined.quiet = false;
-      return joined.promise;
+      return joinOrFetch(key);
     },
     waitForDetail: async (key) => {
       // Each round joins the request in flight (a refresh that superseded ours) or starts one. Bounded, so a

@@ -8,8 +8,16 @@ use std::sync::LazyLock;
 /// An http(s) URL's query string (search terms, ids).
 static URL_QUERY: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(?i)(https?://[^\s?#"'<>]+)\?[^\s"'<>]*"#).unwrap());
-/// A Gmail search outside a URL, up to the next space or parameter.
-static SEARCH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bq=[^\s&]*").unwrap());
+/// A Gmail search outside a URL, up to the next parameter or the end of the line (searches
+/// contain spaces).
+static SEARCH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bq=[^\n&]*").unwrap());
+/// Gmail's free-form error text, which can echo a search or header back: the client's
+/// `message=` field (up to the next field it logs) and [`crate::gmail::GmailError::Api`]'s
+/// Display (to the end of the line). Status and reason stay.
+static GMAIL_MESSAGE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)\bmessage=.*?( (?:delay|retry_after)=|$)").unwrap());
+static GMAIL_API_ERROR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)(Gmail API error \d+(?: \([^)\n]*\))?): .*$").unwrap());
 /// An email address, plain or percent-encoded (`bob%40x.com`).
 static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"[A-Za-z0-9._%+-]+(?:@|%40)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
@@ -17,11 +25,13 @@ static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// `text` with email addresses other than `own_addresses` replaced by `<email>`, the query
-/// strings of http(s) URLs by `?<redacted>`, `q=` values by `q=<redacted>`, and the `home`
-/// directory prefix by `~`.
+/// strings of http(s) URLs by `?<redacted>`, `q=` values by `q=<redacted>`, Gmail's error
+/// text by `<redacted>`, and the `home` directory prefix by `~`.
 pub fn scrub(text: &str, own_addresses: &[String], home: Option<&Path>) -> String {
     let text = URL_QUERY.replace_all(text, "$1?<redacted>");
     let text = SEARCH.replace_all(&text, "q=<redacted>");
+    let text = GMAIL_MESSAGE.replace_all(&text, "message=<redacted>$1");
+    let text = GMAIL_API_ERROR.replace_all(&text, "$1: <redacted>");
     let text = EMAIL.replace_all(&text, |c: &Captures| {
         let found = &c[0];
         if own_addresses
@@ -84,6 +94,25 @@ mod tests {
         );
         assert!(out.contains("from <email> to"), "{out}");
         assert!(out.contains("q=<redacted>&pageToken=1"), "{out}");
+    }
+
+    #[test]
+    fn scrub_drops_gmail_error_text_but_keeps_status_and_reason() {
+        let text = "WARN pheeme_lib::gmail::client: Gmail request throttled or failed, retrying attempt=0 method=GET resource=messages status=400 reason=invalidArgument message=Invalid query: subject:Confidential acquisition delay=1s\n\
+                    INFO pheeme_lib::mail: Gmail search failed error=Gmail API error 400 (invalidArgument): Invalid query: subject:Confidential acquisition\n\
+                    INFO search q=Confidential acquisition\n";
+        let out = scrub(text, &[], None);
+        for gone in ["Confidential", "acquisition", "Invalid query"] {
+            assert!(!out.contains(gone), "{gone} survived: {out}");
+        }
+        assert!(
+            out.contains("status=400 reason=invalidArgument message=<redacted> delay=1s"),
+            "{out}"
+        );
+        assert!(
+            out.contains("Gmail API error 400 (invalidArgument): <redacted>"),
+            "{out}"
+        );
     }
 
     #[test]

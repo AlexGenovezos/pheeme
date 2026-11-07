@@ -402,6 +402,26 @@ test("an open asks Gmail as the user's request; a prefetch asks as background wo
   ]);
 });
 
+test("opening a thread that is being prefetched asks again as the user's request", async () => {
+  const opened: unknown[] = [];
+  const answers: Array<() => void> = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "get_thread") return undefined;
+    const { threadId } = args as { threadId: string };
+    opened.push([threadId, (args as { opened?: boolean }).opened]);
+    return new Promise<ThreadDetail>((resolve) => answers.push(() => resolve(detail(threadId))));
+  });
+  store().prefetch(["a:t1"]);
+  const loading = store().load("a:t1");
+  for (const answer of answers) answer();
+  await loading;
+  expect(opened).toEqual([
+    ["t1", false],
+    ["t1", true],
+  ]);
+  expect(store().details.has("a:t1")).toBe(true);
+});
+
 test("mail:thread_loading tracks what an open is waiting on until the fetch settles", async () => {
   let answer: (d: ThreadDetail) => void = () => {};
   mockIPC(
