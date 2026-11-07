@@ -63,3 +63,18 @@ export function filterSidebarTree(
     return own || children.length > 0 ? [{ ...node, children }] : [];
   });
 }
+
+/**
+ * The nodes the sidebar's More row holds: labels `filterSidebarTree` leaves out, under their parents (shown or not)
+ * so a hidden sublabel still reads as part of its tree.
+ */
+export function hiddenSidebarTree(
+  nodes: LabelNode[],
+  unreadOf: (label: LabelInfo) => number,
+): LabelNode[] {
+  return nodes.flatMap((node) => {
+    const children = hiddenSidebarTree(node.children, unreadOf);
+    const hidden = node.label !== null && !visibleInSidebar(node.label, unreadOf(node.label));
+    return hidden || children.length > 0 ? [{ ...node, children }] : [];
+  });
+}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { ColorPopoverHost } from "../labels/ColorPopover";
 import { LabelDialogHost } from "../labels/LabelDialog";
 import { LabelPickerHost } from "../labels/LabelPicker";
 import { PANE, useUiStore } from "../store/uiStore";
@@ -95,6 +96,7 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
       <ChordHint />
       <LabelPickerHost />
       <LabelDialogHost />
+      <ColorPopoverHost />
     </div>
   );
 }

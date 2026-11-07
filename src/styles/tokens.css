@@ -76,6 +76,8 @@
   --unread-dot-size: 7px;
   --account-dot-size: 8px;
   --label-dot-size: 6px;
+  --sidebar-label-dot-size: 8px;
+  --label-swatch-size: 20px;
   --label-chip-max-width: 160px;
   --label-chip-line-height: 16px;
   --label-picker-width: 280px;

@@ -223,9 +223,6 @@ body[data-resizing] .shell__divider:active::after {
   position: relative;
   color: var(--row-color);
 }
-.sidebar__row--neutral .ui-row__leading {
-  color: var(--color-foreground-muted);
-}
 .sidebar .sidebar__row[data-selected] {
   color: var(--row-color);
 }
@@ -241,18 +238,6 @@ body[data-resizing] .shell__divider:active::after {
 .sidebar .sidebar__row[data-selected] .ui-row__meta {
   color: var(--color-foreground-muted);
   opacity: 1;
-}
-
-/* A user label's Gmail color, tucked into the corner of its tag icon. */
-.sidebar__label-dot {
-  position: absolute;
-  inset-inline-end: calc(var(--space-0-5) * -1);
-  inset-block-end: calc(var(--space-px) * -1);
-  width: var(--label-dot-size);
-  height: var(--label-dot-size);
-  border-radius: var(--radius-full);
-  box-shadow: var(--space-0) var(--space-0) var(--space-0) var(--border-width)
-    var(--color-sidebar-bg);
 }
 
 /* One collapsible section per account inside Inboxes. */
@@ -350,6 +335,156 @@ body[data-resizing] .shell__divider:active::after {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* ---- Labels: nested by depth, a fold chevron on parents, ⋮ on hover ---- */
+
+.sidebar__heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline-end: var(--space-1);
+}
+.sidebar__heading-row .ui-icon-button {
+  color: var(--color-foreground-subtle);
+}
+.sidebar__heading-row .ui-icon-button:hover {
+  color: var(--color-foreground);
+}
+
+.sidebar__labels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-px);
+}
+.sidebar__labels[hidden] {
+  display: none;
+}
+
+/* Each row sets --label-depth; sublabels step in under their parent's name. */
+.sidebar__label {
+  position: relative;
+}
+.sidebar .sidebar__label-row.ui-row--compact {
+  padding-inline-start: calc(var(--space-2) + var(--label-depth) * var(--space-4));
+}
+.sidebar .sidebar__label--parent .sidebar__label-row.ui-row--compact {
+  padding-inline-end: calc(var(--space-1) + var(--control-height-sm));
+}
+.sidebar .sidebar__label:hover .sidebar__label-row.ui-row--compact,
+.sidebar .sidebar__label:focus-within .sidebar__label-row.ui-row--compact {
+  padding-inline-end: calc(var(--space-1) + var(--control-height-sm));
+}
+.sidebar .sidebar__label--parent:hover .sidebar__label-row.ui-row--compact,
+.sidebar .sidebar__label--parent:focus-within .sidebar__label-row.ui-row--compact {
+  padding-inline-end: calc(var(--space-1) + 2 * var(--control-height-sm));
+}
+/* The row keeps its hover tint while the pointer is on its ⋮ or chevron. */
+.sidebar .sidebar__label:hover .sidebar__label-row:not([data-selected]) {
+  background: var(--color-control-hover-bg);
+}
+.sidebar__label:hover .ui-row__meta,
+.sidebar__label:focus-within .ui-row__meta {
+  visibility: hidden;
+}
+
+/* The dot sits in the slot a mailbox icon takes, so label names line up with the rows above. */
+.sidebar__label-row .ui-row__leading {
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-size-md);
+}
+.sidebar__label-dot {
+  width: var(--sidebar-label-dot-size);
+  height: var(--sidebar-label-dot-size);
+  border-radius: var(--radius-full);
+}
+.sidebar__label-dot--none {
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-foreground-subtle);
+}
+.sidebar__label-dot--empty {
+  visibility: hidden;
+}
+.sidebar__label-row--synthetic .ui-row__title {
+  color: var(--color-foreground-muted);
+}
+
+.sidebar__label-menu,
+.sidebar__fold {
+  position: absolute;
+  inset-block: var(--space-0);
+  inset-inline-end: var(--space-1);
+  margin-block: auto;
+}
+.sidebar__label--parent .sidebar__label-menu {
+  inset-inline-end: calc(var(--space-1) + var(--control-height-sm));
+}
+.sidebar__label-menu {
+  opacity: 0;
+}
+.sidebar__label:hover .sidebar__label-menu,
+.sidebar__label:focus-within .sidebar__label-menu {
+  opacity: 1;
+}
+
+.sidebar__fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  padding: var(--space-0);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-foreground-subtle);
+}
+.sidebar__fold:hover {
+  background: var(--color-control-hover-bg);
+  color: var(--color-foreground);
+}
+.sidebar__fold:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-inset);
+}
+.sidebar__fold .lucide {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+.sidebar__fold[aria-expanded="false"] .sidebar__chevron,
+.sidebar__more[aria-expanded="false"] .sidebar__chevron {
+  transform: none;
+}
+
+/* Hidden labels, behind a fold at the end of the section (as in Gmail). */
+.sidebar__more {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: 100%;
+  height: var(--row-height-compact);
+  padding: var(--space-0) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+  text-align: start;
+  cursor: default;
+}
+.sidebar__more:hover {
+  background: var(--color-control-hover-bg);
+  color: var(--color-foreground);
+}
+.sidebar__more:focus-visible {
+  outline-offset: var(--focus-ring-inset);
+}
+.sidebar__more-text {
+  flex: 1;
+}
+.sidebar__more .lucide {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
 }
 
 .sidebar__footer {

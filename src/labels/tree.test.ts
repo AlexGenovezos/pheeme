@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { LabelInfo } from "../lib/tauri";
-import { buildLabelTree, filterSidebarTree, visibleInSidebar } from "./tree";
+import { buildLabelTree, filterSidebarTree, hiddenSidebarTree, visibleInSidebar } from "./tree";
 
 const label = (name: string, over: Partial<LabelInfo> = {}): LabelInfo => ({
   id: `id:${name}`,
@@ -75,4 +75,18 @@ describe("visibility_rules", () => {
     expect(shown.map((n) => n.path)).toEqual(["P", "R"]);
     expect(shown[0].children.map((n) => n.path)).toEqual(["P/C"]);
   });
+});
+
+test("hidden_tree_keeps_parents_of_hidden_labels", () => {
+  const tree = buildLabelTree([
+    label("Clients"),
+    label("Clients/Acme", { labelListVisibility: "labelHide" }),
+    label("Clients/Globex"),
+    label("News", { labelListVisibility: "labelShowIfUnread" }),
+    label("Travel"),
+  ]);
+  const hidden = hiddenSidebarTree(tree, () => 0);
+  expect(hidden.map((n) => n.path)).toEqual(["Clients", "News"]);
+  expect(hidden[0].children.map((n) => n.path)).toEqual(["Clients/Acme"]);
+  expect(hiddenSidebarTree(tree, () => 1).map((n) => n.path)).toEqual(["Clients"]);
 });
