@@ -246,16 +246,30 @@ interface ApplyOptions {
   after?: Promise<boolean>;
   /** An explicit read, unread, archive or delete: a pending automatic read of these conversations is dropped. */
   cancelsAutoRead?: boolean;
+  /**
+   * Act on `keys` even where they have left the list: an open picker keeps acting on the conversations it was
+   * opened for after one of its own changes took them out of the mailbox.
+   */
+  evenIfGone?: boolean;
 }
 
 function apply(
   keys: ThreadKey[] | undefined,
   change: Change,
-  { announce, keepChecked, after, cancelsAutoRead }: ApplyOptions = {},
+  options?: ApplyOptions,
 ): Promise<void> {
+  return applyChange(keys, change, options).then(() => undefined);
+}
+
+/** `apply`, resolving to whether the change went through (for at least one account). */
+function applyChange(
+  keys: ThreadKey[] | undefined,
+  change: Change,
+  { announce, keepChecked, after, cancelsAutoRead, evenIfGone }: ApplyOptions = {},
+): Promise<boolean> {
   const rows = present(keys);
-  if (rows.length === 0) return Promise.resolve();
-  const rowKeys = rows.map((r) => r.key);
+  const rowKeys = evenIfGone && keys ? [...new Set(keys)] : rows.map((r) => r.key);
+  if (rowKeys.length === 0) return Promise.resolve(false);
   if (cancelsAutoRead) rowKeys.forEach((k) => autoReads.delete(k));
   const groups = byAccount(rowKeys);
   const op = newOp();
@@ -288,7 +302,7 @@ function apply(
     return new Map<string, string[]>();
   };
   return (after ? after.then((wanted) => (wanted ? go() : drop()), go) : go()).then((done) => {
-    if (!announce || done.size === 0) return;
+    if (!announce || done.size === 0) return done.size > 0;
     const count = keysOf(done).length;
     const { undo } = announce;
     toast({
@@ -297,6 +311,7 @@ function apply(
       duration: undo ? 6000 : undefined,
       action: undo && { label: "Undo", run: () => void revert(done, change, undo) },
     });
+    return true;
   });
 }
 
@@ -426,30 +441,39 @@ function rowLabelIds(t: ThreadSummary, labelId: string, add: boolean): string[] 
   );
 }
 
-/** `keys` (default: the targets) still in the list that belong to `accountId`. */
-const accountKeys = (accountId: string, keys: ThreadKey[] | undefined): ThreadKey[] =>
-  present(keys)
-    .map((r) => r.key)
-    .filter((k) => parseThreadKey(k).accountId === accountId);
+/** `keys` (default: the targets) still in the list (or, `evenIfGone`, at all) that belong to `accountId`. */
+const accountKeys = (
+  accountId: string,
+  keys: ThreadKey[] | undefined,
+  evenIfGone = false,
+): ThreadKey[] =>
+  (evenIfGone && keys ? [...new Set(keys)] : present(keys).map((r) => r.key)).filter(
+    (k) => parseThreadKey(k).accountId === accountId,
+  );
 
-/** Adds `labelId` to (or removes it from) the targets of `accountId`, whatever they carry now. */
+/**
+ * Adds `labelId` to (or removes it from) the targets of `accountId`, whatever they carry now. Resolves to whether
+ * Gmail's queue took the change. `evenIfGone` acts on `keys` that have left the list (see `ApplyOptions`).
+ */
 export async function applyLabel(
   accountId: string,
   labelId: string,
   add: boolean,
   keys?: ThreadKey[],
-): Promise<void> {
-  const rowKeys = accountKeys(accountId, keys);
-  if (rowKeys.length === 0) return;
+  { evenIfGone = false }: { evenIfGone?: boolean } = {},
+): Promise<boolean> {
+  const rowKeys = accountKeys(accountId, keys, evenIfGone);
+  if (rowKeys.length === 0) return false;
   // Removing a label in that label's own mailbox takes the row out of it.
   const leavesList = !add && inMailbox(labelId);
-  await apply(
+  return applyChange(
     rowKeys,
     modify(add ? [labelId] : [], add ? [] : [labelId], {
       leavesList,
       patch: (t) => ({ ...t, labelIds: rowLabelIds(t, labelId, add) }),
       detail: withLabel(labelId, add),
     }),
+    { evenIfGone },
   );
 }
 

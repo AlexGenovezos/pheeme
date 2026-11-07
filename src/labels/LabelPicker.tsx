@@ -136,10 +136,22 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
       ?.scrollIntoView?.({ block: "nearest" });
   }, [active]);
 
+  /**
+   * Ticks `labelId` to `next` now and applies it to the conversations the picker opened for, even those its own
+   * changes have since taken out of the list. A refusal puts the tick back, unless another tick has replaced it.
+   */
+  const setTick = (labelId: string, next: Membership, add: boolean) => {
+    const previous = membership.get(labelId) ?? "none";
+    setMembership((m) => new Map(m).set(labelId, next));
+    void applyLabel(accountId, labelId, add, keys, { evenIfGone: true }).then((ok) => {
+      if (!ok)
+        setMembership((m) => (m.get(labelId) === next ? new Map(m).set(labelId, previous) : m));
+    });
+  };
+
   const toggle = (label: LabelInfo) => {
     const add = (membership.get(label.id) ?? "none") !== "all";
-    setMembership((m) => new Map(m).set(label.id, add ? "all" : "none"));
-    void applyLabel(accountId, label.id, add, keys);
+    setTick(label.id, add ? "all" : "none", add);
   };
 
   const create = async (name: string) => {
@@ -164,8 +176,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     } else {
       setQuery("");
       setActive(0);
-      setMembership((m) => new Map(m).set(label.id, "all"));
-      void applyLabel(accountId, label.id, true, keys);
+      setTick(label.id, "all", true);
     }
   };
 
@@ -240,7 +251,10 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
         title={option.kind === "label" ? option.label.name : undefined}
         className={cx("label-picker__option", option.kind === "manage" && "label-picker__footer")}
         onPointerMove={() => i !== active && setActive(i)}
-        onClick={() => choose(option)}
+        onClick={() => {
+          setActive(i);
+          choose(option);
+        }}
       >
         {mode === "label" && !createOnly && (
           <span className="label-picker__check">{state && <TickIcon membership={state} />}</span>
@@ -260,6 +274,8 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
       data-owns-keys=""
       style={{ left: pos.x, top: pos.y }}
       onContextMenu={(e) => e.preventDefault()}
+      // Nothing else in the picker takes focus: keep it in the search field, so keys still work after a click.
+      onMouseDown={(e) => e.target !== inputRef.current && e.preventDefault()}
     >
       <div className="label-picker__search">
         <Search aria-hidden="true" />

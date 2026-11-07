@@ -5,6 +5,7 @@ import { useToastStore } from "../components/ui/Toast";
 import type { LabelInfo, MessageDetail, ThreadDetail, ThreadSummary } from "../lib/tauri";
 import { openLabelMenu, openMoveMenu } from "../mail/actions";
 import { threadKey } from "../mail/mailboxes";
+import { useAccountStore } from "../store/accountStore";
 import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore";
@@ -62,6 +63,7 @@ beforeEach(() => {
   __resetMailStoreForTests();
   __resetThreadStoreForTests();
   __resetLabelStoreForTests();
+  useAccountStore.setState({ accounts: [] });
   usePickerStore.getState().close();
   useToastStore.setState({ toasts: [] });
   vi.mocked(revealLabels).mockClear();
@@ -103,6 +105,20 @@ const option = (name: string) => screen.getByRole("option", { name });
 const input = () => screen.getByRole("combobox");
 const type = (text: string) => fireEvent.change(input(), { target: { value: text } });
 const press = (key: string) => fireEvent.keyDown(input(), { key });
+/**
+ * A click as a browser makes it (user-event isn't a dependency): pointer and mouse down, where an unprevented
+ * mousedown on something that can't take focus moves focus off the search field, then up and click.
+ */
+function realClick(el: HTMLElement) {
+  fireEvent.pointerDown(el);
+  if (fireEvent.mouseDown(el)) (document.activeElement as HTMLElement | null)?.blur();
+  fireEvent.pointerUp(el);
+  fireEvent.mouseUp(el);
+  fireEvent.click(el);
+}
+/** A key pressed wherever focus is now. */
+const pressFocused = (key: string) =>
+  fireEvent.keyDown(document.activeElement ?? document.body, { key });
 
 async function openForBoth() {
   useUiStore.setState({ checked: [key(1), key(2)] });
@@ -139,8 +155,8 @@ describe("Label as…", () => {
     expect(option("Receipts")).toHaveAttribute("aria-checked", "true");
 
     // Ticking a label every conversation has takes it off them all.
-    press("ArrowDown"); // Clients/Acme
-    press("ArrowDown"); // Receipts
+    press("ArrowUp"); // Clients/Acme
+    press("ArrowDown"); // back to Receipts, the row clicked
     press("Enter");
     await flush();
     expect(modifyCalls()[1]).toEqual({
@@ -227,6 +243,84 @@ test("Create label… with nothing selected only creates", async () => {
       .userLabels("a1")
       .map((l) => l.name),
   ).toContain("Travel");
+});
+
+describe("after a click", () => {
+  test("focus stays in the search field, so the keys still drive the picker", async () => {
+    await openForBoth();
+    realClick(option("Receipts"));
+    await flush();
+    expect(option("Receipts")).toHaveAttribute("aria-checked", "true");
+    expect(input()).toHaveFocus();
+
+    // The clicked row is the active one, so the arrows go on from there.
+    pressFocused("ArrowUp"); // Clients/Acme
+    pressFocused("Enter");
+    await flush();
+    expect(modifyCalls().map((c) => c.add)).toEqual([["Label_3"], ["Label_2"]]);
+    pressFocused("Escape");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("a tick Gmail refuses goes back, and ticking again sends the add again", async () => {
+    let refuse = true;
+    // A refusal reloads the labels from the backend, which still has them.
+    const labels = useLabelStore.getState().labels.a1;
+    useAccountStore.setState({
+      accounts: [
+        { id: "a1", email: "a@example.com", displayName: null, clientId: "c", synced: true },
+      ],
+    });
+    mockIPC(
+      (cmd, args) => {
+        const a = (args ?? {}) as Record<string, unknown>;
+        calls.push({ cmd, args: a });
+        if (cmd === "modify_threads" && refuse) throw { code: "gmail", message: "Gmail refused" };
+        if (cmd === "list_labels") return labels;
+        if (cmd === "list_threads") return { threads: useMailStore.getState().threads, next: null };
+        return undefined;
+      },
+      { shouldMockEvents: true },
+    );
+    await openForBoth();
+    realClick(option("Receipts"));
+    await flush();
+    expect(useToastStore.getState().toasts[0].title).toBe("Gmail refused");
+    expect(option("Receipts")).toHaveAttribute("aria-checked", "mixed");
+
+    refuse = false;
+    realClick(option("Receipts"));
+    await flush();
+    expect(modifyCalls().map((c) => [c.add, c.remove])).toEqual([
+      [["Label_3"], []],
+      [["Label_3"], []],
+    ]);
+    expect(option("Receipts")).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("unticking the label being viewed takes the rows out, and later ticks still reach them", async () => {
+    useLabelStore.setState((s) => ({ labels: { a1: [...s.labels.a1, label("Label_4", "Work")] } }));
+    useThreadStore.setState({
+      details: new Map([
+        [key(1), detail(1, ["Label_4"])],
+        [key(2), detail(2, ["Label_4"])],
+      ]),
+    });
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "Label_4" } });
+    await openForBoth();
+    realClick(option("Work"));
+    await flush();
+    expect(useMailStore.getState().threads).toEqual([]); // they left Work
+    expect(option("Work")).toHaveAttribute("aria-checked", "false");
+
+    realClick(option("Receipts"));
+    await flush();
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1", "t2"], add: [], remove: ["Label_4"] },
+      { accountId: "a1", threadIds: ["t1", "t2"], add: ["Label_3"], remove: [] },
+    ]);
+    expect(option("Receipts")).toHaveAttribute("aria-checked", "true");
+  });
 });
 
 describe("Move to…", () => {
