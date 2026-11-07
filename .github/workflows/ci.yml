@@ -86,9 +86,9 @@ jobs:
           path: |
             ~/.cargo/bin/sqlx
             ~/.cargo/bin/cargo-sqlx
-          key: sqlx-cli-0.8.6-sqlite-${{ runner.os }}-${{ runner.arch }}
+          key: sqlx-cli-0.9.0-sqlite-${{ runner.os }}-${{ runner.arch }}
       - if: steps.sqlx-cli.outputs.cache-hit != 'true'
-        run: cargo install sqlx-cli@0.8.6 --locked --no-default-features --features sqlite,rustls
+        run: cargo install sqlx-cli@0.9.0 --locked --no-default-features --features sqlite,rustls
       - name: Validate SQLx cache
         working-directory: src-tauri
         run: |

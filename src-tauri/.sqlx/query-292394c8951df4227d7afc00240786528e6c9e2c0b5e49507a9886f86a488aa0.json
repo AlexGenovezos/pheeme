@@ -6,102 +6,222 @@
       {
         "name": "id",
         "ordinal": 0,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "id"
+          }
+        }
       },
       {
         "name": "account_id",
         "ordinal": 1,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "account_id"
+          }
+        }
       },
       {
         "name": "thread_id",
         "ordinal": 2,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "thread_id"
+          }
+        }
       },
       {
         "name": "label_ids",
         "ordinal": 3,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "label_ids"
+          }
+        }
       },
       {
         "name": "from_address",
         "ordinal": 4,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "from_address"
+          }
+        }
       },
       {
         "name": "from_name",
         "ordinal": 5,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "from_name"
+          }
+        }
       },
       {
         "name": "to_addresses",
         "ordinal": 6,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "to_addresses"
+          }
+        }
       },
       {
         "name": "cc_addresses",
         "ordinal": 7,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "cc_addresses"
+          }
+        }
       },
       {
         "name": "subject",
         "ordinal": 8,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "subject"
+          }
+        }
       },
       {
         "name": "snippet",
         "ordinal": 9,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "snippet"
+          }
+        }
       },
       {
         "name": "body_html",
         "ordinal": 10,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "body_html"
+          }
+        }
       },
       {
         "name": "body_text",
         "ordinal": 11,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "body_text"
+          }
+        }
       },
       {
         "name": "date",
         "ordinal": 12,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "date"
+          }
+        }
       },
       {
         "name": "size_estimate",
         "ordinal": 13,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "size_estimate"
+          }
+        }
       },
       {
         "name": "has_attachment",
         "ordinal": 14,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "has_attachment"
+          }
+        }
       },
       {
         "name": "is_read",
         "ordinal": 15,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "is_read"
+          }
+        }
       },
       {
         "name": "is_starred",
         "ordinal": 16,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "is_starred"
+          }
+        }
       },
       {
         "name": "raw_headers",
         "ordinal": 17,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "raw_headers"
+          }
+        }
       },
       {
         "name": "fully_fetched",
         "ordinal": 18,
-        "type_info": "Integer"
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "fully_fetched"
+          }
+        }
       },
       {
         "name": "rfc822_message_id",
         "ordinal": 19,
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "rfc822_message_id"
+          }
+        }
       }
     ],
     "parameters": {

@@ -1441,7 +1441,7 @@ mod tests {
         prefix: &str,
         account_ids: &str,
     ) -> Vec<sqlx::sqlite::SqliteRow> {
-        sqlx::query(&format!("{prefix}{FIRST_PAGE_SQL}"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("{prefix}{FIRST_PAGE_SQL}")))
             .bind("INBOX")
             .bind(account_ids)
             .bind(None::<&str>)
@@ -1458,7 +1458,7 @@ mod tests {
         prefix: &str,
         account_ids: &str,
     ) -> Vec<sqlx::sqlite::SqliteRow> {
-        sqlx::query(&format!("{prefix}{CURSOR_PAGE_SQL}"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("{prefix}{CURSOR_PAGE_SQL}")))
             .bind("INBOX")
             .bind(account_ids)
             .bind(250_i64)
@@ -2055,7 +2055,7 @@ mod tests {
         for scope in [&["a1"][..], &["a2"], &["a1", "a2"]] {
             let ids = labels(scope);
             let json = serde_json::to_string(&ids).unwrap();
-            let expected: Vec<(String, i64)> = sqlx::query_as(&format!(
+            let expected: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
                 "SELECT label_id, COUNT(*) FROM (
                    SELECT x.label_id AS label_id FROM thread_labels i
                    JOIN thread_labels u ON u.account_id = i.account_id
@@ -2073,7 +2073,7 @@ mod tests {
                        WHERE c.account_id = i.account_id AND c.thread_id = i.thread_id
                          AND c.label_id IN {categories}))
                  GROUP BY label_id ORDER BY label_id"
-            ))
+            )))
             .bind(&json)
             .fetch_all(&pool)
             .await
@@ -2337,9 +2337,7 @@ mod tests {
             ),
         ];
         for (name, sql, index, binds) in cases {
-            let mut query = sqlx::query(Box::leak(
-                format!("EXPLAIN QUERY PLAN {sql}").into_boxed_str(),
-            ));
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(format!("EXPLAIN QUERY PLAN {sql}")));
             for b in &binds {
                 query = match b {
                     S(v) => query.bind(*v),
