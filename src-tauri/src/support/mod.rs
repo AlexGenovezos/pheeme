@@ -161,11 +161,16 @@ fn clean_input(
     let note: String = note.trim().chars().take(MAX_NOTE_CHARS).collect();
     let reply_to = reply_to.map(str::trim).filter(|r| !r.is_empty());
     if let Some(address) = reply_to {
+        // Matches what the diagnostics Worker accepts: it puts the address in a Reply-To header.
         let plausible = address.len() <= 254
-            && address.split('@').count() == 2
-            && !address.starts_with('@')
-            && !address.ends_with('@')
-            && !address.chars().any(|c| c.is_whitespace() || c.is_control());
+            && address.is_ascii()
+            && !address.chars().any(|c| c.is_whitespace() || c.is_control())
+            && address.split_once('@').is_some_and(|(local, domain)| {
+                !local.is_empty()
+                    && !domain.contains('@')
+                    && domain.split('.').count() >= 2
+                    && domain.split('.').all(|part| !part.is_empty())
+            });
         if !plausible {
             return Err(SupportError::Invalid(
                 "That doesn't look like an email address.".into(),
@@ -292,7 +297,15 @@ mod tests {
             clean_input("", Some(" me@x.com ")).unwrap().1.as_deref(),
             Some("me@x.com")
         );
-        for bad in ["me", "a@b@c", "me@x.com\r\nBcc: y@z", "@x.com"] {
+        for bad in [
+            "me",
+            "a@b@c",
+            "me@x.com\r\nBcc: y@z",
+            "@x.com",
+            "me@localhost",
+            "me@x..com",
+            "jö@x.com",
+        ] {
             let e = clean_input("", Some(bad)).unwrap_err();
             assert_eq!(e.code(), "invalid_input", "{bad}");
         }
