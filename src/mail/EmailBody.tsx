@@ -261,6 +261,8 @@ function watchFrame(
     remeasureFromZero();
   };
 
+  // Chromium (Windows) runs this; WebKit (macOS, Linux) skips listeners in a script-less frame, so there a
+  // clicked link becomes a navigation that the backend's navigation hook cancels and opens instead.
   const onClick = (event: MouseEvent) => {
     const link = closestLink(event.target);
     if (!link) return;
