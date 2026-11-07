@@ -5,6 +5,7 @@
 # per PR so each breaking change is reviewed on its own. Tauri is its own group
 # in both npm and cargo because the CLI refuses to build when @tauri-apps/* and
 # the tauri crates drift apart by minor version: merge the two Tauri PRs together.
+# The Tauri groups take majors too, so a Tauri major still moves in lockstep.
 version: 2
 updates:
   - package-ecosystem: npm
