@@ -13,7 +13,7 @@ jobs:
   stale:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/stale@v9
+      - uses: actions/stale@v11
         with:
           only-issue-labels: "needs more info"
           # The label is applied by the triage flow, so never auto-mark; close 7 days after it was added.
