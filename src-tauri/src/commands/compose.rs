@@ -4,6 +4,7 @@ use super::CommandError;
 use crate::compose::{
     ComposeDraft, ComposeMode, DraftSummary, QueuedSend, SavedDraft, StagedAttachment,
 };
+use crate::gmail::user_action;
 use crate::AppState;
 use std::path::PathBuf;
 use tauri::State;
@@ -16,10 +17,7 @@ pub async fn compose_template(
     message_id: String,
     mode: ComposeMode,
 ) -> Result<ComposeDraft, CommandError> {
-    Ok(state
-        .compose
-        .template(&account_id, &message_id, mode)
-        .await?)
+    Ok(user_action(state.compose.template(&account_id, &message_id, mode)).await?)
 }
 
 /// Attach a file the user picked or dropped.
@@ -46,7 +44,7 @@ pub async fn save_draft(
     account_id: String,
     message: ComposeDraft,
 ) -> Result<SavedDraft, CommandError> {
-    Ok(state.compose.save_draft(&account_id, &message).await?)
+    Ok(user_action(state.compose.save_draft(&account_id, &message)).await?)
 }
 
 #[tauri::command]
@@ -54,7 +52,7 @@ pub async fn get_drafts(
     state: State<'_, AppState>,
     account_id: String,
 ) -> Result<Vec<DraftSummary>, CommandError> {
-    Ok(state.compose.list_drafts(&account_id).await?)
+    Ok(user_action(state.compose.list_drafts(&account_id)).await?)
 }
 
 /// The draft behind a message in Drafts, for editing.
@@ -64,7 +62,7 @@ pub async fn open_draft(
     account_id: String,
     message_id: String,
 ) -> Result<ComposeDraft, CommandError> {
-    Ok(state.compose.open_draft(&account_id, &message_id).await?)
+    Ok(user_action(state.compose.open_draft(&account_id, &message_id)).await?)
 }
 
 #[tauri::command]
@@ -73,7 +71,7 @@ pub async fn delete_draft(
     account_id: String,
     draft_id: String,
 ) -> Result<(), CommandError> {
-    Ok(state.compose.delete_draft(&account_id, &draft_id).await?)
+    Ok(user_action(state.compose.delete_draft(&account_id, &draft_id)).await?)
 }
 
 /// Queue a message; it leaves after `undo_ms` unless `cancel_send` comes first.

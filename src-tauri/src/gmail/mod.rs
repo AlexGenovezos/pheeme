@@ -13,7 +13,9 @@ pub mod threads;
 pub mod types;
 pub mod user;
 
-pub use client::{GmailClient, QuotaSetting, RetryPolicy, TokenProvider};
+pub use client::{
+    user_action, GmailClient, QuotaSetting, RetryPolicy, TokenProvider, RATE_LIMIT_COOLDOWN,
+};
 pub use error::GmailError;
 pub use mime::{ParsedAttachment, ParsedMessage};
 pub use types::MessageFormat;

@@ -3,6 +3,7 @@
 
 use super::CommandError;
 use crate::diagnostics::{ms_since, PoolLoad, SLOW_READ};
+use crate::gmail::user_action;
 use crate::labels::{DeletePreviewDto, LabelColorDto, LabelEdit};
 use crate::mail::{CountDto, LabelCountDto, LabelDto};
 use crate::AppState;
@@ -55,7 +56,7 @@ pub async fn create_label(
     name: String,
     color: Option<LabelColorDto>,
 ) -> Result<LabelDto, CommandError> {
-    Ok(state.labels.create_label(&account_id, &name, color).await?)
+    Ok(user_action(state.labels.create_label(&account_id, &name, color)).await?)
 }
 
 /// Rename, re-nest, recolour or change a label's visibility; returns every label changed.
@@ -66,10 +67,7 @@ pub async fn update_label(
     label_id: String,
     edit: LabelEdit,
 ) -> Result<Vec<LabelDto>, CommandError> {
-    Ok(state
-        .labels
-        .update_label(&account_id, &label_id, edit)
-        .await?)
+    Ok(user_action(state.labels.update_label(&account_id, &label_id, edit)).await?)
 }
 
 /// Delete a label and its sublabels in Gmail.
@@ -79,7 +77,7 @@ pub async fn delete_label(
     account_id: String,
     label_id: String,
 ) -> Result<(), CommandError> {
-    Ok(state.labels.delete_label(&account_id, &label_id).await?)
+    Ok(user_action(state.labels.delete_label(&account_id, &label_id)).await?)
 }
 
 /// What deleting a label would take with it, for the confirmation.
@@ -89,5 +87,5 @@ pub async fn delete_label_preview(
     account_id: String,
     label_id: String,
 ) -> Result<DeletePreviewDto, CommandError> {
-    Ok(state.labels.delete_preview(&account_id, &label_id).await?)
+    Ok(user_action(state.labels.delete_preview(&account_id, &label_id)).await?)
 }

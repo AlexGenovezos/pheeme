@@ -550,7 +550,7 @@ impl SyncEngine {
             .await?
             .is_none()
         {
-            Some(self.api.profile().await?.messages_total)
+            Some(self.api.backfill_profile().await?.messages_total)
         } else {
             None
         };

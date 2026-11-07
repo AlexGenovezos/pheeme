@@ -9,7 +9,7 @@ use super::engine::{
 use super::events::{SyncEvent, SyncEvents};
 use super::outbox;
 use crate::db::accounts;
-use crate::gmail::GmailError;
+use crate::gmail::{user_action, GmailError, RATE_LIMIT_COOLDOWN};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,10 +25,9 @@ pub const FOCUS_MIN_INTERVAL: Duration = Duration::from_secs(15);
 const SLOW_SYNC: Duration = Duration::from_secs(2);
 pub const BACKFILL_PAUSE: Duration = Duration::from_secs(1);
 
-/// Pause after Gmail rate-limits the backfill, unless it says how long to wait. The page's
-/// progress is kept, so trying again soon costs nothing; waiting for the next sync (up to
-/// 90 s) left the backfill idle most of the time.
-pub const BACKFILL_RATE_LIMIT_PAUSE: Duration = Duration::from_secs(15);
+/// Pause after Gmail rate-limits the backfill, unless it says how long to wait: the client keeps
+/// background requests off Gmail that long anyway. The page's progress is kept.
+pub const BACKFILL_RATE_LIMIT_PAUSE: Duration = RATE_LIMIT_COOLDOWN;
 
 /// Builds the Gmail API for an account (production: a `GmailClient` on the keychain).
 pub type ApiFactory = Arc<dyn Fn(&str) -> Arc<dyn MailApi> + Send + Sync>;
@@ -164,7 +163,8 @@ impl SyncManager {
     async fn process_outbox(&self, account_id: &str) -> Result<(), SyncError> {
         let a = self.account(account_id);
         let _processing = a.outbox_lock.lock().await;
-        outbox::process(&self.engine(account_id), now_ms()).await?;
+        // Every queued change is something the user did: it goes ahead of sync and backfill.
+        user_action(outbox::process(&self.engine(account_id), now_ms())).await?;
         Ok(())
     }
 
