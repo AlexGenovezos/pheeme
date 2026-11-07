@@ -25,11 +25,19 @@ pub const MAX_CONCURRENT_REQUESTS: usize = 10;
 /// Leave room for on-demand attachment downloads even while sync requests are slow or retrying.
 pub(crate) const MAX_BACKGROUND_REQUESTS: usize = MAX_CONCURRENT_REQUESTS - 2;
 
+/// Slots bulk work (the mailbox backfill) may hold, so sync always has some of its own.
+pub(crate) const MAX_BULK_REQUESTS: usize = MAX_BACKGROUND_REQUESTS - 4;
+
 /// Quota units per second each client may spend. Gmail's per-user limit is 6,000 units per
 /// minute for current projects (it was 15,000), enforced per minute; beyond it Gmail answers
 /// 403 `rateLimitExceeded`. 80/s (4,800 a minute) leaves headroom for the user's other
 /// clients, and the limiter backs off further if Gmail still objects.
 pub const QUOTA_UNITS_PER_SEC: u32 = 80;
+
+/// The share of [`QUOTA_UNITS_PER_SEC`] bulk work may spend (2,400 units a minute). Kept well
+/// under Gmail's limit, the backfill doesn't trip it, so sync, sends and opening mail aren't
+/// refused for quota the backfill used up.
+pub const BULK_QUOTA_UNITS_PER_SEC: u32 = 40;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -180,7 +188,19 @@ pub(crate) struct ApiRequest {
     /// Whether failures that leave the outcome unknown (timeouts, dropped connections, 5xx) may
     /// be retried. False for non-idempotent calls such as sends: Gmail may already have acted.
     retry_ambiguous: bool,
-    interactive: bool,
+    priority: Priority,
+}
+
+/// Who is waiting on a request; decides which slots and how much quota it may use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Priority {
+    /// The reader asked for it (an attachment); may use slots reserved from sync.
+    Interactive,
+    /// Sync, sends and other calls that keep the app current.
+    Sync,
+    /// Bulk work nobody is waiting on (the backfill). Gets a few slots and a share of the
+    /// quota, and gives up at Gmail's first rate limit instead of retrying: its caller pauses.
+    Background,
 }
 
 impl ApiRequest {
@@ -192,7 +212,7 @@ impl ApiRequest {
             body: None,
             upload: None,
             retry_ambiguous: true,
-            interactive: false,
+            priority: Priority::Sync,
         }
     }
 
@@ -200,9 +220,14 @@ impl ApiRequest {
         Self::new(Method::GET, segments)
     }
 
-    /// A file the reader asked for; may use slots reserved from background sync.
-    pub fn interactive(mut self) -> Self {
-        self.interactive = true;
+    /// Bulk work nobody is waiting on; see [`Priority::Background`].
+    pub fn background(mut self) -> Self {
+        self.priority = Priority::Background;
+        self
+    }
+
+    pub(crate) fn with_priority(mut self, priority: Priority) -> Self {
+        self.priority = priority;
         self
     }
 
@@ -295,7 +320,9 @@ pub struct GmailClient {
     retry: RetryPolicy,
     permits: Arc<Semaphore>,
     background_permits: Arc<Semaphore>,
+    bulk_permits: Arc<Semaphore>,
     quota: Arc<QuotaLimiter>,
+    bulk_quota: Arc<QuotaLimiter>,
 }
 
 impl GmailClient {
@@ -312,7 +339,9 @@ impl GmailClient {
             retry: RetryPolicy::default(),
             permits: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
             background_permits: Arc::new(Semaphore::new(MAX_BACKGROUND_REQUESTS)),
+            bulk_permits: Arc::new(Semaphore::new(MAX_BULK_REQUESTS)),
             quota: Arc::new(QuotaLimiter::new(QUOTA_UNITS_PER_SEC)),
+            bulk_quota: Arc::new(QuotaLimiter::new(BULK_QUOTA_UNITS_PER_SEC)),
         }
     }
 
@@ -330,6 +359,12 @@ impl GmailClient {
     /// Change the quota pacing (tests use a low rate to observe it).
     pub fn with_quota(mut self, units_per_sec: u32) -> Self {
         self.quota = Arc::new(QuotaLimiter::new(units_per_sec));
+        self
+    }
+
+    /// Change the pacing of background requests (tests observe it at a low rate).
+    pub fn with_background_quota(mut self, units_per_sec: u32) -> Self {
+        self.bulk_quota = Arc::new(QuotaLimiter::new(units_per_sec));
         self
     }
 
@@ -369,23 +404,22 @@ impl GmailClient {
     /// The permit is held for the whole call, backoff sleeps included, so a rate-limited client
     /// slows down instead of piling retries on top of new requests.
     async fn execute(&self, req: &ApiRequest) -> Result<Vec<u8>, GmailError> {
-        // Take the background gate first: queued sync calls must not reserve the last
-        // two global slots. All calls still share the total cap and Gmail quota limiter.
-        let _background = if req.interactive {
+        let closed = |_| GmailError::Network("request limiter closed".into());
+        let background = req.priority == Priority::Background;
+        // Take the narrowest gate first: queued bulk calls must not hold sync's slots, and
+        // queued sync calls must not reserve the last two global slots. All calls still share
+        // the total cap and Gmail quota limiter.
+        let _bulk = if background {
+            Some(self.bulk_permits.acquire().await.map_err(closed)?)
+        } else {
+            None
+        };
+        let _background = if req.priority == Priority::Interactive {
             None
         } else {
-            Some(
-                self.background_permits
-                    .acquire()
-                    .await
-                    .map_err(|_| GmailError::Network("request limiter closed".into()))?,
-            )
+            Some(self.background_permits.acquire().await.map_err(closed)?)
         };
-        let _permit = self
-            .permits
-            .acquire()
-            .await
-            .map_err(|_| GmailError::Network("request limiter closed".into()))?;
+        let _permit = self.permits.acquire().await.map_err(closed)?;
         let url = self.url_for(req)?;
         let mut token = self.tokens.access_token().await?;
         let mut refreshed = false;
@@ -394,6 +428,9 @@ impl GmailClient {
 
         loop {
             // Every attempt spends quota, retries included.
+            if background {
+                self.bulk_quota.take(units).await;
+            }
             self.quota.take(units).await;
             let mut builder = self
                 .http
@@ -456,12 +493,18 @@ impl GmailClient {
                     ));
             if rate_limited {
                 self.quota.rate_limited();
+                if background {
+                    self.bulk_quota.rate_limited();
+                }
             }
             let retryable = rate_limited || (status.is_server_error() && req.retry_ambiguous);
             // A server asking for longer than our cap gets the error back (with `retry_after`)
             // instead of an early retry; the caller decides when to try again.
             let wait_too_long = retry_after.is_some_and(|d| d > self.retry.max_delay);
-            if retryable && !wait_too_long && attempt < self.retry.max_retries {
+            // Bulk work doesn't wait out a rate limit holding its slot: the backfill pauses as
+            // a whole, leaving the quota to sync and the reader.
+            let retry_rate_limit = !(rate_limited && background);
+            if retryable && retry_rate_limit && !wait_too_long && attempt < self.retry.max_retries {
                 let delay = retry_after.unwrap_or_else(|| jittered(self.retry.backoff(attempt)));
                 warn!(
                     attempt,
@@ -476,6 +519,10 @@ impl GmailClient {
                 tokio::time::sleep(delay).await;
                 attempt += 1;
                 continue;
+            }
+            // A refused background call isn't news: its caller logs the pause once.
+            if rate_limited && background {
+                return Err(GmailError::RateLimit { retry_after });
             }
             if rate_limited {
                 warn!(
@@ -1004,5 +1051,63 @@ mod tests {
             elapsed >= Duration::from_millis(450),
             "waited only {elapsed:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn background_requests_get_a_smaller_share_of_the_quota() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        let client = client_for(&server)
+            .0
+            .with_quota(100_000)
+            .with_background_quota(10);
+
+        // Foreground calls aren't held to the background share.
+        let started = Instant::now();
+        for _ in 0..4 {
+            let _: Value = client
+                .send_json(ApiRequest::get(&["messages", "m1"]))
+                .await
+                .unwrap();
+        }
+        assert!(started.elapsed() < Duration::from_millis(400));
+
+        // Background calls are: three go in the burst, the fourth waits ~0.5 s.
+        let started = Instant::now();
+        for _ in 0..4 {
+            let _: Value = client
+                .send_json(ApiRequest::get(&["messages", "m1"]).background())
+                .await
+                .unwrap();
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= Duration::from_millis(450),
+            "waited only {elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn background_requests_give_up_on_the_first_rate_limit() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(403).set_body_json(error_json(
+                403,
+                "rateLimitExceeded",
+                "Quota exceeded",
+            )))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+
+        let err = client
+            .send_json::<Value>(ApiRequest::get(&["messages", "m1"]).background())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, GmailError::RateLimit { .. }), "{err:?}");
     }
 }

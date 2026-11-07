@@ -1,6 +1,6 @@
 //! `users.threads`: list, get, modify, trash.
 
-use super::client::{ApiRequest, GmailClient};
+use super::client::{ApiRequest, GmailClient, Priority};
 use super::error::GmailError;
 use super::types::{MessageFormat, Thread, ThreadListResponse};
 use serde_json::json;
@@ -26,7 +26,8 @@ impl GmailClient {
             .await?;
         for msg in &mut thread.messages {
             if let Some(payload) = msg.payload.as_mut() {
-                self.fill_external_bodies(&msg.id, payload).await?;
+                self.fill_external_bodies(&msg.id, payload, Priority::Sync)
+                    .await?;
             }
         }
         Ok(thread)
