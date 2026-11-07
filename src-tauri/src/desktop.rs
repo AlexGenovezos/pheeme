@@ -164,6 +164,8 @@ pub async fn set_notifications(
     if enabled {
         let permission = platform::permission(true).await?;
         if permission == "denied" {
+            // Still counts as answered, so the first-run prompt doesn't come back.
+            db::desktop::set_enabled(&app.state::<AppState>().db, account_id, false).await?;
             anyhow::bail!("Notifications are blocked. Allow Pheeme in your system notification settings, then try again.");
         }
     }

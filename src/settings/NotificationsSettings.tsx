@@ -7,6 +7,7 @@ import {
   setTrayIcon,
   type DesktopSettings,
 } from "../desktop/api";
+import { resetNotificationPrompt } from "../desktop/prompt";
 import { toCommandError } from "../lib/tauri";
 import { SettingsRow, SettingsSection } from "./rows";
 
@@ -41,7 +42,10 @@ export function NotificationsSettings() {
     setBusy(true);
     setError(null);
     try {
-      setSettings(await update());
+      const next = await update();
+      setSettings(next);
+      // Answering here makes a visible first-run prompt moot.
+      if (next.accounts.every((a) => a.asked)) resetNotificationPrompt();
     } catch (raw) {
       setError(toCommandError(raw).message);
     } finally {

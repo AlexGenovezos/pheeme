@@ -56,7 +56,7 @@ export function useNotificationPrompt() {
   }, [accountIds]);
 }
 
-/** Test hook: forget the visible prompt. */
+/** Dismiss the prompt without answering it (Settings answered instead). */
 export function resetNotificationPrompt() {
   if (shown !== null) dismissToast(shown);
   shown = null;

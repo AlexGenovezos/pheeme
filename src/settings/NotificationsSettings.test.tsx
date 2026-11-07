@@ -1,6 +1,9 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { useToastStore } from "../components/ui/Toast";
+import { useNotificationPrompt } from "../desktop/prompt";
+import { useAccountStore } from "../store/accountStore";
 import { NotificationsSettings } from "./NotificationsSettings";
 
 const snapshot = {
@@ -72,4 +75,29 @@ test("Settings no longer mentions marking mail read from the tray", async () => 
   render(<NotificationsSettings />);
   await screen.findByRole("switch", { name: "Notifications for a@example.com" });
   expect(screen.queryByText(/mark .* read/i)).not.toBeInTheDocument();
+});
+
+test("answering in Settings dismisses a visible first-run prompt", async () => {
+  mockIPC((command) => {
+    if (command === "desktop_settings") return snapshot;
+    if (command === "set_account_notifications")
+      return { ...snapshot, accounts: [{ ...snapshot.accounts[0], enabled: true, asked: true }] };
+    if (command === "answer_notification_prompt") return snapshot;
+  });
+  useAccountStore.setState({ accounts: [{ id: "a", email: "a@example.com" }] as never });
+  function Prompt() {
+    useNotificationPrompt();
+    return null;
+  }
+  render(
+    <>
+      <Prompt />
+      <NotificationsSettings />
+    </>,
+  );
+  await waitFor(() =>
+    expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Turn on notifications?"),
+  );
+  fireEvent.click(await screen.findByRole("switch", { name: "Notifications for a@example.com" }));
+  await waitFor(() => expect(useToastStore.getState().toasts).toEqual([]));
 });
