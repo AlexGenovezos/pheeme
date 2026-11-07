@@ -250,7 +250,13 @@ export const useMailStore = create<MailState>((set, get) => {
       });
     } catch (error) {
       if (ticket === latest && version === localVersion)
-        set({ loading: false, error: toCommandError(error) });
+        set({
+          ...(get().loadedQuery && !sameQuery(get().loadedQuery, query)
+            ? { threads: [], next: null, loadedQuery: null }
+            : {}),
+          loading: false,
+          error: toCommandError(error),
+        });
     }
   };
 
@@ -338,11 +344,17 @@ export const useMailStore = create<MailState>((set, get) => {
       if (!preserveRead || !sameQuery(get().query, query)) keptRead.clear();
       const ticket = ++latest;
       if (query.search) {
+        const before = get();
+        const keepRows =
+          before.loadedQuery?.search &&
+          sameQuery(before.loadedQuery, { ...query, search: before.loadedQuery.search });
         remoteRows = new Map();
         removedFromSearch = new Set();
         remoteUpdates.clear();
         set({
           ...EMPTY,
+          // Keep the last search visible while typing, but never carry rows across account scopes.
+          ...(keepRows ? { threads: before.threads, loadedQuery: before.loadedQuery } : {}),
           query,
           loading: true,
           search: {
