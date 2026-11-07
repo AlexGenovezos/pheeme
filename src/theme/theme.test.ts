@@ -150,6 +150,15 @@ describe("custom themes", () => {
     stop();
   });
 
+  test("two files with the same id in one import install once, the later winning", () => {
+    mockSystemDark(true);
+    const stop = initTheme();
+    const later = { ...harbour, name: "Harbour 2" };
+    useThemeStore.getState().installThemes([harbour, later]);
+    expect(useThemeStore.getState().customThemes).toEqual([later]);
+    stop();
+  });
+
   test("a theme for the kind already showing keeps the mode", () => {
     mockSystemDark(false);
     const stop = initTheme();

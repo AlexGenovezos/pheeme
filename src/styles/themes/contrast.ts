@@ -195,8 +195,6 @@ export function makeReadable(tokens: Tokens): Tokens {
     paneIsLight ? "#000000" : "#ffffff",
     SIDEBAR_FLOOR,
   );
-  if (t["--color-sidebar-bg"] !== tokens["--color-sidebar-bg"])
-    t["--color-sidebar-vibrant-bg"] = withAlpha(t["--color-sidebar-bg"], 0.4); // as build.ts derives it
 
   // 1. Shared text and indicators, readable on the pane.
   for (const fg of SHARED_TEXT) fixForeground(t, fg, ["--color-pane-bg"], 4.5);
@@ -260,5 +258,8 @@ export function makeReadable(tokens: Tokens): Tokens {
       amount,
     );
   }
+  // The macOS vibrancy tint follows the sidebar, which steps 0 and 2 may have moved.
+  if (t["--color-sidebar-bg"] !== tokens["--color-sidebar-bg"])
+    t["--color-sidebar-vibrant-bg"] = withAlpha(t["--color-sidebar-bg"], 0.4); // as build.ts derives it
   return t;
 }

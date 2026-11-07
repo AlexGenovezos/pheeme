@@ -191,6 +191,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   },
   installThemes(files) {
     if (files.length === 0) return;
+    // Two picked files with the same id: the later one wins, as it would on re-import.
+    files = [...new Map(files.map((f) => [f.id, f])).values()];
     const ids = new Set(files.map((f) => f.id));
     const customThemes = [...get().customThemes.filter((t) => !ids.has(t.id)), ...files];
     writeCustomThemes(customThemes, defaultStorage());
