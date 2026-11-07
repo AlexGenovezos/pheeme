@@ -37,7 +37,8 @@ const renderHost = () =>
 async function openNew() {
   renderHost();
   act(() => void useComposeStore.getState().compose("a1"));
-  return screen.findByRole("region", { name: "New message" });
+  // The panel lazy-loads the editor; slow CI runners can take over findBy's default 1 s.
+  return screen.findByRole("region", { name: "New message" }, { timeout: 5000 });
 }
 
 test("typed addresses become chips; Backspace takes the last one back to edit", async () => {
