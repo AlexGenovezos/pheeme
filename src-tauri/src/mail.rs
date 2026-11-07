@@ -2025,7 +2025,18 @@ mod tests {
             .truncate(true)
             .open(stale.join("x.pdf"))
             .unwrap();
-        std::fs::File::open(&stale)
+        // Windows opens a folder only with FILE_FLAG_BACKUP_SEMANTICS, and needs write access
+        // to change its times.
+        let mut folder = std::fs::File::options();
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            folder.write(true).custom_flags(0x0200_0000);
+        }
+        #[cfg(not(windows))]
+        folder.read(true);
+        folder
+            .open(&stale)
             .unwrap()
             .set_modified(std::time::SystemTime::now() - 2 * OPEN_COPY_MAX_AGE)
             .unwrap();
