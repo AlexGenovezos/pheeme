@@ -74,6 +74,13 @@ let nextCheckAt = 0;
 let intervalMs = CHECK_INTERVAL_MS;
 let lastResult: CheckResult | null = null;
 
+/** Numeric compare of dotted versions ("0.12.0" > "0.9.0"); suffixes are ignored. */
+function isNewer(a: string, b: string) {
+  const [x, y] = [a, b].map((v) => v.split(/[.+-]/).slice(0, 3).map(Number));
+  const i = x.findIndex((n, k) => n !== y[k]);
+  return i !== -1 && x[i] > y[i];
+}
+
 function release(update: PendingUpdate) {
   update.close?.().catch(() => {});
 }
@@ -111,8 +118,9 @@ async function doCheck(): Promise<CheckResult> {
       deps.report("up_to_date");
       return "none";
     }
-    // Keep the update already offered when it is the same release, or when it is installing.
-    if (update.version === pending?.version || useUpdateStore.getState().applying) {
+    // Keep the update already offered unless this one is newer, and never swap mid-install.
+    const keep = pending && !isNewer(update.version, pending.version);
+    if (keep || useUpdateStore.getState().applying) {
       release(update);
       return "available";
     }

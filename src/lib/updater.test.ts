@@ -93,6 +93,19 @@ test("keeps the offered update when the same release comes back", async () => {
   expect(first.install).toHaveBeenCalled();
 });
 
+test("keeps the newer update when a stale check returns an older release", async () => {
+  const newer = fakeUpdate(undefined, "0.10.0");
+  const older = fakeUpdate(undefined, "0.9.0");
+  const deps = fakeDeps(async () => newer);
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+  deps.check.mockImplementation(async () => older);
+  await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+  expect(useUpdateStore.getState().available).toBe("0.10.0");
+  expect(older.close).toHaveBeenCalled();
+  expect(newer.close).not.toHaveBeenCalled();
+});
+
 test("does not swap the update while it installs", async () => {
   let finish!: () => void;
   const first = fakeUpdate(() => new Promise<void>((r) => (finish = r)));
