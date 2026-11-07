@@ -40,6 +40,7 @@ export function SendCredentials({ accounts }: { accounts: AccountInfo[] }) {
         if (active) setError(toCommandError(raw).message);
       });
     return () => {
+      // oxlint-disable-next-line react/immutability -- This flag belongs to this effect invocation.
       active = false;
       attempt.current += 1;
       if (session.current) void cancelClientTransfer(session.current).catch(() => {});
@@ -60,10 +61,12 @@ export function SendCredentials({ accounts }: { accounts: AccountInfo[] }) {
           session.current = null;
           return;
         }
+        // oxlint-disable-next-line react/immutability -- The timer handle belongs to this effect invocation.
         timer = setTimeout(() => void poll(), 750);
       } catch (raw) {
         if (active) {
           setError(toCommandError(raw).message);
+          // oxlint-disable-next-line react/immutability -- Function declarations are hoisted before this callback runs.
           cancel();
         }
       }

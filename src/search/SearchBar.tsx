@@ -44,6 +44,7 @@ export function SearchBar() {
           setHistoryError(toCommandError(error).message);
       });
     return () => {
+      // oxlint-disable-next-line react/immutability -- This flag belongs to this effect invocation.
       live = false;
     };
   }, [focused]);
