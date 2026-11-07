@@ -532,6 +532,17 @@ impl GmailClient {
                     .timeout(UPLOAD_TIMEOUT);
             }
 
+            // Google's front end answers a bodiless POST/PUT/PATCH with 411 unless it carries
+            // an explicit `Content-Length: 0` (trash, untrash, ...).
+            if req.body.is_none()
+                && req.upload.is_none()
+                && matches!(req.method, Method::POST | Method::PUT | Method::PATCH)
+            {
+                builder = builder
+                    .header(reqwest::header::CONTENT_LENGTH, 0)
+                    .body(Vec::<u8>::new());
+            }
+
             let sent = Instant::now();
             let response = send_and_read(builder).await;
             if let Some(p) = &probe {
@@ -689,7 +700,8 @@ fn parse_error_body(body: &[u8], status: StatusCode) -> (Option<String>, String)
     let fallback = || {
         let text = String::from_utf8_lossy(body);
         let text = text.trim();
-        if text.is_empty() {
+        if text.is_empty() || text.contains('<') {
+            // An HTML error page (a proxy or Google's front end) is not for the user to read.
             status
                 .canonical_reason()
                 .unwrap_or("request failed")
@@ -810,7 +822,11 @@ mod tests {
         let (reason, message) =
             parse_error_body(b"<html>bad gateway</html>", StatusCode::BAD_GATEWAY);
         assert_eq!(reason, None);
-        assert_eq!(message, "<html>bad gateway</html>");
+        assert_eq!(message, "Bad Gateway");
+
+        let html = b"<!DOCTYPE html><html><title>Error 411 (Length Required)!!1</title></html>";
+        let (_, message) = parse_error_body(html, StatusCode::LENGTH_REQUIRED);
+        assert_eq!(message, "Length Required");
 
         let (_, message) = parse_error_body(b"", StatusCode::BAD_GATEWAY);
         assert_eq!(message, "Bad Gateway");
@@ -882,6 +898,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(profile.history_id, "1204850");
+    }
+
+    #[tokio::test]
+    async fn bodiless_post_sends_content_length_zero() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/messages/m1/trash"))
+            .and(wiremock::matchers::header("content-length", "0"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": "m1"})))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+
+        client
+            .send_json::<Value>(ApiRequest::post(&["messages", "m1", "trash"]))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
