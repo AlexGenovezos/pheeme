@@ -1,8 +1,9 @@
 ; Pheeme's NSIS installer template (bundle.windows.nsis.template in tauri.conf.json).
 ;
-; This is Tauri's default template from tauri-cli v2.10.1
+; Based on Tauri's default template from tauri-cli v2.10.1, with the
+; Restart Manager and language-key compatibility updates from v2.12.4
 ; (crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi at tag tauri-cli-v2.10.1),
-; changed only where marked `PHEEME:` so that double-clicking the installer is a
+; and app-specific changes marked `PHEEME:` so double-clicking the installer is a
 ; one-click install: no wizard pages, a progress bar, then Pheeme opens. It does
 ; this by running the passive mode the updater already uses (/P) whenever the
 ; installer is started with no mode flags.
@@ -33,6 +34,8 @@ ManifestDPIAwareness PerMonitorV2
 !include "FileAssociation.nsh"
 !include "Win\COM.nsh"
 !include "Win\Propkey.nsh"
+; Required by CLI 2.12.4's utils.nsh, matching its default template.
+!include "Win\RestartManager.nsh"
 !include "StrFunc.nsh"
 ${StrCase}
 ${StrLoc}
@@ -235,7 +238,7 @@ Function PageReinstall
     StrCpy $R1 "$(olderOrUnknownVersionInstalled)"
     StrCpy $R2 "$(uninstallBeforeInstalling)"
     StrCpy $R3 "$(dontUninstall)"
-    !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(choowHowToInstall)"
+    !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(chooseHowToInstall)"
   ; Downgrading
   ${ElseIf} $R0 = -1
     StrCpy $R1 "$(newerVersionInstalled)"
@@ -245,7 +248,7 @@ Function PageReinstall
     !else
       StrCpy $R3 "$(dontUninstallDowngrade)"
     !endif
-    !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(choowHowToInstall)"
+    !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(chooseHowToInstall)"
   ${Else}
     Abort
   ${EndIf}
@@ -482,18 +485,6 @@ Function .onInit
     StrCpy $UpdateMode 1
   ${EndIf}
 
-  ; PHEEME: a double-click (no /P, /S or /UPDATE) installs in passive mode,
-  ; which skips every page but the progress bar, and opens Pheeme when done.
-  ; Passive mode closes a running Pheeme without asking, so ask first while
-  ; $PassiveMode is still 0 (Cancel quits the installer).
-  ${If} $PassiveMode <> 1
-  ${AndIf} $UpdateMode <> 1
-  ${AndIfNot} ${Silent}
-    !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
-    StrCpy $OneClickMode 1
-    StrCpy $PassiveMode 1
-  ${EndIf}
-
   !if "${DISPLAYLANGUAGESELECTOR}" == "true"
     !insertmacro MUI_LANGDLL_DISPLAY
   !endif
@@ -525,6 +516,19 @@ Function .onInit
   !if "${INSTALLMODE}" == "both"
     !insertmacro MULTIUSER_INIT
   !endif
+
+  ; PHEEME: a double-click (no /P, /S or /UPDATE) installs in passive mode,
+  ; which skips every page but the progress bar, and opens Pheeme when done.
+  ; Passive mode closes a running Pheeme without asking, so ask first while
+  ; $PassiveMode is still 0 (Cancel quits the installer). The Restart Manager
+  ; needs the full path, so resolve the install directory before asking.
+  ${If} $PassiveMode <> 1
+  ${AndIf} $UpdateMode <> 1
+  ${AndIfNot} ${Silent}
+    !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+    StrCpy $OneClickMode 1
+    StrCpy $PassiveMode 1
+  ${EndIf}
 FunctionEnd
 
 
@@ -646,7 +650,7 @@ Section Install
     !insertmacro NSIS_HOOK_PREINSTALL
   !endif
 
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
 
   ; Copy main executable
   File "${MAINBINARYSRCPATH}"
@@ -789,7 +793,7 @@ Section Uninstall
     !insertmacro NSIS_HOOK_PREUNINSTALL
   !endif
 
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
 
   ; Delete the app directory and its content from disk
   ; Copy main executable
