@@ -2,7 +2,6 @@ import { version } from "../../package.json";
 import { Button } from "../components/ui/Button";
 import { checkForUpdatesNow, displayVersion, useUpdateStore } from "../lib/updater";
 import { isTauri } from "../preview/runtime";
-import { DiagnosticsSection } from "./DiagnosticsSection";
 import { RELEASES } from "./releases";
 import { ReleaseNotes } from "./ReleaseNotes";
 import { SettingsRow, SettingsSection } from "./rows";
@@ -54,10 +53,8 @@ export function AboutSettings() {
         />
         <SettingsRow title="Updates" description={description} control={control} />
       </SettingsSection>
-      {/* Above the release notes, so "Taking too long? Send diagnostics" lands on it without scrolling. */}
-      <DiagnosticsSection />
       {RELEASES.length > 0 && (
-        <SettingsSection title="What's new">
+        <SettingsSection title="What's new" card={false}>
           <ReleaseNotes releases={RELEASES} current={version} />
         </SettingsSection>
       )}

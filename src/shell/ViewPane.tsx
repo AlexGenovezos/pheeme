@@ -5,11 +5,15 @@ import {
   MailOpen,
   MoreHorizontal,
   Reply,
+  ReplyAll,
   Star,
   Trash2,
 } from "lucide-react";
-import { type MouseEvent, useMemo } from "react";
+import { type MouseEvent, type ReactNode, useMemo, useRef } from "react";
+import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { describeShortcut } from "../keyboard/format";
+import { useWidth } from "../lib/useWidth";
 import { registry } from "../keyboard/registry";
 import { useKeybinding } from "../keyboard/useCommands";
 import { showContextMenu } from "../lib/contextMenu";
@@ -30,7 +34,38 @@ import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
 import { notYet } from "./ListPane";
 
+/** Below this reading-pane width, Reply, Reply all and Forward drop their words to fit the toolbar. */
+const LABELED_REPLIES_MIN = 560;
+
+/** Reply, Reply all or Forward: worded in the toolbar so it's always in reach, icon-only when the pane is narrow. */
+function ReplyButton(props: {
+  label: string;
+  shortcut: string | undefined;
+  icon: ReactNode;
+  compact: boolean;
+  disabled: boolean;
+  onClick(): void;
+}) {
+  const { label, shortcut, icon, compact, ...rest } = props;
+  if (compact) return <IconButton label={label} shortcut={shortcut} icon={icon} {...rest} />;
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="toolbar__reply"
+      icon={icon}
+      title={shortcut ? `${label} (${describeShortcut(shortcut)})` : label}
+      {...rest}
+    >
+      {label}
+    </Button>
+  );
+}
+
 export function ViewPane() {
+  const ref = useRef<HTMLDivElement>(null);
+  const width = useWidth(ref);
+  const compact = width > 0 && width < LABELED_REPLIES_MIN;
   const openKey = useUiStore((s) => s.openThread);
   const checked = useUiStore((s) => s.checked);
   const threads = useMailStore((s) => s.threads);
@@ -52,6 +87,7 @@ export function ViewPane() {
     unread: useKeybinding("conversation.mark-unread", "shift+u"),
     star: useKeybinding("conversation.star", "s"),
     reply: useKeybinding("conversation.reply", "r"),
+    replyAll: useKeybinding("conversation.reply-all", "a"),
     forward: useKeybinding("conversation.forward", "f"),
   };
 
@@ -79,7 +115,7 @@ export function ViewPane() {
   };
 
   return (
-    <div className="view-pane">
+    <div className="view-pane" ref={ref}>
       <div className="toolbar toolbar--view" {...dragRegion}>
         <IconButton
           label="Archive"
@@ -110,17 +146,27 @@ export function ViewPane() {
           onClick={() => void toggleStar()}
         />
         <span className="toolbar__separator" />
-        <IconButton
+        <ReplyButton
           label="Reply"
           shortcut={keys.reply}
           icon={<Reply />}
+          compact={compact}
           disabled={off}
           onClick={() => void respond("reply")}
         />
-        <IconButton
+        <ReplyButton
+          label="Reply all"
+          shortcut={keys.replyAll}
+          icon={<ReplyAll />}
+          compact={compact}
+          disabled={off}
+          onClick={() => void respond("replyAll")}
+        />
+        <ReplyButton
           label="Forward"
           shortcut={keys.forward}
           icon={<Forward />}
+          compact={compact}
           disabled={off}
           onClick={() => void respond("forward")}
         />

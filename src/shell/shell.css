@@ -546,14 +546,33 @@ body[data-resizing] .shell__divider:active::after {
 
 /* ---- Reading pane -------------------------------------------------------- */
 
+.view-pane__frame {
+  display: flex;
+  position: relative;
+  flex: 1;
+  flex-direction: column;
+  min-height: var(--space-0);
+}
+
 .view-pane__scroll {
   flex: 1;
   min-height: var(--space-0);
   overflow-y: auto;
 }
-/* Right arrow focuses the pane so Up/Down scroll it; draw the ring inside, where the pane can't clip it. */
+/*
+ * Right arrow focuses the pane so Up/Down scroll it. The ring is an overlay on the frame rather than the
+ * scroller's outline: an email's iframe paints over its scroller's outline, which then vanished on scroll.
+ */
 .view-pane__scroll:focus-visible {
-  outline-offset: var(--focus-ring-inset);
+  outline: none;
+}
+.view-pane__frame:has(> .view-pane__scroll:focus-visible)::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: var(--space-0);
+  border: var(--focus-ring-width) solid var(--color-focus-border);
+  pointer-events: none;
 }
 
 /* ---- Empty states and the chord hint ------------------------------------ */

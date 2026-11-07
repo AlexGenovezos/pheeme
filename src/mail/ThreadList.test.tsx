@@ -374,6 +374,9 @@ describe("location tag", () => {
     useMailStore.setState({ threads: placed() });
     render(<ThreadList {...props()} />);
     expect(within(row(1)).getByText("Updates")).toHaveClass("thread-row__location");
+    expect(within(row(1)).getByText("Updates").style.getPropertyValue("--row-color")).toBe(
+      "var(--color-mailbox-updates)",
+    );
     expect(within(row(2)).getByText("Spam")).toBeInTheDocument();
     expect(within(row(3)).getByText("Archived")).toBeInTheDocument();
   });

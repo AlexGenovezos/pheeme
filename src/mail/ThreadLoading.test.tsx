@@ -62,11 +62,11 @@ test("a network or server retry gives the attempt number", () => {
   expect(screen.getByText("Gmail isn't answering. Retrying (attempt 2)…")).toBeInTheDocument();
 });
 
-test("after 15 s a link offers to send diagnostics from Settings › About", () => {
+test("after 15 s a link offers to send diagnostics from Settings › Diagnostics", () => {
   render(<ThreadLoading />);
   advance(14_999);
   expect(screen.queryByRole("button", { name: "Taking too long? Send diagnostics" })).toBeNull();
   advance(1);
   fireEvent.click(screen.getByRole("button", { name: "Taking too long? Send diagnostics" }));
-  expect(useSettingsStore.getState()).toMatchObject({ open: true, page: "about" });
+  expect(useSettingsStore.getState()).toMatchObject({ open: true, page: "diagnostics" });
 });

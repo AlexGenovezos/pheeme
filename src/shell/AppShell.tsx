@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { useRef, type CSSProperties } from "react";
+import { useWidth } from "../lib/useWidth";
 import { ColorPopoverHost } from "../labels/ColorPopover";
 import { LabelDialogHost } from "../labels/LabelDialog";
 import { LabelPickerHost } from "../labels/LabelPicker";
@@ -10,19 +11,6 @@ import { ListPane } from "./ListPane";
 import { Sidebar } from "./Sidebar";
 import { ViewPane } from "./ViewPane";
 import "./shell.css";
-
-/** Live width of an element (0 until measured, or where ResizeObserver is missing). */
-function useWidth(ref: RefObject<HTMLElement | null>): number {
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [ref]);
-  return width;
-}
 
 /**
  * Three panes: sidebar (collapsible), conversation list, reading view.

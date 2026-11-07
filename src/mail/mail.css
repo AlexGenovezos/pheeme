@@ -49,16 +49,22 @@
   vertical-align: baseline;
 }
 
+/* In the color of the sidebar mailbox it names (--row-color, set inline), tinted like a selected sidebar row. */
 .thread-row__location {
   display: inline-block;
   margin-inline-end: var(--space-1-5);
   padding: var(--space-0) var(--space-1-5);
   border-radius: var(--radius-sm);
   background: var(--color-badge-bg);
-  color: var(--color-badge-foreground);
+  color: var(--row-color);
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-regular);
+  font-weight: var(--font-weight-medium);
   vertical-align: baseline;
+}
+@supports (background: color-mix(in srgb, red 50%, transparent)) {
+  .thread-row__location {
+    background: color-mix(in srgb, var(--row-color) var(--sidebar-selected-tint), transparent);
+  }
 }
 
 .thread-row__stamp {
@@ -226,13 +232,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-}
-
-.thread-view__replies {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-5);
 }
 
 /* ---- Message cards ------------------------------------------------------- */

@@ -138,17 +138,28 @@ test("mailboxExists: gone accounts and deleted user labels don't, system mailbox
 });
 
 test("locationOf names where a conversation sits", () => {
-  expect(locationOf(["INBOX", "CATEGORY_UPDATES", "UNREAD"])).toBe("Updates");
-  expect(locationOf(["INBOX", "CATEGORY_PERSONAL"])).toBe("Primary");
+  expect(locationOf(["INBOX", "CATEGORY_UPDATES", "UNREAD"]).name).toBe("Updates");
+  expect(locationOf(["INBOX", "CATEGORY_PERSONAL"]).name).toBe("Primary");
   // Accounts without category labels: the inbox is Primary.
-  expect(locationOf(["INBOX", "IMPORTANT"])).toBe("Primary");
-  expect(locationOf(["CATEGORY_UPDATES", "Label_1"])).toBe("Archived");
-  expect(locationOf([])).toBe("Archived");
-  expect(locationOf(["SPAM", "CATEGORY_PROMOTIONS"])).toBe("Spam");
-  expect(locationOf(["TRASH", "INBOX"])).toBe("Trash");
-  expect(locationOf(["SENT"])).toBe("Sent");
-  expect(locationOf(["INBOX", "SENT", "CATEGORY_SOCIAL"])).toBe("Social");
-  expect(locationOf(["DRAFT"])).toBe("Drafts");
+  expect(locationOf(["INBOX", "IMPORTANT"]).name).toBe("Primary");
+  expect(locationOf(["CATEGORY_UPDATES", "Label_1"]).name).toBe("Archived");
+  expect(locationOf([]).name).toBe("Archived");
+  expect(locationOf(["SPAM", "CATEGORY_PROMOTIONS"]).name).toBe("Spam");
+  expect(locationOf(["TRASH", "INBOX"]).name).toBe("Trash");
+  expect(locationOf(["SENT"]).name).toBe("Sent");
+  expect(locationOf(["INBOX", "SENT", "CATEGORY_SOCIAL"]).name).toBe("Social");
+  expect(locationOf(["DRAFT"]).name).toBe("Drafts");
+});
+
+test("a location tag takes the color of the sidebar mailbox it names", () => {
+  expect(locationOf(["INBOX", "CATEGORY_PROMOTIONS"]).colorToken).toBe(
+    "--color-mailbox-promotions",
+  );
+  expect(locationOf(["INBOX"]).colorToken).toBe("--color-mailbox-primary");
+  expect(locationOf(["TRASH"]).colorToken).toBe("--color-mailbox-trash");
+  // Archived mail lives in All Mail.
+  expect(locationOf([]).colorToken).toBe("--color-mailbox-allmail");
+  expect(locationOf(["SPAM"])).toBe(locationOf(["SPAM", "UNREAD"]));
 });
 
 test("rows name their location only in views that mix locations", () => {
