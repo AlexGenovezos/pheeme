@@ -12,10 +12,13 @@ use rand::RngExt;
 use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::future::Future;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::Semaphore;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::sync::{Notify, Semaphore};
+use tokio::time::Instant;
 use tracing::warn;
 
 /// Production API root. `me` resolves to the account the access token belongs to.
@@ -42,10 +45,24 @@ pub const QUOTA_PER_MINUTE_RANGE: std::ops::RangeInclusive<u32> = 600..=1_200_00
 /// The share of the limit each client spends (4,800 units a minute at the default). It leaves
 /// headroom for the user's other clients, and the limiter backs off further if Gmail still objects.
 const CLIENT_SHARE: f64 = 0.8;
-/// The share bulk work (the backfill) may spend (2,400 a minute at the default). Kept well under
-/// the limit, the backfill doesn't trip it, so sync, sends and opening mail aren't refused for
+/// The share bulk work (the backfill) may spend (2,400 a minute at the default). The other 60%
+/// is a reserve the backfill never touches, so sync, sends and opening mail aren't refused for
 /// quota the backfill used up.
 const BULK_SHARE: f64 = 0.4;
+
+/// How long background work stays off Gmail after any request is rate-limited. Gmail counts its
+/// limit per minute (across every device on the account), so a shorter pause lands in the same
+/// window, trips it again, and takes the quota the user's next click needs.
+pub const RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(60);
+
+/// After a cooldown, background work restarts at this fraction of its pace and climbs back to
+/// full over [`QUOTA_RECOVERY`] (45 s from a quarter).
+const COOLDOWN_RESTART: f64 = 0.25;
+
+/// The user's requests skip the queue but are paced among themselves at the client's full rate,
+/// with this much backlog allowed at once (400 units at the default limit: a send and a handful
+/// of clicks go immediately; a flood of queued changes is still spread out).
+const USER_BURST: Duration = Duration::from_secs(5);
 
 /// The user's Gmail per-user limit (units per minute), shared by every account's client so a
 /// change in Settings applies at once.
@@ -139,6 +156,10 @@ fn jittered(delay: Duration) -> Duration {
 /// rate's worth per [`QUOTA_RECOVERY`] (so 30 s from half speed). Gmail enforces its limit per
 /// minute, so a fixed rate either wastes quota or keeps tripping it, and recovering much faster
 /// trips it again.
+///
+/// The user's requests ([`Self::take_first`]) keep a schedule of their own and don't wait behind
+/// anything already booked; what they spend is added to the shared schedule, so the requests
+/// behind them wait instead.
 struct QuotaLimiter {
     /// Units per second at full speed: `share` of a per-minute limit that may change.
     limit: Arc<AtomicU32>,
@@ -149,7 +170,9 @@ struct QuotaLimiter {
 struct Pace {
     /// When the schedule is next free.
     next: Instant,
-    /// The rate set by the last cut, and when it was made.
+    /// When the user's schedule is next free.
+    first: Instant,
+    /// The rate set by the last cut, and when it took effect (may be ahead: a cooldown).
     cut: Option<(f64, Instant)>,
 }
 
@@ -163,6 +186,7 @@ impl QuotaLimiter {
             share,
             state: std::sync::Mutex::new(Pace {
                 next: Instant::now(),
+                first: Instant::now(),
                 cut: None,
             }),
         }
@@ -207,11 +231,27 @@ impl QuotaLimiter {
             pace.next = start + Duration::from_secs_f64(f64::from(units) / rate);
             start.checked_sub(QUOTA_BURST).unwrap_or(now)
         };
-        tokio::time::sleep_until(send_at.into()).await;
+        tokio::time::sleep_until(send_at).await;
+    }
+
+    /// [`Self::take`] for the user's requests: wait only behind other user requests, beyond
+    /// [`USER_BURST`] of them, and charge the shared schedule so the requests behind wait.
+    async fn take_first(&self, units: u32) {
+        let send_at = {
+            let mut pace = self.pace();
+            let now = Instant::now();
+            let spend = |rate: f64| Duration::from_secs_f64(f64::from(units) / rate);
+            let rate = self.rate_at(&pace, now);
+            pace.next = pace.next.max(now) + spend(rate);
+            let start = pace.first.max(now);
+            pace.first = start + spend(self.max_rate());
+            start.checked_sub(USER_BURST).unwrap_or(now)
+        };
+        tokio::time::sleep_until(send_at).await;
     }
 
     /// Gmail said slow down: halve the rate (once per burst of rejections) and let the
-    /// window drain before anything else goes.
+    /// window drain for a moment before anything else on this schedule goes.
     fn rate_limited(&self) {
         let mut pace = self.pace();
         let now = Instant::now();
@@ -223,13 +263,101 @@ impl QuotaLimiter {
         }
         let rate = (self.rate_at(&pace, now) / 2.0).max(self.max_rate() / 20.0);
         pace.cut = Some((rate, now));
-        pace.next = pace.next.max(now) + QUOTA_BURST;
+        // `take` lets a request go `QUOTA_BURST` ahead of its slot, so push past that too:
+        // otherwise the pause is used up before it starts.
+        pace.next = pace.next.max(now) + 2 * QUOTA_BURST;
+    }
+
+    /// Book nothing before `until`, then restart at [`COOLDOWN_RESTART`] of the full rate and
+    /// climb back over [`QUOTA_RECOVERY`].
+    fn pause_until(&self, until: Instant) {
+        let mut pace = self.pace();
+        pace.cut = Some((self.max_rate() * COOLDOWN_RESTART, until));
+        pace.next = pace.next.max(until + QUOTA_BURST);
     }
 
     #[cfg(test)]
     fn rate(&self) -> f64 {
         self.rate_at(&self.pace(), Instant::now())
     }
+}
+
+/// Whose turn it is on one account's quota: the user's requests, then sync, then background.
+///
+/// While a user request waits to go out (for a slot, the quota, or a retry), sync and
+/// background requests start nothing new. After any rate limit, background requests are
+/// refused without being sent for [`RATE_LIMIT_COOLDOWN`], whichever request saw it.
+#[derive(Default)]
+struct Turns {
+    users_waiting: AtomicUsize,
+    cooldown_until: std::sync::Mutex<Option<Instant>>,
+    changed: Notify,
+}
+
+impl Turns {
+    /// Count a user request as waiting until the guard drops.
+    fn user_waiting(&self) -> UserWaiting<'_> {
+        self.users_waiting.fetch_add(1, Ordering::SeqCst);
+        UserWaiting(self)
+    }
+
+    fn cooldown_until(&self) -> std::sync::MutexGuard<'_, Option<Instant>> {
+        self.cooldown_until
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Keep background requests off Gmail until at least `until`.
+    fn cool_down(&self, until: Instant) {
+        let mut cooldown = self.cooldown_until();
+        *cooldown = Some(cooldown.map_or(until, |at| at.max(until)));
+    }
+
+    /// Wait until no user request is waiting. Background work during a cooldown gets
+    /// `Err(time left)` instead: its caller pauses rather than holding anything while it waits.
+    async fn wait_turn(&self, background: bool) -> Result<(), Duration> {
+        loop {
+            let notified = self.changed.notified();
+            tokio::pin!(notified);
+            // Registered before the check, so a user request finishing in between still wakes us.
+            notified.as_mut().enable();
+            if self.users_waiting.load(Ordering::SeqCst) > 0 {
+                notified.await;
+                continue;
+            }
+            let now = Instant::now();
+            return match *self.cooldown_until() {
+                Some(until) if background && until > now => Err(until - now),
+                _ => Ok(()),
+            };
+        }
+    }
+}
+
+struct UserWaiting<'a>(&'a Turns);
+
+impl Drop for UserWaiting<'_> {
+    fn drop(&mut self) {
+        if self.0.users_waiting.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.0.changed.notify_waiters();
+        }
+    }
+}
+
+tokio::task_local! {
+    static USER_ACTION: ();
+}
+
+/// Run `f` as something the user did (a label edit, a queued change or send, a search, a
+/// draft): its sync-priority Gmail requests run at [`Priority::Interactive`], ahead of sync and
+/// the backfill. A task-local, so it reaches every request `f` makes (`buffer_unordered`
+/// included) but not spawned tasks.
+pub async fn user_action<F: Future>(f: F) -> F::Output {
+    USER_ACTION.scope((), f).await
+}
+
+fn in_user_action() -> bool {
+    USER_ACTION.try_with(|_| ()).is_ok()
 }
 
 /// One Gmail API call, rebuilt for every attempt.
@@ -250,9 +378,11 @@ pub(crate) struct ApiRequest {
 /// Who is waiting on a request; decides which slots and how much quota it may use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Priority {
-    /// The reader asked for it (an attachment); may use slots reserved from sync.
+    /// The user is waiting on it (an attachment, an opened thread, anything in
+    /// [`user_action`]): may use slots reserved from sync, skips the quota queue, and holds
+    /// sync and background requests back until it has gone out.
     Interactive,
-    /// Sync, sends and other calls that keep the app current.
+    /// Sync and other calls that keep the app current.
     Sync,
     /// Bulk work nobody is waiting on (the backfill). Gets a few slots and a share of the
     /// quota, and gives up at Gmail's first rate limit instead of retrying: its caller pauses.
@@ -379,6 +509,7 @@ pub struct GmailClient {
     bulk_permits: Arc<Semaphore>,
     quota: Arc<QuotaLimiter>,
     bulk_quota: Arc<QuotaLimiter>,
+    turns: Arc<Turns>,
 }
 
 impl GmailClient {
@@ -398,6 +529,7 @@ impl GmailClient {
             bulk_permits: Arc::new(Semaphore::new(MAX_BULK_REQUESTS)),
             quota: Arc::new(QuotaLimiter::new(&QuotaSetting::default(), CLIENT_SHARE)),
             bulk_quota: Arc::new(QuotaLimiter::new(&QuotaSetting::default(), BULK_SHARE)),
+            turns: Arc::default(),
         }
     }
 
@@ -469,18 +601,29 @@ impl GmailClient {
     ///
     /// With a [`probe`] in scope (the reader opened a thread), a sync request is the reader's:
     /// it runs at [`Priority::Interactive`], and its waits, retries and failures are reported.
+    /// Inside [`user_action`] it is the user's too.
     async fn execute(&self, req: &ApiRequest) -> Result<Vec<u8>, GmailError> {
         let closed = |_| GmailError::Network("request limiter closed".into());
         let probe = probe::current();
         let priority = match req.priority {
-            Priority::Sync if probe.is_some() => Priority::Interactive,
+            Priority::Sync if probe.is_some() || in_user_action() => Priority::Interactive,
             p => p,
         };
         let background = priority == Priority::Background;
+        let user = priority == Priority::Interactive;
+        // Until it goes out, a user request holds sync and background requests back.
+        let mut waiting = user.then(|| self.turns.user_waiting());
         if let Some(p) = &probe {
             p.stage(ProbeStage::Queued);
         }
         let queued = Instant::now();
+        let cooling = |left| GmailError::RateLimit {
+            retry_after: Some(left),
+        };
+        if !user {
+            // Before taking any slot, so requests held back don't keep slots from anyone.
+            self.turns.wait_turn(background).await.map_err(cooling)?;
+        }
         // Take the narrowest gate first: queued bulk calls must not hold sync's slots, and
         // queued sync calls must not reserve the last two global slots. All calls still share
         // the total cap and Gmail quota limiter.
@@ -507,10 +650,18 @@ impl GmailClient {
         loop {
             // Every attempt spends quota, retries included.
             let paced = Instant::now();
-            if background {
-                self.bulk_quota.take(units).await;
+            if user {
+                self.quota.take_first(units).await;
+            } else {
+                if background {
+                    self.bulk_quota.take(units).await;
+                }
+                self.quota.take(units).await;
+                // A user request or a rate limit may have come up while this one was paced.
+                self.turns.wait_turn(background).await.map_err(cooling)?;
             }
-            self.quota.take(units).await;
+            // Going out now: whatever was held back for it may go too.
+            drop(waiting.take());
             if let Some(p) = &probe {
                 p.quota_wait(paced.elapsed());
                 p.stage(ProbeStage::Fetching);
@@ -553,6 +704,9 @@ impl GmailClient {
                         if let Some(p) = &probe {
                             p.retrying(attempt, delay, RetryReason::Network);
                         }
+                        if user {
+                            waiting = Some(self.turns.user_waiting());
+                        }
                         tokio::time::sleep(delay).await;
                         attempt += 1;
                         continue;
@@ -592,9 +746,7 @@ impl GmailClient {
                     ));
             if rate_limited {
                 self.quota.rate_limited();
-                if background {
-                    self.bulk_quota.rate_limited();
-                }
+                self.cool_down();
             }
             let retryable = rate_limited || (status.is_server_error() && req.retry_ambiguous);
             // A server asking for longer than our cap gets the error back (with `retry_after`)
@@ -623,6 +775,11 @@ impl GmailClient {
                     };
                     p.retrying(attempt, delay, why);
                 }
+                // Nothing else starts while the user's request waits out its retry, so the
+                // window has room for it when it goes again.
+                if user {
+                    waiting = Some(self.turns.user_waiting());
+                }
                 tokio::time::sleep(delay).await;
                 attempt += 1;
                 continue;
@@ -650,6 +807,14 @@ impl GmailClient {
                 message,
             });
         }
+    }
+
+    /// Gmail refused a request for quota: whichever request it was, keep the account's
+    /// background work off Gmail for [`RATE_LIMIT_COOLDOWN`], then let it ramp back up.
+    fn cool_down(&self) {
+        let until = Instant::now() + RATE_LIMIT_COOLDOWN;
+        self.turns.cool_down(until);
+        self.bulk_quota.pause_until(until);
     }
 }
 
@@ -764,7 +929,6 @@ mod tests {
     use super::*;
     use crate::gmail::types::UserProfile;
     use std::sync::atomic::Ordering;
-    use std::time::Instant;
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -1386,5 +1550,244 @@ mod tests {
         assert_eq!(setting.get(), 600);
         assert_eq!(setting.set(u32::MAX), 1_200_000);
         assert_eq!(QuotaSetting::default().get(), 6_000);
+    }
+
+    fn requests_to(server_requests: &[wiremock::Request], p: &str) -> usize {
+        server_requests.iter().filter(|r| r.url.path() == p).count()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn user_requests_skip_the_queue_and_the_rest_wait_for_them() {
+        let limiter = QuotaLimiter::fixed(10);
+        // Sync and the backfill have booked 10 s ahead.
+        limiter.pace().next = Instant::now() + Duration::from_secs(10);
+
+        let start = Instant::now();
+        limiter.take_first(100).await;
+        assert_eq!(
+            start.elapsed(),
+            Duration::ZERO,
+            "the user waited behind the queue"
+        );
+
+        // The user's 100 units fall on the requests behind: 10 s booked + 10 s spent, less the
+        // 1 s burst.
+        limiter.take(5).await;
+        assert_eq!(start.elapsed(), Duration::from_secs(19));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn user_requests_are_paced_among_themselves_past_a_burst() {
+        // 10 units a second with a 5 s burst: 60 units go at once (the burst, plus the request
+        // due now), the next 10 wait 1 s.
+        let limiter = QuotaLimiter::fixed(10);
+        let start = Instant::now();
+        for _ in 0..6 {
+            limiter.take_first(10).await;
+        }
+        assert_eq!(start.elapsed(), Duration::ZERO);
+        limiter.take_first(10).await;
+        assert_eq!(start.elapsed(), Duration::from_secs(1));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sync_and_background_wait_while_a_user_request_waits() {
+        let turns = Arc::new(Turns::default());
+        let user = turns.user_waiting();
+        let held: Vec<_> = [false, true]
+            .into_iter()
+            .map(|background| {
+                let turns = turns.clone();
+                tokio::spawn(async move { turns.wait_turn(background).await })
+            })
+            .collect();
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        assert!(
+            held.iter().all(|h| !h.is_finished()),
+            "went ahead of the user"
+        );
+
+        drop(user);
+        for h in held {
+            assert_eq!(h.await.unwrap(), Ok(()));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_cooldown_holds_background_only_and_then_ramps_it_back() {
+        let turns = Turns::default();
+        let limiter = QuotaLimiter::fixed(40);
+        let until = Instant::now() + RATE_LIMIT_COOLDOWN;
+        turns.cool_down(until);
+        limiter.pause_until(until);
+
+        assert_eq!(turns.wait_turn(true).await, Err(RATE_LIMIT_COOLDOWN));
+        assert_eq!(
+            turns.wait_turn(false).await,
+            Ok(()),
+            "sync isn't cooled down"
+        );
+
+        // Nothing is booked before the cooldown ends...
+        limiter.take(5).await;
+        assert_eq!(Instant::now(), until);
+        assert_eq!(turns.wait_turn(true).await, Ok(()));
+        // ...then it restarts at a quarter of the pace and is back to full 45 s later.
+        assert!((limiter.rate() - 10.0).abs() < 0.01, "{}", limiter.rate());
+        tokio::time::sleep(Duration::from_secs(45)).await;
+        assert_eq!(limiter.rate(), 40.0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn background_spend_leaves_the_reserve() {
+        // The backfill's path at the default limit: its own share, then the client's.
+        let setting = QuotaSetting::default();
+        let bulk = QuotaLimiter::new(&setting, BULK_SHARE);
+        let shared = QuotaLimiter::new(&setting, CLIENT_SHARE);
+        let start = Instant::now();
+        let mut spent = 0u32;
+        while start.elapsed() < Duration::from_secs(60) {
+            bulk.take(5).await;
+            shared.take(5).await;
+            spent += 5;
+        }
+        let limit = f64::from(DEFAULT_QUOTA_PER_MINUTE);
+        let reserve = limit * (1.0 - BULK_SHARE); // 3,600 a minute
+                                                  // Plus the one-second burst the limiter allows at the start, and the request that
+                                                  // starts just before the minute is up.
+        let allowed = limit - reserve + limit * BULK_SHARE / 60.0 + 5.0;
+        assert!(f64::from(spent) <= allowed, "spent {spent} of {allowed}");
+        assert!(
+            f64::from(spent) >= limit - reserve - 50.0,
+            "starved: {spent}"
+        );
+    }
+
+    #[tokio::test]
+    async fn user_request_goes_ahead_of_a_saturated_sync_and_backfill() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        // 10 units a second: eight sync gets and twenty backfill gets book seconds ahead.
+        let client = client_for(&server)
+            .0
+            .with_quota(10)
+            .with_background_quota(10);
+        let mut queued = Vec::new();
+        for i in 0..28 {
+            let c = client.clone();
+            queued.push(tokio::spawn(async move {
+                let req = ApiRequest::get(&["messages", &format!("q{i}")]);
+                let req = if i < 8 { req } else { req.background() };
+                c.send_json::<Value>(req).await
+            }));
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let started = Instant::now();
+        let mine = user_action(client.send_json::<Value>(ApiRequest::get(&["labels", "L1"])));
+        tokio::time::timeout(Duration::from_millis(500), mine)
+            .await
+            .expect("the user's request waited behind sync and the backfill")
+            .unwrap();
+        let waited = started.elapsed();
+        let sent = server.received_requests().await.unwrap();
+        assert!(
+            sent.len() < 28,
+            "the queue had drained after {waited:?}: nothing to go ahead of"
+        );
+        for q in queued {
+            q.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn sync_waits_while_a_user_request_retries() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/messages/mine"))
+            .respond_with(ResponseTemplate::new(503).insert_header("Retry-After", "0.3"))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        let client = retry_after_client(&server);
+        let c = client.clone();
+        let mine = tokio::spawn(user_action(async move {
+            c.send_json::<Value>(ApiRequest::get(&["messages", "mine"]))
+                .await
+        }));
+        while server.received_requests().await.unwrap().is_empty() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        // Issued while the user's request sleeps before its retry: it goes after, not between.
+        let _: Value = client
+            .send_json(ApiRequest::get(&["messages", "sync"]))
+            .await
+            .unwrap();
+        mine.await.unwrap().unwrap();
+        let order: Vec<_> = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| r.url.path().to_owned())
+            .collect();
+        assert_eq!(
+            order,
+            ["/messages/mine", "/messages/mine", "/messages/sync"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rate_limit_anywhere_cools_background_down_but_not_the_user() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/history"))
+            .respond_with(ResponseTemplate::new(403).set_body_json(error_json(
+                403,
+                "rateLimitExceeded",
+                "Quota exceeded for quota metric 'Queries' ... 'Units per minute per user'",
+            )))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+
+        // Sync sees the rate limit (and gets through on a retry).
+        let _: Value = client
+            .send_json(ApiRequest::get(&["history"]))
+            .await
+            .unwrap();
+
+        // The backfill is turned away without spending quota, told how long is left.
+        let err = client
+            .send_json::<Value>(ApiRequest::get(&["messages", "bulk"]).background())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, GmailError::RateLimit { retry_after: Some(left) }
+                if left > RATE_LIMIT_COOLDOWN - Duration::from_secs(10)),
+            "{err:?}"
+        );
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(requests_to(&sent, "/messages/bulk"), 0);
+
+        // The user's request goes straight out.
+        let mine = user_action(client.send_json::<Value>(ApiRequest::get(&["labels", "L1"])));
+        tokio::time::timeout(Duration::from_millis(500), mine)
+            .await
+            .expect("the user's request was held by the cooldown")
+            .unwrap();
     }
 }

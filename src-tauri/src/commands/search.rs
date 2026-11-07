@@ -1,6 +1,7 @@
 //! Search commands: thin adapters over [`crate::mail::MailService`].
 
 use super::CommandError;
+use crate::gmail::user_action;
 use crate::mail::{GmailSearchPageDto, SearchPageDto, ThreadCursorDto};
 use crate::AppState;
 use std::collections::HashMap;
@@ -29,10 +30,7 @@ pub async fn search_gmail(
     query: String,
     page_tokens: Option<HashMap<String, String>>,
 ) -> Result<GmailSearchPageDto, CommandError> {
-    Ok(state
-        .mail
-        .search_gmail(&account_ids, &query, page_tokens)
-        .await?)
+    Ok(user_action(state.mail.search_gmail(&account_ids, &query, page_tokens)).await?)
 }
 
 #[tauri::command]
