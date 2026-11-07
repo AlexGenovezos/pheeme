@@ -10,6 +10,7 @@ import { SEQUENCE_WAIT_MS } from "./KeyboardSettings";
 import { Settings } from "./Settings";
 import { useSettingsStore } from "./settingsStore";
 import { initReadingSize, READING_SIZE_KEY } from "./readingSettings";
+import { DEFAULT_PREFS, SPEED_READER_KEY, useSpeedReaderSettings } from "../speedread/settings";
 
 const archive = vi.fn();
 const star = vi.fn();
@@ -111,13 +112,34 @@ test("Appearance sets the theme mode and the sidebar", () => {
 test("Appearance changes and persists the reading size", () => {
   render(<Harness />);
   open("appearance");
-  fireEvent.click(within(dialog()).getByRole("radio", { name: "Large" }));
+  const size = within(within(dialog()).getByRole("radiogroup", { name: "Reading text size" }));
+  fireEvent.click(size.getByRole("radio", { name: "Large" }));
   expect(document.documentElement.dataset.readingSize).toBe("large");
   expect(localStorage.getItem(READING_SIZE_KEY)).toBe("large");
-  expect(within(dialog()).getByRole("radio", { name: "Large" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  expect(size.getByRole("radio", { name: "Large" })).toHaveAttribute("aria-checked", "true");
+});
+
+test("Appearance sets up the speed reader", () => {
+  useSpeedReaderSettings.setState({ ...DEFAULT_PREFS });
+  render(<Harness />);
+  open("appearance");
+  const speed = within(dialog()).getByRole("slider", { name: "Reading speed" });
+  fireEvent.change(speed, { target: { value: "450" } });
+  expect(useSpeedReaderSettings.getState().wpm).toBe(450);
+  fireEvent.click(within(dialog()).getByRole("button", { name: "Faster" }));
+  expect(useSpeedReaderSettings.getState().wpm).toBe(475);
+  fireEvent.click(within(dialog()).getByRole("switch", { name: "Offer speed reading" }));
+  expect(useSpeedReaderSettings.getState().offer).toBe(false);
+  fireEvent.click(within(dialog()).getByRole("switch", { name: "Pause at punctuation" }));
+  expect(useSpeedReaderSettings.getState().pauses).toBe(false);
+  const words = within(within(dialog()).getByRole("radiogroup", { name: "Word size" }));
+  fireEvent.click(words.getByRole("radio", { name: "Medium" }));
+  expect(JSON.parse(localStorage.getItem(SPEED_READER_KEY)!)).toEqual({
+    offer: false,
+    wpm: 475,
+    pauses: false,
+    size: "medium",
+  });
 });
 
 describe("search", () => {

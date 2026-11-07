@@ -105,6 +105,18 @@
   --switch-height: 16px;
   --switch-thumb: 12px;
   --switch-inset: 2px;
+  /* Speed reader: one word at a time over the blurred app. */
+  --speed-reader-width: 720px;
+  --speed-reader-stage-height: 220px;
+  --speed-reader-word-medium: 40px;
+  --speed-reader-word-large: 56px;
+  --speed-reader-guide-length: 18px;
+  --speed-reader-play-size: 52px;
+  --speed-reader-progress-height: 4px;
+  --speed-reader-thumb-size: 12px;
+  --speed-reader-preset-width: 44px;
+  --speed-control-slider-width: 160px;
+  --speed-control-value-width: 72px;
   /* Settings dialog: a floating window over the blurred app. */
   --settings-width: 920px;
   --settings-height: 640px;

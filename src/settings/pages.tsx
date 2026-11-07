@@ -27,6 +27,12 @@ import { DiagnosticsSection } from "./DiagnosticsSection";
 import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
 import { READING_SIZES, type ReadingSize, useReadingSettings } from "./readingSettings";
+import {
+  OfferControl,
+  PausesControl,
+  SpeedControl,
+  WordSizeControl,
+} from "../speedread/SpeedReader";
 import type { SettingsPageDef } from "./schema";
 
 const MODE_LABELS: Record<ThemeMode, string> = { system: "System", light: "Light", dark: "Dark" };
@@ -130,6 +136,40 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
               "Preloading images lets senders see that an email was opened, along with your IP address and approximate location, even for emails you skip. Turning it off keeps text preloading, and loads images only when you open an email.",
             keywords: ["privacy", "images", "tracking"],
             Control: PreloadImagesControl,
+          },
+        ],
+      },
+      {
+        title: "Speed reader",
+        settings: [
+          {
+            id: "speedReader.offer",
+            title: "Offer speed reading",
+            description:
+              "Show a Speed read button on emails that are mostly plain text, to read them one word at a time.",
+            keywords: ["rsvp", "fast", "reader", "words"],
+            Control: OfferControl,
+          },
+          {
+            id: "speedReader.wpm",
+            title: "Speed",
+            description: "Words per minute. You can also change it while reading.",
+            keywords: ["wpm", "words per minute", "fast", "slow", "speed reader"],
+            Control: SpeedControl,
+          },
+          {
+            id: "speedReader.pauses",
+            title: "Pause at punctuation",
+            description: "Linger a moment at commas, the ends of sentences and new paragraphs.",
+            keywords: ["speed reader", "commas", "sentences"],
+            Control: PausesControl,
+          },
+          {
+            id: "speedReader.size",
+            title: "Word size",
+            description: "How big each word shows in the speed reader.",
+            keywords: ["speed reader", "font", "larger"],
+            Control: WordSizeControl,
           },
         ],
       },

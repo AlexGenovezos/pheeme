@@ -20,6 +20,7 @@ import {
 } from "../mail/mailboxes";
 import { usePaletteStore } from "../palette/paletteStore";
 import { useSettingsStore } from "../settings/settingsStore";
+import { speedReadOpenConversation } from "../speedread/open";
 import { useAccountStore } from "../store/accountStore";
 import { useUiStore } from "../store/uiStore";
 import { useThemeStore } from "../theme/theme";
@@ -195,6 +196,14 @@ export function appCommands(): Command[] {
       group: "Conversation",
       shortcut: "f",
       run: () => void respond("forward"),
+    },
+    {
+      id: "conversation.speed-read",
+      title: "Speed read",
+      group: "Conversation",
+      shortcut: "shift+r",
+      keywords: ["rsvp", "fast", "reader", "words per minute"],
+      run: speedReadOpenConversation,
     },
     {
       id: "view.toggleSidebar",
