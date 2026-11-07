@@ -53,13 +53,18 @@ pub async fn list_threads(
     Ok(result?)
 }
 
+/// `opened`: the reader opened the thread (a prefetch leaves it out).
 #[tauri::command]
 pub async fn get_thread(
     state: State<'_, AppState>,
     account_id: String,
     thread_id: String,
+    opened: Option<bool>,
 ) -> Result<ThreadDetailDto, CommandError> {
-    Ok(state.mail.get_thread(&account_id, &thread_id).await?)
+    Ok(state
+        .mail
+        .get_thread(&account_id, &thread_id, opened.unwrap_or(false))
+        .await?)
 }
 
 #[tauri::command]

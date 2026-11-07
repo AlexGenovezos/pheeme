@@ -120,6 +120,13 @@ impl SyncManager {
         self.events.emit(event);
     }
 
+    /// A sync (the first one included) or the backfill is running for the account, so its
+    /// requests compete with anything the reader opens.
+    pub fn sync_busy(&self, account_id: &str) -> bool {
+        let a = self.account(account_id);
+        a.backfilling.load(Ordering::SeqCst) || a.run_lock.try_lock().is_err()
+    }
+
     /// Drop an account's sync state (it was removed).
     pub fn forget(&self, account_id: &str) {
         lock(&self.accounts).remove(account_id);
@@ -339,6 +346,7 @@ mod tests {
     async fn undo_deadline_dispatches_during_a_blocked_mail_fetch() {
         let (_dir, pool, fake, events, manager) = setup().await;
         manager.engine("a1").run_initial_sync().await.unwrap();
+        assert!(!manager.sync_busy("a1"));
         fake.add(FakeMsg::new("new", "new-thread", &["INBOX"]));
         let gate = fake.hold_batch_gets();
         let sync = manager.run_coalesced("a1");
@@ -381,6 +389,7 @@ mod tests {
         .expect("send waited for the blocked mail fetch");
         assert_eq!(fake.sent().len(), 1);
         assert!(manager.account("a1").run_lock.try_lock().is_err());
+        assert!(manager.sync_busy("a1"), "a sync is fetching mail");
 
         // Finish the fetch and its coalesced follow-up; neither may dispatch the message again.
         gate.add_permits(10);

@@ -7,6 +7,7 @@
 //! [`GmailClient::send_empty`]. Nothing here depends on Tauri.
 
 use super::error::GmailError;
+use super::probe::{self, ProbeStage, RetryReason};
 use rand::Rng;
 use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
@@ -465,9 +466,21 @@ impl GmailClient {
     ///
     /// The permit is held for the whole call, backoff sleeps included, so a rate-limited client
     /// slows down instead of piling retries on top of new requests.
+    ///
+    /// With a [`probe`] in scope (the reader opened a thread), a sync request is the reader's:
+    /// it runs at [`Priority::Interactive`], and its waits, retries and failures are reported.
     async fn execute(&self, req: &ApiRequest) -> Result<Vec<u8>, GmailError> {
         let closed = |_| GmailError::Network("request limiter closed".into());
-        let background = req.priority == Priority::Background;
+        let probe = probe::current();
+        let priority = match req.priority {
+            Priority::Sync if probe.is_some() => Priority::Interactive,
+            p => p,
+        };
+        let background = priority == Priority::Background;
+        if let Some(p) = &probe {
+            p.stage(ProbeStage::Queued);
+        }
+        let queued = Instant::now();
         // Take the narrowest gate first: queued bulk calls must not hold sync's slots, and
         // queued sync calls must not reserve the last two global slots. All calls still share
         // the total cap and Gmail quota limiter.
@@ -476,12 +489,15 @@ impl GmailClient {
         } else {
             None
         };
-        let _background = if req.priority == Priority::Interactive {
+        let _background = if priority == Priority::Interactive {
             None
         } else {
             Some(self.background_permits.acquire().await.map_err(closed)?)
         };
         let _permit = self.permits.acquire().await.map_err(closed)?;
+        if let Some(p) = &probe {
+            p.slot_wait(queued.elapsed());
+        }
         let url = self.url_for(req)?;
         let mut token = self.tokens.access_token().await?;
         let mut refreshed = false;
@@ -490,10 +506,15 @@ impl GmailClient {
 
         loop {
             // Every attempt spends quota, retries included.
+            let paced = Instant::now();
             if background {
                 self.bulk_quota.take(units).await;
             }
             self.quota.take(units).await;
+            if let Some(p) = &probe {
+                p.quota_wait(paced.elapsed());
+                p.stage(ProbeStage::Fetching);
+            }
             let mut builder = self
                 .http
                 .request(req.method.clone(), url.clone())
@@ -511,14 +532,25 @@ impl GmailClient {
                     .timeout(UPLOAD_TIMEOUT);
             }
 
-            let (status, retry_after, body) = match send_and_read(builder).await {
+            let sent = Instant::now();
+            let response = send_and_read(builder).await;
+            if let Some(p) = &probe {
+                p.sent(sent.elapsed());
+            }
+            let (status, retry_after, body) = match response {
                 Ok(parts) => parts,
                 Err(e) => {
+                    if let Some(p) = &probe {
+                        p.failed(None, Some("network"));
+                    }
                     // A connect failure means the request never left; anything later is ambiguous.
                     let safe_to_retry = req.retry_ambiguous || e.is_connect();
                     if safe_to_retry && attempt < self.retry.max_retries {
                         let delay = jittered(self.retry.backoff(attempt));
                         warn!(attempt, ?delay, error = %e, "Gmail request failed, retrying");
+                        if let Some(p) = &probe {
+                            p.retrying(attempt, delay, RetryReason::Network);
+                        }
                         tokio::time::sleep(delay).await;
                         attempt += 1;
                         continue;
@@ -535,6 +567,9 @@ impl GmailClient {
             }
 
             let (reason, message) = parse_error_body(&body, status);
+            if let Some(p) = &probe {
+                p.failed(Some(status.as_u16()), reason.as_deref());
+            }
 
             if status == StatusCode::UNAUTHORIZED {
                 if refreshed {
@@ -578,6 +613,14 @@ impl GmailClient {
                     ?delay,
                     "Gmail request throttled or failed, retrying"
                 );
+                if let Some(p) = &probe {
+                    let why = if rate_limited {
+                        RetryReason::RateLimited
+                    } else {
+                        RetryReason::Server
+                    };
+                    p.retrying(attempt, delay, why);
+                }
                 tokio::time::sleep(delay).await;
                 attempt += 1;
                 continue;
@@ -1201,6 +1244,118 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1600)).await;
         let fast = gets().await;
         assert!(fast < Duration::from_millis(400), "still paced: {fast:?}");
+    }
+
+    #[tokio::test]
+    async fn probe_upgrades_sync_requests_to_interactive() {
+        use crate::gmail::probe::{with_probe, RequestProbe};
+        use crate::gmail::MessageFormat;
+        use tokio::sync::Semaphore;
+
+        let server = MockServer::start().await;
+        let started = Arc::new(Semaphore::new(0));
+        let arrivals = started.clone();
+        Mock::given(method("GET"))
+            .and(wiremock::matchers::path_regex(r"^/messages/slow[0-9]+$"))
+            .respond_with(move |_: &wiremock::Request| {
+                arrivals.add_permits(1);
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id": "slow", "threadId": "t0"}))
+                    .set_delay(Duration::from_secs(10))
+            })
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/messages/m1"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id": "m1", "threadId": "t1"})),
+            )
+            .mount(&server)
+            .await;
+        let client = client_for(&server).0.with_quota(100_000);
+        let sync = client.clone();
+        let task = tokio::spawn(async move {
+            let ids: Vec<_> = (0..MAX_BACKGROUND_REQUESTS)
+                .map(|i| format!("slow{i}"))
+                .collect();
+            sync.batch_get_messages(&ids, MessageFormat::Full).await
+        });
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            started.acquire_many(MAX_BACKGROUND_REQUESTS as u32),
+        )
+        .await
+        .expect("sync requests reached Gmail")
+        .unwrap()
+        .forget();
+
+        let probe = RequestProbe::new(|_| {});
+        let ids = ["m1".to_owned()];
+        let opened = with_probe(
+            probe.clone(),
+            client.batch_get_messages(&ids, MessageFormat::Full),
+        );
+        let result = tokio::time::timeout(Duration::from_secs(1), opened).await;
+        task.abort();
+        let result = result.expect("the opened thread waited behind sync");
+        assert!(result[0].1.is_ok(), "{result:?}");
+        assert_eq!(probe.snapshot().requests, 1);
+    }
+
+    #[tokio::test]
+    async fn probe_reports_retry_stage_and_stats() {
+        use crate::gmail::probe::{with_probe, ProbeStage, RequestProbe, RetryReason};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .insert_header("Retry-After", "1")
+                    .set_body_json(error_json(429, "rateLimitExceeded", "slow down")),
+            )
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(profile_json()))
+            .mount(&server)
+            .await;
+        let client = retry_after_client(&server).with_retry_policy(RetryPolicy {
+            max_retries: 2,
+            base_delay: Duration::from_millis(1),
+            multiplier: 2,
+            max_delay: Duration::from_secs(2),
+        });
+        let stages = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = stages.clone();
+        let probe = RequestProbe::new(move |s| seen.lock().unwrap().push(s));
+
+        let _: Value = with_probe(
+            probe.clone(),
+            client.send_json(ApiRequest::get(&["profile"])),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            *stages.lock().unwrap(),
+            [
+                ProbeStage::Queued,
+                ProbeStage::Fetching,
+                ProbeStage::Retrying {
+                    attempt: 0,
+                    retry_in: Duration::from_secs(1),
+                    reason: RetryReason::RateLimited,
+                },
+                ProbeStage::Fetching,
+            ]
+        );
+        let stats = probe.snapshot();
+        assert_eq!(stats.retries, 1);
+        assert_eq!(stats.requests, 2);
+        assert_eq!(stats.last_status, Some(429));
+        assert_eq!(stats.last_reason.as_deref(), Some("rateLimitExceeded"));
     }
 
     #[test]

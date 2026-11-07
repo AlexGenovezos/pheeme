@@ -750,10 +750,13 @@ impl MailApi for FakeGmail {
         ids: &[String],
         format: MessageFormat,
     ) -> Vec<(String, Result<Message, GmailError>)> {
+        // Like `GmailClient`, tell an opened thread's probe where its fetch has got to.
+        crate::gmail::probe::report(crate::gmail::probe::ProbeStage::Queued);
         let gate = self.lock().batch_gate.clone();
         if let Some(gate) = gate {
             let _permit = gate.acquire().await.expect("gate open");
         }
+        crate::gmail::probe::report(crate::gmail::probe::ProbeStage::Fetching);
         let hook = self.lock().before_batch_get.take();
         if let Some(hook) = hook {
             hook();
