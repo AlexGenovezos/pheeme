@@ -19,8 +19,8 @@ import { useCommands } from "../keyboard/useCommands";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
-import { useUiStore } from "../store/uiStore";
-import { moveSelection, openAndMarkRead, openFocused } from "./actions";
+import { focusedThread, type ListDensity, useUiStore } from "../store/uiStore";
+import { moveSelection, openAndMarkRead, openFocused, toggleCheckFocused } from "./actions";
 import {
   accountColorIndex,
   locationOf,
@@ -35,14 +35,18 @@ import "./mail.css";
 /** Ask for the next page when the last rendered row is this close to the end. */
 const LOAD_MORE_WITHIN = 10;
 const SKELETON_ROWS = 8;
-/** Used until CSS is readable (tests); the real value is `--row-height-comfortable`. */
-const FALLBACK_ROW_HEIGHT = 76;
+/** Used until CSS is readable (tests); the real values are `--row-height-comfortable` and `--row-height-thread-compact`. */
+const FALLBACK_ROW_HEIGHT: Record<ListDensity, number> = { comfortable: 76, compact: 56 };
+const ROW_HEIGHT_TOKEN: Record<ListDensity, string> = {
+  comfortable: "--row-height-comfortable",
+  compact: "--row-height-thread-compact",
+};
 
-function rowHeightEstimate(): number {
+function rowHeightEstimate(density: ListDensity): number {
   const value = parseFloat(
-    getComputedStyle(document.documentElement).getPropertyValue("--row-height-comfortable"),
+    getComputedStyle(document.documentElement).getPropertyValue(ROW_HEIGHT_TOKEN[density]),
   );
-  return Number.isFinite(value) && value > 0 ? value : FALLBACK_ROW_HEIGHT;
+  return Number.isFinite(value) && value > 0 ? value : FALLBACK_ROW_HEIGHT[density];
 }
 
 export interface ThreadListProps {
@@ -138,13 +142,17 @@ export function ThreadList(props: ThreadListProps) {
 
 function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const mailbox = useUiStore((s) => s.mailbox);
-  const open = useUiStore((s) => s.openThread);
+  // The row drawn as selected: the open one, or with the reading pane off and nothing open, the highlight.
+  const open = useUiStore(focusedThread);
+  const readingPane = useUiStore((s) => s.readingPane);
+  const listShown = useUiStore((s) => s.readingPane || s.openThread === null);
   const checked = useUiStore((s) => s.checked);
   const threads = useMailStore((s) => s.threads);
   const loading = useMailStore((s) => s.loading);
   const next = useMailStore((s) => s.next);
   const search = useMailStore((s) => s.search);
   const searchAccountId = useUiStore((s) => s.searchAccountId);
+  const density = useUiStore((s) => s.listDensity);
   const remoteMore = Object.keys(search?.remoteNext ?? {}).length > 0;
   const canLoadMore = !!next || remoteMore;
   const error = useMailStore((s) => s.error);
@@ -174,7 +182,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const virtualizer = useVirtualizer({
     count: threads.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: rowHeightEstimate,
+    estimateSize: () => rowHeightEstimate(density),
     overscan: 8,
     rangeExtractor,
     getItemKey: (i) => keys[i],
@@ -202,12 +210,27 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
     error,
   ]);
 
-  // j/k and arrow keys move the open thread; keep it in view.
+  // Rows change height with density: drop the measured sizes so every row is measured again.
+  useEffect(() => {
+    virtualizer.measure();
+    // `virtualizer` is stable for the component's life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [density]);
+
+  // j/k and arrow keys move the open thread (or the highlight); keep it in view.
   useEffect(() => {
     if (openIndex >= 0) virtualizer.scrollToIndex(openIndex, { align: "auto" });
     // `virtualizer` is stable for the component's life.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openIndex]);
+
+  // Reading pane off: back from a conversation (u or Back), the keys go to the list again.
+  const wasShown = useRef(listShown);
+  useEffect(() => {
+    if (listShown && !wasShown.current && !readingPane)
+      focusFromKeyboard(scrollRef.current, { preventScroll: true });
+    wasShown.current = listShown;
+  }, [listShown, readingPane]);
 
   const checkAll = () => useUiStore.getState().checkAll(keys);
 
@@ -250,10 +273,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
       title: "Select conversation",
       group: "Conversation",
       shortcut: "x",
-      run: () => {
-        const key = useUiStore.getState().openThread;
-        if (key !== null) useUiStore.getState().toggleChecked(key);
-      },
+      run: toggleCheckFocused,
     },
     {
       id: "list.check-all",
@@ -302,6 +322,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
         ref={scrollRef}
         className="list-pane__scroll"
         role="listbox"
+        data-density={density}
         aria-multiselectable="true"
         aria-label={`${title} conversations`}
         aria-activedescendant={openIndex >= 0 ? rowId(keys[openIndex]) : undefined}
@@ -325,6 +346,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
                   thread={thread}
                   position={item.index + 1}
                   setSize={setSize}
+                  compact={density === "compact"}
                   open={key === open}
                   checked={checkedSet.has(key)}
                   showAccountDot={showAccountDot}

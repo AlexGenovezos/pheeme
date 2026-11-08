@@ -20,6 +20,12 @@
   inset-inline: var(--space-0);
 }
 
+/* Compact density drops the snippet: two lines at a fixed height, the one the list estimates before measuring. */
+.list-pane__scroll[data-density="compact"] .thread-row {
+  height: var(--row-height-thread-compact);
+  padding-block: var(--space-2);
+}
+
 .thread-row--checked:not([data-selected]) {
   background: var(--color-list-active-bg);
 }

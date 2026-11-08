@@ -1,5 +1,5 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
 import {
   __resetUiStoreForTests,
@@ -124,6 +124,8 @@ describe("layout storage", () => {
       sidebarWidth: 220,
       listWidth: PANE.listDefault,
       sidebarCollapsed: false,
+      listDensity: "comfortable",
+      readingPane: true,
     });
     localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarWidth: 9999, listWidth: 10 }));
     expect(readLayout()).toMatchObject({ sidebarWidth: PANE.sidebarMax, listWidth: PANE.listMin });
@@ -140,5 +142,47 @@ describe("layout storage", () => {
     expect(stored()).toMatchObject({ sidebarCollapsed: true });
     fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
     expect(stored()).toMatchObject({ sidebarCollapsed: false });
+  });
+});
+
+describe("reading pane off", () => {
+  // The conversation's detail isn't what these tests are about: it fails to load, and the pane says so.
+  beforeEach(() =>
+    mockIPC(
+      (cmd) => {
+        if (cmd === "get_thread") throw { code: "not_found", message: "Gone" };
+      },
+      { shouldMockEvents: true },
+    ),
+  );
+
+  test("the list fills the main column until a conversation opens in its place", () => {
+    useUiStore.getState().setReadingPane(false);
+    expect(stored()).toMatchObject({ readingPane: false });
+    const { container } = render(<AppShell />);
+    expect(shell(container).dataset.readingPane).toBe("off");
+    expect(screen.getByRole("region", { name: "Conversations" })).toBeInTheDocument();
+    expect(screen.queryByRole("main", { name: "Reading pane" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("separator", { name: "Resize conversation list" }),
+    ).not.toBeInTheDocument();
+
+    act(() => useUiStore.setState({ openThread: "a1:t1" }));
+    expect(screen.queryByRole("region", { name: "Conversations" })).not.toBeInTheDocument();
+    expect(screen.getByRole("main", { name: "Reading pane" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to list" }));
+    expect(useUiStore.getState().openThread).toBeNull();
+    expect(useUiStore.getState().cursor).toBe("a1:t1");
+    expect(screen.getByRole("region", { name: "Conversations" })).toBeInTheDocument();
+  });
+
+  test("with the reading pane on there is no Back button", () => {
+    useUiStore.setState({ openThread: "a1:t1" });
+    const { container } = render(<AppShell />);
+    expect(shell(container).dataset.readingPane).toBeUndefined();
+    expect(screen.getByRole("region", { name: "Conversations" })).toBeInTheDocument();
+    expect(screen.getByRole("main", { name: "Reading pane" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back to list" })).not.toBeInTheDocument();
   });
 });

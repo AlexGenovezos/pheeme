@@ -70,6 +70,8 @@
   --row-height-compact: 28px;
   /* A three-line conversation row; the list's first guess before it measures. */
   --row-height-comfortable: 76px;
+  /* A two-line conversation row (compact list density). */
+  --row-height-thread-compact: 56px;
   --icon-size-sm: 14px;
   --icon-size-md: 16px;
   --icon-stroke: 1.75;

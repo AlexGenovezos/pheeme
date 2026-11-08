@@ -18,10 +18,13 @@ import "./shell.css";
  * Three panes: sidebar (collapsible), conversation list, reading view.
  * Widths live in the UI store (persisted) and reach CSS as variables; the grid
  * itself guarantees the minimums, so a narrow window never overlaps panes.
+ * With the reading pane off, the list and the open conversation share one column,
+ * and only one of them shows.
  */
 export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const { sidebarWidth, listWidth, sidebarCollapsed } = useUiStore();
+  const { sidebarWidth, listWidth, sidebarCollapsed, readingPane } = useUiStore();
+  const conversationOpen = useUiStore((s) => s.openThread !== null);
   const { setSidebarWidth, setListWidth, resetSidebarWidth, resetListWidth } =
     useUiStore.getState();
 
@@ -48,6 +51,7 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
       className="shell"
       style={style}
       data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
+      data-reading-pane={readingPane ? undefined : "off"}
       data-overlay-titlebar={overlayTitleBar || undefined}
     >
       <aside
@@ -68,19 +72,30 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
           onReset={resetSidebarWidth}
         />
       )}
-      <section className="shell__list" aria-label="Conversations">
+      {/* Hidden rather than unmounted: the list keeps its scroll position and its j/k commands. */}
+      <section
+        className="shell__list"
+        aria-label="Conversations"
+        hidden={!readingPane && conversationOpen}
+      >
         <ListPane />
       </section>
-      <Divider
-        className="shell__divider--list"
-        label="Resize conversation list"
-        value={renderedListWidth}
-        min={PANE.listMin}
-        max={listMax}
-        onResize={(w) => setListWidth(w, listSpace)}
-        onReset={resetListWidth}
-      />
-      <main className="shell__view" aria-label="Reading pane">
+      {readingPane && (
+        <Divider
+          className="shell__divider--list"
+          label="Resize conversation list"
+          value={renderedListWidth}
+          min={PANE.listMin}
+          max={listMax}
+          onResize={(w) => setListWidth(w, listSpace)}
+          onReset={resetListWidth}
+        />
+      )}
+      <main
+        className="shell__view"
+        aria-label="Reading pane"
+        hidden={!readingPane && !conversationOpen}
+      >
         <ViewPane />
       </main>
       <ChordHint />

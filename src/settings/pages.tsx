@@ -21,7 +21,7 @@ import {
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Switch } from "../components/ui/Switch";
 import { registry } from "../keyboard/registry";
-import { useUiStore } from "../store/uiStore";
+import { type ListDensity, useUiStore } from "../store/uiStore";
 import { THEME_MODES, type ThemeMode, useThemeStore } from "../theme/theme";
 import { AboutSettings } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
@@ -66,6 +66,12 @@ function SidebarControl() {
   );
 }
 
+function ReadingPaneControl() {
+  const shown = useUiStore((s) => s.readingPane);
+  const setShown = useUiStore((s) => s.setReadingPane);
+  return <Switch label="Show reading pane" checked={shown} onChange={setShown} />;
+}
+
 function PreloadImagesControl() {
   const checked = useReadingSettings((s) => s.preloadImages);
   const onChange = useReadingSettings((s) => s.setPreloadImages);
@@ -84,6 +90,22 @@ function ReadingSizeControl() {
         label: value === "large" ? "Large" : "Standard",
       }))}
       onChange={(value) => setSize(value as ReadingSize)}
+    />
+  );
+}
+
+function ListDensityControl() {
+  const density = useUiStore((s) => s.listDensity);
+  const setDensity = useUiStore((s) => s.setListDensity);
+  return (
+    <SegmentedControl
+      label="List density"
+      value={density}
+      options={[
+        { value: "comfortable", label: "Comfortable" },
+        { value: "compact", label: "Compact" },
+      ]}
+      onChange={(value) => setDensity(value as ListDensity)}
     />
   );
 }
@@ -212,6 +234,20 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             description: "Mailboxes and labels on the left.",
             keywords: ["panel", "hide"],
             Control: SidebarControl,
+          },
+          {
+            id: "layout.readingPane",
+            title: "Show reading pane",
+            description: "Off: conversations open in place of the list. Press U or Back to return.",
+            keywords: ["preview pane", "split", "hide", "single column", "full width"],
+            Control: ReadingPaneControl,
+          },
+          {
+            id: "layout.listDensity",
+            title: "List density",
+            description: "Compact rows leave out the preview line, so more conversations fit.",
+            keywords: ["compact", "comfortable", "rows", "snippet", "preview", "spacing"],
+            Control: ListDensityControl,
           },
         ],
       },

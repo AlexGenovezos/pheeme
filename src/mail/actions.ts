@@ -22,7 +22,7 @@ import { useAccountStore } from "../store/accountStore";
 import { type UnreadCountChange, useLabelStore } from "../store/labelStore";
 import { newOp, useMailStore } from "../store/mailStore";
 import { useThreadStore } from "../store/threadStore";
-import { useUiStore } from "../store/uiStore";
+import { focusedThread, useUiStore } from "../store/uiStore";
 import {
   CATEGORIES,
   parseThreadKey,
@@ -93,15 +93,17 @@ const modify = (
   send: (accountId, ids) => modifyThreads(accountId, ids, add, remove),
 });
 
-/** The checked conversations, else the open one. Keys may have left the list since; mutating actions skip those. */
-export function targetsOf(checked: ThreadKey[], openThread: ThreadKey | null): ThreadKey[] {
+/**
+ * The checked conversations, else the focused one (the open one, or with the reading pane off, the highlighted row).
+ * Keys may have left the list since; mutating actions skip those.
+ */
+export function targetsOf(checked: ThreadKey[], focused: ThreadKey | null): ThreadKey[] {
   if (checked.length > 0) return checked;
-  return openThread === null ? [] : [openThread];
+  return focused === null ? [] : [focused];
 }
 
 export function targets(): ThreadKey[] {
-  const { checked, openThread } = ui();
-  return targetsOf(checked, openThread);
+  return targetsOf(ui().checked, focusedThread(ui()));
 }
 
 /** `keys` (default: the targets) that are still in the list, once each, with their rows. */
@@ -225,9 +227,8 @@ function patchUnread(op: number, rows: ThreadSummary[], change: Change) {
   );
 }
 
-/** Where the open thread goes when `removed` leave the list: the next row, else the one above, else nothing. `undefined` if it stays. */
-function nextOpenAfter(removed: Set<ThreadKey>): ThreadKey | null | undefined {
-  const open = ui().openThread;
+/** Where `open` (the open thread or the highlight) goes when `removed` leave the list: the next row, else the one above, else nothing. `undefined` if it stays. */
+function nextAfter(open: ThreadKey | null, removed: Set<ThreadKey>): ThreadKey | null | undefined {
   if (open === null || !removed.has(open)) return undefined;
   const keys = mail().threads.map(keyOf);
   const at = keys.indexOf(open);
@@ -291,10 +292,13 @@ function applyChange(
   );
   if (change.patch) mail().patch(rowKeys, change.patch, op);
   if (change.leavesList) {
-    const next = nextOpenAfter(new Set(rowKeys));
+    const removed = new Set(rowKeys);
+    const next = nextAfter(ui().openThread, removed);
+    const nextCursor = nextAfter(ui().cursor, removed);
     mail().remove(rowKeys, op);
     if (next === null) ui().setOpenThread(null);
     else if (next !== undefined) openAndMarkRead(next);
+    if (nextCursor !== undefined) ui().setCursor(nextCursor);
   }
   const patchDetail = change.detail;
   if (patchDetail)
@@ -785,12 +789,16 @@ export function openAndMarkRead(key: ThreadKey, direction: 1 | -1 = 1): void {
   }
 }
 
-/** j / k and the arrow keys: open the next or previous row, or the first/last when none is open. */
+/**
+ * j / k and the arrow keys: open the next or previous row, or the first/last when none is open. With the reading
+ * pane off and nothing open, they move the highlight instead.
+ */
 export function moveSelection(delta: 1 | -1): void {
   const keys = mail().threads.map(keyOf);
   if (keys.length === 0) return;
-  const open = ui().openThread;
-  const at = open === null ? -1 : keys.indexOf(open);
+  const browsing = !ui().readingPane && ui().openThread === null;
+  const current = focusedThread(ui());
+  const at = current === null ? -1 : keys.indexOf(current);
   const to =
     at < 0
       ? delta === 1
@@ -798,13 +806,34 @@ export function moveSelection(delta: 1 | -1): void {
         : keys.length - 1
       : Math.min(Math.max(at + delta, 0), keys.length - 1);
   if (to === at) return;
-  openAndMarkRead(keys[to], delta);
+  if (browsing) ui().setCursor(keys[to]);
+  else openAndMarkRead(keys[to], delta);
 }
 
-/** `o` / Enter: open the focused conversation, or the first one when nothing is. */
+/** The focused conversation, where a highlight whose row has left the list (filtered out, archived elsewhere) counts as nothing. */
+function focusedInList(): ThreadKey | null {
+  const focused = focusedThread(ui());
+  if (focused !== null && ui().openThread === null && present([focused]).length === 0) return null;
+  return focused;
+}
+
+/** `o` / Enter: open the focused conversation (or highlighted row), or the first one when nothing is. */
 export function openFocused(): void {
-  const open = ui().openThread;
+  const focused = focusedInList();
   const first = mail().threads[0];
-  if (open !== null) openAndMarkRead(open);
+  if (focused !== null) openAndMarkRead(focused);
   else if (first) openAndMarkRead(keyOf(first));
+}
+
+/** `x`: check or uncheck the focused conversation (or highlighted row). */
+export function toggleCheckFocused(): void {
+  const focused = focusedInList();
+  if (focused !== null) ui().toggleChecked(focused);
+}
+
+/** `u` / Back: close the conversation, leaving its row highlighted for when the reading pane is off. */
+export function closeConversation(): void {
+  const open = ui().openThread;
+  if (open !== null) ui().setCursor(open);
+  ui().setOpenThread(null);
 }

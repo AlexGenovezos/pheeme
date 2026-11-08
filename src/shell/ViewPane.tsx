@@ -1,5 +1,6 @@
 import {
   Archive,
+  ArrowLeft,
   Forward,
   Mail,
   MailOpen,
@@ -20,6 +21,7 @@ import { useKeybinding } from "../keyboard/useCommands";
 import { showContextMenu } from "../lib/contextMenu";
 import {
   archive,
+  closeConversation,
   respond,
   openLabelMenu,
   openMoveMenu,
@@ -71,6 +73,7 @@ export function ViewPane() {
   const compact = width > 0 && width < LABELED_REPLIES_MIN;
   const openKey = useUiStore((s) => s.openThread);
   const checked = useUiStore((s) => s.checked);
+  const readingPane = useUiStore((s) => s.readingPane);
   const threads = useMailStore((s) => s.threads);
   const off = !openKey; // Reply and Forward need an open conversation
   // What the mutations act on (the checked rows, else the open one) that is still in the list. Rows that have
@@ -84,6 +87,7 @@ export function ViewPane() {
   const anyUnread = rows.some((t) => t.unread);
   const starred = rows[0]?.starred ?? false;
   const keys = {
+    back: useKeybinding("conversation.close", "u"),
     archive: useKeybinding("conversation.archive", "e"),
     delete: useKeybinding("conversation.delete", "#"),
     read: useKeybinding("conversation.mark-read", "shift+i"),
@@ -124,6 +128,18 @@ export function ViewPane() {
   return (
     <div className="view-pane" ref={ref}>
       <div className="toolbar toolbar--view" {...dragRegion}>
+        {/* Reading pane off: the conversation stands in for the list, so offer the way back. */}
+        {!readingPane && (
+          <>
+            <IconButton
+              label="Back to list"
+              shortcut={keys.back}
+              icon={<ArrowLeft />}
+              onClick={closeConversation}
+            />
+            <span className="toolbar__separator" />
+          </>
+        )}
         <IconButton
           label="Archive"
           shortcut={keys.archive}

@@ -15,6 +15,7 @@ import {
   moveTo,
   moveToCategory,
   openAndMarkRead,
+  openFocused,
   openLabelMenu,
   openMoveMenu,
   setRead,
@@ -24,6 +25,7 @@ import {
   toggleStar,
   trash,
 } from "./actions";
+import { appCommands } from "../keyboard/appCommands";
 import { threadKey } from "./mailboxes";
 
 vi.mock("../lib/contextMenu", () => ({ showContextMenu: vi.fn(async () => {}) }));
@@ -612,6 +614,84 @@ describe("opening", () => {
     moveSelection(1);
     expect(useUiStore.getState().openThread).toBe(key(2));
     useUiStore.setState({ openThread: null });
+    moveSelection(1);
+    expect(useUiStore.getState().openThread).toBe(key(1));
+  });
+});
+
+describe("with the reading pane off", () => {
+  const closeConversation = () =>
+    appCommands()
+      .find((c) => c.id === "conversation.close")!
+      .run();
+  beforeEach(() => {
+    useUiStore.getState().setReadingPane(false);
+    setList([thread(1), thread(2), thread(3)]);
+  });
+
+  test("j and k move the highlight without opening anything", () => {
+    moveSelection(1);
+    expect(useUiStore.getState().cursor).toBe(key(1));
+    expect(useUiStore.getState().openThread).toBeNull();
+    moveSelection(1);
+    expect(useUiStore.getState().cursor).toBe(key(2));
+    expect(useUiStore.getState().openThread).toBeNull();
+    expect(calls.filter((c) => c.cmd === "get_thread")).toEqual([]);
+  });
+
+  test("o opens the highlighted conversation", () => {
+    useUiStore.getState().setCursor(key(2));
+    openFocused();
+    expect(useUiStore.getState().openThread).toBe(key(2));
+  });
+
+  test("actions with nothing checked act on the highlighted conversation", () => {
+    useUiStore.getState().setCursor(key(2));
+    expect(targets()).toEqual([key(2)]);
+  });
+
+  test("inside a conversation, j and k move to the next one", () => {
+    useUiStore.setState({ openThread: key(1), cursor: null });
+    moveSelection(1);
+    expect(useUiStore.getState().openThread).toBe(key(2));
+    expect(targets()).toEqual([key(2)]);
+  });
+
+  test("closing the conversation highlights it in the list", () => {
+    useUiStore.setState({ openThread: key(2) });
+    closeConversation();
+    expect(useUiStore.getState().openThread).toBeNull();
+    expect(useUiStore.getState().cursor).toBe(key(2));
+  });
+
+  test("archiving the highlighted conversation moves the highlight to the next one", async () => {
+    useUiStore.getState().setCursor(key(2));
+    await archive();
+    expect(listKeys()).toEqual([key(1), key(3)]);
+    expect(useUiStore.getState().cursor).toBe(key(3));
+    expect(useUiStore.getState().openThread).toBeNull();
+  });
+
+  test("filtering or searching drops the highlight, and o never opens a row that left the list", () => {
+    const ui = useUiStore.getState();
+    for (const reset of [
+      () => ui.toggleUnreadOnly(),
+      () => ui.setSearch("invoice"),
+      () => ui.setSearchAccount("a1"),
+    ]) {
+      ui.setCursor(key(2));
+      reset();
+      expect(useUiStore.getState().cursor).toBeNull();
+    }
+    ui.setCursor(key(9));
+    openFocused();
+    expect(useUiStore.getState().openThread).toBe(key(1));
+  });
+
+  test("with the reading pane on, the highlight is ignored", () => {
+    useUiStore.getState().setReadingPane(true);
+    useUiStore.getState().setCursor(key(2));
+    expect(targets()).toEqual([]);
     moveSelection(1);
     expect(useUiStore.getState().openThread).toBe(key(1));
   });
