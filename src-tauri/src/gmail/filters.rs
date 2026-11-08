@@ -26,8 +26,11 @@ impl GmailClient {
     }
 
     pub async fn delete_filter(&self, id: &str) -> Result<(), GmailError> {
-        self.send_empty(ApiRequest::new(Method::DELETE, &["settings", "filters", id]))
-            .await
+        self.send_empty(ApiRequest::new(
+            Method::DELETE,
+            &["settings", "filters", id],
+        ))
+        .await
     }
 }
 

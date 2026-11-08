@@ -3,6 +3,7 @@
 
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/gmail.settings.basic",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ];
@@ -108,7 +109,7 @@ export const STEPS: GuideStep[] = [
       "App information: enter the app name below and your email as the support email.",
       "Audience: choose External. Choose Internal only for a Google Workspace project used by your organization's accounts alone.",
       "Contact information: your email. Agree to the policy and click Create.",
-      "Optional: under Data access, add the scopes below. Pheeme asks for them when you sign in either way.",
+      "Optional: under Data access, add the scopes below. Pheeme asks for them when you sign in either way. gmail.settings.basic only lets Pheeme save sender rules (Gmail filters that file a sender's mail in an inbox tab).",
     ],
     why: "Google shows this screen when you sign in. The app is yours, so you're both its developer and its only user.",
     link: {

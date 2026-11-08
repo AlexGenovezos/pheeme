@@ -160,15 +160,17 @@ mod tests {
     #[test]
     fn missing_scope_detection() {
         assert_eq!(
-            api(403, Some("insufficientPermissions"), "Insufficient Permission").code(),
+            api(
+                403,
+                Some("insufficientPermissions"),
+                "Insufficient Permission"
+            )
+            .code(),
             "missing_scope"
         );
-        assert!(api(
-            403,
-            None,
-            "Request had insufficient authentication scopes."
-        )
-        .is_missing_scope());
+        assert!(
+            api(403, None, "Request had insufficient authentication scopes.").is_missing_scope()
+        );
         assert!(!api(403, Some("forbidden"), "x").is_missing_scope());
         assert!(!api(400, Some("insufficientPermissions"), "x").is_missing_scope());
     }

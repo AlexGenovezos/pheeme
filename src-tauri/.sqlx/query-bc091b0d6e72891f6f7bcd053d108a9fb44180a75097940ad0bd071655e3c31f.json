@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT DISTINCT tl.thread_id AS \"thread_id!\" FROM thread_labels tl\n           JOIN messages m ON m.thread_id = tl.thread_id AND m.account_id = tl.account_id\n           WHERE tl.label_id = 'INBOX' AND tl.account_id = ?1\n             AND lower(m.from_address) = lower(?2)",
+  "describe": {
+    "columns": [
+      {
+        "name": "thread_id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "thread_labels",
+            "name": "thread_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bc091b0d6e72891f6f7bcd053d108a9fb44180a75097940ad0bd071655e3c31f"
+}

@@ -12,8 +12,10 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 
 /// The narrowest scopes v1 needs. Never request `https://mail.google.com/`.
+/// `gmail.settings.basic` is for sender rules (Gmail filters); it's optional, see [`REQUIRED_SCOPE`].
 pub const SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.settings.basic",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
 ];

@@ -6,6 +6,7 @@ pub mod labels;
 pub mod messages;
 pub mod mods;
 pub mod search;
+pub mod sender_rules;
 pub mod settings;
 pub mod support;
 pub mod sync;

@@ -4,9 +4,9 @@
 use super::api::MailApi;
 use crate::gmail::mime::encode_base64url;
 use crate::gmail::types::{
-    Draft, DraftListResponse, Filter, Header, HistoryLabelChange, HistoryListResponse, HistoryMessage,
-    HistoryRecord, Label, LabelColor, LabelUpdate, Message, MessageListResponse, MessagePart,
-    MessagePartBody, MessageRef, Thread, ThreadListResponse, UserProfile,
+    Draft, DraftListResponse, Filter, Header, HistoryLabelChange, HistoryListResponse,
+    HistoryMessage, HistoryRecord, Label, LabelColor, LabelUpdate, Message, MessageListResponse,
+    MessagePart, MessagePartBody, MessageRef, Thread, ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailError, MessageFormat};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -1192,7 +1192,11 @@ impl MailApi for FakeGmail {
         let mut s = self.lock();
         let same = |f: &Filter| f.criteria == filter.criteria && f.action == filter.action;
         if s.filters.values().any(same) {
-            return Err(api_error(400, "failedPrecondition", "Filter already exists"));
+            return Err(api_error(
+                400,
+                "failedPrecondition",
+                "Filter already exists",
+            ));
         }
         s.next_filter += 1;
         let id = format!("filter_{}", s.next_filter);
