@@ -314,12 +314,21 @@ function watchFrame(
       lastFocusedFrame = iframe;
       pane()?.focus({ preventScroll: true });
     });
+  // A press anywhere in the app is outside the frame (presses inside it never reach the app): the email is no
+  // longer what the user last clicked, so its leftover selection isn't what mod+c should copy.
+  const onHostPointerDown = () => {
+    if (lastFocusedFrame === iframe) lastFocusedFrame = null;
+  };
   // With focus out of the frame, the native copy reads the app's selection; copy the email's instead.
   const onHostKeyDown = (event: KeyboardEvent) => {
     if (lastFocusedFrame !== iframe || event.altKey || event.shiftKey) return;
     if (isEditableTarget(event.target)) return; // a text field's own selection
     // A conversation left behind stays mounted (inert); its old selection isn't what's being copied.
-    if (iframe.closest("[inert]") || !pane()?.contains(host.activeElement)) return;
+    if (iframe.closest("[inert]")) return;
+    // Drag-selecting in the frame can leave nothing focused (macOS 27 WebKit takes focus off the pane), so the
+    // page itself counts as still being in the email; focus somewhere else in the app (keys moved it) doesn't.
+    const active = host.activeElement;
+    if (active && active !== host.body && !pane()?.contains(active)) return;
     const mod = platform === "macos" ? event.metaKey : event.ctrlKey;
     if (!mod || event.key.toLowerCase() !== "c") return;
     if (doc.getSelection()?.isCollapsed !== false || host.getSelection()?.isCollapsed === false)
@@ -329,6 +338,7 @@ function watchFrame(
 
   if (!listenersRun) {
     host.defaultView?.addEventListener("blur", onHostBlur);
+    host.defaultView?.addEventListener("pointerdown", onHostPointerDown, true);
     host.defaultView?.addEventListener("keydown", onHostKeyDown, true);
   }
 
@@ -350,6 +360,7 @@ function watchFrame(
     doc.removeEventListener("auxclick", onClick, true);
     doc.removeEventListener("keydown", onKeyDown);
     host.defaultView?.removeEventListener("blur", onHostBlur);
+    host.defaultView?.removeEventListener("pointerdown", onHostPointerDown, true);
     host.defaultView?.removeEventListener("keydown", onHostKeyDown, true);
     if (lastFocusedFrame === iframe) lastFocusedFrame = null;
     doc.removeEventListener("load", onContentLoad, true);
