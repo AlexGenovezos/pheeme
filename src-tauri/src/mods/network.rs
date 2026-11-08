@@ -119,7 +119,7 @@ pub async fn client(url: &Url) -> Result<Client, String> {
         !addresses.is_empty() && addresses.iter().all(|a| public_ip(a.ip())),
         "Mods cannot access local, private or special-use network addresses",
     )?;
-    Client::builder()
+    crate::http::client_builder()
         .no_proxy()
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())

@@ -577,7 +577,7 @@ mod tests {
     }
 
     async fn get(uri: &str) -> (u16, String) {
-        let response = reqwest::get(uri).await.unwrap();
+        let response = crate::http::client().get(uri).send().await.unwrap();
         (response.status().as_u16(), response.text().await.unwrap())
     }
 
@@ -641,7 +641,7 @@ mod tests {
             .mount(&server)
             .await;
         let tokens = exchange_code(
-            &reqwest::Client::new(),
+            &crate::http::client(),
             &endpoints(&server),
             &creds(),
             "c0de",
@@ -685,7 +685,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(503).set_body_string("<html>"))
             .mount(&server)
             .await;
-        let http = reqwest::Client::new();
+        let http = crate::http::client();
         let ep = endpoints(&server);
         assert_eq!(
             exchange_code(&http, &ep, &creds(), "c", "v", "r")
@@ -718,7 +718,7 @@ mod tests {
             token: "http://127.0.0.1:1/token".into(),
             ..Endpoints::default()
         };
-        let error = refresh(&reqwest::Client::new(), &ep, &creds(), "rt")
+        let error = refresh(&crate::http::client(), &ep, &creds(), "rt")
             .await
             .unwrap_err();
         assert_eq!(error.code(), "network");
@@ -742,7 +742,7 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        let http = reqwest::Client::new();
+        let http = crate::http::client();
         let ep = endpoints(&server);
         assert_eq!(
             user_info(&http, &ep, "at").await.unwrap(),

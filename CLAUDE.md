@@ -60,6 +60,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `commands/` | Tauri command handlers (the IPC surface the frontend calls) |
 | `gmail/` | Gmail REST API client. `auth.rs` is OAuth (PKCE + loopback redirect); the rest lands in Phase 3 |
 | `sync/` | `engine.rs` initial/incremental (`history.list`)/expiry-reconcile/backfill; `outbox.rs` optimistic ops + safe sends; `manager.rs` per-account scheduling and triggers; `api.rs` the `MailApi` trait (`fake.rs` is the in-memory Gmail for tests) |
+| `http.rs` | Every `reqwest` client is built here (`client`, `client_builder`), which installs the rustls crypto provider; clippy rejects `reqwest::Client::new`/`builder` and `reqwest::get` |
 | `render.rs` | Email HTML sanitizer (`ammonia`) and signed `pheeme-att` URLs for inline `cid:` images |
 | `attachment_cache.rs` / `attachment_kind.rs` | Attachment bytes cached on disk (500 MB, least recently used evicted first); which files the preview shows and which open in the default app |
 | `attachment_cache.rs` | Attachment bytes on disk (`{cache}/attachments/{account}/{message}/{row}`): a sweep at launch (and after every 50 MB of downloads) removes orphans, then the least recently used files past 500 MB |

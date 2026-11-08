@@ -91,7 +91,7 @@ pub async fn tick(db: &SqlitePool, url: &str, now: i64) -> anyhow::Result<bool> 
 
 /// POST the ping as JSON. Any 2xx counts as delivered.
 pub async fn send(url: &str, ping: &Ping) -> anyhow::Result<()> {
-    let http = reqwest::Client::builder()
+    let http = crate::http::client_builder()
         .timeout(TIMEOUT)
         .user_agent(concat!("pheeme/", env!("CARGO_PKG_VERSION")))
         .build()?;
