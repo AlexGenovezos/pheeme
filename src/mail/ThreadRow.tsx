@@ -1,6 +1,6 @@
 // One conversation in the list: selection checkbox, sender, subject, snippet, date and hover actions.
 import { Archive, Mail, MailOpen, Paperclip, Star, Trash2 } from "lucide-react";
-import { type CSSProperties, memo, type MouseEvent, useState } from "react";
+import { type CSSProperties, memo, type MouseEvent, useMemo, useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { registry } from "../keyboard/registry";
 import { ListRow } from "../components/ui/ListRow";
@@ -8,8 +8,10 @@ import { cx } from "../lib/utils";
 import { formatListDate } from "../lib/dates";
 import { LabelChip } from "../labels/LabelChip";
 import type { LabelInfo, ThreadSummary } from "../lib/tauri";
+import { CodeChip } from "./CodeCard";
 import { startMailDrag } from "./dragMail";
 import { type Location, threadKey } from "./mailboxes";
+import { rowCode } from "./verificationCode";
 import "./mail.css";
 
 export type RowAction = "archive" | "delete" | "read";
@@ -73,6 +75,7 @@ export const ThreadRow = memo(function ThreadRow({
     const label = labels.get(id);
     return label && label.messageListVisibility !== "hide" && id !== currentLabelId ? [label] : [];
   });
+  const code = useMemo(() => rowCode(thread, Date.now()), [thread]);
   const act = (action: RowAction) => (e: MouseEvent) => {
     e.stopPropagation();
     onAction(action, thread);
@@ -93,7 +96,8 @@ export const ThreadRow = memo(function ThreadRow({
       onClick={(e) => onSelect(e, thread)}
       onPointerDown={(e) => {
         // The checkbox and hover actions are buttons, not handles.
-        if ((e.target as Element).closest(".thread-row__lead, .thread-row__actions")) return;
+        if ((e.target as Element).closest(".thread-row__lead, .thread-row__actions, .code-chip"))
+          return;
         startMailDrag(e, threadKey(thread.accountId, thread.id));
       }}
       onContextMenu={(e) => onContextMenu(e, thread)}
@@ -212,7 +216,16 @@ export const ThreadRow = memo(function ThreadRow({
           {thread.subject ?? "(no subject)"}
         </>
       }
-      description={thread.snippet}
+      description={
+        code ? (
+          <>
+            <CodeChip code={code} />
+            {thread.snippet}
+          </>
+        ) : (
+          thread.snippet
+        )
+      }
     />
   );
 });

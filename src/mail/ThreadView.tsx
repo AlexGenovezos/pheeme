@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
 import { LabelChip } from "../labels/LabelChip";
@@ -9,6 +9,7 @@ import { useMailStore } from "../store/mailStore";
 import { useLabelStore } from "../store/labelStore";
 import { isComplete, useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
+import { CodeCard } from "./CodeCard";
 import { MessageCard } from "./MessageCard";
 import { ThreadLoading } from "./ThreadLoading";
 import { applyLabel, archive } from "./actions";
@@ -16,6 +17,7 @@ import { focusFromKeyboard } from "../keyboard/focus";
 import { handleScrollKeyDown, handleScrollKeyUp, stopKeyScroll } from "./keyScroll";
 import { parseThreadKey, threadKey } from "./mailboxes";
 import { openTimer } from "./openTiming";
+import { conversationCode } from "./verificationCode";
 import "./mail.css";
 
 /** Which messages are open. `seen` is every message already given its starting state. */
@@ -266,6 +268,7 @@ function Conversation({
     ? (labelsById.get("INBOX") ?? INBOX_FALLBACK(accountId))
     : null;
   const subject = detail.thread.subject || "(no subject)";
+  const code = useMemo(() => conversationCode(detail.messages), [detail.messages]);
   usePrefetchAttachments(detail, active);
   return (
     <div className="thread-view">
@@ -278,6 +281,7 @@ function Conversation({
             : applyLabel(accountId, label.id, false, [openKey], { evenIfGone: true }))
         }
       />
+      {code && <CodeCard code={code.code} />}
       <div className="thread-view__messages">
         {detail.messages.map((m) => (
           <MessageCard

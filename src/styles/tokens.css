@@ -91,6 +91,9 @@
   --hairline: 1px;
   --badge-min-width: 18px;
   --kbd-min-width: 18px;
+  /* One character of a verification code on the code card. */
+  --code-digit-width: 26px;
+  --code-digit-height: 34px;
   --divider-hit-area: 7px;
   --divider-hit-offset: -3px;
   /* Space the macOS traffic lights occupy (trafficLightPosition x = 16 in tauri.conf.json;

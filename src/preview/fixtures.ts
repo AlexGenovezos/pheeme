@@ -498,6 +498,21 @@ export function createFixtureThreads(): FixtureThread[] {
       ),
     ]),
 
+    // A sign-in code: the conversation shows it on a card, and the list row offers to copy it.
+    thread("p-19", P, ["INBOX"], "Your temporary Lumen login code", [
+      message(
+        "p-19-m1",
+        ["Lumen", "noreply@lumen.example"],
+        minutesAgo(2),
+        "Enter this temporary verification code to continue: 779693\n\nDidn't request a code? You can ignore this email.",
+        me,
+        {
+          unread: true,
+          html: `<p>Enter this temporary verification code to continue:</p><table><tr>${[..."779693"].map((d) => `<td style="padding:4px 8px;font-size:24px">${d}</td>`).join("")}</tr></table><p>Didn't request a code? You can ignore this email.</p>`,
+        },
+      ),
+    ]),
+
     // ── Work ──
     thread("w-01", W, ["INBOX", "STARRED", "Label_10"], "Pilot for the support team", [
       message(
