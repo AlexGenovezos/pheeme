@@ -122,17 +122,19 @@ fn open_in_default_app(url: &Url) -> Result<(), CommandError> {
     })
 }
 
-/// A navigation that leaves the app: a web or email link anywhere but the app's own `localhost` origins
-/// (`tauri.localhost`, the dev server, `pheeme-att.localhost`).
+/// A navigation that leaves the app: a web or email link anywhere but the app's own pages (`tauri.localhost`
+/// on Windows, the dev server on `localhost:1420`). Other `localhost` addresses count as external, so an
+/// email can't load a local service inside the app.
 ///
 /// WebKit (macOS, Linux) never runs the email frame's click handler: the frame is sandboxed without
 /// scripts, and WebKit skips event listeners in a script-less document even when the parent added them.
 /// A clicked link arrives as a navigation instead, so the webview cancels these and opens them here.
 pub fn is_external_navigation(url: &Url) -> bool {
     parse_mail_link(url.as_str()).is_some()
-        && !url
-            .host_str()
-            .is_some_and(|host| host == "localhost" || host.ends_with(".localhost"))
+        && !matches!(
+            (url.host_str(), url.port()),
+            (Some("tauri.localhost"), None) | (Some("localhost"), Some(1420))
+        )
 }
 
 /// The webview's navigation hook: keeps external links out of the app and opens them in the default app.
@@ -203,6 +205,10 @@ mod tests {
             "https://search.app/1fX35K7LMcx7WJH86",
             "http://example.com/a?b=c",
             "mailto:a@b",
+            "http://evil.localhost/",
+            "http://localhost:8080/",
+            "http://localhost/",
+            "http://tauri.localhost:8080/",
         ] {
             assert!(
                 is_external_navigation(&Url::parse(external).unwrap()),
@@ -214,7 +220,6 @@ mod tests {
             "http://tauri.localhost/",
             "https://tauri.localhost/",
             "http://localhost:1420/",
-            "http://pheeme-att.localhost/x",
             "about:srcdoc",
             "about:blank",
         ] {
