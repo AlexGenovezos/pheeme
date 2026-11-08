@@ -8,6 +8,7 @@ import { cx } from "../lib/utils";
 import { formatListDate } from "../lib/dates";
 import { LabelChip } from "../labels/LabelChip";
 import type { LabelInfo, ThreadSummary } from "../lib/tauri";
+import { startMailDrag } from "./dragMail";
 import { type Location, threadKey } from "./mailboxes";
 import "./mail.css";
 
@@ -90,6 +91,11 @@ export const ThreadRow = memo(function ThreadRow({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={(e) => onSelect(e, thread)}
+      onPointerDown={(e) => {
+        // The checkbox and hover actions are buttons, not handles.
+        if ((e.target as Element).closest(".thread-row__lead, .thread-row__actions")) return;
+        startMailDrag(e, threadKey(thread.accountId, thread.id));
+      }}
       onContextMenu={(e) => onContextMenu(e, thread)}
       leading={
         <label
