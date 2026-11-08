@@ -2,7 +2,7 @@
 //! an in-memory mailbox ([`super::fake::FakeGmail`]).
 
 use crate::gmail::types::{
-    Draft, DraftListResponse, HistoryListResponse, Label, LabelColor, LabelUpdate, Message,
+    Draft, DraftListResponse, Filter, HistoryListResponse, Label, LabelColor, LabelUpdate, Message,
     MessageListResponse, Thread, ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailClient, GmailError, MessageFormat};
@@ -110,6 +110,10 @@ pub trait MailApi: Send + Sync {
     async fn delete_draft(&self, id: &str) -> Result<(), GmailError>;
     /// Send a draft as saved; returns the sent message id.
     async fn send_draft(&self, id: &str) -> Result<String, GmailError>;
+    /// The account's filters (needs `gmail.settings.basic`).
+    async fn list_filters(&self) -> Result<Vec<Filter>, GmailError>;
+    async fn create_filter(&self, filter: &Filter) -> Result<Filter, GmailError>;
+    async fn delete_filter(&self, id: &str) -> Result<(), GmailError>;
 }
 
 #[async_trait::async_trait]
@@ -273,5 +277,17 @@ impl MailApi for GmailClient {
 
     async fn send_draft(&self, id: &str) -> Result<String, GmailError> {
         Ok(GmailClient::send_draft(self, id).await?.id)
+    }
+
+    async fn list_filters(&self) -> Result<Vec<Filter>, GmailError> {
+        GmailClient::list_filters(self).await
+    }
+
+    async fn create_filter(&self, filter: &Filter) -> Result<Filter, GmailError> {
+        GmailClient::create_filter(self, filter).await
+    }
+
+    async fn delete_filter(&self, id: &str) -> Result<(), GmailError> {
+        GmailClient::delete_filter(self, id).await
     }
 }

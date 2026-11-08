@@ -3,6 +3,7 @@ pub mod auth;
 pub mod client;
 pub mod drafts;
 pub mod error;
+pub mod filters;
 pub mod history;
 pub mod labels;
 pub mod messages;

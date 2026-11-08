@@ -4,7 +4,7 @@
 use super::api::MailApi;
 use crate::gmail::mime::encode_base64url;
 use crate::gmail::types::{
-    Draft, DraftListResponse, Header, HistoryLabelChange, HistoryListResponse, HistoryMessage,
+    Draft, DraftListResponse, Filter, Header, HistoryLabelChange, HistoryListResponse, HistoryMessage,
     HistoryRecord, Label, LabelColor, LabelUpdate, Message, MessageListResponse, MessagePart,
     MessagePartBody, MessageRef, Thread, ThreadListResponse, UserProfile,
 };
@@ -274,6 +274,9 @@ struct State {
     user_labels: BTreeMap<String, Label>,
     next_label: u64,
     list_omits_color: bool,
+    /// Filters by id (`users.settings.filters`).
+    filters: BTreeMap<String, Filter>,
+    next_filter: u64,
 }
 
 pub struct FakeGmail {
@@ -351,6 +354,21 @@ impl FakeGmail {
     }
 
     /// Calls of `method` so far (method names as in [`MailApi`]).
+    /// Add a filter as if made elsewhere; returns its id.
+    pub fn seed_filter(&self, mut filter: Filter) -> String {
+        let mut s = self.lock();
+        s.next_filter += 1;
+        let id = format!("filter_{}", s.next_filter);
+        filter.id = Some(id.clone());
+        s.filters.insert(id.clone(), filter);
+        id
+    }
+
+    /// Every filter, by id.
+    pub fn filters(&self) -> Vec<Filter> {
+        self.lock().filters.values().cloned().collect()
+    }
+
     pub fn calls(&self, method: &str) -> usize {
         self.lock().calls.get(method).copied().unwrap_or(0)
     }
@@ -1162,6 +1180,36 @@ impl MailApi for FakeGmail {
         self.lock().drafts.remove(id);
         self.delete(&message_id);
         Ok(())
+    }
+
+    async fn list_filters(&self) -> Result<Vec<Filter>, GmailError> {
+        self.enter("list_filters")?;
+        Ok(self.filters())
+    }
+
+    async fn create_filter(&self, filter: &Filter) -> Result<Filter, GmailError> {
+        self.enter("create_filter")?;
+        let mut s = self.lock();
+        let same = |f: &Filter| f.criteria == filter.criteria && f.action == filter.action;
+        if s.filters.values().any(same) {
+            return Err(api_error(400, "failedPrecondition", "Filter already exists"));
+        }
+        s.next_filter += 1;
+        let id = format!("filter_{}", s.next_filter);
+        let created = Filter {
+            id: Some(id.clone()),
+            ..filter.clone()
+        };
+        s.filters.insert(id, created.clone());
+        Ok(created)
+    }
+
+    async fn delete_filter(&self, id: &str) -> Result<(), GmailError> {
+        self.enter("delete_filter")?;
+        match self.lock().filters.remove(id) {
+            Some(_) => Ok(()),
+            None => Err(not_found()),
+        }
     }
 
     async fn send_draft(&self, id: &str) -> Result<String, GmailError> {
