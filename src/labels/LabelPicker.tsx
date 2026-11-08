@@ -14,7 +14,9 @@ import { listen } from "@tauri-apps/api/event";
 import { createSubscriptionScope } from "../lib/subscriptions";
 import { type LabelInfo, SYNC_EVENTS, type SyncAccountEvent } from "../lib/tauri";
 import { cx } from "../lib/utils";
-import { applyLabel, labelMembership, moveOrigin, moveTo } from "../mail/actions";
+import { applyLabel, labelMembership, moveOrigin, moveTo, shownCategory } from "../mail/actions";
+import { openCategoryMove } from "../mail/CategoryMoveDialog";
+import { CATEGORIES, type MailboxRow } from "../mail/mailboxes";
 import { useLabelStore } from "../store/labelStore";
 import { openLabelDialog } from "./dialogStore";
 import { chipColors } from "./palette";
@@ -36,6 +38,7 @@ interface LabelOption {
 
 type Option =
   | LabelOption
+  | { kind: "category"; category: MailboxRow }
   | { kind: "inbox" | "trash" | "manage" }
   | { kind: "create"; name: string };
 
@@ -94,6 +97,8 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   const all = useLabelStore((s) => s.labels[accountId] ?? NO_LABELS);
   const userLabels = useLabelStore((s) => s.userLabels(accountId));
   const [origin] = useState(() => (mode === "move" ? moveOrigin(accountId) : null));
+  // The category tab being shown isn't somewhere to move to.
+  const [shown] = useState(() => (mode === "move" ? shownCategory() : null));
   const tree = useMemo(() => labelTreeOptions(userLabels, origin), [userLabels, origin]);
   const [membership, setMembership] = useState(() => new Map(spec.membership));
   const [query, setQuery] = useState("");
@@ -116,6 +121,10 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     const list: Option[] = [];
     if (!createOnly) {
       if (mode === "move" && origin !== "INBOX" && matches("Inbox")) list.push({ kind: "inbox" });
+      if (mode === "move")
+        for (const category of CATEGORIES)
+          if (category.labelId !== shown && matches(category.name))
+            list.push({ kind: "category", category });
       if (!q) list.push(...tree);
       else for (const { label } of tree) if (matches(label.name)) list.push(searchOption(label));
       if (mode === "move" && matches("Trash")) list.push({ kind: "trash" });
@@ -124,7 +133,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     if (name && !all.some((l) => l.name.toLowerCase() === q)) list.push({ kind: "create", name });
     list.push({ kind: "manage" });
     return list;
-  }, [all, createOnly, mode, origin, query, tree]);
+  }, [all, createOnly, mode, origin, query, shown, tree]);
 
   // Keep the popover inside the viewport once its size is known.
   useLayoutEffect(() => {
@@ -236,6 +245,9 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
         if (mode === "label") return toggle(option.label);
         onClose();
         return void moveTo(accountId, keys, option.label.id);
+      case "category":
+        onClose();
+        return openCategoryMove({ accountId, keys, category: option.category.labelId, at: pos });
       case "inbox":
       case "trash":
         onClose();
@@ -271,17 +283,21 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
         ? option.text
         : option.kind === "create"
           ? `Create "${option.name}"…`
-          : option.kind === "inbox"
-            ? "Inbox"
-            : option.kind === "trash"
-              ? "Trash"
-              : "Manage labels";
+          : option.kind === "category"
+            ? option.category.name
+            : option.kind === "inbox"
+              ? "Inbox"
+              : option.kind === "trash"
+                ? "Trash"
+                : "Manage labels";
     const context = option.kind === "label" ? option.context : "";
     const icon =
       option.kind === "label" ? (
         <LabelDot label={option.label} />
       ) : option.kind === "create" ? (
         <Plus aria-hidden="true" />
+      ) : option.kind === "category" ? (
+        <option.category.icon aria-hidden="true" />
       ) : option.kind === "inbox" ? (
         <Inbox aria-hidden="true" />
       ) : option.kind === "trash" ? (
@@ -291,7 +307,13 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
       );
     return (
       <div
-        key={option.kind === "label" ? option.label.id : option.kind}
+        key={
+          option.kind === "label"
+            ? option.label.id
+            : option.kind === "category"
+              ? option.category.labelId
+              : option.kind
+        }
         id={`label-picker-option-${i}`}
         role="option"
         aria-label={option.kind === "label" ? option.label.name : undefined}

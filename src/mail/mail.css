@@ -483,3 +483,73 @@
   visibility: hidden;
   pointer-events: none;
 }
+
+/* The choice a move to an inbox category asks (CategoryMoveDialog). */
+.category-move {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: var(--category-move-width);
+  max-width: calc(100% - var(--space-4));
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-menu-border);
+  border-radius: var(--radius-md);
+  background: var(--color-menu-bg);
+  color: var(--color-menu-foreground);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--font-size-md);
+}
+
+.category-move__title {
+  margin: var(--space-0);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
+
+.category-move__choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+.category-move__choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.category-move__choice[aria-disabled] {
+  color: var(--color-foreground-muted);
+  cursor: default;
+}
+
+.category-move__choice--nested {
+  padding-left: var(--space-5);
+}
+
+.category-move__sender {
+  overflow-wrap: anywhere;
+}
+
+.category-move__note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+
+.category-move__note p {
+  margin: var(--space-0);
+}
+
+.category-move__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useToastStore } from "../components/ui/Toast";
 import type { LabelInfo, MessageDetail, ThreadDetail, ThreadSummary } from "../lib/tauri";
 import { openLabelMenu, openMoveMenu } from "../mail/actions";
+import { useCategoryMoveStore } from "../mail/CategoryMoveDialog";
 import { threadKey } from "../mail/mailboxes";
 import { useAccountStore } from "../store/accountStore";
 import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
@@ -473,12 +474,44 @@ describe("after a click", () => {
 });
 
 describe("Move to…", () => {
-  test("lists Inbox, the labels and Trash without ticks, leaving out where the mail is", async () => {
+  test("a category leaves out the tab being shown and asks how to move", () => {
+    useUiStore.setState({
+      mailbox: { accountId: "a1", labelId: "INBOX", category: "CATEGORY_SOCIAL" },
+      checked: [key(1)],
+    });
+    render(<LabelPickerHost />);
+    act(() => openMoveMenu({ x: 5, y: 6 }));
+    expect(optionNames().slice(0, 4)).toEqual(["Primary", "Promotions", "Updates", "Forums"]);
+    type("upd");
+    press("Enter");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useCategoryMoveStore.getState().spec).toMatchObject({
+      accountId: "a1",
+      keys: [key(1)],
+      category: "CATEGORY_UPDATES",
+      at: { x: 5, y: 6 },
+    });
+    expect(modifyCalls()).toEqual([]);
+    act(() => useCategoryMoveStore.getState().close());
+  });
+
+  test("lists Inbox, the categories, the labels and Trash without ticks, leaving out where the mail is", async () => {
     useUiStore.setState({ mailbox: { accountId: "a1", labelId: "Label_3" }, checked: [key(1)] });
     render(<LabelPickerHost />);
     act(() => openMoveMenu({ x: 0, y: 0 }));
     expect(screen.getByRole("dialog", { name: "Move to" })).toBeInTheDocument();
-    expect(optionNames()).toEqual(["Inbox", "Clients", "Acme", "Trash", "Manage labels"]);
+    expect(optionNames()).toEqual([
+      "Inbox",
+      "Primary",
+      "Social",
+      "Promotions",
+      "Updates",
+      "Forums",
+      "Clients",
+      "Acme",
+      "Trash",
+      "Manage labels",
+    ]);
     expect(option("Clients")).not.toHaveAttribute("aria-checked");
 
     fireEvent.click(option("Clients/Acme"));
@@ -493,7 +526,7 @@ describe("Move to…", () => {
     useUiStore.setState({ mailbox: { accountId: "a1", labelId: "INBOX" }, checked: [key(1)] });
     render(<LabelPickerHost />);
     act(() => openMoveMenu({ x: 0, y: 0 }));
-    expect(optionNames()[0]).toBe("Clients"); // already in the Inbox
+    expect(optionNames()[0]).toBe("Primary"); // already in the Inbox
     type("tra");
     press("Enter");
     await flush();

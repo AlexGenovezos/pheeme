@@ -13,6 +13,7 @@ import {
   archive,
   moveSelection,
   moveTo,
+  moveToCategory,
   openAndMarkRead,
   openLabelMenu,
   openMoveMenu,
@@ -1050,4 +1051,125 @@ test("search actions use the search results, rather than the mailbox underneath 
   await trash([key(1)]);
   expect(listKeys()).toEqual([]);
   expect(calls.some((c) => c.cmd === "trash_threads")).toBe(true);
+});
+
+describe("moveToCategory", () => {
+  const OTHERS_THAN = (c: string) =>
+    [
+      "CATEGORY_PERSONAL",
+      "CATEGORY_SOCIAL",
+      "CATEGORY_PROMOTIONS",
+      "CATEGORY_UPDATES",
+      "CATEGORY_FORUMS",
+    ].filter((id) => id !== c);
+  const undo = () => last(toasts()).action?.run();
+
+  test("from the Primary tab: leaves it, and Undo restores each conversation's own categories", async () => {
+    useUiStore.setState({
+      mailbox: { accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" },
+    });
+    setList([
+      thread(1, "a1", { systemLabelIds: ["CATEGORY_PERSONAL", "INBOX"] }),
+      thread(2, "a1", { systemLabelIds: ["INBOX"] }),
+      thread(3, "a1", { systemLabelIds: ["CATEGORY_PERSONAL", "INBOX"] }),
+    ]);
+    await moveToCategory("a1", [key(1), key(2)], "CATEGORY_UPDATES");
+    expect(modifyCalls()).toEqual([
+      {
+        accountId: "a1",
+        threadIds: ["t1", "t2"],
+        add: ["CATEGORY_UPDATES", "INBOX"],
+        remove: OTHERS_THAN("CATEGORY_UPDATES"),
+      },
+    ]);
+    expect(listKeys()).toEqual([key(3)]);
+    expect(last(toasts())).toMatchObject({
+      title: 'Moved to "Updates"',
+      description: "2 conversations",
+    });
+
+    undo();
+    await flush();
+    expect(modifyCalls().slice(1)).toEqual([
+      {
+        accountId: "a1",
+        threadIds: ["t1"],
+        add: ["CATEGORY_PERSONAL"],
+        remove: ["CATEGORY_UPDATES"],
+      },
+      { accountId: "a1", threadIds: ["t2"], add: [], remove: ["CATEGORY_UPDATES"] },
+    ]);
+  });
+
+  test("an archived conversation comes back to the inbox, and Undo archives it again", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "ALL" } });
+    setList([thread(1, "a1", { systemLabelIds: ["CATEGORY_SOCIAL"] })]);
+    await moveToCategory("a1", [key(1)], "CATEGORY_FORUMS");
+    expect(listKeys()).toEqual([key(1)]);
+    expect(useMailStore.getState().threads[0].systemLabelIds).toEqual(["CATEGORY_FORUMS", "INBOX"]);
+    undo();
+    await flush();
+    expect(modifyCalls()[1]).toEqual({
+      accountId: "a1",
+      threadIds: ["t1"],
+      add: ["CATEGORY_SOCIAL"],
+      remove: ["CATEGORY_FORUMS", "INBOX"],
+    });
+    expect(useMailStore.getState().threads[0].systemLabelIds).toEqual(["CATEGORY_SOCIAL"]);
+  });
+
+  test("moves the sender's other inbox mail too, and Undo takes back the saved rules", async () => {
+    useUiStore.setState({
+      mailbox: { accountId: "a1", labelId: "INBOX", category: "CATEGORY_PROMOTIONS" },
+    });
+    setList([thread(1, "a1", { systemLabelIds: ["CATEGORY_PROMOTIONS", "INBOX"] })]);
+    const saved = { created: ["filter_1"], replaced: [] };
+    await moveToCategory("a1", [key(1)], "CATEGORY_UPDATES", {
+      extra: [{ threadId: "t9", categories: ["CATEGORY_SOCIAL"] }],
+      rules: Promise.resolve(saved),
+      note: "Future mail from a@x.com goes there too",
+    });
+    expect(modifyCalls()[0]).toMatchObject({ threadIds: ["t1", "t9"] });
+    expect(last(toasts()).description).toBe(
+      "2 conversations · Future mail from a@x.com goes there too",
+    );
+
+    undo();
+    await flush();
+    await flush();
+    expect(modifyCalls().slice(1)).toEqual([
+      {
+        accountId: "a1",
+        threadIds: ["t1"],
+        add: ["CATEGORY_PROMOTIONS"],
+        remove: ["CATEGORY_UPDATES"],
+      },
+      {
+        accountId: "a1",
+        threadIds: ["t9"],
+        add: ["CATEGORY_SOCIAL"],
+        remove: ["CATEGORY_UPDATES"],
+      },
+    ]);
+    expect(calls.filter((c) => c.cmd === "undo_sender_rules").map((c) => c.args)).toEqual([
+      { accountId: "a1", saved },
+    ]);
+  });
+
+  test("Undo after a rule that couldn't be saved only moves the mail back", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "ALL" } });
+    setList([thread(1, "a1", { systemLabelIds: ["INBOX"] })]);
+    await moveToCategory("a1", [key(1)], "CATEGORY_SOCIAL", { rules: Promise.resolve(null) });
+    undo();
+    await flush();
+    await flush();
+    expect(modifyCalls()).toHaveLength(2);
+    expect(calls.some((c) => c.cmd === "undo_sender_rules")).toBe(false);
+  });
+
+  test("leaves other accounts' rows alone", async () => {
+    setList([thread(1, "a1"), thread(2, "a2")]);
+    await moveToCategory("a1", [key(1), key(2, "a2")], "CATEGORY_SOCIAL");
+    expect(modifyCalls().map((c) => c.threadIds)).toEqual([["t1"]]);
+  });
 });

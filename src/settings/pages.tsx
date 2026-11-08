@@ -3,6 +3,7 @@ import { ModsSettings } from "../mods/ModsSettings";
 import {
   Bell,
   Info,
+  Filter,
   Keyboard,
   LifeBuoy,
   Palette,
@@ -26,6 +27,7 @@ import { AccountsSettings, accountsMatch } from "./AccountsSettings";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
+import { SenderRulesSettings } from "./SenderRulesSettings";
 import { ImportThemeControl, ThemeChoiceControl } from "./ThemeSettings";
 import { READING_SIZES, type ReadingSize, useReadingSettings } from "./readingSettings";
 import {
@@ -244,6 +246,26 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     ],
     Component: AccountsSettings,
     matches: accountsMatch,
+  },
+  {
+    id: "senderRules",
+    title: "Sender rules",
+    icon: Filter,
+    group: "Mail",
+    keywords: [
+      "filters",
+      "categories",
+      "category",
+      "tabs",
+      "primary",
+      "social",
+      "promotions",
+      "updates",
+      "forums",
+      "future mail",
+      "sender",
+    ],
+    Component: SenderRulesSettings,
   },
   {
     id: "compose",

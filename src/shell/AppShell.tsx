@@ -3,6 +3,7 @@ import { useWidth } from "../lib/useWidth";
 import { ColorPopoverHost } from "../labels/ColorPopover";
 import { LabelDialogHost } from "../labels/LabelDialog";
 import { LabelPickerHost } from "../labels/LabelPicker";
+import { CategoryMoveHost } from "../mail/CategoryMoveDialog";
 import { PANE, useUiStore } from "../store/uiStore";
 import { ChordHint } from "./ChordHint";
 import { overlayTitleBar } from "./chrome";
@@ -83,6 +84,7 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
       </main>
       <ChordHint />
       <LabelPickerHost />
+      <CategoryMoveHost />
       <LabelDialogHost />
       <ColorPopoverHost />
     </div>
