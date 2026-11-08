@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Skeleton } from "../components/ui/Skeleton";
 import { getSyncProgress, type SyncProgress } from "../lib/tauri";
 
 /** Poll only while Accounts settings is mounted; never overlap IPC requests. */
@@ -55,7 +56,11 @@ export function MailSyncProgress({
     <div className="settings-sync">
       <div className="settings-sync__heading">
         <span>{progress?.complete ? "Mailbox synced" : "Mail sync"}</span>
-        {percent !== undefined && <span>{percent}%</span>}
+        {percent !== undefined ? (
+          <span>{percent}%</span>
+        ) : (
+          !progress && <Skeleton className="settings-sync__pending" width="4ch" />
+        )}
       </div>
       <progress
         className="settings-sync__bar"
@@ -67,13 +72,16 @@ export function MailSyncProgress({
       <span className="settings-sync__detail">
         {unavailable ? "Sync progress unavailable. Retrying…" : count}
       </span>
-      {progress && (
-        <span className="settings-sync__detail">
-          {progress.downloadedMessages.toLocaleString()} message bodies available offline. Bodies
-          from the last 180 days download automatically; older bodies and attachments download when
-          opened.
-        </span>
-      )}
+      {/* Always rendered, so the card keeps its height when progress arrives. */}
+      <span className="settings-sync__detail">
+        {progress ? (
+          progress.downloadedMessages.toLocaleString()
+        ) : (
+          <Skeleton className="settings-sync__pending" width="5ch" />
+        )}{" "}
+        message bodies available offline. Bodies from the last 180 days download automatically;
+        older bodies and attachments download when opened.
+      </span>
     </div>
   );
 }

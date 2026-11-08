@@ -44,6 +44,17 @@ test("shows mailbox progress separately from downloaded message bodies", () => {
   expect(screen.getByText("Mailbox synced")).toBeInTheDocument();
 });
 
+test("before progress loads, the card already has the same lines it will have after", () => {
+  const { container, rerender } = render(
+    <MailSyncProgress email="me@example.com" unavailable={false} />,
+  );
+  const lines = () => container.querySelectorAll(".settings-sync__heading > *, .settings-sync > *");
+  const before = lines().length;
+  expect(screen.getByText(/message bodies available offline/)).toBeInTheDocument();
+  rerender(<MailSyncProgress email="me@example.com" progress={partial} unavailable={false} />);
+  expect(lines().length).toBe(before);
+});
+
 test("unknown totals are indeterminate and an empty completed mailbox is 100%", () => {
   const { rerender } = render(
     <MailSyncProgress
