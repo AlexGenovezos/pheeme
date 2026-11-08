@@ -46,6 +46,8 @@ export interface ComposeWindow {
   minimized: boolean;
   /** Asking "Save draft or discard?". */
   confirmingClose: boolean;
+  /** Asking "Send this message?" (Settings › Compose › Confirm before sending). */
+  confirmingSend: boolean;
 }
 
 /** Gmail's limit on everything attached to one message. */
@@ -119,6 +121,9 @@ interface ComposeState {
   /** Save to Gmail Drafts now (autosave passes `quiet`, which keeps failures off the toasts). */
   save(id: number, opts?: { quiet?: boolean }): Promise<boolean>;
   send(id: number): Promise<void>;
+  /** Send, or ask first when "Confirm before sending" is on. */
+  requestSend(id: number): void;
+  cancelSend(id: number): void;
   /** Close: quietly when nothing is unsaved, else ask. */
   requestClose(id: number): void;
   cancelClose(id: number): void;
@@ -186,6 +191,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     error: null,
     minimized: false,
     confirmingClose: false,
+    confirmingSend: false,
   });
 
   /** A panel already open for this conversation or draft. */
@@ -200,7 +206,17 @@ export const useComposeStore = create<ComposeState>((set, get) => {
   /** Put a message back into a panel (after Undo or a refused send). */
   const reopen = (win: ComposeWindow, error: string | null) => {
     // Past the panel limit if need be: this message exists nowhere else.
-    open({ ...win, sending: false, saving: false, error, confirmingClose: false }, true);
+    open(
+      {
+        ...win,
+        sending: false,
+        saving: false,
+        error,
+        confirmingClose: false,
+        confirmingSend: false,
+      },
+      true,
+    );
   };
 
   const onSendStatus = (event: OutboxSendStatus) => {
@@ -396,9 +412,31 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       return next;
     },
 
+    requestSend(id) {
+      const win = find(id);
+      if (!win || win.loading || win.sending) return;
+      if (useComposeSettings.getState().confirmSend && !win.confirmingSend) {
+        const problem =
+          win.attaching > 0 ? "Wait for the attachments to finish." : sendProblem(win.draft);
+        if (problem) {
+          patch(id, { error: problem });
+          return;
+        }
+        patch(id, { confirmingSend: true, confirmingClose: false, minimized: false });
+        return;
+      }
+      void get().send(id);
+    },
+
+    cancelSend(id) {
+      patch(id, { confirmingSend: false });
+      get().focus(id);
+    },
+
     async send(id) {
       const win = find(id);
       if (!win || win.loading || win.sending) return;
+      patch(id, { confirmingSend: false });
       const problem =
         win.attaching > 0 ? "Wait for the attachments to finish." : sendProblem(win.draft);
       if (problem) {
@@ -441,7 +479,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         dropStaged(win.draft.attachments);
         return;
       }
-      patch(id, { confirmingClose: true, minimized: false });
+      patch(id, { confirmingClose: true, confirmingSend: false, minimized: false });
     },
 
     cancelClose(id) {

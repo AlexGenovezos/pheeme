@@ -44,6 +44,12 @@ export function ComposePanel({ win }: { win: ComposeWindow }) {
   const subject = win.draft.subject.trim();
   const title = win.minimized && subject ? subject : TITLES[win.kind];
 
+  // The send prompt takes focus, so Escape and Enter reach it even from the editor's link input.
+  const confirmSendRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (win.confirmingSend) confirmSendRef.current?.focus();
+  }, [win.confirmingSend]);
+
   // Autosave while there's something new (minimized too).
   useEffect(() => {
     if (win.loading) return;
@@ -57,10 +63,11 @@ export function ComposePanel({ win }: { win: ComposeWindow }) {
   const onKeyDown = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      void store.send(win.id);
+      if (!win.confirmingSend) store.requestSend(win.id);
     } else if (e.key === "Escape" && !e.defaultPrevented) {
       e.preventDefault();
-      if (win.confirmingClose) store.cancelClose(win.id);
+      if (win.confirmingSend) store.cancelSend(win.id);
+      else if (win.confirmingClose) store.cancelClose(win.id);
       else store.requestClose(win.id);
     }
   };
@@ -123,6 +130,20 @@ export function ComposePanel({ win }: { win: ComposeWindow }) {
         </div>
       ) : (
         <ComposeForm win={win} />
+      )}
+
+      {win.confirmingSend && (
+        <div className="compose__confirm" role="alertdialog" aria-label="Send this message?">
+          <p className="compose__confirm-title">Send this message?</p>
+          <div className="compose__confirm-actions">
+            <Button variant="ghost" onClick={() => store.cancelSend(win.id)}>
+              Keep editing
+            </Button>
+            <Button ref={confirmSendRef} variant="primary" onClick={() => void store.send(win.id)}>
+              Send
+            </Button>
+          </div>
+        </div>
       )}
 
       {win.confirmingClose && (
@@ -332,7 +353,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
         <Button
           variant="primary"
           disabled={win.sending}
-          onClick={() => void store.send(win.id)}
+          onClick={() => store.requestSend(win.id)}
           title={`Send (${describeShortcut(SEND_SHORTCUT)})`}
         >
           {win.sending ? "Sending…" : "Send"}

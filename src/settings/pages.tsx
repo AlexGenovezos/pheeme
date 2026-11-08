@@ -14,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import {
+  type DefaultReply,
   UNDO_SEND_CHOICES,
   type UndoSendSeconds,
   useComposeSettings,
@@ -108,6 +109,28 @@ function ListDensityControl() {
       onChange={(value) => setDensity(value as ListDensity)}
     />
   );
+}
+
+function DefaultReplyControl() {
+  const reply = useComposeSettings((s) => s.defaultReply);
+  const set = useComposeSettings((s) => s.setDefaultReply);
+  return (
+    <SegmentedControl
+      label="Default reply"
+      value={reply}
+      options={[
+        { value: "reply", label: "Reply" },
+        { value: "replyAll", label: "Reply all" },
+      ]}
+      onChange={(v) => set(v as DefaultReply)}
+    />
+  );
+}
+
+function ConfirmSendControl() {
+  const confirm = useComposeSettings((s) => s.confirmSend);
+  const set = useComposeSettings((s) => s.setConfirmSend);
+  return <Switch label="Confirm before sending" checked={confirm} onChange={set} />;
 }
 
 function UndoSendControl() {
@@ -329,6 +352,18 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     keywords: ["write", "send", "reply", "draft"],
     sections: [
       {
+        title: "Replies",
+        settings: [
+          {
+            id: "compose.defaultReply",
+            title: "Default reply",
+            description: "Which reply button comes first, and stands out, above a conversation.",
+            keywords: ["reply all", "button", "toolbar"],
+            Control: DefaultReplyControl,
+          },
+        ],
+      },
+      {
         title: "Sending",
         settings: [
           {
@@ -337,6 +372,13 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             description: "How long a sent message waits, so you can take it back.",
             keywords: ["delay", "cancel", "unsend"],
             Control: UndoSendControl,
+          },
+          {
+            id: "compose.confirmSend",
+            title: "Confirm before sending",
+            description: "Ask before each message leaves, in addition to Undo send.",
+            keywords: ["prompt", "ask", "send", "accidental"],
+            Control: ConfirmSendControl,
           },
         ],
       },
