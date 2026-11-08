@@ -11,6 +11,7 @@ import {
   trash,
 } from "../mail/actions";
 import { openCreateLabel } from "../labels/create";
+import { COPY_CODE_COMMAND, COPY_CODE_SHORTCUT, copyOpenConversationCode } from "../mail/CodeCard";
 import {
   CATEGORIES,
   categoryMailbox,
@@ -204,6 +205,14 @@ export function appCommands(): Command[] {
       shortcut: "shift+r",
       keywords: ["rsvp", "fast", "reader", "words per minute"],
       run: speedReadOpenConversation,
+    },
+    {
+      id: COPY_CODE_COMMAND,
+      title: "Copy verification code",
+      group: "Conversation",
+      shortcut: COPY_CODE_SHORTCUT,
+      keywords: ["otp", "2fa", "login code", "one-time", "passcode"],
+      run: copyOpenConversationCode,
     },
     {
       id: "view.toggleSidebar",
