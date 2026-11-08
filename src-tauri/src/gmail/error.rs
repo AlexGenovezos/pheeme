@@ -55,6 +55,9 @@ impl GmailError {
         if self.is_history_expired() {
             return "history_expired";
         }
+        if self.is_missing_scope() {
+            return "missing_scope";
+        }
         match self {
             GmailError::Auth(_) => "auth",
             GmailError::SignedOut(_) => "signed_out",
@@ -69,6 +72,26 @@ impl GmailError {
     /// The API answered 404 (the message, thread, label or draft does not exist).
     pub fn is_not_found(&self) -> bool {
         matches!(self, GmailError::Api { status: 404, .. })
+    }
+
+    /// Gmail refused because the account didn't grant the scope this call needs (an account that
+    /// signed in before Pheeme asked for it, or a user who unticked it on Google's consent screen).
+    pub fn is_missing_scope(&self) -> bool {
+        match self {
+            GmailError::Api {
+                status: 403,
+                reason,
+                message,
+            } => {
+                matches!(
+                    reason.as_deref(),
+                    Some("insufficientPermissions" | "ACCESS_TOKEN_SCOPE_INSUFFICIENT")
+                ) || message
+                    .to_ascii_lowercase()
+                    .contains("insufficient authentication scopes")
+            }
+            _ => false,
+        }
     }
 
     /// `history.list` rejected the start history id because Gmail no longer keeps that far back.
@@ -132,5 +155,23 @@ mod tests {
             "history_expired"
         );
         assert!(api(404, None, "x").is_not_found());
+    }
+
+    #[test]
+    fn missing_scope_detection() {
+        assert_eq!(
+            api(
+                403,
+                Some("insufficientPermissions"),
+                "Insufficient Permission"
+            )
+            .code(),
+            "missing_scope"
+        );
+        assert!(
+            api(403, None, "Request had insufficient authentication scopes.").is_missing_scope()
+        );
+        assert!(!api(403, Some("forbidden"), "x").is_missing_scope());
+        assert!(!api(400, Some("insufficientPermissions"), "x").is_missing_scope());
     }
 }

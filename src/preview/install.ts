@@ -26,6 +26,7 @@ import {
 import { createComposeHandlers } from "./compose";
 import { sampleAttachment } from "./attachments";
 import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel } from "./labels";
+import { createSenderRuleHandlers } from "./senderRules";
 import { createTransferHandlers } from "./transfer";
 
 type Args = Record<string, unknown> | undefined;
@@ -187,6 +188,11 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     },
     list_labels: (args) => labelsFor(labels, String(args?.accountId)),
     ...createLabelHandlers(labels, threads),
+    ...createSenderRuleHandlers(
+      threads,
+      (id) => accounts.find((a) => a.id === id)?.email,
+      params.get("senderRules") === "missing",
+    ),
     list_threads: (args): ThreadPage => ({
       threads: threadsIn(
         threads,

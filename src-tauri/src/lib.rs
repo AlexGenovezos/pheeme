@@ -17,6 +17,7 @@ pub mod mods;
 pub mod render;
 pub mod search;
 pub mod secrets;
+pub mod sender_rules;
 pub mod support;
 pub mod sync;
 mod text;
@@ -37,6 +38,7 @@ pub struct AppState {
     pub accounts: Arc<accounts::AccountService>,
     pub mail: mail::MailService,
     pub labels: labels::LabelService,
+    pub sender_rules: sender_rules::SenderRuleService,
     pub compose: compose::ComposeService,
     pub sync: Arc<SyncManager>,
     pub transfers: transfer::TransferService,
@@ -74,6 +76,7 @@ pub async fn build_state(
     let sync = SyncManager::new(db.clone(), api_for, events);
     let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
     let labels = labels::LabelService::new(db.clone(), sync.clone());
+    let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
     let compose = compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir);
     compose.sweep_staging().await;
     tokio::spawn({
@@ -86,6 +89,7 @@ pub async fn build_state(
         accounts,
         mail,
         labels,
+        sender_rules,
         compose,
         sync,
         transfers: transfer::TransferService::default(),
@@ -329,6 +333,12 @@ pub fn run() {
             commands::labels::update_label,
             commands::labels::delete_label,
             commands::labels::delete_label_preview,
+            commands::sender_rules::list_sender_rules,
+            commands::sender_rules::rule_senders,
+            commands::sender_rules::save_sender_rules,
+            commands::sender_rules::undo_sender_rules,
+            commands::sender_rules::delete_sender_rule,
+            commands::sender_rules::inbox_threads_from,
             commands::search::search_messages,
             commands::search::search_gmail,
             commands::search::recent_searches,

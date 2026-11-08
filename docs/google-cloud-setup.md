@@ -44,9 +44,11 @@ open the calendar.
    used by your organization's accounts alone.
 4. **Contact information:** your email. Agree to the policy and click **Create**.
 5. Optional: under **Data access**, add these scopes. Pheeme requests them at
-   sign-in either way.
+   sign-in either way. `gmail.settings.basic` only lets Pheeme save sender
+   rules (Gmail filters that file a sender's mail in an inbox tab).
    ```
    https://www.googleapis.com/auth/gmail.modify
+   https://www.googleapis.com/auth/gmail.settings.basic
    https://www.googleapis.com/auth/userinfo.email
    https://www.googleapis.com/auth/userinfo.profile
    ```

@@ -225,6 +225,39 @@ export const deleteLabel = (accountId: string, labelId: string) =>
   invoke<void>("delete_label", { accountId, labelId });
 export const deleteLabelPreview = (accountId: string, labelId: string) =>
   invoke<LabelDeletePreview>("delete_label_preview", { accountId, labelId });
+/** A Gmail filter that files a sender's mail in an inbox category ("from a@x.com → Updates"). */
+export interface SenderRule {
+  /** Gmail's filter id. */
+  id: string;
+  sender: string;
+  /** `CATEGORY_*`. */
+  category: string;
+}
+/** What saving sender rules changed, so Undo can put it back. */
+export interface SavedRules {
+  created: string[];
+  replaced: SenderRule[];
+}
+/** A cached inbox conversation and its `CATEGORY_*` labels before a move. */
+export interface InboxThread {
+  threadId: string;
+  categories: string[];
+}
+/** The account's sender rules. Rejects with `missing_scope` when the account hasn't granted filters access. */
+export const listSenderRules = (accountId: string) =>
+  invoke<SenderRule[]>("list_sender_rules", { accountId });
+/** The senders a rule would be made for: each conversation's latest sender who isn't the account itself. */
+export const ruleSenders = (accountId: string, threadIds: string[]) =>
+  invoke<string[]>("rule_senders", { accountId, threadIds });
+export const saveSenderRules = (accountId: string, senders: string[], category: string) =>
+  invoke<SavedRules>("save_sender_rules", { accountId, senders, category });
+export const undoSenderRules = (accountId: string, saved: SavedRules) =>
+  invoke<void>("undo_sender_rules", { accountId, saved });
+export const deleteSenderRule = (accountId: string, ruleId: string) =>
+  invoke<void>("delete_sender_rule", { accountId, ruleId });
+/** Cached inbox conversations from `senders` that aren't in `category` yet. */
+export const inboxThreadsFrom = (accountId: string, senders: string[], category: string) =>
+  invoke<InboxThread[]>("inbox_threads_from", { accountId, senders, category });
 export const modifyThreads = (
   accountId: string,
   threadIds: string[],

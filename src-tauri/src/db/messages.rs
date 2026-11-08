@@ -310,6 +310,29 @@ pub async fn trim_old_bodies<'e>(
     Ok(done.rows_affected())
 }
 
+/// The From address of `thread_id`'s latest message not sent from `own_address`, or `None` when
+/// every message is the account's own (or has no sender).
+pub async fn latest_sender_other_than(
+    pool: &SqlitePool,
+    account_id: &str,
+    thread_id: &str,
+    own_address: &str,
+) -> Result<Option<String>> {
+    let sender = sqlx::query_scalar!(
+        r#"SELECT from_address AS "from_address!" FROM messages
+           WHERE account_id = ?1 AND thread_id = ?2
+             AND from_address IS NOT NULL AND from_address != ''
+             AND lower(from_address) != lower(?3)
+           ORDER BY date DESC LIMIT 1"#,
+        account_id,
+        thread_id,
+        own_address
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(sender)
+}
+
 pub async fn get_messages_for_thread<'e>(
     ex: impl SqliteExecutor<'e>,
     account_id: &str,

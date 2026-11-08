@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT from_address AS \"from_address!\" FROM messages\n           WHERE account_id = ?1 AND thread_id = ?2\n             AND from_address IS NOT NULL AND from_address != ''\n             AND lower(from_address) != lower(?3)\n           ORDER BY date DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "from_address!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "messages",
+            "name": "from_address"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "86e4d2d1aabffadb9a2b864593831fb06c1725a35ecc493e9d4d7223c13ec83a"
+}

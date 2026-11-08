@@ -201,6 +201,25 @@ pub async fn get_thread_label_ids(
     Ok(rows.into_iter().map(|r| r.label_id).collect())
 }
 
+/// Threads in the inbox with at least one cached message from `sender` (compared lowercased).
+pub async fn inbox_threads_from(
+    pool: &SqlitePool,
+    account_id: &str,
+    sender: &str,
+) -> Result<Vec<String>> {
+    let ids = sqlx::query_scalar!(
+        r#"SELECT DISTINCT tl.thread_id AS "thread_id!" FROM thread_labels tl
+           JOIN messages m ON m.thread_id = tl.thread_id AND m.account_id = tl.account_id
+           WHERE tl.label_id = 'INBOX' AND tl.account_id = ?1
+             AND lower(m.from_address) = lower(?2)"#,
+        account_id,
+        sender
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(ids)
+}
+
 /// System label ids (INBOX, CATEGORY_*, SPAM, TRASH, SENT…) of many threads in one query,
 /// keyed by `(account_id, thread_id)` and sorted ascending. Threads without any are absent.
 /// Seeks the primary key of `thread_labels` per thread.
