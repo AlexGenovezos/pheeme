@@ -553,3 +553,31 @@
   justify-content: flex-end;
   gap: var(--space-2);
 }
+
+/* Dragging conversations onto the sidebar (dragMail.tsx). */
+.mail-dragging,
+.mail-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.mail-drag-card {
+  position: fixed;
+  z-index: var(--z-overlay);
+  padding: var(--space-1) var(--space-2-5);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-foreground);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(var(--space-3), var(--space-3));
+}
+
+[data-drop-active] {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-inset);
+  background: var(--color-list-hover-bg);
+}

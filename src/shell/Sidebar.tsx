@@ -53,6 +53,7 @@ import {
   resolveActiveAccount,
 } from "../mail/mailboxes";
 import { composeNew } from "../mail/actions";
+import { dropTarget } from "../mail/dragMail";
 import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
 import { type SyncFailure, useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
@@ -135,9 +136,19 @@ interface MailboxRowProps {
   /** Screen reader word for the count ("unread", "conversations"). */
   unit: string;
   target: MailboxRef;
+  /** Dragged conversations can be dropped here (a category or Trash of `target`'s account). */
+  droppable?: boolean;
 }
 
-function MailboxRow({ name, icon: Icon, colorToken, count, unit, target }: MailboxRowProps) {
+function MailboxRow({
+  name,
+  icon: Icon,
+  colorToken,
+  count,
+  unit,
+  target,
+  droppable,
+}: MailboxRowProps) {
   const selected = useUiStore((s) => sameMailbox(s.mailbox, target));
   const go = () => useUiStore.getState().setMailbox(target);
   const text = formatCount(count);
@@ -156,6 +167,9 @@ function MailboxRow({ name, icon: Icon, colorToken, count, unit, target }: Mailb
       meta={text || undefined}
       onClick={go}
       onKeyDown={(e) => activateOnKey(e, go)}
+      {...(droppable && target.accountId
+        ? dropTarget(target.accountId, target.category ?? target.labelId)
+        : {})}
     />
   );
 }
@@ -173,6 +187,7 @@ function CategoryRows({ accountId }: { accountId: string }) {
           count={counts[c.labelId] ?? 0}
           unit="unread"
           target={categoryMailbox(accountId, c.labelId)}
+          droppable
         />
       ))}
     </>
@@ -273,6 +288,7 @@ function Favorites({ accountId }: { accountId: string }) {
           count={counts[f.labelId]?.[f.count] ?? 0}
           unit={f.count === "total" ? "conversations" : "unread"}
           target={{ accountId, labelId: f.labelId }}
+          droppable={f.labelId === "TRASH"}
         />
       ))}
     </Section>
@@ -416,6 +432,7 @@ function LabelRow({ accountId, node, folded, unread }: LabelRowProps) {
         meta={text || undefined}
         onClick={label ? go : fold}
         onKeyDown={label ? onKeyDown : undefined}
+        {...(label ? dropTarget(accountId, label.id) : {})}
       />
       {label && (
         <IconButton
