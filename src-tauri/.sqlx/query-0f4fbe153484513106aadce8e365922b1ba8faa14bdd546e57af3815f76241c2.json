@@ -1,0 +1,28 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT label_id AS \"label_id!\", COUNT(*) AS \"count!: i64\"\n        FROM (\n            SELECT x.label_id AS label_id\n            FROM thread_labels u INDEXED BY idx_thread_labels_listing\n            CROSS JOIN thread_labels i\n              ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'\n            CROSS JOIN thread_labels x\n              ON x.account_id = u.account_id AND x.thread_id = u.thread_id\n             AND x.label_id IN ('INBOX', 'CATEGORY_SOCIAL',\n                                'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS')\n            WHERE u.label_id = 'UNREAD' AND u.account_id IN (SELECT value FROM json_each(?1))\n            UNION ALL\n            SELECT 'CATEGORY_PERSONAL' AS label_id\n            FROM thread_labels u INDEXED BY idx_thread_labels_listing\n            CROSS JOIN thread_labels i\n              ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'\n            WHERE u.label_id = 'UNREAD' AND u.account_id IN (SELECT value FROM json_each(?1))\n              AND NOT EXISTS (\n                    SELECT 1 FROM thread_labels c\n                    WHERE c.account_id = u.account_id AND c.thread_id = u.thread_id\n                      AND c.label_id IN (\n                            SELECT json_extract(e.value, '$[1]') FROM json_each(?2) e\n                            WHERE json_extract(e.value, '$[0]') = u.account_id))\n        )\n        GROUP BY label_id\n        ORDER BY label_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "label_id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "name": "count!: i64",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "0f4fbe153484513106aadce8e365922b1ba8faa14bdd546e57af3815f76241c2"
+}

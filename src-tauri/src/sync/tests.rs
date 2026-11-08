@@ -1204,6 +1204,33 @@ async fn notifications_only_for_new_unread_primary_including_replies() {
 }
 
 #[tokio::test]
+async fn notifications_include_mail_of_hidden_tabs() {
+    let h = harness().await;
+    h.engine.run_initial_sync().await.unwrap();
+    crate::db::settings::set_inbox_tabs(&h.pool, ACCT, &s(&["CATEGORY_SOCIAL"]))
+        .await
+        .unwrap();
+    h.fake.add(FakeMsg::new(
+        "social",
+        "social",
+        &["INBOX", "UNREAD", "CATEGORY_SOCIAL"],
+    ));
+    h.fake.add(FakeMsg::new(
+        "promo",
+        "promo",
+        &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"],
+    ));
+    h.engine.run_incremental_sync().await.unwrap();
+    let mail = arrivals(&h.events);
+    assert_eq!(
+        mail.iter()
+            .map(|m| m.thread_id.as_str())
+            .collect::<Vec<_>>(),
+        ["social"]
+    );
+}
+
+#[tokio::test]
 async fn notification_replay_reclassification_backfill_and_resync_stay_silent() {
     let h = harness().await;
     h.fake

@@ -10,7 +10,7 @@ use super::convert;
 use super::events::{NewMail, SyncEvent, SyncEvents};
 use super::outbox;
 use crate::db::threads::{self, RecomputeResult, CATEGORY_LABELS};
-use crate::db::{self, accounts, attachments, labels, messages, sync_state};
+use crate::db::{self, accounts, attachments, labels, messages, settings, sync_state};
 use crate::gmail::types::{HistoryRecord, Message};
 use crate::gmail::{GmailError, MessageFormat};
 use crate::search;
@@ -285,6 +285,8 @@ impl SyncEngine {
             }
         }
 
+        // Read before the write opens: hidden tabs' new mail alerts as Primary.
+        let hidden_tabs = settings::inbox_tabs(&self.db, &self.account_id).await?;
         let mut guard = self.write_lock.lock().await;
         let mut tx = db::begin_write(&self.db).await?;
         // Tombstones only matter while a backfill can still bring the message back; it
@@ -336,7 +338,7 @@ impl SyncEngine {
         let mut new_mail = Vec::new();
         for id in added_ids.iter().filter(|id| !known.contains(*id)) {
             if let Some(message) = messages::get_message(&mut *tx, &self.account_id, id).await? {
-                if let Some(mail) = NewMail::from_message(&message) {
+                if let Some(mail) = NewMail::from_message(&message, &hidden_tabs) {
                     new_mail.push(mail);
                 }
             }

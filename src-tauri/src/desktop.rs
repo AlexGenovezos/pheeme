@@ -325,7 +325,9 @@ pub fn install(app: &AppHandle) {
                     .collect::<Vec<_>>();
                 let start = std::time::Instant::now();
                 let pool = crate::diagnostics::PoolLoad::of(&state.db);
-                let counts = db::threads::unread_counts(&state.db, &ids).await?;
+                // Only the Inbox count is read, and inbox tabs don't change it.
+                let counts =
+                    db::threads::unread_counts(&state.db, &ids, &Default::default()).await?;
                 if start.elapsed() >= crate::diagnostics::SLOW_READ {
                     tracing::info!(
                         elapsed_ms = crate::diagnostics::ms_since(start),

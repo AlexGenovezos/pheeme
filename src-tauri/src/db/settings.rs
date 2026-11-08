@@ -87,6 +87,36 @@ pub async fn set_telemetry_last_ping(pool: &SqlitePool, at_ms: i64) -> Result<()
     set(pool, TELEMETRY_LAST_PING, &at_ms.to_string()).await
 }
 
+fn inbox_tabs_key(account_id: &str) -> String {
+    format!("inbox_tabs.{account_id}")
+}
+
+/// The inbox tabs this account hides (their mail shows under Primary), in no particular
+/// order. Anything that isn't one of [`crate::mail::OTHER_CATEGORIES`] is dropped.
+pub async fn inbox_tabs(pool: &SqlitePool, account_id: &str) -> Result<Vec<String>> {
+    let stored: Vec<String> = get(pool, &inbox_tabs_key(account_id))
+        .await?
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or_default();
+    Ok(stored
+        .into_iter()
+        .filter(|l| crate::mail::OTHER_CATEGORIES.contains(&l.as_str()))
+        .collect())
+}
+
+pub async fn set_inbox_tabs(pool: &SqlitePool, account_id: &str, hidden: &[String]) -> Result<()> {
+    set(
+        pool,
+        &inbox_tabs_key(account_id),
+        &serde_json::to_string(hidden)?,
+    )
+    .await
+}
+
+pub async fn delete_inbox_tabs(pool: &SqlitePool, account_id: &str) -> Result<()> {
+    delete(pool, &inbox_tabs_key(account_id)).await
+}
+
 async fn get(pool: &SqlitePool, key: &str) -> Result<Option<String>> {
     Ok(
         sqlx::query_scalar!("SELECT value FROM app_settings WHERE key = ?", key)
@@ -156,5 +186,22 @@ mod tests {
         set_telemetry(&reopened, true).await.unwrap();
         assert!(telemetry(&reopened).await.unwrap());
         assert_ne!(telemetry_install_id(&reopened).await.unwrap(), id);
+    }
+
+    #[tokio::test]
+    async fn inbox_tabs_round_trip_and_drop_unknown() {
+        let db = crate::db::test_support::TestDb::with_account("a").await;
+        assert!(inbox_tabs(&db.pool, "a").await.unwrap().is_empty());
+        let hidden = ["CATEGORY_SOCIAL", "CATEGORY_PERSONAL", "X"].map(String::from);
+        set_inbox_tabs(&db.pool, "a", &hidden).await.unwrap();
+        let reopened = crate::db::init_db(db.dir()).await.unwrap();
+        assert_eq!(
+            inbox_tabs(&reopened, "a").await.unwrap(),
+            ["CATEGORY_SOCIAL"]
+        );
+        assert!(inbox_tabs(&reopened, "b").await.unwrap().is_empty());
+
+        delete_inbox_tabs(&reopened, "a").await.unwrap();
+        assert!(inbox_tabs(&reopened, "a").await.unwrap().is_empty());
     }
 }

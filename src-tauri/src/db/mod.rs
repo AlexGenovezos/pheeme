@@ -678,7 +678,13 @@ mod tests {
         recompute(&pool, "acct-1", &["t1"]).await;
         recompute(&pool, "acct-2", &["t2", "t3", "t4"]).await;
 
-        let counts = threads::unread_counts(&pool, &labels(&["acct-1", "acct-2"]))
+        let every_tab = |ids: &[String]| {
+            ids.iter()
+                .map(|a| (a.clone(), crate::mail::primary_excludes(&[])))
+                .collect::<std::collections::HashMap<_, _>>()
+        };
+        let both = labels(&["acct-1", "acct-2"]);
+        let counts = threads::unread_counts(&pool, &both, &every_tab(&both))
             .await
             .unwrap();
         assert_eq!(
@@ -689,7 +695,8 @@ mod tests {
                 ("INBOX".to_owned(), 2),
             ]
         );
-        let one = threads::unread_counts(&pool, &labels(&["acct-1"]))
+        let acct1 = labels(&["acct-1"]);
+        let one = threads::unread_counts(&pool, &acct1, &every_tab(&acct1))
             .await
             .unwrap();
         assert_eq!(

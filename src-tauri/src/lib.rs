@@ -343,6 +343,8 @@ pub fn run() {
             commands::threads::get_thread,
             commands::threads::modify_threads,
             commands::threads::trash_threads,
+            commands::threads::inbox_tabs,
+            commands::threads::set_inbox_tabs,
             commands::labels::list_labels,
             commands::labels::mailbox_counts,
             commands::labels::label_counts,

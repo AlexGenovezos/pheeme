@@ -17,6 +17,7 @@ use pheeme_lib::sync::manager::SyncManager;
 use pheeme_lib::sync::{MailApi, NoopEvents};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -391,12 +392,17 @@ fn list_unread_tab(ctx: Ctx) -> threads::ThreadPage {
     page
 }
 
+/// Every inbox tab shown, the default: Primary excludes the other four categories.
+fn every_tab() -> HashMap<String, Vec<String>> {
+    HashMap::from([(ACCT.to_string(), pheeme_lib::mail::primary_excludes(&[]))])
+}
+
 /// The seeded mailbox with both count queries prepared and their pages cached, as after the
 /// first sidebar refresh. Every sync event reruns them (sidebar and tray).
 fn warm_counts() -> Ctx {
     let ctx = open_fixture();
     ctx.rt.block_on(async {
-        threads::unread_counts(&ctx.pool, &[ACCT.to_string()])
+        threads::unread_counts(&ctx.pool, &[ACCT.to_string()], &every_tab())
             .await
             .unwrap();
         threads::label_counts(&ctx.pool, ACCT).await.unwrap();
@@ -409,7 +415,7 @@ fn warm_counts() -> Ctx {
 fn unread_counts(ctx: Ctx) -> Vec<(String, i64)> {
     let counts = measured(
         &ctx.rt,
-        threads::unread_counts(&ctx.pool, &[ACCT.to_string()]),
+        threads::unread_counts(&ctx.pool, &[ACCT.to_string()], &every_tab()),
     )
     .unwrap();
     assert!(counts.iter().any(|(label, n)| label == "INBOX" && *n > 0));
