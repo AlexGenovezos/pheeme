@@ -613,3 +613,50 @@ describe("preview label CRUD", () => {
     stops.forEach((stop) => stop());
   });
 });
+
+describe("sender rules", () => {
+  type Handlers = ReturnType<typeof createPreviewHandlers>;
+  const call = <T>(handlers: Handlers, cmd: string, args: Record<string, unknown>) =>
+    handlers[cmd](args) as T;
+
+  test("save reuses and replaces like the backend, and undo puts it back", () => {
+    const handlers = createPreviewHandlers();
+    const save = (category: string) =>
+      call<{ created: string[]; replaced: { sender: string }[] }>(handlers, "save_sender_rules", {
+        accountId: "acc-personal",
+        senders: ["News@X.com"],
+        category,
+      });
+    const list = () =>
+      call<{ sender: string; category: string }[]>(handlers, "list_sender_rules", {
+        accountId: "acc-personal",
+      });
+
+    const first = save("CATEGORY_UPDATES");
+    expect(first.created).toHaveLength(1);
+    expect(list()).toEqual([expect.objectContaining({ sender: "news@x.com" })]);
+    expect(save("CATEGORY_UPDATES").created).toEqual([]);
+    const moved = save("CATEGORY_SOCIAL");
+    expect(moved.replaced).toEqual([expect.objectContaining({ sender: "news@x.com" })]);
+    expect(list().map((r) => r.category)).toEqual(["CATEGORY_SOCIAL"]);
+    call(handlers, "undo_sender_rules", { accountId: "acc-personal", saved: moved });
+    expect(list().map((r) => r.category)).toEqual(["CATEGORY_UPDATES"]);
+  });
+
+  test("rule senders skip the account's own mail", () => {
+    const handlers = createPreviewHandlers();
+    const thread = createFixtureThreads().find((t) => t.accountId === "acc-personal")!;
+    const senders = call<string[]>(handlers, "rule_senders", {
+      accountId: "acc-personal",
+      threadIds: [thread.id],
+    });
+    expect(senders).not.toContain(fixtureAccounts[0].email);
+  });
+
+  test("?senderRules=missing answers like an account without filters access", () => {
+    const handlers = createPreviewHandlers("?senderRules=missing");
+    expect(() => handlers.list_sender_rules({ accountId: "acc-personal" })).toThrow(
+      expect.objectContaining({ code: "missing_scope" }),
+    );
+  });
+});
