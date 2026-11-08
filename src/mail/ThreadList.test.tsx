@@ -644,3 +644,42 @@ describe("label chips", () => {
     expect(r.getByText("+2")).toBeInTheDocument();
   });
 });
+
+describe("list density", () => {
+  const load = () => {
+    useMailStore.setState({ threads: many(3), loading: false, next: null });
+    return render(<ThreadList {...props()} />);
+  };
+
+  test("comfortable shows the snippet", () => {
+    load();
+    expect(screen.getByRole("listbox")).toHaveAttribute("data-density", "comfortable");
+    expect(screen.getByText("Snippet 1")).toBeInTheDocument();
+  });
+
+  test("compact leaves the snippet out", () => {
+    useUiStore.setState({ listDensity: "compact" });
+    load();
+    expect(screen.getByRole("listbox")).toHaveAttribute("data-density", "compact");
+    expect(screen.getByText("Subject 1")).toBeInTheDocument();
+    expect(screen.queryByText("Snippet 1")).not.toBeInTheDocument();
+  });
+
+  test("compact rows render at the height the list estimates for them", async () => {
+    // Vitest hands tests empty CSS modules, so read the stylesheet itself (untyped: the app has no Node types).
+    const fs: { readFileSync(path: string, encoding: "utf8"): string } = await import(
+      "node:fs" as string
+    );
+    const style = document.createElement("style");
+    style.textContent = fs.readFileSync("src/mail/mail.css", "utf8");
+    document.head.append(style);
+    try {
+      useUiStore.setState({ listDensity: "compact" });
+      const { container } = load();
+      const row = container.querySelector<HTMLElement>(".thread-row")!;
+      expect(getComputedStyle(row).height).toBe("var(--row-height-thread-compact)");
+    } finally {
+      style.remove();
+    }
+  });
+});

@@ -135,6 +135,14 @@ test("the list row offers a recent code; clicking it copies without opening the 
   expect(useUiStore.getState().openThread).toBeNull();
 });
 
+test("compact rows keep the code chip on the subject line", () => {
+  useUiStore.setState({ listDensity: "compact" });
+  useMailStore.setState({ threads: [summary()] });
+  render(<ThreadList title="Inbox" onRowAction={vi.fn()} rowMenu={() => []} />);
+  fireEvent.click(screen.getByRole("button", { name: "Copy verification code 779693" }));
+  expect(writeText).toHaveBeenCalledWith("779693");
+});
+
 test("the list chip goes away once the code is an hour old, without anything else re-rendering", () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   try {

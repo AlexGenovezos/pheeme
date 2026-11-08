@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "vitest";
-import { LAYOUT_KEY, __resetUiStoreForTests, useUiStore } from "./uiStore";
+import { LAYOUT_KEY, __resetUiStoreForTests, readLayout, useUiStore } from "./uiStore";
 
 const ui = () => useUiStore.getState();
 const stored = () => JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "null");
@@ -193,4 +193,21 @@ test("unread filters are independent per account, label and category, and reset 
   ui().toggleUnreadOnly();
   __resetUiStoreForTests();
   expect(ui().unreadMailboxes).toEqual({});
+});
+
+test("list density defaults to comfortable and persists in the layout", () => {
+  expect(ui().listDensity).toBe("comfortable");
+  ui().setListDensity("compact");
+  expect(ui().listDensity).toBe("compact");
+  expect(stored().listDensity).toBe("compact");
+  expect(readLayout().listDensity).toBe("compact");
+  __resetUiStoreForTests();
+  expect(ui().listDensity).toBe("compact");
+});
+
+test("an unknown stored list density reads as comfortable", () => {
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify({ listDensity: "tiny" }));
+  expect(readLayout().listDensity).toBe("comfortable");
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarWidth: 200 }));
+  expect(readLayout().listDensity).toBe("comfortable");
 });

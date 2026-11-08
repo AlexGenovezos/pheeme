@@ -124,6 +124,7 @@ describe("layout storage", () => {
       sidebarWidth: 220,
       listWidth: PANE.listDefault,
       sidebarCollapsed: false,
+      listDensity: "comfortable",
     });
     localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarWidth: 9999, listWidth: 10 }));
     expect(readLayout()).toMatchObject({ sidebarWidth: PANE.sidebarMax, listWidth: PANE.listMin });

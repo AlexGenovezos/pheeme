@@ -31,6 +31,8 @@ export interface ThreadRowProps {
   /** One-based place in the list, and the list's size (-1 while more pages exist). */
   position: number;
   setSize: number;
+  /** Compact density: no snippet line. */
+  compact: boolean;
   /** The conversation shown in the reading pane. */
   open: boolean;
   /** Part of the multi-selection. */
@@ -56,6 +58,7 @@ export const ThreadRow = memo(function ThreadRow({
   thread,
   position,
   setSize,
+  compact,
   open,
   checked,
   showAccountDot,
@@ -223,11 +226,12 @@ export const ThreadRow = memo(function ThreadRow({
               )}
             </span>
           )}
+          {compact && code && <CodeChip code={code} />}
           {thread.subject ?? "(no subject)"}
         </>
       }
       description={
-        code ? (
+        compact ? undefined : code ? (
           <>
             <CodeChip code={code} />
             {thread.snippet}

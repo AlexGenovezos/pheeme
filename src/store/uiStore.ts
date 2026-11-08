@@ -20,10 +20,14 @@ export const PANE = {
 
 export const LAYOUT_KEY = "pheeme.layout";
 
+/** Comfortable shows sender, subject and snippet; compact drops the snippet. */
+export type ListDensity = "comfortable" | "compact";
+
 export interface PaneLayout {
   sidebarWidth: number;
   listWidth: number;
   sidebarCollapsed: boolean;
+  listDensity: ListDensity;
 }
 
 /** Navigation choices that survive a restart, stored beside the layout. */
@@ -43,6 +47,7 @@ const DEFAULT_LAYOUT: PaneLayout = {
   sidebarWidth: PANE.sidebarDefault,
   listWidth: PANE.listDefault,
   sidebarCollapsed: false,
+  listDensity: "comfortable",
 };
 
 const clamp = (n: number, min: number, max: number) =>
@@ -78,6 +83,7 @@ export function readLayout(
     listWidth:
       typeof raw.listWidth === "number" ? clampList(raw.listWidth) : DEFAULT_LAYOUT.listWidth,
     sidebarCollapsed: raw.sidebarCollapsed === true,
+    listDensity: raw.listDensity === "compact" ? "compact" : "comfortable",
   };
 }
 
@@ -149,6 +155,7 @@ interface UiState extends PaneLayout, NavPrefs {
   resetSidebarWidth(): void;
   resetListWidth(): void;
   toggleSidebar(): void;
+  setListDensity(density: ListDensity): void;
   /** Go to a mailbox: clears the open thread and selection. An account mailbox also becomes the active account. */
   setMailbox(ref: MailboxRef): void;
   /** Show `accountId`'s Favorites and labels in the sidebar, leaving the mailbox as it is. */
@@ -178,6 +185,7 @@ const persistedOf = (s: Persisted): Persisted => ({
   sidebarWidth: s.sidebarWidth,
   listWidth: s.listWidth,
   sidebarCollapsed: s.sidebarCollapsed,
+  listDensity: s.listDensity,
   activeAccountId: s.activeAccountId,
   collapsedAccounts: s.collapsedAccounts,
   foldedLabels: s.foldedLabels,
@@ -230,6 +238,7 @@ export const useUiStore = create<UiState>((set, get) => {
     resetSidebarWidth: () => persist({ sidebarWidth: PANE.sidebarDefault }),
     resetListWidth: () => persist({ listWidth: PANE.listDefault }),
     toggleSidebar: () => persist({ sidebarCollapsed: !get().sidebarCollapsed }),
+    setListDensity: (listDensity) => persist({ listDensity }),
     setMailbox: (ref) => {
       set({ searchText: "", openThread: null, checked: [], anchor: null });
       persist({
