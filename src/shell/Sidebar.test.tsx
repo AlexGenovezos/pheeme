@@ -300,9 +300,10 @@ describe("stacked layout", () => {
   test("account headers carry their account color dot", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
-    expect(accountHeader(TWO.email).querySelector(".sidebar__account-dot")).toHaveStyle({
-      background: "var(--color-account-2)",
-    });
+    expect(
+      accountHeader(TWO.email).querySelector<HTMLElement>(".sidebar__account-dot")?.style
+        .background,
+    ).toBe("var(--color-account-2)");
   });
 
   test("sync error on an account shows a warning on its header", async () => {
