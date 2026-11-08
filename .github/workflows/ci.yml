@@ -27,7 +27,7 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-22.04]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-build
         with:
           cache-key: ${{ matrix.os || 'ubuntu-22.04' }}-debug
@@ -45,7 +45,7 @@ jobs:
         run: npx playwright test e2e/mods.spec.ts e2e/email-keyboard.spec.ts e2e/unread-filter.spec.ts e2e/search.spec.ts e2e/sync-progress.spec.ts e2e/custom-themes.spec.ts e2e/category-move.spec.ts --reporter=list,html
       - name: Mod UI evidence
         if: always() && matrix.os == 'ubuntu-22.04'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mod-ui-evidence
           path: |
@@ -61,27 +61,27 @@ jobs:
       - name: Rust clippy
         if: matrix.os == 'ubuntu-22.04'
         working-directory: src-tauri
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: Rust tests
         working-directory: src-tauri
-        run: cargo test
+        run: cargo test --locked
       - name: Keychain round trip
         if: matrix.os != 'ubuntu-22.04'
         working-directory: src-tauri
-        run: cargo test -- --ignored keyring_store_round_trip_on_this_os
+        run: cargo test --locked -- --ignored keyring_store_round_trip_on_this_os
 
   sqlx-cache:
     name: SQLx offline cache
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-build
         with:
           node: "false"
           cache-key: ubuntu-22.04-debug
       # sqlx-cli has no prebuilt binary, so it's built once and cached (the build took ~105s).
       - id: sqlx-cli
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/bin/sqlx
@@ -95,7 +95,7 @@ jobs:
           export DATABASE_URL="sqlite://$PWD/ci.sqlite"
           sqlx database create
           sqlx migrate run --source src/db/migrations
-          cargo sqlx prepare --check -- --all-targets
+          cargo sqlx prepare --check -- --all-targets --locked
 
   bundle:
     name: Bundle (${{ matrix.os }})
@@ -107,17 +107,17 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-22.04]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-build
         with:
           cache-key: ${{ matrix.os || 'ubuntu-22.04' }}-debug
       - run: npm ci
       - name: Bundle (deb)
         if: matrix.os == 'ubuntu-22.04'
-        run: npx tauri build --debug --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: npx tauri build --debug --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
       - name: Bundle (nsis)
         if: matrix.os == 'windows-latest'
-        run: npx tauri build --debug --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: npx tauri build --debug --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
       # Runs the installer the way a user does (no flags). Our template
       # (src-tauri/windows/installer.nsi) makes that a one-click install, so it
       # must finish with no input and open Pheeme; a wizard page would wait forever.
@@ -149,8 +149,8 @@ jobs:
           Stop-Process -Name pheeme -Force
       - name: Bundle (dmg)
         if: matrix.os == 'macos-latest'
-        run: npx tauri build --debug --bundles dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
-      - uses: actions/upload-artifact@v7
+        run: npx tauri build --debug --bundles dmg --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
           name: pheeme-${{ matrix.os }}
@@ -166,20 +166,20 @@ jobs:
     name: Coverage
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-build
         with:
           rust-components: llvm-tools-preview
           cache-key: ubuntu-22.04-coverage
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
-          tool: cargo-llvm-cov
+          tool: cargo-llvm-cov@0.9.1
       - name: Rust coverage
         working-directory: src-tauri
         shell: bash
         run: |
           set +e
-          cargo llvm-cov --summary-only --fail-under-lines 75 | tee rust-coverage.txt
+          cargo llvm-cov --locked --summary-only --fail-under-lines 75 | tee rust-coverage.txt
           status=${PIPESTATUS[0]}
           { echo '### Rust coverage'; echo '```'; grep -E "^(Filename|TOTAL)" rust-coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"

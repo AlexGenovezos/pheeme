@@ -5,6 +5,10 @@
 See [Develop on macOS](README.md#develop-on-macos) in the README and the commands in
 [CLAUDE.md](CLAUDE.md#commands) for the first checkout, dev server, tests and the SQLx offline cache.
 
+Dependencies are pinned. `package.json` lists exact versions (`.npmrc` saves new ones exact), CI
+reads Node's version from `.nvmrc` and runs every `cargo` build with `--locked`, and workflow
+actions are pinned to commit SHAs. Dependabot proposes updates weekly, once a release is 3 days old.
+
 ## Read this first
 
 Contributions are welcome. Pheeme is maintained by one person, so this guide exists to keep reviews quick:
