@@ -883,7 +883,8 @@ pub async fn unread_counts(
     excludes: &HashMap<String, Vec<String>>,
 ) -> Result<Vec<(String, i64)>> {
     let accounts = serde_json::to_string(account_ids)?;
-    // `[account_id, label_id]` pairs, matched per account in the Primary branch.
+    // `[account_id, label_id]` pairs, parsed once into `ex` and matched per account in the
+    // Primary branch.
     let pairs: Vec<(&str, &str)> = account_ids
         .iter()
         .filter_map(|a| excludes.get(a).map(|labels| (a, labels)))
@@ -892,6 +893,9 @@ pub async fn unread_counts(
     let excluded = serde_json::to_string(&pairs)?;
     let rows = sqlx::query!(
         r#"
+        WITH ex(account_id, label_id) AS MATERIALIZED (
+            SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?2)
+        )
         SELECT label_id AS "label_id!", COUNT(*) AS "count!: i64"
         FROM (
             SELECT x.label_id AS label_id
@@ -910,11 +914,10 @@ pub async fn unread_counts(
               ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'
             WHERE u.label_id = 'UNREAD' AND u.account_id IN (SELECT value FROM json_each(?1))
               AND NOT EXISTS (
-                    SELECT 1 FROM thread_labels c
-                    WHERE c.account_id = u.account_id AND c.thread_id = u.thread_id
-                      AND c.label_id IN (
-                            SELECT json_extract(e.value, '$[1]') FROM json_each(?2) e
-                            WHERE json_extract(e.value, '$[0]') = u.account_id))
+                    SELECT 1 FROM ex CROSS JOIN thread_labels c
+                      ON c.account_id = u.account_id AND c.thread_id = u.thread_id
+                     AND c.label_id = ex.label_id
+                    WHERE ex.account_id = u.account_id)
         )
         GROUP BY label_id
         ORDER BY label_id
