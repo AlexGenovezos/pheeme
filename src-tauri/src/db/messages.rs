@@ -310,6 +310,42 @@ pub async fn trim_old_bodies<'e>(
     Ok(done.rows_affected())
 }
 
+/// Drop the cached bodies of up to `limit` messages, whatever their age, except drafts (whose
+/// body is what the compose panel edits). Like [`trim_old_bodies`], they go back to metadata
+/// only. Returns how many were cleared.
+pub async fn clear_bodies<'e>(ex: impl SqliteExecutor<'e>, limit: i64) -> Result<u64> {
+    let done = sqlx::query!(
+        r#"UPDATE messages
+           SET body_html = NULL, body_text = NULL, raw_headers = NULL,
+               fully_fetched = 0, body_fetched_at = NULL
+           WHERE rowid IN (
+             SELECT rowid FROM messages
+             WHERE body_fetched_at IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM json_each(messages.label_ids) WHERE value = 'DRAFT')
+             LIMIT ?
+           )"#,
+        limit
+    )
+    .execute(ex)
+    .await?;
+    Ok(done.rows_affected())
+}
+
+/// `(account id, thread id)` of every thread with a cached body [`clear_bodies`] would drop.
+pub async fn threads_with_bodies(pool: &SqlitePool) -> Result<Vec<(String, String)>> {
+    let rows = sqlx::query!(
+        r#"SELECT DISTINCT account_id AS "account_id!", thread_id AS "thread_id!" FROM messages
+           WHERE body_fetched_at IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM json_each(messages.label_ids) WHERE value = 'DRAFT')"#
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.account_id, r.thread_id))
+        .collect())
+}
+
 /// The From address of `thread_id`'s latest message not sent from `own_address`, or `None` when
 /// every message is the account's own (or has no sender).
 pub async fn latest_sender_other_than(

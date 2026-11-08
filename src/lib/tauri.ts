@@ -311,6 +311,13 @@ export const openAttachment = (accountId: string, messageId: string, attachmentI
   invoke<void>("open_attachment", { accountId, messageId, attachmentId });
 /** Shows a file saved by `saveAttachment` in the system file manager. */
 export const revealDownload = (path: string) => invoke<void>("reveal_download", { path });
+/** What `clearDownloadedMail` removed: emails whose text went, and bytes of attachments. */
+export interface ClearedDownloads {
+  messages: number;
+  bytes: number;
+}
+/** Drops every downloaded email body (except drafts) and cached attachment, for all accounts. */
+export const clearDownloadedMail = () => invoke<ClearedDownloads>("clear_downloaded_mail");
 /** Opens an http, https or mailto link from an email; anything else is rejected. */
 export const openMailLink = (url: string) => invoke<void>("open_mail_link", { url });
 export interface SearchPage extends ThreadPage {
