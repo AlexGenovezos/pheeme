@@ -159,8 +159,10 @@
   --onboarding-content-width: 560px;
   --intro-art-column: 420px;
   --intro-art-size: 360px;
-  --intro-copy-width: 430px;
-  --intro-icon-size: 32px;
+  /* Wide enough for the headline, and each point beside its icon, on one line. */
+  --intro-copy-width: 540px;
+  /* A point's icon spans its title and its one line of text. */
+  --intro-icon-size: 36px;
   --intro-backdrop-blur: 40px;
   --intro-backdrop-bleed: 60px;
   --step-dot-size: 20px;

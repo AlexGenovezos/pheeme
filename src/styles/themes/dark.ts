@@ -2,7 +2,7 @@ import { buildTheme, type ThemeSource } from "./build";
 
 /**
  * Pheeme Dark. Deep graphite with a green cast (not pure black), lifted
- * verdigris accent. Keep --color-app-bg in sync with the critical style in
+ * ink-blue accent. Keep --color-app-bg in sync with the critical style in
  * index.html and the window backgroundColor in tauri.conf.json.
  */
 export const darkSource: ThemeSource = {
@@ -21,13 +21,13 @@ export const darkSource: ThemeSource = {
     "--color-foreground-muted": "#9ba6a6",
     "--color-foreground-subtle": "#97a2a2",
     "--color-foreground-disabled": "#6b7676",
-    "--color-link": "#66d0c6",
-    "--color-selection-bg": "#24524d",
+    "--color-link": "#9fb5f6",
+    "--color-selection-bg": "#2b3c6b",
 
-    "--color-accent": "#4cc2b7",
-    "--color-accent-foreground": "#0a1e1c",
-    "--color-focus-border": "#4cc2b7",
-    "--color-unread-indicator": "#4cc2b7",
+    "--color-accent": "#8ba5f2",
+    "--color-accent-foreground": "#0b1530",
+    "--color-focus-border": "#8ba5f2",
+    "--color-unread-indicator": "#8ba5f2",
 
     "--color-button-secondary-bg": "#262d2e",
     "--color-control-hover-bg": "#ffffff0f",
@@ -36,8 +36,8 @@ export const darkSource: ThemeSource = {
     "--color-input-placeholder": "#a0aeae",
 
     "--color-list-hover-bg": "#1e2425",
-    "--color-list-active-bg": "#183a37",
-    "--color-list-active-foreground": "#e6f5f3",
+    "--color-list-active-bg": "#1e2b4f",
+    "--color-list-active-foreground": "#e8edfb",
     "--color-list-inactive-bg": "#232a2b",
 
     "--color-badge-bg": "#2a3233",
@@ -47,11 +47,11 @@ export const darkSource: ThemeSource = {
     "--color-kbd-border": "#3a4243",
 
     "--color-menu-bg": "#1f2526",
-    "--color-menu-selection-bg": "#1f6c65",
+    "--color-menu-selection-bg": "#2d4a9e",
     "--color-menu-selection-foreground": "#ffffff",
     "--color-menu-separator": "#2c3334",
     "--color-palette-bg": "#1c2122",
-    "--color-palette-active-bg": "#1d3f3b",
+    "--color-palette-active-bg": "#222f57",
     "--color-toast-bg": "#2a3132",
     "--color-toast-foreground": "#e4e9e9",
     "--color-toast-border": "#3a4243",

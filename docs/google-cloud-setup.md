@@ -7,10 +7,10 @@ over.
 
 This is what keeps Pheeme free and private:
 
-- **Completely free.** Google gives your own app Gmail access at no charge.
-  There's no Pheeme server to pay for, so no subscription.
+- **Completely free.** Google gives your own app Gmail access at no charge. No
+  server, no subscription.
 - **You own your data.** Mail goes straight from Google to your computer.
-  Nobody in between can read it, including us.
+  Nobody in between, not even us.
 
 The welcome screen also has a switch for anonymous usage stats (once a day, a
 random ID, the app version, your operating system and chip type; see the

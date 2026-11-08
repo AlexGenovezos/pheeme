@@ -44,18 +44,19 @@ export const INTRO = {
   eyebrow: "Welcome to Pheeme",
   title: "Free for good, and your mail stays yours.",
   lead: "Before you sign in, you'll set up a small Google Cloud app of your own. It takes about 15 minutes, once, and it's what keeps Pheeme free and private.",
+  /** Each body fits one line of the intro's copy column. */
   points: [
     {
       title: "Completely free",
-      body: "Google gives your own app Gmail access at no charge. There's no Pheeme server to pay for, so no subscription.",
+      body: "Google gives your own app Gmail access at no charge. No server, no subscription.",
     },
     {
       title: "You own your data",
-      body: "Mail goes straight from Google to this computer. Nobody in between can read it, including us.",
+      body: "Mail goes straight from Google to this computer. Nobody in between, not even us.",
     },
     {
       title: "Set it up once",
-      body: "Every Google account you add can share the same app, and your other devices can copy it over.",
+      body: "Every account you add shares the same app, and your other devices can copy it.",
     },
   ],
   guideUrl: "https://github.com/AlexGenovezos/pheeme/blob/main/docs/google-cloud-setup.md",
