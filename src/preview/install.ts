@@ -141,6 +141,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   let gmailQuota = 6000;
   let trayIcon = true;
   let telemetry = true;
+  const inboxTabs = new Map<string, string[]>();
+  const hiddenTabs = (accountId: string) => inboxTabs.get(accountId) ?? [];
   const desktopSettings = () => ({
     accounts: accounts.map((a) => ({
       accountId: a.id,
@@ -189,6 +191,17 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       return gmailQuota;
     },
     list_labels: (args) => labelsFor(labels, String(args?.accountId)),
+    inbox_tabs: (args) => [...(inboxTabs.get(String(args?.accountId)) ?? [])],
+    // Like the backend: keeps only the four hideable tabs, then tells the stores to reload.
+    set_inbox_tabs: (args) => {
+      const accountId = String(args?.accountId);
+      const hidden = CATEGORY_IDS.filter(
+        (c) => c !== "CATEGORY_PERSONAL" && stringsOf(args?.hidden).includes(c),
+      );
+      inboxTabs.set(accountId, hidden);
+      void emit(SYNC_EVENTS.labelsUpdated, { accountId }).catch(() => {});
+      return [...hidden];
+    },
     ...createLabelHandlers(labels, threads),
     ...createSenderRuleHandlers(
       threads,
@@ -206,6 +219,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
         String(args?.labelId ?? "INBOX"),
         args?.alsoLabelId ? String(args.alsoLabelId) : null,
         accountIdsOf(args),
+        hiddenTabs,
       )
         .filter(
           (t) =>
@@ -228,7 +242,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     mailbox_counts: (args): MailboxCount[] => {
       const ids = accountIdsOf(args);
       const unread = (category: string | null) =>
-        threadsIn(threads, "INBOX", category, ids).filter((t) => hasLabel(t, "UNREAD")).length;
+        threadsIn(threads, "INBOX", category, ids, hiddenTabs).filter((t) => hasLabel(t, "UNREAD"))
+          .length;
       return [
         { labelId: "INBOX", unread: unread(null) },
         ...CATEGORY_IDS.map((c) => ({ labelId: c, unread: unread(c) })),

@@ -453,6 +453,7 @@ impl AccountService {
         let id = account_id.to_owned();
         self.keychain(move |store| store.delete(&id)).await?;
         db_accounts::delete_account(&self.db, account_id).await?;
+        crate::db::settings::delete_inbox_tabs(&self.db, account_id).await?;
         lock(&self.tokens).remove(account_id);
         Ok(())
     }
@@ -545,7 +546,7 @@ mod tests {
     const CLIENT_B: &str = "b.apps.googleusercontent.com";
 
     struct Harness {
-        _db: TestDb,
+        db: TestDb,
         service: AccountService,
         secrets: Arc<MemoryStore>,
         server: MockServer,
@@ -568,7 +569,7 @@ mod tests {
             Duration::from_secs(10),
         );
         Harness {
-            _db: db,
+            db,
             service,
             secrets,
             server,
@@ -900,6 +901,33 @@ mod tests {
             .await;
         h.service.remove_account(&account.id).await.unwrap();
         assert!(h.service.list_accounts().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remove_account_forgets_inbox_tabs() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+        Mock::given(path("/revoke"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&h.server)
+            .await;
+        let pool = &h.db.pool;
+        crate::db::settings::set_inbox_tabs(pool, &account.id, &["CATEGORY_SOCIAL".to_owned()])
+            .await
+            .unwrap();
+        let key = format!("inbox_tabs.{}", account.id);
+        let stored = || async {
+            sqlx::query_scalar::<_, String>("SELECT value FROM app_settings WHERE key = ?")
+                .bind(&key)
+                .fetch_optional(pool)
+                .await
+                .unwrap()
+        };
+        assert!(stored().await.is_some());
+
+        h.service.remove_account(&account.id).await.unwrap();
+        assert_eq!(stored().await, None);
     }
 
     #[tokio::test]

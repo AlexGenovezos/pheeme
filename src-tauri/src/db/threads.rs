@@ -870,7 +870,8 @@ pub async fn recompute_threads(
 
 /// Unread thread counts across `account_ids` for `INBOX` and each inbox category tab.
 /// A category is `INBOX ∩ CATEGORY_x`; `CATEGORY_PERSONAL` (Primary) is the unread inbox
-/// minus the other four categories, so an account without category labels still has its
+/// minus the account's `excludes` (the categories whose tabs it shows; an account missing
+/// from the map excludes nothing), so an account without category labels still has its
 /// whole inbox under Primary. Labels with no unread threads are omitted.
 ///
 /// Walks the `UNREAD` rows of `idx_thread_labels_listing`, not the inbox: a large inbox is
@@ -879,10 +880,22 @@ pub async fn recompute_threads(
 pub async fn unread_counts(
     pool: &SqlitePool,
     account_ids: &[String],
+    excludes: &HashMap<String, Vec<String>>,
 ) -> Result<Vec<(String, i64)>> {
     let accounts = serde_json::to_string(account_ids)?;
+    // `[account_id, label_id]` pairs, parsed once into `ex` and matched per account in the
+    // Primary branch.
+    let pairs: Vec<(&str, &str)> = account_ids
+        .iter()
+        .filter_map(|a| excludes.get(a).map(|labels| (a, labels)))
+        .flat_map(|(a, labels)| labels.iter().map(move |l| (a.as_str(), l.as_str())))
+        .collect();
+    let excluded = serde_json::to_string(&pairs)?;
     let rows = sqlx::query!(
         r#"
+        WITH ex(account_id, label_id) AS MATERIALIZED (
+            SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?2)
+        )
         SELECT label_id AS "label_id!", COUNT(*) AS "count!: i64"
         FROM (
             SELECT x.label_id AS label_id
@@ -901,15 +914,16 @@ pub async fn unread_counts(
               ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'
             WHERE u.label_id = 'UNREAD' AND u.account_id IN (SELECT value FROM json_each(?1))
               AND NOT EXISTS (
-                    SELECT 1 FROM thread_labels c
-                    WHERE c.account_id = u.account_id AND c.thread_id = u.thread_id
-                      AND c.label_id IN ('CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS',
-                                         'CATEGORY_UPDATES', 'CATEGORY_FORUMS'))
+                    SELECT 1 FROM ex CROSS JOIN thread_labels c
+                      ON c.account_id = u.account_id AND c.thread_id = u.thread_id
+                     AND c.label_id = ex.label_id
+                    WHERE ex.account_id = u.account_id)
         )
         GROUP BY label_id
         ORDER BY label_id
         "#,
-        accounts
+        accounts,
+        excluded
     )
     .fetch_all(pool)
     .await?;
@@ -1021,6 +1035,11 @@ mod tests {
 
     fn labels(ids: &[&str]) -> Vec<String> {
         ids.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// Every tab shown: Primary excludes all four other categories in each account.
+    fn every_tab(ids: &[String]) -> HashMap<String, Vec<String>> {
+        ids.iter().map(|a| (a.clone(), labels(&OTHERS))).collect()
     }
 
     fn account(id: &str) -> DbAccount {
@@ -1849,7 +1868,8 @@ mod tests {
         )
         .await;
 
-        let counts = unread_counts(&pool, &labels(&["a1"])).await.unwrap();
+        let a1 = labels(&["a1"]);
+        let counts = unread_counts(&pool, &a1, &every_tab(&a1)).await.unwrap();
         let count = |id: &str| counts.iter().find(|(l, _)| l == id).map(|(_, n)| *n);
         assert_eq!(count("CATEGORY_PERSONAL"), Some(2));
         assert_eq!(count("INBOX"), Some(3));
@@ -1859,10 +1879,46 @@ mod tests {
         let pool = seeded_pool().await;
         seed(&pool, "a1", "t1", Some(200), &["INBOX", "UNREAD"]).await;
         seed(&pool, "a1", "t2", Some(100), &["INBOX", "UNREAD"]).await;
-        let counts = unread_counts(&pool, &labels(&["a1"])).await.unwrap();
+        let a1 = labels(&["a1"]);
+        let counts = unread_counts(&pool, &a1, &every_tab(&a1)).await.unwrap();
         assert_eq!(
             counts,
             vec![("CATEGORY_PERSONAL".to_owned(), 2), ("INBOX".to_owned(), 2)]
+        );
+    }
+
+    #[tokio::test]
+    async fn unread_counts_primary_absorbs_hidden_tabs_per_account() {
+        let pool = seeded_pool().await;
+        for account in ["a1", "a2"] {
+            seed(&pool, account, "plain", Some(200), &["INBOX", "UNREAD"]).await;
+            seed(
+                &pool,
+                account,
+                "social",
+                Some(100),
+                &["INBOX", "UNREAD", "CATEGORY_SOCIAL"],
+            )
+            .await;
+        }
+        // a1 hides Social; a2 shows every tab.
+        let excludes = HashMap::from([
+            (
+                "a1".to_owned(),
+                labels(&["CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS"]),
+            ),
+            ("a2".to_owned(), labels(&OTHERS)),
+        ]);
+        let counts = unread_counts(&pool, &labels(&["a1", "a2"]), &excludes)
+            .await
+            .unwrap();
+        assert_eq!(
+            counts,
+            vec![
+                ("CATEGORY_PERSONAL".to_owned(), 3),
+                ("CATEGORY_SOCIAL".to_owned(), 2),
+                ("INBOX".to_owned(), 4),
+            ]
         );
     }
 
@@ -2140,7 +2196,7 @@ mod tests {
             .unwrap();
             assert!(!expected.is_empty());
             assert_eq!(
-                unread_counts(&pool, &ids).await.unwrap(),
+                unread_counts(&pool, &ids, &every_tab(&ids)).await.unwrap(),
                 expected,
                 "{scope:?}"
             );

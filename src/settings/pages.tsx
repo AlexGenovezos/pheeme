@@ -6,6 +6,7 @@ import {
   Info,
   Filter,
   Keyboard,
+  LayoutList,
   LifeBuoy,
   Palette,
   Puzzle,
@@ -28,6 +29,7 @@ import { AboutSettings } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
 import { ContactsSettings } from "./ContactsSettings";
 import { DiagnosticsSection } from "./DiagnosticsSection";
+import { InboxTabsSettings } from "./InboxTabsSettings";
 import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
 import { SenderRulesSettings } from "./SenderRulesSettings";
@@ -323,6 +325,15 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       "address book",
     ],
     Component: ContactsSettings,
+  },
+  {
+    id: "inboxTabs",
+    title: "Inbox tabs",
+    icon: LayoutList,
+    group: "Mail",
+    keywords: ["categories", "tabs", "social", "promotions", "updates", "forums", "primary"],
+    Component: InboxTabsSettings,
+    matches: accountsMatch,
   },
   {
     id: "senderRules",

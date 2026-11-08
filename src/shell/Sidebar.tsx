@@ -43,7 +43,6 @@ import { cx } from "../lib/utils";
 import {
   accountColorIndex,
   ALL_INBOXES,
-  CATEGORIES,
   categoryMailbox,
   FAVORITES,
   formatCount,
@@ -56,6 +55,7 @@ import { composeNew } from "../mail/actions";
 import { dropTarget } from "../mail/dragMail";
 import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
 import { type SyncFailure, useAccountStore } from "../store/accountStore";
+import { useInboxTabs, visibleCategories } from "../store/inboxTabsStore";
 import { useLabelStore } from "../store/labelStore";
 import { focusFromKeyboard } from "../keyboard/focus";
 import { registry } from "../keyboard/registry";
@@ -176,9 +176,11 @@ function MailboxRow({
 
 function CategoryRows({ accountId }: { accountId: string }) {
   const counts = useLabelStore((s) => s.categoryCounts[accountId] ?? NO_COUNTS);
+  useInboxTabs((s) => s.hidden[accountId]); // re-render when the tabs change
+  const rows = visibleCategories(accountId);
   return (
     <>
-      {CATEGORIES.map((c) => (
+      {rows.map((c) => (
         <MailboxRow
           key={c.labelId}
           name={c.name}

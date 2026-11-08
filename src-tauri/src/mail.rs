@@ -8,7 +8,7 @@ use crate::db::attachments::{self, DbAttachment};
 use crate::db::messages::{parse_labels, DbMessage};
 use crate::db::search::{self as search_db, ThreadSearch, LABEL_KEY_SEP};
 use crate::db::threads::{self, DbThread, ThreadCursor, ThreadQuery};
-use crate::db::{labels, messages};
+use crate::db::{labels, messages, settings};
 use crate::diagnostics::{ms_since, OpenTiming, OpenTimings, ShownTiming, ShownTimings};
 use crate::gmail::mime::EmailAddress;
 use crate::gmail::probe::{with_probe, ProbeStage, ProbeStats, RequestProbe};
@@ -39,6 +39,16 @@ pub const OTHER_CATEGORIES: [&str; 4] = [
     "CATEGORY_FORUMS",
 ];
 const PRIMARY_CATEGORY: &str = "CATEGORY_PERSONAL";
+
+/// What Primary leaves out when the account hides the `hidden` tabs: the other
+/// categories still shown (a hidden tab's mail shows under Primary).
+pub fn primary_excludes(hidden: &[String]) -> Vec<String> {
+    OTHER_CATEGORIES
+        .iter()
+        .filter(|l| !hidden.iter().any(|h| h == *l))
+        .map(|l| (*l).to_owned())
+        .collect()
+}
 pub const MAX_PAGE: i64 = 500;
 
 #[derive(Debug, thiserror::Error)]
@@ -496,7 +506,8 @@ impl MailService {
     /// Threads under `label_id` (and `also_label_id`, for a category tab) across
     /// `account_ids`, newest first. `label_id == ALL_MAIL` lists everything outside
     /// Spam and Trash; `also_label_id == CATEGORY_PERSONAL` lists `label_id` minus the
-    /// other categories, so accounts without category labels still show their inbox.
+    /// categories whose tabs the account shows, so accounts without category labels still
+    /// show their inbox (category tabs are always one account's, `account_ids[0]`).
     /// `read_filter`: None lists all rows; Some lists unread plus the supplied account/thread pairs.
     pub async fn list_threads(
         &self,
@@ -518,10 +529,11 @@ impl MailService {
                 .await?
         } else {
             let primary = also_label_id == Some(PRIMARY_CATEGORY);
-            let exclude: Vec<String> = if primary {
-                OTHER_CATEGORIES.iter().map(|l| (*l).to_owned()).collect()
-            } else {
-                Vec::new()
+            let exclude: Vec<String> = match account_ids.first() {
+                Some(account_id) if primary => {
+                    primary_excludes(&settings::inbox_tabs(&self.db, account_id).await?)
+                }
+                _ => Vec::new(),
             };
             threads::list_threads(
                 &self.db,
@@ -730,13 +742,44 @@ impl MailService {
             .collect())
     }
 
-    /// Unread conversations in Inbox and each category tab, across `account_ids`.
+    /// Unread conversations in Inbox and each category tab, across `account_ids`. Each
+    /// account's Primary takes in the mail of the tabs it hides.
     pub async fn mailbox_counts(&self, account_ids: &[String]) -> Result<Vec<CountDto>, MailError> {
-        Ok(threads::unread_counts(&self.db, account_ids)
+        let mut excludes = HashMap::new();
+        for account_id in account_ids {
+            let hidden = settings::inbox_tabs(&self.db, account_id).await?;
+            excludes.insert(account_id.clone(), primary_excludes(&hidden));
+        }
+        Ok(threads::unread_counts(&self.db, account_ids, &excludes)
             .await?
             .into_iter()
             .map(|(label_id, unread)| CountDto { label_id, unread })
             .collect())
+    }
+
+    /// The inbox tabs `account_id` hides.
+    pub async fn inbox_tabs(&self, account_id: &str) -> Result<Vec<String>, MailError> {
+        Ok(settings::inbox_tabs(&self.db, account_id).await?)
+    }
+
+    /// Hide these inbox tabs of `account_id` (anything but Social, Promotions, Updates and
+    /// Forums is ignored) and show the rest. Returns what's now hidden; emits
+    /// `sync:labels_updated` so counts and lists reload.
+    pub async fn set_inbox_tabs(
+        &self,
+        account_id: &str,
+        hidden: &[String],
+    ) -> Result<Vec<String>, MailError> {
+        let hidden: Vec<String> = OTHER_CATEGORIES
+            .iter()
+            .filter(|l| hidden.iter().any(|h| h == *l))
+            .map(|l| (*l).to_owned())
+            .collect();
+        settings::set_inbox_tabs(&self.db, account_id, &hidden).await?;
+        self.sync.emit(SyncEvent::LabelsUpdated {
+            account_id: account_id.to_owned(),
+        });
+        Ok(hidden)
     }
 
     /// Unread and total conversations per label of one account, counted from the cache.
@@ -1496,6 +1539,67 @@ mod tests {
         assert_eq!(count("INBOX"), Some((3, 4)));
         assert_eq!(count("Label_1"), Some((1, 1)));
         assert_eq!(count("CATEGORY_SOCIAL"), Some((0, 1)));
+    }
+
+    #[tokio::test]
+    async fn list_primary_includes_hidden_tab_mail() {
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
+        let fake = Arc::new(FakeGmail::new());
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"]));
+        fake.seed(FakeMsg::new(
+            "m2",
+            "t2",
+            &["INBOX", "CATEGORY_SOCIAL", "UNREAD"],
+        ));
+        fake.seed(FakeMsg::new(
+            "m3",
+            "t3",
+            &["INBOX", "CATEGORY_PROMOTIONS", "UNREAD"],
+        ));
+        let events = Arc::new(RecordingEvents::default());
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            events.clone(),
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(pool, sync, db.dir().join("cache"));
+        let accounts = ["a1".to_owned()];
+        let list = |tab: &'static str| {
+            let mail = &mail;
+            let accounts = &accounts;
+            async move {
+                let page = mail
+                    .list_threads(accounts, "INBOX", Some(tab), None, None, None)
+                    .await
+                    .unwrap();
+                let mut ids: Vec<String> = page.threads.into_iter().map(|t| t.id).collect();
+                ids.sort();
+                ids
+            }
+        };
+        assert_eq!(list("CATEGORY_PERSONAL").await, ["t1"]);
+
+        events.take();
+        let hidden = mail
+            .set_inbox_tabs("a1", &["CATEGORY_SOCIAL".to_owned(), "X".to_owned()])
+            .await
+            .unwrap();
+        assert_eq!(hidden, ["CATEGORY_SOCIAL"]);
+        assert_eq!(mail.inbox_tabs("a1").await.unwrap(), ["CATEGORY_SOCIAL"]);
+        assert!(events.take().contains(&SyncEvent::LabelsUpdated {
+            account_id: "a1".into()
+        }));
+
+        assert_eq!(list("CATEGORY_PERSONAL").await, ["t1", "t2"]);
+        assert_eq!(list("CATEGORY_SOCIAL").await, ["t2"]);
+        assert_eq!(list("CATEGORY_PROMOTIONS").await, ["t3"]);
+        let counts = mail.mailbox_counts(&accounts).await.unwrap();
+        let count = |id: &str| counts.iter().find(|c| c.label_id == id).map(|c| c.unread);
+        assert_eq!(count("CATEGORY_PERSONAL"), Some(2));
+        assert_eq!(count("CATEGORY_SOCIAL"), Some(1));
     }
 
     #[tokio::test]

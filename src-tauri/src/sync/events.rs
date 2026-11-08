@@ -3,7 +3,8 @@
 
 use serde::Serialize;
 
-/// A newly delivered unread Primary message, emitted only by incremental history sync.
+/// A newly delivered unread Primary message (including mail of the inbox tabs the account
+/// hides, which shows under Primary), emitted only by incremental history sync.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewMail {
@@ -14,24 +15,21 @@ pub struct NewMail {
 }
 
 impl NewMail {
-    pub fn from_message(message: &crate::db::messages::DbMessage) -> Option<Self> {
+    /// `hidden_tabs`: the inbox tabs the message's account hides.
+    pub fn from_message(
+        message: &crate::db::messages::DbMessage,
+        hidden_tabs: &[String],
+    ) -> Option<Self> {
         let labels = message.labels();
         let has = |label: &str| labels.iter().any(|l| l == label);
         // SENT is allowed: mail you send yourself lands unread in the Inbox. Your own replies
         // carry neither INBOX nor UNREAD, so the checks above already keep them silent.
         if message.is_read != 0
             || !has("INBOX")
-            || [
-                "TRASH",
-                "SPAM",
-                "DRAFT",
-                "CATEGORY_SOCIAL",
-                "CATEGORY_PROMOTIONS",
-                "CATEGORY_UPDATES",
-                "CATEGORY_FORUMS",
-            ]
-            .iter()
-            .any(|l| has(l))
+            || ["TRASH", "SPAM", "DRAFT"].iter().any(|l| has(l))
+            || crate::mail::primary_excludes(hidden_tabs)
+                .iter()
+                .any(|l| has(l))
         {
             return None;
         }
@@ -204,6 +202,41 @@ mod tests {
             serde_json::to_value(&e).unwrap(),
             serde_json::json!({"accountId": "a", "threadId": "t", "stage": "retrying",
                 "attempt": 0, "retryInMs": 8000, "reason": "rate_limited", "syncBusy": true})
+        );
+    }
+
+    #[test]
+    fn new_mail_alerts_for_hidden_tab() {
+        let message = crate::db::messages::DbMessage {
+            id: "m".into(),
+            account_id: "a".into(),
+            thread_id: "t".into(),
+            label_ids: Some(r#"["INBOX","UNREAD","CATEGORY_SOCIAL"]"#.into()),
+            from_address: Some("x@example.com".into()),
+            from_name: None,
+            to_addresses: None,
+            cc_addresses: None,
+            subject: None,
+            snippet: None,
+            body_html: None,
+            body_text: None,
+            date: None,
+            size_estimate: None,
+            has_attachment: 0,
+            is_read: 0,
+            is_starred: 0,
+            raw_headers: None,
+            fully_fetched: 1,
+            rfc822_message_id: None,
+        };
+        let mail = NewMail::from_message(&message, &["CATEGORY_SOCIAL".to_owned()]).unwrap();
+        assert_eq!(mail.thread_id, "t");
+        assert_eq!(mail.sender, "x@example.com");
+        assert_eq!(NewMail::from_message(&message, &[]), None);
+        // Hiding another tab doesn't let Social through.
+        assert_eq!(
+            NewMail::from_message(&message, &["CATEGORY_PROMOTIONS".to_owned()]),
+            None
         );
     }
 }

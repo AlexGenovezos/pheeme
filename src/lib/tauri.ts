@@ -211,6 +211,11 @@ export const getThread = (accountId: string, threadId: string, opened = false, p
 export const listLabels = (accountId: string) => invoke<LabelInfo[]>("list_labels", { accountId });
 export const mailboxCounts = (accountIds: string[]) =>
   invoke<MailboxCount[]>("mailbox_counts", { accountIds });
+/** The inbox tabs (`CATEGORY_SOCIAL`, `_PROMOTIONS`, `_UPDATES`, `_FORUMS`) this account hides. */
+export const getInboxTabs = (accountId: string) => invoke<string[]>("inbox_tabs", { accountId });
+/** Hides these inbox tabs (their mail shows under Primary); resolves to what's now hidden. */
+export const setInboxTabs = (accountId: string, hidden: string[]) =>
+  invoke<string[]>("set_inbox_tabs", { accountId, hidden });
 /** Unread and total conversations per label of one account, counted from the local cache. */
 export const labelCounts = (accountId: string) =>
   invoke<LabelCount[]>("label_counts", { accountId });

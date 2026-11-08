@@ -112,6 +112,24 @@ describe("preview IPC", () => {
     expect(inbox.length).toBeGreaterThan(primary.length);
   });
 
+  test("a hidden tab's mail shows in Primary and in its count", () => {
+    const handlers = createPreviewHandlers();
+    const query = {
+      accountIds: ["acc-personal"],
+      labelId: "INBOX",
+      alsoLabelId: "CATEGORY_PERSONAL",
+    };
+    const primary = () => (handlers.list_threads(query) as { threads: unknown[] }).threads.length;
+    const unread = () =>
+      (handlers.mailbox_counts({ accountIds: ["acc-personal"] }) as Counts).find(
+        (c) => c.labelId === "CATEGORY_PERSONAL",
+      )!.unread;
+    const [before, unreadBefore] = [primary(), unread()];
+    handlers.set_inbox_tabs({ accountId: "acc-personal", hidden: ["CATEGORY_SOCIAL"] });
+    expect(primary()).toBeGreaterThan(before);
+    expect(unread()).toBeGreaterThanOrEqual(unreadBefore);
+  });
+
   test("both accounts have unread mail in every category, starred threads and drafts", () => {
     const handlers = createPreviewHandlers();
     for (const accountId of ["acc-personal", "acc-work"]) {
@@ -611,6 +629,29 @@ describe("preview label CRUD", () => {
       expect(labelEvents).toEqual([{ accountId: "acc-personal" }]);
     });
     stops.forEach((stop) => stop());
+  });
+});
+
+describe("inbox tabs", () => {
+  test("keeps the hidden tabs per account and fires labels_updated", async () => {
+    installPreview();
+    const labelEvents: unknown[] = [];
+    const stop = await listen(SYNC_EVENTS.labelsUpdated, (e) => labelEvents.push(e.payload));
+    await expect(invoke("inbox_tabs", { accountId: "acc-personal" })).resolves.toEqual([]);
+
+    await expect(
+      invoke("set_inbox_tabs", {
+        accountId: "acc-personal",
+        hidden: ["CATEGORY_SOCIAL", "CATEGORY_PERSONAL", "X"],
+      }),
+    ).resolves.toEqual(["CATEGORY_SOCIAL"]);
+
+    await expect(invoke("inbox_tabs", { accountId: "acc-personal" })).resolves.toEqual([
+      "CATEGORY_SOCIAL",
+    ]);
+    await expect(invoke("inbox_tabs", { accountId: "acc-work" })).resolves.toEqual([]);
+    await vi.waitFor(() => expect(labelEvents).toEqual([{ accountId: "acc-personal" }]));
+    stop();
   });
 });
 

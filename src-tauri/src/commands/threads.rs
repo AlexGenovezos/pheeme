@@ -94,3 +94,22 @@ pub async fn trash_threads(
 ) -> Result<(), CommandError> {
     Ok(state.mail.trash_threads(&account_id, &thread_ids).await?)
 }
+
+/// The inbox tabs (Social, Promotions, Updates, Forums) this account hides.
+#[tauri::command]
+pub async fn inbox_tabs(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> Result<Vec<String>, CommandError> {
+    Ok(state.mail.inbox_tabs(&account_id).await?)
+}
+
+/// Hide these inbox tabs; their mail shows under Primary. Returns what's now hidden.
+#[tauri::command]
+pub async fn set_inbox_tabs(
+    state: State<'_, AppState>,
+    account_id: String,
+    hidden: Vec<String>,
+) -> Result<Vec<String>, CommandError> {
+    Ok(state.mail.set_inbox_tabs(&account_id, &hidden).await?)
+}

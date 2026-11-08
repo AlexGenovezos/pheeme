@@ -97,6 +97,9 @@ export const CATEGORY_IDS = [
 ];
 const OTHER_CATEGORY_IDS = CATEGORY_IDS.filter((id) => id !== "CATEGORY_PERSONAL");
 
+/** The tabs an account hides, for Primary to take their mail. */
+export type HiddenTabs = (accountId: string) => readonly string[];
+
 // ── Rich bodies ──────────────────────────────────────────────────────────────
 
 /**
@@ -665,13 +668,14 @@ export function hasLabel(t: FixtureThread, labelId: string): boolean {
 
 /**
  * Threads in a mailbox, newest first, as `list_threads` selects them. `ALL` is everything but Spam and
- * Trash. `category` narrows an inbox: Primary (`CATEGORY_PERSONAL`) is the inbox minus the other four.
+ * Trash. `category` narrows an inbox: Primary (`CATEGORY_PERSONAL`) is the inbox minus the tabs still shown.
  */
 export function threadsIn(
   threads: FixtureThread[],
   mailbox: string,
   category?: string | null,
   accountIds?: string[],
+  hiddenTabs: HiddenTabs = () => [],
 ): FixtureThread[] {
   let found = threads.filter((t) =>
     mailbox === "ALL" ? !hasLabel(t, "SPAM") && !hasLabel(t, "TRASH") : hasLabel(t, mailbox),
@@ -679,7 +683,10 @@ export function threadsIn(
   // No account ids means every account.
   if (accountIds?.length) found = found.filter((t) => accountIds.includes(t.accountId));
   if (category === "CATEGORY_PERSONAL")
-    found = found.filter((t) => !OTHER_CATEGORY_IDS.some((c) => hasLabel(t, c)));
+    found = found.filter(
+      (t) =>
+        !OTHER_CATEGORY_IDS.some((c) => !hiddenTabs(t.accountId).includes(c) && hasLabel(t, c)),
+    );
   else if (category) found = found.filter((t) => hasLabel(t, category));
   return found.sort((a, b) => threadDate(b) - threadDate(a));
 }

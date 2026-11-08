@@ -24,6 +24,7 @@ import { usePaletteStore } from "../palette/paletteStore";
 import { useSettingsStore } from "../settings/settingsStore";
 import { speedReadOpenConversation } from "../speedread/open";
 import { useAccountStore } from "../store/accountStore";
+import { useInboxTabs } from "../store/inboxTabsStore";
 import { useUiStore } from "../store/uiStore";
 import { useThemeStore } from "../theme/theme";
 import type { Command } from "./registry";
@@ -92,7 +93,9 @@ export function appCommands(): Command[] {
       keywords: ["inbox", "category"],
       run: () => {
         const id = activeAccount();
-        if (id) ui().setMailbox(categoryMailbox(id, c.labelId));
+        if (!id) return;
+        const hidden = useInboxTabs.getState().hidden[id]?.includes(c.labelId);
+        ui().setMailbox(categoryMailbox(id, hidden ? CATEGORIES[0].labelId : c.labelId));
       },
     })),
     ...FAVORITES.map<Command>((f) => ({
