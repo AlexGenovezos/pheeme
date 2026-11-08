@@ -498,6 +498,27 @@ impl MailService {
         self.attachments.sweep().await;
     }
 
+    /// Drop every cached email body (drafts' excepted) and attachment, for all accounts, and
+    /// tell the UI which threads changed so it forgets their bodies too. Lists, labels and
+    /// header search stay; opening an email downloads it again. Returns (messages, bytes).
+    pub async fn clear_downloaded(&self) -> Result<(u64, u64), MailError> {
+        let mut changed: HashMap<String, Vec<String>> = HashMap::new();
+        for (account_id, thread_id) in messages::threads_with_bodies(&self.db).await? {
+            changed.entry(account_id).or_default().push(thread_id);
+        }
+        let cleared = crate::body_retention::clear_all(&self.db).await?;
+        let bytes = self.attachments.clear().await;
+        for account in crate::db::accounts::list_accounts(&self.db).await? {
+            self.sync.emit(SyncEvent::MessagesUpdated {
+                modified: changed.remove(&account.id).unwrap_or_default(),
+                account_id: account.id,
+                added: Vec::new(),
+                removed: Vec::new(),
+            });
+        }
+        Ok((cleared, bytes))
+    }
+
     /// Drop a removed account's cached attachment bytes.
     pub async fn forget_account(&self, account_id: &str) {
         self.attachments.remove_account(account_id).await;
@@ -1704,6 +1725,29 @@ mod tests {
             e,
             SyncEvent::MessagesUpdated { modified, .. } if modified == &["t1".to_owned()]
         )));
+    }
+
+    #[tokio::test]
+    async fn clearing_downloaded_mail_drops_bodies_and_attachments_and_tells_the_ui() {
+        let (_dir, _fake, events, mail) =
+            events_fixture(FakeMsg::new("m1", "t1", &["INBOX"])).await;
+        assert_eq!(fully_fetched(&mail, "m1").await, 1);
+        let cached = mail.attachments.path("a1", "m1", "0");
+        mail.attachments.write(&cached, b"12345").await.unwrap();
+        events.take();
+
+        assert_eq!(mail.clear_downloaded().await.unwrap(), (1, 5));
+        assert_eq!(fully_fetched(&mail, "m1").await, 0);
+        assert!(!cached.exists());
+        assert_eq!(
+            events.take(),
+            vec![SyncEvent::MessagesUpdated {
+                account_id: "a1".into(),
+                added: vec![],
+                removed: vec![],
+                modified: vec!["t1".into()],
+            }]
+        );
     }
 
     #[tokio::test]

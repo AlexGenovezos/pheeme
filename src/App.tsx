@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast, ToastProvider } from "./components/ui/Toast";
 import { ComposeHost, useComposeEvents } from "./compose/ComposeHost";
 import { Onboarding } from "./onboarding/Onboarding";
+import { useSetupGuide } from "./onboarding/guideStore";
 import { useAccountStore } from "./store/accountStore";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useAppCommands } from "./keyboard/appCommands";
@@ -120,14 +121,26 @@ function App() {
   useModEvents();
   const { accounts, loaded, error, load, upsert, reconnecting, reconnect } = useAccountStore();
   const reconnectAccount = accounts.find((a) => a.id === reconnecting);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<false | "account" | "guide">(false);
   const showMail = useCallback(() => setAdding(false), []);
   useDesktopEvents(loaded && accounts.length > 0, showMail);
   // Onboarding replaces the mail screen; the settings dialog closes so it doesn't reopen on return.
   const addAccount = () => {
     useSettingsStore.getState().close();
-    setAdding(true);
+    setAdding("account");
   };
+
+  // Settings › About and the palette's "Open setup guide" open onboarding at the guide's first step.
+  useEffect(
+    () =>
+      useSetupGuide.subscribe((state, prev) => {
+        if (state.requested !== prev.requested) {
+          useSettingsStore.getState().close();
+          setAdding("guide");
+        }
+      }),
+    [],
+  );
 
   useEffect(() => {
     void load();
@@ -159,9 +172,10 @@ function App() {
   } else if (loaded && (accounts.length === 0 || adding || reconnectAccount)) {
     screen = (
       <Onboarding
-        key={reconnectAccount?.id ?? "add"}
+        key={reconnectAccount?.id ?? (adding === "guide" ? "guide" : "add")}
         accounts={accounts}
         reconnect={reconnectAccount}
+        tutorial={adding === "guide"}
         onConnected={(account) => {
           upsert(account);
           setAdding(false);

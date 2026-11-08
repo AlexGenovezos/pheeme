@@ -111,6 +111,47 @@ impl AttachmentCache {
         }
     }
 
+    /// Delete every cached file, for all accounts; returns the bytes freed. Waits for a
+    /// running sweep, and for each file's download in progress (which then goes too), so
+    /// neither races it.
+    pub async fn clear(&self) -> u64 {
+        let _sweeping = self.sweeping.lock().await;
+        self.written.store(0, Ordering::Relaxed);
+        let mut freed = 0;
+        for (_, account_dir) in subdirs(&self.dir).await {
+            for (_, message_dir) in subdirs(&account_dir).await {
+                let Ok(mut files) = tokio::fs::read_dir(&message_dir).await else {
+                    continue;
+                };
+                while let Ok(Some(file)) = files.next_entry().await {
+                    let path = file.path();
+                    let name = file.file_name().to_string_lossy().into_owned();
+                    // A half-written file belongs to the download of the file it's named
+                    // after: wait for that, then remove what it wrote.
+                    let mut paths = vec![path];
+                    if let Some((cached, _)) = name.split_once(TMP_MARKER) {
+                        paths.insert(0, message_dir.join(cached));
+                    }
+                    let _fetching = self.lock(&paths[0]).await;
+                    for path in &paths {
+                        let Ok(meta) = tokio::fs::symlink_metadata(path).await else {
+                            continue;
+                        };
+                        if remove_entry(path, meta.is_dir()).await.is_ok() && meta.is_file() {
+                            freed += meta.len();
+                        }
+                    }
+                }
+                let _ = tokio::fs::remove_dir(&message_dir).await;
+            }
+            let _ = tokio::fs::remove_dir(&account_dir).await;
+        }
+        if freed > 0 {
+            tracing::info!(bytes = freed, "cleared the attachment cache");
+        }
+        freed
+    }
+
     /// Remove files nothing refers to any more, then the least recently used ones until
     /// the cache is under its limit. A sweep already running makes this a no-op.
     pub async fn sweep(&self) {
@@ -355,6 +396,39 @@ mod tests {
         cache.sweep().await;
         assert!(cache.path("a1", "m1", "0").is_file());
         assert!(cache.path("a1", "m1", "1").is_file());
+    }
+
+    #[tokio::test]
+    async fn clear_attachment_cache_returns_bytes() {
+        let (_db, cache) = fixture(MAX_BYTES, 2).await;
+        let first = cache.path("a1", "m1", "0");
+        let second = cache.path("a2", "m9", "1");
+        put(&first, 10, 0);
+        put(&second, 20, 0);
+
+        assert_eq!(cache.clear().await, 30);
+        assert!(!first.exists());
+        assert!(!second.exists());
+        assert!(!cache.dir.join("a1").exists(), "empty folders go too");
+        assert_eq!(cache.clear().await, 0, "nothing left");
+    }
+
+    #[tokio::test]
+    async fn clear_waits_for_a_download_of_the_same_file() {
+        let (_db, cache) = fixture(MAX_BYTES, 1).await;
+        let path = cache.path("a1", "m1", "0");
+        put(&path, 10, 0);
+        let fetching = cache.lock(&path).await;
+        let clearing = tokio::spawn({
+            let cache = cache.clone();
+            async move { cache.clear().await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!clearing.is_finished(), "waits for the download");
+        assert!(path.is_file());
+        drop(fetching);
+        assert_eq!(clearing.await.unwrap(), 10);
+        assert!(!path.exists());
     }
 
     #[tokio::test]

@@ -105,6 +105,22 @@ test("with accounts it shows them and can add or remove one", async () => {
   expect(calls).toContain("remove_account");
 });
 
+test("Settings › About › Open guide opens the setup tutorial, not the account chooser", async () => {
+  mockIPC((cmd) => (cmd === "list_accounts" ? [account] : undefined));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  const dialog = screen.getByRole("dialog", { name: /Settings/ });
+  fireEvent.click(within(dialog).getByRole("button", { name: "About" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Open guide" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Create a Google Cloud project" }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: "Setup steps" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(await screen.findByRole("button", { name: "Settings" })).toBeInTheDocument();
+});
+
 test("a failed remove keeps the account and shows why", async () => {
   mockIPC((cmd) => {
     if (cmd === "list_accounts") return [account];

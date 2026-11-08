@@ -39,6 +39,21 @@ pub async fn trim(db: &SqlitePool, now: i64) -> anyhow::Result<u64> {
     }
 }
 
+/// Drop every cached body except drafts' (Clear downloaded mail, in Settings › Appearance ›
+/// Privacy); returns how many messages were cleared.
+pub async fn clear_all(db: &SqlitePool) -> anyhow::Result<u64> {
+    let mut total = 0;
+    loop {
+        let mut tx = db::begin_write(db).await?;
+        let cleared = messages::clear_bodies(&mut *tx, BATCH).await?;
+        tx.commit().await?;
+        total += cleared;
+        if cleared < BATCH as u64 {
+            return Ok(total);
+        }
+    }
+}
+
 /// Trim at launch, then every [`INTERVAL`] while the app runs.
 pub async fn run(db: SqlitePool) {
     loop {
@@ -168,6 +183,58 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(trim(&db.pool, NOW).await.unwrap(), count as u64);
+    }
+
+    #[tokio::test]
+    async fn clear_bodies_drops_every_cached_body() {
+        let db = TestDb::with_account("a1").await;
+        for (id, fetched) in [("recent", 2), ("old-1", 400), ("old-2", 400)] {
+            upsert_message(&db.pool, &message(id, fetched))
+                .await
+                .unwrap();
+            set_fetched(&db, id, fetched).await;
+        }
+
+        assert_eq!(clear_all(&db.pool).await.unwrap(), 3);
+        for id in ["recent", "old-1", "old-2"] {
+            let m = get_message(&db.pool, "a1", id).await.unwrap().unwrap();
+            assert_eq!(m.fully_fetched, 0, "{id}");
+            assert!(m.body_text.is_none(), "{id}");
+            assert!(m.body_html.is_none(), "{id}");
+            assert_eq!(m.subject.as_deref(), Some(format!("subject {id}").as_str()));
+        }
+        assert_eq!(clear_all(&db.pool).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn clear_bodies_keeps_drafts() {
+        let db = TestDb::with_account("a1").await;
+        let mut draft = message("draft", 2);
+        draft.label_ids = Some(r#"["DRAFT"]"#.into());
+        upsert_message(&db.pool, &draft).await.unwrap();
+        upsert_message(&db.pool, &message("sent", 2)).await.unwrap();
+        for id in ["draft", "sent"] {
+            set_fetched(&db, id, 2).await;
+        }
+
+        assert_eq!(clear_all(&db.pool).await.unwrap(), 1);
+        assert!(has_body(&db, "draft").await);
+        assert!(!has_body(&db, "sent").await);
+    }
+
+    #[tokio::test]
+    async fn clear_all_runs_in_batches_until_done() {
+        let db = TestDb::with_account("a1").await;
+        let count = BATCH + 3;
+        for i in 0..count {
+            let id = format!("m{i}");
+            upsert_message(&db.pool, &message(&id, 2)).await.unwrap();
+        }
+        sqlx::query("UPDATE messages SET body_fetched_at = 0")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(clear_all(&db.pool).await.unwrap(), count as u64);
     }
 
     #[tokio::test]

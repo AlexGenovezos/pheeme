@@ -1,8 +1,9 @@
 //! Attachment commands: previewing, prefetching, opening in the default app, saving to
-//! Downloads and revealing the result.
+//! Downloads and revealing the result, and clearing downloaded mail.
 
 use super::CommandError;
 use crate::AppState;
+use serde::Serialize;
 use std::path::Path;
 use tauri::{AppHandle, Manager, State};
 
@@ -113,6 +114,20 @@ pub fn reveal_download(app: AppHandle, path: String) -> Result<(), CommandError>
         code: "open_failed".into(),
         message: format!("Couldn't show the file ({error})."),
     })
+}
+
+#[derive(Debug, Serialize)]
+pub struct ClearedDto {
+    pub messages: u64,
+    pub bytes: u64,
+}
+
+/// Drops every downloaded email body (except drafts) and cached attachment for all
+/// accounts (Settings › Appearance › Privacy); see [`crate::mail::MailService::clear_downloaded`].
+#[tauri::command]
+pub async fn clear_downloaded_mail(state: State<'_, AppState>) -> Result<ClearedDto, CommandError> {
+    let (messages, bytes) = state.mail.clear_downloaded().await?;
+    Ok(ClearedDto { messages, bytes })
 }
 
 #[cfg(test)]

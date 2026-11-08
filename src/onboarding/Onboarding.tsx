@@ -39,17 +39,21 @@ interface Props {
   onClose?: () => void;
   /** Sign this connected account in again (straight to Google) instead of adding one. */
   reconnect?: AccountInfo;
+  /** Open at the first setup step with the step list (Settings › About › Open guide). */
+  tutorial?: boolean;
 }
 
 const CLIENT_ID_SUFFIX = ".apps.googleusercontent.com";
 
-export function Onboarding({ accounts, onConnected, onClose, reconnect }: Props) {
+export function Onboarding({ accounts, onConnected, onClose, reconnect, tutorial }: Props) {
   const firstRun = accounts.length === 0;
   const [initial] = useState(() =>
-    firstRun ? loadProgress() : { step: "choose" as SetupView, clientId: "" },
+    firstRun
+      ? loadProgress()
+      : { step: tutorial ? STEPS[0].id : ("choose" as SetupView), clientId: "" },
   );
   const [setupView, setView] = useState<SetupView>(initial.step);
-  const [guide, setGuide] = useState(firstRun);
+  const [guide, setGuide] = useState(firstRun || tutorial === true);
   const [clientId, setClientId] = useState(initial.clientId);
   const [clientSecret, setClientSecret] = useState("");
   const [preparedClient, setPreparedClient] = useState<ClientChoice | null>(null);

@@ -27,6 +27,7 @@ import { type ListDensity, useUiStore } from "../store/uiStore";
 import { THEME_MODES, type ThemeMode, useThemeStore } from "../theme/theme";
 import { AboutSettings } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
+import { ClearDownloadedMail } from "./ClearDownloadedMail";
 import { ContactsSettings } from "./ContactsSettings";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { InboxTabsSettings } from "./InboxTabsSettings";
@@ -206,6 +207,11 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             keywords: ["font", "larger", "accessibility", "compose", "zoom"],
             Control: ReadingSizeControl,
           },
+        ],
+      },
+      {
+        title: "Privacy",
+        settings: [
           {
             id: "reading.preloadImages",
             title: "Preload images",
@@ -213,6 +219,14 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
               "Preloading images lets senders see that an email was opened, along with your IP address and approximate location, even for emails you skip. Turning it off keeps text preloading, and loads images only when you open an email.",
             keywords: ["privacy", "images", "tracking"],
             Control: PreloadImagesControl,
+          },
+          {
+            id: "privacy.clearDownloaded",
+            title: "Clear downloaded mail",
+            description:
+              "Remove the email text and attachments saved on this computer. Your conversation list and labels stay, and an email downloads again when you open it.",
+            keywords: ["privacy", "cache", "local", "delete", "storage", "disk", "attachments"],
+            Control: ClearDownloadedMail,
           },
         ],
       },

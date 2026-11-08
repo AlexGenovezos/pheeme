@@ -374,6 +374,12 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     },
     prefetch_attachments: () => undefined,
     open_attachment: () => undefined,
+    // The fixtures have no download to drop: report what the app would clear and keep them.
+    clear_downloaded_mail: () => ({
+      messages: threads.filter((t) => !t.labelIds.includes("DRAFT")).flatMap((t) => t.messages)
+        .length,
+      bytes: 0,
+    }),
     // Diagnostics: nothing leaves the browser; both just succeed.
     telemetry_enabled: () => telemetry,
     set_telemetry: (args) => {

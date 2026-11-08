@@ -328,6 +328,7 @@ pub fn run() {
             commands::attachments::read_attachment,
             commands::attachments::prefetch_attachments,
             commands::attachments::open_attachment,
+            commands::attachments::clear_downloaded_mail,
             commands::auth::begin_oauth,
             commands::auth::complete_oauth,
             commands::auth::cancel_oauth,
