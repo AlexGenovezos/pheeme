@@ -1,13 +1,16 @@
 # Diagnostics Worker
 
-Receives **Settings › About › Send diagnostics** uploads from the app at
+Receives the app's daily anonymous usage ping at
+`https://diagnostics.pheeme.email/v1/ping` (see [Usage pings](#usage-pings)),
+and **Settings › Diagnostics › Send diagnostics** uploads from the app at
 `https://diagnostics.pheeme.email/v1/upload`, stores each zip in the private R2
 bucket `pheeme-diagnostics` (deleted after 30 days), and emails a notification
 from `diagnostics@pheeme.email` to `ajg0360@gmail.com` with the user's note,
 the summary highlights, and the command to download the zip. The zip is never
 attached to the email.
 
-- `src/handler.ts` — all request handling, pure and tested (`handler.test.ts`).
+- `src/handler.ts` — upload handling, pure and tested (`handler.test.ts`).
+- `src/ping.ts` — usage ping handling, pure and tested (`ping.test.ts`).
 - `src/mime.ts` — builds the notification email (`mime.test.ts`).
 - `src/index.ts` — wires the real bindings and defines the `DailyCap` Durable Object.
 - `src/types.ts`, `src/cloudflare.d.ts` — the minimal runtime types used; no npm dependencies.
@@ -24,6 +27,30 @@ Over a limit the Worker answers 429 and stores and sends nothing.
 - `bundle`: the zip (`application/zip`), at most 5 MB.
 
 Responses: `204` stored; `400` malformed; `404`/`405` wrong path or method; `413` too large; `429` with `Retry-After` (60 s for the per-IP limit, seconds to the next UTC midnight for the daily cap); `5xx` failure.
+
+## Usage pings
+
+`POST /v1/ping`, `application/json`, at most 2 KB:
+`{ installId, version, os, osVersion, arch }`. `installId` is a lowercase v4
+UUID the app makes up on first use; the other fields are at most 100
+characters with no line breaks. Responses: `204` stored; `400` malformed;
+`405` wrong method; `413` too large; `429` over 30 pings per IP per minute.
+
+Each install has one object, `installs/<installId>.json`
+(`{ firstSeen, lastSeen, version, os, osVersion, arch }`), overwritten by every
+ping. The bucket's 30-day expiry rule deletes it 30 days after the last ping,
+so the objects under `installs/` are the installs active in the last 30 days.
+No IP address or ping history is kept. The app pings at most once every 20
+hours, only once an account is connected, and never from debug builds (unless
+`PHEEME_TELEMETRY_URL` is set). Settings › Diagnostics and the welcome screen
+turn it off; the privacy policy (`site/public/privacy.html`) describes it.
+
+To see the numbers (needs `wrangler login`):
+
+```bash
+node scripts/installs.mjs          # active installs, by OS, OS version, chip and app version
+node scripts/installs.mjs --json
+```
 
 ## One-time setup
 
@@ -73,6 +100,15 @@ already on that account.
    ```
 
 4. Smoke test (counts against the limits above):
+
+   ```bash
+   curl -i https://diagnostics.pheeme.email/v1/ping -H 'content-type: application/json' \
+     -d '{"installId":"00000000-0000-4000-8000-000000000000","version":"smoke","os":"curl","osVersion":"curl","arch":"x86_64"}'
+   ```
+
+   Expect `HTTP/2 204`. Delete the smoke record afterwards with
+   `wrangler r2 object delete pheeme-diagnostics/installs/00000000-0000-4000-8000-000000000000.json --remote`.
+   Then the upload:
 
    ```bash
    dir=$(mktemp -d) && echo '{}' > "$dir/summary.json" && (cd "$dir" && zip -q t.zip summary.json)

@@ -73,6 +73,8 @@ security-framework = "3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winrt-notification = { package = "tauri-winrt-notification", version = "0.7" }
+# The Windows build number for the anonymous usage ping (already in the tree via tao).
+windows-version = "0.1"
 
 [dev-dependencies]
 dhat = "0.3.3"

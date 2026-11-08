@@ -81,6 +81,22 @@ test("the intro opens the transfer screen and the setup doc, and the guide goes 
   expect(screen.getByRole("heading", { name: /Free for good/ })).toBeInTheDocument();
 });
 
+test("the intro has the usage stats switch, on by default, and turning it off is saved", async () => {
+  let enabled = true;
+  const calls = backend({
+    telemetry_enabled: () => enabled,
+    set_telemetry: (args) => (enabled = args.enabled as boolean),
+  });
+  render(<Onboarding accounts={[]} onConnected={() => {}} />);
+  const toggle = screen.getByRole("switch", { name: "Share anonymous usage stats" });
+  await waitFor(() => expect(toggle).toBeEnabled());
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  expect(screen.getByText(/Never your email or anything in it/)).toBeInTheDocument();
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
+  expect(calls).toContainEqual({ cmd: "set_telemetry", args: { enabled: false } });
+});
+
 test("resumes at the saved step, and after the form resumes at the form", () => {
   backend({});
   saveProgress({ step: "publish", clientId: "" });

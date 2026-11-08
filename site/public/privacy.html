@@ -23,7 +23,7 @@
 
   <main class="wrap legal" id="main">
     <h1>Privacy Policy</h1>
-    <p class="updated">Effective November 6, 2026</p>
+    <p class="updated">Effective November 7, 2026</p>
 
     <div class="summary">
       <strong>The short version</strong>
@@ -31,7 +31,8 @@
         <li>pheeme is an email client that runs on your computer. Your mail is downloaded to your device and stays there.</li>
         <li>We don't run servers that receive, store, or read your email.</li>
         <li>We don't sell your data, show ads, or use your email to train AI models.</li>
-        <li>The app sends us nothing unless you choose to send diagnostics, and those never include your email.</li>
+        <li>Once a day the app sends us an anonymous ping (a random ID, the app version, your operating system and chip type) so we can count how many people use pheeme. You can turn it off on the welcome screen or in Settings › Diagnostics.</li>
+        <li>Anything more is sent only if you choose to send diagnostics. Neither ever includes your email.</li>
         <li>You can disconnect your account and delete everything pheeme stored at any time.</li>
       </ul>
     </div>
@@ -70,8 +71,17 @@
       <li>We don't sell Google user data, and we don't use it to determine credit-worthiness or for lending purposes.</li>
     </ul>
 
-    <h2>Analytics and telemetry</h2>
-    <p>The app does not collect analytics or usage telemetry, and it never sends us anything in the background. If we ever add crash reporting, it will be off unless you turn it on, it will never include the contents of your email, and we will update this policy first.</p>
+    <h2>Anonymous usage stats</h2>
+    <p>So we know roughly how many people use pheeme and on what computers, the app sends one small ping a day once you've connected an account. It is on by default, and you can turn it off on the first welcome screen or at any time in Settings › Diagnostics.</p>
+    <p>Each ping contains only:</p>
+    <ul>
+      <li><strong>A random install ID</strong> that the app makes up on your device. It isn't derived from your email address, your Google account, your computer, or anything else about you.</li>
+      <li><strong>The app version</strong>, for example 0.16.0.</li>
+      <li><strong>Your operating system and its version</strong>, for example macOS 15.1 or Windows 11.</li>
+      <li><strong>Your computer's chip type</strong>, for example Apple Silicon (aarch64) or Intel/AMD (x86_64).</li>
+    </ul>
+    <p>It never includes your email address, your accounts, how many there are, your mail or anything about it, or how you use the app.</p>
+    <p>The ping goes to the same small service as diagnostics (diagnostics.pheeme.email, on Cloudflare). We keep one record per install, the latest ping, which is replaced by the next one and deleted automatically about 30 days after the last. We don't store your IP address with it, though Cloudflare processes it to deliver the request. Turning the stats off stops the pings and deletes the install ID from your device, so turning them back on later starts a new, unconnected ID. The app doesn't collect crash reports or any other analytics.</p>
 
     <h2>Sending diagnostics</h2>
     <p>If something is slow or broken, you can send us diagnostics from Settings › Diagnostics. Nothing is uploaded until you click Send. If you'd rather check first, you can save the same file to your computer and email it to us yourself.</p>

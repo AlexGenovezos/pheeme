@@ -4,7 +4,8 @@
   "account_id": "16ff14fb0430f18bc095f18a64b11c7e",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  // Receives "Send diagnostics" uploads from the app. Setup: README.md.
+  // Receives "Send diagnostics" uploads and the daily anonymous usage ping from
+  // the app. Setup: README.md.
   "routes": [{ "pattern": "diagnostics.pheeme.email", "custom_domain": true }],
   "workers_dev": false,
   "preview_urls": false,
@@ -17,6 +18,13 @@
       "name": "PER_IP",
       "namespace_id": "2001",
       "simple": { "limit": 2, "period": 60 },
+    },
+    // The daily anonymous usage ping (/v1/ping): an app pings about once a day,
+    // so this only stops floods. Generous because offices share an IP.
+    {
+      "name": "PING_PER_IP",
+      "namespace_id": "2002",
+      "simple": { "limit": 30, "period": 60 },
     },
   ],
   // One Durable Object counts accepted uploads per UTC day (cap in handler.ts).

@@ -2,8 +2,14 @@
 // needs no npm dependencies. Shapes follow the Cloudflare docs; widen them only
 // when the code starts using more.
 
-/** R2 bucket binding (`put` only). */
+/** An R2 object body, as `get` returns it. */
+export interface BucketObject {
+  json<T>(): Promise<T>;
+}
+
+/** R2 bucket binding (`put` and `get` only). */
 export interface Bucket {
+  get(key: string): Promise<BucketObject | null>;
   put(
     key: string,
     value: ArrayBuffer,
@@ -41,6 +47,24 @@ export interface Deps {
   id(): string;
 }
 
+/** Everything `handlePing` touches outside the request. */
+export interface PingDeps {
+  bucket: Bucket;
+  perIp: RateLimiter;
+  now(): Date;
+}
+
+/** What `installs/<installId>.json` holds: the latest ping from one install. */
+export interface InstallRecord {
+  /** ISO time of the first ping still on record (resets if the install went 30 days silent). */
+  firstSeen: string;
+  lastSeen: string;
+  version: string;
+  os: string;
+  osVersion: string;
+  arch: string;
+}
+
 /** Durable Object key-value storage (`ctx.storage`), async API subset. */
 export interface KvStorage {
   get<T>(key: string): Promise<T | undefined>;
@@ -67,6 +91,7 @@ export interface DailyCapNamespace {
 export interface Env {
   BUNDLES: Bucket;
   PER_IP: RateLimiter;
+  PING_PER_IP: RateLimiter;
   DAILY_CAP: DailyCapNamespace;
   NOTIFY: SendEmail;
 }

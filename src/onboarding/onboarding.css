@@ -440,6 +440,24 @@
   stroke-width: var(--icon-stroke);
 }
 
+.intro__telemetry {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3);
+  align-items: start;
+  margin-top: var(--space-6);
+  font-size: var(--font-size-sm);
+}
+
+.intro__telemetry strong {
+  font-weight: var(--font-weight-semibold);
+}
+
+.intro__telemetry p {
+  color: var(--color-foreground-muted);
+  line-height: var(--line-height-normal);
+}
+
 .intro__fine {
   margin-top: var(--space-4);
   font-size: var(--font-size-sm);

@@ -8,6 +8,7 @@ import { clearProgress, loadProgress, saveProgress } from "./progress";
 import { type GuideStep, INTRO, STEPS, type StepId, stepById, stepIndex } from "./steps";
 import { BROWSER_PROBLEMS, isCredentialProblem, problemTitle } from "./troubleshooting";
 import { type SignInState, useSignIn } from "./useSignIn";
+import { TELEMETRY_TITLE, TelemetrySwitch } from "../settings/telemetry";
 import { ReceiveCredentials } from "../transfer/ReceiveCredentials";
 import "./onboarding.css";
 
@@ -281,6 +282,13 @@ function Intro({ onStart, onReceive }: { onStart: () => void; onReceive: () => v
           <Button size="lg" onClick={onReceive}>
             Receive from another device
           </Button>
+        </div>
+        <div className="intro__telemetry">
+          <TelemetrySwitch />
+          <div>
+            <strong>{TELEMETRY_TITLE}</strong>
+            <p>{INTRO.telemetry}</p>
+          </div>
         </div>
         <p className="intro__fine">
           Pheeme is open source under the MIT license.{" "}

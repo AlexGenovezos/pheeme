@@ -3714,6 +3714,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
+ "windows-version",
  "wiremock",
  "zbus 5.14.0",
  "zeroize",

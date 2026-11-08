@@ -12,6 +12,11 @@ This is what keeps Pheeme free and private:
 - **You own your data.** Mail goes straight from Google to your computer.
   Nobody in between can read it, including us.
 
+The welcome screen also has a switch for anonymous usage stats (once a day, a
+random ID, the app version, your operating system and chip type; see the
+[privacy policy](https://pheeme.app/privacy)). It's on by default, and you can
+change it later in Settings › Diagnostics.
+
 Pheeme explains this on first launch, then walks you through these steps
 itself. This page mirrors that intro and guide (`src/onboarding/steps.ts`); keep
 the two in step.

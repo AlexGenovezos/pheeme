@@ -139,6 +139,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   const notificationChoices = new Map<string, boolean>();
   let gmailQuota = 6000;
   let trayIcon = true;
+  let telemetry = true;
   const desktopSettings = () => ({
     accounts: accounts.map((a) => ({
       accountId: a.id,
@@ -347,6 +348,11 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     prefetch_attachments: () => undefined,
     open_attachment: () => undefined,
     // Diagnostics: nothing leaves the browser; both just succeed.
+    telemetry_enabled: () => telemetry,
+    set_telemetry: (args) => {
+      telemetry = args?.enabled === true;
+      return telemetry;
+    },
     send_diagnostics: () => undefined,
     save_diagnostics: () => undefined,
     log_update: () => undefined,
