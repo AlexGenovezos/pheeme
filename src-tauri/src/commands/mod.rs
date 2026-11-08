@@ -225,6 +225,26 @@ mod tests {
         }
     }
 
+    /// A clicked email link reaches `allow_navigation` only as a navigation of the email frame. WebKit
+    /// checks that navigation against the app's `frame-src` first, and without `https:`/`http:` there
+    /// it refuses the link before the hook is asked, so the click does nothing.
+    #[test]
+    fn csp_lets_email_links_reach_the_navigation_hook() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        for policy in ["csp", "devCsp"] {
+            let frame_src = conf["app"]["security"][policy]["frame-src"]
+                .as_str()
+                .unwrap_or_default();
+            for source in ["https:", "http:", "mailto:"] {
+                assert!(
+                    frame_src.split_whitespace().any(|s| s == source),
+                    "{policy} frame-src lacks {source}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn command_error_carries_code_and_plain_message() {
         let error = CommandError::from(AccountError::NotFound);

@@ -271,7 +271,8 @@ function watchFrame(
   };
 
   // Chromium (Windows) runs this; WebKit (macOS, Linux) skips listeners in a script-less frame, so there a
-  // clicked link becomes a navigation that the backend's navigation hook cancels and opens instead.
+  // clicked link becomes a navigation that the backend's navigation hook cancels and opens instead. That
+  // needs `frame-src` in tauri.conf.json's CSP to allow the link's scheme, or WebKit refuses it first.
   const onClick = (event: MouseEvent) => {
     const link = closestLink(event.target);
     if (!link) return;
