@@ -10,6 +10,7 @@ import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { useLabelDialogStore } from "../labels/dialogStore";
 import { usePickerStore } from "../labels/pickerStore";
+import { useSetupGuide } from "../onboarding/guideStore";
 import { appCommands } from "./appCommands";
 import { createRegistry } from "./registry";
 
@@ -185,4 +186,12 @@ test("Create label… opens the new-label dialog for the account in view", () =>
     spec: { mode: "create", accountId: "a1" },
   });
   useLabelDialogStore.getState().close();
+});
+
+test("help.setupGuide asks App to open the setup guide", () => {
+  const before = useSetupGuide.getState().requested;
+  appCommands()
+    .find((c) => c.id === "help.setupGuide")!
+    .run();
+  expect(useSetupGuide.getState().requested).toBe(before + 1);
 });

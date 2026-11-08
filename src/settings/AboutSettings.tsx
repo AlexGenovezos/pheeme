@@ -2,6 +2,7 @@ import { version } from "../../package.json";
 import { Button } from "../components/ui/Button";
 import { checkForUpdatesNow, displayVersion, useUpdateStore } from "../lib/updater";
 import { isTauri } from "../preview/runtime";
+import { useSetupGuide } from "../onboarding/guideStore";
 import { RELEASES } from "./releases";
 import { ReleaseNotes } from "./ReleaseNotes";
 import { SettingsRow, SettingsSection } from "./rows";
@@ -19,6 +20,7 @@ export function AboutSettings() {
   const manualCheck = useUpdateStore((s) => s.manualCheck);
   const apply = useUpdateStore((s) => s.apply);
   const desktop = isTauri();
+  const openGuide = useSetupGuide((s) => s.open);
 
   let description: string;
   let control;
@@ -52,6 +54,17 @@ export function AboutSettings() {
           control={<span className="settings-about__version">{displayVersion(version)}</span>}
         />
         <SettingsRow title="Updates" description={description} control={control} />
+      </SettingsSection>
+      <SettingsSection title="Help">
+        <SettingsRow
+          title="Google Cloud setup guide"
+          description="Step-by-step help creating the Google Cloud client Pheeme signs in with. You can connect another account at the end, or close it."
+          control={
+            <Button size="sm" onClick={openGuide}>
+              Open guide
+            </Button>
+          }
+        />
       </SettingsSection>
       {RELEASES.length > 0 && (
         <SettingsSection title="What's new" card={false}>

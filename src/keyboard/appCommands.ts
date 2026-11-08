@@ -13,6 +13,7 @@ import {
 } from "../mail/actions";
 import { openCreateLabel } from "../labels/create";
 import { COPY_CODE_COMMAND, COPY_CODE_SHORTCUT, copyOpenConversationCode } from "../mail/CodeCard";
+import { useSetupGuide } from "../onboarding/guideStore";
 import {
   CATEGORIES,
   categoryMailbox,
@@ -69,6 +70,13 @@ export function appCommands(): Command[] {
       group: "General",
       keywords: ["settings", "add account", "remove account", "sign out"],
       run: () => useSettingsStore.getState().openSettings("accounts"),
+    },
+    {
+      id: "help.setupGuide",
+      title: "Open setup guide",
+      group: "General",
+      keywords: ["tutorial", "google cloud", "help", "setup", "onboarding"],
+      run: () => useSetupGuide.getState().open(),
     },
     {
       id: "compose.new",
