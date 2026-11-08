@@ -23,6 +23,7 @@ import { isTauri } from "./preview/runtime";
 import { revealWindow } from "./theme/nativeWindow";
 import { AppShell } from "./shell/AppShell";
 import { ContextMenuHost } from "./shell/ContextMenuHost";
+import { useInboxTabs } from "./store/inboxTabsStore";
 import { useLabelStore } from "./store/labelStore";
 import { useMailStore } from "./store/mailStore";
 import { useThreadStore } from "./store/threadStore";
@@ -70,7 +71,9 @@ function useSyncEvents() {
 function useLabelsAndCounts() {
   const accountIds = useAccountStore((s) => s.accounts.map((a) => a.id).join("\n"));
   useEffect(() => {
-    void useLabelStore.getState().load(accountIds ? accountIds.split("\n") : []);
+    const ids = accountIds ? accountIds.split("\n") : [];
+    void useLabelStore.getState().load(ids);
+    void useInboxTabs.getState().load(ids);
   }, [accountIds]);
 }
 

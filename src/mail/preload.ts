@@ -6,9 +6,9 @@ import { listThreads, type ThreadSummary } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useMailStore } from "../store/mailStore";
 import { useThreadStore } from "../store/threadStore";
+import { useInboxTabs, visibleCategories } from "../store/inboxTabsStore";
 import { useUiStore } from "../store/uiStore";
 import {
-  CATEGORIES,
   categoryMailbox,
   mailboxKey,
   type MailboxRef,
@@ -68,13 +68,14 @@ export function startPreloading(): () => void {
   const loadCategories = async () => {
     const ui = useUiStore.getState();
     const accountId = resolveActiveAccount(ui.activeAccountId, useAccountStore.getState().accounts);
-    const scope = JSON.stringify([accountId, ui.unreadMailboxes]);
+    const hiddenTabs = accountId ? useInboxTabs.getState().hidden[accountId] : null;
+    const scope = JSON.stringify([accountId, ui.unreadMailboxes, hiddenTabs]);
     if (scope === categoryScope) return;
     categoryScope = scope;
     const refs: MailboxRef[] = accountId
       ? [
           { accountId, labelId: "INBOX" },
-          ...CATEGORIES.map((c) => categoryMailbox(accountId, c.labelId)),
+          ...visibleCategories(accountId).map((c) => categoryMailbox(accountId, c.labelId)),
         ]
       : [];
     const pages = await Promise.all(
@@ -99,6 +100,7 @@ export function startPreloading(): () => void {
     useMailStore.subscribe(update),
     useUiStore.subscribe(update),
     useAccountStore.subscribe(update),
+    useInboxTabs.subscribe(update),
   ];
   update();
   return () => {

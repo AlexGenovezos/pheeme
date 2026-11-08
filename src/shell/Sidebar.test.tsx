@@ -12,6 +12,7 @@ import { revealLabels } from "../labels/reveal";
 import { useSettingsStore } from "../settings/settingsStore";
 import type { AccountInfo, LabelInfo } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
+import { useInboxTabs } from "../store/inboxTabsStore";
 import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
 import { __resetUiStoreForTests, LAYOUT_KEY, useUiStore } from "../store/uiStore";
 import { ContextMenuHost } from "./ContextMenuHost";
@@ -97,6 +98,7 @@ beforeEach(() => {
   localStorage.clear();
   __resetUiStoreForTests();
   __resetLabelStoreForTests();
+  useInboxTabs.setState({ hidden: {} });
   mockIPC(() => undefined, { shouldMockEvents: true });
 });
 
@@ -833,5 +835,19 @@ describe("Labels section", () => {
     expect(usePickerStore.getState().spec).toBeNull();
     expect(useUiStore.getState().sidebarCollapsed).toBe(false);
     await waitFor(() => expect(link("Alerts", labelsRegion())).toHaveFocus());
+  });
+});
+
+describe("inbox tabs", () => {
+  test("a hidden tab has no row; Primary stays", () => {
+    seed([ONE, TWO]);
+    useInboxTabs.setState({ hidden: { a1: ["CATEGORY_SOCIAL"] } });
+    render(<Sidebar />);
+    const group = accountGroup("me@home.test");
+    expect(within(group).queryByRole("link", { name: "Social" })).toBeNull();
+    expect(within(group).getByRole("link", { name: "Primary" })).toBeInTheDocument();
+    expect(
+      within(accountGroup("me@work.test")).getByRole("link", { name: "Social" }),
+    ).toBeInTheDocument();
   });
 });
