@@ -4,12 +4,14 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { dismissToast, ToastProvider, useToastStore } from "../components/ui/Toast";
 import { useAccountStore } from "../store/accountStore";
 import { ComposeHost } from "./ComposeHost";
+import { __resetComposeSettingsForTests, useComposeSettings } from "./composeSettings";
 import { __resetComposeStoreForTests, useComposeStore } from "./composeStore";
 
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
 
 beforeEach(() => {
   localStorage.clear();
+  __resetComposeSettingsForTests();
   __resetComposeStoreForTests();
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
   useAccountStore.setState({
@@ -249,4 +251,64 @@ test("opening a saved draft and closing it untouched doesn't ask", async () => {
   const panel = await screen.findByRole("region", { name: "Draft" });
   fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
   expect(screen.queryByRole("region", { name: "Draft" })).not.toBeInTheDocument();
+});
+
+async function addressed() {
+  const panel = await openNew();
+  const to = within(panel).getByRole("combobox", { name: "To" });
+  fireEvent.change(to, { target: { value: "mira@example.com" } });
+  fireEvent.keyDown(to, { key: "Enter" });
+  return { panel, to };
+}
+const sent = () => calls.filter((c) => c.cmd === "send_email").length;
+
+test("confirm before sending: Send asks first, then sends once", async () => {
+  act(() => useComposeSettings.getState().setConfirmSend(true));
+  const { panel } = await addressed();
+  fireEvent.click(within(panel).getByRole("button", { name: "Send" }));
+  const prompt = within(panel).getByRole("alertdialog", { name: "Send this message?" });
+  expect(sent()).toBe(0);
+  fireEvent.click(within(prompt).getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(sent()).toBe(1));
+});
+
+test("confirm before sending: mod+Enter asks, and Keep editing or Escape closes the prompt", async () => {
+  act(() => useComposeSettings.getState().setConfirmSend(true));
+  const { panel, to } = await addressed();
+  fireEvent.keyDown(to, { key: "Enter", ctrlKey: true });
+  const prompt = within(panel).getByRole("alertdialog", { name: "Send this message?" });
+  expect(sent()).toBe(0);
+  fireEvent.click(within(prompt).getByRole("button", { name: "Keep editing" }));
+  expect(within(panel).queryByRole("alertdialog")).not.toBeInTheDocument();
+  fireEvent.keyDown(to, { key: "Enter", ctrlKey: true });
+  expect(within(panel).getByRole("alertdialog", { name: "Send this message?" })).toBeVisible();
+  fireEvent.keyDown(to, { key: "Escape" });
+  expect(within(panel).queryByRole("alertdialog")).not.toBeInTheDocument();
+  expect(sent()).toBe(0);
+});
+
+test("without confirm before sending, Send sends straight away", async () => {
+  const { panel } = await addressed();
+  fireEvent.click(within(panel).getByRole("button", { name: "Send" }));
+  expect(within(panel).queryByRole("alertdialog")).not.toBeInTheDocument();
+  await waitFor(() => expect(sent()).toBe(1));
+});
+
+test("closing while the send prompt is open leaves only the close prompt", async () => {
+  act(() => useComposeSettings.getState().setConfirmSend(true));
+  const { panel } = await addressed();
+  fireEvent.click(within(panel).getByRole("button", { name: "Send" }));
+  expect(within(panel).getByRole("alertdialog", { name: "Send this message?" })).toBeVisible();
+  fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+  const prompts = within(panel).getAllByRole("alertdialog");
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]).toHaveAccessibleName("Save draft or discard?");
+});
+
+test("the send prompt takes focus on its Send button", async () => {
+  act(() => useComposeSettings.getState().setConfirmSend(true));
+  const { panel } = await addressed();
+  fireEvent.click(within(panel).getByRole("button", { name: "Send" }));
+  const prompt = within(panel).getByRole("alertdialog", { name: "Send this message?" });
+  await waitFor(() => expect(within(prompt).getByRole("button", { name: "Send" })).toHaveFocus());
 });

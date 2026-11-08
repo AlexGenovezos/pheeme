@@ -22,24 +22,62 @@ function read(): UndoSendSeconds {
     : DEFAULT_UNDO_SEND;
 }
 
+/** Which reply button comes first, and stands out, above a conversation. */
+export type DefaultReply = "reply" | "replyAll";
+export const DEFAULT_REPLY: DefaultReply = "reply";
+
+const REPLY_KEY = "pheeme.default-reply";
+const CONFIRM_KEY = "pheeme.confirm-send";
+
+function readReply(): DefaultReply {
+  return storage()?.getItem(REPLY_KEY) === "replyAll" ? "replyAll" : DEFAULT_REPLY;
+}
+
+function readConfirm(): boolean {
+  return storage()?.getItem(CONFIRM_KEY) === "true";
+}
+
+function persist(key: string, value: string) {
+  try {
+    storage()?.setItem(key, value);
+  } catch {
+    // The choice just won't survive a relaunch.
+  }
+}
+
 interface ComposeSettings {
   undoSendSeconds: UndoSendSeconds;
   setUndoSendSeconds(seconds: UndoSendSeconds): void;
+  defaultReply: DefaultReply;
+  setDefaultReply(reply: DefaultReply): void;
+  /** Ask "Send this message?" before each send. */
+  confirmSend: boolean;
+  setConfirmSend(confirm: boolean): void;
 }
 
 export const useComposeSettings = create<ComposeSettings>((set) => ({
   undoSendSeconds: read(),
   setUndoSendSeconds: (seconds) => {
-    try {
-      storage()?.setItem(KEY, String(seconds));
-    } catch {
-      // The choice just won't survive a relaunch.
-    }
+    persist(KEY, String(seconds));
     set({ undoSendSeconds: seconds });
+  },
+  defaultReply: readReply(),
+  setDefaultReply: (reply) => {
+    persist(REPLY_KEY, reply);
+    set({ defaultReply: reply });
+  },
+  confirmSend: readConfirm(),
+  setConfirmSend: (confirm) => {
+    persist(CONFIRM_KEY, String(confirm));
+    set({ confirmSend: confirm });
   },
 }));
 
-/** Test helper: re-read the stored choice. */
+/** Test helper: re-read the stored choices. */
 export function __resetComposeSettingsForTests() {
-  useComposeSettings.setState({ undoSendSeconds: read() });
+  useComposeSettings.setState({
+    undoSendSeconds: read(),
+    defaultReply: readReply(),
+    confirmSend: readConfirm(),
+  });
 }

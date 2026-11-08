@@ -12,6 +12,7 @@ import {
   Zap,
 } from "lucide-react";
 import { type MouseEvent, type ReactNode, useMemo, useRef } from "react";
+import { useComposeSettings } from "../compose/composeSettings";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { describeShortcut } from "../keyboard/format";
@@ -49,13 +50,15 @@ function ReplyButton(props: {
   icon: ReactNode;
   compact: boolean;
   disabled: boolean;
+  /** The default reply: filled when the button is labelled. */
+  primary?: boolean;
   onClick(): void;
 }) {
-  const { label, shortcut, icon, compact, ...rest } = props;
+  const { label, shortcut, icon, compact, primary, ...rest } = props;
   if (compact) return <IconButton label={label} shortcut={shortcut} icon={icon} {...rest} />;
   return (
     <Button
-      variant="ghost"
+      variant={primary ? "primary" : "ghost"}
       size="sm"
       className="toolbar__reply"
       icon={icon}
@@ -74,6 +77,7 @@ export function ViewPane() {
   const openKey = useUiStore((s) => s.openThread);
   const checked = useUiStore((s) => s.checked);
   const readingPane = useUiStore((s) => s.readingPane);
+  const defaultReply = useComposeSettings((s) => s.defaultReply);
   const threads = useMailStore((s) => s.threads);
   const off = !openKey; // Reply and Forward need an open conversation
   // What the mutations act on (the checked rows, else the open one) that is still in the list. Rows that have
@@ -169,22 +173,47 @@ export function ViewPane() {
           onClick={() => void toggleStar()}
         />
         <span className="toolbar__separator" />
-        <ReplyButton
-          label="Reply"
-          shortcut={keys.reply}
-          icon={<Reply />}
-          compact={compact}
-          disabled={off}
-          onClick={() => void respond("reply")}
-        />
-        <ReplyButton
-          label="Reply all"
-          shortcut={keys.replyAll}
-          icon={<ReplyAll />}
-          compact={compact}
-          disabled={off}
-          onClick={() => void respond("replyAll")}
-        />
+        {defaultReply === "replyAll" ? (
+          <>
+            <ReplyButton
+              label="Reply all"
+              shortcut={keys.replyAll}
+              icon={<ReplyAll />}
+              compact={compact}
+              disabled={off}
+              primary
+              onClick={() => void respond("replyAll")}
+            />
+            <ReplyButton
+              label="Reply"
+              shortcut={keys.reply}
+              icon={<Reply />}
+              compact={compact}
+              disabled={off}
+              onClick={() => void respond("reply")}
+            />
+          </>
+        ) : (
+          <>
+            <ReplyButton
+              label="Reply"
+              shortcut={keys.reply}
+              icon={<Reply />}
+              compact={compact}
+              disabled={off}
+              primary
+              onClick={() => void respond("reply")}
+            />
+            <ReplyButton
+              label="Reply all"
+              shortcut={keys.replyAll}
+              icon={<ReplyAll />}
+              compact={compact}
+              disabled={off}
+              onClick={() => void respond("replyAll")}
+            />
+          </>
+        )}
         <ReplyButton
           label="Forward"
           shortcut={keys.forward}

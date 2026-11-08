@@ -6,6 +6,7 @@ import { threadKey } from "../mail/mailboxes";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetThreadStoreForTests } from "../store/threadStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
+import { useComposeSettings } from "../compose/composeSettings";
 import { ViewPane } from "./ViewPane";
 
 const thread = (n: number, over: Partial<ThreadSummary> = {}): ThreadSummary => ({
@@ -114,4 +115,17 @@ test("checked rows that have all left the list leave the mutations off", () => {
   render(<ViewPane />);
   expect(button("Archive")).toBeDisabled();
   expect(button("More actions")).toBeDisabled();
+});
+
+test("the default reply comes first and is the primary button", () => {
+  act(() => useComposeSettings.getState().setDefaultReply("replyAll"));
+  render(<ViewPane />);
+  const names = screen
+    .getAllByRole("button")
+    .map((b) => b.getAttribute("aria-label") ?? b.textContent ?? "")
+    .filter((n) => /^Reply/.test(n));
+  expect(names[0]).toMatch(/^Reply all/);
+  expect(button("Reply all")).toHaveClass("ui-button--primary");
+  expect(button("Reply")).not.toHaveClass("ui-button--primary");
+  act(() => useComposeSettings.getState().setDefaultReply("reply"));
 });
