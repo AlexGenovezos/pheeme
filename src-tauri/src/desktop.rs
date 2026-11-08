@@ -1,10 +1,12 @@
 //! Desktop integration. Sync produces arrivals; this layer handles OS presentation and navigation.
 mod icon;
 mod platform;
+mod schedule;
 
 use crate::db::{self, desktop::AccountDesktop};
 use crate::sync::SyncEvent;
 use crate::AppState;
+use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,6 +15,8 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
+
+pub use schedule::{NotifySchedule, ScheduleMode};
 
 const TRAY: &str = "pheeme-mail";
 
@@ -38,6 +42,8 @@ pub struct DesktopSettings {
     pub tray_available: bool,
     /// The user wants the menu bar / notification area icon.
     pub tray_enabled: bool,
+    /// When alerts may appear, for every account.
+    pub schedule: NotifySchedule,
 }
 
 #[cfg(target_os = "linux")]
@@ -95,12 +101,24 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
         let messages = messages.clone();
         tauri::async_runtime::spawn(async move {
             let state = app.state::<AppState>();
+            let schedule = db::settings::notify_schedule(&state.db)
+                .await
+                .unwrap_or_default();
             match db::desktop::accounts(&state.db).await {
                 Ok(accounts)
                     if accounts
                         .iter()
                         .any(|a| a.account_id == account_id && a.enabled) =>
                 {
+                    // Dropped, not saved for later.
+                    if !schedule.allows(Local::now().naive_local()) {
+                        tracing::info!(
+                            %account_id,
+                            alerts = messages.len(),
+                            "new mail not alerted: outside the notification schedule"
+                        );
+                        return;
+                    }
                     // One notification per conversation per sync, including replies to existing threads.
                     let by_thread: BTreeMap<_, _> = messages
                         .into_iter()
@@ -157,6 +175,7 @@ pub async fn settings(app: &AppHandle) -> anyhow::Result<DesktopSettings> {
         permission: platform::permission(false).await?,
         tray_available: app.state::<Arc<Desktop>>().can_hide.load(Ordering::Relaxed),
         tray_enabled: db::settings::tray_icon(&state.db).await?,
+        schedule: db::settings::notify_schedule(&state.db).await?,
     })
 }
 
@@ -181,6 +200,18 @@ pub async fn set_notifications(
         }
     }
     db::desktop::set_enabled(&app.state::<AppState>().db, account_id, enabled).await?;
+    settings(app).await
+}
+
+/// Save when alerts may appear. Hours are 0 to 23.
+pub async fn set_schedule(
+    app: &AppHandle,
+    schedule: NotifySchedule,
+) -> anyhow::Result<DesktopSettings> {
+    if !schedule.valid() {
+        anyhow::bail!("Pick hours between 0 and 23.");
+    }
+    db::settings::set_notify_schedule(&app.state::<AppState>().db, &schedule).await?;
     settings(app).await
 }
 

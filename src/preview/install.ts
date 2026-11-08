@@ -140,6 +140,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   const notificationChoices = new Map<string, boolean>();
   let gmailQuota = 6000;
   let trayIcon = true;
+  let notifySchedule = { mode: "always", startHour: 9, endHour: 17, weekdaysOnly: true };
   let telemetry = true;
   const inboxTabs = new Map<string, string[]>();
   const hiddenTabs = (accountId: string) => inboxTabs.get(accountId) ?? [];
@@ -153,6 +154,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     permission: "system",
     trayAvailable: false,
     trayEnabled: trayIcon,
+    schedule: notifySchedule,
   });
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
@@ -182,6 +184,10 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     },
     set_tray_icon: (args) => {
       trayIcon = args?.shown === true;
+      return desktopSettings();
+    },
+    set_notification_schedule: (args) => {
+      notifySchedule = { ...notifySchedule, ...(args?.schedule as typeof notifySchedule) };
       return desktopSettings();
     },
     take_notification_target: () => null,

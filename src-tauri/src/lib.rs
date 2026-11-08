@@ -305,6 +305,7 @@ pub fn run() {
             commands::settings::set_account_notifications,
             commands::settings::answer_notification_prompt,
             commands::settings::set_tray_icon,
+            commands::settings::set_notification_schedule,
             commands::settings::telemetry_enabled,
             commands::settings::set_telemetry,
             commands::settings::take_notification_target,

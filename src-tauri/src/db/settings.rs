@@ -1,9 +1,11 @@
 //! App-wide preferences stored in `app_settings`.
+use crate::desktop::NotifySchedule;
 use anyhow::Result;
 use sqlx::SqlitePool;
 
 const GMAIL_QUOTA: &str = "gmail_quota_per_minute";
 const TRAY_ICON: &str = "tray_icon";
+const NOTIFY_SCHEDULE: &str = "notify_schedule";
 const TELEMETRY: &str = "telemetry";
 const TELEMETRY_INSTALL_ID: &str = "telemetry_install_id";
 const TELEMETRY_LAST_PING: &str = "telemetry_last_ping_ms";
@@ -87,6 +89,18 @@ pub async fn set_telemetry_last_ping(pool: &SqlitePool, at_ms: i64) -> Result<()
     set(pool, TELEMETRY_LAST_PING, &at_ms.to_string()).await
 }
 
+/// When alerts may appear. Missing or unreadable JSON reads as the default (any time).
+pub async fn notify_schedule(pool: &SqlitePool) -> Result<NotifySchedule> {
+    Ok(get(pool, NOTIFY_SCHEDULE)
+        .await?
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or_default())
+}
+
+pub async fn set_notify_schedule(pool: &SqlitePool, schedule: &NotifySchedule) -> Result<()> {
+    set(pool, NOTIFY_SCHEDULE, &serde_json::to_string(schedule)?).await
+}
+
 fn inbox_tabs_key(account_id: &str) -> String {
     format!("inbox_tabs.{account_id}")
 }
@@ -147,6 +161,27 @@ async fn delete(pool: &SqlitePool, key: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn notify_schedule_persists_and_bad_json_reads_as_default() {
+        use crate::desktop::ScheduleMode;
+        let db = crate::db::test_support::TestDb::with_account("a").await;
+        assert_eq!(
+            notify_schedule(&db.pool).await.unwrap(),
+            NotifySchedule::default()
+        );
+        let off = NotifySchedule {
+            mode: ScheduleMode::Off,
+            ..Default::default()
+        };
+        set_notify_schedule(&db.pool, &off).await.unwrap();
+        assert_eq!(notify_schedule(&db.pool).await.unwrap(), off);
+        set(&db.pool, NOTIFY_SCHEDULE, "{").await.unwrap();
+        assert_eq!(
+            notify_schedule(&db.pool).await.unwrap(),
+            NotifySchedule::default()
+        );
+    }
 
     #[tokio::test]
     async fn gmail_quota_persists() {

@@ -19,12 +19,14 @@ export function SegmentedControl<T extends string>({
   onChange,
   label,
   className,
+  disabled,
 }: {
   value: T;
   options: readonly Segment<T>[];
   onChange(value: T): void;
   label: string;
   className?: string;
+  disabled?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -52,6 +54,7 @@ export function SegmentedControl<T extends string>({
           type="button"
           role="radio"
           aria-checked={o.value === value}
+          disabled={disabled}
           tabIndex={o.value === value ? 0 : -1}
           className="ui-segmented__option"
           onClick={() => onChange(o.value)}

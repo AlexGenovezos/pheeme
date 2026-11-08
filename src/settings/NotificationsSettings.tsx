@@ -1,15 +1,53 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
+import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Switch } from "../components/ui/Switch";
 import {
   getDesktopSettings,
   setAccountNotifications,
+  setNotificationSchedule,
   setTrayIcon,
   type DesktopSettings,
+  type NotifySchedule,
 } from "../desktop/api";
 import { resetNotificationPrompt } from "../desktop/prompt";
 import { toCommandError } from "../lib/tauri";
 import { SettingsRow, SettingsSection } from "./rows";
+
+const MODES = [
+  { value: "always", label: "Any time" },
+  { value: "workHours", label: "Work hours" },
+  { value: "off", label: "Off" },
+] as const;
+const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+
+function HourSelect({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  disabled: boolean;
+  onChange(hour: number): void;
+}) {
+  return (
+    <select
+      className="settings-select"
+      aria-label={label}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(Number(e.target.value))}
+    >
+      {HOURS.map((hour) => (
+        <option key={hour} value={hour}>
+          {String(hour).padStart(2, "0")}:00
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export function NotificationsSettings() {
   const [settings, setSettings] = useState<DesktopSettings | null>(null);
@@ -57,8 +95,65 @@ export function NotificationsSettings() {
     if (next.accounts.every((a) => a.asked)) resetNotificationPrompt();
   }
 
+  const schedule = settings?.schedule;
+  const saveSchedule = (patch: Partial<NotifySchedule>) => {
+    if (schedule) void change(() => setNotificationSchedule({ ...schedule, ...patch }));
+  };
+
   return (
     <>
+      <SettingsSection title="Schedule">
+        <SettingsRow
+          title="When to alert"
+          description="Outside these hours new mail arrives quietly. Your system's Focus / Do Not Disturb still applies."
+          control={
+            <SegmentedControl
+              label="When to alert"
+              value={schedule?.mode ?? "always"}
+              options={MODES}
+              disabled={busy}
+              onChange={(mode) => saveSchedule({ mode })}
+            />
+          }
+        />
+        {schedule?.mode === "workHours" && (
+          <>
+            <SettingsRow
+              title="From"
+              control={
+                <HourSelect
+                  label="From"
+                  value={schedule.startHour}
+                  disabled={busy}
+                  onChange={(startHour) => saveSchedule({ startHour })}
+                />
+              }
+            />
+            <SettingsRow
+              title="Until"
+              control={
+                <HourSelect
+                  label="Until"
+                  value={schedule.endHour}
+                  disabled={busy}
+                  onChange={(endHour) => saveSchedule({ endHour })}
+                />
+              }
+            />
+            <SettingsRow
+              title="Weekdays only"
+              control={
+                <Switch
+                  label="Weekdays only"
+                  checked={schedule.weekdaysOnly}
+                  disabled={busy}
+                  onChange={(weekdaysOnly) => saveSchedule({ weekdaysOnly })}
+                />
+              }
+            />
+          </>
+        )}
+      </SettingsSection>
       <SettingsSection title="Desktop notifications">
         <SettingsRow
           title="New Primary mail"

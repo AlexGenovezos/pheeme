@@ -1,6 +1,6 @@
 //! Desktop preferences, the Gmail quota, and queued notification navigation.
 use super::CommandError;
-use crate::desktop::{self, DesktopSettings, ThreadTarget};
+use crate::desktop::{self, DesktopSettings, NotifySchedule, ThreadTarget};
 use crate::AppState;
 use tauri::{AppHandle, State};
 
@@ -39,6 +39,15 @@ pub async fn answer_notification_prompt(
 #[tauri::command]
 pub async fn set_tray_icon(app: AppHandle, shown: bool) -> Result<DesktopSettings, CommandError> {
     desktop::set_tray_icon(&app, shown).await.map_err(error)
+}
+
+/// Choose when alerts may appear (any time, work hours or off) for every account.
+#[tauri::command]
+pub async fn set_notification_schedule(
+    app: AppHandle,
+    schedule: NotifySchedule,
+) -> Result<DesktopSettings, CommandError> {
+    desktop::set_schedule(&app, schedule).await.map_err(error)
 }
 
 #[tauri::command]
