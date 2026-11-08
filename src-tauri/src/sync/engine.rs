@@ -219,16 +219,24 @@ impl SyncEngine {
     /// Apply everything since the stored history id. Falls back to [`Self::run_full_resync`]
     /// when Gmail no longer has that history. Returns whether any thread changed.
     pub async fn run_incremental_sync(&self) -> Result<bool, SyncError> {
+        Ok(self.incremental_sync(false).await?.unwrap_or(false))
+    }
+
+    /// [`Self::run_incremental_sync`] for a frequent new-mail check: when Gmail has no history
+    /// since the cursor it stops after that one request, with no write, label refresh or events,
+    /// and returns `None`. Otherwise it syncs in full and returns whether any thread changed.
+    pub async fn check_incremental_sync(&self) -> Result<Option<bool>, SyncError> {
+        self.incremental_sync(true).await
+    }
+
+    async fn incremental_sync(&self, quiet_if_unchanged: bool) -> Result<Option<bool>, SyncError> {
         let account = accounts::get_account(&self.db, &self.account_id)
             .await?
             .ok_or_else(|| SyncError::Db(anyhow::anyhow!("account {} is gone", self.account_id)))?;
         let Some(start) = account.history_id else {
             self.run_initial_sync().await?;
-            return Ok(true);
+            return Ok(Some(true));
         };
-        self.emit(SyncEvent::Started {
-            account_id: self.account(),
-        });
 
         // Read every page first: a failure part-way applies nothing.
         let mut records = Vec::new();
@@ -238,7 +246,7 @@ impl SyncEngine {
                 Ok(page) => page,
                 Err(e) if e.is_history_expired() => {
                     self.run_full_resync().await?;
-                    return Ok(true);
+                    return Ok(Some(true));
                 }
                 Err(e) => return Err(e.into()),
             };
@@ -248,6 +256,12 @@ impl SyncEngine {
                 break page.history_id.unwrap_or(start.clone());
             }
         };
+        if quiet_if_unchanged && records.is_empty() {
+            return Ok(None);
+        }
+        self.emit(SyncEvent::Started {
+            account_id: self.account(),
+        });
 
         let intents = self.fold_history(&records).await?;
         let to_fetch: Vec<String> = intents
@@ -349,7 +363,7 @@ impl SyncEngine {
         self.emit(SyncEvent::Completed {
             account_id: self.account(),
         });
-        Ok(changed)
+        Ok(Some(changed))
     }
 
     /// Reduce history records, in order, to one intent per message.

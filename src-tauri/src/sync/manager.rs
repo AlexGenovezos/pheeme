@@ -1,6 +1,6 @@
 //! Runs sync for every connected account: one sync at a time per account (extra
-//! requests coalesce), the 90 s timer, focus/manual/after-action triggers, and a
-//! background backfill per account.
+//! requests coalesce), the 10 s new-mail check (a full sync at least every 90 s),
+//! focus/manual/after-action triggers, and a background backfill per account.
 
 use super::api::MailApi;
 use super::engine::{
@@ -17,7 +17,13 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 
-pub const SYNC_INTERVAL: Duration = Duration::from_secs(90);
+/// How often to ask Gmail for new mail, so notifications arrive within seconds. A check that
+/// finds no history costs one `history.list` (2 quota units) and stops there.
+pub const SYNC_INTERVAL: Duration = Duration::from_secs(10);
+/// A sync also refreshes label names, colours and counters and tells the window to reload.
+/// Gmail records no history for label edits made elsewhere, so a full sync runs at least this
+/// often even when nothing new arrived.
+pub const FULL_SYNC_INTERVAL: Duration = Duration::from_secs(90);
 /// Focus changes fire often; don't sync on focus more often than this.
 pub const FOCUS_MIN_INTERVAL: Duration = Duration::from_secs(15);
 /// Pause between backfill pages, to stay well inside Gmail's per-user quota.
@@ -53,6 +59,9 @@ struct AccountSync {
     backfilling: AtomicBool,
     /// The account's first sync (no history cursor yet) is running.
     first_sync: AtomicBool,
+    /// When the last full sync succeeded; `None` after a failure, so the next one runs in full
+    /// and its `sync:completed` clears the error.
+    last_full: Mutex<Option<Instant>>,
 }
 
 pub struct SyncManager {
@@ -116,6 +125,7 @@ impl SyncManager {
                     dirty: AtomicBool::new(false),
                     backfilling: AtomicBool::new(false),
                     first_sync: AtomicBool::new(false),
+                    last_full: Mutex::new(None),
                 })
             })
             .clone()
@@ -186,13 +196,24 @@ impl SyncManager {
         let _first_done = FirstSyncDone(&a.first_sync);
         let engine = self.engine(account_id);
         let start = Instant::now();
+        let full_due = lock(&a.last_full).is_none_or(|t| t.elapsed() >= FULL_SYNC_INTERVAL);
         let result = async {
             self.process_outbox(account_id).await?;
-            let changed = engine.run_incremental_sync().await?;
+            let changed = if full_due {
+                Some(engine.run_incremental_sync().await?)
+            } else {
+                engine.check_incremental_sync().await?
+            };
+            if changed.is_some() {
+                *lock(&a.last_full) = Some(Instant::now());
+            }
             self.process_outbox(account_id).await?;
             Ok::<_, SyncError>(changed)
         }
         .await;
+        if result.is_err() {
+            *lock(&a.last_full) = None;
+        }
         if start.elapsed() >= SLOW_SYNC {
             tracing::info!(
                 account = account_id,
@@ -301,6 +322,8 @@ impl SyncManager {
         let this = self.clone();
         self.runtime.spawn(async move {
             let mut tick = tokio::time::interval(SYNC_INTERVAL);
+            // After the computer sleeps, check once rather than catching up on every missed tick.
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 tick.tick().await;
                 this.trigger(None);
@@ -366,6 +389,86 @@ mod tests {
             events.clone(),
         );
         (db, pool, fake, events, manager)
+    }
+
+    /// Sync twice (initial, then a full incremental) and wait for the backfill that follows, so
+    /// it can't store mail or refresh labels in the middle of a test.
+    async fn synced(manager: &Arc<SyncManager>) {
+        manager.sync_account("a1").await.unwrap();
+        manager.sync_account("a1").await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while manager.sync_busy("a1") {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("backfill never finished");
+        let state = crate::db::sync_state::get(&manager.db, "a1").await.unwrap();
+        assert!(
+            state.backfill_complete,
+            "a later sync would restart the backfill"
+        );
+    }
+
+    #[tokio::test]
+    async fn frequent_check_stops_at_history_when_nothing_is_new() {
+        let (_dir, _pool, fake, events, manager) = setup().await;
+        fake.add(FakeMsg::new("m1", "t1", &["INBOX"]));
+        synced(&manager).await;
+        events.take();
+        let labels = fake.calls("list_labels");
+        let history = fake.calls("list_history");
+
+        manager.sync_account("a1").await.unwrap();
+        assert_eq!(fake.calls("list_history"), history + 1);
+        assert_eq!(fake.calls("list_labels"), labels, "no label refresh");
+        assert!(events.names().is_empty(), "{:?}", events.names());
+
+        // New mail syncs in full, and alerts, on the next check.
+        fake.add(FakeMsg::new(
+            "m2",
+            "t2",
+            &["INBOX", "UNREAD", "CATEGORY_PERSONAL"],
+        ));
+        manager.sync_account("a1").await.unwrap();
+        let names = events.names();
+        assert!(names.contains(&"sync:new_mail"), "{names:?}");
+        assert!(names.contains(&"sync:completed"), "{names:?}");
+        assert_eq!(fake.calls("list_labels"), labels + 1);
+    }
+
+    #[tokio::test]
+    async fn sync_after_a_failure_runs_in_full() {
+        let (_dir, _pool, fake, events, manager) = setup().await;
+        synced(&manager).await;
+        fake.fail_next("list_history", GmailError::Network("down".into()));
+        assert!(manager.sync_account("a1").await.is_err());
+        events.take();
+
+        // Nothing new, but the window still hears `sync:completed` to clear the error.
+        manager.sync_account("a1").await.unwrap();
+        assert!(
+            events.names().contains(&"sync:completed"),
+            "{:?}",
+            events.names()
+        );
+    }
+
+    #[tokio::test]
+    async fn full_sync_runs_once_its_interval_passes() {
+        let (_dir, _pool, fake, events, manager) = setup().await;
+        synced(&manager).await;
+        *lock(&manager.account("a1").last_full) = Instant::now().checked_sub(FULL_SYNC_INTERVAL);
+        events.take();
+        let labels = fake.calls("list_labels");
+
+        manager.sync_account("a1").await.unwrap();
+        assert_eq!(fake.calls("list_labels"), labels + 1);
+        assert!(
+            events.names().contains(&"sync:completed"),
+            "{:?}",
+            events.names()
+        );
     }
 
     #[tokio::test]

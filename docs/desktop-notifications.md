@@ -21,8 +21,10 @@ Multiple messages arriving in one conversation during one sync produce one alert
 Click an alert to bring Pheeme forward and open its conversation in the owning
 account. Focus / Do Not Disturb, banners, sounds and lock-screen previews remain
 controlled by the OS. Pheeme does not request critical or time-sensitive alerts.
-Notifications use the existing sync loop, so they arrive on its next successful
-sync (normally within 90 seconds), rather than through a separate polling timer.
+Notifications use the existing sync loop, which asks Gmail for new mail every 10
+seconds, so an alert normally appears within about 10 seconds of the mail arriving.
+A check that finds nothing new costs one small Gmail request; label names, colours
+and counts still refresh at least every 90 seconds.
 
 The menu bar / system tray shows the number of unread cached inbox conversations
 across all accounts, matching All Inboxes. macOS shows the number beside a template
