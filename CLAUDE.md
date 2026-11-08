@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Source of truth:** [docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md) sets scope, priorities and the phase order, and overrides `Gmail client project plan.md` wherever they disagree (see its §9). The plan remains the detailed technical reference.
 
-**Current state:** Phases 1–9 of design §12 are built: foundation, OAuth + multi-account onboarding, the Gmail API client, the sync engine, the app shell, the mail UI (v0.6), compose (v0.8), search (v0.9) and labels (Phase 9: create, edit, delete, colour and show/hide through Gmail's labels API, a nested Labels sidebar section, searchable Label as… (`l`) and Move to… (`v`), coloured chips in the list and conversation). Phases 1–9 have passed acceptance (progress per phase: GitHub epic #21). v0.9 also includes encrypted Google Cloud client transfer between devices, offline release notes in Settings › About, and default-on persistent diagnostic logs.
+**Current state:** Phases 1–10 of design §12 are built: foundation, OAuth + multi-account onboarding, the Gmail API client, the sync engine, the app shell, the mail UI (v0.6), compose (v0.8), search (v0.9) and labels (Phase 9: create, edit, delete, colour and show/hide through Gmail's labels API, a nested Labels sidebar section, searchable Label as… (`l`) and Move to… (`v`), coloured chips in the list and conversation) and Phase 10 (notifications and the tray). Phases 1–10 have passed acceptance (progress per phase: GitHub epic #21). Phase 11 (settings) is built and in review: list density, hiding the reading pane, default reply, confirm before sending, per-account Inbox tabs (mail from a hidden tab shows as Primary), a notification schedule, Clear downloaded mail and reopening the setup guide. v0.9 also includes encrypted Google Cloud client transfer between devices, offline release notes in Settings › About, and default-on persistent diagnostic logs.
 
 ## Commands
 
@@ -62,10 +62,9 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `sync/` | `engine.rs` initial/incremental (`history.list`)/expiry-reconcile/backfill; `outbox.rs` optimistic ops + safe sends; `manager.rs` per-account scheduling and triggers; `api.rs` the `MailApi` trait (`fake.rs` is the in-memory Gmail for tests) |
 | `http.rs` | Every `reqwest` client is built here (`client`, `client_builder`), which installs the rustls crypto provider; clippy rejects `reqwest::Client::new`/`builder` and `reqwest::get` |
 | `render.rs` | Email HTML sanitizer (`ammonia`) and signed `pheeme-att` URLs for inline `cid:` images |
-| `attachment_cache.rs` / `attachment_kind.rs` | Attachment bytes cached on disk (500 MB, least recently used evicted first); which files the preview shows and which open in the default app |
-| `attachment_cache.rs` | Attachment bytes on disk (`{cache}/attachments/{account}/{message}/{row}`): a sweep at launch (and after every 50 MB of downloads) removes orphans, then the least recently used files past 500 MB |
+| `attachment_cache.rs` / `attachment_kind.rs` | Attachment bytes on disk (`{cache}/attachments/{account}/{message}/{row}`): a sweep at launch (and after every 50 MB of downloads) removes orphans, then the least recently used files past 500 MB; `clear` deletes them all. `attachment_kind` decides which files the preview shows and which open in the default app |
 | `telemetry.rs` | Anonymous usage ping (on by default; Settings › Diagnostics and the welcome screen turn it off): once a day after an account is connected, a random install ID, version, OS and chip go to the diagnostics Worker's `/v1/ping`. Never from debug builds. `node scripts/installs.mjs` reads the counts |
-| `body_retention.rs` | Periodic trim (launch, then every 6 h): bodies of mail older than the 180-day body window go back to metadata only 30 days after they were downloaded |
+| `body_retention.rs` | Periodic trim (launch, then every 6 h): bodies of mail older than the 180-day body window go back to metadata only 30 days after they were downloaded; `clear_all` (Clear downloaded mail) does it for every body at once |
 | `mail.rs` | Tauri-free mail service the commands call: cached list/thread/label reads, changes via the outbox |
 | `contacts.rs` | Tauri-free recipient suggestions for To/Cc/Bcc, answered locally: addresses from synced mail (the `contacts` table, kept by a trigger on `messages`) plus Google Contacts and "Other contacts" downloaded through the People API (`gmail/people.rs`) after launch and every 6 h. Settings › Contacts walks an account through turning the People API on and signing in again |
 | `labels.rs` | Tauri-free label service: create, rename/re-nest (cascading to sublabels), colour, visibility and delete (with sublabels), straight to Gmail's labels API (not the outbox), then written to the cache |
@@ -76,11 +75,12 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 
 ### Frontend State
 
-Six Zustand stores:
+Seven Zustand stores:
 - `accountStore` — connected accounts (load, upsert, remove)
 - `mailStore` — the active mailbox or search results (paged, optimistic patches), reloaded on `sync:*` events; search combines instant local matches with background Gmail pages
 - `labelStore` — per-account labels, label counts and category counts, plus the All Inboxes unread count
 - `threadStore` — thread-detail cache with prefetch; evicts on `sync:messages_updated`
+- `inboxTabsStore` — per-account hidden Inbox tabs (Primary is always shown)
 - `uiStore` — active mailbox, search text and account scope, selected thread, multi-select, pane layout
 - `composeStore` (`src/compose/`) — open compose panels (autosave, close prompt) and sends waiting out undo or Gmail's confirmation; a refused or undone send reopens its panel
 
