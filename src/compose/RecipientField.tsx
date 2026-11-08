@@ -35,7 +35,12 @@ interface RecipientFieldProps {
 export const RecipientField = forwardRef<HTMLInputElement, RecipientFieldProps>(
   function RecipientField({ label, value, onChange, suggest, trailing }, ref) {
     const [text, setText] = useState("");
-    const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
+    // Results with the query and lookup they answer: older ones are never shown or picked while newer ones load.
+    const [found, setFound] = useState<{
+      query: string;
+      suggest: RecipientFieldProps["suggest"];
+      list: ContactSuggestion[];
+    } | null>(null);
     const [active, setActive] = useState(0);
     // Whether the arrows moved the highlight since the last keystroke.
     const [navigated, setNavigated] = useState(false);
@@ -45,7 +50,8 @@ export const RecipientField = forwardRef<HTMLInputElement, RecipientFieldProps>(
     const latest = useRef(0);
 
     const chosen = new Set(value.map((r) => r.address.toLowerCase()));
-    const shown = suggestions.filter((s) => !chosen.has(s.address.toLowerCase()));
+    const current = found?.query === text.trim() && found.suggest === suggest ? found.list : [];
+    const shown = current.filter((s) => !chosen.has(s.address.toLowerCase()));
     const open = focused && !hidden && shown.length > 0 && text.trim() !== "";
     const activeIndex = Math.min(active, shown.length - 1);
 
@@ -53,12 +59,14 @@ export const RecipientField = forwardRef<HTMLInputElement, RecipientFieldProps>(
       const query = text.trim();
       const request = ++latest.current;
       if (!suggest || !query || /[,;]/.test(query)) {
-        setSuggestions([]);
+        setFound(null);
         return;
       }
+      const answer = (list: ContactSuggestion[]) =>
+        request === latest.current && setFound({ query, suggest, list });
       suggest(query).then(
-        (found) => request === latest.current && setSuggestions(Array.isArray(found) ? found : []),
-        () => request === latest.current && setSuggestions([]),
+        (list) => answer(Array.isArray(list) ? list : []),
+        () => answer([]),
       );
     }, [text, suggest]);
 

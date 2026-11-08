@@ -124,6 +124,26 @@ test("people already added aren't suggested again, and clicking one adds it", as
   ]);
 });
 
+test("suggestions for earlier text can't be picked while the new ones load", async () => {
+  let answer: (people: typeof PEOPLE) => void = () => {};
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+    if (cmd !== "suggest_contacts") return undefined;
+    if ((args as { query: string }).query === "mi") return PEOPLE;
+    return new Promise((resolve) => (answer = resolve));
+  });
+  const panel = await openNew();
+  const to = within(panel).getByRole("combobox", { name: "To" });
+  fireEvent.focus(to);
+  fireEvent.change(to, { target: { value: "mi" } });
+  await within(panel).findByRole("listbox");
+  fireEvent.change(to, { target: { value: "bob" } });
+  expect(within(panel).queryByRole("listbox")).not.toBeInTheDocument();
+  fireEvent.keyDown(to, { key: "Enter" });
+  expect(useComposeStore.getState().windows[0].draft.to.map((r) => r.address)).toEqual(["bob"]);
+  await act(async () => answer([]));
+});
+
 test("Escape hides suggestions without closing the panel", async () => {
   suggestPeople();
   const panel = await openNew();
