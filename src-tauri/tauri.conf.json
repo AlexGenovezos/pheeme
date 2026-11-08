@@ -37,6 +37,7 @@
         "connect-src": "ipc: http://ipc.localhost",
         "font-src": "'self' data:",
         "object-src": "'none'",
+        "frame-src": "'self' https: http: mailto:",
         "base-uri": "'none'"
       },
       "devCsp": {
@@ -47,6 +48,7 @@
         "connect-src": "ipc: http://ipc.localhost ws://localhost:1420 ws://localhost:1421",
         "font-src": "'self' data:",
         "object-src": "'none'",
+        "frame-src": "'self' https: http: mailto:",
         "base-uri": "'none'"
       }
     }
