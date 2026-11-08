@@ -138,14 +138,25 @@ pub struct OpenTiming {
     pub outcome: String,
 }
 
-/// The most recent [`OPEN_TIMINGS`] opens, oldest first.
-#[derive(Debug, Default)]
-pub struct OpenTimings(Mutex<VecDeque<OpenTiming>>);
+/// The most recent [`OPEN_TIMINGS`] entries, oldest first.
+#[derive(Debug)]
+pub struct Recent<T>(Mutex<VecDeque<T>>);
+
+/// The most recent opened threads, as the backend timed them.
+pub type OpenTimings = Recent<OpenTiming>;
+/// The most recent picked conversations, as the window timed them.
+pub type ShownTimings = Recent<ShownTiming>;
 
 pub const OPEN_TIMINGS: usize = 50;
 
-impl OpenTimings {
-    pub fn record(&self, timing: OpenTiming) {
+impl<T> Default for Recent<T> {
+    fn default() -> Self {
+        Self(Mutex::new(VecDeque::with_capacity(OPEN_TIMINGS)))
+    }
+}
+
+impl<T: Clone> Recent<T> {
+    pub fn record(&self, timing: T) {
         let mut timings = self
             .0
             .lock()
@@ -156,13 +167,78 @@ impl OpenTimings {
         timings.push_back(timing);
     }
 
-    pub fn recent(&self) -> Vec<OpenTiming> {
+    pub fn recent(&self) -> Vec<T> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .cloned()
             .collect()
+    }
+}
+
+/// How a picked conversation's timing ended.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShownOutcome {
+    /// Painted, with every image in its email bodies loaded or failed.
+    #[default]
+    Shown,
+    /// The user picked another conversation (or closed it) first.
+    Left,
+    /// Still not finished after 30 seconds.
+    TimedOut,
+}
+
+/// What the user waited for after picking a conversation, timed in the window (`src/mail/openTiming.ts`):
+/// [`OpenTiming`] covers only `get_thread`, which a conversation already in memory never calls.
+/// Milliseconds from the pick. No ids, subjects or addresses.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShownTiming {
+    /// Milliseconds since the epoch, stamped when the report arrives.
+    #[serde(skip_deserializing)]
+    pub at_ms: i64,
+    pub outcome: ShownOutcome,
+    /// The conversation was already in memory, so no `get_thread` ran.
+    pub from_memory: bool,
+    /// Until its data was in hand; `None` if it never was.
+    pub data_ms: Option<u64>,
+    /// Until the first frame painted with it.
+    pub paint_ms: Option<u64>,
+    /// Until every image settled; `None` with no images or when that never happened.
+    pub images_ms: Option<u64>,
+    pub images: u32,
+    pub images_failed: u32,
+    pub images_pending: u32,
+    pub total_ms: u64,
+}
+
+impl ShownTiming {
+    /// Write it to the log: at `info` when the user waited over a second, else `debug`.
+    pub fn log(&self) {
+        macro_rules! log_shown {
+            ($level:expr) => {
+                tracing::event!(
+                    $level,
+                    outcome = ?self.outcome,
+                    from_memory = self.from_memory,
+                    data_ms = ?self.data_ms,
+                    paint_ms = ?self.paint_ms,
+                    images_ms = ?self.images_ms,
+                    images = self.images,
+                    images_failed = self.images_failed,
+                    images_pending = self.images_pending,
+                    total_ms = self.total_ms,
+                    "thread shown"
+                )
+            };
+        }
+        if self.total_ms > 1000 {
+            log_shown!(tracing::Level::INFO);
+        } else {
+            log_shown!(tracing::Level::DEBUG);
+        }
     }
 }
 
@@ -248,6 +324,56 @@ mod tests {
         assert_eq!(recent.len(), OPEN_TIMINGS);
         assert_eq!(recent[0].total_ms, 5);
         assert_eq!(recent.last().unwrap().total_ms, OPEN_TIMINGS as u64 + 4);
+    }
+
+    #[test]
+    fn shown_timing_reads_what_the_window_sends() {
+        let timing: ShownTiming = serde_json::from_value(serde_json::json!({
+            "outcome": "timed_out",
+            "fromMemory": true,
+            "dataMs": 0,
+            "paintMs": 412,
+            "imagesMs": null,
+            "images": 14,
+            "imagesFailed": 2,
+            "imagesPending": 3,
+            "totalMs": 30000,
+        }))
+        .unwrap();
+        assert_eq!(timing.outcome, ShownOutcome::TimedOut);
+        assert!(timing.from_memory);
+        assert_eq!(
+            (timing.data_ms, timing.paint_ms, timing.images_ms),
+            (Some(0), Some(412), None)
+        );
+        assert_eq!(
+            (timing.images, timing.images_failed, timing.images_pending),
+            (14, 2, 3)
+        );
+        assert_eq!(
+            timing.at_ms, 0,
+            "stamped on arrival, not taken from the window"
+        );
+
+        let unknown = serde_json::json!({
+            "outcome": "exploded", "fromMemory": false, "dataMs": null, "paintMs": null,
+            "imagesMs": null, "images": 0, "imagesFailed": 0, "imagesPending": 0, "totalMs": 1,
+        });
+        assert!(serde_json::from_value::<ShownTiming>(unknown).is_err());
+    }
+
+    #[test]
+    fn shown_timings_keep_the_newest() {
+        let timings = ShownTimings::default();
+        for n in 0..OPEN_TIMINGS as u64 + 2 {
+            timings.record(ShownTiming {
+                total_ms: n,
+                ..ShownTiming::default()
+            });
+        }
+        let recent = timings.recent();
+        assert_eq!(recent.len(), OPEN_TIMINGS);
+        assert_eq!(recent[0].total_ms, 2);
     }
 
     #[test]

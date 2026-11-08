@@ -460,6 +460,28 @@ export type UpdateEvent =
 /** Log one updater step with the version it concerns and any error, for Send diagnostics. */
 export const logUpdate = (event: UpdateEvent, version: string | null, error: string | null) =>
   invoke<void>("log_update", { event, version, error });
+/**
+ * What the user waited for after picking a conversation, measured in the window: `get_thread` times only the
+ * backend, and a conversation already in memory never calls it. Milliseconds from the pick; no ids or subjects.
+ */
+export interface ShownTiming {
+  /** `shown`: painted with every image settled; `left`: the user moved on first; `timed_out`: gave up waiting. */
+  outcome: "shown" | "left" | "timed_out";
+  /** The conversation was already in memory, so no `get_thread` ran. */
+  fromMemory: boolean;
+  /** Until the conversation's data was in hand, or null if it never was. */
+  dataMs: number | null;
+  /** Until the first frame painted with it. */
+  paintMs: number | null;
+  /** Until every image in its email bodies loaded or failed; null when there were none or it never happened. */
+  imagesMs: number | null;
+  images: number;
+  imagesFailed: number;
+  imagesPending: number;
+  totalMs: number;
+}
+/** Log how long a conversation took to show, for Send diagnostics. */
+export const logThreadShown = (timing: ShownTiming) => invoke<void>("log_thread_shown", { timing });
 /** Write the same bundle to `path` (chosen in a save dialog). */
 export const saveDiagnostics = (note: string, replyTo: string | null, path: string) =>
   invoke<void>("save_diagnostics", { note, replyTo, path });
