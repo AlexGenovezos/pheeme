@@ -13,6 +13,7 @@ import { copyOpenConversationCode } from "./CodeCard";
 import { threadKey } from "./mailboxes";
 import { ThreadList } from "./ThreadList";
 import { ThreadView } from "./ThreadView";
+import { LIST_CODE_MAX_AGE } from "./verificationCode";
 
 const KEY = threadKey("a1", "t1");
 const NOW = Date.now();
@@ -132,4 +133,17 @@ test("the list row offers a recent code; clicking it copies without opening the 
   fireEvent.click(chips[0]);
   expect(writeText).toHaveBeenCalledWith("779693");
   expect(useUiStore.getState().openThread).toBeNull();
+});
+
+test("the list chip goes away once the code is an hour old, without anything else re-rendering", () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  try {
+    useMailStore.setState({ threads: [summary({ date: Date.now() - LIST_CODE_MAX_AGE + 1000 })] });
+    render(<ThreadList title="Inbox" onRowAction={vi.fn()} rowMenu={() => []} />);
+    expect(screen.getByRole("button", { name: "Copy verification code 779693" })).toBeTruthy();
+    act(() => vi.advanceTimersByTime(2000));
+    expect(screen.queryByRole("button", { name: "Copy verification code 779693" })).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });

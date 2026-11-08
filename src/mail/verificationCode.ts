@@ -12,14 +12,14 @@ import type { MessageDetail, ThreadSummary } from "../lib/tauri";
 
 /** Wording that makes an email a sign-in or verification code email. */
 const STRONG =
-  /\b(?:verification|verify|security|log[- ]?in|sign[- ]?in|one[- ]time|single[- ]use|authentication|2fa|two[- ]factor|2-step|two[- ]step|mfa)\s+(?:code|passcode|pin)\b|\b(?:passcode|otp)\b/i;
+  /\b(?:verification|verify|security|log[- ]?in|sign[- ]?in|one[- ]time|single[- ]use|authentication|2fa|two[- ]factor|2-step|two[- ]step|mfa)\s+(?:code|passcode|pin)\b|\b(?:passcode|otp)\b/gi;
 /** Wording that's enough for an all-digit code. */
 const WEAK =
-  /\b(?:confirmation|temporary|access)\s+(?:code|pin)\b|\b(?:is|as) your (?:[\w-]+ ){0,3}(?:code|passcode|pin)\b|\byour code is\b|\benter (?:this|the following) code\b/i;
-/** Where the code word is; the code itself must be near one. */
-const CODE_WORD = /\b(?:code|passcode|otp|pin)\b/gi;
-/** How far (in characters) a code may sit from the word "code". */
+  /\b(?:confirmation|temporary|access)\s+(?:code|pin)\b|\b(?:is|as) your (?:[\w-]+ ){0,3}(?:code|passcode|pin)\b|\byour code is\b|\benter (?:this|the following) code\b/gi;
+/** How far (in characters) a code may sit from that wording. */
 const NEAR = 80;
+/** What comes just before a number that only identifies something: "the phone ending in 1234". */
+const IDENTIFIES = /\b(?:ending|ends) (?:in|with) $|\blast (?:\d|four|4) digits(?: of)?:? $/i;
 
 /**
  * A code standing on its own: 4–8 digits, digits grouped 3+3 or 4+4, or 5–8 capitals and digits (optionally
@@ -30,19 +30,20 @@ const CANDIDATE =
 
 interface Candidate {
   code: string;
+  letters: boolean;
   start: number;
   end: number;
 }
 
-function candidates(text: string, letters: boolean): Candidate[] {
+function candidates(text: string): Candidate[] {
   const found: Candidate[] = [];
   for (const m of text.matchAll(CANDIDATE)) {
     const raw = m[1];
     const hasLetter = /[A-Z]/.test(raw);
     const digitsOnly = raw.replace(/[ -]/g, "");
     if (!/\d/.test(raw)) continue;
+    if (IDENTIFIES.test(text.slice(Math.max(0, m.index - 24), m.index))) continue;
     if (hasLetter) {
-      if (!letters) continue;
       if (raw.replace("-", "").length < 5) continue;
     } else {
       if (!/^\d{4,8}$/.test(digitsOnly)) continue;
@@ -50,21 +51,33 @@ function candidates(text: string, letters: boolean): Candidate[] {
       if (/^(?:19|20)\d\d$/.test(digitsOnly)) continue;
     }
     const start = m.index;
-    found.push({ code: hasLetter ? raw : digitsOnly, start, end: start + raw.length });
+    found.push({
+      code: hasLetter ? raw : digitsOnly,
+      letters: hasLetter,
+      start,
+      end: start + raw.length,
+    });
   }
   return found;
 }
 
-/** The one-time code in `text`, or null when the text isn't a code email or no code sits near the wording. */
+/**
+ * The one-time code in `text`, or null when the text isn't a code email or no code sits near the wording.
+ * Distance is measured to the wording itself, not to any "code": in "Your verification code is 123456.
+ * Discount code SAVE20" the promo code is next to a "code" but not to the verification wording.
+ */
 export function findCode(text: string): string | null {
   const flat = text.replace(/\s+/g, " ");
-  const strong = STRONG.test(flat);
-  if (!strong && !WEAK.test(flat)) return null;
-  const words = [...flat.matchAll(CODE_WORD)].map((m) => [m.index, m.index + m[0].length]);
+  const anchors = [
+    ...[...flat.matchAll(STRONG)].map((m) => ({ m, strong: true })),
+    ...[...flat.matchAll(WEAK)].map((m) => ({ m, strong: false })),
+  ].map(({ m, strong }) => ({ start: m.index, end: m.index + m[0].length, strong }));
+  if (!anchors.length) return null;
   let best: { code: string; distance: number } | null = null;
-  for (const c of candidates(flat, strong)) {
-    for (const [start, end] of words) {
-      const distance = c.start >= end ? c.start - end : start >= c.end ? start - c.end : 0;
+  for (const c of candidates(flat)) {
+    for (const a of anchors) {
+      if (c.letters && !a.strong) continue;
+      const distance = c.start >= a.end ? c.start - a.end : a.start >= c.end ? a.start - c.end : 0;
       if (distance <= NEAR && (!best || distance < best.distance))
         best = { code: c.code, distance };
     }

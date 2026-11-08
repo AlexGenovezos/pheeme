@@ -1,6 +1,6 @@
 // One conversation in the list: selection checkbox, sender, subject, snippet, date and hover actions.
 import { Archive, Mail, MailOpen, Paperclip, Star, Trash2 } from "lucide-react";
-import { type CSSProperties, memo, type MouseEvent, useMemo, useState } from "react";
+import { type CSSProperties, memo, type MouseEvent, useEffect, useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { registry } from "../keyboard/registry";
 import { ListRow } from "../components/ui/ListRow";
@@ -11,7 +11,7 @@ import type { LabelInfo, ThreadSummary } from "../lib/tauri";
 import { CodeChip } from "./CodeCard";
 import { startMailDrag } from "./dragMail";
 import { type Location, threadKey } from "./mailboxes";
-import { rowCode } from "./verificationCode";
+import { LIST_CODE_MAX_AGE, rowCode } from "./verificationCode";
 import "./mail.css";
 
 export type RowAction = "archive" | "delete" | "read";
@@ -75,7 +75,17 @@ export const ThreadRow = memo(function ThreadRow({
     const label = labels.get(id);
     return label && label.messageListVisibility !== "hide" && id !== currentLabelId ? [label] : [];
   });
-  const code = useMemo(() => rowCode(thread, Date.now()), [thread]);
+  // Re-checked when the code gets too old for the list, even if nothing else re-renders the row.
+  const [, setExpired] = useState(0);
+  const code = rowCode(thread, Date.now());
+  useEffect(() => {
+    if (!code) return;
+    const timer = setTimeout(
+      () => setExpired((n) => n + 1),
+      thread.date + LIST_CODE_MAX_AGE - Date.now() + 1,
+    );
+    return () => clearTimeout(timer);
+  }, [code, thread.date]);
   const act = (action: RowAction) => (e: MouseEvent) => {
     e.stopPropagation();
     onAction(action, thread);

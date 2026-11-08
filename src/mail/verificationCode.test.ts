@@ -55,6 +55,17 @@ describe("findCode", () => {
     ).toBe("660021");
   });
 
+  it("takes the code next to the verification wording, not a promo code next to another 'code'", () => {
+    expect(findCode("Your verification code is 123456. Discount code SAVE20")).toBe("123456");
+  });
+
+  it("doesn't take the end of a phone number for the code", () => {
+    expect(findCode("Your verification code was sent to the phone ending in 1234.")).toBeNull();
+    expect(
+      findCode("Your verification code was sent to the phone ending in 1234. Your code is 908172"),
+    ).toBe("908172");
+  });
+
   it("reads codes that come before the wording in a subject", () => {
     expect(findCode("123456 is your Facebook confirmation code")).toBe("123456");
   });
