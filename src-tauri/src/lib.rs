@@ -6,6 +6,7 @@ pub mod attachment_kind;
 pub mod body_retention;
 pub mod commands;
 pub mod compose;
+pub mod contacts;
 pub mod db;
 pub mod desktop;
 mod diagnostics;
@@ -42,6 +43,7 @@ pub struct AppState {
     pub labels: labels::LabelService,
     pub sender_rules: sender_rules::SenderRuleService,
     pub compose: compose::ComposeService,
+    pub contacts: Arc<contacts::ContactService>,
     pub sync: Arc<SyncManager>,
     pub transfers: transfer::TransferService,
     /// The Gmail per-user limit every account's client paces itself by (Settings › Sync).
@@ -76,6 +78,12 @@ pub async fn build_state(
             as Arc<dyn sync::MailApi>
     });
     let sync = SyncManager::new(db.clone(), api_for, events);
+    let tokens = accounts.clone();
+    let people_for: contacts::PeopleFactory = Arc::new(move |account_id: &str| {
+        let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
+        Arc::new(gmail::GmailClient::people(provider)) as Arc<dyn contacts::PeopleApi>
+    });
+    let contacts = contacts::ContactService::new(db.clone(), people_for);
     let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
@@ -86,6 +94,7 @@ pub async fn build_state(
         async move { mail.sweep_attachment_cache().await }
     });
     tokio::spawn(body_retention::run(db.clone()));
+    tokio::spawn(contacts.clone().run());
     Ok(AppState {
         db,
         accounts,
@@ -93,6 +102,7 @@ pub async fn build_state(
         labels,
         sender_rules,
         compose,
+        contacts,
         sync,
         transfers: transfer::TransferService::default(),
         gmail_quota,
@@ -353,6 +363,9 @@ pub fn run() {
             commands::search::remove_recent_search,
             commands::sync::sync_now,
             commands::sync::get_sync_progress,
+            commands::contacts::suggest_contacts,
+            commands::contacts::google_contacts_status,
+            commands::contacts::refresh_google_contacts,
             commands::compose::compose_template,
             commands::compose::stage_attachment,
             commands::compose::discard_attachments,

@@ -43,7 +43,7 @@ async function openNew() {
 
 test("typed addresses become chips; Backspace takes the last one back to edit", async () => {
   const panel = await openNew();
-  const to = within(panel).getByRole("textbox", { name: "To" });
+  const to = within(panel).getByRole("combobox", { name: "To" });
   fireEvent.change(to, { target: { value: "Mira <mira@example.com>" } });
   fireEvent.keyDown(to, { key: "Enter" });
   fireEvent.change(to, { target: { value: "bo@x.test" } });
@@ -59,11 +59,91 @@ test("typed addresses become chips; Backspace takes the last one back to edit", 
   expect(useComposeStore.getState().windows[0].draft.to).toHaveLength(1);
 });
 
+const PEOPLE = [
+  { name: "Mira Tan", address: "mira@example.com" },
+  { name: null, address: "mira.k@example.net" },
+];
+
+function suggestPeople() {
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+    if (cmd === "suggest_contacts") return PEOPLE;
+    return undefined;
+  });
+}
+
+test("typing suggests people; arrows move, Enter picks with the name", async () => {
+  suggestPeople();
+  const panel = await openNew();
+  const to = within(panel).getByRole("combobox", { name: "To" });
+  fireEvent.focus(to);
+  fireEvent.change(to, { target: { value: "mir" } });
+  const list = await within(panel).findByRole("listbox", { name: "Suggested To recipients" });
+  expect(calls.find((c) => c.cmd === "suggest_contacts")?.args).toMatchObject({
+    accountId: "a1",
+    query: "mir",
+  });
+  const options = within(list).getAllByRole("option");
+  expect(options.map((o) => o.textContent)).toEqual([
+    "Mira Tanmira@example.com",
+    "mira.k@example.net",
+  ]);
+  expect(to).toHaveAttribute("aria-activedescendant", options[0].id);
+  fireEvent.keyDown(to, { key: "ArrowDown" });
+  expect(to).toHaveAttribute("aria-activedescendant", options[1].id);
+  fireEvent.keyDown(to, { key: "ArrowUp" });
+  fireEvent.keyDown(to, { key: "Enter" });
+  expect(useComposeStore.getState().windows[0].draft.to).toEqual([
+    { name: "Mira Tan", address: "mira@example.com" },
+  ]);
+  expect(to).toHaveValue("");
+  expect(within(panel).queryByRole("listbox")).not.toBeInTheDocument();
+});
+
+test("people already added aren't suggested again, and clicking one adds it", async () => {
+  suggestPeople();
+  const panel = await openNew();
+  const to = within(panel).getByRole("combobox", { name: "To" });
+  fireEvent.focus(to);
+  fireEvent.change(to, { target: { value: "mira@example.com" } });
+  await within(panel).findByRole("listbox");
+  fireEvent.keyDown(to, { key: "Enter" });
+  // A whole typed address goes in as typed, with the suggestion's name.
+  expect(useComposeStore.getState().windows[0].draft.to).toEqual([
+    { name: "Mira Tan", address: "mira@example.com" },
+  ]);
+  fireEvent.change(to, { target: { value: "mi" } });
+  const list = await within(panel).findByRole("listbox");
+  const options = within(list).getAllByRole("option");
+  expect(options).toHaveLength(1);
+  fireEvent.mouseDown(options[0]);
+  fireEvent.click(options[0]);
+  expect(useComposeStore.getState().windows[0].draft.to.map((r) => r.address)).toEqual([
+    "mira@example.com",
+    "mira.k@example.net",
+  ]);
+});
+
+test("Escape hides suggestions without closing the panel", async () => {
+  suggestPeople();
+  const panel = await openNew();
+  const to = within(panel).getByRole("combobox", { name: "To" });
+  fireEvent.focus(to);
+  fireEvent.change(to, { target: { value: "mir" } });
+  await within(panel).findByRole("listbox");
+  fireEvent.keyDown(to, { key: "Escape" });
+  expect(within(panel).queryByRole("listbox")).not.toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "New message" })).toBeInTheDocument();
+  // Typed text without a pick still becomes a chip as before.
+  fireEvent.keyDown(to, { key: "Enter" });
+  expect(useComposeStore.getState().windows[0].draft.to.map((r) => r.address)).toEqual(["mir"]);
+});
+
 test("Cc and Bcc appear on request", async () => {
   const panel = await openNew();
-  expect(within(panel).queryByRole("textbox", { name: "Cc" })).not.toBeInTheDocument();
+  expect(within(panel).queryByRole("combobox", { name: "Cc" })).not.toBeInTheDocument();
   fireEvent.click(within(panel).getByRole("button", { name: "Cc" }));
-  expect(within(panel).getByRole("textbox", { name: "Cc" })).toBeInTheDocument();
+  expect(within(panel).getByRole("combobox", { name: "Cc" })).toBeInTheDocument();
 });
 
 test("a new message can come from any account", async () => {
@@ -80,7 +160,7 @@ test("Send without recipients says why instead of sending", async () => {
 
 test("mod+Enter sends and the panel closes", async () => {
   const panel = await openNew();
-  const to = within(panel).getByRole("textbox", { name: "To" });
+  const to = within(panel).getByRole("combobox", { name: "To" });
   fireEvent.change(to, { target: { value: "mira@example.com" } });
   fireEvent.keyDown(to, { key: "Enter" });
   fireEvent.keyDown(to, { key: "Enter", ctrlKey: true });

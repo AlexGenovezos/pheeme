@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod attachments;
+pub mod contacts;
 pub mod desktop;
 pub mod labels;
 pub mod messages;

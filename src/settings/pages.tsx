@@ -2,6 +2,7 @@ import { NotificationsSettings } from "./NotificationsSettings";
 import { ModsSettings } from "../mods/ModsSettings";
 import {
   Bell,
+  Contact,
   Info,
   Filter,
   Keyboard,
@@ -24,6 +25,7 @@ import { useUiStore } from "../store/uiStore";
 import { THEME_MODES, type ThemeMode, useThemeStore } from "../theme/theme";
 import { AboutSettings } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
+import { ContactsSettings } from "./ContactsSettings";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
@@ -246,6 +248,22 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     ],
     Component: AccountsSettings,
     matches: accountsMatch,
+  },
+  {
+    id: "contacts",
+    title: "Contacts",
+    icon: Contact,
+    group: "Mail",
+    keywords: [
+      "autocomplete",
+      "suggestions",
+      "recipients",
+      "to",
+      "google contacts",
+      "people api",
+      "address book",
+    ],
+    Component: ContactsSettings,
   },
   {
     id: "senderRules",

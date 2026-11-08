@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT status, detail, checked_at, synced_at\n           FROM google_contacts_sync WHERE account_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "status",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "google_contacts_sync",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "detail",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "google_contacts_sync",
+            "name": "detail"
+          }
+        }
+      },
+      {
+        "name": "checked_at",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "google_contacts_sync",
+            "name": "checked_at"
+          }
+        }
+      },
+      {
+        "name": "synced_at",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "google_contacts_sync",
+            "name": "synced_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "4d1f608f6297ec477249d6b666c8977f706f3ac2573c7ec310edaa4d8318b76c"
+}

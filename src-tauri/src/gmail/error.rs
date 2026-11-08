@@ -94,6 +94,39 @@ impl GmailError {
         }
     }
 
+    /// Google refused because the API isn't turned on in the user's Google Cloud project (an
+    /// API added after they set the project up, such as the People API).
+    pub fn is_api_disabled(&self) -> bool {
+        match self {
+            GmailError::Api {
+                status: 403,
+                reason,
+                message,
+            } => {
+                matches!(
+                    reason.as_deref(),
+                    Some("SERVICE_DISABLED" | "accessNotConfigured")
+                ) || {
+                    let message = message.to_ascii_lowercase();
+                    message.contains("has not been used in project")
+                        || message.contains("it is disabled")
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// The Google Cloud project number in an [`Self::is_api_disabled`] message
+    /// ("People API has not been used in project 123 before or it is disabled...").
+    pub fn disabled_api_project(&self) -> Option<String> {
+        let GmailError::Api { message, .. } = self else {
+            return None;
+        };
+        let (_, rest) = message.split_once("in project ")?;
+        let number: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        (!number.is_empty()).then_some(number)
+    }
+
     /// `history.list` rejected the start history id because Gmail no longer keeps that far back.
     /// The sync engine answers this with a full re-sync.
     pub fn is_history_expired(&self) -> bool {
@@ -155,6 +188,30 @@ mod tests {
             "history_expired"
         );
         assert!(api(404, None, "x").is_not_found());
+    }
+
+    #[test]
+    fn api_disabled_detection_and_project() {
+        let disabled = api(
+            403,
+            Some("PERMISSION_DENIED"),
+            "People API has not been used in project 123456 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/people.googleapis.com/overview?project=123456 then retry.",
+        );
+        assert!(disabled.is_api_disabled());
+        assert!(!disabled.is_missing_scope());
+        assert_eq!(disabled.disabled_api_project().as_deref(), Some("123456"));
+        assert!(api(403, Some("SERVICE_DISABLED"), "x").is_api_disabled());
+        assert_eq!(
+            api(403, Some("SERVICE_DISABLED"), "x").disabled_api_project(),
+            None
+        );
+        assert!(!api(403, Some("forbidden"), "x").is_api_disabled());
+        assert!(!api(
+            403,
+            Some("PERMISSION_DENIED"),
+            "Request had insufficient authentication scopes."
+        )
+        .is_api_disabled());
     }
 
     #[test]

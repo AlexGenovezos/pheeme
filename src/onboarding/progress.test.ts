@@ -34,6 +34,7 @@ test("the guide covers the steps the design requires, in order", () => {
   expect(STEPS.map((s) => s.id)).toEqual([
     "project",
     "gmail-api",
+    "people-api",
     "calendar-api",
     "consent",
     "branding",

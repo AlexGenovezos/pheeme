@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO google_contacts (account_id, address, name, saved) VALUES (?, ?, ?, ?)\n             ON CONFLICT (account_id, saved, address) DO UPDATE SET\n                 name = coalesce(google_contacts.name, excluded.name)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "6d3ee77eb1111abec6ff0549e0aa5a14d77f5158358dec5a3586adc722290b99"
+}

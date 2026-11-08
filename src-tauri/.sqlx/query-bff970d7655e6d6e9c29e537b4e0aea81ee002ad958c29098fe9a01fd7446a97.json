@@ -1,0 +1,75 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT address AS \"address!: String\",\n               coalesce(max(CASE WHEN src = 2 THEN name END),\n                        max(CASE WHEN src = 0 THEN name END),\n                        max(name)) AS \"name?: String\",\n               max(sent_count) AS \"sent_count!: i64\",\n               max(received_count) AS \"received_count!: i64\",\n               max(last_sent) AS \"last_sent!: i64\",\n               max(last_received) AS \"last_received!: i64\",\n               max(src = 2) AS \"saved!: bool\",\n               max(src = 1) AS \"other!: bool\"\n        FROM (\n            SELECT address, name, sent_count, received_count, last_sent, last_received, 0 AS src\n            FROM contacts WHERE account_id = ?1\n            UNION ALL\n            SELECT address, name, 0, 0, 0, 0, CASE saved WHEN 1 THEN 2 ELSE 1 END\n            FROM google_contacts WHERE account_id = ?1\n        )\n        GROUP BY address\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "address!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "google_contacts",
+            "name": "address"
+          }
+        }
+      },
+      {
+        "name": "name?: String",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "sent_count!: i64",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "received_count!: i64",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "last_sent!: i64",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "last_received!: i64",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "saved!: bool",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "other!: bool",
+        "ordinal": 7,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bff970d7655e6d6e9c29e537b4e0aea81ee002ad958c29098fe9a01fd7446a97"
+}
