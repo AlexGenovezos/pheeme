@@ -486,6 +486,61 @@ test("where the frame's listeners don't run (macOS WebKit), focus leaves the fra
   }
 });
 
+/** Render in a pane with the frame's own listeners blocked (macOS WebKit), click into it, and select its text. */
+function clickIntoBlockedFrame() {
+  render(
+    <div>
+      <div tabIndex={-1} aria-label="Pane">
+        <EmailBody message={message()} />
+      </div>
+      <button type="button">Elsewhere</button>
+    </div>,
+  );
+  const doc = frame().contentDocument!;
+  const dispatch = doc.dispatchEvent.bind(doc);
+  doc.dispatchEvent = (e: Event) => (e.type === "pheeme-probe" ? true : dispatch(e));
+  act(() => useThemeStore.setState({ resolved: "dark" }));
+  frame().focus();
+  act(() => {
+    window.dispatchEvent(new Event("blur"));
+    vi.runAllTimers();
+  });
+  doc.execCommand = vi.fn(() => true);
+  doc.getSelection()!.selectAllChildren(doc.body);
+  return { doc, pane: screen.getByLabelText("Pane") };
+}
+
+const COPY = { key: "c", ...(platform === "macos" ? { metaKey: true } : { ctrlKey: true }) };
+
+test("mod+c still copies the email's selection when WebKit drops focus to the page during the drag", () => {
+  vi.useFakeTimers();
+  try {
+    const { doc, pane } = clickIntoBlockedFrame();
+    // Seen on macOS 27: drag-selecting in the frame leaves nothing focused in the app.
+    act(() => pane.blur());
+    expect(document.activeElement).toBe(document.body);
+
+    expect(fireEvent.keyDown(document.body, COPY)).toBe(false);
+    expect(doc.execCommand).toHaveBeenCalledWith("copy");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("after a click elsewhere in the app, mod+c no longer copies the email's old selection", () => {
+  vi.useFakeTimers();
+  try {
+    const { doc } = clickIntoBlockedFrame();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Elsewhere" }));
+    act(() => (document.activeElement as HTMLElement).blur());
+
+    expect(fireEvent.keyDown(document.body, COPY)).toBe(true);
+    expect(doc.execCommand).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("marks images that failed to load once the frame finishes loading", () => {
   render(<EmailBody message={message()} />);
   const doc = frame().contentDocument!;
