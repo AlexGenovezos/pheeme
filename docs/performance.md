@@ -120,12 +120,19 @@ it never touches a real keychain, and records:
 | Measure | First CI runs | Budget |
 |---------|---------------|--------|
 | Start (WebDriver session request to the first list row), median of 5 launches | single starts 0.9 to 2.1 s | 3 s |
-| Memory after a minute idle: app plus its WebKit processes, PSS | 236 to 239 MiB | 290 MiB |
-| The same after a scripted 10-minute session (mailboxes, scrolling, conversations) | 300 MiB | 360 MiB |
+| Memory after a minute idle: app plus its WebKit processes, PSS | 236 to 239 MiB | 330 MiB |
+| The same after a scripted 10-minute session (mailboxes, scrolling, conversations) | 300 MiB | 400 MiB |
 
-The budgets sit about 20% above those first measurements on an `ubuntu-22.04` runner, which
-renders in software under Xvfb. Idle memory is well over the issue's starting target of
-150 MiB, and the session adds about 64 MiB: both are worth a look.
+The budgets sit about 20% above the measurements on an `ubuntu-22.04` runner, which renders
+in software under Xvfb. They were first set at 290 and 360 MiB. Preloading ahead of the
+reader (below) keeps 160 conversations cached instead of 30 and 5 rendered instead of 1,
+for about 25 MiB more both idle and after the session (269 to 281 and 355 to 365 MiB on
+2026-11-08), so they were raised to 330 and 400 MiB. Idle memory is well over the issue's
+starting target of 150 MiB, and the session adds about 85 MiB: both are worth a look.
+
+The seeded mailbox is a returning user's: the one-time "Turn on notifications?" prompt is
+already answered, and usage pings are off. Left up for the whole run, that prompt's toast
+alone added 40 to 90 MiB and made the session figure swing by as much.
 
 Memory is PSS (proportional set size), which splits shared pages between the processes
 using them, so the total isn't inflated by WebKit's shared libraries the way summed RSS is.
