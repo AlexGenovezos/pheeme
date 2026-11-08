@@ -56,7 +56,7 @@ jobs:
             args: ""
             bundle-dir: src-tauri/target/release/bundle
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-build
@@ -66,8 +66,8 @@ jobs:
       - run: npm ci
       - if: matrix.os == 'ubuntu-22.04'
         run: bash scripts/resolve-apple-env.test.sh
-      - run: npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}' ${{ matrix.args }}
-      - uses: actions/upload-artifact@v7
+      - run: npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}' ${{ matrix.args }} -- --locked
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pheeme-dry-run-${{ matrix.name }}
           path: |
@@ -83,10 +83,10 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       # Versions match the tag, and docs/releases/<tag>.md is written (no TODO or DRAFT left).
       - run: node scripts/release.mjs check "$GITHUB_REF_NAME"
 
@@ -138,7 +138,7 @@ jobs:
             os: ubuntu-22.04
             args: ""
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-build
         with:
           rust-targets: ${{ matrix.target || '' }}
@@ -154,7 +154,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      - uses: tauri-apps/tauri-action@v1
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -163,7 +163,7 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.id }}
           # The publish job writes latest.json once all builds are up; per-build writes race.
           uploadUpdaterJson: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} -- --locked
 
   publish:
     name: Publish release
@@ -175,12 +175,12 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Write latest.json
         env:
           RELEASE_ID: ${{ needs.create-release.outputs.id }}

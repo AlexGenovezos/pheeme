@@ -29,7 +29,7 @@ jobs:
       targets: ${{ steps.collect.outputs.targets }}
     steps:
       - id: collect
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             if (context.eventName === "pull_request_target") {
@@ -83,14 +83,14 @@ jobs:
       # the default ref is the base branch (pull_request_target), the default branch
       # (issue_comment) or main (push). Never check out the PR head here.
       - name: Checkout label helpers
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: .github/scripts
 
       - id: vouch
         name: Check PR author trust
-        uses: mitchellh/vouch/action/check-user@v1
+        uses: mitchellh/vouch/action/check-user@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
         with:
           user: ${{ matrix.target.user }}
           allow-fail: true
@@ -98,7 +98,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sync PR labels
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBER: ${{ matrix.target.number }}
           VOUCH_STATUS: ${{ steps.vouch.outputs.status }}
