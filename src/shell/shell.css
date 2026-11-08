@@ -20,6 +20,31 @@
     minmax(var(--shell-view-min), 1fr);
 }
 
+/*
+ * Reading pane off: one main column after the sidebar, shared by the list and the open conversation. The one
+ * not showing is [hidden] but keeps its layout, so the list holds its scroll position (and keeps the highlighted
+ * row in view) while a conversation is open.
+ */
+.shell[data-reading-pane="off"] {
+  grid-template-areas: "sidebar main";
+  grid-template-columns:
+    min(var(--shell-sidebar-w), calc(100% - var(--shell-view-min)))
+    minmax(var(--shell-view-min), 1fr);
+}
+.shell[data-reading-pane="off"][data-sidebar="collapsed"] {
+  grid-template-columns: 0 minmax(var(--shell-view-min), 1fr);
+}
+.shell[data-reading-pane="off"] :is(.shell__list, .shell__view) {
+  grid-area: main;
+}
+.shell[data-reading-pane="off"] .shell__list {
+  border-right: none;
+}
+.shell[data-reading-pane="off"] :is(.shell__list, .shell__view)[hidden] {
+  display: block;
+  visibility: hidden;
+}
+
 .shell__sidebar {
   grid-area: sidebar;
   min-width: var(--space-0);

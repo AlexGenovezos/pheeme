@@ -19,8 +19,8 @@ import { useCommands } from "../keyboard/useCommands";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
-import { type ListDensity, useUiStore } from "../store/uiStore";
-import { moveSelection, openAndMarkRead, openFocused } from "./actions";
+import { focusedThread, type ListDensity, useUiStore } from "../store/uiStore";
+import { moveSelection, openAndMarkRead, openFocused, toggleCheckFocused } from "./actions";
 import {
   accountColorIndex,
   locationOf,
@@ -142,7 +142,10 @@ export function ThreadList(props: ThreadListProps) {
 
 function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const mailbox = useUiStore((s) => s.mailbox);
-  const open = useUiStore((s) => s.openThread);
+  // The row drawn as selected: the open one, or with the reading pane off and nothing open, the highlight.
+  const open = useUiStore(focusedThread);
+  const readingPane = useUiStore((s) => s.readingPane);
+  const listShown = useUiStore((s) => s.readingPane || s.openThread === null);
   const checked = useUiStore((s) => s.checked);
   const threads = useMailStore((s) => s.threads);
   const loading = useMailStore((s) => s.loading);
@@ -214,12 +217,20 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [density]);
 
-  // j/k and arrow keys move the open thread; keep it in view.
+  // j/k and arrow keys move the open thread (or the highlight); keep it in view.
   useEffect(() => {
     if (openIndex >= 0) virtualizer.scrollToIndex(openIndex, { align: "auto" });
     // `virtualizer` is stable for the component's life.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openIndex]);
+
+  // Reading pane off: back from a conversation (u or Back), the keys go to the list again.
+  const wasShown = useRef(listShown);
+  useEffect(() => {
+    if (listShown && !wasShown.current && !readingPane)
+      focusFromKeyboard(scrollRef.current, { preventScroll: true });
+    wasShown.current = listShown;
+  }, [listShown, readingPane]);
 
   const checkAll = () => useUiStore.getState().checkAll(keys);
 
@@ -262,10 +273,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
       title: "Select conversation",
       group: "Conversation",
       shortcut: "x",
-      run: () => {
-        const key = useUiStore.getState().openThread;
-        if (key !== null) useUiStore.getState().toggleChecked(key);
-      },
+      run: toggleCheckFocused,
     },
     {
       id: "list.check-all",

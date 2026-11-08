@@ -211,3 +211,21 @@ test("an unknown stored list density reads as comfortable", () => {
   localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarWidth: 200 }));
   expect(readLayout().listDensity).toBe("comfortable");
 });
+
+test("the reading pane defaults to on and persists in the layout", () => {
+  expect(ui().readingPane).toBe(true);
+  ui().setReadingPane(false);
+  expect(stored().readingPane).toBe(false);
+  expect(readLayout().readingPane).toBe(false);
+  __resetUiStoreForTests();
+  expect(ui().readingPane).toBe(false);
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify({ readingPane: "no" }));
+  expect(readLayout().readingPane).toBe(true);
+});
+
+test("changing mailbox clears the highlighted row", () => {
+  ui().setCursor("a1:t1");
+  expect(ui().cursor).toBe("a1:t1");
+  ui().setMailbox({ accountId: null, labelId: "STARRED" });
+  expect(ui().cursor).toBeNull();
+});

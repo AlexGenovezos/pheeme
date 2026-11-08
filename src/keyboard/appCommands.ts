@@ -1,5 +1,6 @@
 import {
   archive,
+  closeConversation,
   composeNew,
   labelMenuAnchor,
   openFocused,
@@ -175,7 +176,7 @@ export function appCommands(): Command[] {
       title: "Close conversation",
       group: "Conversation",
       shortcut: "u",
-      run: () => ui().setOpenThread(null),
+      run: closeConversation,
     },
     {
       id: "conversation.reply",

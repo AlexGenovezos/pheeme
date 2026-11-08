@@ -383,6 +383,18 @@ describe("focus and selection semantics", () => {
     expect(useUiStore.getState().checked).toEqual([key(1), key(4)]);
   });
 
+  test("with the reading pane off, x ignores a highlight whose row has left the list", () => {
+    useMailStore.setState({ threads: many(3) });
+    useUiStore.getState().setReadingPane(false);
+    render(<ThreadList {...props()} />);
+    act(() => useUiStore.getState().setCursor(key(9)));
+    pressKey("x");
+    expect(useUiStore.getState().checked).toEqual([]);
+    act(() => useUiStore.getState().setCursor(key(1)));
+    pressKey("x");
+    expect(useUiStore.getState().checked).toEqual([key(1)]);
+  });
+
   test("aria-selected is the checked set; the open row is drawn separately", () => {
     useMailStore.setState({ threads: many(10) });
     render(<ThreadList {...props()} />);

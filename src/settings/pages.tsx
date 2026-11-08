@@ -66,6 +66,12 @@ function SidebarControl() {
   );
 }
 
+function ReadingPaneControl() {
+  const shown = useUiStore((s) => s.readingPane);
+  const setShown = useUiStore((s) => s.setReadingPane);
+  return <Switch label="Show reading pane" checked={shown} onChange={setShown} />;
+}
+
 function PreloadImagesControl() {
   const checked = useReadingSettings((s) => s.preloadImages);
   const onChange = useReadingSettings((s) => s.setPreloadImages);
@@ -228,6 +234,13 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             description: "Mailboxes and labels on the left.",
             keywords: ["panel", "hide"],
             Control: SidebarControl,
+          },
+          {
+            id: "layout.readingPane",
+            title: "Show reading pane",
+            description: "Off: conversations open in place of the list. Press U or Back to return.",
+            keywords: ["preview pane", "split", "hide", "single column", "full width"],
+            Control: ReadingPaneControl,
           },
           {
             id: "layout.listDensity",

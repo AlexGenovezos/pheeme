@@ -28,6 +28,8 @@ export interface PaneLayout {
   listWidth: number;
   sidebarCollapsed: boolean;
   listDensity: ListDensity;
+  /** Off: no reading pane; a conversation opens in place of the list. */
+  readingPane: boolean;
 }
 
 /** Navigation choices that survive a restart, stored beside the layout. */
@@ -48,6 +50,7 @@ const DEFAULT_LAYOUT: PaneLayout = {
   listWidth: PANE.listDefault,
   sidebarCollapsed: false,
   listDensity: "comfortable",
+  readingPane: true,
 };
 
 const clamp = (n: number, min: number, max: number) =>
@@ -84,6 +87,7 @@ export function readLayout(
       typeof raw.listWidth === "number" ? clampList(raw.listWidth) : DEFAULT_LAYOUT.listWidth,
     sidebarCollapsed: raw.sidebarCollapsed === true,
     listDensity: raw.listDensity === "compact" ? "compact" : "comfortable",
+    readingPane: raw.readingPane !== false,
   };
 }
 
@@ -146,6 +150,11 @@ interface UiState extends PaneLayout, NavPrefs {
   toggleUnreadOnly(): void;
   /** The conversation shown in the reading pane. */
   openThread: ThreadKey | null;
+  /**
+   * With the reading pane off, the row highlighted in the list without being open: j/k and the arrows move it,
+   * `o` opens it, and actions with nothing checked act on it. Unused while the reading pane is on.
+   */
+  cursor: ThreadKey | null;
   /** Multi-selection, in the order it was checked. */
   checked: ThreadKey[];
   /** Where a shift-click range starts: the last row toggled or range-started. */
@@ -156,11 +165,13 @@ interface UiState extends PaneLayout, NavPrefs {
   resetListWidth(): void;
   toggleSidebar(): void;
   setListDensity(density: ListDensity): void;
-  /** Go to a mailbox: clears the open thread and selection. An account mailbox also becomes the active account. */
+  setReadingPane(on: boolean): void;
+  /** Go to a mailbox: clears the open thread, highlight and selection. An account mailbox also becomes the active account. */
   setMailbox(ref: MailboxRef): void;
   /** Show `accountId`'s Favorites and labels in the sidebar, leaving the mailbox as it is. */
   setActiveAccount(accountId: string): void;
   setOpenThread(key: ThreadKey | null): void;
+  setCursor(key: ThreadKey | null): void;
   toggleChecked(key: ThreadKey): void;
   /** Check every row from the anchor to `to` inclusive; `keys` is the list in display order. */
   checkRange(keys: ThreadKey[], to: ThreadKey): void;
@@ -178,6 +189,14 @@ interface UiState extends PaneLayout, NavPrefs {
   forgetAccount(accountId: string, remaining: { id: string }[]): void;
 }
 
+/**
+ * The row the keyboard acts on: the open conversation, or with the reading pane off and nothing open, the
+ * highlighted row.
+ */
+export const focusedThread = (
+  s: Pick<UiState, "readingPane" | "openThread" | "cursor">,
+): ThreadKey | null => (s.readingPane || s.openThread !== null ? s.openThread : s.cursor);
+
 type Persisted = PaneLayout & NavPrefs & Pick<UiState, "mailbox">;
 
 const persistedOf = (s: Persisted): Persisted => ({
@@ -186,15 +205,17 @@ const persistedOf = (s: Persisted): Persisted => ({
   listWidth: s.listWidth,
   sidebarCollapsed: s.sidebarCollapsed,
   listDensity: s.listDensity,
+  readingPane: s.readingPane,
   activeAccountId: s.activeAccountId,
   collapsedAccounts: s.collapsedAccounts,
   foldedLabels: s.foldedLabels,
   labelsMoreOpen: s.labelsMoreOpen,
 });
 
-const navReset = (): Pick<UiState, "mailbox" | "openThread" | "checked" | "anchor"> => ({
+const navReset = (): Pick<UiState, "mailbox" | "openThread" | "cursor" | "checked" | "anchor"> => ({
   mailbox: DEFAULT_MAILBOX,
   openThread: null,
+  cursor: null,
   checked: [],
   anchor: null,
 });
@@ -216,6 +237,7 @@ export const useUiStore = create<UiState>((set, get) => {
         checked: [],
         anchor: null,
         openThread: null,
+        cursor: null,
       })),
     ...readLayout(),
     ...readNavPrefs(),
@@ -227,11 +249,12 @@ export const useUiStore = create<UiState>((set, get) => {
         searchText: text,
         searchAccountId: s.searchText.trim() ? s.searchAccountId : s.mailbox.accountId,
         openThread: null,
+        cursor: null,
         checked: [],
         anchor: null,
       })),
     setSearchAccount: (searchAccountId) =>
-      set({ searchAccountId, openThread: null, checked: [], anchor: null }),
+      set({ searchAccountId, openThread: null, cursor: null, checked: [], anchor: null }),
     mailbox: readLastMailbox(),
     setSidebarWidth: (w) => persist({ sidebarWidth: clampSidebar(w) }),
     setListWidth: (w, available) => persist({ listWidth: clampList(w, available) }),
@@ -239,8 +262,9 @@ export const useUiStore = create<UiState>((set, get) => {
     resetListWidth: () => persist({ listWidth: PANE.listDefault }),
     toggleSidebar: () => persist({ sidebarCollapsed: !get().sidebarCollapsed }),
     setListDensity: (listDensity) => persist({ listDensity }),
+    setReadingPane: (readingPane) => persist({ readingPane }),
     setMailbox: (ref) => {
-      set({ searchText: "", openThread: null, checked: [], anchor: null });
+      set({ searchText: "", openThread: null, cursor: null, checked: [], anchor: null });
       persist({
         mailbox: ref,
         ...(ref.accountId !== null && { activeAccountId: ref.accountId }),
@@ -248,6 +272,7 @@ export const useUiStore = create<UiState>((set, get) => {
     },
     setActiveAccount: (accountId) => persist({ activeAccountId: accountId }),
     setOpenThread: (key) => set({ openThread: key }),
+    setCursor: (key) => set({ cursor: key }),
     toggleChecked: (key) =>
       set((s) => ({
         checked: s.checked.includes(key) ? s.checked.filter((k) => k !== key) : [...s.checked, key],
@@ -275,6 +300,7 @@ export const useUiStore = create<UiState>((set, get) => {
       else
         set({
           openThread: ofAccount(s.openThread) ? null : s.openThread,
+          cursor: ofAccount(s.cursor) ? null : s.cursor,
           checked: s.checked.filter((k) => !ofAccount(k)),
           anchor: ofAccount(s.anchor) ? null : s.anchor,
         });
