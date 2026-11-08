@@ -3,6 +3,7 @@
 //! adapters over [`MailService`].
 
 use crate::attachment_cache::AttachmentCache;
+use crate::attachment_kind;
 use crate::db::attachments::{self, DbAttachment};
 use crate::db::messages::{parse_labels, DbMessage};
 use crate::db::search::{self as search_db, ThreadSearch, LABEL_KEY_SEP};
@@ -377,6 +378,31 @@ pub fn safe_file_name(name: Option<&str>) -> String {
         "attachment".to_owned()
     } else {
         cleaned.to_owned()
+    }
+}
+
+/// [`safe_file_name`], also valid on Windows: `<>"|?*` become `_` and a reserved device name
+/// (`CON.pdf`, `com1.txt`) gets a leading `_`. Used for copies opened in the default app, which
+/// only need to keep the extension.
+fn openable_file_name(name: Option<&str>) -> String {
+    let name: String = safe_file_name(name)
+        .chars()
+        .map(|c| if "<>\"|?*".contains(c) { '_' } else { c })
+        .collect();
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end()
+        .to_ascii_uppercase();
+    let reserved = matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || matches!(stem.as_bytes(), [b'C', b'O', b'M', d] | [b'L', b'P', b'T', d] if d.is_ascii_digit());
+    if reserved {
+        format!("_{name}")
+    } else {
+        name
     }
 }
 
@@ -858,30 +884,116 @@ impl MailService {
         let cached = self
             .attachments
             .path(&row.account_id, &row.message_id, &row.id);
+        let _fetching = self.attachments.lock(&cached).await;
         let bytes = match self.attachments.read(&cached).await {
             Some(bytes) => bytes,
-            None => {
-                let api = self.sync.engine(&row.account_id).api;
-                let bytes = match row.attachment_id.as_deref() {
-                    Some(gmail_id) => api
-                        .get_attachment(&row.message_id, gmail_id)
-                        .await
-                        .map_err(SyncError::from)?,
-                    // Small parts travel inside the message: re-read it and take the part
-                    // at this row's index (rows are numbered in parse order).
-                    None => embedded_bytes(api.as_ref(), &row).await?,
-                };
-                if let Err(e) = self.attachments.write(&cached, &bytes).await {
-                    tracing::warn!(error = %e, "couldn't cache an attachment");
-                }
-                bytes
-            }
+            None => self.download(&row, &cached).await?,
         };
         Ok(AttachmentBytes {
             filename: row.filename,
             mime_type,
             bytes,
         })
+    }
+
+    /// Fetch an attachment from Gmail and cache it at `cached`. Hold the file's
+    /// [`AttachmentCache::lock`].
+    async fn download(&self, row: &DbAttachment, cached: &Path) -> Result<Vec<u8>, MailError> {
+        let api = self.sync.engine(&row.account_id).api;
+        let bytes = match row.attachment_id.as_deref() {
+            Some(gmail_id) => api
+                .get_attachment(&row.message_id, gmail_id)
+                .await
+                .map_err(SyncError::from)?,
+            // Small parts travel inside the message: re-read it and take the part
+            // at this row's index (rows are numbered in parse order).
+            None => embedded_bytes(api.as_ref(), row).await?,
+        };
+        if let Err(e) = self.attachments.write(cached, &bytes).await {
+            tracing::warn!(error = %e, "couldn't cache an attachment");
+        }
+        Ok(bytes)
+    }
+
+    /// Download the previewable attachments of these messages into the cache, so opening a
+    /// preview is instant. Files already cached, inline images, files of unknown size and
+    /// files over [`PREFETCH_MAX_FILE`] are skipped; the run stops at [`PREFETCH_MAX_TOTAL`].
+    /// Failures (offline, a deleted message) are logged and skipped. Returns how many files
+    /// were downloaded.
+    pub async fn prefetch_attachments(&self, account_id: &str, message_ids: &[String]) -> usize {
+        let mut budget = PREFETCH_MAX_TOTAL;
+        let mut fetched = 0;
+        for message_id in message_ids {
+            let rows =
+                match attachments::get_attachments_for_message(&self.db, account_id, message_id)
+                    .await
+                {
+                    Ok(rows) => rows,
+                    Err(e) => {
+                        tracing::debug!(error = %e, "couldn't list attachments to prefetch");
+                        continue;
+                    }
+                };
+            for row in rows {
+                let Some(size) = row.size.and_then(|s| u64::try_from(s).ok()) else {
+                    continue;
+                };
+                if row.is_inline != 0
+                    || size > PREFETCH_MAX_FILE
+                    || !attachment_kind::previewable(
+                        row.filename.as_deref(),
+                        row.mime_type.as_deref(),
+                    )
+                {
+                    continue;
+                }
+                if size > budget {
+                    return fetched;
+                }
+                let cached = self
+                    .attachments
+                    .path(&row.account_id, &row.message_id, &row.id);
+                let _fetching = self.attachments.lock(&cached).await;
+                if self.attachments.contains(&cached).await {
+                    continue;
+                }
+                budget -= size;
+                match self.download(&row, &cached).await {
+                    Ok(_) => fetched += 1,
+                    Err(e) => tracing::debug!(error = %e, "couldn't prefetch an attachment"),
+                }
+            }
+        }
+        fetched
+    }
+
+    /// Copy an attachment into a fresh folder under `dir` for the default app to open, and
+    /// return its path. Only documents and media qualify ([`attachment_kind::openable`]).
+    /// Copies older than a day are cleared out first.
+    pub async fn open_copy(
+        &self,
+        account_id: &str,
+        message_id: &str,
+        attachment_row_id: &str,
+        dir: &Path,
+    ) -> Result<PathBuf, MailError> {
+        let row = attachments::get_one(&self.db, account_id, message_id, attachment_row_id)
+            .await?
+            .ok_or(MailError::NotFound)?;
+        if !attachment_kind::openable(row.filename.as_deref()) {
+            return Err(MailError::Invalid(
+                "Pheeme doesn't open this kind of file. Download it instead.".into(),
+            ));
+        }
+        clear_old_copies(dir).await;
+        let att = self.bytes_of(row).await?;
+        let folder = dir.join(uuid::Uuid::new_v4().to_string());
+        tokio::fs::create_dir_all(&folder).await.map_err(io_error)?;
+        let path = folder.join(openable_file_name(att.filename.as_deref()));
+        tokio::fs::write(&path, &att.bytes)
+            .await
+            .map_err(io_error)?;
+        Ok(path)
     }
 
     /// Local search over cached mail, newest first, keyset-paged like
@@ -1109,6 +1221,30 @@ fn has_body(m: &DbMessage) -> bool {
 /// Printable ASCII only: nothing that could end a header line or fail response building.
 fn is_header_safe(value: &str) -> bool {
     !value.is_empty() && value.bytes().all(|b| (0x20..0x7f).contains(&b))
+}
+
+/// Largest single file [`MailService::prefetch_attachments`] downloads (Gmail's own limit).
+pub const PREFETCH_MAX_FILE: u64 = 25 * 1024 * 1024;
+/// Most one prefetch run downloads, so a thread full of attachments can't fill the cache.
+pub const PREFETCH_MAX_TOTAL: u64 = 100 * 1024 * 1024;
+/// Copies handed to the default app are kept this long (the app may still have one open).
+const OPEN_COPY_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// Remove folders under `dir` made by [`MailService::open_copy`] more than a day ago.
+async fn clear_old_copies(dir: &Path) {
+    let Ok(mut entries) = tokio::fs::read_dir(dir).await else {
+        return;
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let old = entry
+            .metadata()
+            .await
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t.elapsed().is_ok_and(|age| age > OPEN_COPY_MAX_AGE));
+        if old {
+            let _ = tokio::fs::remove_dir_all(entry.path()).await;
+        }
+    }
 }
 
 fn io_error(e: std::io::Error) -> MailError {
@@ -1776,6 +1912,162 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn prefetch_caches_previewable_files_once_and_skips_the_rest() {
+        let (dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"])
+                .with_attachment("plan.pdf", "application/octet-stream", "g1")
+                .with_attachment("setup.zip", "application/zip", "g2")
+                .with_attachment("huge.pdf", "application/pdf", "g3")
+                .with_inline("logo.png", "image/png", "g4", "logo"),
+            &[
+                ("g1", b"%PDF"),
+                ("g2", b"zip"),
+                ("g3", b"big"),
+                ("g4", b"png"),
+            ],
+        )
+        .await;
+        let big = i64::try_from(PREFETCH_MAX_FILE + 1).unwrap();
+        sqlx::query("UPDATE attachments SET size = ? WHERE filename = 'huge.pdf'")
+            .bind(big)
+            .execute(&dir.pool)
+            .await
+            .unwrap();
+        let ids = vec!["m1".to_owned(), "gone".to_owned()];
+
+        assert_eq!(mail.prefetch_attachments("a1", &ids).await, 1);
+        assert_eq!(
+            mail.prefetch_attachments("a1", &ids).await,
+            0,
+            "already cached"
+        );
+
+        assert_eq!(fake.attachment_fetches(), 1, "only plan.pdf");
+        let cached = |row: &str| {
+            dir.dir()
+                .join("cache/attachments/a1/m1")
+                .join(row)
+                .is_file()
+        };
+        assert_eq!(
+            [cached("0"), cached("1"), cached("2"), cached("3")],
+            [true, false, false, false]
+        );
+        // The preview then reads it without going to Gmail.
+        assert_eq!(
+            mail.attachment("a1", "m1", "0").await.unwrap().bytes,
+            b"%PDF"
+        );
+        assert_eq!(fake.attachment_fetches(), 1);
+    }
+
+    #[tokio::test]
+    async fn prefetch_stops_at_its_total_budget() {
+        let (dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"])
+                .with_attachment("a.pdf", "application/pdf", "g1")
+                .with_attachment("b.pdf", "application/pdf", "g2")
+                .with_attachment("c.pdf", "application/pdf", "g3")
+                .with_attachment("d.pdf", "application/pdf", "g4")
+                .with_attachment("e.pdf", "application/pdf", "g5"),
+            &[
+                ("g1", b"a"),
+                ("g2", b"b"),
+                ("g3", b"c"),
+                ("g4", b"d"),
+                ("g5", b"e"),
+            ],
+        )
+        .await;
+        let each = i64::try_from(PREFETCH_MAX_TOTAL / 4).unwrap();
+        sqlx::query("UPDATE attachments SET size = ?")
+            .bind(each)
+            .execute(&dir.pool)
+            .await
+            .unwrap();
+
+        assert_eq!(mail.prefetch_attachments("a1", &["m1".to_owned()]).await, 4);
+        assert_eq!(fake.attachment_fetches(), 4);
+    }
+
+    #[tokio::test]
+    async fn a_preview_during_a_prefetch_waits_instead_of_downloading_again() {
+        let (_dir, fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
+            &[("g1", b"%PDF")],
+        )
+        .await;
+        let ids = vec!["m1".to_owned()];
+        let (prefetched, opened) = tokio::join!(
+            mail.prefetch_attachments("a1", &ids),
+            mail.attachment("a1", "m1", "0")
+        );
+        assert_eq!(opened.unwrap().bytes, b"%PDF");
+        assert!(prefetched <= 1);
+        assert_eq!(fake.attachment_fetches(), 1);
+    }
+
+    #[tokio::test]
+    async fn open_copy_writes_documents_and_refuses_executables() {
+        let (dir, _fake, mail) = attachment_fixture(
+            FakeMsg::new("m1", "t1", &["INBOX"])
+                .with_attachment("../Plan.pdf", "application/pdf", "g1")
+                .with_attachment("setup.exe", "application/pdf", "g2"),
+            &[("g1", b"%PDF"), ("g2", b"MZ")],
+        )
+        .await;
+        let opened = dir.dir().join("opened");
+        let stale = opened.join("old");
+        std::fs::create_dir_all(&stale).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(stale.join("x.pdf"))
+            .unwrap();
+        // Windows opens a folder only with FILE_FLAG_BACKUP_SEMANTICS, and needs write access
+        // to change its times.
+        let mut folder = std::fs::File::options();
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            folder.write(true).custom_flags(0x0200_0000);
+        }
+        #[cfg(not(windows))]
+        folder.read(true);
+        folder
+            .open(&stale)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - 2 * OPEN_COPY_MAX_AGE)
+            .unwrap();
+
+        let rows = attachments::get_attachments_for_message(&dir.pool, "a1", "m1")
+            .await
+            .unwrap();
+        let id_of = |name: &str| {
+            rows.iter()
+                .find(|r| r.filename.as_deref() == Some(name))
+                .unwrap()
+                .id
+                .clone()
+        };
+        let path = mail
+            .open_copy("a1", "m1", &id_of("../Plan.pdf"), &opened)
+            .await
+            .unwrap();
+        assert_eq!(path.file_name().unwrap(), "Plan.pdf");
+        assert!(path.starts_with(&opened));
+        assert_eq!(std::fs::read(&path).unwrap(), b"%PDF");
+        assert!(!stale.exists(), "day-old copies are cleared");
+
+        assert!(matches!(
+            mail.open_copy("a1", "m1", &id_of("setup.exe"), &opened)
+                .await,
+            Err(MailError::Invalid(_))
+        ));
+    }
+
+    #[tokio::test]
     async fn inline_image_rejects_non_images() {
         let (_dir, fake, mail) = attachment_fixture(
             FakeMsg::new("m1", "t1", &["INBOX"])
@@ -1862,6 +2154,26 @@ mod tests {
         assert_eq!(safe_file_name(Some("dir/")), "attachment");
         assert_eq!(safe_file_name(Some(".hidden")), "hidden");
         assert_eq!(safe_file_name(Some("ok name.txt ")), "ok name.txt");
+    }
+
+    #[test]
+    fn openable_file_names_are_valid_on_windows() {
+        assert_eq!(
+            openable_file_name(Some("Q&A? <draft>*.pdf")),
+            "Q&A_ _draft__.pdf"
+        );
+        assert_eq!(
+            openable_file_name(Some("say \"hi\" | bye.txt")),
+            "say _hi_ _ bye.txt"
+        );
+        assert_eq!(openable_file_name(Some("CON.pdf")), "_CON.pdf");
+        assert_eq!(openable_file_name(Some("com1.tar.gz")), "_com1.tar.gz");
+        assert_eq!(openable_file_name(Some("lpt9")), "_lpt9");
+        assert_eq!(openable_file_name(Some("console.pdf")), "console.pdf");
+        assert_eq!(openable_file_name(Some("com10.pdf")), "com10.pdf");
+        assert_eq!(openable_file_name(Some("Plan.pdf")), "Plan.pdf");
+        assert_eq!(openable_file_name(Some("éé.pdf")), "éé.pdf");
+        assert_eq!(openable_file_name(Some("coméé.pdf")), "coméé.pdf");
     }
 
     #[test]

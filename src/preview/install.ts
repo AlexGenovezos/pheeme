@@ -24,6 +24,7 @@ import {
   threadsIn,
 } from "./fixtures";
 import { createComposeHandlers } from "./compose";
+import { sampleAttachment } from "./attachments";
 import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel } from "./labels";
 import { createTransferHandlers } from "./transfer";
 
@@ -327,6 +328,18 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     open_external: () => undefined,
     open_mail_link: () => undefined,
     save_attachment: () => "/Users/you/Downloads/attachment.pdf",
+    // Every attachment of a kind reads as the matching sample file.
+    read_attachment: (args) => {
+      const att = threads
+        .filter((t) => t.accountId === args?.accountId)
+        .flatMap((t) => t.messages)
+        .find((m) => m.id === args?.messageId)
+        ?.attachments.find((a) => a.id === args?.attachmentId);
+      if (!att) throw { code: "not_found", message: "That attachment isn't on this device." };
+      return sampleAttachment(att.filename, att.mimeType);
+    },
+    prefetch_attachments: () => undefined,
+    open_attachment: () => undefined,
     // Diagnostics: nothing leaves the browser; both just succeed.
     send_diagnostics: () => undefined,
     save_diagnostics: () => undefined,

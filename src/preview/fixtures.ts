@@ -164,14 +164,16 @@ const GARDEN_LETTER = `<div>
 <p>Harriet</p>
 </div>`;
 
-const pdf = (id: string, filename: string, size: number): AttachmentInfo => ({
+const file = (id: string, filename: string, mimeType: string, size: number): AttachmentInfo => ({
   id,
   filename,
-  mimeType: "application/pdf",
+  mimeType,
   size,
   isInline: false,
   contentId: null,
 });
+const pdf = (id: string, filename: string, size: number) =>
+  file(id, filename, "application/pdf", size);
 
 // ── Builders ─────────────────────────────────────────────────────────────────
 
@@ -298,7 +300,23 @@ export function createFixtureThreads(): FixtureThread[] {
         minutesAgo(12),
         "I can turn the favourite into a full macOS and Windows set by Friday. The spec sheet is attached too.\n\nMira",
         me,
-        { unread: true, attachments: [pdf("p-01-a2", "icon-spec-sheet.pdf", 96_420)] },
+        {
+          unread: true,
+          // One of each kind the preview panel shows, plus one it can't.
+          attachments: [
+            pdf("p-01-a2", "icon-spec-sheet.pdf", 96_420),
+            file("p-01-a3", "handoff-notes.docx", "application/octet-stream", 2_238),
+            file(
+              "p-01-a4",
+              "icon-budget.xlsx",
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              2_568,
+            ),
+            file("p-01-a5", "favourite-direction.png", "image/png", 23_463),
+            file("p-01-a6", "review-list.csv", "text/csv", 175),
+            file("p-01-a7", "icon-sources.zip", "application/zip", 3_904_112),
+          ],
+        },
       ),
     ]),
     thread("p-02", P, ["INBOX", "CATEGORY_UPDATES"], "[pheeme] CI passed on feat/mail-ui", [

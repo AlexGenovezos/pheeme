@@ -385,6 +385,32 @@
   border-radius: var(--radius-sm);
 }
 
+.attachments__open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: var(--space-0);
+  padding: var(--space-0);
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.attachments__open:hover .attachments__name {
+  text-decoration: underline;
+}
+.attachments__open:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-xs);
+}
+.attachments__item:hover {
+  background: var(--color-list-hover-bg);
+}
+
 .attachments__icon {
   flex-shrink: 0;
   width: var(--icon-size-md);

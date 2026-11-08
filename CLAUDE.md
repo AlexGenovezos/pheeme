@@ -61,6 +61,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `gmail/` | Gmail REST API client. `auth.rs` is OAuth (PKCE + loopback redirect); the rest lands in Phase 3 |
 | `sync/` | `engine.rs` initial/incremental (`history.list`)/expiry-reconcile/backfill; `outbox.rs` optimistic ops + safe sends; `manager.rs` per-account scheduling and triggers; `api.rs` the `MailApi` trait (`fake.rs` is the in-memory Gmail for tests) |
 | `render.rs` | Email HTML sanitizer (`ammonia`) and signed `pheeme-att` URLs for inline `cid:` images |
+| `attachment_cache.rs` / `attachment_kind.rs` | Attachment bytes cached on disk (500 MB, least recently used evicted first); which files the preview shows and which open in the default app |
 | `attachment_cache.rs` | Attachment bytes on disk (`{cache}/attachments/{account}/{message}/{row}`): a sweep at launch (and after every 50 MB of downloads) removes orphans, then the least recently used files past 500 MB |
 | `body_retention.rs` | Periodic trim (launch, then every 6 h): bodies of mail older than the 180-day body window go back to metadata only 30 days after they were downloaded |
 | `mail.rs` | Tauri-free mail service the commands call: cached list/thread/label reads, changes via the outbox |
@@ -84,7 +85,7 @@ Settings is a dialog over the app (`src/settings/`). Pages, sections and rows ar
 
 Label UI lives in `src/labels/`: the label tree (nesting by `/` in names), palette and chip colours, the searchable picker behind Label as… and Move to…, and the create/edit/delete dialogs.
 
-Compose panels dock at the bottom of the window (`src/compose/ComposeHost.tsx`); the TipTap editor is lazy-loaded with the panel. A panel is a `data-owns-keys` region, so single-key shortcuts don't fire inside it. Mail actions (archive, trash, star, read, labels, reply, new message) live in `src/mail/actions.ts`, shared by buttons, menus and shortcuts. Browser preview (`npm run dev`) answers every command from `src/preview/` fixtures, which mutate and emit `sync:messages_updated` like the app.
+Compose panels dock at the bottom of the window (`src/compose/ComposeHost.tsx`); the TipTap editor is lazy-loaded with the panel. A panel is a `data-owns-keys` region, so single-key shortcuts don't fire inside it. Mail actions (archive, trash, star, read, labels, reply, new message) live in `src/mail/actions.ts`, shared by buttons, menus and shortcuts. Clicking an attachment (or Space on it) opens a Quick Look-style preview over the blurred app (`src/mail/preview/`): PDFs (pdf.js), Word (docx-preview, in a script-less sandboxed frame), spreadsheets and CSV, images and text, each reader lazy-loaded; opening a conversation prefetches its attachments into the disk cache. Browser preview (`npm run dev`) answers every command from `src/preview/` fixtures, which mutate and emit `sync:messages_updated` like the app.
 
 The speed reader (`src/speedread/`) flashes one word at a time from emails that are mostly prose. `text.ts` decides which emails qualify and extracts their paragraphs, `words.ts` holds the focus-letter and pause rules, and its settings (`settings.ts`) are shared by the reader dialog and Settings › Appearance.
 

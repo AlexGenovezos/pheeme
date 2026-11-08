@@ -135,6 +135,13 @@
   --settings-number-width: 140px;
   /* A dropdown in a settings row, e.g. Appearance › Light theme. */
   --settings-select-max-width: 220px;
+  /* Attachment preview: a Quick Look-style panel over the blurred app. */
+  --preview-max-width: 1100px;
+  --preview-margin: 40px;
+  --preview-backdrop-blur: 14px;
+  --preview-page-max-width: 900px;
+  --preview-cell-max-width: 320px;
+  --preview-none-icon-size: 64px;
   --chord-hint-offset: 12px;
   /* Compose panels, docked to the bottom of the window. */
   --compose-width: 560px;

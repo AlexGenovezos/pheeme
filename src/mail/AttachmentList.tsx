@@ -1,8 +1,9 @@
 import { Download, File } from "lucide-react";
 import { useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
-import { toast } from "../components/ui/Toast";
-import { type AttachmentInfo, revealDownload, saveAttachment, toCommandError } from "../lib/tauri";
+import type { AttachmentInfo } from "../lib/tauri";
+import { downloadAttachment } from "./attachmentActions";
+import { usePreviewStore } from "./preview/previewStore";
 import "./mail.css";
 
 export function formatSize(bytes: number): string {
@@ -23,7 +24,7 @@ export interface AttachmentListProps {
   attachments: AttachmentInfo[];
 }
 
-/** The message's files. Inline images belong to the body, so they're left out. */
+/** The message's files, each opening the preview panel. Inline images belong to the body, so they're left out. */
 export function AttachmentList({ accountId, messageId, attachments }: AttachmentListProps) {
   const [saving, setSaving] = useState<ReadonlySet<string>>(new Set());
   const files = attachments.filter((a) => !a.isInline);
@@ -32,28 +33,7 @@ export function AttachmentList({ accountId, messageId, attachments }: Attachment
   const download = async (file: AttachmentInfo) => {
     setSaving((s) => new Set(s).add(file.id));
     try {
-      const path = await saveAttachment(accountId, messageId, file.id);
-      toast({
-        title: "Saved to Downloads",
-        description: file.filename ?? undefined,
-        action: {
-          label: "Show in folder",
-          run: () =>
-            void revealDownload(path).catch((e) =>
-              toast({
-                title: "Couldn't show the file",
-                description: toCommandError(e).message,
-                tone: "danger",
-              }),
-            ),
-        },
-      });
-    } catch (error) {
-      toast({
-        title: "Couldn't save the attachment",
-        description: toCommandError(error).message,
-        tone: "danger",
-      });
+      await downloadAttachment(accountId, messageId, file);
     } finally {
       setSaving((s) => {
         const next = new Set(s);
@@ -63,17 +43,27 @@ export function AttachmentList({ accountId, messageId, attachments }: Attachment
     }
   };
 
+  const preview = (index: number) =>
+    usePreviewStore.getState().open({ accountId, messageId, files, index });
+
   return (
     <ul className="attachments" aria-label="Attachments">
-      {files.map((file) => {
+      {files.map((file, index) => {
         const name = file.filename ?? "Attachment";
         const downloading = saving.has(file.id);
         return (
           <li key={file.id} className="attachments__item">
-            <File className="attachments__icon" aria-hidden="true" />
-            <span className="attachments__name selectable" title={name}>
-              {name}
-            </span>
+            {/* Click, or Space/Enter with it focused, opens the preview (like Quick Look). */}
+            <button
+              type="button"
+              className="attachments__open"
+              aria-label={`Preview ${name}`}
+              title={`Preview ${name}`}
+              onClick={() => preview(index)}
+            >
+              <File className="attachments__icon" aria-hidden="true" />
+              <span className="attachments__name">{name}</span>
+            </button>
             {downloading ? (
               <span className="attachments__size" role="status">
                 Downloading…

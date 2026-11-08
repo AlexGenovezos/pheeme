@@ -2,6 +2,7 @@ pub mod accounts;
 #[cfg(target_os = "macos")]
 mod app_menu;
 pub mod attachment_cache;
+pub mod attachment_kind;
 pub mod body_retention;
 pub mod commands;
 pub mod compose;
@@ -302,6 +303,9 @@ pub fn run() {
             commands::open_mail_link,
             commands::attachments::save_attachment,
             commands::attachments::reveal_download,
+            commands::attachments::read_attachment,
+            commands::attachments::prefetch_attachments,
+            commands::attachments::open_attachment,
             commands::auth::begin_oauth,
             commands::auth::complete_oauth,
             commands::auth::cancel_oauth,

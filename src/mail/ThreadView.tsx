@@ -3,7 +3,7 @@ import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
 import { LabelChip } from "../labels/LabelChip";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
-import type { LabelInfo, ThreadDetail } from "../lib/tauri";
+import { type LabelInfo, prefetchAttachments, type ThreadDetail } from "../lib/tauri";
 import { useReadingSettings } from "../settings/readingSettings";
 import { useMailStore } from "../store/mailStore";
 import { useLabelStore } from "../store/labelStore";
@@ -210,7 +210,7 @@ export function ThreadView() {
             aria-hidden={key !== openKey || undefined}
             {...(key !== openKey ? { inert: true } : {})}
           >
-            <Conversation openKey={key} detail={details.get(key)!} />
+            <Conversation openKey={key} detail={details.get(key)!} active={key === openKey} />
           </div>
         ))}
       </div>
@@ -218,7 +218,16 @@ export function ThreadView() {
   );
 }
 
-function Conversation({ openKey, detail }: { openKey: string; detail: ThreadDetail }) {
+function Conversation({
+  openKey,
+  detail,
+  active,
+}: {
+  openKey: string;
+  detail: ThreadDetail;
+  /** The conversation on screen; the rest are neighbours rendered out of sight. */
+  active: boolean;
+}) {
   const loading = useThreadStore((s) => s.loading[openKey]);
   const accountId = parseThreadKey(openKey).accountId;
   const userLabels = useLabelStore((s) => s.userLabels(accountId));
@@ -247,6 +256,7 @@ function Conversation({ openKey, detail }: { openKey: string; detail: ThreadDeta
     ? (labelsById.get("INBOX") ?? INBOX_FALLBACK(accountId))
     : null;
   const subject = detail.thread.subject || "(no subject)";
+  usePrefetchAttachments(detail, active);
   return (
     <div className="thread-view">
       <h2 className="thread-view__subject selectable">{subject}</h2>
@@ -273,6 +283,27 @@ function Conversation({ openKey, detail }: { openKey: string; detail: ThreadDeta
       </div>
     </div>
   );
+}
+
+/**
+ * Opening a conversation starts caching its attachments in the background, so a preview opens at once.
+ * Once per conversation and set of messages: a reply arriving asks again, for the new message only.
+ */
+function usePrefetchAttachments(detail: ThreadDetail, active: boolean) {
+  const accountId = detail.thread.accountId;
+  const ids = detail.messages
+    .filter((m) => m.attachments.some((a) => !a.isInline))
+    .map((m) => m.id)
+    .reverse(); // newest first: if the budget runs out, the latest files are the ones cached
+  const key = ids.join(",");
+  const asked = useRef(new Set<string>());
+  useEffect(() => {
+    if (!active) return;
+    const fresh = key ? key.split(",").filter((id) => !asked.current.has(id)) : [];
+    if (!fresh.length) return;
+    fresh.forEach((id) => asked.current.add(id));
+    prefetchAttachments(accountId, fresh).catch(() => undefined);
+  }, [accountId, key, active]);
 }
 
 /** "J and K move through the list. ⌘K shows every command.", with the user's keys. */
