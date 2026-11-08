@@ -9,6 +9,7 @@ pub mod labels;
 pub mod messages;
 pub mod mime;
 pub mod palette;
+pub mod people;
 pub mod probe;
 pub mod threads;
 pub mod types;

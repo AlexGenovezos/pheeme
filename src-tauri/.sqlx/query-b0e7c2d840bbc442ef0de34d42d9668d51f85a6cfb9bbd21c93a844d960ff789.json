@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM google_contacts WHERE account_id = ? AND saved = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "b0e7c2d840bbc442ef0de34d42d9668d51f85a6cfb9bbd21c93a844d960ff789"
+}

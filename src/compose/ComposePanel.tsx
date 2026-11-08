@@ -1,11 +1,12 @@
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import DOMPurify from "dompurify";
 import { ChevronDown, Minus, MoreHorizontal, Paperclip, Trash2, X } from "lucide-react";
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { describeShortcut } from "../keyboard/format";
 import { showContextMenu } from "../lib/contextMenu";
+import { suggestContacts } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { formatSize } from "../mail/AttachmentList";
 import { HtmlBody } from "../mail/EmailBody";
@@ -153,6 +154,10 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   const accounts = useAccountStore((s) => s.accounts);
   const account = accounts.find((a) => a.id === win.accountId);
   const toRef = useRef<HTMLInputElement>(null);
+  const suggest = useCallback(
+    (query: string) => suggestContacts(win.accountId, query),
+    [win.accountId],
+  );
   const [showCc, setShowCc] = useState(win.draft.cc.length > 0);
   const [showBcc, setShowBcc] = useState(win.draft.bcc.length > 0);
   const [showQuote, setShowQuote] = useState(false);
@@ -224,6 +229,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
           label="To"
           value={draft.to}
           onChange={(to) => store.update(win.id, { to })}
+          suggest={suggest}
           trailing={
             <span className="compose-field__toggles">
               {!showCc && (
@@ -244,6 +250,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
             label="Cc"
             value={draft.cc}
             onChange={(cc) => store.update(win.id, { cc })}
+            suggest={suggest}
           />
         )}
         {showBcc && (
@@ -251,6 +258,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
             label="Bcc"
             value={draft.bcc}
             onChange={(bcc) => store.update(win.id, { bcc })}
+            suggest={suggest}
           />
         )}
         <div className="compose-field">

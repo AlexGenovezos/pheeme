@@ -123,8 +123,66 @@
 }
 
 .compose-field--recipients {
+  position: relative;
   align-items: flex-start;
   padding-block: var(--space-1);
+}
+
+/* People matching what's typed in To, Cc or Bcc, under the field and over the body. */
+.compose-suggestions {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-start: calc(var(--compose-field-label-width) + var(--space-2));
+  z-index: var(--z-popover);
+  min-width: var(--menu-min-width);
+  max-width: calc(100% - var(--compose-field-label-width) - var(--space-2));
+  margin: var(--space-0);
+  padding: var(--space-1);
+  border: var(--border-width) solid var(--color-menu-border);
+  border-radius: var(--radius-md);
+  background: var(--color-menu-bg);
+  color: var(--color-menu-foreground);
+  box-shadow: var(--shadow-popover);
+  list-style: none;
+  animation: ui-menu-in var(--duration-fast) var(--ease-out);
+  transform-origin: top left;
+}
+
+.compose-suggestion {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: var(--space-0);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: default;
+}
+
+.compose-suggestion[data-active] {
+  background: var(--color-menu-selection-bg);
+  color: var(--color-menu-selection-foreground);
+}
+
+.compose-suggestion__name {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose-suggestion__address {
+  min-width: var(--space-0);
+  overflow: hidden;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose-suggestion[data-active] .compose-suggestion__address {
+  color: inherit;
 }
 
 .compose-field__label {

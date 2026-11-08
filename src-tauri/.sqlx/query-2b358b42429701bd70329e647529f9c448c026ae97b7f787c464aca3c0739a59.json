@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO google_contacts_sync (account_id, status, detail, checked_at, synced_at)\n         VALUES (?1, ?2, ?3, ?4, CASE WHEN ?5 THEN ?4 END)\n         ON CONFLICT (account_id) DO UPDATE SET\n             status = excluded.status,\n             detail = excluded.detail,\n             checked_at = excluded.checked_at,\n             synced_at = CASE WHEN ?5 THEN ?4 ELSE google_contacts_sync.synced_at END",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "2b358b42429701bd70329e647529f9c448c026ae97b7f787c464aca3c0739a59"
+}

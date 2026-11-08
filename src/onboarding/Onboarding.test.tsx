@@ -50,6 +50,7 @@ test("walks the guide in order and saves progress without the secret", () => {
   expect(loadProgress().step).toBe("project");
   for (const title of [
     "Turn on the Gmail API",
+    "Turn on the People API",
     "Turn on the Google Calendar API",
     "Set up the sign-in screen",
     "Add Pheeme's links to the branding",

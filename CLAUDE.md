@@ -67,6 +67,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `telemetry.rs` | Anonymous usage ping (on by default; Settings › Diagnostics and the welcome screen turn it off): once a day after an account is connected, a random install ID, version, OS and chip go to the diagnostics Worker's `/v1/ping`. Never from debug builds. `node scripts/installs.mjs` reads the counts |
 | `body_retention.rs` | Periodic trim (launch, then every 6 h): bodies of mail older than the 180-day body window go back to metadata only 30 days after they were downloaded |
 | `mail.rs` | Tauri-free mail service the commands call: cached list/thread/label reads, changes via the outbox |
+| `contacts.rs` | Tauri-free recipient suggestions for To/Cc/Bcc, answered locally: addresses from synced mail (the `contacts` table, kept by a trigger on `messages`) plus Google Contacts and "Other contacts" downloaded through the People API (`gmail/people.rs`) after launch and every 6 h. Settings › Contacts walks an account through turning the People API on and signing in again |
 | `labels.rs` | Tauri-free label service: create, rename/re-nest (cascading to sublabels), colour, visibility and delete (with sublabels), straight to Gmail's labels API (not the outbox), then written to the cache |
 | `compose/` | Tauri-free compose service: MIME building (`lettre`), Reply/Reply All/Forward templates, staged attachments, Gmail drafts, sends (with undo window) via the outbox |
 | `accounts.rs` | Tauri-free account service: sign-in flow, list/remove, access tokens (cached in memory) |
@@ -93,7 +94,7 @@ The speed reader (`src/speedread/`) flashes one word at a time from emails that 
 
 ### Database Schema Summary
 
-Nine tables.
+Twelve tables.
 - `accounts` — Account identity and Gmail history_id for sync (no tokens; those are in the keychain)
 - `labels` — Gmail labels with message/thread unread/total counters
 - `threads` — Conversation rows, derived from their messages by `threads::recompute_threads` (never written directly by sync)
@@ -102,6 +103,8 @@ Nine tables.
 - `attachments` — Attachment metadata incl. `content_id`/`is_inline` (content is cached on disk, not stored); cascades from messages
 - `outbox` / `outbox_messages` — Ordered queue of local changes and sends waiting for Gmail, with each target message's labels before the change
 - `sync_state` — Per-account backfill position
+- `contacts` — Every address an account has exchanged mail with (sent/received counts, last dates), kept by a trigger on `messages`, for recipient suggestions
+- `google_contacts` / `google_contacts_sync` — The account's downloaded Google Contacts and how the last download went
 
 ## Key Conventions
 

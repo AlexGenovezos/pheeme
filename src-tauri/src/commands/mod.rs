@@ -2,6 +2,7 @@ pub mod accounts;
 pub mod attachments;
 pub mod auth;
 pub mod compose;
+pub mod contacts;
 pub mod labels;
 pub mod mods;
 pub mod search;

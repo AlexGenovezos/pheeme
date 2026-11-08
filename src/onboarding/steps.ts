@@ -4,6 +4,8 @@
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/gmail.settings.basic",
+  "https://www.googleapis.com/auth/contacts.readonly",
+  "https://www.googleapis.com/auth/contacts.other.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ];
@@ -11,6 +13,7 @@ export const GMAIL_SCOPES = [
 export type StepId =
   | "project"
   | "gmail-api"
+  | "people-api"
   | "calendar-api"
   | "consent"
   | "branding"
@@ -91,6 +94,17 @@ export const STEPS: GuideStep[] = [
     },
   },
   {
+    id: "people-api",
+    short: "Enable People API",
+    title: "Turn on the People API",
+    actions: ["Open the People API page and check your project is selected.", "Click Enable."],
+    why: "Optional. As you type a recipient, Pheeme suggests people from your mail; with the People API it suggests your Google Contacts too. Pheeme only reads them.",
+    link: {
+      label: "Open People API",
+      url: "https://console.cloud.google.com/apis/library/people.googleapis.com",
+    },
+  },
+  {
     id: "calendar-api",
     short: "Enable Calendar API",
     title: "Turn on the Google Calendar API",
@@ -113,7 +127,7 @@ export const STEPS: GuideStep[] = [
       "App information: enter the app name below and your email as the support email.",
       "Audience: choose External. Choose Internal only for a Google Workspace project used by your organization's accounts alone.",
       "Contact information: your email. Agree to the policy and click Create.",
-      "Optional: under Data access, add the scopes below. Pheeme asks for them when you sign in either way. gmail.settings.basic only lets Pheeme save sender rules (Gmail filters that file a sender's mail in an inbox tab).",
+      "Optional: under Data access, add the scopes below. Pheeme asks for them when you sign in either way. gmail.settings.basic only lets Pheeme save sender rules (Gmail filters that file a sender's mail in an inbox tab), and the two contacts scopes only let it read your contacts to suggest recipients.",
     ],
     why: "Google shows this screen when you sign in. The app is yours, so you're both its developer and its only user.",
     link: {
