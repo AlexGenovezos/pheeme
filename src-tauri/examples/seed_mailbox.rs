@@ -51,6 +51,8 @@ async fn main() -> anyhow::Result<()> {
     let now = chrono::Utc::now().timestamp_millis();
 
     let pool = db::init_db(&dir).await?;
+    // The run is a release build: without this it sends the daily usage ping and counts as an install.
+    db::settings::set_telemetry(&pool, false).await?;
     accounts::insert_account(
         &pool,
         &accounts::DbAccount {
@@ -65,6 +67,8 @@ async fn main() -> anyhow::Result<()> {
         },
     )
     .await?;
+    // A returning user's state: the one-time "Turn on notifications?" prompt already answered.
+    db::desktop::answer_unasked(&pool, false).await?;
 
     let mut tx = db::begin_write(&pool).await?;
     for (id, name, kind) in SYSTEM_LABELS

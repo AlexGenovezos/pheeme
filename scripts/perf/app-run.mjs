@@ -27,14 +27,16 @@ const { values: opts } = parseArgs({
 if (!opts.app || !opts.home) throw new Error("--app and --home are required");
 const app = resolve(opts.app);
 
-/** About 20% above the first measured baseline (docs/performance.md). */
+/** About 20% above the measured baseline (docs/performance.md). */
 const BUDGETS = {
   // Measured on ubuntu-22.04 runners (Xvfb, software rendering) on 2026-11-03: single starts
   // of 913-2120 ms, 236-240 MiB idle, 300-310 MiB after the session. Idle is over the
-  // issue's starting target of 150 MiB.
+  // issue's starting target of 150 MiB. Re-measured on 2026-11-08 after preloading ahead of
+  // the reader (#154: 160 cached conversations, 5 rendered): 269-281 MiB idle, 355-365 MiB
+  // after the session.
   "Start to first list paint (median of 5)": { unit: "ms", max: 3000 },
-  "Idle memory (app + WebKit, PSS)": { unit: "MiB", max: 290 },
-  "Memory after the session (app + WebKit, PSS)": { unit: "MiB", max: 360 },
+  "Idle memory (app + WebKit, PSS)": { unit: "MiB", max: 330 },
+  "Memory after the session (app + WebKit, PSS)": { unit: "MiB", max: 400 },
 };
 
 const LAUNCHES = 5;
