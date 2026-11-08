@@ -132,8 +132,8 @@ fn open_in_default_app(url: &Url) -> Result<(), CommandError> {
 pub fn is_external_navigation(url: &Url) -> bool {
     parse_mail_link(url.as_str()).is_some()
         && !matches!(
-            (url.host_str(), url.port()),
-            (Some("tauri.localhost"), None) | (Some("localhost"), Some(1420))
+            (url.scheme(), url.host_str(), url.port()),
+            (_, Some("tauri.localhost"), None) | ("http", Some("localhost"), Some(1420))
         )
 }
 
@@ -209,6 +209,7 @@ mod tests {
             "http://localhost:8080/",
             "http://localhost/",
             "http://tauri.localhost:8080/",
+            "https://localhost:1420/",
         ] {
             assert!(
                 is_external_navigation(&Url::parse(external).unwrap()),
