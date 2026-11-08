@@ -97,10 +97,10 @@ jobs:
       - uses: ./.github/actions/setup-build
         with:
           node: "false"
-          cache-key: ubuntu-22.04-release
+          cache-key: ubuntu-22.04-soak
       - name: Heap soak (short)
         working-directory: src-tauri
-        run: cargo test --locked --release --features test-support --test soak -- --nocapture
+        run: cargo test --locked --profile soak --features test-support --test soak -- --nocapture
       - name: Upload the heap profile
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -71,8 +71,8 @@ id for good once the backfill had finished.
 
 ```bash
 cd src-tauri
-cargo test --release --features test-support --test soak -- --nocapture
-SOAK=long cargo test --release --features test-support --test soak -- --nocapture
+cargo test --profile soak --features test-support --test soak -- --nocapture
+SOAK=long cargo test --profile soak --features test-support --test soak -- --nocapture
 ```
 
 If a change legitimately needs more memory, measure the new peak and raise the budget in
@@ -146,6 +146,27 @@ home=$(mktemp -d)
 xvfb-run -a dbus-run-session -- node scripts/perf/app-run.mjs \
   --app src-tauri/target/release/pheeme --home "$home" --session-minutes 2
 ```
+
+## Release profile
+
+Shipping builds use thin LTO, one codegen unit and stripped symbols (`[profile.release]` in
+`src-tauri/Cargo.toml`). Measured on 2026-11-08 on the 4-core Linux devbox, clean
+`cargo build --release --features tauri/custom-protocol`, with the harness above for start
+time and memory:
+
+| Profile | Binary | Clean build | Start to first list paint | Idle PSS |
+| --- | --- | --- | --- | --- |
+| cargo defaults | 47.9 MB (34.3 MB stripped) | 403 s | 533-570 ms | 326 MiB |
+| thin LTO, 1 codegen unit, stripped | 28.1 MB | 381 s | 516-622 ms | 323 MiB |
+| fat LTO, 1 codegen unit, stripped | 26.9 MB | 436 s | not measured | not measured |
+
+Start time and memory don't change; the binary is 41% smaller. Fat LTO saves 1.2 MB more for
+a 15% longer build, so thin is the default. Stripping drops symbol names, so a crash backtrace
+from a release build shows addresses only.
+
+The benchmarks and the heap soak keep cargo's release defaults (`[profile.bench]`, and
+`[profile.soak]` for `cargo test --profile soak`): they build on every PR, the benchmarks
+compare a PR with its base, and dhat's heap profile needs symbol names.
 
 ## Preloading ahead of the reader
 

@@ -92,8 +92,26 @@ name = "hot_paths"
 harness = false
 required-features = ["bench"]
 
-# Heap soak and leak check under dhat: `cargo test --release --features test-support --test soak`.
+# Heap soak and leak check under dhat: `cargo test --profile soak --features test-support --test soak`.
 # See docs/performance.md.
 [[test]]
 name = "soak"
 required-features = ["test-support"]
+
+# Shipping builds. Measured in docs/performance.md ("Release profile"): the binary
+# drops from 47.9 MB to 28.1 MB, with no slower build. Fat LTO saved 1.2 MB more for a 15%
+# longer build.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+# Benchmarks and the heap soak keep cargo's release defaults: they build on every PR, the
+# benchmarks compare a PR against its base, and dhat's heap profile needs symbol names.
+[profile.bench]
+lto = false
+codegen-units = 16
+strip = "debuginfo"
+
+[profile.soak]
+inherits = "bench"
