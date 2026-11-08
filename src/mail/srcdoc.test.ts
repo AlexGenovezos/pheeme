@@ -105,6 +105,8 @@ describe("buildSrcdoc", () => {
     );
     // Light text would turn dark under the filter, so the theme colors are not used here.
     expect(inverted).not.toContain("#e4e9e9");
+    // A failed image stays inverted with the page, so its alt text reads like the text around it.
+    expect(inverted).toMatch(/img\[data-pheeme-broken\]\s*{\s*filter:\s*none/);
 
     // Dark theme, body declares dark: no filter, let it pick its dark styles.
     const declared = shellCss(

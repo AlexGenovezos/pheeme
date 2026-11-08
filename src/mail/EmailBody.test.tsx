@@ -485,3 +485,26 @@ test("where the frame's listeners don't run (macOS WebKit), focus leaves the fra
     vi.useRealTimers();
   }
 });
+
+test("marks images that failed to load once the frame finishes loading", () => {
+  render(<EmailBody message={message()} />);
+  const doc = frame().contentDocument!;
+  doc.body.innerHTML =
+    '<img id="ok" alt="ok"><img id="failed" alt="Logo"><img id="pending" alt="p">';
+  const state = (id: string, complete: boolean, naturalWidth: number) => {
+    const image = doc.getElementById(id)!;
+    Object.defineProperty(image, "complete", { configurable: true, value: complete });
+    Object.defineProperty(image, "naturalWidth", { configurable: true, value: naturalWidth });
+  };
+  state("ok", true, 520);
+  state("failed", true, 0);
+  state("pending", false, 0);
+
+  // WebKit runs no listeners inside the script-less frame; the iframe's own `load` reaches the parent.
+  fireEvent.load(frame());
+
+  const broken = (id: string) => doc.getElementById(id)!.hasAttribute("data-pheeme-broken");
+  expect(broken("ok")).toBe(false);
+  expect(broken("failed")).toBe(true);
+  expect(broken("pending")).toBe(false);
+});
