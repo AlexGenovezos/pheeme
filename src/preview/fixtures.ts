@@ -507,7 +507,7 @@ export function createFixtureThreads(): FixtureThread[] {
         "Enter this temporary verification code to continue: 779693\n\nDidn't request a code? You can ignore this email.",
         me,
         {
-          unread: true,
+          // Read, so the unread counts other tests expect stay as they were.
           html: `<p>Enter this temporary verification code to continue:</p><table><tr>${[..."779693"].map((d) => `<td style="padding:4px 8px;font-size:24px">${d}</td>`).join("")}</tr></table><p>Didn't request a code? You can ignore this email.</p>`,
         },
       ),
