@@ -88,9 +88,8 @@ too" means that sender never lands in the wrong tab again, in Pheeme or any othe
   same sender with a different category exists: replace it, since the user just said where that sender belongs.
   **My call:** create the new filter first, then delete the old one, so a failure never leaves the sender with no
   rule.
-- "Move existing mail too" runs a Gmail search for `from:<address> in:inbox`, following every result page, and
-  applies the same category move to the results through the outbox in batches. **My call:** one Undo covers the
-  whole move; if a search page fails part way, what moved stays moved and the toast says the rest couldn't be.
+- "Move existing mail too" moves the sender's conversations in the inbox that Pheeme has cached, through the outbox
+  (which can only change cached messages). **My call:** one Undo covers the whole move.
 - Filter calls are user actions: wrap them in `gmail::user_action`, like the label commands. They go straight to
   Gmail, not the outbox (like labels in `labels.rs`); put them in a small Tauri-free service, with commands in
   `commands/` and wrappers in `src/lib/tauri.ts`.
@@ -102,9 +101,8 @@ too" means that sender never lands in the wrong tab again, in Pheeme or any othe
 ### Permission
 
 - New sign-ins request `gmail.settings.basic`. Google lets users untick it; that is allowed.
-- Pheeme needs to know per account whether the scope is granted. Google returns the granted scopes on every token
-  response, including refreshes, so record it when tokens are obtained (in memory with the access token, or
-  persisted; Builder's call) rather than guessing.
+- Pheeme learns whether an account has the scope from Gmail itself: the popup and the Settings page list the
+  account's filters, and a 403 for missing scopes means it isn't granted.
 - **Existing accounts** don't have the scope until they reconnect. When an account lacks it:
   - one-off moves work as usual;
   - the popup's "future mail too" option is shown disabled with "Reconnect <account> to let Pheeme save sender
