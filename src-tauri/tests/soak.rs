@@ -5,7 +5,7 @@
 //! thread reads). Every cycle leaves the mailbox the same size, so the live heap should level
 //! off: the test fails when it keeps growing per cycle, or when the peak passes its budget.
 //!
-//! `cargo test --release --features test-support --test soak -- --nocapture`;
+//! `cargo test --profile soak --features test-support --test soak -- --nocapture`;
 //! `SOAK=long` for the nightly size. See docs/performance.md.
 
 use pheeme_lib::db::{self, accounts};
