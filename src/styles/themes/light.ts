@@ -1,9 +1,9 @@
 import { buildTheme, type ThemeSource } from "./build";
 
 /**
- * Pheeme Light. Cool mineral greys with one accent, verdigris: the patina on
- * the bronze trumpet Pheme carries. The accent is spent on selection, focus
- * and unread state only, so it always means "this one".
+ * Pheeme Light. Cool mineral greys with one accent, ink blue: the engraving
+ * ink of the app icon. The accent is spent on selection, focus, primary
+ * actions and unread state only, so it always means "this one".
  *
  * Keep --color-app-bg in sync with the critical style in index.html
  * (theme.test.ts checks it).
@@ -24,13 +24,13 @@ export const lightSource: ThemeSource = {
     "--color-foreground-muted": "#586262",
     "--color-foreground-subtle": "#596565",
     "--color-foreground-disabled": "#8a9494",
-    "--color-link": "#1d6f69",
-    "--color-selection-bg": "#bfe3df",
+    "--color-link": "#1f45a8",
+    "--color-selection-bg": "#c8d5f4",
 
-    "--color-accent": "#1d6f69",
+    "--color-accent": "#1b3f9a",
     "--color-accent-foreground": "#ffffff",
-    "--color-focus-border": "#2a8c84",
-    "--color-unread-indicator": "#1f857d",
+    "--color-focus-border": "#3a63c8",
+    "--color-unread-indicator": "#2a55c4",
 
     "--color-button-secondary-bg": "#edf0f0",
     "--color-control-hover-bg": "#14282810",
@@ -39,8 +39,8 @@ export const lightSource: ThemeSource = {
     "--color-input-placeholder": "#596565",
 
     "--color-list-hover-bg": "#f2f5f5",
-    "--color-list-active-bg": "#dcefec",
-    "--color-list-active-foreground": "#0f2e2b",
+    "--color-list-active-bg": "#e0e7f8",
+    "--color-list-active-foreground": "#101d42",
     "--color-list-inactive-bg": "#eceff0",
 
     "--color-badge-bg": "#e3e8e8",
@@ -50,11 +50,11 @@ export const lightSource: ThemeSource = {
     "--color-kbd-border": "#d3d9d9",
 
     "--color-menu-bg": "#ffffff",
-    "--color-menu-selection-bg": "#1d6f69",
+    "--color-menu-selection-bg": "#1b3f9a",
     "--color-menu-selection-foreground": "#ffffff",
     "--color-menu-separator": "#e3e7e7",
     "--color-palette-bg": "#ffffff",
-    "--color-palette-active-bg": "#e2f1ef",
+    "--color-palette-active-bg": "#e6ecfa",
     "--color-toast-bg": "#1f2525",
     "--color-toast-foreground": "#eef1f1",
     "--color-toast-border": "#1f2525",

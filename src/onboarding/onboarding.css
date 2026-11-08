@@ -333,7 +333,8 @@
   height: 100%;
   overflow: hidden auto;
   display: grid;
-  grid-template-columns: minmax(0, var(--intro-art-column)) minmax(0, var(--intro-copy-width));
+  /* The copy keeps its width; the art gives way on a narrow window. */
+  grid-template-columns: minmax(0, var(--intro-art-column)) var(--intro-copy-width);
   justify-content: center;
   align-items: center;
   column-gap: var(--space-12);
@@ -381,42 +382,49 @@
 }
 
 .intro__eyebrow {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: var(--letter-spacing-caps);
-  text-transform: uppercase;
-  color: var(--color-accent);
-  margin-bottom: var(--space-3);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-foreground-muted);
+  margin-bottom: var(--space-2);
 }
 
 .intro h1 {
   font-size: var(--font-size-display);
+  letter-spacing: var(--letter-spacing-tight);
   margin-bottom: var(--space-3);
+  text-wrap: balance;
+}
+
+.intro__lead {
+  text-wrap: pretty;
 }
 
 .intro__lead {
   font-size: var(--font-size-lg);
   line-height: var(--line-height-normal);
   color: var(--color-foreground-muted);
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-8);
 }
 
+/* Each point: an icon as tall as its two lines, on the copy's left edge. */
 .intro__points {
   list-style: none;
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-5);
   margin-bottom: var(--space-8);
 }
 
 .intro__points li {
   display: grid;
   grid-template-columns: var(--intro-icon-size) 1fr;
-  gap: var(--space-3);
-  align-items: start;
+  column-gap: var(--space-4);
+  align-items: center;
 }
 
 .intro__points strong {
+  display: block;
   font-weight: var(--font-weight-semibold);
+  margin-bottom: var(--space-0-5);
 }
 
 .intro__points p {
@@ -425,27 +433,34 @@
 }
 
 .intro__icon {
-  display: grid;
-  place-items: center;
-  width: var(--intro-icon-size);
-  height: var(--intro-icon-size);
-  border-radius: var(--radius-md);
-  background: var(--color-button-secondary-bg);
+  display: flex;
   color: var(--color-accent);
 }
 
 .intro__icon svg {
-  width: var(--icon-size-md);
-  height: var(--icon-size-md);
-  stroke-width: var(--icon-stroke);
+  width: var(--intro-icon-size);
+  height: var(--intro-icon-size);
+  stroke-width: 1.25;
+  /* Lucide draws 2 of its 24 units in from the edge; pull the stroke onto the copy's edge. */
+  margin-left: calc(var(--intro-icon-size) / -12);
 }
 
+/* The two ways in, the same size side by side. */
+.intro__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+/* The title and its switch on one line, the details across the full width below. */
 .intro__telemetry {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--space-3);
-  align-items: start;
-  margin-top: var(--space-6);
+  grid-template-columns: 1fr auto;
+  column-gap: var(--space-4);
+  align-items: center;
+  margin-top: var(--space-8);
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--color-border-subtle);
   font-size: var(--font-size-sm);
 }
 
@@ -454,6 +469,8 @@
 }
 
 .intro__telemetry p {
+  grid-column: 1 / -1;
+  margin-top: var(--space-1);
   color: var(--color-foreground-muted);
   line-height: var(--line-height-normal);
 }

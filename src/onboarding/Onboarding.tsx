@@ -275,7 +275,7 @@ function Intro({ onStart, onReceive }: { onStart: () => void; onReceive: () => v
             );
           })}
         </ul>
-        <div className="button-row">
+        <div className="intro__actions">
           <Button variant="primary" size="lg" onClick={onStart}>
             Set up my Google app
           </Button>
@@ -284,11 +284,9 @@ function Intro({ onStart, onReceive }: { onStart: () => void; onReceive: () => v
           </Button>
         </div>
         <div className="intro__telemetry">
+          <strong>{TELEMETRY_TITLE}</strong>
           <TelemetrySwitch />
-          <div>
-            <strong>{TELEMETRY_TITLE}</strong>
-            <p>{INTRO.telemetry}</p>
-          </div>
+          <p>{INTRO.telemetry}</p>
         </div>
         <p className="intro__fine">
           Pheeme is open source under the MIT license.{" "}
