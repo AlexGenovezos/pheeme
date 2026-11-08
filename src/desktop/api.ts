@@ -7,6 +7,13 @@ export interface NotificationAccount {
   /** Answered via the prompt or Settings; unanswered accounts get the prompt. */
   asked: boolean;
 }
+export interface NotifySchedule {
+  mode: "always" | "workHours" | "off";
+  /** Local hour, 0 to 23. */
+  startHour: number;
+  endHour: number;
+  weekdaysOnly: boolean;
+}
 export interface DesktopSettings {
   accounts: NotificationAccount[];
   permission: "notDetermined" | "denied" | "granted" | "system";
@@ -14,6 +21,8 @@ export interface DesktopSettings {
   trayAvailable: boolean;
   /** The user wants the menu bar / notification area icon. */
   trayEnabled: boolean;
+  /** When alerts may appear, for every account. */
+  schedule: NotifySchedule;
 }
 export interface ThreadTarget {
   accountId: string;
@@ -26,3 +35,5 @@ export const answerNotificationPrompt = (enable: boolean) =>
   invoke<DesktopSettings>("answer_notification_prompt", { enable });
 export const setTrayIcon = (shown: boolean) => invoke<DesktopSettings>("set_tray_icon", { shown });
 export const takeNotificationTarget = () => invoke<ThreadTarget | null>("take_notification_target");
+export const setNotificationSchedule = (schedule: NotifySchedule) =>
+  invoke<DesktopSettings>("set_notification_schedule", { schedule });
