@@ -20,6 +20,7 @@ pub mod secrets;
 pub mod sender_rules;
 pub mod support;
 pub mod sync;
+pub mod telemetry;
 mod text;
 pub mod transfer;
 
@@ -221,6 +222,9 @@ pub fn run() {
             ))?;
             state.log_dir = log_path;
             let sync = state.sync.clone();
+            if telemetry::active_in_this_build() {
+                tauri::async_runtime::spawn(telemetry::run(state.db.clone()));
+            }
             app.manage(state);
             desktop::install(app.handle());
             sync.start();
@@ -290,6 +294,8 @@ pub fn run() {
             commands::settings::set_account_notifications,
             commands::settings::answer_notification_prompt,
             commands::settings::set_tray_icon,
+            commands::settings::telemetry_enabled,
+            commands::settings::set_telemetry,
             commands::settings::take_notification_target,
             commands::settings::gmail_quota,
             commands::settings::set_gmail_quota,

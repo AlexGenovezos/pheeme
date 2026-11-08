@@ -5,6 +5,7 @@ import { EmailMessage } from "cloudflare:email";
 import { DurableObject } from "cloudflare:workers";
 import { handleUpload, takeDailySlot } from "./handler";
 import { buildMime } from "./mime";
+import { handlePing } from "./ping";
 import type { Env } from "./types";
 
 const FROM = "diagnostics@pheeme.email";
@@ -13,6 +14,13 @@ const TO = "ajg0360@gmail.com";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (new URL(request.url).pathname === "/v1/ping") {
+      return handlePing(request, {
+        bucket: env.BUNDLES,
+        perIp: env.PING_PER_IP,
+        now: () => new Date(),
+      });
+    }
     return handleUpload(request, {
       bucket: env.BUNDLES,
       perIp: env.PER_IP,

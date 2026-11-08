@@ -5,13 +5,17 @@ import { TextInput } from "../components/ui/TextInput";
 import { saveDiagnostics, sendDiagnostics, toCommandError } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { SettingsRow, SettingsSection } from "./rows";
+import { TELEMETRY_DESCRIPTION, TELEMETRY_TITLE, TelemetrySwitch } from "./telemetry";
 
 /** The Worker keeps notes to this length. */
 export const NOTE_MAX_LENGTH = 2000;
 
 type Status = { kind: "done" | "failed"; text: string } | null;
 
-/** Settings › Diagnostics: send a scrubbed log bundle to the developer, or save it to a file. */
+/**
+ * Settings › Diagnostics: the anonymous usage ping switch, and sending a scrubbed log bundle to the developer (or
+ * saving it to a file).
+ */
 export function DiagnosticsSection() {
   const accounts = useAccountStore((s) => s.accounts);
   const [note, setNote] = useState("");
@@ -97,48 +101,57 @@ export function DiagnosticsSection() {
   }
 
   return (
-    <SettingsSection title="Diagnostics">
-      <SettingsRow
-        title="Send diagnostics"
-        description="Sends recent logs to the developer so they can see why something was slow or broken. Logs never include your emails, subjects or contacts. Your note is sent as you type it."
-      />
-      <form
-        className="settings-diagnostics"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
-        <label className="settings-diagnostics__field">
-          <span className="settings-diagnostics__label">What happened?</span>
-          <textarea
-            className="settings-diagnostics__note"
-            value={note}
-            maxLength={NOTE_MAX_LENGTH}
-            rows={3}
-            placeholder="Optional"
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </label>
-        {sender}
-        <div className="settings-diagnostics__actions">
-          <Button type="submit" variant="primary" size="sm" disabled={busy !== null}>
-            {busy === "send" ? "Sending…" : "Send"}
-          </Button>
-          <Button size="sm" disabled={busy !== null} onClick={() => void saveCopy()}>
-            Save a copy…
-          </Button>
-        </div>
-        {status && (
-          <p
-            className="settings-diagnostics__status"
-            data-failed={status.kind === "failed" || undefined}
-            role={status.kind === "failed" ? "alert" : "status"}
-          >
-            {status.text}
-          </p>
-        )}
-      </form>
-    </SettingsSection>
+    <>
+      <SettingsSection title="Usage stats">
+        <SettingsRow
+          title={TELEMETRY_TITLE}
+          description={TELEMETRY_DESCRIPTION}
+          control={<TelemetrySwitch />}
+        />
+      </SettingsSection>
+      <SettingsSection title="Diagnostics">
+        <SettingsRow
+          title="Send diagnostics"
+          description="Sends recent logs to the developer so they can see why something was slow or broken. Logs never include your emails, subjects or contacts. Your note is sent as you type it."
+        />
+        <form
+          className="settings-diagnostics"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send();
+          }}
+        >
+          <label className="settings-diagnostics__field">
+            <span className="settings-diagnostics__label">What happened?</span>
+            <textarea
+              className="settings-diagnostics__note"
+              value={note}
+              maxLength={NOTE_MAX_LENGTH}
+              rows={3}
+              placeholder="Optional"
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </label>
+          {sender}
+          <div className="settings-diagnostics__actions">
+            <Button type="submit" variant="primary" size="sm" disabled={busy !== null}>
+              {busy === "send" ? "Sending…" : "Send"}
+            </Button>
+            <Button size="sm" disabled={busy !== null} onClick={() => void saveCopy()}>
+              Save a copy…
+            </Button>
+          </div>
+          {status && (
+            <p
+              className="settings-diagnostics__status"
+              data-failed={status.kind === "failed" || undefined}
+              role={status.kind === "failed" ? "alert" : "status"}
+            >
+              {status.text}
+            </p>
+          )}
+        </form>
+      </SettingsSection>
+    </>
   );
 }

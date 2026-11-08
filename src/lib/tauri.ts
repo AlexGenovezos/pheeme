@@ -515,6 +515,10 @@ export interface ShownTiming {
 }
 /** Log how long a conversation took to show, for Send diagnostics. */
 export const logThreadShown = (timing: ShownTiming) => invoke<void>("log_thread_shown", { timing });
+/** Whether the daily anonymous usage ping is on (it is unless the user turned it off). */
+export const telemetryEnabled = () => invoke<boolean>("telemetry_enabled");
+/** Turn the anonymous usage ping on or off; off also forgets the install ID. Returns the stored choice. */
+export const setTelemetry = (enabled: boolean) => invoke<boolean>("set_telemetry", { enabled });
 /** Write the same bundle to `path` (chosen in a save dialog). */
 export const saveDiagnostics = (note: string, replyTo: string | null, path: string) =>
   invoke<void>("save_diagnostics", { note, replyTo, path });

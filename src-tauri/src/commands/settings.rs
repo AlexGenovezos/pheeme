@@ -68,3 +68,35 @@ pub async fn set_gmail_quota(
         })?;
     Ok(state.gmail_quota.set(stored))
 }
+
+/// Whether the daily anonymous usage ping is on (Settings › Diagnostics, the welcome screen).
+#[tauri::command]
+pub async fn telemetry_enabled(state: State<'_, AppState>) -> Result<bool, CommandError> {
+    crate::db::settings::telemetry(&state.db)
+        .await
+        .map_err(settings_error)
+}
+
+/// Turn the ping on or off; off also forgets the install ID. Returns the stored choice.
+#[tauri::command]
+pub async fn set_telemetry(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<bool, CommandError> {
+    crate::db::settings::set_telemetry(&state.db, enabled)
+        .await
+        .map_err(settings_error)?;
+    tracing::info!(
+        enabled,
+        "anonymous usage ping turned {}",
+        if enabled { "on" } else { "off" }
+    );
+    Ok(enabled)
+}
+
+fn settings_error(e: anyhow::Error) -> CommandError {
+    CommandError {
+        code: "settings".into(),
+        message: e.to_string(),
+    }
+}

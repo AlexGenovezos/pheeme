@@ -59,6 +59,9 @@ export const INTRO = {
     },
   ],
   guideUrl: "https://github.com/AlexGenovezos/pheeme/blob/main/docs/google-cloud-setup.md",
+  /** Next to the usage stats switch. Nothing is sent until an account is connected. */
+  telemetry:
+    "Once a day, a random ID, the app version, your operating system and chip type, so the developer knows how many people use Pheeme. Never your email or anything in it. Change it any time in Settings › Diagnostics.",
 } as const;
 
 export const STEPS: GuideStep[] = [

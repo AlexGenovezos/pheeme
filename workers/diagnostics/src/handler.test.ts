@@ -66,7 +66,7 @@ function deps(over: { limited?: boolean; capped?: boolean; notifyFails?: boolean
     if (over.notifyFails) throw new Error("E_SENDER_NOT_VERIFIED");
   });
   const d: Deps = {
-    bucket: { put },
+    bucket: { put, get: async () => null },
     perIp: { limit },
     dailyCap: { take },
     notify,
