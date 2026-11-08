@@ -397,6 +397,13 @@
   line-height: var(--line-height-normal);
 }
 
+/* A number not loaded yet, sized like the number so nothing moves when it arrives. */
+.settings-sync .settings-sync__pending {
+  display: inline-block;
+  height: var(--font-size-sm);
+  vertical-align: text-bottom;
+}
+
 .settings-account__failure {
   margin: var(--space-0);
   padding: var(--space-0) var(--space-4) var(--space-3);

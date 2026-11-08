@@ -18,7 +18,8 @@ import "./transfer.css";
 export function SendCredentials({ accounts }: { accounts: AccountInfo[] }) {
   const clients = [...new Map(accounts.map((a) => [a.clientId, a])).values()];
   const [accountId, setAccountId] = useState(clients[0]?.id ?? "");
-  const [addresses, setAddresses] = useState<string[]>([]);
+  // null until the interfaces load, so the "no network" note can't flash first.
+  const [addresses, setAddresses] = useState<string[] | null>(null);
   const [address, setAddress] = useState("");
   const [offer, setOffer] = useState<TransferOffer | null>(null);
   const [status, setStatus] = useState<TransferStatus | null>(null);
@@ -37,7 +38,9 @@ export function SendCredentials({ accounts }: { accounts: AccountInfo[] }) {
         setAddress(ips[0] ?? "");
       })
       .catch((raw) => {
-        if (active) setError(toCommandError(raw).message);
+        if (!active) return;
+        setAddresses([]);
+        setError(toCommandError(raw).message);
       });
     return () => {
       // oxlint-disable-next-line react/immutability -- This flag belongs to this effect invocation.
@@ -169,7 +172,7 @@ export function SendCredentials({ accounts }: { accounts: AccountInfo[] }) {
               }
             />
           )}
-          {addresses.length > 1 && (
+          {addresses && addresses.length > 1 && (
             <SettingsRow
               title="Network"
               description="Choose your Wi-Fi or Ethernet address."
@@ -184,7 +187,7 @@ export function SendCredentials({ accounts }: { accounts: AccountInfo[] }) {
               }
             />
           )}
-          {!address && (
+          {addresses && !address && (
             <p className="transfer-note">Connect to Wi-Fi or Ethernet, then reopen this page.</p>
           )}
         </>
