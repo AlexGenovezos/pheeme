@@ -391,12 +391,30 @@ mod tests {
         (db, pool, fake, events, manager)
     }
 
+    /// Sync twice (initial, then a full incremental) and wait for the backfill that follows, so
+    /// it can't store mail or refresh labels in the middle of a test.
+    async fn synced(manager: &Arc<SyncManager>) {
+        manager.sync_account("a1").await.unwrap();
+        manager.sync_account("a1").await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while manager.sync_busy("a1") {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("backfill never finished");
+        let state = crate::db::sync_state::get(&manager.db, "a1").await.unwrap();
+        assert!(
+            state.backfill_complete,
+            "a later sync would restart the backfill"
+        );
+    }
+
     #[tokio::test]
     async fn frequent_check_stops_at_history_when_nothing_is_new() {
         let (_dir, _pool, fake, events, manager) = setup().await;
         fake.add(FakeMsg::new("m1", "t1", &["INBOX"]));
-        manager.sync_account("a1").await.unwrap(); // initial sync
-        manager.sync_account("a1").await.unwrap(); // first incremental: full
+        synced(&manager).await;
         events.take();
         let labels = fake.calls("list_labels");
         let history = fake.calls("list_history");
@@ -422,8 +440,7 @@ mod tests {
     #[tokio::test]
     async fn sync_after_a_failure_runs_in_full() {
         let (_dir, _pool, fake, events, manager) = setup().await;
-        manager.sync_account("a1").await.unwrap();
-        manager.sync_account("a1").await.unwrap();
+        synced(&manager).await;
         fake.fail_next("list_history", GmailError::Network("down".into()));
         assert!(manager.sync_account("a1").await.is_err());
         events.take();
@@ -440,8 +457,7 @@ mod tests {
     #[tokio::test]
     async fn full_sync_runs_once_its_interval_passes() {
         let (_dir, _pool, fake, events, manager) = setup().await;
-        manager.sync_account("a1").await.unwrap();
-        manager.sync_account("a1").await.unwrap();
+        synced(&manager).await;
         *lock(&manager.account("a1").last_full) = Instant::now().checked_sub(FULL_SYNC_INTERVAL);
         events.take();
         let labels = fake.calls("list_labels");
