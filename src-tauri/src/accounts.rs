@@ -176,7 +176,7 @@ impl AccountService {
         endpoints: Endpoints,
         sign_in_timeout: Duration,
     ) -> Self {
-        let http = reqwest::Client::builder()
+        let http = crate::http::client_builder()
             .timeout(Duration::from_secs(30))
             .build()
             .expect("reqwest client builds with static config");
@@ -610,7 +610,15 @@ mod tests {
         let url = Url::parse(&start.auth_url).unwrap();
         let q: HashMap<_, _> = url.query_pairs().into_owned().collect();
         let callback = format!("{}?state={}&code={code}", q["redirect_uri"], q["state"]);
-        assert_eq!(reqwest::get(callback).await.unwrap().status(), 200);
+        assert_eq!(
+            crate::http::client()
+                .get(callback)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
     }
 
     fn new_client(client_id: &str) -> ClientChoice {
@@ -815,12 +823,14 @@ mod tests {
         let start = h.service.begin_sign_in(new_client(CLIENT_A)).await.unwrap();
         let url = Url::parse(&start.auth_url).unwrap();
         let q: HashMap<_, _> = url.query_pairs().into_owned().collect();
-        reqwest::get(format!(
-            "{}?state={}&error=access_denied",
-            q["redirect_uri"], q["state"]
-        ))
-        .await
-        .unwrap();
+        crate::http::client()
+            .get(format!(
+                "{}?state={}&error=access_denied",
+                q["redirect_uri"], q["state"]
+            ))
+            .send()
+            .await
+            .unwrap();
         let error = h
             .service
             .complete_sign_in(&start.flow_id)

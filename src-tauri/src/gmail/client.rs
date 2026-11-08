@@ -450,7 +450,7 @@ pub struct GmailClient {
 
 impl GmailClient {
     pub fn new(tokens: Arc<dyn TokenProvider>) -> Self {
-        let http = reqwest::Client::builder()
+        let http = crate::http::client_builder()
             .timeout(REQUEST_TIMEOUT)
             .user_agent(concat!("pheeme/", env!("CARGO_PKG_VERSION")))
             .build()

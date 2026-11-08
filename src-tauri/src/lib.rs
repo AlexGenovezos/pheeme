@@ -10,6 +10,7 @@ pub mod db;
 pub mod desktop;
 mod diagnostics;
 pub mod gmail;
+pub mod http;
 pub mod identity;
 pub mod labels;
 pub mod mail;

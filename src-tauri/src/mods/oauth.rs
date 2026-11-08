@@ -292,7 +292,7 @@ mod tests {
         let connection: Connection = serde_json::from_value(serde_json::json!({
             "id":"test", "name":"Test", "authorizationUrl":"https://example.com/auth", "tokenUrl":"https://example.com/token", "scopes":["read"], "apiOrigins":["https://example.com"]
         })).unwrap();
-        let client = reqwest::Client::builder()
+        let client = crate::http::client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap();

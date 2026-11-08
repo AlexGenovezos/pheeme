@@ -1,0 +1,7 @@
+# reqwest has no TLS provider of its own here: build clients through `crate::http`.
+disallowed-methods = [
+  { path = "reqwest::Client::new", reason = "use crate::http::client(), which installs the TLS provider" },
+  { path = "reqwest::Client::builder", reason = "use crate::http::client_builder(), which installs the TLS provider" },
+  { path = "reqwest::ClientBuilder::new", reason = "use crate::http::client_builder(), which installs the TLS provider" },
+  { path = "reqwest::get", reason = "use crate::http::client().get(..), which installs the TLS provider" },
+]

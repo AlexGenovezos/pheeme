@@ -23,7 +23,7 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 /// POST the bundle to `url` as `multipart/form-data` (`meta` JSON and the `bundle` zip).
 pub async fn send(url: &str, meta: &UploadMeta, zip: Vec<u8>) -> Result<(), SupportError> {
     let network = |e: reqwest::Error| SupportError::Network(e.without_url().to_string());
-    let http = reqwest::Client::builder()
+    let http = crate::http::client_builder()
         .timeout(TIMEOUT)
         .user_agent(concat!("pheeme/", env!("CARGO_PKG_VERSION")))
         .build()
