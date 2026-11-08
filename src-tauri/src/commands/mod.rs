@@ -3,7 +3,6 @@ pub mod attachments;
 pub mod auth;
 pub mod compose;
 pub mod labels;
-pub mod messages;
 pub mod mods;
 pub mod search;
 pub mod sender_rules;
