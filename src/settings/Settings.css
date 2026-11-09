@@ -645,4 +645,48 @@
 .signature-editor .compose-toolbar {
   border-top: var(--border-width) solid var(--color-border-subtle);
   background: transparent;
+
+/* AI assistants (src/settings/AssistantSettings.tsx). */
+.settings-assistant__connect {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  font-size: var(--font-size-md);
+}
+
+.settings-assistant__hint {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  overflow-wrap: anywhere;
+}
+
+.settings-assistant__command {
+  display: block;
+  padding: var(--space-2);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+  color: var(--color-input-foreground);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.settings-assistant__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings-assistant__error {
+  margin: var(--space-0);
+  padding: var(--space-2);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.settings-assistant__failed .settings-row__description {
+  color: var(--color-danger);
 }

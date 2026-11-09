@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO assistant_activity (client_id, client_name, tool, summary, error, at)\n         VALUES (?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "adc0bb4cc93c2bd1c5c1a31e0fa16fd75b9f87d7e5e3044c7c048f3899964663"
+}

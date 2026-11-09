@@ -9,6 +9,7 @@ const NOTIFY_SCHEDULE: &str = "notify_schedule";
 const TELEMETRY: &str = "telemetry";
 const TELEMETRY_INSTALL_ID: &str = "telemetry_install_id";
 const TELEMETRY_LAST_PING: &str = "telemetry_last_ping_ms";
+const ASSISTANT_ENABLED: &str = "assistant_enabled";
 
 /// The Gmail per-user limit the user entered (units per minute), if they changed it.
 pub async fn gmail_quota(pool: &SqlitePool) -> Result<Option<u32>> {
@@ -99,6 +100,15 @@ pub async fn notify_schedule(pool: &SqlitePool) -> Result<NotifySchedule> {
 
 pub async fn set_notify_schedule(pool: &SqlitePool, schedule: &NotifySchedule) -> Result<()> {
     set(pool, NOTIFY_SCHEDULE, &serde_json::to_string(schedule)?).await
+}
+
+/// Whether AI assistants may connect (the MCP server runs). Off unless the user turned it on.
+pub async fn assistant_enabled(pool: &SqlitePool) -> Result<bool> {
+    Ok(get(pool, ASSISTANT_ENABLED).await?.as_deref() == Some("1"))
+}
+
+pub async fn set_assistant_enabled(pool: &SqlitePool, enabled: bool) -> Result<()> {
+    set(pool, ASSISTANT_ENABLED, if enabled { "1" } else { "0" }).await
 }
 
 fn inbox_tabs_key(account_id: &str) -> String {
@@ -221,6 +231,17 @@ mod tests {
         set_telemetry(&reopened, true).await.unwrap();
         assert!(telemetry(&reopened).await.unwrap());
         assert_ne!(telemetry_install_id(&reopened).await.unwrap(), id);
+    }
+
+    #[tokio::test]
+    async fn assistant_defaults_off_and_persists() {
+        let db = crate::db::test_support::TestDb::with_account("a").await;
+        assert!(!assistant_enabled(&db.pool).await.unwrap());
+        set_assistant_enabled(&db.pool, true).await.unwrap();
+        let reopened = crate::db::init_db(db.dir()).await.unwrap();
+        assert!(assistant_enabled(&reopened).await.unwrap());
+        set_assistant_enabled(&reopened, false).await.unwrap();
+        assert!(!assistant_enabled(&reopened).await.unwrap());
     }
 
     #[tokio::test]

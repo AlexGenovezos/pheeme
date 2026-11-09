@@ -1,0 +1,58 @@
+/** Settings › AI assistants for browser preview (`src-tauri/src/local_api` and `src-tauri/src/mcp` in the app). */
+
+import type {
+  AssistantActivity,
+  AssistantClient,
+  AssistantStatus,
+  NewAssistant,
+} from "../lib/tauri";
+
+type Args = Record<string, unknown> | undefined;
+
+const URL = "http://127.0.0.1:43830/mcp";
+
+export function createAssistantHandlers() {
+  let enabled = false;
+  let next = 0;
+  const clients: AssistantClient[] = [];
+  let activity: AssistantActivity[] = [];
+  const status = (): AssistantStatus => ({
+    enabled,
+    server: { state: enabled ? "running" : "off", url: URL, message: null },
+    clients: clients.map((c) => ({ ...c })),
+  });
+  return {
+    assistant_status: () => status(),
+    set_assistant_enabled: (args: Args) => {
+      enabled = Boolean(args?.enabled);
+      return status();
+    },
+    connect_assistant: (args: Args): NewAssistant => {
+      const name = String(args?.name ?? "").trim();
+      if (!name) throw { code: "invalid_input", message: "Give the assistant a name." };
+      next += 1;
+      const client = { id: `client-${next}`, name, createdAt: Date.now(), lastUsedAt: null };
+      clients.push(client);
+      activity = [
+        {
+          id: next,
+          clientName: name,
+          tool: "list_mailbox",
+          summary: "inbox (unread)",
+          error: null,
+          at: Date.now(),
+        },
+        ...activity,
+      ];
+      return { client: { ...client }, token: `pheeme_preview${next}` };
+    },
+    remove_assistant: (args: Args) => {
+      const at = clients.findIndex((c) => c.id === args?.clientId);
+      if (at >= 0) clients.splice(at, 1);
+    },
+    assistant_activity: () => activity.map((a) => ({ ...a })),
+    clear_assistant_activity: () => {
+      activity = [];
+    },
+  };
+}

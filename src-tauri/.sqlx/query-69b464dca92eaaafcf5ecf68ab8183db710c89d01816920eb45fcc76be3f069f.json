@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM assistant_activity WHERE id <= (SELECT MAX(id) FROM assistant_activity) - ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "69b464dca92eaaafcf5ecf68ab8183db710c89d01816920eb45fcc76be3f069f"
+}

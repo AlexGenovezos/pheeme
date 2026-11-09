@@ -68,6 +68,9 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `mail.rs` | Tauri-free mail service the commands call: cached list/thread/label reads, changes via the outbox |
 | `contacts.rs` | Tauri-free recipient suggestions for To/Cc/Bcc, answered locally: addresses from synced mail (the `contacts` table, kept by a trigger on `messages`) plus Google Contacts and "Other contacts" downloaded through the People API (`gmail/people.rs`) after launch and every 6 h. Settings › Contacts walks an account through turning the People API on and signing in again |
 | `calendar/` | Tauri-free Calendar mode backend (no UI yet; reads and writes). `service.rs` answers calendars and the events in a range from the cache and runs its own sync loop (60 s, 15 s while Calendar mode is in front), apart from mail sync; `sync.rs` syncs each calendar with its Calendar API `syncToken` (`singleEvents=false`; 410 Gone means a full re-sync); `recurrence.rs` expands repeating events locally (`rrule`); `gmail/calendar.rs` is the API client. Access is an incremental consent (`ClientChoice::Calendar`, `auth::CALENDAR_SCOPES`) asked only when the user opens the calendar; status changes emit `calendar:access`, cache changes `calendar:updated`. Writes go straight to the Calendar API, not the outbox, and reach the cache only after Google confirms: `writes.rs` (create, edit, delete, move, copy, with `If-Match` etags; a 412 refetches and fails with `conflict`), `repeating.rs` (edits and deletes of repeating events in three scopes: this, this and following, all), `rsvp.rs` (answers an invite, always `sendUpdates=all`; `respond_to_invite` serves Mail's invite card) and `edit.rs` (`EventEdit` validation and body building). `sendUpdates` defaults to `none`. Commands wrap in `user_action` |
+| `local_api/` | The local API for AI assistants (and later scripts): the only way in for MCP. Enforces the Settings › AI assistants switch, per-client tokens (SHA-256 in `assistant_clients`) and the activity log, and calls the services above, never SQL of its own. Tools are declared once in `requests.rs` (`Request` + `catalog`) |
+| `mcp/` | The MCP server over `local_api`: Streamable HTTP on `127.0.0.1:43830/mcp` (hyper, plain JSON, no SSE), bearer token, Host/Origin checked against loopback. Runs only while assistants are allowed |
+| `filters.rs` | Every Gmail filter, described in words with label names (sender rules are the narrow kind `sender_rules.rs` edits) |
 | `labels.rs` | Tauri-free label service: create, rename/re-nest (cascading to sublabels), colour, visibility and delete (with sublabels), straight to Gmail's labels API (not the outbox), then written to the cache |
 | `compose/` | Tauri-free compose service: MIME building (`lettre`), Reply/Reply All/Forward templates, staged attachments, Gmail drafts, sends (with undo window) via the outbox |
 | `accounts.rs` | Tauri-free account service: sign-in flow, list/remove, access tokens (cached in memory) |
@@ -96,7 +99,7 @@ The speed reader (`src/speedread/`) flashes one word at a time from emails that 
 
 ### Database Schema Summary
 
-Fifteen tables.
+Seventeen tables.
 - `accounts` — Account identity and Gmail history_id for sync (no tokens; those are in the keychain)
 - `labels` — Gmail labels with message/thread unread/total counters
 - `threads` — Conversation rows, derived from their messages by `threads::recompute_threads` (never written directly by sync)
@@ -109,6 +112,7 @@ Fifteen tables.
 - `google_contacts` / `google_contacts_sync` — The account's downloaded Google Contacts and how the last download went
 - `calendars` / `events` — Each account's Google calendars (with `hidden`, Pheeme's local sidebar tick, and the sync token) and their events; a repeating event is stored once (`recurrence`) with its changed or cancelled occurrences (`recurring_event_id`), and expanded when read
 - `calendar_access` — Per account: whether calendar access was allowed and how the last calendar sync went, plus the user's Calendar time zone and week start
+- `assistant_clients` / `assistant_activity` — Connected AI assistants (token hashes) and their latest 1,000 tool calls
 
 ## Key Conventions
 
@@ -117,6 +121,7 @@ Fifteen tables.
 - **Thread labels** live in the `thread_labels` table, derived from `messages.label_ids`: change message labels, then call `recompute_threads` in the same transaction.
 - **Mail changes** (archive, read, star, trash, send) go through `sync::outbox`, never straight to Gmail (drafts are the exception: saved straight to the drafts API). Write transactions use `db::begin_write` (`BEGIN IMMEDIATE`).
 - **Label metadata changes** (create, rename, delete, colour, visibility) go straight to Gmail through `LabelService` (`labels.rs`), not the outbox, and hold the per-account label lock. Label sync takes that lock with `try_lock`, so message sync never waits on it.
+- **AI assistant tools** go in `local_api` (a `Request` variant and a `catalog` entry, side by side), calling a service; the MCP layer never needs to change. Keep writes to the outbox and services the UI uses.
 - **User-initiated Gmail calls** (label, draft and search commands, outbox dispatch) run inside `gmail::user_action`, ahead of sync and the backfill: wrap any new command that calls Gmail the same way.
 - **Command errors** reject with `{ code, message }` (`CommandError` in `commands/mod.rs`): branch on `code`, show `message`.
 - **No layout shift when data loads:** a component must have the same size and the same elements before and after its data arrives. Render every line, button and value slot from the first frame, with a `Skeleton` (`src/components/ui/Skeleton.tsx`) or placeholder in place of the missing value; don't add or remove elements (`{data && …}`) once it loads. Messages about empty or missing data ("no network", "no results") show only after the load has finished, never during it: keep "not loaded yet" (`null`) apart from "loaded and empty" (`[]`).

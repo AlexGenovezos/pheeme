@@ -11,11 +11,14 @@ pub mod contacts;
 pub mod db;
 pub mod desktop;
 mod diagnostics;
+pub mod filters;
 pub mod gmail;
 pub mod http;
 pub mod identity;
 pub mod labels;
+pub mod local_api;
 pub mod mail;
+pub mod mcp;
 pub mod mods;
 pub mod render;
 pub mod search;
@@ -48,6 +51,9 @@ pub struct AppState {
     pub calendar: Arc<calendar::service::CalendarService>,
     pub sync: Arc<SyncManager>,
     pub transfers: transfer::TransferService,
+    /// The MCP server AI assistants connect to, over [`local_api::LocalApi`]; runs only while
+    /// Settings › AI assistants allows it.
+    pub assistants: Arc<mcp::McpServer>,
     /// The Gmail per-user limit every account's client paces itself by (Settings › Sync).
     pub gmail_quota: gmail::QuotaSetting,
     /// Where the logs are written (for Send diagnostics); `None` when there is no log dir.
@@ -96,6 +102,9 @@ pub async fn build_state(
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
     let compose = compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir);
+    let local_api =
+        local_api::LocalApi::new(db.clone(), accounts.clone(), mail.clone(), sync.clone());
+    let assistants = Arc::new(mcp::McpServer::new(Arc::new(local_api), mcp::DEFAULT_PORT));
     compose.sweep_staging().await;
     tokio::spawn({
         let mail = mail.clone();
@@ -115,6 +124,7 @@ pub async fn build_state(
         calendar,
         sync,
         transfers: transfer::TransferService::default(),
+        assistants,
         gmail_quota,
         log_dir: None,
     })
@@ -243,6 +253,15 @@ pub fn run() {
             ))?;
             state.log_dir = log_path;
             let sync = state.sync.clone();
+            let assistants = state.assistants.clone();
+            let activity_events = app.handle().clone();
+            assistants.api().on_activity(Arc::new(move || {
+                use tauri::Emitter;
+                let _ = activity_events.emit("assistant:activity", ());
+            }));
+            tauri::async_runtime::spawn(async move {
+                assistants.apply_setting().await;
+            });
             if telemetry::active_in_this_build() {
                 tauri::async_runtime::spawn(telemetry::run(state.db.clone()));
             }
@@ -366,6 +385,12 @@ pub fn run() {
             commands::labels::update_label,
             commands::labels::delete_label,
             commands::labels::delete_label_preview,
+            commands::assistant::assistant_status,
+            commands::assistant::set_assistant_enabled,
+            commands::assistant::connect_assistant,
+            commands::assistant::remove_assistant,
+            commands::assistant::assistant_activity,
+            commands::assistant::clear_assistant_activity,
             commands::sender_rules::list_sender_rules,
             commands::sender_rules::rule_senders,
             commands::sender_rules::save_sender_rules,
