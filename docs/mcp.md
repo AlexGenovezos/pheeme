@@ -32,7 +32,7 @@ Other MCP clients that speak Streamable HTTP take the same URL and `Authorizatio
 | `get_thread` | A conversation as plain text, with attachment names |
 | `list_filters` | Every Gmail filter, in words, flagging those that delete mail, skip the inbox or mark it read |
 
-Writes come in groups, each off until you turn it on under **What assistants may change**:
+Writes come in groups, each off until you turn it on under **What clients may change**:
 
 | Group | Tools |
 | --- | --- |

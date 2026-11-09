@@ -38,7 +38,7 @@ pub enum ApiError {
     Unauthorized,
     #[error("Pheeme has no tool called {0}.")]
     UnknownTool(String),
-    #[error("The user hasn't allowed assistants to {}. They can turn on Settings › AI assistants › {} in Pheeme.", .0.what(), .0.title())]
+    #[error("The user hasn't allowed MCP clients to {}. They can turn on Settings › MCP › {} in Pheeme.", .0.what(), .0.title())]
     NotAllowed(Permission),
     #[error("{0}")]
     Invalid(String),
