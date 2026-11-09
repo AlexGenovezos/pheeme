@@ -9,7 +9,7 @@ A fast, open-source desktop client for Gmail, with Google Calendar coming next, 
 - **Free to run:** you bring your own Google Cloud OAuth client, so there's no subscription and no server between you and your mail.
 - **Multi-account:** one combined inbox, or switch between accounts.
 
-> **Status:** early development. Not usable yet.
+> **Status:** beta. Pheeme works as a day-to-day Gmail client and updates itself; 1.0 will be the first non-beta release.
 
 Website: [pheeme.app](https://pheeme.app) (source in [`site/`](site/))
 
@@ -17,29 +17,46 @@ Website: [pheeme.app](https://pheeme.app) (source in [`site/`](site/))
 
 Download the latest build from [Releases](https://github.com/AlexGenovezos/pheeme/releases/latest). Versions are two-part (`v0.2`); 0.x is beta, and 1.0 is when Pheeme leaves beta.
 
-- **macOS:** open the `.dmg` and drag Pheeme to Applications. If the build is
-  unsigned, right-click the app and choose Open, or run
-  `xattr -dr com.apple.quarantine /Applications/Pheeme.app`.
-- **Windows:** run the installer. If SmartScreen warns about it, choose
-  More info, then Run anyway.
-- **Linux:** `chmod +x Pheeme_*.AppImage` and run it, or install the deb with
-  `sudo apt install ./Pheeme_*.deb`.
+- **macOS (Apple Silicon):** open the `.dmg` and drag Pheeme to Applications.
+  The app is signed with a Developer ID and notarized by Apple, so it opens
+  without a warning. There's no Intel build.
+- **Windows (x64):** run the `-setup.exe` installer. It isn't code-signed, so
+  SmartScreen may warn about it: choose More info, then Run anyway.
+- **Linux (x86_64):** install the deb with `sudo apt install ./Pheeme_*.deb`,
+  or `chmod +x Pheeme_*.AppImage` and run it. Pheeme keeps sign-in tokens in
+  the system keychain, so it needs a running, unlocked Secret Service provider
+  such as GNOME Keyring or KWallet; without one, sign-in stops with a message
+  saying so.
 
 Pheeme checks for updates on launch and every 6 hours, and asks before
 restarting to apply one.
 
+### First launch
+
+Pheeme has no server of its own: it signs in to Gmail with an OAuth client you
+create in your own Google Cloud project, which is free. The app walks you
+through it on first launch, and the same steps are in
+[Google Cloud setup](docs/google-cloud-setup.md). It takes about 15 minutes,
+once. To use the same client on another computer, send it over your local
+network from Settings instead of creating a new one
+([Transfer client credentials](docs/local-credential-transfer.md)).
+
 ## Docs
 
-- [Desktop notifications and tray](docs/desktop-notifications.md): per-account alerts, background sync and OS acceptance checks
-
-- [Mods](docs/mods.md): install personal features and write integrations without maintaining a fork
-
-- [Local diagnostics](docs/diagnostics.md): always-on logs and where to find them
-- [Design](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md): scope, priorities and roadmap
-- [Technical plan](Gmail%20client%20project%20plan.md): the detailed implementation reference
+Using Pheeme:
 
 - [Google Cloud setup](docs/google-cloud-setup.md): create the OAuth client Pheeme signs in with (the app also walks you through it)
 - [Transfer client credentials](docs/local-credential-transfer.md): securely reuse your Google Cloud client on another device over your local network
+- [Desktop notifications and tray](docs/desktop-notifications.md): per-account alerts, background sync and OS acceptance checks
+- [Themes](docs/themes.md): custom theme files and importing a VS Code theme
+- [Mods](docs/mods.md): install personal features and write integrations without maintaining a fork
+- [Local diagnostics](docs/diagnostics.md): always-on logs and where to find them
+
+Building Pheeme:
+
+- [Design](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md): scope, priorities and roadmap
+- [Technical plan](Gmail%20client%20project%20plan.md): the detailed implementation reference
+- [Performance checks](docs/performance.md): the CI benchmarks, leak checks and nightly memory budgets
 
 ## Develop on macOS
 
