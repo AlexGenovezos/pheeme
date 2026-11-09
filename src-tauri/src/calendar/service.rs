@@ -497,6 +497,12 @@ impl CalendarService {
         self.wake.notify_one();
     }
 
+    /// Whether a sync of `account_id` was asked for and hasn't run yet.
+    #[cfg(test)]
+    pub(super) fn is_forced(&self, account_id: &str) -> bool {
+        lock(&self.forced).contains(account_id)
+    }
+
     /// One pass: every account that allowed calendar access and isn't waiting on the user,
     /// plus any triggered account.
     pub async fn tick(&self, now: i64) {

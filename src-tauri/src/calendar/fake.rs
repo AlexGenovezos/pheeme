@@ -116,14 +116,40 @@ impl State {
         let master_id = id.rsplit_once('_')?.0;
         let master = self.current(calendar_id, master_id)?;
         let (_, original) = instance_parts(id, &master)?;
+        let (start, end) = instance_times(&master, &original)?;
         let mut e = master.clone();
         let o = e.as_object_mut()?;
         o.remove("recurrence");
         o.insert("id".into(), json!(id));
         o.insert("recurringEventId".into(), json!(master_id));
         o.insert("originalStartTime".into(), original);
+        o.insert("start".into(), start);
+        o.insert("end".into(), end);
         Some(e)
     }
+}
+
+/// An instance's own start and end, as Google gives them: its original start, and the
+/// series' length.
+fn instance_times(master: &Value, original: &Value) -> Option<(Value, Value)> {
+    if let Some(d) = original["date"].as_str() {
+        let parse = |v: &Value| chrono::NaiveDate::parse_from_str(v.as_str()?, "%Y-%m-%d").ok();
+        let days = parse(&master["end"]["date"])? - parse(&master["start"]["date"])?;
+        let start = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()?;
+        let end = (start + days).format("%Y-%m-%d").to_string();
+        return Some((json!({"date": d}), json!({"date": end})));
+    }
+    let parse = |v: &Value| chrono::DateTime::parse_from_rfc3339(v.as_str()?).ok();
+    let length = parse(&master["end"]["dateTime"])? - parse(&master["start"]["dateTime"])?;
+    let start = parse(&original["dateTime"])?;
+    let time = |t: chrono::DateTime<chrono::FixedOffset>| {
+        let mut v = json!({"dateTime": t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)});
+        if let Some(tz) = master["start"]["timeZone"].as_str() {
+            v["timeZone"] = json!(tz);
+        }
+        v
+    };
+    Some((time(start), time(start + length)))
 }
 
 fn write(

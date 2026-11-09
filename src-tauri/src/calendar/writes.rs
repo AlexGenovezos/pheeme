@@ -1,11 +1,13 @@
 //! Calendar writes: create, edit, delete, move and copy events, plus their plumbing (what an
 //! event id points at, whether a calendar can be changed, caching Google's answer). Nothing
-//! is cached until Google confirms a change.
+//! is cached until Google confirms a change. Changes to repeating events ("this", "this
+//! and following", "all") are in `repeating.rs`.
 
 use super::convert::{self, EventChange};
 use super::edit::{self, EventEdit, OriginalStart, TimeInput};
 use super::error::CalendarError;
 use super::recurrence;
+use super::repeating::Resolved;
 use super::service::{unstored_occurrence, CalendarService};
 use crate::db;
 use crate::db::calendar::{DbCalendar, DbEvent};
@@ -26,7 +28,7 @@ pub enum EditScope {
 
 /// Fields of an event resource a copy must not carry: Google's ids and bookkeeping, and the
 /// original's conference (a copy gets its own Meet).
-const NOT_COPIED: [&str; 13] = [
+pub(super) const NOT_COPIED: [&str; 13] = [
     "id",
     "iCalUID",
     "etag",
@@ -83,16 +85,16 @@ pub(super) fn can_edit(calendar: &DbCalendar, flags: &Value) -> bool {
 }
 
 /// A new event id made here, so a retried insert can't create the event twice.
-fn new_id() -> String {
+pub(super) fn new_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
 
-fn raw(e: &DbEvent) -> Value {
+pub(super) fn raw(e: &DbEvent) -> Value {
     serde_json::from_str(&e.raw).unwrap_or_default()
 }
 
 /// The calendar's zone for times given without one.
-fn zone_of(calendar: &DbCalendar) -> &str {
+pub(super) fn zone_of(calendar: &DbCalendar) -> &str {
     calendar.time_zone.as_deref().unwrap_or("UTC")
 }
 
@@ -102,20 +104,6 @@ fn has_meet(raw: &Value) -> bool {
     raw["hangoutLink"].is_string()
         || conference["conferenceSolution"]["key"]["type"] == "hangoutsMeet"
         || conference["createRequest"]["conferenceSolutionKey"]["type"] == "hangoutsMeet"
-}
-
-/// Until repeating events are handled (Task 7), a change to a series or one of its
-/// occurrences is refused before anything reaches Google.
-fn repeating_not_supported() -> CalendarError {
-    CalendarError::Invalid("Changing repeating events isn't supported yet.".into())
-}
-
-/// A stored event that neither repeats nor belongs to a series.
-fn single(target: &Target) -> Option<&DbEvent> {
-    match target {
-        Target::Stored(e) if e.recurrence.is_none() && e.recurring_event_id.is_none() => Some(e),
-        _ => None,
-    }
 }
 
 impl CalendarService {
@@ -187,17 +175,36 @@ impl CalendarService {
         calendar_id: &str,
         api_event: ApiEvent,
     ) -> Result<EventRef, CalendarError> {
-        let calendar = self.calendar(account_id, calendar_id).await?;
         let id = api_event.id.clone();
-        let (upserts, deleted) = match convert::event(
-            account_id,
-            calendar_id,
-            calendar.time_zone.as_deref(),
-            &api_event,
-        ) {
-            EventChange::Upsert(e) => (vec![*e], Vec::new()),
-            EventChange::Delete(id) => (Vec::new(), vec![id]),
-        };
+        self.save_all(account_id, calendar_id, vec![api_event])
+            .await?;
+        Ok(EventRef {
+            account_id: account_id.to_owned(),
+            calendar_id: calendar_id.to_owned(),
+            id,
+        })
+    }
+
+    /// [`Self::save`] for several events of one calendar, telling the UI once.
+    pub(super) async fn save_all(
+        &self,
+        account_id: &str,
+        calendar_id: &str,
+        api_events: Vec<ApiEvent>,
+    ) -> Result<(), CalendarError> {
+        let calendar = self.calendar(account_id, calendar_id).await?;
+        let (mut upserts, mut deleted) = (Vec::new(), Vec::new());
+        for api_event in &api_events {
+            match convert::event(
+                account_id,
+                calendar_id,
+                calendar.time_zone.as_deref(),
+                api_event,
+            ) {
+                EventChange::Upsert(e) => upserts.push(*e),
+                EventChange::Delete(id) => deleted.push(id),
+            }
+        }
         db::calendar::apply_event_changes(
             &self.db,
             account_id,
@@ -211,11 +218,7 @@ impl CalendarService {
             account_id: account_id.to_owned(),
         });
         self.trigger(Some(account_id.to_owned()));
-        Ok(EventRef {
-            account_id: account_id.to_owned(),
-            calendar_id: calendar_id.to_owned(),
-            id,
-        })
+        Ok(())
     }
 
     /// After a 412: fetch Google's current version and cache it. Errors are ignored; the
@@ -233,9 +236,9 @@ impl CalendarService {
     }
 
     /// Turns Google's answer into the command's: after a 412 the current version is cached
-    /// first (`id`, when the write had an etag), and an unconfirmed write asks for a sync so
-    /// the calendar soon shows what Google has.
-    async fn settle<T>(
+    /// first (`id`, when the write had an etag), and an unconfirmed write, or one Google has
+    /// no event for, asks for a sync so the calendar soon shows what Google has.
+    pub(super) async fn settle<T>(
         &self,
         account_id: &str,
         calendar_id: &str,
@@ -250,9 +253,9 @@ impl CalendarService {
                 }
                 Err(CalendarError::Conflict)
             }
-            Err(CalendarError::Unconfirmed) => {
+            Err(e @ (CalendarError::Unconfirmed | CalendarError::NotFound)) => {
                 self.trigger(Some(account_id.to_owned()));
-                Err(CalendarError::Unconfirmed)
+                Err(e)
             }
             other => other,
         }
@@ -260,7 +263,7 @@ impl CalendarService {
 
     /// Removes an event (a series with its occurrences) from the cache after Google
     /// confirmed it is gone from this calendar.
-    async fn uncache(
+    pub(super) async fn uncache(
         &self,
         account_id: &str,
         calendar_id: &str,
@@ -301,7 +304,8 @@ impl CalendarService {
         self.save(account_id, calendar_id, event).await
     }
 
-    /// Changes an event. A single event ignores `scope`; repeating events come in Task 7.
+    /// Changes an event. A single event ignores `scope`; for a repeating one it says which
+    /// occurrences change.
     pub async fn update_event(
         &self,
         account_id: &str,
@@ -313,10 +317,13 @@ impl CalendarService {
     ) -> Result<EventRef, CalendarError> {
         let calendar = self.writable(account_id, calendar_id).await?;
         let target = self.target(account_id, calendar_id, event_id).await?;
-        // Task 7: dispatch repeating targets on `scope` here.
-        let _ = scope;
-        let event = single(&target).ok_or_else(repeating_not_supported)?;
-        let existing = raw(event);
+        let event = match self.resolve(account_id, calendar_id, target, scope).await? {
+            Resolved::Single(e) => e,
+            Resolved::Series(s) => {
+                return self.update_in_series(&calendar, s, scope, edit, send).await
+            }
+        };
+        let existing = raw(&event);
         if !can_edit(&calendar, &existing) {
             return Err(CalendarError::ReadOnly(
                 "Only the organizer can change this event.".into(),
@@ -341,7 +348,8 @@ impl CalendarService {
         self.save(account_id, calendar_id, saved).await
     }
 
-    /// Deletes an event. A single event ignores `scope`; repeating events come in Task 7.
+    /// Deletes an event. A single event ignores `scope`; for a repeating one it says which
+    /// occurrences go.
     pub async fn delete_event(
         &self,
         account_id: &str,
@@ -350,11 +358,22 @@ impl CalendarService {
         scope: EditScope,
         send: SendUpdates,
     ) -> Result<(), CalendarError> {
-        self.writable(account_id, calendar_id).await?;
+        let calendar = self.writable(account_id, calendar_id).await?;
         let target = self.target(account_id, calendar_id, event_id).await?;
-        // Task 7: dispatch repeating targets on `scope` here.
-        let _ = scope;
-        let event = single(&target).ok_or_else(repeating_not_supported)?;
+        match self.resolve(account_id, calendar_id, target, scope).await? {
+            Resolved::Single(e) => self.delete_stored(account_id, calendar_id, &e, send).await,
+            Resolved::Series(s) => self.delete_in_series(&calendar, s, scope, send).await,
+        }
+    }
+
+    /// Deletes a stored event (a series with its occurrences), then uncaches it.
+    pub(super) async fn delete_stored(
+        &self,
+        account_id: &str,
+        calendar_id: &str,
+        event: &DbEvent,
+        send: SendUpdates,
+    ) -> Result<(), CalendarError> {
         let opts = WriteOptions {
             send_updates: send,
             if_match: Some(&event.etag),
@@ -1055,32 +1074,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn repeating_edits_and_deletes_are_refused_for_now() {
-        let h = harness(&["a"]).await;
-        h.fake("a").put(CAL, standup_series());
-        h.grant("a").await;
-        for id in ["standup", "standup_20261109T140000Z"] {
-            let err = h
-                .service
-                .update_event(
-                    "a",
-                    CAL,
-                    id,
-                    EditScope::This,
-                    summary("x"),
-                    SendUpdates::None,
-                )
-                .await
-                .unwrap_err();
-            assert_eq!(err.code(), "invalid_input", "{id}");
-            let err = h
-                .service
-                .delete_event("a", CAL, id, EditScope::All, SendUpdates::None)
-                .await
-                .unwrap_err();
-            assert_eq!(err.code(), "invalid_input", "{id}");
-        }
-        assert!(h.fake("a").writes().is_empty());
+    async fn a_write_google_has_no_event_for_asks_for_a_sync() {
+        let h = with_event().await;
+        h.fake("a").forget(CAL, "e");
+        assert!(!h.service.is_forced("a"));
+        let err = h
+            .service
+            .update_event(
+                "a",
+                CAL,
+                "e",
+                EditScope::This,
+                summary("New"),
+                SendUpdates::None,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CalendarError::NotFound), "{err:?}");
+        assert!(h.service.is_forced("a"), "a sync is asked for");
     }
 
     #[test]
