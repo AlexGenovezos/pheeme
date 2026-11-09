@@ -16,12 +16,18 @@ export const vibrancy = platform === "macos" && isTauri();
 export function syncNativeWindow(mode: ThemeMode, theme: ThemeDefinition) {
   const win = getCurrentWindow();
   const warn = (what: string) => (err: unknown) => console.warn(`${what} failed`, err);
-  // System mode lets the OS drive the title bar, unless the theme is the other kind
-  // (a dark theme chosen for Light mode): then the title bar follows the theme.
-  const followOs = mode === "system" && theme.kind === (systemPrefersDark() ? "dark" : "light");
-  win.setTheme(followOs ? null : theme.kind).catch(warn("setTheme"));
-  // A transparent window must stay transparent, or the vibrancy behind the sidebar is covered.
-  if (!vibrancy)
+  // System mode leaves the appearance to the OS. setTheme sets it app-wide, which is
+  // what prefers-color-scheme reports, so overriding it here would re-resolve the
+  // theme from the override and flip back and forth forever.
+  win.setTheme(mode === "system" ? null : theme.kind).catch(warn("setTheme"));
+  if (vibrancy) {
+    // The vibrancy material has the window's appearance. Under a theme of the other
+    // kind (a light theme in dark mode) it would show dark through a light sidebar,
+    // so the sidebar and window go solid instead.
+    const appearance = mode === "system" ? (systemPrefersDark() ? "dark" : "light") : theme.kind;
+    if (theme.kind === appearance) document.documentElement.dataset.vibrancy = "";
+    else delete document.documentElement.dataset.vibrancy;
+  } else
     win
       .setBackgroundColor(themeColorToHex(theme.tokens["--color-app-bg"]))
       .catch(warn("setBackgroundColor"));
