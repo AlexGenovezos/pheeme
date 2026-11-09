@@ -8,6 +8,7 @@ pub mod error;
 pub(crate) mod fake;
 pub mod recurrence;
 mod repeating;
+mod rsvp;
 pub mod series;
 pub mod service;
 pub mod sync;

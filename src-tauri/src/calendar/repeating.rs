@@ -43,9 +43,9 @@ pub(super) enum Resolved {
 /// One occurrence of a series: the series (when cached), the occurrence's original start,
 /// and its own row when it was changed before.
 pub(super) struct InSeries {
-    master: Option<DbEvent>,
-    at: OriginalStart,
-    row: Option<DbEvent>,
+    pub(super) master: Option<DbEvent>,
+    pub(super) at: OriginalStart,
+    pub(super) row: Option<DbEvent>,
 }
 
 impl InSeries {
