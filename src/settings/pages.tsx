@@ -9,6 +9,7 @@ import {
   LayoutList,
   LifeBuoy,
   Palette,
+  PenLine,
   Puzzle,
   RefreshCw,
   SquarePen,
@@ -34,6 +35,7 @@ import { InboxTabsSettings } from "./InboxTabsSettings";
 import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
 import { SenderRulesSettings } from "./SenderRulesSettings";
+import { SignatureSettings } from "./SignatureSettings";
 import {
   CreateThemeControl,
   ImportThemeControl,
@@ -439,6 +441,14 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
         ],
       },
     ],
+  },
+  {
+    id: "signatures",
+    title: "Signatures",
+    icon: PenLine,
+    group: "Mail",
+    keywords: ["signature", "sign off", "footer", "compose", "reply", "forward", "new message"],
+    Component: SignatureSettings,
   },
   {
     id: "sync",

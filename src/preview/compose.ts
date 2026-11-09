@@ -83,6 +83,11 @@ export function createComposeHandlers(
   };
 
   return {
+    /** Each fixture account's Gmail signature: its name, and a line about where it was sent from. */
+    gmail_signature: (args) => {
+      const from = me(String(args?.accountId));
+      return `<div><b>${escapeHtml(from.name ?? from.address)}</b><br><span style="color:#5f6368">Sent while previewing Pheeme</span></div>`;
+    },
     compose_template: (args) => {
       const accountId = String(args?.accountId);
       const mode = args?.mode as ComposeMode;

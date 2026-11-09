@@ -269,6 +269,25 @@ impl ComposeService {
         Ok(draft)
     }
 
+    /// The signature set in Gmail for the account's own address (sanitized HTML), or `None`
+    /// when it has none.
+    pub async fn gmail_signature(&self, account_id: &str) -> Result<Option<String>, MailError> {
+        let me = self.sender(account_id).await?;
+        let list = self.api(account_id).list_send_as().await.map_err(gmail)?;
+        let mine = list
+            .iter()
+            .find(|s| {
+                s.send_as_email
+                    .trim()
+                    .eq_ignore_ascii_case(me.address.trim())
+            })
+            .or_else(|| list.iter().find(|s| s.is_primary));
+        Ok(mine
+            .and_then(|s| s.signature.as_deref())
+            .map(template::clean_html)
+            .filter(|html| !html.trim().is_empty()))
+    }
+
     pub async fn stage_file(&self, path: &Path) -> Result<StagedAttachment, MailError> {
         self.staging.stage_file(path).await
     }

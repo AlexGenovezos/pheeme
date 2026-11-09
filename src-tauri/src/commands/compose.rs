@@ -20,6 +20,15 @@ pub async fn compose_template(
     Ok(user_action(state.compose.template(&account_id, &message_id, mode)).await?)
 }
 
+/// The account's signature as set in Gmail (HTML), or `None` when it has none.
+#[tauri::command]
+pub async fn gmail_signature(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> Result<Option<String>, CommandError> {
+    Ok(user_action(state.compose.gmail_signature(&account_id)).await?)
+}
+
 /// Attach a file the user picked or dropped.
 #[tauri::command]
 pub async fn stage_attachment(

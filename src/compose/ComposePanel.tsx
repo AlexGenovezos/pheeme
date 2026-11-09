@@ -18,8 +18,9 @@ import {
   MAX_ATTACHMENT_BYTES,
   useComposeStore,
 } from "./composeStore";
-import { EditorBody, EditorToolbar, useComposeEditor } from "./Editor";
+import { EditorBody, EditorToolbar, replaceSignature, useComposeEditor } from "./Editor";
 import { RecipientField } from "./RecipientField";
+import { useSignatures } from "./signatures";
 
 const SEND_SHORTCUT = "mod+enter";
 
@@ -188,6 +189,14 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   useEffect(() => {
     editor?.setEditable(!win.sending, false); // no update event: not an edit
   }, [editor, win.sending]);
+
+  // A new message sent from another account takes that account's signature.
+  const signedAs = useRef(win.accountId);
+  useEffect(() => {
+    if (!editor || signedAs.current === win.accountId) return;
+    signedAs.current = win.accountId;
+    replaceSignature(editor, useSignatures.getState().signatureFor(win.accountId, "new"));
+  }, [editor, win.accountId]);
 
   // Focus: replies start in the body, new messages in To.
   useEffect(() => {

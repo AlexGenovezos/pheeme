@@ -3,7 +3,7 @@
 
 use crate::gmail::types::{
     Draft, DraftListResponse, Filter, HistoryListResponse, Label, LabelColor, LabelUpdate, Message,
-    MessageListResponse, Thread, ThreadListResponse, UserProfile,
+    MessageListResponse, SendAs, Thread, ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailClient, GmailError, MessageFormat};
 
@@ -114,6 +114,8 @@ pub trait MailApi: Send + Sync {
     async fn list_filters(&self) -> Result<Vec<Filter>, GmailError>;
     async fn create_filter(&self, filter: &Filter) -> Result<Filter, GmailError>;
     async fn delete_filter(&self, id: &str) -> Result<(), GmailError>;
+    /// The account's send-as addresses and their signatures (needs `gmail.settings.basic`).
+    async fn list_send_as(&self) -> Result<Vec<SendAs>, GmailError>;
 }
 
 #[async_trait::async_trait]
@@ -289,5 +291,9 @@ impl MailApi for GmailClient {
 
     async fn delete_filter(&self, id: &str) -> Result<(), GmailError> {
         GmailClient::delete_filter(self, id).await
+    }
+
+    async fn list_send_as(&self) -> Result<Vec<SendAs>, GmailError> {
+        GmailClient::list_send_as(self).await
     }
 }

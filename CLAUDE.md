@@ -75,7 +75,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 
 ### Frontend State
 
-Seven Zustand stores:
+Eight Zustand stores:
 - `accountStore` — connected accounts (load, upsert, remove)
 - `mailStore` — the active mailbox or search results (paged, optimistic patches), reloaded on `sync:*` events; search combines instant local matches with background Gmail pages
 - `labelStore` — per-account labels, label counts and category counts, plus the All Inboxes unread count
@@ -83,6 +83,7 @@ Seven Zustand stores:
 - `inboxTabsStore` — per-account hidden Inbox tabs (Primary is always shown)
 - `uiStore` — active mailbox, search text and account scope, selected thread, multi-select, pane layout
 - `composeStore` (`src/compose/`) — open compose panels (autosave, close prompt) and sends waiting out undo or Gmail's confirmation; a refused or undone send reopens its panel
+- `signatures` (`src/compose/signatures.ts`) — per-account signature choices for new messages and replies/forwards (Gmail's, the account's own, or none) and the last fetched Gmail signatures (`users.settings.sendAs`), both in localStorage. The signature sits in the body as one `div.gmail_signature` block (`SignatureNode`), above the separately held quote; Settings › Signatures edits them
 
 Settings is a dialog over the app (`src/settings/`). Pages, sections and rows are declared as data in `src/settings/pages.tsx`: a new setting is one `SettingDef` there. Keyboard shortcuts come from the command registry; user rebindings are overrides stored by `src/keyboard/bindings.ts`, so label a button with `useKeybinding(commandId)` rather than a literal key.
 

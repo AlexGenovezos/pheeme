@@ -2,7 +2,9 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { createSubscriptionScope } from "../lib/subscriptions";
 import { isTauri } from "../preview/runtime";
+import { useAccountStore } from "../store/accountStore";
 import { useComposeStore } from "./composeStore";
+import { useSignatures } from "./signatures";
 import "./compose.css";
 
 // The editor is the heaviest part of the app; it loads the first time a message is written.
@@ -67,7 +69,10 @@ export function ComposeHost() {
   );
 }
 
-/** Follow send outcomes for the whole session (a panel is gone by the time its send is confirmed). */
+/**
+ * Follow send outcomes for the whole session (a panel is gone by the time its send is confirmed), and fetch each
+ * account's Gmail signature once, so a new message starts with the current one.
+ */
 export function useComposeEvents() {
   useEffect(() => {
     const scope = createSubscriptionScope();
@@ -76,4 +81,8 @@ export function useComposeEvents() {
       .catch((err) => console.warn("send status listener failed", err));
     return scope.dispose;
   }, []);
+  const accounts = useAccountStore((s) => s.accounts);
+  useEffect(() => {
+    for (const a of accounts) void useSignatures.getState().refreshGmailOnce(a.id);
+  }, [accounts]);
 }

@@ -394,6 +394,21 @@ button.compose-from:hover {
 .compose-editor__content a {
   color: var(--color-link);
 }
+/* The signature: one block, selected and deleted as a whole. */
+.compose-editor__content .gmail_signature {
+  margin-top: var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-foreground-muted);
+  cursor: default;
+}
+.compose-editor__content .gmail_signature img {
+  max-width: 100%;
+  height: auto;
+}
+.compose-editor__content .gmail_signature.ProseMirror-selectednode {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+}
 
 .compose-toolbar {
   display: flex;

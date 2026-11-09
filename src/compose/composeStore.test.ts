@@ -12,6 +12,7 @@ import {
   sendProblem,
   useComposeStore,
 } from "./composeStore";
+import { __resetSignaturesForTests, useSignatures } from "./signatures";
 
 type Call = { cmd: string; args: Record<string, unknown> };
 let calls: Call[];
@@ -28,6 +29,7 @@ beforeEach(async () => {
   localStorage.clear();
   __resetComposeSettingsForTests();
   __resetComposeStoreForTests();
+  __resetSignaturesForTests();
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
   calls = [];
   let n = 0;
@@ -223,6 +225,39 @@ test("a reply panel loads its template; a failure closes it with the reason", as
   await store().respond("a1", "m9", "forward");
   expect(store().windows).toHaveLength(1);
   expect(titles()).toContain("Gone.");
+});
+
+const SIGNED =
+  '<p></p><div class="gmail_signature" data-smartmail="gmail_signature"><b>Me</b></div>';
+
+test("a new message starts with the signature, and a signature alone isn't worth keeping", async () => {
+  handlers.gmail_signature = () => "<b>Me</b>";
+  await useSignatures.getState().refreshGmail("a1");
+  const id = store().compose("a1");
+  expect(win(id).draft.bodyHtml).toBe(SIGNED);
+  store().update(id, { bodyHtml: SIGNED.replace("<p></p>", "<p> </p>") });
+  store().requestClose(id);
+  expect(store().windows).toEqual([]); // no "Save draft?" for an untouched signature
+  expect(called("save_draft")).toEqual([]);
+
+  useSignatures.getState().update("a1", { newMessages: "none" });
+  expect(win(store().compose("a1")).draft.bodyHtml).toBe("");
+});
+
+test("a reply waits for a first fetch of the Gmail signature and puts it above the quote", async () => {
+  handlers.gmail_signature = () => "<b>Me</b>";
+  handlers.compose_template = () => ({ ...emptyDraft(), quoteHtml: "<blockquote>Hi</blockquote>" });
+  await store().respond("a1", "m9", "reply");
+  expect(called("gmail_signature")).toHaveLength(1);
+  expect(store().windows[0].draft).toMatchObject({
+    bodyHtml: SIGNED,
+    quoteHtml: "<blockquote>Hi</blockquote>",
+  });
+
+  useSignatures.getState().update("a1", { replies: "none" });
+  await store().respond("a1", "m10", "forward");
+  expect(store().windows[1].draft.bodyHtml).toBe("");
+  expect(called("gmail_signature")).toHaveLength(1); // once a session
 });
 
 test("attachments: staged files join the message; a failure is reported", async () => {

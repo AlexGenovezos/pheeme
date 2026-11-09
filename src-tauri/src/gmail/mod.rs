@@ -11,6 +11,7 @@ pub mod mime;
 pub mod palette;
 pub mod people;
 pub mod probe;
+pub mod send_as;
 pub mod threads;
 pub mod types;
 pub mod user;

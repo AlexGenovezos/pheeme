@@ -157,7 +157,7 @@ fn original_body(original: &Original) -> String {
 }
 
 /// Scripts, handlers and external stylesheets go; inline styles, images (also `cid:`) stay.
-fn clean_html(html: &str) -> String {
+pub(crate) fn clean_html(html: &str) -> String {
     ammonia::Builder::default()
         .add_tags(["center", "font"])
         .add_generic_attributes([
