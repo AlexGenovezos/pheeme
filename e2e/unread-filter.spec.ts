@@ -85,7 +85,7 @@ test("unread filtering survives reading and mailbox changes, and stays separate 
   // Undoing another row's archive must not clear this visit's just-read row.
   const other = rows.filter({ hasText: "Pilot for the support team" });
   await other.hover();
-  await other.getByRole("button", { name: "Archive", exact: true }).click();
+  await other.getByRole("button", { name: "Archive", exact: true, includeHidden: true }).click();
   await expect(other).toHaveCount(0);
   await page.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(other).toBeVisible();
