@@ -596,6 +596,16 @@ export interface SyncProgress {
 
 export const getSyncProgress = () => invoke<SyncProgress[]>("get_sync_progress");
 
+/** Google stopped or started answering this device. Offline, syncing pauses and changes wait. */
+export const NETWORK_EVENT = "network:status";
+
+export interface NetworkStatusEvent {
+  online: boolean;
+}
+
+/** Whether Google answered the last time it was asked. */
+export const networkOnline = () => invoke<boolean>("network_online");
+
 /** Call an event unlisten fn, ignoring failures (e.g. the IPC bridge is already gone). */
 export function stopQuietly(stop: () => void) {
   try {

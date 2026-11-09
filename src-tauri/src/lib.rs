@@ -410,6 +410,7 @@ pub fn run() {
             commands::search::add_recent_search,
             commands::search::remove_recent_search,
             commands::sync::sync_now,
+            commands::sync::network_online,
             commands::sync::get_sync_progress,
             commands::contacts::suggest_contacts,
             commands::contacts::google_contacts_status,

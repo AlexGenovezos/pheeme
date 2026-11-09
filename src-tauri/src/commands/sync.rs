@@ -9,6 +9,12 @@ pub fn sync_now(state: State<'_, AppState>, account_id: Option<String>) {
     state.mail.sync_now(account_id);
 }
 
+/// Whether Google answered the last time it was asked (`network:status` reports changes).
+#[tauri::command]
+pub fn network_online(state: State<'_, AppState>) -> bool {
+    state.sync.online()
+}
+
 #[tauri::command]
 pub async fn get_sync_progress(
     state: State<'_, AppState>,

@@ -50,7 +50,7 @@ const ONE = account("a1", "me@home.test");
 const TWO = account("a2", "me@work.test");
 
 function seed(accounts: AccountInfo[]) {
-  useAccountStore.setState({ accounts, loaded: true, error: null, syncErrors: {} });
+  useAccountStore.setState({ accounts, loaded: true, error: null, syncErrors: {}, offline: false });
   useLabelStore.setState({
     labels: {
       a1: [
@@ -342,6 +342,28 @@ describe("stacked layout", () => {
     stop();
   });
 
+  test("offline, one note replaces every account's network failure until Google answers", async () => {
+    seed([ONE, TWO]);
+    const stop = await useAccountStore.getState().subscribe();
+    render(<Sidebar />);
+    expect(screen.queryByText(/^Offline/)).not.toBeInTheDocument();
+    await act(() =>
+      emit("sync:error", { accountId: "a2", code: "network", message: "Gmail didn't answer" }),
+    );
+    await waitFor(() => expect(accountHeader(TWO.email)).toHaveAttribute("aria-description"));
+
+    await act(() => emit("network:status", { online: false }));
+    const note = await within(region("Inboxes")).findByText("Offline. Changes will sync later.");
+    expect(note.closest("[role=status]")).toBeInTheDocument();
+    expect(accountHeader(TWO.email)).not.toHaveAttribute("aria-description");
+
+    await act(() => emit("network:status", { online: true }));
+    await waitFor(() =>
+      expect(screen.queryByText("Offline. Changes will sync later.")).not.toBeInTheDocument(),
+    );
+    stop();
+  });
+
   test("rows open with Enter and Space", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
@@ -440,7 +462,13 @@ describe("Labels section", () => {
   });
 
   function seedLabels() {
-    useAccountStore.setState({ accounts: [ONE], loaded: true, error: null, syncErrors: {} });
+    useAccountStore.setState({
+      accounts: [ONE],
+      loaded: true,
+      error: null,
+      syncErrors: {},
+      offline: false,
+    });
     useLabelStore.setState({
       labels: {
         a1: [

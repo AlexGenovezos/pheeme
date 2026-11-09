@@ -198,6 +198,20 @@ pub async fn update_progress<'e>(
     Ok(())
 }
 
+/// Make every change that failed and is waiting out its backoff due at `now_ms` (the connection
+/// came back). Sends still in their undo window (no attempt yet) keep their time.
+pub async fn retry_waiting<'e>(ex: impl SqliteExecutor<'e>, now_ms: i64) -> Result<()> {
+    sqlx::query!(
+        r#"UPDATE outbox SET next_attempt_at = ?
+           WHERE status = 'pending' AND attempts > 0 AND next_attempt_at > ?"#,
+        now_ms,
+        now_ms
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
 /// Move a send from `pending` to `p` (normally `checking`) as it leaves. False when it is no
 /// longer pending (cancelled by undo send meanwhile), in which case it must not be sent.
 pub async fn claim_send<'e>(

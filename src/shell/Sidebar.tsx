@@ -10,6 +10,7 @@ import {
   SquarePen,
   TriangleAlert,
   UserPlus,
+  WifiOff,
 } from "lucide-react";
 import {
   type CSSProperties,
@@ -240,6 +241,22 @@ function AccountSection({
       <div id={rowsId} className="sidebar__group-rows" hidden={collapsed}>
         {!collapsed && <CategoryRows accountId={account.id} />}
       </div>
+    </div>
+  );
+}
+
+/** One calm note while Google can't be reached, in place of a failure on every account. */
+function OfflineNote() {
+  const offline = useAccountStore((s) => s.offline);
+  if (!offline) return null;
+  return (
+    <div
+      className="sidebar__sync-error sidebar__offline"
+      role="status"
+      title="Pheeme syncs again as soon as the connection is back. Changes you make wait until then."
+    >
+      <WifiOff aria-hidden="true" />
+      <span>Offline. Changes will sync later.</span>
     </div>
   );
 }
@@ -655,6 +672,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
 
       <nav className="sidebar__scroll" aria-label="Mailboxes" onKeyDown={onMailboxKeyDown}>
         <Section title="Inboxes">
+          <OfflineNote />
           {single ? (
             <>
               {errors[single.id] && (

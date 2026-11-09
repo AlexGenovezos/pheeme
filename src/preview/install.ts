@@ -315,6 +315,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       recent = args?.query == null ? [] : recent.filter((r) => r !== args.query);
     },
     sync_now: () => undefined,
+    network_online: () => !params.has("offline"),
     modify_threads: (args) => {
       const add = stringsOf(args?.add);
       const remove = stringsOf(args?.remove);
