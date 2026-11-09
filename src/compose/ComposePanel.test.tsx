@@ -342,3 +342,21 @@ test("the signature shows whole in the editor, stays one block, and follows the 
   expect(editor.querySelectorAll(".gmail_signature")).toHaveLength(1);
   expect(editor.querySelector(".gmail_signature")?.textContent).toBe("Me Two");
 });
+
+test("a new message opened before the first Gmail signature fetch gets it when it arrives", async () => {
+  let answer: (html: string) => void = () => {};
+  mockIPC((cmd) =>
+    cmd === "gmail_signature" ? new Promise<string>((resolve) => (answer = resolve)) : undefined,
+  );
+  const fetching = useSignatures.getState().refreshGmail("a1");
+  const panel = await openNew();
+  const editor = within(panel).getByRole("textbox", { name: "Message" });
+  expect(editor.querySelector(".gmail_signature")).toBeNull();
+
+  await act(async () => {
+    answer("<b>Late</b>");
+    await fetching;
+  });
+  await waitFor(() => expect(editor.querySelector(".gmail_signature b")?.textContent).toBe("Late"));
+  expect(editor.querySelectorAll(".gmail_signature")).toHaveLength(1);
+});

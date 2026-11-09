@@ -190,6 +190,19 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     editor?.setEditable(!win.sending, false); // no update event: not an edit
   }, [editor, win.sending]);
 
+  // A new message opened before the account's Gmail signature was first fetched gets it when it arrives.
+  const gmailHtml = useSignatures((s) => s.gmail[win.accountId]?.html);
+  const awaitingGmail = useRef(
+    win.kind === "new" &&
+      gmailHtml === undefined &&
+      useSignatures.getState().forAccount(win.accountId).newMessages === "gmail",
+  );
+  useEffect(() => {
+    if (!editor || !awaitingGmail.current || gmailHtml === undefined) return;
+    awaitingGmail.current = false;
+    replaceSignature(editor, useSignatures.getState().signatureFor(win.accountId, "new"));
+  }, [editor, gmailHtml, win.accountId]);
+
   // A new message sent from another account takes that account's signature.
   const signedAs = useRef(win.accountId);
   useEffect(() => {
