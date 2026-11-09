@@ -111,6 +111,25 @@ pub async fn set_assistant_enabled(pool: &SqlitePool, enabled: bool) -> Result<(
     set(pool, ASSISTANT_ENABLED, if enabled { "1" } else { "0" }).await
 }
 
+fn assistant_allow_key(group: &str) -> String {
+    format!("assistant_allow.{group}")
+}
+
+/// Whether assistants may use a group of write tools (`local_api::Permission`). Off unless the
+/// user turned it on.
+pub async fn assistant_allows(pool: &SqlitePool, group: &str) -> Result<bool> {
+    Ok(get(pool, &assistant_allow_key(group)).await?.as_deref() == Some("1"))
+}
+
+pub async fn set_assistant_allows(pool: &SqlitePool, group: &str, allowed: bool) -> Result<()> {
+    set(
+        pool,
+        &assistant_allow_key(group),
+        if allowed { "1" } else { "0" },
+    )
+    .await
+}
+
 fn inbox_tabs_key(account_id: &str) -> String {
     format!("inbox_tabs.{account_id}")
 }
@@ -242,6 +261,17 @@ mod tests {
         assert!(assistant_enabled(&reopened).await.unwrap());
         set_assistant_enabled(&reopened, false).await.unwrap();
         assert!(!assistant_enabled(&reopened).await.unwrap());
+
+        assert!(!assistant_allows(&reopened, "organize").await.unwrap());
+        set_assistant_allows(&reopened, "organize", true)
+            .await
+            .unwrap();
+        assert!(assistant_allows(&reopened, "organize").await.unwrap());
+        assert!(!assistant_allows(&reopened, "filters").await.unwrap());
+        set_assistant_allows(&reopened, "organize", false)
+            .await
+            .unwrap();
+        assert!(!assistant_allows(&reopened, "organize").await.unwrap());
     }
 
     #[tokio::test]

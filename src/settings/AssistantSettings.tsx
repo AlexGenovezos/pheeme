@@ -12,6 +12,7 @@ import { cx } from "../lib/utils";
 import {
   ASSISTANT_ACTIVITY_EVENT,
   type AssistantActivity,
+  type AssistantPermission,
   type AssistantStatus,
   type NewAssistant,
   assistantActivity,
@@ -20,9 +21,31 @@ import {
   connectAssistant,
   removeAssistant,
   setAssistantEnabled,
+  setAssistantPermission,
   toCommandError,
 } from "../lib/tauri";
 import { SettingsRow, SettingsSection } from "./rows";
+
+/** The write groups, each off until the user allows it. Reading needs only the main switch. */
+export const PERMISSIONS: { id: AssistantPermission; title: string; description: string }[] = [
+  {
+    id: "organize",
+    title: "Organize mail",
+    description:
+      "Archive, move to the inbox, mark read or unread, star, add and remove labels, create labels, and move to Trash.",
+  },
+  {
+    id: "filters",
+    title: "Change Gmail filters",
+    description: "Create and delete Gmail filters, which act on mail that arrives later.",
+  },
+  {
+    id: "drafts",
+    title: "Write drafts",
+    description:
+      "Save drafts and replies in Drafts for you to review and send. Clients can't send.",
+  },
+];
 
 /** The command that adds Pheeme to Claude Code. */
 export function claudeCommand(url: string, token: string): string {
@@ -158,6 +181,15 @@ export function AssistantSettings() {
     }
   }
 
+  async function allow(permission: AssistantPermission, allowed: boolean) {
+    setError(null);
+    try {
+      setStatus(await setAssistantPermission(permission, allowed));
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   async function connect() {
     setBusy(true);
     setError(null);
@@ -195,9 +227,10 @@ export function AssistantSettings() {
     <>
       <p className="settings-empty">
         With MCP on, AI assistants such as Claude Code can search and read your mail and list your
-        Gmail filters through Pheeme, while Pheeme is open. They work through the same actions as
-        the app, never straight on its database, and they can't send mail. Only programs on this
-        computer with a token you created can connect, and Activity shows every call they make.
+        Gmail filters through Pheeme, while Pheeme is open, and change only what you allow below.
+        They work through the same actions as the app, never straight on its database, and they
+        can't send mail. Only programs on this computer with a token you created can connect, and
+        Activity shows every call they make.
       </p>
       {error && (
         <p className="settings-assistant__error" role="alert">
@@ -221,6 +254,23 @@ export function AssistantSettings() {
           title="Server"
           description={status ? serverText(status) : <Skeleton width="16em" />}
         />
+      </SettingsSection>
+      <SettingsSection title="What clients may change">
+        {PERMISSIONS.map((p) => (
+          <SettingsRow
+            key={p.id}
+            title={p.title}
+            description={p.description}
+            control={
+              <Switch
+                label={p.title}
+                checked={status?.allowed.includes(p.id) ?? false}
+                disabled={status === null}
+                onChange={(next) => void allow(p.id, next)}
+              />
+            }
+          />
+        ))}
       </SettingsSection>
       <SettingsSection
         title="Activity"

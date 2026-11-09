@@ -55,6 +55,30 @@ impl FilterService {
         let names = label_names(&self.db, account_id).await?;
         Ok(filters.iter().map(|f| describe(f, &names)).collect())
     }
+
+    /// Create a filter in Gmail (not retried when the outcome is unknown, see
+    /// [`crate::gmail::GmailClient::create_filter`]). It applies to mail that arrives from now on.
+    pub async fn create(&self, account_id: &str, filter: &Filter) -> Result<FilterDto, MailError> {
+        let created = self
+            .api(account_id)
+            .create_filter(filter)
+            .await
+            .map_err(gmail)?;
+        let names = label_names(&self.db, account_id).await?;
+        Ok(describe(&created, &names))
+    }
+
+    /// Delete a filter; one that isn't there is an error, so a mistyped id isn't taken as done.
+    pub async fn delete(&self, account_id: &str, filter_id: &str) -> Result<(), MailError> {
+        let api = self.api(account_id);
+        let filters = api.list_filters().await.map_err(gmail)?;
+        if !filters.iter().any(|f| f.id.as_deref() == Some(filter_id)) {
+            return Err(MailError::Invalid(format!(
+                "There's no filter {filter_id} on this account."
+            )));
+        }
+        api.delete_filter(filter_id).await.map_err(gmail)
+    }
 }
 
 /// Label id → name for the account's cached labels.

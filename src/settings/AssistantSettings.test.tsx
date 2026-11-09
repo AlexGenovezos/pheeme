@@ -39,6 +39,7 @@ test("turns assistants on, connects one with a one-time command, and removes it"
   // Every row is drawn before the status arrives.
   expect(screen.getByRole("switch", { name: "Allow MCP connections" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
+  expect(screen.getByRole("switch", { name: "Change Gmail filters" })).toBeDisabled();
   await flush();
 
   const main = screen.getByRole("region", { name: "MCP server" });
@@ -49,6 +50,14 @@ test("turns assistants on, connects one with a one-time command, and removes it"
   await flush();
   expect(calls).toContain("set_assistant_enabled");
   expect(main).toHaveTextContent("Listening at http://127.0.0.1:43830/mcp");
+
+  const organize = screen.getByRole("switch", { name: "Organize mail" });
+  expect(organize).not.toBeChecked();
+  fireEvent.click(organize);
+  await flush();
+  expect(calls).toContain("set_assistant_permission");
+  expect(screen.getByRole("switch", { name: "Organize mail" })).toBeChecked();
+  expect(screen.getByRole("switch", { name: "Write drafts" })).not.toBeChecked();
 
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));
   await flush();

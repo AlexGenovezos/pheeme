@@ -92,6 +92,8 @@ fn tools_list() -> Value {
                 "annotations": {
                     "title": t.title,
                     "readOnlyHint": t.read_only,
+                    "destructiveHint": t.destructive,
+                    "idempotentHint": t.read_only,
                     "openWorldHint": false,
                 },
             })

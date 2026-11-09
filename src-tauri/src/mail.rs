@@ -854,6 +854,26 @@ impl MailService {
         Ok(())
     }
 
+    /// Which of `thread_ids` the account has cached, in the order given (the others can't be
+    /// changed: the outbox only changes cached mail).
+    pub async fn cached_threads(
+        &self,
+        account_id: &str,
+        thread_ids: &[String],
+    ) -> Result<Vec<String>, MailError> {
+        let mut out = Vec::new();
+        for id in thread_ids {
+            if threads::get_thread(&self.db, account_id, id)
+                .await?
+                .is_some()
+                && !out.contains(id)
+            {
+                out.push(id.clone());
+            }
+        }
+        Ok(out)
+    }
+
     fn after_change(&self, account_id: &str, queued: Option<outbox::EnqueueResult>) {
         if let Some(q) = queued {
             self.sync

@@ -7,12 +7,15 @@
 
 mod read;
 mod requests;
+mod write;
 
 pub use requests::{catalog, Request, ToolDef};
 
 use crate::accounts::{AccountError, AccountService};
+use crate::compose::ComposeService;
 use crate::db::{assistant as db, settings};
 use crate::filters::FilterService;
+use crate::labels::LabelService;
 use crate::mail::{MailError, MailService};
 use crate::sync::engine::now_ms;
 use crate::sync::manager::SyncManager;
@@ -35,6 +38,8 @@ pub enum ApiError {
     Unauthorized,
     #[error("Pheeme has no tool called {0}.")]
     UnknownTool(String),
+    #[error("The user hasn't allowed assistants to {}. They can turn on Settings › AI assistants › {} in Pheeme.", .0.what(), .0.title())]
+    NotAllowed(Permission),
     #[error("{0}")]
     Invalid(String),
     #[error(transparent)]
@@ -47,6 +52,7 @@ impl ApiError {
     pub fn code(&self) -> &str {
         match self {
             ApiError::Disabled => "disabled",
+            ApiError::NotAllowed(_) => "not_allowed",
             ApiError::Unauthorized => "unauthorized",
             ApiError::UnknownTool(_) | ApiError::Invalid(_) => "invalid_input",
             ApiError::Mail(e) => e.code(),
@@ -58,6 +64,53 @@ impl ApiError {
 impl From<anyhow::Error> for ApiError {
     fn from(e: anyhow::Error) -> Self {
         ApiError::Mail(e.into())
+    }
+}
+
+/// A group of write tools the user allows separately (all off by default). Reading needs
+/// only the main switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Permission {
+    /// Archive, inbox, read/unread, star, labels, trash, create label.
+    Organize,
+    /// Create and delete Gmail filters.
+    Filters,
+    /// Create drafts.
+    Drafts,
+}
+
+impl Permission {
+    pub const ALL: [Permission; 3] = [
+        Permission::Organize,
+        Permission::Filters,
+        Permission::Drafts,
+    ];
+
+    /// The `app_settings` key part.
+    pub fn key(self) -> &'static str {
+        match self {
+            Permission::Organize => "organize",
+            Permission::Filters => "filters",
+            Permission::Drafts => "drafts",
+        }
+    }
+
+    /// The Settings switch.
+    pub fn title(self) -> &'static str {
+        match self {
+            Permission::Organize => "Organize mail",
+            Permission::Filters => "Change Gmail filters",
+            Permission::Drafts => "Write drafts",
+        }
+    }
+
+    fn what(self) -> &'static str {
+        match self {
+            Permission::Organize => "archive, label, star, mark or delete mail",
+            Permission::Filters => "create or delete Gmail filters",
+            Permission::Drafts => "write drafts",
+        }
     }
 }
 
@@ -133,6 +186,8 @@ pub struct LocalApi {
     db: SqlitePool,
     accounts: Arc<AccountService>,
     mail: MailService,
+    labels: LabelService,
+    compose: ComposeService,
     filters: FilterService,
     on_activity: std::sync::OnceLock<ActivityListener>,
 }
@@ -142,13 +197,16 @@ impl LocalApi {
         db: SqlitePool,
         accounts: Arc<AccountService>,
         mail: MailService,
+        compose: ComposeService,
         sync: Arc<SyncManager>,
     ) -> Self {
         Self {
+            labels: LabelService::new(db.clone(), sync.clone()),
             filters: FilterService::new(db.clone(), sync),
             db,
             accounts,
             mail,
+            compose,
             on_activity: std::sync::OnceLock::new(),
         }
     }
@@ -165,6 +223,14 @@ impl LocalApi {
 
     pub async fn set_enabled(&self, enabled: bool) -> Result<(), ApiError> {
         Ok(settings::set_assistant_enabled(&self.db, enabled).await?)
+    }
+
+    pub async fn allows(&self, permission: Permission) -> Result<bool, ApiError> {
+        Ok(settings::assistant_allows(&self.db, permission.key()).await?)
+    }
+
+    pub async fn set_allows(&self, permission: Permission, allowed: bool) -> Result<(), ApiError> {
+        Ok(settings::set_assistant_allows(&self.db, permission.key(), allowed).await?)
     }
 
     /// The client a bearer token belongs to.
@@ -194,7 +260,10 @@ impl LocalApi {
             .map(|r| r.summary())
             .unwrap_or_else(|_| String::new());
         let result = match parsed {
-            Ok(request) => crate::gmail::user_action(self.run(request)).await,
+            Ok(request) => match request.permission() {
+                Some(p) if !self.allows(p).await? => Err(ApiError::NotAllowed(p)),
+                _ => crate::gmail::user_action(self.run(request)).await,
+            },
             Err(e) => Err(e),
         };
         let error = result.as_ref().err().map(|e| e.to_string());
@@ -223,7 +292,10 @@ impl LocalApi {
     }
 
     async fn run(&self, request: Request) -> Result<Value, ApiError> {
-        read::run(self, request).await
+        match request.permission() {
+            None => read::run(self, request).await,
+            Some(_) => write::run(self, request).await,
+        }
     }
 
     /// Connect a client: store its token's hash and return the token, once.

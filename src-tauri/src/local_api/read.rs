@@ -23,6 +23,7 @@ pub(super) async fn run(api: &LocalApi, request: Request) -> Result<Value, ApiEr
         Request::SearchMail(s) => search_mail(api, s).await,
         Request::GetThread(t) => get_thread(api, t).await,
         Request::ListFilters(a) => list_filters(api, a).await,
+        _ => Err(ApiError::Invalid("That tool changes mail.".into())),
     }
 }
 
