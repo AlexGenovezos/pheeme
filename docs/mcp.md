@@ -62,7 +62,7 @@ most mail, and what should I filter or unsubscribe from?"
   local name, and doesn't follow redirects.
 - **Activity** lists every tool call (Pheeme keeps the latest 1,000): which client, which tool, when, and
   any error. Open a call to see exactly what it sent (its arguments, as received) and what came back: a
-  change's whole answer, or for a read, the ids of the conversations, messages and filters it returned
-  (the mail itself isn't copied into the log). Calls Pheeme refused are listed too.
+  change's whole answer, or for a read, the ids of the conversations, messages and filters it returned,
+  and the senders a report named (the mail itself isn't copied into the log). Calls Pheeme refused are listed too.
 
 If port 43830 is taken, Settings says so; quit whatever is using it and turn the switch off and on.

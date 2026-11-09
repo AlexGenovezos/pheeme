@@ -602,6 +602,12 @@ async fn reports_the_heaviest_senders() {
     assert_eq!(bank["messages"], 2);
     assert_eq!(bank["unread"], 1);
     assert_eq!(bank["tab"], "primary");
+    // The log names the senders a report returned, not just the conversations.
+    let logged = h.api.activity(1).await.unwrap()[0].result.clone().unwrap();
+    assert!(
+        logged.contains(r#""senders":["deals@shop.com","alerts@bank.com"]"#),
+        "{logged}"
+    );
 
     let one = h
         .call("sender_report", json!({ "limit": 1 }))

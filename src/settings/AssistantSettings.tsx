@@ -49,7 +49,7 @@ export const PERMISSIONS: { id: AssistantPermission; title: string; description:
     id: "unsubscribe",
     title: "Unsubscribe",
     description:
-      "Unsubscribe from mailing lists that offer one-click unsubscribe. For others, the assistant gives you the link.",
+      "Unsubscribe from mailing lists that offer one-click unsubscribe. For others, the client gives you the link.",
   },
 ];
 
