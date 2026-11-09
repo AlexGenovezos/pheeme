@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!\", thread_id AS \"thread_id!\", raw_headers FROM messages\n           WHERE account_id = ?1 AND lower(from_address) = lower(?2)\n           ORDER BY (raw_headers IS NOT NULL) DESC, date DESC LIMIT 1",
+  "query": "SELECT id AS \"id!\", thread_id AS \"thread_id!\", raw_headers\n           FROM messages INDEXED BY idx_messages_date\n           WHERE date >= ?3 AND account_id = ?1 AND lower(from_address) = lower(?2)\n           ORDER BY (raw_headers IS NOT NULL) DESC, date DESC LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -38,7 +38,7 @@
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 3
     },
     "nullable": [
       false,
@@ -46,5 +46,5 @@
       true
     ]
   },
-  "hash": "c3c2e9dd42d2f7ae21e0c28732d099cf1c372d9bbbbabbb7fe208758661b9054"
+  "hash": "75833eaf6e28d428f7af4353cce45e6d37b7bc00c87acdc78b810e13a9fed5a8"
 }

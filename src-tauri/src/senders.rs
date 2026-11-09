@@ -8,6 +8,7 @@ use crate::mail::MailError;
 use reqwest::Url;
 use serde::Serialize;
 use sqlx::SqlitePool;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 /// One sender's mail over the report window.
@@ -34,22 +35,19 @@ pub struct SenderDto {
 }
 
 fn tab(s: &DbSenderStats) -> &'static str {
-    let tabs = [
+    let tabbed = s.promotions + s.social + s.updates + s.forums;
+    [
+        ((s.messages - tabbed).max(0), "primary"),
         (s.promotions, "promotions"),
         (s.social, "social"),
         (s.updates, "updates"),
         (s.forums, "forums"),
-    ];
-    let (most, name) = tabs
-        .iter()
-        .copied()
-        .max_by_key(|(n, _)| *n)
-        .unwrap_or((0, "primary"));
-    if most * 2 > s.messages {
-        name
-    } else {
-        "primary"
-    }
+    ]
+    .into_iter()
+    // The first of the largest, so a tie goes to Primary.
+    .rev()
+    .max_by_key(|(n, _)| *n)
+    .map_or("primary", |(_, name)| name)
 }
 
 /// The top `limit` senders since `since_ms`, most mail first.
@@ -62,7 +60,7 @@ pub async fn report(
 ) -> Result<Vec<SenderDto>, MailError> {
     let mut out = Vec::new();
     for s in messages::sender_stats(db, account_id, since_ms, own_address, limit).await? {
-        let latest = messages::latest_from(db, account_id, &s.address).await?;
+        let latest = messages::latest_from(db, account_id, &s.address, since_ms).await?;
         let unsubscribe = match latest.as_ref().and_then(|(_, _, h)| h.as_deref()) {
             Some(json) => {
                 let headers: Vec<Header> = serde_json::from_str(json).unwrap_or_default();
@@ -174,14 +172,64 @@ fn safe_one_click(url: &str) -> Option<Url> {
     (!local).then_some(url)
 }
 
-/// Unsubscribe with one POST, as RFC 8058 defines. Redirects aren't followed.
+/// Whether an address is on the public internet (not loopback, private, link-local, shared,
+/// reserved or the like), so a sender's link can't reach the user's own network.
+fn is_public(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            !(v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || v4.is_multicast()
+                || a == 0
+                || a >= 240
+                || (a == 100 && (64..128).contains(&b))
+                || (a == 198 && (18..20).contains(&b))
+                || (a == 192 && b == 0))
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_public(IpAddr::V4(v4));
+            }
+            let first = v6.segments()[0];
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80
+                || (first == 0x2001 && v6.segments()[1] == 0x0db8))
+        }
+    }
+}
+
+fn not_public() -> MailError {
+    MailError::Invalid(
+        "Pheeme only unsubscribes in one click through an https link to a public site.".into(),
+    )
+}
+
+/// Unsubscribe with one POST, as RFC 8058 defines. The host is looked up once and every
+/// address must be public; the request goes to those addresses, so a second lookup can't
+/// point it elsewhere. Redirects aren't followed.
 pub async fn one_click(url: &str) -> Result<(), MailError> {
     let Some(url) = safe_one_click(url) else {
-        return Err(MailError::Invalid(
-            "Pheeme only unsubscribes in one click through an https link to a public site.".into(),
-        ));
+        return Err(not_public());
     };
+    let host = url.host_str().unwrap_or_default().to_owned();
+    let port = url.port_or_known_default().unwrap_or(443);
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+        .await
+        .map_err(|e| MailError::Invalid(format!("Couldn't find the sender's site: {e}")))?
+        .collect();
+    if addrs.is_empty() || addrs.iter().any(|a| !is_public(a.ip())) {
+        return Err(not_public());
+    }
     let client = crate::http::client_builder()
+        .resolve_to_addrs(&host, &addrs)
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(20))
         .build()
@@ -196,9 +244,9 @@ pub async fn one_click(url: &str) -> Result<(), MailError> {
             MailError::Invalid(format!("Couldn't reach the sender to unsubscribe: {e}"))
         })?;
     let status = response.status();
-    if status.is_client_error() || status.is_server_error() {
+    if !status.is_success() {
         return Err(MailError::Invalid(format!(
-            "The sender's unsubscribe link answered {status}."
+            "The sender's unsubscribe link answered {status}, so it may not have worked. Give the user the link."
         )));
     }
     Ok(())
@@ -264,6 +312,54 @@ mod tests {
         ] {
             assert!(safe_one_click(bad).is_none(), "{bad}");
         }
+    }
+
+    #[test]
+    fn only_public_addresses_pass() {
+        for public in ["8.8.8.8", "1.1.1.1", "2606:4700::1111"] {
+            assert!(is_public(public.parse().unwrap()), "{public}");
+        }
+        for private in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "198.18.0.1",
+            "240.0.0.1",
+            "::1",
+            "::",
+            "fd00::1",
+            "fe80::1",
+            "::ffff:192.168.1.1",
+            "2001:db8::1",
+        ] {
+            assert!(!is_public(private.parse().unwrap()), "{private}");
+        }
+    }
+
+    #[test]
+    fn the_tab_is_where_most_of_it_lands() {
+        let stats = |messages, promotions, social, updates| DbSenderStats {
+            address: "a@x.com".into(),
+            name: None,
+            messages,
+            unread: 0,
+            in_inbox: 0,
+            in_trash: 0,
+            in_spam: 0,
+            promotions,
+            social,
+            updates,
+            forums: 0,
+            last_date: 0,
+            you_wrote: 0,
+        };
+        assert_eq!(tab(&stats(10, 4, 3, 3)), "promotions");
+        assert_eq!(tab(&stats(10, 0, 0, 2)), "primary");
+        assert_eq!(tab(&stats(4, 2, 0, 0)), "primary");
     }
 
     #[tokio::test]

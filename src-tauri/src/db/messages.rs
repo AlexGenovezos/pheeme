@@ -433,19 +433,24 @@ pub async fn sender_stats(
     Ok(rows)
 }
 
-/// The newest message from `address` (any case) whose headers are cached, else the newest
-/// one: its id, thread and headers (JSON, `None` when only its metadata is cached).
+/// The newest message from `address` (any case) since `since_ms` whose headers are cached,
+/// else the newest one: its id, thread and headers (JSON, `None` when only its metadata is
+/// cached). The window keeps the scan to recent mail: without statistics SQLite would
+/// otherwise pick an `account_id` index and read the account's whole history per sender.
 pub async fn latest_from(
     pool: &SqlitePool,
     account_id: &str,
     address: &str,
+    since_ms: i64,
 ) -> Result<Option<(String, String, Option<String>)>> {
     let row = sqlx::query!(
-        r#"SELECT id AS "id!", thread_id AS "thread_id!", raw_headers FROM messages
-           WHERE account_id = ?1 AND lower(from_address) = lower(?2)
+        r#"SELECT id AS "id!", thread_id AS "thread_id!", raw_headers
+           FROM messages INDEXED BY idx_messages_date
+           WHERE date >= ?3 AND account_id = ?1 AND lower(from_address) = lower(?2)
            ORDER BY (raw_headers IS NOT NULL) DESC, date DESC LIMIT 1"#,
         account_id,
-        address
+        address,
+        since_ms
     )
     .fetch_optional(pool)
     .await?;
@@ -513,4 +518,32 @@ pub async fn delete_message<'e>(
     .execute(ex)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn latest_from_reads_only_the_window() {
+        let db = crate::db::test_support::TestDb::with_account("a").await;
+        let plan: Vec<(i64, i64, i64, String)> = sqlx::query_as(
+            "EXPLAIN QUERY PLAN SELECT id FROM messages INDEXED BY idx_messages_date
+             WHERE date >= 0 AND account_id = 'a' AND lower(from_address) = 'x'
+             ORDER BY (raw_headers IS NOT NULL) DESC, date DESC LIMIT 1",
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        assert!(
+            plan.iter().any(
+                |(_, _, _, step)| step.contains("idx_messages_date") && step.contains("date>?")
+            ),
+            "{plan:?}"
+        );
+        assert!(latest_from(&db.pool, "a", "x@y.com", 0)
+            .await
+            .unwrap()
+            .is_none());
+    }
 }

@@ -83,10 +83,11 @@ pub enum Permission {
 }
 
 impl Permission {
-    pub const ALL: [Permission; 3] = [
+    pub const ALL: [Permission; 4] = [
         Permission::Organize,
         Permission::Filters,
         Permission::Drafts,
+        Permission::Unsubscribe,
     ];
 
     /// The `app_settings` key part.

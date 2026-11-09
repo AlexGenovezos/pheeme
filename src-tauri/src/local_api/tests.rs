@@ -731,6 +731,21 @@ async fn unsubscribes_only_when_allowed_and_only_to_public_https() {
 }
 
 #[test]
+fn every_permission_is_listed_once() {
+    // A new group missing from `ALL` would never show as allowed in Settings.
+    for p in Permission::ALL {
+        let listed = match p {
+            Permission::Organize
+            | Permission::Filters
+            | Permission::Drafts
+            | Permission::Unsubscribe => 1,
+        };
+        assert_eq!(Permission::ALL.iter().filter(|q| **q == p).count(), listed);
+    }
+    assert_eq!(Permission::ALL.len(), 4);
+}
+
+#[test]
 fn every_catalog_example_parses() {
     for tool in catalog() {
         let parsed = Request::parse(tool.name, tool.example.clone());
