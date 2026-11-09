@@ -2,6 +2,8 @@
 //! from there. Tauri-free; `commands/calendar.rs` is the thin IPC adapter.
 
 pub mod convert;
+pub mod edit;
+pub mod error;
 #[cfg(test)]
 pub(crate) mod fake;
 pub mod recurrence;
