@@ -1,0 +1,89 @@
+{
+  "kind": "calendar#events",
+  "summary": "me@example.com",
+  "timeZone": "America/New_York",
+  "nextSyncToken": "s2",
+  "items": [
+    {
+      "kind": "calendar#event",
+      "etag": "\"3400000000000000\"",
+      "id": "timed1",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=dGltZWQx",
+      "updated": "2026-11-01T12:00:00.000Z",
+      "summary": "Design review",
+      "location": "Room 4",
+      "description": "Walk through onboarding",
+      "colorId": "5",
+      "organizer": { "email": "sam@acme.com", "displayName": "Sam Rivera" },
+      "start": { "dateTime": "2026-11-12T14:00:00-05:00", "timeZone": "America/New_York" },
+      "end": { "dateTime": "2026-11-12T15:00:00-05:00", "timeZone": "America/New_York" },
+      "iCalUID": "timed1@google.com",
+      "attendees": [
+        { "email": "sam@acme.com", "displayName": "Sam Rivera", "organizer": true, "responseStatus": "accepted" },
+        { "email": "me@example.com", "self": true, "responseStatus": "needsAction" },
+        { "email": "room4@resource.calendar.google.com", "resource": true, "responseStatus": "accepted" },
+        { "email": "jo@acme.com", "optional": true, "responseStatus": "declined", "comment": "Out that day" }
+      ],
+      "conferenceData": {
+        "entryPoints": [{ "entryPointType": "video", "uri": "https://meet.google.com/abc-defg-hij" }],
+        "conferenceSolution": { "key": { "type": "hangoutsMeet" }, "name": "Google Meet" },
+        "conferenceId": "abc-defg-hij"
+      },
+      "reminders": { "useDefault": true },
+      "eventType": "default"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3400000000000001\"",
+      "id": "allday1",
+      "status": "confirmed",
+      "updated": "2026-11-01T12:00:00.000Z",
+      "summary": "Holiday",
+      "transparency": "transparent",
+      "start": { "date": "2026-11-12" },
+      "end": { "date": "2026-11-13" },
+      "iCalUID": "allday1@google.com"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3400000000000002\"",
+      "id": "series1",
+      "status": "confirmed",
+      "updated": "2026-10-20T09:00:00.000Z",
+      "summary": "Standup",
+      "start": { "dateTime": "2026-10-26T09:00:00-04:00", "timeZone": "America/New_York" },
+      "end": { "dateTime": "2026-10-26T09:15:00-04:00", "timeZone": "America/New_York" },
+      "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE;TZID=America/New_York:20261116T090000"],
+      "iCalUID": "series1@google.com",
+      "reminders": { "useDefault": false, "overrides": [{ "method": "popup", "minutes": 5 }] }
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3400000000000003\"",
+      "id": "series1_20261109T140000Z",
+      "status": "confirmed",
+      "updated": "2026-11-05T09:00:00.000Z",
+      "summary": "Standup (moved)",
+      "start": { "dateTime": "2026-11-10T10:00:00-05:00", "timeZone": "America/New_York" },
+      "end": { "dateTime": "2026-11-10T10:15:00-05:00", "timeZone": "America/New_York" },
+      "recurringEventId": "series1",
+      "originalStartTime": { "dateTime": "2026-11-09T09:00:00-05:00", "timeZone": "America/New_York" },
+      "iCalUID": "series1@google.com"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3400000000000004\"",
+      "id": "series1_20261102T140000Z",
+      "status": "cancelled",
+      "recurringEventId": "series1",
+      "originalStartTime": { "dateTime": "2026-11-02T09:00:00-05:00", "timeZone": "America/New_York" }
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3400000000000005\"",
+      "id": "gone1",
+      "status": "cancelled"
+    }
+  ]
+}
