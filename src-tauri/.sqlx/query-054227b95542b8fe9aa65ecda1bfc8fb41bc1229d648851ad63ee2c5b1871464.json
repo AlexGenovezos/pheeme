@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE outbox SET next_attempt_at = ?\n           WHERE status = 'pending' AND attempts > 0 AND next_attempt_at > ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "054227b95542b8fe9aa65ecda1bfc8fb41bc1229d648851ad63ee2c5b1871464"
+}

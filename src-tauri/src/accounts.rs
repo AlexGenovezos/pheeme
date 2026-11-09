@@ -531,11 +531,15 @@ impl crate::gmail::TokenProvider for AccountTokens {
     }
 }
 
-/// A dead or missing sign-in is `SignedOut`, so the UI can offer to sign in again.
+/// A dead or missing sign-in is `SignedOut`, so the UI can offer to sign in again. Not reaching
+/// Google to refresh the token is `Offline` (no Gmail request went out), not a sign-in problem.
 fn token_error(error: AccountError) -> crate::gmail::GmailError {
     match error {
         AccountError::OAuth(OAuthError::InvalidGrant) | AccountError::NoSavedSignIn => {
             crate::gmail::GmailError::SignedOut(error.to_string())
+        }
+        AccountError::OAuth(OAuthError::Network(message)) => {
+            crate::gmail::GmailError::Offline(message)
         }
         other => crate::gmail::GmailError::Auth(other.to_string()),
     }
@@ -1158,6 +1162,15 @@ mod tests {
             serde_json::from_value(serde_json::json!({"kind": "calendar", "accountId": "a"}))
                 .unwrap();
         assert!(matches!(calendar, ClientChoice::Calendar { account_id } if account_id == "a"));
+    }
+
+    #[test]
+    fn unreachable_token_refresh_is_offline_not_auth() {
+        let error = token_error(AccountError::OAuth(OAuthError::Network("dns".into())));
+        assert!(
+            matches!(error, crate::gmail::GmailError::Offline(_)),
+            "{error:?}"
+        );
     }
 
     #[test]

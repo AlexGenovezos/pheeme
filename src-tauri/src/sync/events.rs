@@ -114,6 +114,10 @@ pub enum SyncEvent {
         account_id: String,
         status: String,
     },
+    /// Google stopped (`false`) or started again (`true`) answering this device.
+    Network {
+        online: bool,
+    },
 }
 
 impl SyncEvent {
@@ -128,6 +132,7 @@ impl SyncEvent {
             SyncEvent::OpRejected { .. } => "outbox:rejected",
             SyncEvent::SendStatus { .. } => "outbox:send_status",
             SyncEvent::ThreadLoading { .. } => "mail:thread_loading",
+            SyncEvent::Network { .. } => "network:status",
             SyncEvent::CalendarUpdated { .. } => "calendar:updated",
             SyncEvent::CalendarAccess { .. } => "calendar:access",
         }

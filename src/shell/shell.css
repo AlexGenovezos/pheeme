@@ -351,6 +351,9 @@ body[data-resizing] .shell__divider:active::after {
   color: var(--color-warning);
   font-size: var(--font-size-xs);
 }
+.sidebar__offline {
+  color: var(--color-foreground-muted);
+}
 .sidebar__sync-error .lucide {
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
