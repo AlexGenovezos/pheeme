@@ -360,6 +360,14 @@ impl CalendarService {
                 }
                 Err(SyncError::Api(e)) if is_transient(&e) => {
                     warn!(error = %e, "calendar sync will retry");
+                    // An account the regular ticks skip (never allowed, or waiting on the
+                    // user) was asked for: keep asking until Google answers.
+                    let polled = before
+                        .as_deref()
+                        .is_some_and(|s| s != "unknown" && !HELD.contains(&s));
+                    if !polled {
+                        lock(&self.forced).insert(account_id.to_owned());
+                    }
                     return Ok(());
                 }
                 Err(SyncError::Api(e)) => classify(&e),
@@ -799,6 +807,23 @@ mod tests {
             h.events.names().is_empty(),
             "nothing changed, nothing emitted"
         );
+    }
+
+    #[tokio::test]
+    async fn a_requested_sync_that_failed_offline_is_retried_next_tick() {
+        let h = harness(&["a"]).await;
+        h.fake("a")
+            .fail_with(|| GmailError::Offline("no route".into()));
+        h.service.trigger(Some("a".into()));
+        h.service.tick(1_000).await;
+        assert_eq!(
+            h.service.accounts().await.unwrap()[0].access.status,
+            "unknown"
+        );
+
+        h.fake("a").succeed();
+        h.service.tick(2_000).await;
+        assert_eq!(h.service.accounts().await.unwrap()[0].access.status, "on");
     }
 
     #[tokio::test]

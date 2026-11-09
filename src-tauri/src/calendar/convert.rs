@@ -99,9 +99,10 @@ pub fn event(
             start,
             end_ms.unwrap_or(start),
             time_zone.as_deref().unwrap_or("UTC"),
+            false,
         ),
         (Some(start), Some(_), false) => {
-            recur_until_ms(&e.recurrence, start, end_ms.unwrap_or(start), "UTC")
+            recur_until_ms(&e.recurrence, start, end_ms.unwrap_or(start), "UTC", true)
         }
         _ => None,
     };

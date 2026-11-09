@@ -52,7 +52,9 @@ fn rule_text(
     tz: chrono_tz::Tz,
 ) -> String {
     let dtstart = match all_day_start {
-        Some(d) => format!("DTSTART;VALUE=DATE:{}", d.format("%Y%m%d")),
+        // Dates are pinned to UTC midnight: `rrule` reads a floating date in the machine's
+        // own zone, which shifts every date for anyone east or west of UTC.
+        Some(d) => format!("DTSTART:{}T000000Z", d.format("%Y%m%d")),
         None => {
             let local = tz
                 .timestamp_millis_opt(start_ms)
@@ -70,9 +72,35 @@ fn rule_text(
         }
     };
     std::iter::once(dtstart)
-        .chain(recurrence.iter().map(|l| l.trim().to_owned()))
+        .chain(recurrence.iter().map(|l| {
+            let line = l.trim();
+            if all_day_start.is_some() {
+                dates_at_utc_midnight(line)
+            } else {
+                line.to_owned()
+            }
+        }))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// An all-day series' date-only values as UTC midnights, to match its DTSTART:
+/// `EXDATE;VALUE=DATE:20261111` → `EXDATE:20261111T000000Z`, and `UNTIL=20261231` → the
+/// end of that day.
+fn dates_at_utc_midnight(line: &str) -> String {
+    static DATE_LIST: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^(?i)(EXDATE|RDATE);VALUE=DATE:(.*)$").unwrap()
+    });
+    static UNTIL: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)UNTIL=(\d{8})(;|$)").unwrap());
+    if let Some(c) = DATE_LIST.captures(line) {
+        let dates: Vec<String> = c[2]
+            .split(',')
+            .map(|d| format!("{}T000000Z", d.trim()))
+            .collect();
+        return format!("{}:{}", &c[1], dates.join(","));
+    }
+    UNTIL.replace(line, "UNTIL=${1}T235959Z${2}").into_owned()
 }
 
 fn parse_set(event: &DbEvent, recurrence: &[String]) -> Option<RRuleSet> {
@@ -199,7 +227,13 @@ pub fn expand(
 
 /// When a bounded series (every RRULE has COUNT or UNTIL) ends: the last occurrence's end.
 /// `None` for a series that never ends, or one too long to walk.
-pub fn recur_until_ms(recurrence: &[String], start_ms: i64, end_ms: i64, tz: &str) -> Option<i64> {
+pub fn recur_until_ms(
+    recurrence: &[String],
+    start_ms: i64,
+    end_ms: i64,
+    tz: &str,
+    all_day: bool,
+) -> Option<i64> {
     let rules: Vec<&String> = recurrence
         .iter()
         .filter(|l| l.trim_start().to_ascii_uppercase().starts_with("RRULE"))
@@ -212,7 +246,13 @@ pub fn recur_until_ms(recurrence: &[String], start_ms: i64, end_ms: i64, tz: &st
         return None;
     }
     let tz = zone(Some(tz));
-    let set: RRuleSet = rule_text(recurrence, start_ms, None, tz).parse().ok()?;
+    let all_day_start = all_day
+        .then(|| Utc.timestamp_millis_opt(start_ms).single())
+        .flatten()
+        .map(|d| d.date_naive());
+    let set: RRuleSet = rule_text(recurrence, start_ms, all_day_start, tz)
+        .parse()
+        .ok()?;
     let mut last = None;
     for (i, start) in set.into_iter().enumerate() {
         if i >= MAX_BOUND_STEPS {
@@ -444,19 +484,55 @@ mod tests {
     fn count_and_until_bound_series() {
         let start = ms("2026-10-26T09:00:00-04:00");
         let end = ms("2026-10-26T09:15:00-04:00");
-        let count = recur_until_ms(&["RRULE:FREQ=WEEKLY;COUNT=3".into()], start, end, NY);
+        let count = recur_until_ms(&["RRULE:FREQ=WEEKLY;COUNT=3".into()], start, end, NY, false);
         assert_eq!(count, Some(ms("2026-11-09T14:15:00Z")));
         let until = recur_until_ms(
             &["RRULE:FREQ=WEEKLY;UNTIL=20261103T045959Z".into()],
             start,
             end,
             NY,
+            false,
         );
         assert_eq!(until, Some(ms("2026-11-02T14:15:00Z")));
         assert_eq!(
-            recur_until_ms(&["RRULE:FREQ=WEEKLY".into()], start, end, NY),
+            recur_until_ms(&["RRULE:FREQ=WEEKLY".into()], start, end, NY, false),
             None
         );
+    }
+
+    #[test]
+    fn all_day_rules_have_no_floating_dates() {
+        // `rrule` reads a floating date in the machine's zone; every date must be UTC.
+        let text = rule_text(
+            &[
+                "RRULE:FREQ=DAILY;UNTIL=20261112".into(),
+                "EXDATE;VALUE=DATE:20261111,20261113".into(),
+                "RDATE;VALUE=DATE:20261120".into(),
+            ],
+            ms("2026-11-10T00:00:00Z"),
+            NaiveDate::from_ymd_opt(2026, 11, 10),
+            chrono_tz::UTC,
+        );
+        assert_eq!(
+            text,
+            "DTSTART:20261110T000000Z\n\
+             RRULE:FREQ=DAILY;UNTIL=20261112T235959Z\n\
+             EXDATE:20261111T000000Z,20261113T000000Z\n\
+             RDATE:20261120T000000Z"
+        );
+    }
+
+    #[test]
+    fn all_day_until_bounds_the_series() {
+        let start = ms("2026-11-10T00:00:00Z");
+        let until = recur_until_ms(
+            &["RRULE:FREQ=DAILY;UNTIL=20261112".into()],
+            start,
+            start + 24 * 3_600_000,
+            "UTC",
+            true,
+        );
+        assert_eq!(until, Some(ms("2026-11-13T00:00:00Z")));
     }
 
     #[test]

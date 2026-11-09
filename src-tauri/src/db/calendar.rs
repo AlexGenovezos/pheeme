@@ -190,7 +190,9 @@ pub async fn apply_event_changes(
     let mut tx = super::begin_write(pool).await?;
     for id in deleted_ids {
         sqlx::query!(
-            "DELETE FROM events WHERE account_id = ? AND calendar_id = ? AND id = ?",
+            // A deleted series takes its changed and cancelled occurrences with it.
+            "DELETE FROM events
+             WHERE account_id = ?1 AND calendar_id = ?2 AND (id = ?3 OR recurring_event_id = ?3)",
             account_id,
             calendar_id,
             id
@@ -666,6 +668,30 @@ mod tests {
         );
         let cals = calendars(pool, Some("a")).await.unwrap();
         assert_eq!(cals[0].sync_token.as_deref(), Some("t2"));
+    }
+
+    #[tokio::test]
+    async fn deleting_a_series_deletes_its_changed_occurrences() {
+        let db = TestDb::with_account("a").await;
+        let pool = &db.pool;
+        replace_calendars(pool, "a", &[cal("C")]).await.unwrap();
+        let mut series = event("C", "s", 0, H);
+        series.recurrence = Some(r#"["RRULE:FREQ=DAILY"]"#.into());
+        let mut moved = event("C", "s_1", 30 * H, 31 * H);
+        moved.recurring_event_id = Some("s".into());
+        moved.original_start_ms = Some(24 * H);
+        apply_event_changes(pool, "a", "C", &[series, moved], &[], None)
+            .await
+            .unwrap();
+
+        apply_event_changes(pool, "a", "C", &[], &["s".into()], None)
+            .await
+            .unwrap();
+
+        assert!(events_overlapping(pool, 0, 48 * H)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
