@@ -23,6 +23,8 @@ struct State {
     /// Tokens issued before this sequence answer 410 Gone.
     gone_before: u64,
     fail: Option<fn() -> GmailError>,
+    /// Every `get_event` fails with this until cleared.
+    read_fail: Option<fn() -> GmailError>,
     settings: CalendarSettings,
     pub calls: usize,
     /// Every write received, in order (a failed one too).
@@ -37,8 +39,12 @@ struct State {
 enum Plan {
     /// Fail without applying.
     Fail(fn() -> GmailError),
-    /// Apply, then answer a network error.
-    LoseReply,
+    /// Apply, then answer this error.
+    FailAfterApply(fn() -> GmailError),
+}
+
+fn reply_lost() -> GmailError {
+    GmailError::Network("reply lost".into())
 }
 
 /// One write the fake received.
@@ -170,10 +176,13 @@ fn write(
     }
 }
 
-/// The write applied; a lost reply turns its answer into a network error.
-fn reply<T>(lost: bool, result: Result<T, GmailError>) -> Result<T, GmailError> {
+/// The write applied; a planned failure after applying replaces its answer.
+fn reply<T>(
+    lost: Option<fn() -> GmailError>,
+    result: Result<T, GmailError>,
+) -> Result<T, GmailError> {
     match (lost, result) {
-        (true, Ok(_)) => Err(GmailError::Network("reply lost".into())),
+        (Some(make), Ok(_)) => Err(make()),
         (_, r) => r,
     }
 }
@@ -294,9 +303,19 @@ impl FakeCalendar {
 
     /// The `n`-th write from now (0-based) applies, then answers a network error.
     pub fn lose_reply(&self, n: usize) {
+        self.fail_after_apply(n, reply_lost);
+    }
+
+    /// The `n`-th write from now (0-based) applies, then answers `make()`.
+    pub fn fail_after_apply(&self, n: usize, make: fn() -> GmailError) {
         let mut s = self.lock();
         let at = s.write_count + n;
-        s.plans.insert(at, Plan::LoseReply);
+        s.plans.insert(at, Plan::FailAfterApply(make));
+    }
+
+    /// Every `get_event` fails with `make()` (writes and sync are unaffected); `None` clears it.
+    pub fn fail_reads(&self, make: Option<fn() -> GmailError>) {
+        self.lock().read_fail = make;
     }
 
     /// The newest version of an event (a cancelled one too), for assertions.
@@ -305,19 +324,20 @@ impl FakeCalendar {
     }
 
     /// Record a write and decide its planned outcome: `Err` if it must fail unapplied,
-    /// `Ok(true)` if it applies but its reply is lost.
+    /// `Some(error)` if it applies but then answers that error.
+    #[allow(clippy::type_complexity)]
     fn begin_write(
         &self,
         w: FakeWrite,
-    ) -> Result<(std::sync::MutexGuard<'_, State>, bool), GmailError> {
+    ) -> Result<(std::sync::MutexGuard<'_, State>, Option<fn() -> GmailError>), GmailError> {
         let mut s = self.enter()?;
         let at = s.write_count;
         s.write_count += 1;
         s.writes.push(w);
         match s.plans.remove(&at) {
             Some(Plan::Fail(make)) => Err(make()),
-            Some(Plan::LoseReply) => Ok((s, true)),
-            None => Ok((s, false)),
+            Some(Plan::FailAfterApply(make)) => Ok((s, Some(make))),
+            None => Ok((s, None)),
         }
     }
 
@@ -519,6 +539,9 @@ impl CalendarApi for FakeCalendar {
 
     async fn get_event(&self, calendar_id: &str, event_id: &str) -> Result<ApiEvent, GmailError> {
         let s = self.enter()?;
+        if let Some(make) = s.read_fail {
+            return Err(make());
+        }
         let e = s
             .current(calendar_id, event_id)
             .ok_or_else(|| api_error(404, "notFound"))?;

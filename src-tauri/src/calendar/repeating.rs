@@ -28,6 +28,23 @@ const UNREADABLE_TIMES: &str = "Pheeme couldn't read this series' times.";
 const NO_SUCH_TIME: &str =
     "That time doesn't exist on the series' first day, because the clocks change then.";
 const ORGANIZER_ONLY: &str = "Only the organizer can change this event.";
+const SPLIT_UNKNOWN: &str = "Pheeme couldn't tell whether the new part of this series was \
+     saved, so some occurrences may show twice. Check this series on calendar.google.com.";
+
+/// A write error after which the write may still have landed: a lost reply, or a server
+/// error (writes with an etag aren't retried).
+fn ambiguous(e: &GmailError) -> bool {
+    matches!(e, GmailError::Network(_))
+        || matches!(e, GmailError::Api { status, .. } if *status >= 500)
+}
+
+/// Whether Google's answer to a read says the event is gone.
+fn is_gone(read: &Result<ApiEvent, GmailError>) -> bool {
+    match read {
+        Ok(e) => e.status.as_deref() == Some("cancelled"),
+        Err(e) => e.is_not_found() || e.is_gone(),
+    }
+}
 
 fn invalid(message: &str) -> CalendarError {
     CalendarError::Invalid(message.to_owned())
@@ -413,17 +430,29 @@ impl CalendarService {
         let conference = body.get("conferenceData").is_some();
         let api = (self.api_for)(account_id);
 
-        // 1. The new series. A lost reply is checked before going on.
+        // 1. The new series. If it may have landed unseen, it's looked for, and removed when
+        //    it can't be found, so the unchanged old series doesn't show twice.
         let opts = WriteOptions {
             send_updates: send,
             if_match: None,
             conference,
         };
         let result = match api.insert_event(calendar_id, body, opts).await {
-            Err(GmailError::Network(m)) => api
-                .get_event(calendar_id, &id)
-                .await
-                .map_err(|_| GmailError::Network(m)),
+            Err(e) if ambiguous(&e) => match api.get_event(calendar_id, &id).await {
+                Ok(found) => Ok(found),
+                Err(_) => {
+                    self.trigger(Some(account_id.to_owned()));
+                    let opts = WriteOptions {
+                        send_updates: send,
+                        if_match: None,
+                        conference: false,
+                    };
+                    if api.delete_event(calendar_id, &id, opts).await.is_err() {
+                        return Err(CalendarError::Incomplete(SPLIT_UNKNOWN.into()));
+                    }
+                    Err(e)
+                }
+            },
             other => other,
         };
         let inserted = self.settle(account_id, calendar_id, None, result).await?;
@@ -437,9 +466,9 @@ impl CalendarService {
         let cut = json!({ "recurrence": split.old });
         let result = match api.patch_event(calendar_id, &master.id, cut, opts).await {
             // The cut may have landed: only an unchanged series is safe to undo the new one for.
-            Err(GmailError::Network(m)) => match api.get_event(calendar_id, &master.id).await {
+            Err(err) if ambiguous(&err) => match api.get_event(calendar_id, &master.id).await {
                 Ok(e) if e.recurrence == split.old => Ok(e),
-                Ok(e) if e.etag == master.etag => Err(GmailError::Network(m)),
+                Ok(e) if e.etag == master.etag => Err(err),
                 _ => {
                     self.trigger(Some(account_id.to_owned()));
                     return Err(CalendarError::Unconfirmed);
@@ -458,10 +487,9 @@ impl CalendarService {
                     conference: false,
                 };
                 let undone = match api.delete_event(calendar_id, &inserted.id, opts).await {
-                    Err(GmailError::Network(_)) => api
-                        .get_event(calendar_id, &inserted.id)
-                        .await
-                        .is_ok_and(|e| e.status.as_deref() == Some("cancelled")),
+                    Err(e) if ambiguous(&e) => {
+                        is_gone(&api.get_event(calendar_id, &inserted.id).await)
+                    }
                     r => r.is_ok(),
                 };
                 if !undone {
@@ -1220,6 +1248,80 @@ mod tests {
         let shown = lines(&h).await;
         assert_eq!(shown.len(), 10, "{shown:?}");
         assert!(shown[3..].iter().all(|l| l.ends_with("Renamed")));
+    }
+
+    fn offline() -> GmailError {
+        GmailError::Offline("down".into())
+    }
+
+    #[tokio::test]
+    async fn following_split_keeps_the_new_series_when_the_cut_fails_ambiguously() {
+        let h = seeded().await;
+        // The cut lands but answers 503, and Google can't be asked what it has.
+        h.fake("a").fail_after_apply(1, || GmailError::Api {
+            status: 503,
+            reason: Some("backendError".into()),
+            message: "Service Unavailable".into(),
+        });
+        h.fake("a").fail_reads(Some(offline));
+        let err = update(&h, &occ(4), EditScope::Following, summary("Renamed"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CalendarError::Unconfirmed), "{err:?}");
+        let writes = h.fake("a").writes();
+        let methods: Vec<&str> = writes.iter().map(|w| w.method).collect();
+        assert_eq!(
+            methods,
+            vec!["insert", "patch"],
+            "the new series isn't undone"
+        );
+        let new_id = writes[0].body["id"].as_str().unwrap();
+        assert_eq!(
+            h.fake("a").event(CAL, new_id).unwrap()["status"],
+            "confirmed"
+        );
+        assert!(h.service.is_forced("a"));
+
+        h.fake("a").fail_reads(None);
+        h.service.tick(crate::sync::engine::now_ms()).await;
+        let series: Vec<String> = shown(&h)
+            .await
+            .iter()
+            .filter(|e| e.id != WEEK_6)
+            .map(line)
+            .collect();
+        assert_eq!(series.len(), 10, "{series:?}");
+        assert!(series[..3].iter().all(|l| l.ends_with("Weekly")));
+        assert!(series[3..].iter().all(|l| l.ends_with("Renamed")));
+    }
+
+    #[tokio::test]
+    async fn following_split_removes_a_new_series_it_cannot_confirm() {
+        let h = seeded().await;
+        let before = rows(&h).await;
+        // The insert lands but its reply is lost, and Google can't be asked about it.
+        h.fake("a").lose_reply(0);
+        h.fake("a").fail_reads(Some(offline));
+        let err = update(&h, &occ(4), EditScope::Following, summary("Renamed"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CalendarError::Unconfirmed), "{err:?}");
+        let writes = h.fake("a").writes();
+        let methods: Vec<&str> = writes.iter().map(|w| w.method).collect();
+        assert_eq!(methods, vec!["insert", "delete"]);
+        let new_id = writes[0].body["id"].as_str().unwrap();
+        assert_eq!(writes[1].event_id.as_deref(), Some(new_id));
+        assert_eq!(writes[1].if_match, None);
+        assert_eq!(
+            h.fake("a").event(CAL, new_id).unwrap()["status"],
+            "cancelled"
+        );
+        assert_eq!(
+            h.fake("a").event(CAL, "weekly").unwrap()["recurrence"],
+            json!([RULE])
+        );
+        assert_eq!(rows(&h).await, before);
+        assert!(h.service.is_forced("a"));
     }
 
     #[tokio::test]
