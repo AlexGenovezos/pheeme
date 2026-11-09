@@ -43,7 +43,8 @@ Writes come in groups, each off until you turn it on under **What assistants may
 Changes go through the same outbox as the app's buttons, so they show in Pheeme at once and reach
 Gmail in order. A tool whose group is off answers with the setting to turn on.
 
-Assistants can't send mail: drafts wait in Drafts for you.
+Assistants can't send mail: drafts wait in Drafts for you. They don't include your signature yet
+(Settings › Signatures applies to messages you write in Pheeme).
 
 ## Safety
 
