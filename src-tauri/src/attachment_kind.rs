@@ -91,7 +91,10 @@ mod tests {
         ));
         assert!(previewable(Some("budget.xlsx"), None));
         assert!(previewable(Some("scan"), Some("image/jpeg; name=scan")));
-        assert!(previewable(Some("deck.PPTX"), Some("application/octet-stream")));
+        assert!(previewable(
+            Some("deck.PPTX"),
+            Some("application/octet-stream")
+        ));
         assert!(!previewable(Some("slides.ppt"), Some("application/pdf")));
         assert!(!previewable(Some("archive.zip"), Some("application/zip")));
         assert!(!previewable(Some("page.html"), Some("text/html")));

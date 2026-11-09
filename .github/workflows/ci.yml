@@ -42,7 +42,7 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Browser interaction flows
         if: matrix.os == 'ubuntu-22.04'
-        run: npx playwright test e2e/mods.spec.ts e2e/email-keyboard.spec.ts e2e/unread-filter.spec.ts e2e/search.spec.ts e2e/sync-progress.spec.ts e2e/custom-themes.spec.ts e2e/category-move.spec.ts --reporter=list,html
+        run: npx playwright test e2e/mods.spec.ts e2e/email-keyboard.spec.ts e2e/unread-filter.spec.ts e2e/search.spec.ts e2e/sync-progress.spec.ts e2e/custom-themes.spec.ts e2e/category-move.spec.ts e2e/pptx-preview.spec.ts --reporter=list,html
       - name: Mod UI evidence
         if: always() && matrix.os == 'ubuntu-22.04'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
