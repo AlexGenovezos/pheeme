@@ -314,6 +314,79 @@ pub async fn clear_calendar_events(
     Ok(())
 }
 
+/// One cached event (a series, a single event or a stored occurrence) by id.
+pub async fn event<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    calendar_id: &str,
+    id: &str,
+) -> Result<Option<DbEvent>> {
+    Ok(sqlx::query_as!(
+        DbEvent,
+        r#"SELECT e.account_id, e.calendar_id, e.id, e.ical_uid, e.recurring_event_id,
+                  e.original_start_ms, e.original_start_date, e.status, e.start_ms, e.end_ms,
+                  e.start_date, e.end_date, e.time_zone, e.recurrence, e.recur_until_ms,
+                  e.summary, e.location, e.description, e.organizer_email, e.self_response,
+                  e.attendees, e.conference, e.color_id, e.transparency, e.visibility,
+                  e.reminders, e.html_link, e.etag, e.updated_ms, e.raw
+           FROM events e
+           WHERE e.account_id = ? AND e.calendar_id = ? AND e.id = ?"#,
+        account_id,
+        calendar_id,
+        id
+    )
+    .fetch_optional(ex)
+    .await?)
+}
+
+/// Every cached row of an account sharing an iCalendar UID (the same invitation on
+/// several of its calendars, or a series and its changed occurrences).
+pub async fn events_by_ical_uid<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    ical_uid: &str,
+) -> Result<Vec<DbEvent>> {
+    Ok(sqlx::query_as!(
+        DbEvent,
+        r#"SELECT e.account_id, e.calendar_id, e.id, e.ical_uid, e.recurring_event_id,
+                  e.original_start_ms, e.original_start_date, e.status, e.start_ms, e.end_ms,
+                  e.start_date, e.end_date, e.time_zone, e.recurrence, e.recur_until_ms,
+                  e.summary, e.location, e.description, e.organizer_email, e.self_response,
+                  e.attendees, e.conference, e.color_id, e.transparency, e.visibility,
+                  e.reminders, e.html_link, e.etag, e.updated_ms, e.raw
+           FROM events e
+           WHERE e.account_id = ? AND e.ical_uid = ?
+           ORDER BY e.calendar_id, e.id"#,
+        account_id,
+        ical_uid
+    )
+    .fetch_all(ex)
+    .await?)
+}
+
+/// Delete a series' changed and cancelled occurrences whose original start is at or after
+/// `from_ms` (all-day ones are stored at their date's UTC midnight); returns how many.
+pub async fn delete_overrides_from<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    calendar_id: &str,
+    master_id: &str,
+    from_ms: i64,
+) -> Result<u64> {
+    let done = sqlx::query!(
+        "DELETE FROM events
+         WHERE account_id = ? AND calendar_id = ? AND recurring_event_id = ?
+           AND original_start_ms >= ?",
+        account_id,
+        calendar_id,
+        master_id,
+        from_ms
+    )
+    .execute(ex)
+    .await?;
+    Ok(done.rows_affected())
+}
+
 /// Rows from shown calendars that may have occurrences in `[from_ms, to_ms)`: events that
 /// overlap it (all-day ones padded by a day, for the caller to trim by zone), every series
 /// that runs into it, and every changed or cancelled occurrence of those series.
@@ -735,5 +808,53 @@ mod tests {
         let got = access(pool, "a").await.unwrap().unwrap();
         assert_eq!(got.synced_at, Some(7));
         assert_eq!(got.detail.as_deref(), Some("boom"));
+    }
+
+    #[tokio::test]
+    async fn delete_overrides_from_keeps_earlier_ones() {
+        use super::event as stored;
+        let db = TestDb::with_account("a").await;
+        let pool = &db.pool;
+        replace_calendars(pool, "a", &[cal("C")]).await.unwrap();
+        let mut series = event("C", "s", 0, H);
+        series.recurrence = Some(r#"["RRULE:FREQ=DAILY"]"#.into());
+        let over = |id: &str, at: i64| {
+            let mut e = event("C", id, at, at + H);
+            e.recurring_event_id = Some("s".into());
+            e.original_start_ms = Some(at);
+            e
+        };
+        let mut other = over("t_1", 48 * H);
+        other.recurring_event_id = Some("t".into());
+        apply_event_changes(
+            pool,
+            "a",
+            "C",
+            &[
+                series,
+                over("s_1", 24 * H),
+                over("s_2", 48 * H),
+                over("s_3", 72 * H),
+                other,
+            ],
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+
+        let n = delete_overrides_from(pool, "a", "C", "s", 48 * H)
+            .await
+            .unwrap();
+        assert_eq!(n, 2);
+        assert!(stored(pool, "a", "C", "s_1").await.unwrap().is_some());
+        assert!(stored(pool, "a", "C", "s_2").await.unwrap().is_none());
+        assert!(stored(pool, "a", "C", "s_3").await.unwrap().is_none());
+        assert!(stored(pool, "a", "C", "t_1").await.unwrap().is_some());
+        assert!(stored(pool, "a", "C", "s").await.unwrap().is_some());
+        let same = events_by_ical_uid(pool, "a", "s_1@google.com")
+            .await
+            .unwrap();
+        assert_eq!(ids(&same), vec!["s_1"]);
     }
 }

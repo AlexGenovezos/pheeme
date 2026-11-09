@@ -10,6 +10,7 @@ pub mod recurrence;
 pub mod series;
 pub mod service;
 pub mod sync;
+mod writes;
 
 use crate::gmail::calendar::{
     ApiEvent, CalendarListPage, CalendarSettings, EventsPage, SendUpdates, WriteOptions,

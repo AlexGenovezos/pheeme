@@ -2,11 +2,15 @@
 //! range (series expanded), answered from the cache, plus the background loop that keeps the
 //! cache current. Runs apart from mail sync, so a calendar problem never holds mail up.
 
+use super::edit::OriginalStart;
+use super::error::CalendarError;
 use super::recurrence::{self, Occurrence};
 use super::sync::{classify, sync_account, SyncError};
+use super::writes::{can_write, Target};
 use super::{CalendarApi, CalendarFactory};
 use crate::db;
 use crate::db::calendar::{DbCalendarAccess, DbEvent};
+use crate::gmail::calendar::{ApiAttendee, ApiPerson};
 use crate::gmail::GmailError;
 use crate::mail::MailError;
 use crate::sync::engine::now_ms;
@@ -67,6 +71,70 @@ pub struct CalendarEventDto {
     pub color_id: Option<String>,
     pub transparency: Option<String>,
     pub recurring: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonDto {
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub is_self: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendeeDto {
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub response: Option<String>,
+    pub optional: bool,
+    pub organizer: bool,
+    pub is_self: bool,
+    pub resource: bool,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderDto {
+    /// `popup` or `email`.
+    pub method: String,
+    pub minutes: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemindersDto {
+    pub use_default: bool,
+    pub overrides: Vec<ReminderDto>,
+}
+
+/// Everything the event panel shows and edits about one event or occurrence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventDetailDto {
+    #[serde(flatten)]
+    pub event: CalendarEventDto,
+    pub description: Option<String>,
+    pub organizer: Option<PersonDto>,
+    pub attendees: Vec<AttendeeDto>,
+    /// The first video entry point of the conference.
+    pub meet_url: Option<String>,
+    /// A Meet link was asked for and Google hasn't made it yet.
+    pub conference_pending: bool,
+    /// The series' recurrence lines (an occurrence gets its series').
+    pub recurrence: Vec<String>,
+    /// For an occurrence: when it was originally scheduled.
+    pub original_start: Option<EventTimeDto>,
+    pub reminders: RemindersDto,
+    pub visibility: Option<String>,
+    pub html_link: Option<String>,
+    pub guests_can_modify: bool,
+    pub guests_can_invite_others: bool,
+    pub guests_can_see_other_guests: bool,
+    pub can_edit: bool,
+    pub can_rsvp: bool,
+    pub can_delete: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -147,9 +215,9 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 pub struct CalendarService {
-    db: SqlitePool,
-    api_for: CalendarFactory,
-    events: Arc<dyn SyncEvents>,
+    pub(super) db: SqlitePool,
+    pub(super) api_for: CalendarFactory,
+    pub(super) events: Arc<dyn SyncEvents>,
     foreground: AtomicBool,
     wake: Notify,
     /// Accounts to sync on the next tick whatever their status (just signed in, or asked).
@@ -253,6 +321,141 @@ impl CalendarService {
         };
         out.sort_by_key(|e| (start_key(e), !e.all_day, e.id.clone()));
         Ok(out)
+    }
+
+    /// The full detail of one event, or of one occurrence of a series (stored or not).
+    /// An occurrence nobody changed is answered from its series, at its own time.
+    pub async fn event_detail(
+        &self,
+        account_id: &str,
+        calendar_id: &str,
+        event_id: &str,
+    ) -> Result<EventDetailDto, CalendarError> {
+        let calendar = self.calendar(account_id, calendar_id).await?;
+        let (row, occurrence, master, original) = match self
+            .target(account_id, calendar_id, event_id)
+            .await?
+        {
+            Target::Stored(e) => {
+                let master = match &e.recurring_event_id {
+                    Some(id) => db::calendar::event(&self.db, account_id, calendar_id, id).await?,
+                    None => None,
+                };
+                let original = (e.original_start_ms.is_some() || e.original_start_date.is_some())
+                    .then(|| EventTimeDto {
+                        ms: e
+                            .original_start_date
+                            .is_none()
+                            .then_some(e.original_start_ms)
+                            .flatten(),
+                        date: e.original_start_date.clone(),
+                        time_zone: e.time_zone.clone(),
+                    });
+                (*e, None, master, original)
+            }
+            Target::Occurrence { master, at } => {
+                let (occ, original) = unstored_occurrence(&master, event_id, &at);
+                (*master, Some(occ), None, Some(original))
+            }
+        };
+        // The series' lines, also for an occurrence.
+        let recurrence = recurrence::recurrence_lines(master.as_ref().unwrap_or(&row));
+        let raw: serde_json::Value = serde_json::from_str(&row.raw).unwrap_or_default();
+        // Permissions are the series' when this is an unstored occurrence of it.
+        let raw_flags: serde_json::Value = match (&occurrence, &master) {
+            (None, Some(m)) if raw.get("organizer").is_none() => {
+                serde_json::from_str(&m.raw).unwrap_or_default()
+            }
+            _ => raw.clone(),
+        };
+        let organizer: Option<ApiPerson> = raw_flags
+            .get("organizer")
+            .and_then(|o| serde_json::from_value(o.clone()).ok());
+        let attendees: Vec<ApiAttendee> = serde_json::from_str(&row.attendees).unwrap_or_default();
+        let flag = |key: &str, default: bool| {
+            raw_flags
+                .get(key)
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(default)
+        };
+        let guests_can_modify = flag("guestsCanModify", false);
+        let writable = can_write(&calendar);
+        let conference = raw.get("conferenceData");
+        let meet_url = conference
+            .and_then(|c| c.get("entryPoints"))
+            .and_then(|e| e.as_array())
+            .and_then(|points| {
+                points
+                    .iter()
+                    .find(|p| p.get("entryPointType").and_then(|t| t.as_str()) == Some("video"))
+            })
+            .and_then(|p| p.get("uri"))
+            .and_then(|u| u.as_str())
+            .map(str::to_owned);
+        let conference_pending = conference
+            .and_then(|c| c.get("createRequest"))
+            .and_then(|r| r.get("status"))
+            .and_then(|s| s.get("statusCode"))
+            .and_then(|c| c.as_str())
+            == Some("pending");
+        let reminders = raw.get("reminders");
+        let reminders = RemindersDto {
+            use_default: reminders
+                .and_then(|r| r.get("useDefault"))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(true),
+            overrides: reminders
+                .and_then(|r| r.get("overrides"))
+                .and_then(|o| o.as_array())
+                .map(|list| {
+                    list.iter()
+                        .filter_map(|o| {
+                            Some(ReminderDto {
+                                method: o.get("method")?.as_str()?.to_owned(),
+                                minutes: o.get("minutes")?.as_i64()?,
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
+        let can_rsvp = attendees.iter().any(|a| a.is_self && !a.organizer);
+        Ok(EventDetailDto {
+            event: dto(&row, occurrence.as_ref()),
+            description: row.description.clone(),
+            organizer: organizer.as_ref().map(|o| PersonDto {
+                email: o.email.clone(),
+                name: o.display_name.clone(),
+                is_self: o.is_self,
+            }),
+            attendees: attendees
+                .into_iter()
+                .map(|a| AttendeeDto {
+                    email: a.email,
+                    name: a.display_name,
+                    response: a.response_status,
+                    optional: a.optional,
+                    organizer: a.organizer,
+                    is_self: a.is_self,
+                    resource: a.resource,
+                    comment: a.comment,
+                })
+                .collect(),
+            meet_url,
+            conference_pending,
+            recurrence,
+            original_start: original,
+            reminders,
+            visibility: row.visibility.clone(),
+            html_link: row.html_link.clone(),
+            guests_can_modify,
+            guests_can_invite_others: flag("guestsCanInviteOthers", true),
+            guests_can_see_other_guests: flag("guestsCanSeeOtherGuests", true),
+            can_edit: writable
+                && (organizer.as_ref().is_none_or(|o| o.is_self) || guests_can_modify),
+            can_rsvp,
+            can_delete: writable,
+        })
     }
 
     /// Show or hide a calendar's events (local only).
@@ -418,6 +621,72 @@ fn overlaps(e: &DbEvent, from_ms: i64, to_ms: i64, tz: chrono_tz::Tz) -> bool {
             start < to_ms && (end > from_ms || (end == start && start >= from_ms))
         }
         _ => false,
+    }
+}
+
+/// An occurrence with no row of its own: the series' length from the occurrence's original
+/// start, and that start as the DTO reports it.
+fn unstored_occurrence(
+    master: &DbEvent,
+    event_id: &str,
+    at: &OriginalStart,
+) -> (Occurrence, EventTimeDto) {
+    let zone = master.time_zone.clone();
+    match at {
+        OriginalStart::Ms(start) => {
+            let length = match (master.start_ms, master.end_ms) {
+                (Some(s), Some(e)) => e - s,
+                _ => 0,
+            };
+            (
+                Occurrence {
+                    master_id: Some(master.id.clone()),
+                    event_id: event_id.to_owned(),
+                    start_ms: Some(*start),
+                    end_ms: Some(start + length),
+                    start_date: None,
+                    end_date: None,
+                    original_start_ms: Some(*start),
+                },
+                EventTimeDto {
+                    ms: Some(*start),
+                    date: None,
+                    time_zone: zone,
+                },
+            )
+        }
+        OriginalStart::Date(day) => {
+            let parse = |d: &Option<String>| {
+                d.as_deref()
+                    .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+            };
+            let days = match (parse(&master.start_date), parse(&master.end_date)) {
+                (Some(s), Some(e)) => (e - s).num_days().max(1),
+                _ => 1,
+            };
+            let end = *day + chrono::Days::new(days.unsigned_abs());
+            let fmt = |d: &NaiveDate| d.format("%Y-%m-%d").to_string();
+            (
+                Occurrence {
+                    master_id: Some(master.id.clone()),
+                    event_id: event_id.to_owned(),
+                    start_ms: None,
+                    end_ms: None,
+                    start_date: Some(fmt(day)),
+                    end_date: Some(fmt(&end)),
+                    original_start_ms: day
+                        .and_time(chrono::NaiveTime::MIN)
+                        .and_utc()
+                        .timestamp_millis()
+                        .into(),
+                },
+                EventTimeDto {
+                    ms: None,
+                    date: Some(fmt(day)),
+                    time_zone: zone,
+                },
+            )
+        }
     }
 }
 
@@ -832,5 +1101,277 @@ mod tests {
         h.service.trigger(Some("a".into()));
         h.service.tick(1_000).await;
         assert_eq!(h.service.accounts().await.unwrap()[0].access.status, "on");
+    }
+
+    fn guest_event() -> serde_json::Value {
+        let mut e = timed(
+            "review",
+            "Review",
+            "2026-11-10T10:00:00-05:00",
+            "2026-11-10T11:00:00-05:00",
+        );
+        e["organizer"] = json!({"email": "boss@example.com", "displayName": "Boss"});
+        e["attendees"] = json!([
+            {"email": "boss@example.com", "organizer": true, "responseStatus": "accepted"},
+            {"email": "a@example.com", "self": true, "responseStatus": "needsAction"}
+        ]);
+        e
+    }
+
+    #[tokio::test]
+    async fn detail_of_single_event() {
+        let h = harness(&["a"]).await;
+        let mut e = timed(
+            "planning",
+            "Planning",
+            "2026-11-10T10:00:00-05:00",
+            "2026-11-10T11:00:00-05:00",
+        );
+        e["description"] = json!("Agenda");
+        e["htmlLink"] = json!("https://calendar.google.com/e/1");
+        e["visibility"] = json!("private");
+        e["organizer"] = json!({"email": "a@example.com", "self": true});
+        e["attendees"] = json!([
+            {"email": "a@example.com", "self": true, "organizer": true, "responseStatus": "accepted"},
+            {"email": "bo@example.com", "displayName": "Bo", "responseStatus": "tentative",
+             "optional": true, "comment": "maybe"}
+        ]);
+        e["conferenceData"] = json!({"entryPoints": [
+            {"entryPointType": "phone", "uri": "tel:+1"},
+            {"entryPointType": "video", "uri": "https://meet.google.com/abc"}
+        ]});
+        e["reminders"] =
+            json!({"useDefault": false, "overrides": [{"method": "popup", "minutes": 10}]});
+        e["guestsCanInviteOthers"] = json!(false);
+        h.fake("a").put("a@example.com", e);
+        h.grant("a").await;
+
+        let d = h
+            .service
+            .event_detail("a", "a@example.com", "planning")
+            .await
+            .unwrap();
+        assert_eq!(d.event.summary.as_deref(), Some("Planning"));
+        assert_eq!(d.description.as_deref(), Some("Agenda"));
+        assert_eq!(
+            d.organizer.as_ref().unwrap().email.as_deref(),
+            Some("a@example.com")
+        );
+        assert!(d.organizer.as_ref().unwrap().is_self);
+        assert_eq!(d.attendees.len(), 2);
+        assert_eq!(d.attendees[1].response.as_deref(), Some("tentative"));
+        assert!(d.attendees[1].optional);
+        assert_eq!(d.attendees[1].comment.as_deref(), Some("maybe"));
+        assert_eq!(d.meet_url.as_deref(), Some("https://meet.google.com/abc"));
+        assert!(!d.conference_pending);
+        assert!(d.recurrence.is_empty());
+        assert!(d.original_start.is_none());
+        assert!(!d.reminders.use_default);
+        assert_eq!(
+            d.reminders.overrides,
+            vec![ReminderDto {
+                method: "popup".into(),
+                minutes: 10
+            }]
+        );
+        assert_eq!(d.visibility.as_deref(), Some("private"));
+        assert_eq!(
+            d.html_link.as_deref(),
+            Some("https://calendar.google.com/e/1")
+        );
+        assert!(!d.guests_can_modify);
+        assert!(!d.guests_can_invite_others);
+        assert!(d.guests_can_see_other_guests);
+        assert!(d.can_edit && d.can_delete);
+        assert!(!d.can_rsvp, "the organizer doesn't RSVP");
+        let json = serde_json::to_value(&d).unwrap();
+        assert_eq!(json["summary"], "Planning");
+        assert_eq!(json["meetUrl"], "https://meet.google.com/abc");
+    }
+
+    #[tokio::test]
+    async fn detail_of_unstored_occurrence_uses_master_at_its_time() {
+        let h = harness(&["a"]).await;
+        let mut series = standup_series();
+        series["recurrence"] = json!(["RRULE:FREQ=WEEKLY;BYDAY=MO"]);
+        h.fake("a").put("a@example.com", series);
+        h.grant("a").await;
+
+        let d = h
+            .service
+            .event_detail("a", "a@example.com", "standup_20261109T140000Z")
+            .await
+            .unwrap();
+        assert_eq!(d.event.id, "standup_20261109T140000Z");
+        assert_eq!(d.event.master_id.as_deref(), Some("standup"));
+        assert!(d.event.recurring);
+        assert_eq!(d.event.summary.as_deref(), Some("Standup"));
+        assert_eq!(d.event.start.ms, Some(ms("2026-11-09T14:00:00Z")));
+        assert_eq!(d.event.end.ms, Some(ms("2026-11-09T14:15:00Z")));
+        assert_eq!(
+            d.original_start.unwrap().ms,
+            Some(ms("2026-11-09T14:00:00Z"))
+        );
+        assert_eq!(d.recurrence, vec!["RRULE:FREQ=WEEKLY;BYDAY=MO".to_owned()]);
+
+        // Not an occurrence of the rule (a Tuesday): not found.
+        let err = h
+            .service
+            .event_detail("a", "a@example.com", "standup_20261110T140000Z")
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), "not_found");
+    }
+
+    #[tokio::test]
+    async fn detail_of_unstored_all_day_occurrence() {
+        let h = harness(&["a"]).await;
+        h.fake("a").put(
+            "a@example.com",
+            json!({"id": "trip", "status": "confirmed", "etag": "\"t\"", "summary": "Trip",
+                   "start": {"date": "2026-11-02"}, "end": {"date": "2026-11-04"},
+                   "recurrence": ["RRULE:FREQ=WEEKLY"]}),
+        );
+        h.grant("a").await;
+        let d = h
+            .service
+            .event_detail("a", "a@example.com", "trip_20261109")
+            .await
+            .unwrap();
+        assert!(d.event.all_day);
+        assert_eq!(d.event.start.date.as_deref(), Some("2026-11-09"));
+        assert_eq!(d.event.end.date.as_deref(), Some("2026-11-11"));
+        assert_eq!(
+            d.original_start.unwrap().date.as_deref(),
+            Some("2026-11-09")
+        );
+    }
+
+    #[tokio::test]
+    async fn detail_flags_for_reader_calendar_and_guest_event() {
+        let h = harness(&["a"]).await;
+        h.fake("a").put("a@example.com", guest_event());
+        let mut open = guest_event();
+        open["id"] = json!("open");
+        open["guestsCanModify"] = json!(true);
+        h.fake("a").put("a@example.com", open);
+        let mut ro = calendar("holidays");
+        ro.access_role = "reader".into();
+        h.fake("a").add_calendar(ro);
+        let mut mine = timed(
+            "mine",
+            "Mine",
+            "2026-11-10T10:00:00-05:00",
+            "2026-11-10T11:00:00-05:00",
+        );
+        mine["organizer"] = json!({"email": "a@example.com", "self": true});
+        h.fake("a").put("holidays", mine);
+        h.grant("a").await;
+
+        let guest = h
+            .service
+            .event_detail("a", "a@example.com", "review")
+            .await
+            .unwrap();
+        assert!(!guest.can_edit, "a guest can't edit unless allowed");
+        assert!(guest.can_rsvp);
+        assert!(guest.can_delete);
+        assert!(!guest.organizer.unwrap().is_self);
+        let open = h
+            .service
+            .event_detail("a", "a@example.com", "open")
+            .await
+            .unwrap();
+        assert!(open.can_edit && open.guests_can_modify);
+
+        let reader = h
+            .service
+            .event_detail("a", "holidays", "mine")
+            .await
+            .unwrap();
+        assert!(!reader.can_edit && !reader.can_delete);
+    }
+
+    #[tokio::test]
+    async fn detail_unknown_id_is_not_found() {
+        let h = harness(&["a"]).await;
+        h.grant("a").await;
+        for id in ["nope", "nope_20261109T140000Z", "x"] {
+            let err = h
+                .service
+                .event_detail("a", "a@example.com", id)
+                .await
+                .unwrap_err();
+            assert_eq!(err.code(), "not_found", "{id}");
+        }
+        let err = h.service.event_detail("a", "gone", "x").await.unwrap_err();
+        assert_eq!(err.code(), "not_found");
+    }
+
+    #[tokio::test]
+    async fn writable_save_and_refresh_after_conflict() {
+        let h = harness(&["a"]).await;
+        let mut ro = calendar("holidays");
+        ro.access_role = "freeBusyReader".into();
+        h.fake("a").add_calendar(ro);
+        h.fake("a").put(
+            "a@example.com",
+            timed(
+                "e",
+                "Old",
+                "2026-11-10T10:00:00-05:00",
+                "2026-11-10T11:00:00-05:00",
+            ),
+        );
+        h.grant("a").await;
+
+        assert!(h.service.writable("a", "a@example.com").await.is_ok());
+        let err = h.service.writable("a", "holidays").await.unwrap_err();
+        assert_eq!(err.code(), "read_only");
+        assert_eq!(err.to_string(), "You can't change events on this calendar.");
+
+        // Google has a newer version; refresh caches it and announces it.
+        let mut newer = timed(
+            "e",
+            "New",
+            "2026-11-10T10:00:00-05:00",
+            "2026-11-10T11:00:00-05:00",
+        );
+        newer["etag"] = json!("\"e2\"");
+        h.fake("a").put("a@example.com", newer);
+        h.events.take();
+        h.service
+            .refresh_after_conflict("a", "a@example.com", "e")
+            .await;
+        let d = h
+            .service
+            .event_detail("a", "a@example.com", "e")
+            .await
+            .unwrap();
+        assert_eq!(d.event.summary.as_deref(), Some("New"));
+        assert_eq!(h.events.names(), vec!["calendar:updated"]);
+
+        // A cancelled event leaves the cache.
+        let api = h.fake("a").event("a@example.com", "e").unwrap();
+        let mut gone = api.clone();
+        gone["status"] = json!("cancelled");
+        let saved = h
+            .service
+            .save(
+                "a",
+                "a@example.com",
+                crate::gmail::calendar::ApiEvent::try_from(gone).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(saved.id, "e");
+        assert_eq!(
+            h.service
+                .event_detail("a", "a@example.com", "e")
+                .await
+                .unwrap_err()
+                .code(),
+            "not_found"
+        );
     }
 }
