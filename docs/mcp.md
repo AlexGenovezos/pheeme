@@ -32,11 +32,23 @@ Other MCP clients that speak Streamable HTTP take the same URL and `Authorizatio
 | `get_thread` | A conversation as plain text, with attachment names |
 | `list_filters` | Every Gmail filter, in words, flagging those that delete mail, skip the inbox or mark it read |
 
-Assistants can't send mail.
+Writes come in groups, each off until you turn it on under **What clients may change**:
+
+| Group | Tools |
+| --- | --- |
+| Organize mail | `archive`, `move_to_inbox`, `mark_read`, `mark_unread`, `star`, `unstar`, `change_labels`, `create_label`, `trash` |
+| Change Gmail filters | `create_filter`, `delete_filter` |
+| Write drafts | `create_draft` (new or a reply) |
+
+Changes go through the same outbox as the app's buttons, so they show in Pheeme at once and reach
+Gmail in order. A tool whose group is off answers with the setting to turn on.
+
+Assistants can't send mail: drafts wait in Drafts for you. They don't include your signature yet
+(Settings › Signatures applies to messages you write in Pheeme).
 
 ## Safety
 
-- Off by default. Turning it off stops the server.
+- Off by default, and every write group off by default. Turning the main switch off stops the server.
 - Loopback only: the server never listens on a network interface, and refuses requests whose `Host` or
   `Origin` isn't `127.0.0.1`/`localhost` on its port.
 - Each assistant has its own token. **Remove** revokes it at once.

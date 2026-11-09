@@ -2,7 +2,7 @@
 //! server that serves it.
 
 use super::CommandError;
-use crate::local_api::{ActivityDto, ClientDto, NewClientDto, ACTIVITY_SHOWN};
+use crate::local_api::{ActivityDto, ClientDto, NewClientDto, Permission, ACTIVITY_SHOWN};
 use crate::mcp::ServerStatus;
 use crate::AppState;
 use serde::Serialize;
@@ -14,6 +14,8 @@ pub struct AssistantStatusDto {
     pub enabled: bool,
     pub server: ServerStatus,
     pub clients: Vec<ClientDto>,
+    /// The write groups the user allows.
+    pub allowed: Vec<Permission>,
 }
 
 async fn status(state: &AppState) -> Result<AssistantStatusDto, CommandError> {
@@ -22,6 +24,15 @@ async fn status(state: &AppState) -> Result<AssistantStatusDto, CommandError> {
         enabled: api.enabled().await?,
         server: state.assistants.status().await,
         clients: api.clients().await?,
+        allowed: {
+            let mut allowed = Vec::new();
+            for p in Permission::ALL {
+                if api.allows(p).await? {
+                    allowed.push(p);
+                }
+            }
+            allowed
+        },
     })
 }
 
@@ -40,6 +51,21 @@ pub async fn set_assistant_enabled(
 ) -> Result<AssistantStatusDto, CommandError> {
     state.assistants.api().set_enabled(enabled).await?;
     state.assistants.apply_setting().await;
+    status(&state).await
+}
+
+/// Allow or refuse a group of write tools.
+#[tauri::command]
+pub async fn set_assistant_permission(
+    state: State<'_, AppState>,
+    permission: Permission,
+    allowed: bool,
+) -> Result<AssistantStatusDto, CommandError> {
+    state
+        .assistants
+        .api()
+        .set_allows(permission, allowed)
+        .await?;
     status(&state).await
 }
 

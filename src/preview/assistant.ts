@@ -3,6 +3,7 @@
 import type {
   AssistantActivity,
   AssistantClient,
+  AssistantPermission,
   AssistantStatus,
   NewAssistant,
 } from "../lib/tauri";
@@ -16,15 +17,23 @@ export function createAssistantHandlers() {
   let next = 0;
   const clients: AssistantClient[] = [];
   let activity: AssistantActivity[] = [];
+  let allowed: AssistantPermission[] = [];
   const status = (): AssistantStatus => ({
     enabled,
     server: { state: enabled ? "running" : "off", url: URL, message: null },
     clients: clients.map((c) => ({ ...c })),
+    allowed: [...allowed],
   });
   return {
     assistant_status: () => status(),
     set_assistant_enabled: (args: Args) => {
       enabled = Boolean(args?.enabled);
+      return status();
+    },
+    set_assistant_permission: (args: Args) => {
+      const permission = String(args?.permission) as AssistantPermission;
+      allowed = allowed.filter((p) => p !== permission);
+      if (args?.allowed) allowed.push(permission);
       return status();
     },
     connect_assistant: (args: Args): NewAssistant => {

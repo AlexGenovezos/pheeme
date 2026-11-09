@@ -269,11 +269,14 @@ export interface AssistantClient {
   createdAt: number;
   lastUsedAt: number | null;
 }
-/** Whether assistants are allowed, the MCP server's state, and the connected clients. */
+/** A group of assistant write tools the user allows separately. */
+export type AssistantPermission = "organize" | "filters" | "drafts";
+/** Whether assistants are allowed, the MCP server's state, the connected clients and the write groups allowed. */
 export interface AssistantStatus {
   enabled: boolean;
   server: { state: "off" | "running" | "failed"; url: string; message: string | null };
   clients: AssistantClient[];
+  allowed: AssistantPermission[];
 }
 /** A newly connected assistant; `token` is shown once and never stored in the clear. */
 export interface NewAssistant {
@@ -298,6 +301,8 @@ export const ASSISTANT_ACTIVITY_EVENT = "assistant:activity";
 export const assistantStatus = () => invoke<AssistantStatus>("assistant_status");
 export const setAssistantEnabled = (enabled: boolean) =>
   invoke<AssistantStatus>("set_assistant_enabled", { enabled });
+export const setAssistantPermission = (permission: AssistantPermission, allowed: boolean) =>
+  invoke<AssistantStatus>("set_assistant_permission", { permission, allowed });
 export const connectAssistant = (name: string) =>
   invoke<NewAssistant>("connect_assistant", { name });
 export const removeAssistant = (clientId: string) => invoke<void>("remove_assistant", { clientId });

@@ -1,4 +1,5 @@
 use super::*;
+use crate::compose::ComposeService;
 use crate::db::test_support::TestDb;
 use crate::gmail::types::{Filter, FilterAction, FilterCriteria};
 use crate::secrets::MemoryStore;
@@ -32,9 +33,15 @@ pub(crate) async fn setup(fake: FakeGmail) -> Harness {
         Arc::new(MemoryStore::new()),
     ));
     let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
+    let compose = ComposeService::new(
+        pool.clone(),
+        sync.clone(),
+        mail.clone(),
+        &db.dir().join("cache"),
+    );
     let notified = Arc::new(AtomicUsize::new(0));
     let count = notified.clone();
-    let api = LocalApi::new(pool, accounts, mail, sync);
+    let api = LocalApi::new(pool, accounts, mail, compose, sync);
     api.on_activity(Arc::new(move || {
         count.fetch_add(1, Ordering::SeqCst);
     }));
@@ -332,12 +339,238 @@ async fn lists_filters_in_words() {
     assert_eq!(h.fake.calls("list_filters"), 1);
 }
 
+fn ids(out: &Value, key: &str) -> Vec<String> {
+    out[key]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .unwrap_or(v["thread_id"].as_str().unwrap_or(""))
+                .to_owned()
+        })
+        .collect()
+}
+
+async fn mailbox(h: &Harness, name: &str) -> Vec<String> {
+    let out = h
+        .call("list_mailbox", json!({ "mailbox": name }))
+        .await
+        .unwrap();
+    ids(&out, "threads")
+}
+
+#[tokio::test]
+async fn writes_need_their_group_allowed() {
+    let fake = FakeGmail::new();
+    fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+    let h = setup(fake).await;
+    let err = h
+        .call("archive", json!({ "thread_ids": ["t1"] }))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ApiError::NotAllowed(Permission::Organize)));
+    assert!(err.to_string().contains("Organize mail"), "{err}");
+    assert_eq!(mailbox(&h, "inbox").await, ["t1"]);
+    assert!(h.api.activity(1).await.unwrap()[0].error.is_none());
+    assert!(h.api.activity(2).await.unwrap()[1].error.is_some());
+
+    h.api.set_allows(Permission::Organize, true).await.unwrap();
+    let err = h
+        .call("create_filter", json!({ "from": "a@x.com", "trash": true }))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ApiError::NotAllowed(Permission::Filters)));
+    let err = h
+        .call("create_draft", json!({ "body": "hi" }))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ApiError::NotAllowed(Permission::Drafts)));
+}
+
+#[tokio::test]
+async fn organizes_mail_through_the_outbox() {
+    let fake = FakeGmail::new();
+    fake.add_user_label("Label_1", "Receipts", None);
+    fake.seed(msg("m1", "t1", &["INBOX", "UNREAD"], "a@x.com").days_ago(1));
+    fake.seed(msg("m2", "t2", &["INBOX"], "b@x.com").days_ago(2));
+    let h = setup(fake).await;
+    h.api.set_allows(Permission::Organize, true).await.unwrap();
+
+    let out = h
+        .call("archive", json!({ "thread_ids": ["t1", "nope"] }))
+        .await
+        .unwrap();
+    assert_eq!(ids(&out, "changed"), ["t1"]);
+    assert_eq!(ids(&out, "not_found"), ["nope"]);
+    assert_eq!(mailbox(&h, "inbox").await, ["t2"]);
+    h.call("move_to_inbox", json!({ "thread_ids": ["t1"] }))
+        .await
+        .unwrap();
+    assert_eq!(mailbox(&h, "inbox").await, ["t1", "t2"]);
+
+    h.call("mark_read", json!({ "thread_ids": ["t1"] }))
+        .await
+        .unwrap();
+    let unread = h
+        .call("list_mailbox", json!({ "unread_only": true }))
+        .await
+        .unwrap();
+    assert!(ids(&unread, "threads").is_empty());
+    h.call("star", json!({ "thread_ids": ["t2"] }))
+        .await
+        .unwrap();
+    assert_eq!(mailbox(&h, "starred").await, ["t2"]);
+
+    h.call(
+        "change_labels",
+        json!({ "thread_ids": ["t2"], "add": ["receipts"] }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(mailbox(&h, "Receipts").await, ["t2"]);
+    let err = h
+        .call(
+            "change_labels",
+            json!({ "thread_ids": ["t2"], "add": ["INBOX"] }),
+        )
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("move_to_inbox"), "{err}");
+    let err = h
+        .call("archive", json!({ "thread_ids": ["nope"] }))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("None of those"), "{err}");
+
+    h.call("trash", json!({ "thread_ids": ["t2"] }))
+        .await
+        .unwrap();
+    assert_eq!(mailbox(&h, "trash").await, ["t2"]);
+    assert_eq!(mailbox(&h, "inbox").await, ["t1"]);
+
+    let label = h
+        .call("create_label", json!({ "name": "Clients/Acme" }))
+        .await
+        .unwrap();
+    assert_eq!(label["name"], "Clients/Acme");
+}
+
+#[tokio::test]
+async fn creates_and_deletes_filters() {
+    let fake = FakeGmail::new();
+    fake.add_user_label("Label_1", "Receipts", None);
+    let h = setup(fake).await;
+    h.api.set_allows(Permission::Filters, true).await.unwrap();
+
+    let out = h
+        .call(
+            "create_filter",
+            json!({
+                "from": "shop@x.com", "subject": "Order", "add_label": "Receipts",
+                "category": "updates", "skip_inbox": true, "mark_read": true, "important": false
+            }),
+        )
+        .await
+        .unwrap();
+    let held = h.fake.filters();
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0].criteria.from.as_deref(), Some("shop@x.com"));
+    assert_eq!(held[0].criteria.other["subject"], "Order");
+    assert_eq!(
+        held[0].action.add_label_ids,
+        ["Label_1", "CATEGORY_UPDATES"]
+    );
+    assert_eq!(
+        held[0].action.remove_label_ids,
+        ["INBOX", "UNREAD", "IMPORTANT"]
+    );
+    assert_eq!(out["filter"]["add_labels"][0], "Receipts");
+
+    for bad in [
+        json!({ "skip_inbox": true }),
+        json!({ "from": "a@x.com" }),
+        json!({ "from": "a@x.com", "add_label": "Nope" }),
+        json!({ "from": "a@x.com", "category": "spam" }),
+    ] {
+        assert!(h.call("create_filter", bad.clone()).await.is_err(), "{bad}");
+    }
+    assert_eq!(h.fake.filters().len(), 1);
+
+    let id = out["filter"]["id"].as_str().unwrap().to_owned();
+    let err = h
+        .call("delete_filter", json!({ "filter_id": "nope" }))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("no filter"), "{err}");
+    h.call("delete_filter", json!({ "filter_id": id }))
+        .await
+        .unwrap();
+    assert!(h.fake.filters().is_empty());
+}
+
+#[tokio::test]
+async fn writes_new_drafts_and_replies_but_never_sends() {
+    let fake = FakeGmail::new();
+    fake.seed(FakeMsg {
+        subject: "Lunch?".into(),
+        ..msg("m1", "t1", &["INBOX"], "Friend <f@x.com>").days_ago(1)
+    });
+    let h = setup(fake).await;
+    h.api.set_allows(Permission::Drafts, true).await.unwrap();
+
+    let out = h
+        .call(
+            "create_draft",
+            json!({ "to": ["Ann <ann@x.com>"], "subject": "Hello", "body": "Line one\nLine two" }),
+        )
+        .await
+        .unwrap();
+    let draft_id = out["draft_id"].as_str().unwrap();
+    let message = h.fake.drafts()[draft_id].clone();
+    let raw = String::from_utf8_lossy(h.fake.message(&message).unwrap().raw.as_deref().unwrap())
+        .into_owned();
+    assert!(raw.contains("ann@x.com"), "{raw}");
+    assert!(raw.contains("Subject: Hello"), "{raw}");
+
+    let reply = h
+        .call(
+            "create_draft",
+            json!({ "reply_to_message_id": "m1", "body": "Yes!" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reply["thread_id"], "t1");
+    let message = h.fake.drafts()[reply["draft_id"].as_str().unwrap()].clone();
+    let raw = String::from_utf8_lossy(h.fake.message(&message).unwrap().raw.as_deref().unwrap())
+        .into_owned();
+    assert!(raw.contains("f@x.com"), "{raw}");
+    assert!(raw.contains("Re: Lunch?"), "{raw}");
+
+    let err = h
+        .call(
+            "create_draft",
+            json!({ "to": ["not an address"], "body": "x" }),
+        )
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("isn't an email address"), "{err}");
+    assert!(h.fake.sent().is_empty());
+}
+
 #[test]
 fn every_catalog_example_parses() {
     for tool in catalog() {
         let parsed = Request::parse(tool.name, tool.example.clone());
         assert!(parsed.is_ok(), "{}: {:?}", tool.name, parsed.err());
         assert_eq!(tool.input_schema["type"], "object", "{}", tool.name);
-        assert!(!parsed.unwrap().summary().is_empty());
+        let parsed = parsed.unwrap();
+        assert!(!parsed.summary().is_empty());
+        assert_eq!(
+            parsed.permission().is_none(),
+            tool.read_only,
+            "{}",
+            tool.name
+        );
     }
 }

@@ -102,8 +102,13 @@ pub async fn build_state(
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
     let compose = compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir);
-    let local_api =
-        local_api::LocalApi::new(db.clone(), accounts.clone(), mail.clone(), sync.clone());
+    let local_api = local_api::LocalApi::new(
+        db.clone(),
+        accounts.clone(),
+        mail.clone(),
+        compose.clone(),
+        sync.clone(),
+    );
     let assistants = Arc::new(mcp::McpServer::new(Arc::new(local_api), mcp::DEFAULT_PORT));
     compose.sweep_staging().await;
     tokio::spawn({
@@ -387,6 +392,7 @@ pub fn run() {
             commands::labels::delete_label_preview,
             commands::assistant::assistant_status,
             commands::assistant::set_assistant_enabled,
+            commands::assistant::set_assistant_permission,
             commands::assistant::connect_assistant,
             commands::assistant::remove_assistant,
             commands::assistant::assistant_activity,
