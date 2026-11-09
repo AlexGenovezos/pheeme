@@ -9,7 +9,8 @@ import { PreviewMessage } from "./PreviewMessage";
  * The renderer writes slide text as text (never as markup) and builds its own elements, so it
  * runs in the app's document rather than a sandboxed frame (a frame would cut it off from the
  * deck's embedded fonts, which it registers on this document). Nothing loads from outside the
- * file: external media is blocked, and links and click actions are swallowed.
+ * file: external media is blocked, and links and click actions are swallowed. Charts take no
+ * pointer input (see preview.css): their tooltips would insert the deck's text as markup.
  */
 export default function PptxView({ data, name }: { data: ArrayBuffer; name: string }) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -21,11 +22,10 @@ export default function PptxView({ data, name }: { data: ArrayBuffer; name: stri
     const scrollContainer = scroller.current;
     if (!root || !scrollContainer) return;
     const stop = new AbortController();
-    let viewer: PptxViewer | null = null;
     setState("loading");
-    // The viewer may keep the buffer it's given; keep the cached one intact.
-    PptxViewer.open(data.slice(0), root, {
-      signal: stop.signal,
+    // Made before opening so cleanup can always destroy it: an aborted open throws before
+    // the static `PptxViewer.open` would hand the viewer back.
+    const viewer = new PptxViewer(root, {
       zipLimits: RECOMMENDED_ZIP_LIMITS,
       externalMedia: "block",
       // Its PDF fallback for EMF pictures needs blob: workers, which the app's CSP refuses.
@@ -33,21 +33,23 @@ export default function PptxView({ data, name }: { data: ArrayBuffer; name: stri
       lazyMedia: true,
       lazySlides: true,
       scrollContainer,
-      listOptions: { windowed: true, initialSlides: 3, batchSize: 4 },
-      // Links can't go anywhere from a preview; keep their text only.
+      // Links can't go anywhere from a preview; keep their text only. (Just links: SVG
+      // elements such as WordArt's <textPath> use href for references within the slide.)
       onSlideRendered: (_, el) => {
-        for (const link of el.querySelectorAll("[href]")) link.removeAttribute("href");
+        for (const link of el.querySelectorAll("a[href]")) link.removeAttribute("href");
       },
-    })
-      .then((v) => {
-        if (stop.signal.aborted) return v.destroy();
-        viewer = v;
-        setState("ready");
+    });
+    // The viewer may keep the buffer it's given; keep the cached one intact.
+    viewer
+      .open(data.slice(0), {
+        signal: stop.signal,
+        listOptions: { windowed: true, initialSlides: 3, batchSize: 4 },
       })
+      .then(() => !stop.signal.aborted && setState("ready"))
       .catch(() => !stop.signal.aborted && setState("failed"));
     return () => {
       stop.abort();
-      viewer?.destroy();
+      viewer.destroy();
     };
   }, [data]);
 

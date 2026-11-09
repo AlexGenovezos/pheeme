@@ -147,6 +147,10 @@
   max-width: var(--preview-page-max-width);
   margin: var(--space-0) auto;
 }
+/* No hover on charts: the renderer's chart tooltips insert the deck's text as markup. */
+.file-preview__deck [_echarts_instance_] {
+  pointer-events: none;
+}
 
 .file-preview__over {
   position: absolute;
