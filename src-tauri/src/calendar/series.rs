@@ -5,11 +5,12 @@ use super::edit::OriginalStart;
 use super::error::CalendarError;
 use super::recurrence::{self, rule_count_before};
 use crate::db::calendar::DbEvent;
-use chrono::{NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Utc};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Utc};
 
 const UNREADABLE: &str = "Pheeme couldn't read this event's repeat rule.";
 const NOT_AN_OCCURRENCE: &str = "That occurrence isn't part of this series any more.";
 const CHANGE_DAY_IN_EDITOR: &str = "Change the day for this series from Repeat in the editor.";
+const KIND_CHANGE: &str = "Pheeme can't move a repeating event between all-day and timed this way.";
 const WEEKDAYS: [&str; 7] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 fn invalid(message: &str) -> CalendarError {
@@ -222,20 +223,99 @@ fn value_ms(v: &str, zone: chrono_tz::Tz) -> Option<i64> {
         .map(|t| t.timestamp_millis())
 }
 
-/// The recurrence lines for a series whose every occurrence moves `days` days: weekdays in
-/// BYDAY (keeping any ordinal, so `2TU` becomes `2WE`), BYMONTHDAY, UNTIL and every
-/// EXDATE/RDATE move with it. Refuses rules that can't follow the move exactly.
-pub fn shift_days(recurrence: &[String], days: i64) -> Result<Vec<String>, CalendarError> {
-    if days == 0 {
-        return Ok(recurrence.to_vec());
+/// How a series moves: by wall-clock time in its zone.
+struct Move {
+    /// The series' zone (UTC for all-day series, which are pinned to UTC midnight).
+    tz: chrono_tz::Tz,
+    /// Whole days between the old and new local start dates.
+    days: i64,
+    /// The full wall-clock change, days and time of day.
+    delta: TimeDelta,
+    /// The new first occurrence's local date.
+    new_day: NaiveDate,
+}
+
+impl Move {
+    /// A date or date-time value moved in the series' wall clock, written in its own form:
+    /// dates by the day part, `…Z` in UTC, and local times in `value_zone` (their TZID) or
+    /// the series' zone.
+    fn value(&self, v: &str, value_zone: Option<chrono_tz::Tz>) -> Option<String> {
+        if v.len() == 8 {
+            let d = NaiveDate::parse_from_str(v, "%Y%m%d").ok()?;
+            return Some(
+                d.checked_add_signed(TimeDelta::try_days(self.days)?)?
+                    .format("%Y%m%d")
+                    .to_string(),
+            );
+        }
+        let moved = |instant: chrono::DateTime<Utc>| {
+            let local = instant.with_timezone(&self.tz).naive_local();
+            self.tz
+                .from_local_datetime(&local.checked_add_signed(self.delta)?)
+                .earliest()
+        };
+        if let Some(utc) = v.strip_suffix(['Z', 'z']) {
+            let t = NaiveDateTime::parse_from_str(utc, "%Y%m%dT%H%M%S").ok()?;
+            let m = moved(t.and_utc())?;
+            return Some(m.with_timezone(&Utc).format("%Y%m%dT%H%M%SZ").to_string());
+        }
+        let zone = value_zone.unwrap_or(self.tz);
+        let t = NaiveDateTime::parse_from_str(v, "%Y%m%dT%H%M%S").ok()?;
+        let instant = zone.from_local_datetime(&t).earliest()?.with_timezone(&Utc);
+        let m = moved(instant)?;
+        Some(m.with_timezone(&zone).format("%Y%m%dT%H%M%S").to_string())
     }
-    recurrence
+}
+
+/// `master`'s recurrence lines once the series moves so its first occurrence starts at
+/// `new_start`, measured in wall-clock time in the series' zone. BYDAY weekdays and
+/// BYMONTHDAY move by the whole days; UNTIL and every EXDATE/RDATE move by the whole change,
+/// so excluded occurrences stay excluded. Refuses moves a rule can't follow exactly.
+pub fn shift(master: &DbEvent, new_start: &OriginalStart) -> Result<Vec<String>, CalendarError> {
+    let lines = recurrence::recurrence_lines(master);
+    let (tz, from, to) = match (master.is_all_day(), new_start) {
+        (true, OriginalStart::Date(to)) => {
+            let from = master
+                .start_date
+                .as_deref()
+                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                .ok_or_else(|| invalid(UNREADABLE))?;
+            let midnight = chrono::NaiveTime::MIN;
+            (
+                chrono_tz::UTC,
+                from.and_time(midnight),
+                to.and_time(midnight),
+            )
+        }
+        (false, OriginalStart::Ms(to)) => {
+            let tz = recurrence::zone(master.time_zone.as_deref());
+            let local = |ms: i64| {
+                tz.timestamp_millis_opt(ms)
+                    .single()
+                    .map(|t| t.naive_local())
+                    .ok_or_else(|| invalid(UNREADABLE))
+            };
+            let from = master.start_ms.ok_or_else(|| invalid(UNREADABLE))?;
+            (tz, local(from)?, local(*to)?)
+        }
+        _ => return Err(invalid(KIND_CHANGE)),
+    };
+    let mv = Move {
+        tz,
+        days: (to.date() - from.date()).num_days(),
+        delta: to - from,
+        new_day: to.date(),
+    };
+    if mv.delta.is_zero() {
+        return Ok(lines);
+    }
+    lines
         .iter()
         .map(|line| {
             let line = line.trim();
             let (head, values) = line.split_once(':').ok_or_else(|| invalid(UNREADABLE))?;
             match name_of(head).as_str() {
-                "RRULE" => Ok(format!("{head}:{}", shift_rule(values, days)?)),
+                "RRULE" => Ok(format!("{head}:{}", shift_rule(values, &mv)?)),
                 "EXDATE" | "RDATE" => {
                     let kind = param(head, "VALUE").map(str::to_ascii_uppercase);
                     if kind
@@ -244,9 +324,17 @@ pub fn shift_days(recurrence: &[String], days: i64) -> Result<Vec<String>, Calen
                     {
                         return Err(invalid(UNREADABLE));
                     }
+                    let zone = match param(head, "TZID") {
+                        Some(name) => Some(
+                            name.trim_matches('"')
+                                .parse::<chrono_tz::Tz>()
+                                .map_err(|_| invalid(UNREADABLE))?,
+                        ),
+                        None => None,
+                    };
                     let shifted = values
                         .split(',')
-                        .map(|v| shift_value(v.trim(), days).ok_or_else(|| invalid(UNREADABLE)))
+                        .map(|v| mv.value(v.trim(), zone).ok_or_else(|| invalid(UNREADABLE)))
                         .collect::<Result<Vec<_>, _>>()?;
                     Ok(format!("{head}:{}", shifted.join(",")))
                 }
@@ -256,13 +344,26 @@ pub fn shift_days(recurrence: &[String], days: i64) -> Result<Vec<String>, Calen
         .collect()
 }
 
-fn shift_rule(rule: &str, days: i64) -> Result<String, CalendarError> {
+fn shift_rule(rule: &str, mv: &Move) -> Result<String, CalendarError> {
     let parts: Vec<&str> = rule.split(';').collect();
-    if ["BYSETPOS", "BYYEARDAY", "BYWEEKNO"]
-        .iter()
-        .any(|k| part_value(&parts, k).is_some())
-    {
-        return Err(invalid(CHANGE_DAY_IN_EDITOR));
+    let days = mv.days;
+    if days != 0 {
+        if ["BYSETPOS", "BYYEARDAY", "BYWEEKNO"]
+            .iter()
+            .any(|k| part_value(&parts, k).is_some())
+        {
+            return Err(invalid(CHANGE_DAY_IN_EDITOR));
+        }
+        // A monthly rule without days takes its day from the start; days 29–31 skip some
+        // months, so moving onto them would lose occurrences.
+        let monthly = part_value(&parts, "FREQ").is_some_and(|f| f.eq_ignore_ascii_case("MONTHLY"));
+        if monthly
+            && part_value(&parts, "BYDAY").is_none()
+            && part_value(&parts, "BYMONTHDAY").is_none()
+            && mv.new_day.day() > 28
+        {
+            return Err(invalid(CHANGE_DAY_IN_EDITOR));
+        }
     }
     let weekly = part_value(&parts, "FREQ").is_some_and(|f| f.eq_ignore_ascii_case("WEEKLY"));
     let interval: i64 = match part_value(&parts, "INTERVAL") {
@@ -281,6 +382,15 @@ fn shift_rule(rule: &str, days: i64) -> Result<String, CalendarError> {
                 return Ok((*p).to_owned());
             };
             let key = key.trim();
+            if key.eq_ignore_ascii_case("UNTIL") {
+                let until = mv
+                    .value(value.trim(), None)
+                    .ok_or_else(|| invalid(UNREADABLE))?;
+                return Ok(format!("{key}={until}"));
+            }
+            if days == 0 {
+                return Ok((*p).to_owned());
+            }
             if key.eq_ignore_ascii_case("BYDAY") {
                 let mut weeks = std::collections::HashSet::new();
                 let shifted = value
@@ -292,17 +402,14 @@ fn shift_rule(rule: &str, days: i64) -> Result<String, CalendarError> {
                             .checked_sub(2)
                             .ok_or_else(|| invalid(UNREADABLE))?;
                         let (ordinal, code) = (&entry[..split], &entry[split..]);
-                        let ordinal_ok = ordinal
-                            .strip_prefix(['+', '-'])
-                            .unwrap_or(ordinal)
-                            .chars()
-                            .all(|c| c.is_ascii_digit());
-                        let day = weekday(code)
-                            .filter(|_| ordinal_ok)
-                            .ok_or_else(|| invalid(UNREADABLE))?;
+                        let day = weekday(code).ok_or_else(|| invalid(UNREADABLE))?;
+                        // "The 2nd Tuesday" a day later isn't always "the 2nd Wednesday".
+                        if !ordinal.is_empty() {
+                            return Err(invalid(CHANGE_DAY_IN_EDITOR));
+                        }
                         // Which week (counted from WKST) the moved day lands in.
                         weeks.insert((((day + 7 - week_start) % 7) as i64 + days).div_euclid(7));
-                        Ok(format!("{ordinal}{}", WEEKDAYS[(day + step) % 7]))
+                        Ok(WEEKDAYS[(day + step) % 7].to_owned())
                     })
                     .collect::<Result<Vec<_>, CalendarError>>()?;
                 // Every other week on Sunday and Monday, a day later, can't be said with a
@@ -326,9 +433,6 @@ fn shift_rule(rule: &str, days: i64) -> Result<String, CalendarError> {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(format!("{key}={}", shifted.join(",")))
-            } else if key.eq_ignore_ascii_case("UNTIL") {
-                let until = shift_value(value.trim(), days).ok_or_else(|| invalid(UNREADABLE))?;
-                Ok(format!("{key}={until}"))
             } else {
                 Ok((*p).to_owned())
             }
@@ -339,24 +443,6 @@ fn shift_rule(rule: &str, days: i64) -> Result<String, CalendarError> {
 
 fn weekday(code: &str) -> Option<usize> {
     WEEKDAYS.iter().position(|w| w.eq_ignore_ascii_case(code))
-}
-
-/// A date or date-time value `days` days later, in the same form.
-fn shift_value(v: &str, days: i64) -> Option<String> {
-    let delta = TimeDelta::try_days(days)?;
-    if v.len() == 8 {
-        let d = NaiveDate::parse_from_str(v, "%Y%m%d").ok()?;
-        return Some(d.checked_add_signed(delta)?.format("%Y%m%d").to_string());
-    }
-    let (t, z) = match v.strip_suffix(['Z', 'z']) {
-        Some(t) => (t, "Z"),
-        None => (v, ""),
-    };
-    let t = NaiveDateTime::parse_from_str(t, "%Y%m%dT%H%M%S").ok()?;
-    Some(format!(
-        "{}{z}",
-        t.checked_add_signed(delta)?.format("%Y%m%dT%H%M%S")
-    ))
 }
 
 #[cfg(test)]
@@ -665,38 +751,86 @@ mod tests {
         );
     }
 
+    /// Weekly 09:00 New York series beginning Monday 2026-12-07 (no DST change near it).
+    fn december(recurrence: &[&str]) -> DbEvent {
+        series(
+            "2026-12-07T09:00:00-05:00",
+            "2026-12-07T09:15:00-05:00",
+            recurrence,
+        )
+    }
+
+    /// `shift` of `rules` on [`december`] by whole days.
+    fn by_days(rules: &[&str], days: i64) -> Result<Vec<String>, CalendarError> {
+        let master = december(rules);
+        let at = OriginalStart::Ms(master.start_ms.unwrap() + days * 24 * 3_600_000);
+        shift(&master, &at)
+    }
+
+    fn refused(got: Result<Vec<String>, CalendarError>) -> bool {
+        matches!(got, Err(CalendarError::Invalid(m)) if m == CHANGE_DAY_IN_EDITOR)
+    }
+
+    /// `e` with its start moved to `new_start` and its recurrence shifted to match.
+    fn moved(e: &DbEvent, new_start: &str) -> DbEvent {
+        let duration = e.end_ms.unwrap() - e.start_ms.unwrap();
+        let at = OriginalStart::Ms(ms(new_start));
+        let mut m = with_rules(e, &shift(e, &at).unwrap());
+        m.start_ms = Some(ms(new_start));
+        m.end_ms = Some(ms(new_start) + duration);
+        m
+    }
+
+    /// `e`'s occurrences, each moved by `delta` of wall-clock time in New York.
+    fn each_moved(e: &DbEvent, delta: TimeDelta) -> Vec<String> {
+        let ny: chrono_tz::Tz = NY.parse().unwrap();
+        all(e)
+            .iter()
+            .map(|s| {
+                let t = chrono::DateTime::parse_from_rfc3339(&s.replace('Z', ":00Z")).unwrap();
+                let local = t.with_timezone(&ny).naive_local() + delta;
+                ny.from_local_datetime(&local)
+                    .unwrap()
+                    .with_timezone(&Utc)
+                    .format("%Y-%m-%dT%H:%MZ")
+                    .to_string()
+            })
+            .collect()
+    }
+
     #[test]
-    fn shift_days_moves_weekdays() {
+    fn shift_moves_weekdays() {
         assert_eq!(
-            shift_days(&lines(&["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"]), 1).unwrap(),
+            by_days(&["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"], 1).unwrap(),
             lines(&["RRULE:FREQ=WEEKLY;BYDAY=TU,TH"])
         );
         assert_eq!(
-            shift_days(&lines(&["RRULE:FREQ=WEEKLY;BYDAY=SU"]), 1).unwrap(),
+            by_days(&["RRULE:FREQ=WEEKLY;BYDAY=SU"], 1).unwrap(),
             lines(&["RRULE:FREQ=WEEKLY;BYDAY=MO"])
         );
         assert_eq!(
-            shift_days(&lines(&["RRULE:FREQ=WEEKLY;BYDAY=MO"]), -8).unwrap(),
+            by_days(&["RRULE:FREQ=WEEKLY;BYDAY=MO"], -8).unwrap(),
             lines(&["RRULE:FREQ=WEEKLY;BYDAY=SU"])
         );
     }
 
     #[test]
-    fn shift_days_keeps_ordinals() {
+    fn shift_refuses_ordinal_weekdays() {
+        assert!(refused(by_days(&["RRULE:FREQ=MONTHLY;BYDAY=2TU"], 1)));
+        assert!(refused(by_days(&["RRULE:FREQ=MONTHLY;BYDAY=-1SU"], -1)));
+        // A change of time alone leaves the days, ordinals included, as they are.
+        let master = december(&["RRULE:FREQ=MONTHLY;BYDAY=1MO"]);
+        let later = OriginalStart::Ms(ms("2026-12-07T11:00:00-05:00"));
         assert_eq!(
-            shift_days(&lines(&["RRULE:FREQ=MONTHLY;BYDAY=2TU"]), 1).unwrap(),
-            lines(&["RRULE:FREQ=MONTHLY;BYDAY=2WE"])
-        );
-        assert_eq!(
-            shift_days(&lines(&["RRULE:FREQ=MONTHLY;BYDAY=-1MO"]), -1).unwrap(),
-            lines(&["RRULE:FREQ=MONTHLY;BYDAY=-1SU"])
+            shift(&master, &later).unwrap(),
+            lines(&["RRULE:FREQ=MONTHLY;BYDAY=1MO"])
         );
     }
 
     #[test]
-    fn shift_days_moves_month_days_within_1_to_28() {
+    fn shift_moves_month_days_within_1_to_28() {
         assert_eq!(
-            shift_days(&lines(&["RRULE:FREQ=MONTHLY;BYMONTHDAY=15"]), 3).unwrap(),
+            by_days(&["RRULE:FREQ=MONTHLY;BYMONTHDAY=15"], 3).unwrap(),
             lines(&["RRULE:FREQ=MONTHLY;BYMONTHDAY=18"])
         );
         for (rule, days) in [
@@ -705,63 +839,71 @@ mod tests {
             ("RRULE:FREQ=MONTHLY;BYMONTHDAY=-1", -1),
             ("RRULE:FREQ=MONTHLY;BYMONTHDAY=31", -3),
         ] {
-            assert!(
-                matches!(
-                    shift_days(&lines(&[rule]), days),
-                    Err(CalendarError::Invalid(_))
-                ),
-                "{rule} {days}"
-            );
+            assert!(refused(by_days(&[rule], days)), "{rule} {days}");
         }
+        // A change of time alone keeps the day of the month.
+        let master = december(&["RRULE:FREQ=MONTHLY;BYMONTHDAY=31"]);
+        let later = OriginalStart::Ms(ms("2026-12-07T11:00:00-05:00"));
+        assert!(shift(&master, &later).is_ok());
     }
 
     #[test]
-    fn shift_days_refuses_bysetpos() {
-        let got = shift_days(
-            &lines(&["RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1"]),
-            1,
+    fn shift_refuses_monthly_start_day_past_28() {
+        let master = series(
+            "2026-11-27T09:00:00-05:00",
+            "2026-11-27T09:15:00-05:00",
+            &["RRULE:FREQ=MONTHLY;COUNT=6"],
         );
-        match got {
-            Err(CalendarError::Invalid(m)) => {
-                assert_eq!(
-                    m,
-                    "Change the day for this series from Repeat in the editor."
-                )
-            }
-            other => panic!("{other:?}"),
-        }
+        let to = |s: &str| OriginalStart::Ms(ms(s));
+        assert!(refused(shift(&master, &to("2026-11-29T09:00:00-05:00"))));
+        assert!(shift(&master, &to("2026-11-28T09:00:00-05:00")).is_ok());
     }
 
     #[test]
-    fn shift_days_refuses_fortnightly_days_crossing_the_week_start() {
+    fn shift_refuses_bysetpos() {
+        assert!(refused(by_days(
+            &["RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1"],
+            1
+        )));
+    }
+
+    #[test]
+    fn shift_refuses_fortnightly_days_crossing_the_week_start() {
         // Every other week on Sunday and Monday: a day later, the Sunday becomes a Monday in
         // the off week, which a two-week rule can't say.
-        assert!(matches!(
-            shift_days(&lines(&["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,MO"]), 1),
-            Err(CalendarError::Invalid(_))
-        ));
-        assert!(shift_days(&lines(&["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE"]), 1).is_ok());
-        assert!(shift_days(&lines(&["RRULE:FREQ=WEEKLY;BYDAY=SU,MO"]), 1).is_ok());
+        assert!(refused(by_days(
+            &["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,MO"],
+            1
+        )));
+        assert!(by_days(&["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE"], 1).is_ok());
+        assert!(by_days(&["RRULE:FREQ=WEEKLY;BYDAY=SU,MO"], 1).is_ok());
     }
 
     #[test]
-    fn shift_days_moves_exdates_and_until() {
-        let got = shift_days(
-            &lines(&[
+    fn shift_with_no_change_keeps_the_lines() {
+        let rules = ["RRULE:FREQ=MONTHLY;BYDAY=MO;BYSETPOS=-1"];
+        assert_eq!(by_days(&rules, 0).unwrap(), lines(&rules));
+    }
+
+    #[test]
+    fn shift_moves_exdates_and_until() {
+        let master = series(
+            "2026-11-09T09:00:00-05:00",
+            "2026-11-09T09:15:00-05:00",
+            &[
                 "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261222T045959Z",
-                "EXDATE;TZID=America/New_York:20261102T090000,20261130T090000",
-                "EXDATE:20261116T140000Z",
+                "EXDATE;TZID=America/New_York:20261116T090000,20261130T090000",
+                "EXDATE:20261123T140000Z",
                 "RDATE;VALUE=DATE:20261231",
-            ]),
-            1,
-        )
-        .unwrap();
+            ],
+        );
+        let got = shift(&master, &OriginalStart::Ms(ms("2026-11-10T09:00:00-05:00"))).unwrap();
         assert_eq!(
             got,
             lines(&[
                 "RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261223T045959Z",
-                "EXDATE;TZID=America/New_York:20261103T090000,20261201T090000",
-                "EXDATE:20261117T140000Z",
+                "EXDATE;TZID=America/New_York:20261117T090000,20261201T090000",
+                "EXDATE:20261124T140000Z",
                 "RDATE;VALUE=DATE:20270101",
             ])
         );
@@ -777,29 +919,74 @@ mod tests {
                 "EXDATE;TZID=America/New_York:20261123T090000",
             ],
         );
-        let mut moved = with_rules(
-            &master,
-            &shift_days(
-                &lines(&[
-                    "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=6",
-                    "EXDATE;TZID=America/New_York:20261123T090000",
-                ]),
-                1,
-            )
-            .unwrap(),
+        let got = all(&moved(&master, "2026-11-10T09:00:00-05:00"));
+        assert_eq!(got, each_moved(&master, TimeDelta::days(1)));
+        assert_eq!(got.len(), 5);
+    }
+
+    #[test]
+    fn shift_time_only_moves_exdates() {
+        let master = series(
+            "2026-11-09T10:00:00-05:00",
+            "2026-11-09T10:30:00-05:00",
+            &[
+                "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=6",
+                "EXDATE;TZID=America/New_York:20261123T100000",
+            ],
         );
-        moved.start_ms = Some(ms("2026-11-10T09:00:00-05:00"));
-        moved.end_ms = Some(ms("2026-11-10T09:15:00-05:00"));
-        let shifted: Vec<String> = all(&master)
-            .iter()
-            .map(|s| {
-                let t = chrono::DateTime::parse_from_rfc3339(&s.replace('Z', ":00Z")).unwrap();
-                (t + chrono::Duration::days(1))
-                    .format("%Y-%m-%dT%H:%MZ")
-                    .to_string()
-            })
-            .collect();
-        assert_eq!(all(&moved), shifted);
-        assert_eq!(shifted.len(), 5);
+        let later = moved(&master, "2026-11-09T11:00:00-05:00");
+        assert_eq!(
+            serde_json::from_str::<Vec<String>>(later.recurrence.as_deref().unwrap()).unwrap(),
+            lines(&[
+                "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=6",
+                "EXDATE;TZID=America/New_York:20261123T110000",
+            ])
+        );
+        let got = all(&later);
+        assert_eq!(got, each_moved(&master, TimeDelta::hours(1)));
+        assert!(!got.contains(&"2026-11-23T16:00Z".to_string()));
+        assert_eq!(got.len(), 5);
+    }
+
+    #[test]
+    fn shift_across_dst_keeps_wall_clock() {
+        // Daily at 10:00 New York; Saturday Oct 31 (EDT, 14:00Z) is excluded. A day later
+        // it is Sunday Nov 1, after the clocks went back: 10:00 EST is 15:00Z.
+        let master = series(
+            "2026-10-28T10:00:00-04:00",
+            "2026-10-28T10:30:00-04:00",
+            &["RRULE:FREQ=DAILY;COUNT=7", "EXDATE:20261031T140000Z"],
+        );
+        let later = moved(&master, "2026-10-29T10:00:00-04:00");
+        assert_eq!(
+            serde_json::from_str::<Vec<String>>(later.recurrence.as_deref().unwrap()).unwrap(),
+            lines(&["RRULE:FREQ=DAILY;COUNT=7", "EXDATE:20261101T150000Z"])
+        );
+        let got = all(&later);
+        assert_eq!(got, each_moved(&master, TimeDelta::days(1)));
+        assert_eq!(got.len(), 6);
+    }
+
+    #[test]
+    fn shift_all_day_series_by_dates() {
+        let master = all_day_series(
+            "2026-11-09",
+            &[
+                "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261207",
+                "EXDATE;VALUE=DATE:20261123",
+            ],
+        );
+        let got = shift(&master, &OriginalStart::Date(day("2026-11-11"))).unwrap();
+        assert_eq!(
+            got,
+            lines(&[
+                "RRULE:FREQ=WEEKLY;BYDAY=WE;UNTIL=20261209",
+                "EXDATE;VALUE=DATE:20261125"
+            ])
+        );
+        assert!(matches!(
+            shift(&master, &OriginalStart::Ms(ms("2026-11-11T00:00:00Z"))),
+            Err(CalendarError::Invalid(_))
+        ));
     }
 }
