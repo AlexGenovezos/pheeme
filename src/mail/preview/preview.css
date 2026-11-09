@@ -131,6 +131,33 @@
   border: none;
 }
 
+/* PowerPoint: the deck's slides stacked down the middle, scrolling themselves. */
+.file-preview__slides {
+  flex: 1;
+  min-height: var(--space-0);
+  overflow: auto;
+  padding: var(--space-4);
+}
+.file-preview__slides[data-state="loading"],
+.file-preview__slides[data-state="failed"] {
+  visibility: hidden;
+}
+
+.file-preview__deck {
+  max-width: var(--preview-page-max-width);
+  margin: var(--space-0) auto;
+}
+/* No hover on charts: the renderer's chart tooltips insert the deck's text as markup. */
+.file-preview__deck [_echarts_instance_] {
+  pointer-events: none;
+}
+
+.file-preview__over {
+  position: absolute;
+  inset: var(--space-0);
+  display: flex;
+}
+
 .file-preview__stage--image {
   align-items: center;
   justify-content: center;
