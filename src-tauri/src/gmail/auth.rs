@@ -548,7 +548,11 @@ mod tests {
             Some("me@example.com"),
             extra_scopes,
         );
-        Url::parse(&url).unwrap().query_pairs().into_owned().collect()
+        Url::parse(&url)
+            .unwrap()
+            .query_pairs()
+            .into_owned()
+            .collect()
     }
 
     #[test]

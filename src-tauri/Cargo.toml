@@ -64,6 +64,8 @@ rquickjs = "0.14"
 regex = "1"
 # Diagnostics bundles: deflate only (flate2's Rust backend, as file-rotate already uses).
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+rrule = "0.14"
+chrono-tz = "0.10"
 
 # Valgrind only runs on Linux. Optional so that plain builds don't need libclang.
 [target.'cfg(target_os = "linux")'.dependencies]

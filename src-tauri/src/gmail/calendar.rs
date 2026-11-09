@@ -326,10 +326,16 @@ mod tests {
         let timed = &page.items[0];
         assert_eq!(timed.id, "timed1");
         let start = timed.start.as_ref().unwrap();
-        assert_eq!(start.date_time.as_deref(), Some("2026-11-12T14:00:00-05:00"));
+        assert_eq!(
+            start.date_time.as_deref(),
+            Some("2026-11-12T14:00:00-05:00")
+        );
         assert_eq!(start.time_zone.as_deref(), Some("America/New_York"));
         assert_eq!(timed.etag, "\"3400000000000000\"");
-        assert_eq!(timed.organizer.as_ref().unwrap().email.as_deref(), Some("sam@acme.com"));
+        assert_eq!(
+            timed.organizer.as_ref().unwrap().email.as_deref(),
+            Some("sam@acme.com")
+        );
         let me: Vec<_> = timed.attendees.iter().filter(|a| a.is_self).collect();
         assert_eq!(me.len(), 1);
         assert_eq!(me[0].response_status.as_deref(), Some("needsAction"));
@@ -341,7 +347,10 @@ mod tests {
         assert_eq!(timed.raw["eventType"], "default");
 
         let all_day = &page.items[1];
-        assert_eq!(all_day.start.as_ref().unwrap().date.as_deref(), Some("2026-11-12"));
+        assert_eq!(
+            all_day.start.as_ref().unwrap().date.as_deref(),
+            Some("2026-11-12")
+        );
         assert_eq!(all_day.transparency.as_deref(), Some("transparent"));
 
         let series = &page.items[2];
@@ -351,7 +360,12 @@ mod tests {
         let moved = &page.items[3];
         assert_eq!(moved.recurring_event_id.as_deref(), Some("series1"));
         assert_eq!(
-            moved.original_start_time.as_ref().unwrap().date_time.as_deref(),
+            moved
+                .original_start_time
+                .as_ref()
+                .unwrap()
+                .date_time
+                .as_deref(),
             Some("2026-11-09T09:00:00-05:00")
         );
         let cancelled = &page.items[4];

@@ -315,7 +315,11 @@ pub async fn clear_calendar_events(
 /// Rows from shown calendars that may have occurrences in `[from_ms, to_ms)`: events that
 /// overlap it (all-day ones padded by a day, for the caller to trim by zone), every series
 /// that runs into it, and every changed or cancelled occurrence of those series.
-pub async fn events_overlapping(pool: &SqlitePool, from_ms: i64, to_ms: i64) -> Result<Vec<DbEvent>> {
+pub async fn events_overlapping(
+    pool: &SqlitePool,
+    from_ms: i64,
+    to_ms: i64,
+) -> Result<Vec<DbEvent>> {
     let mut conn = pool.acquire().await?;
     let mut rows = sqlx::query_as!(
         DbEvent,
@@ -520,7 +524,9 @@ mod tests {
     async fn replace_calendars_keeps_hidden_and_token_and_drops_missing() {
         let db = TestDb::with_account("a").await;
         let pool = &db.pool;
-        replace_calendars(pool, "a", &[cal("A"), cal("B")]).await.unwrap();
+        replace_calendars(pool, "a", &[cal("A"), cal("B")])
+            .await
+            .unwrap();
         set_hidden(pool, "a", "A", true).await.unwrap();
         apply_event_changes(pool, "a", "A", &[], &[], Some("t1"))
             .await
@@ -587,7 +593,9 @@ mod tests {
         .await
         .unwrap();
 
-        let got = events_overlapping(pool, 10 * H + H / 2, 12 * H).await.unwrap();
+        let got = events_overlapping(pool, 10 * H + H / 2, 12 * H)
+            .await
+            .unwrap();
         assert_eq!(ids(&got), vec!["open", "open_x", "single"]);
         let got = events_overlapping(pool, 11 * H, 12 * H).await.unwrap();
         assert_eq!(ids(&got), vec!["open", "open_x"]);
@@ -652,7 +660,10 @@ mod tests {
         )
         .await;
         assert!(err.is_err());
-        assert_eq!(ids(&events_overlapping(pool, 0, 24 * H).await.unwrap()), vec!["e1"]);
+        assert_eq!(
+            ids(&events_overlapping(pool, 0, 24 * H).await.unwrap()),
+            vec!["e1"]
+        );
         let cals = calendars(pool, Some("a")).await.unwrap();
         assert_eq!(cals[0].sync_token.as_deref(), Some("t2"));
     }
@@ -667,7 +678,10 @@ mod tests {
             .unwrap();
         clear_calendar_events(pool, "a", "C").await.unwrap();
         assert!(events_overlapping(pool, 0, H).await.unwrap().is_empty());
-        assert_eq!(calendars(pool, Some("a")).await.unwrap()[0].sync_token, None);
+        assert_eq!(
+            calendars(pool, Some("a")).await.unwrap()[0].sync_token,
+            None
+        );
     }
 
     #[tokio::test]
@@ -675,7 +689,9 @@ mod tests {
         let db = TestDb::with_account("a").await;
         let pool = &db.pool;
         assert_eq!(access(pool, "a").await.unwrap(), None);
-        set_access(pool, "a", "missing_scope", None, 5).await.unwrap();
+        set_access(pool, "a", "missing_scope", None, 5)
+            .await
+            .unwrap();
         set_settings(pool, "a", Some("Europe/Paris"), Some(1), 6)
             .await
             .unwrap();
@@ -687,7 +703,9 @@ mod tests {
         assert_eq!(got.time_zone.as_deref(), Some("Europe/Paris"));
         assert_eq!(got.week_start, Some(1));
         assert_eq!(got.settings_checked_at, Some(6));
-        set_access(pool, "a", "error", Some("boom"), 8).await.unwrap();
+        set_access(pool, "a", "error", Some("boom"), 8)
+            .await
+            .unwrap();
         let got = access(pool, "a").await.unwrap().unwrap();
         assert_eq!(got.synced_at, Some(7));
         assert_eq!(got.detail.as_deref(), Some("boom"));
