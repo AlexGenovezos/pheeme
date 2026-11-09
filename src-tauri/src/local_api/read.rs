@@ -1,7 +1,10 @@
 //! The read tools, each a call into the services the UI uses. Output is shaped for a reader
 //! that isn't Pheeme's UI: label names instead of ids, ISO dates, plain-text bodies.
 
-use super::requests::{AccountArg, GetThread, ListMailbox, SearchMail, DEFAULT_LIMIT, MAX_LIMIT};
+use super::requests::{
+    AccountArg, FilterAudit, GetThread, ListMailbox, SearchMail, SenderReport, AUDIT_DAYS,
+    DEFAULT_DAYS, DEFAULT_LIMIT, MAX_LIMIT,
+};
 use super::{ApiError, LocalApi, Request};
 use crate::accounts::AccountInfo;
 use crate::compose::build::html_to_text;
@@ -23,6 +26,8 @@ pub(super) async fn run(api: &LocalApi, request: Request) -> Result<Value, ApiEr
         Request::SearchMail(s) => search_mail(api, s).await,
         Request::GetThread(t) => get_thread(api, t).await,
         Request::ListFilters(a) => list_filters(api, a).await,
+        Request::SenderReport(r) => sender_report(api, r).await,
+        Request::FilterAudit(a) => filter_audit(api, a).await,
         _ => Err(ApiError::Invalid("That tool changes mail.".into())),
     }
 }
@@ -534,9 +539,138 @@ async fn list_filters(api: &LocalApi, args: AccountArg) -> Result<Value, ApiErro
     Ok(json!({ "accounts": out }))
 }
 
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+
+async fn sender_report(api: &LocalApi, args: SenderReport) -> Result<Value, ApiError> {
+    let days = args.days.unwrap_or(DEFAULT_DAYS).clamp(1, 3650);
+    let since = crate::sync::engine::now_ms() - days * DAY_MS;
+    let mut out = Vec::new();
+    for account in resolve_accounts(api, args.account.as_deref()).await? {
+        let senders = crate::senders::report(
+            &api.db,
+            &account.id,
+            &account.email,
+            since,
+            limit(args.limit),
+        )
+        .await?;
+        let senders: Vec<Value> = senders
+            .into_iter()
+            .map(|s| {
+                let mut v = serde_json::to_value(&s).unwrap_or_default();
+                v["last_date"] = json!(iso(s.last_date));
+                v
+            })
+            .collect();
+        out.push(json!({ "account": account.email, "senders": senders }));
+    }
+    Ok(json!({
+        "days": days,
+        "note": "Counts come from the mail on this computer, received mail only.",
+        "accounts": out,
+    }))
+}
+
+/// Gmail search for what a filter's criteria match (Gmail's own criteria field names).
+fn filter_query(criteria: &serde_json::Map<String, Value>) -> Option<String> {
+    let text = |key: &str| {
+        criteria
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+    };
+    let mut parts = Vec::new();
+    for (key, op) in [("from", "from"), ("to", "to"), ("subject", "subject")] {
+        if let Some(v) = text(key) {
+            parts.push(format!("{op}:({v})"));
+        }
+    }
+    if let Some(v) = text("query") {
+        parts.push(format!("({v})"));
+    }
+    if let Some(v) = text("negatedQuery") {
+        parts.push(format!("-({v})"));
+    }
+    if criteria.get("hasAttachment") == Some(&Value::Bool(true)) {
+        parts.push("has:attachment".into());
+    }
+    if let Some(size) = criteria.get("size").and_then(Value::as_i64) {
+        match criteria.get("sizeComparison").and_then(Value::as_str) {
+            Some("larger") => parts.push(format!("larger:{size}")),
+            Some("smaller") => parts.push(format!("smaller:{size}")),
+            _ => {}
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join(" "))
+}
+
+async fn filter_audit(api: &LocalApi, args: FilterAudit) -> Result<Value, ApiError> {
+    let days = args.days.unwrap_or(AUDIT_DAYS).clamp(1, 3650);
+    let sample = args.sample.unwrap_or(10).clamp(1, 50);
+    let mut rows = Rows::new(api).await?;
+    let mut out = Vec::new();
+    for account in resolve_accounts(api, args.account.as_deref()).await? {
+        let mut audited = Vec::new();
+        for filter in api.filters.list(&account.id).await? {
+            if !args.all && !(filter.trashes || filter.skips_inbox || filter.marks_read) {
+                continue;
+            }
+            let Some(criteria) = filter_query(&filter.criteria) else {
+                audited.push(
+                    json!({ "filter": filter, "note": "Pheeme can't search for these criteria." }),
+                );
+                continue;
+            };
+            let query = format!("{criteria} in:anywhere newer_than:{days}d");
+            let entry = match api
+                .mail
+                .search_gmail(std::slice::from_ref(&account.id), &query, None)
+                .await
+            {
+                Ok(page) => {
+                    let more = page.threads.len() > sample || !page.next.is_empty();
+                    let caught: Vec<_> = page.threads.into_iter().take(sample).collect();
+                    json!({
+                        "filter": filter,
+                        "gmail_query": query,
+                        "caught": rows.rows(caught).await?,
+                        "more": more,
+                    })
+                }
+                Err(e) => json!({ "filter": filter, "gmail_query": query, "error": e.to_string() }),
+            };
+            audited.push(entry);
+        }
+        out.push(json!({ "account": account.email, "filters": audited }));
+    }
+    Ok(json!({
+        "days": days,
+        "note": "Gmail filters act when mail arrives; 'caught' is what their criteria match now, with \
+                 its labels showing where it is (TRASH, INBOX...).",
+        "accounts": out,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filter_criteria_become_gmail_queries() {
+        let criteria = json!({
+            "from": "a@x.com OR b@y.com", "subject": "Sale", "query": "deal",
+            "negatedQuery": "invoice", "hasAttachment": true, "size": 1000, "sizeComparison": "larger"
+        });
+        assert_eq!(
+            filter_query(criteria.as_object().unwrap()).as_deref(),
+            Some("from:(a@x.com OR b@y.com) subject:(Sale) (deal) -(invoice) has:attachment larger:1000")
+        );
+        assert_eq!(
+            filter_query(json!({ "from": " " }).as_object().unwrap()),
+            None
+        );
+    }
 
     #[test]
     fn cursors_round_trip_and_reject_junk() {

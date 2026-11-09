@@ -854,6 +854,31 @@ impl MailService {
         Ok(())
     }
 
+    /// A message's headers, downloading its body first if only its metadata is cached.
+    pub async fn message_headers(
+        &self,
+        account_id: &str,
+        message_id: &str,
+    ) -> Result<Vec<crate::gmail::types::Header>, MailError> {
+        let mut msg = messages::get_message(&self.db, account_id, message_id)
+            .await?
+            .ok_or(MailError::NotFound)?;
+        if msg.raw_headers.is_none() {
+            self.sync
+                .engine(account_id)
+                .load_thread_bodies(&msg.thread_id)
+                .await?;
+            msg = messages::get_message(&self.db, account_id, message_id)
+                .await?
+                .ok_or(MailError::NotFound)?;
+        }
+        Ok(msg
+            .raw_headers
+            .as_deref()
+            .and_then(|j| serde_json::from_str(j).ok())
+            .unwrap_or_default())
+    }
+
     /// Which of `thread_ids` the account has cached, in the order given (the others can't be
     /// changed: the outbox only changes cached mail).
     pub async fn cached_threads(

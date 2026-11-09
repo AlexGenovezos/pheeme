@@ -45,6 +45,12 @@ export const PERMISSIONS: { id: AssistantPermission; title: string; description:
     description:
       "Save drafts and replies in Drafts for you to review and send. Clients can't send.",
   },
+  {
+    id: "unsubscribe",
+    title: "Unsubscribe",
+    description:
+      "Unsubscribe from mailing lists that offer one-click unsubscribe. For others, the client gives you the link.",
+  },
 ];
 
 /** The command that adds Pheeme to Claude Code. */

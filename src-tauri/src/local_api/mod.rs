@@ -78,13 +78,16 @@ pub enum Permission {
     Filters,
     /// Create drafts.
     Drafts,
+    /// Unsubscribe in one click.
+    Unsubscribe,
 }
 
 impl Permission {
-    pub const ALL: [Permission; 3] = [
+    pub const ALL: [Permission; 4] = [
         Permission::Organize,
         Permission::Filters,
         Permission::Drafts,
+        Permission::Unsubscribe,
     ];
 
     /// The `app_settings` key part.
@@ -93,6 +96,7 @@ impl Permission {
             Permission::Organize => "organize",
             Permission::Filters => "filters",
             Permission::Drafts => "drafts",
+            Permission::Unsubscribe => "unsubscribe",
         }
     }
 
@@ -102,6 +106,7 @@ impl Permission {
             Permission::Organize => "Organize mail",
             Permission::Filters => "Change Gmail filters",
             Permission::Drafts => "Write drafts",
+            Permission::Unsubscribe => "Unsubscribe",
         }
     }
 
@@ -110,6 +115,7 @@ impl Permission {
             Permission::Organize => "archive, label, star, mark or delete mail",
             Permission::Filters => "create or delete Gmail filters",
             Permission::Drafts => "write drafts",
+            Permission::Unsubscribe => "unsubscribe from mailing lists",
         }
     }
 }
@@ -375,7 +381,7 @@ fn audit_result(tool: &str, value: &Value) -> String {
         return clip(value.to_string());
     }
     let mut seen = serde_json::Map::new();
-    for key in ["thread_id", "message_id", "id"] {
+    for key in ["thread_id", "message_id", "id", "sender"] {
         let mut ids = Vec::new();
         collect(value, key, &mut ids);
         if !ids.is_empty() {
