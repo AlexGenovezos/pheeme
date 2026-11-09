@@ -309,6 +309,8 @@ pub(crate) struct ApiRequest {
     /// be retried. False for non-idempotent calls such as sends: Gmail may already have acted.
     retry_ambiguous: bool,
     priority: Priority,
+    /// Extra request headers (for example `If-Match`), sent next to the bearer.
+    headers: Vec<(&'static str, String)>,
 }
 
 /// Who is waiting on a request; decides which slots and how much quota it may use.
@@ -335,6 +337,7 @@ impl ApiRequest {
             upload: None,
             retry_ambiguous: true,
             priority: Priority::Sync,
+            headers: Vec::new(),
         }
     }
 
@@ -355,6 +358,20 @@ impl ApiRequest {
 
     pub fn post(segments: &[&str]) -> Self {
         Self::new(Method::POST, segments)
+    }
+
+    pub fn patch(segments: &[&str]) -> Self {
+        Self::new(Method::PATCH, segments)
+    }
+
+    pub fn delete(segments: &[&str]) -> Self {
+        Self::new(Method::DELETE, segments)
+    }
+
+    /// Send an extra request header.
+    pub fn header(mut self, name: &'static str, value: impl Into<String>) -> Self {
+        self.headers.push((name, value.into()));
+        self
     }
 
     /// Add a query parameter (repeat the key for list-valued parameters such as `labelIds`).
@@ -605,6 +622,9 @@ impl GmailClient {
                 .http
                 .request(req.method.clone(), url.clone())
                 .bearer_auth(&token);
+            for (name, value) in &req.headers {
+                builder = builder.header(*name, value);
+            }
             if !req.query.is_empty() {
                 builder = builder.query(&req.query);
             }

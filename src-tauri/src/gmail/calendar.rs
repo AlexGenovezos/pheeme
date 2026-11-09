@@ -287,12 +287,177 @@ impl GmailClient {
     }
 }
 
+/// Whether Google emails the guests about a change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SendUpdates {
+    All,
+    None,
+}
+
+impl SendUpdates {
+    fn as_str(self) -> &'static str {
+        match self {
+            SendUpdates::All => "all",
+            SendUpdates::None => "none",
+        }
+    }
+}
+
+/// How an event write is sent.
+#[derive(Debug, Clone, Copy)]
+pub struct WriteOptions<'a> {
+    pub send_updates: SendUpdates,
+    /// The stored etag: the write fails with 412 if the event changed since.
+    pub if_match: Option<&'a str>,
+    /// The body touches `conferenceData` (adds `conferenceDataVersion=1`).
+    pub conference: bool,
+}
+
+impl WriteOptions<'_> {
+    fn apply(&self, mut req: ApiRequest) -> ApiRequest {
+        req = req.query("sendUpdates", self.send_updates.as_str());
+        if self.conference {
+            req = req.query("conferenceDataVersion", "1");
+        }
+        if let Some(etag) = self.if_match {
+            // With an etag the write must not be re-sent when its outcome is unknown.
+            req = req.header("If-Match", etag).non_idempotent();
+        }
+        req
+    }
+}
+
+impl GmailClient {
+    /// Create an event. The body should carry a client-made `id`: a 409 means an earlier
+    /// attempt landed, so that event is fetched and returned.
+    pub async fn insert_event(
+        &self,
+        calendar_id: &str,
+        body: Value,
+        opts: WriteOptions<'_>,
+    ) -> Result<ApiEvent, GmailError> {
+        let id = body.get("id").and_then(Value::as_str).map(str::to_owned);
+        let req = opts.apply(ApiRequest::post(&["calendars", calendar_id, "events"]).json(body));
+        match self.send_json::<Value>(req).await {
+            Ok(raw) => ApiEvent::try_from(raw),
+            Err(e) if e.is_duplicate() => match id {
+                // The earlier attempt landed, so whatever stops us reading it back leaves
+                // the outcome unconfirmed, never "didn't reach Google".
+                Some(id) => self.get_event(calendar_id, &id).await.map_err(|e| {
+                    GmailError::Network(format!(
+                        "the event was saved but couldn't be read back: {e}"
+                    ))
+                }),
+                None => Err(e),
+            },
+            Err(e) => Err(e),
+        }
+    }
+
+    pub async fn patch_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        body: Value,
+        opts: WriteOptions<'_>,
+    ) -> Result<ApiEvent, GmailError> {
+        let req = opts
+            .apply(ApiRequest::patch(&["calendars", calendar_id, "events", event_id]).json(body));
+        ApiEvent::try_from(self.send_json::<Value>(req).await?)
+    }
+
+    /// Delete an event; one that is already gone (404 or 410) counts as deleted.
+    pub async fn delete_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        opts: WriteOptions<'_>,
+    ) -> Result<(), GmailError> {
+        let req = opts.apply(ApiRequest::delete(&[
+            "calendars",
+            calendar_id,
+            "events",
+            event_id,
+        ]));
+        match self.send_empty(req).await {
+            Err(e) if e.is_not_found() || e.is_gone() => Ok(()),
+            other => other,
+        }
+    }
+
+    pub async fn get_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+    ) -> Result<ApiEvent, GmailError> {
+        let req = ApiRequest::get(&["calendars", calendar_id, "events", event_id]);
+        ApiEvent::try_from(self.send_json::<Value>(req).await?)
+    }
+
+    /// Move an event to another calendar. Never re-sent when its outcome is unknown.
+    pub async fn move_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        destination: &str,
+        send_updates: SendUpdates,
+    ) -> Result<ApiEvent, GmailError> {
+        let req = ApiRequest::post(&["calendars", calendar_id, "events", event_id, "move"])
+            .query("destination", destination)
+            .query("sendUpdates", send_updates.as_str())
+            .non_idempotent();
+        ApiEvent::try_from(self.send_json::<Value>(req).await?)
+    }
+
+    /// Copy an invitation into a calendar (`events.import`).
+    pub async fn import_event(
+        &self,
+        calendar_id: &str,
+        body: Value,
+    ) -> Result<ApiEvent, GmailError> {
+        let req = ApiRequest::post(&["calendars", calendar_id, "events", "import"]).json(body);
+        ApiEvent::try_from(self.send_json::<Value>(req).await?)
+    }
+
+    /// The events on a calendar with this iCalendar UID (a series comes unexpanded).
+    pub async fn events_by_ical_uid(
+        &self,
+        calendar_id: &str,
+        ical_uid: &str,
+    ) -> Result<Vec<ApiEvent>, GmailError> {
+        let req = ApiRequest::get(&["calendars", calendar_id, "events"])
+            .query("iCalUID", ical_uid)
+            .query("singleEvents", "false")
+            .query("showDeleted", "false");
+        let res: EventsResponse = self.send_json(req).await?;
+        res.items.into_iter().map(ApiEvent::try_from).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::{SendUpdates, WriteOptions};
     use crate::gmail::client::test_support::client_for;
     use serde_json::json;
-    use wiremock::matchers::{method, path, query_param};
+    use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn event_json(id: &str) -> serde_json::Value {
+        json!({"id": id, "etag": "\"e2\"", "status": "confirmed", "summary": "Lunch"})
+    }
+
+    fn opts(
+        send_updates: SendUpdates,
+        if_match: Option<&str>,
+        conference: bool,
+    ) -> WriteOptions<'_> {
+        WriteOptions {
+            send_updates,
+            if_match,
+            conference,
+        }
+    }
 
     fn fixture(name: &str) -> serde_json::Value {
         let path = format!("{}/src/gmail/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -479,5 +644,282 @@ mod tests {
         let settings = client.calendar_settings().await.unwrap();
         assert_eq!(settings.time_zone.as_deref(), Some("Europe/Paris"));
         assert_eq!(settings.week_start, Some(1));
+    }
+
+    #[tokio::test]
+    async fn patch_sends_if_match_and_send_updates() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/calendars/primary/events/ev1"))
+            .and(header("If-Match", "\"e1\""))
+            .and(query_param("sendUpdates", "none"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(event_json("ev1")))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let event = client
+            .patch_event(
+                "primary",
+                "ev1",
+                json!({"summary": "Lunch"}),
+                opts(SendUpdates::None, Some("\"e1\""), false),
+            )
+            .await
+            .unwrap();
+        assert_eq!(event.etag, "\"e2\"");
+        let requests = server.received_requests().await.unwrap();
+        let query = requests[0].url.query().unwrap_or_default();
+        assert!(!query.contains("conferenceDataVersion"), "{query}");
+    }
+
+    #[tokio::test]
+    async fn patch_with_conference_sends_version_1() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/calendars/primary/events/ev1"))
+            .and(query_param("conferenceDataVersion", "1"))
+            .and(query_param("sendUpdates", "all"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(event_json("ev1")))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        client
+            .patch_event(
+                "primary",
+                "ev1",
+                json!({}),
+                opts(SendUpdates::All, None, true),
+            )
+            .await
+            .unwrap();
+        let requests = server.received_requests().await.unwrap();
+        assert!(!requests[0].headers.contains_key("if-match"));
+    }
+
+    #[tokio::test]
+    async fn patch_412_is_conflict() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .respond_with(ResponseTemplate::new(412).set_body_json(json!({
+                "error": {"code": 412, "message": "Precondition Failed",
+                          "errors": [{"reason": "conditionNotMet", "message": "Precondition Failed"}]}
+            })))
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let err = client
+            .patch_event(
+                "primary",
+                "ev1",
+                json!({}),
+                opts(SendUpdates::None, Some("\"e1\""), false),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.is_conflict(), "{err:?}");
+        assert!(!err.is_duplicate());
+    }
+
+    #[tokio::test]
+    async fn insert_retry_after_duplicate_returns_existing() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/calendars/primary/events"))
+            .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+                "error": {"code": 409, "message": "The requested identifier already exists.",
+                          "errors": [{"reason": "duplicate", "message": "exists"}]}
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/calendars/primary/events/abc123"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(event_json("abc123")))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let event = client
+            .insert_event(
+                "primary",
+                json!({"id": "abc123", "summary": "Lunch"}),
+                opts(SendUpdates::None, None, false),
+            )
+            .await
+            .unwrap();
+        assert_eq!(event.id, "abc123");
+    }
+
+    #[tokio::test]
+    async fn insert_duplicate_then_failed_get_is_network() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/calendars/primary/events"))
+            .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+                "error": {"code": 409, "message": "The requested identifier already exists.",
+                          "errors": [{"reason": "duplicate", "message": "exists"}]}
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/calendars/primary/events/abc123"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let err = client
+            .insert_event(
+                "primary",
+                json!({"id": "abc123"}),
+                opts(SendUpdates::None, None, false),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, crate::gmail::error::GmailError::Network(_)),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn insert_posts_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/calendars/primary/events"))
+            .and(query_param("sendUpdates", "none"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(event_json("abc123")))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        client
+            .insert_event(
+                "primary",
+                json!({"id": "abc123"}),
+                opts(SendUpdates::None, None, false),
+            )
+            .await
+            .unwrap();
+        let requests = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(body["id"], "abc123");
+    }
+
+    #[tokio::test]
+    async fn delete_treats_410_as_done() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/calendars/primary/events/ev1"))
+            .and(query_param("sendUpdates", "all"))
+            .respond_with(ResponseTemplate::new(410).set_body_json(json!({
+                "error": {"code": 410, "message": "Resource has been deleted"}
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("DELETE"))
+            .and(path("/calendars/primary/events/ev2"))
+            .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+                "error": {"code": 404, "message": "Not Found"}
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        client
+            .delete_event("primary", "ev1", opts(SendUpdates::All, None, false))
+            .await
+            .unwrap();
+        client
+            .delete_event("primary", "ev2", opts(SendUpdates::None, None, false))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn move_posts_destination() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/calendars/primary/events/ev1/move"))
+            .and(query_param("destination", "work@group.calendar.google.com"))
+            .and(query_param("sendUpdates", "none"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(event_json("ev1")))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let event = client
+            .move_event(
+                "primary",
+                "ev1",
+                "work@group.calendar.google.com",
+                SendUpdates::None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(event.id, "ev1");
+    }
+
+    #[tokio::test]
+    async fn import_posts_to_import_path() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/calendars/primary/events/import"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(event_json("imp1")))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let event = client
+            .import_event("primary", json!({"iCalUID": "u@x"}))
+            .await
+            .unwrap();
+        assert_eq!(event.id, "imp1");
+    }
+
+    #[tokio::test]
+    async fn events_by_ical_uid_queries_uid() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/calendars/primary/events"))
+            .and(query_param("iCalUID", "u1@google.com"))
+            .and(query_param("singleEvents", "false"))
+            .and(query_param("showDeleted", "false"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"items": [event_json("a"), event_json("b")]})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let events = client
+            .events_by_ical_uid("primary", "u1@google.com")
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn if_match_write_is_not_retried_on_503() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let err = client
+            .patch_event(
+                "primary",
+                "ev1",
+                json!({}),
+                opts(SendUpdates::None, Some("\"e1\""), false),
+            )
+            .await
+            .unwrap_err();
+        assert!(!err.is_conflict(), "{err:?}");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 }

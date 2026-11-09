@@ -17,6 +17,7 @@ pub mod transfer;
 pub mod updater;
 
 use crate::accounts::AccountError;
+use crate::calendar::error::CalendarError;
 use crate::mail::MailError;
 use crate::support::SupportError;
 use reqwest::Url;
@@ -41,6 +42,15 @@ impl From<AccountError> for CommandError {
 
 impl From<MailError> for CommandError {
     fn from(error: MailError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<CalendarError> for CommandError {
+    fn from(error: CalendarError) -> Self {
         Self {
             code: error.code().to_owned(),
             message: error.to_string(),

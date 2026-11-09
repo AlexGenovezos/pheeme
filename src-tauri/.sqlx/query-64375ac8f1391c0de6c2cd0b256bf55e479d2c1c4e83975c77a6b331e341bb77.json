@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM events\n         WHERE account_id = ? AND calendar_id = ? AND recurring_event_id = ?\n           AND original_start_ms >= ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "64375ac8f1391c0de6c2cd0b256bf55e479d2c1c4e83975c77a6b331e341bb77"
+}

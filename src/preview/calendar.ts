@@ -7,6 +7,10 @@ import {
   type CalendarAccount,
   type CalendarEvent,
   type CalendarInfo,
+  type EventDetail,
+  type EventEdit,
+  type EventRef,
+  type EventTime,
 } from "../lib/tauri";
 
 type Args = Record<string, unknown> | undefined;
@@ -175,6 +179,57 @@ export function createCalendarHandlers(
     );
   }
 
+  // Who organizes each fixture event, when it isn't the account itself.
+  const organizers = new Map<string, string>([["design-review", "morgan@example.org"]]);
+  const descriptions = new Map<string, string>();
+  const find = (args: Args) =>
+    events.find(
+      (e) =>
+        e.accountId === String(args?.accountId) &&
+        e.calendarId === String(args?.calendarId) &&
+        e.id === String(args?.eventId),
+    );
+  const missing = () => ({ code: "not_found", message: "That event isn't available any more." });
+  const readOnly = () => ({
+    code: "read_only",
+    message: "Only the organizer can change this event.",
+  });
+  const changed = (accountId: string) =>
+    void emit(CALENDAR_EVENTS.updated, { accountId }).catch(() => {});
+  const timeOf = (t: EventEdit["start"], fallback: EventTime): EventTime =>
+    t
+      ? { ms: t.ms ?? null, date: t.date ?? null, timeZone: t.timeZone ?? fallback.timeZone }
+      : fallback;
+  /** Applies an edit's fields to an event. */
+  const apply = (e: CalendarEvent, edit: EventEdit) => {
+    if (edit.summary != null) e.summary = edit.summary || null;
+    if (edit.location != null) e.location = edit.location || null;
+    if (edit.description != null) descriptions.set(e.id, edit.description);
+    if (edit.colorId != null) e.colorId = edit.colorId || null;
+    if (edit.transparency != null) e.transparency = edit.transparency;
+    if (edit.conference != null) e.hasConference = edit.conference;
+    if (edit.recurrence != null) e.recurring = edit.recurrence.length > 0;
+    if (edit.start) e.start = timeOf(edit.start, e.start);
+    if (edit.end) e.end = timeOf(edit.end, e.end);
+    if (edit.start || edit.end) e.allDay = e.start.date !== null;
+  };
+  const isOrganizer = (e: CalendarEvent) => !organizers.has(e.id);
+  const ref = (e: CalendarEvent): EventRef => ({
+    accountId: e.accountId,
+    calendarId: e.calendarId,
+    id: e.id,
+  });
+  let nextId = 1;
+  const placeholder = (accountId: string, calendarId: string): CalendarEvent => ({
+    ...base({ id: accountId, email: "" }, calendarId, `new-${nextId++}`, ""),
+    summary: null,
+  });
+  /** The event and, for "this", only it; otherwise every occurrence of its series. */
+  const inScope = (e: CalendarEvent, scope: unknown) =>
+    scope === "this" || !e.masterId
+      ? [e]
+      : events.filter((o) => o.accountId === e.accountId && o.masterId === e.masterId);
+
   const shown = (e: CalendarEvent) =>
     statuses.get(e.accountId) === "on" &&
     !calendars.get(e.accountId)?.find((c) => c.id === e.calendarId)?.hidden;
@@ -232,5 +287,107 @@ export function createCalendarHandlers(
       return accessOf(accountId);
     },
     set_calendar_foreground: () => undefined,
+    calendar_event_detail: (args: Args): EventDetail => {
+      const e = find(args);
+      if (!e) throw missing();
+      const account = accounts.find((a) => a.id === e.accountId);
+      const organizer = organizers.get(e.id) ?? account?.email ?? null;
+      const mine = isOrganizer(e);
+      return {
+        ...e,
+        description: descriptions.get(e.id) ?? null,
+        organizer: { email: organizer, name: null, isSelf: mine },
+        attendees: e.selfResponse
+          ? [
+              {
+                email: account?.email ?? null,
+                name: null,
+                response: e.selfResponse,
+                optional: false,
+                organizer: false,
+                isSelf: true,
+                resource: false,
+                comment: null,
+              },
+            ]
+          : [],
+        meetUrl: e.hasConference ? "https://meet.google.com/abc-defg-hij" : null,
+        conferencePending: false,
+        recurrence: e.recurring ? ["RRULE:FREQ=WEEKLY"] : [],
+        originalStart: null,
+        reminders: { useDefault: true, overrides: [] },
+        visibility: null,
+        htmlLink: null,
+        guestsCanModify: false,
+        guestsCanInviteOthers: true,
+        guestsCanSeeOtherGuests: true,
+        canEdit: mine && e.calendarId !== "en.usa#holiday@group.v.calendar.google.com",
+        canRsvp: e.selfResponse !== null,
+        canDelete: mine,
+      };
+    },
+    create_calendar_event: (args: Args): EventRef => {
+      const e = placeholder(String(args?.accountId), String(args?.calendarId));
+      apply(e, (args?.edit ?? {}) as EventEdit);
+      events.push(e);
+      changed(e.accountId);
+      return ref(e);
+    },
+    update_calendar_event: (args: Args): EventRef => {
+      const e = find(args);
+      if (!e) throw missing();
+      if (!isOrganizer(e)) throw readOnly();
+      // "following" behaves like "all" here.
+      for (const o of inScope(e, args?.scope)) apply(o, (args?.edit ?? {}) as EventEdit);
+      changed(e.accountId);
+      return ref(e);
+    },
+    delete_calendar_event: (args: Args) => {
+      const e = find(args);
+      if (!e) throw missing();
+      if (!isOrganizer(e)) throw readOnly();
+      for (const o of inScope(e, args?.scope)) events.splice(events.indexOf(o), 1);
+      changed(e.accountId);
+    },
+    move_calendar_event: (args: Args): EventRef => {
+      const e = find(args);
+      if (!e) throw missing();
+      if (!isOrganizer(e)) throw readOnly();
+      e.calendarId = String(args?.destinationCalendarId);
+      changed(e.accountId);
+      return ref(e);
+    },
+    copy_calendar_event: (args: Args): EventRef => {
+      const e = find(args);
+      if (!e) throw missing();
+      const copy: CalendarEvent = {
+        ...e,
+        accountId: String(args?.toAccountId),
+        calendarId: String(args?.toCalendarId),
+        id: `copy-${nextId++}`,
+        masterId: null,
+        recurring: false,
+        selfResponse: null,
+      };
+      events.push(copy);
+      changed(copy.accountId);
+      return ref(copy);
+    },
+    respond_to_calendar_event: (args: Args): EventRef => {
+      const e = find(args);
+      if (!e) throw missing();
+      for (const o of inScope(e, args?.scope)) o.selfResponse = String(args?.response);
+      changed(e.accountId);
+      return ref(e);
+    },
+    respond_to_calendar_invite: (args: Args): EventRef => {
+      // The preview's invites carry their event id as iCalendar UID.
+      const uid = String(args?.icalUid);
+      const e = events.find((o) => o.accountId === String(args?.accountId) && o.id === uid);
+      if (!e) throw missing();
+      e.selfResponse = String(args?.response);
+      changed(e.accountId);
+      return ref(e);
+    },
   };
 }
