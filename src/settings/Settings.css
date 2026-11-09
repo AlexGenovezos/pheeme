@@ -690,3 +690,9 @@
 .settings-assistant__failed .settings-row__description {
   color: var(--color-danger);
 }
+
+/* A fixed height whether loading, empty or full, so nothing below it moves. */
+.settings-assistant__activity {
+  height: var(--assistant-activity-height);
+  overflow-y: auto;
+}

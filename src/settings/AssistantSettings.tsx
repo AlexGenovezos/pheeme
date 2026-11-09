@@ -186,25 +186,43 @@ export function AssistantSettings() {
           description={status ? serverText(status) : <Skeleton width="16em" />}
         />
       </SettingsSection>
-      <SettingsSection title="Connected assistants">
-        {status === null ? (
-          <SettingsRow title={<Skeleton width="8em" />} description={<Skeleton width="14em" />} />
-        ) : (
-          status.clients.map((c) => (
+      <SettingsSection
+        title="Activity"
+        action={
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!activity?.length}
+            onClick={() => void clear()}
+          >
+            Clear
+          </Button>
+        }
+      >
+        <div className="settings-assistant__activity">
+          {activity === null ? (
             <SettingsRow
-              key={c.id}
-              title={c.name}
-              description={`Connected ${formatListDate(c.createdAt)} · ${
-                c.lastUsedAt ? `last used ${formatListDate(c.lastUsedAt)}` : "not used yet"
-              }`}
-              control={
-                <Button size="sm" variant="danger" onClick={() => void remove(c.id)}>
-                  Remove
-                </Button>
-              }
+              title={<Skeleton width="10em" />}
+              description={<Skeleton width="18em" />}
             />
-          ))
-        )}
+          ) : activity.length === 0 ? (
+            <SettingsRow
+              title="No activity yet"
+              description="Each tool call an assistant makes shows here."
+            />
+          ) : (
+            activity.map((a) => (
+              <SettingsRow
+                key={a.id}
+                className={a.error ? "settings-assistant__failed" : undefined}
+                title={`${a.tool} · ${a.summary}`}
+                description={`${a.clientName}, ${formatListDate(a.at)}${a.error ? `: ${a.error}` : ""}`}
+              />
+            ))
+          )}
+        </div>
+      </SettingsSection>
+      <SettingsSection title="Connected assistants">
         {added && status ? (
           <Connected added={added} url={status.server.url} onDone={() => setAdded(null)} />
         ) : (
@@ -232,37 +250,21 @@ export function AssistantSettings() {
             }
           />
         )}
-      </SettingsSection>
-      <SettingsSection
-        title="Activity"
-        action={
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={!activity?.length}
-            onClick={() => void clear()}
-          >
-            Clear
-          </Button>
-        }
-      >
-        {activity === null ? (
-          <SettingsRow title={<Skeleton width="10em" />} description={<Skeleton width="18em" />} />
-        ) : activity.length === 0 ? (
+        {/* Last on the page, so the list growing once it loads moves nothing. */}
+        {status?.clients.map((c) => (
           <SettingsRow
-            title="No activity yet"
-            description="Each tool call an assistant makes shows here."
+            key={c.id}
+            title={c.name}
+            description={`Connected ${formatListDate(c.createdAt)} · ${
+              c.lastUsedAt ? `last used ${formatListDate(c.lastUsedAt)}` : "not used yet"
+            }`}
+            control={
+              <Button size="sm" variant="danger" onClick={() => void remove(c.id)}>
+                Remove
+              </Button>
+            }
           />
-        ) : (
-          activity.map((a) => (
-            <SettingsRow
-              key={a.id}
-              className={a.error ? "settings-assistant__failed" : undefined}
-              title={`${a.tool} · ${a.summary}`}
-              description={`${a.clientName}, ${formatListDate(a.at)}${a.error ? `: ${a.error}` : ""}`}
-            />
-          ))
-        )}
+        ))}
       </SettingsSection>
     </>
   );

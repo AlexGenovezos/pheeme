@@ -254,6 +254,37 @@ async fn searches_the_cache_and_reads_threads_as_text() {
 }
 
 #[tokio::test]
+async fn gmail_search_honours_the_limit_and_pages_through() {
+    let fake = FakeGmail::new();
+    for n in 0..5 {
+        fake.seed(msg(&format!("m{n}"), &format!("t{n}"), &["INBOX"], "a@x.com").days_ago(n + 1));
+    }
+    let h = setup(fake).await;
+    let mut seen = Vec::new();
+    let mut cursor: Option<String> = None;
+    for _ in 0..10 {
+        let mut args = json!({ "query": "subject", "gmail": true, "limit": 2 });
+        if let Some(c) = &cursor {
+            args["cursor"] = json!(c);
+        }
+        let page = h.call("search_mail", args).await.unwrap();
+        assert_eq!(page["searched"], "Gmail");
+        let threads = page["threads"].as_array().unwrap();
+        assert!(threads.len() <= 2);
+        seen.extend(
+            threads
+                .iter()
+                .map(|t| t["thread_id"].as_str().unwrap().to_owned()),
+        );
+        match page["next_cursor"].as_str() {
+            Some(c) => cursor = Some(c.to_owned()),
+            None => break,
+        }
+    }
+    assert_eq!(seen, ["t0", "t1", "t2", "t3", "t4"]);
+}
+
+#[tokio::test]
 async fn lists_filters_in_words() {
     let fake = FakeGmail::new();
     fake.add_user_label("Label_1", "Receipts", None);

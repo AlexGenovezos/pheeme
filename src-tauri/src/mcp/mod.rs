@@ -270,22 +270,27 @@ async fn respond(api: &LocalApi, port: u16, req: Request<Incoming>) -> Response<
             .insert(ALLOW, HeaderValue::from_static("POST"));
         return response;
     }
-    let caller = match bearer(&req) {
-        None => Err(ApiError::Unauthorized),
-        Some(token) => api.authenticate(token).await,
+    let unauthorized = || {
+        let mut response = plain(
+            StatusCode::UNAUTHORIZED,
+            &ApiError::Unauthorized.to_string(),
+        );
+        response
+            .headers_mut()
+            .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+        response
     };
-    let caller = match caller {
+    let Some(token) = bearer(&req).map(str::to_owned) else {
+        return unauthorized();
+    };
+    let body = match Limited::new(req.into_body(), MAX_BODY).collect().await {
+        Ok(body) => body.to_bytes(),
+        Err(_) => return plain(StatusCode::PAYLOAD_TOO_LARGE, "That request is too large."),
+    };
+    // Checked once the body is in, so a client removed while it was still sending is refused.
+    let caller = match api.authenticate(&token).await {
         Ok(caller) => caller,
-        Err(ApiError::Unauthorized) => {
-            let mut response = plain(
-                StatusCode::UNAUTHORIZED,
-                &ApiError::Unauthorized.to_string(),
-            );
-            response
-                .headers_mut()
-                .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
-            return response;
-        }
+        Err(ApiError::Unauthorized) => return unauthorized(),
         Err(e) => {
             tracing::warn!(error = %e, "couldn't check an assistant's token");
             return plain(
@@ -293,10 +298,6 @@ async fn respond(api: &LocalApi, port: u16, req: Request<Incoming>) -> Response<
                 "Pheeme couldn't check the token.",
             );
         }
-    };
-    let body = match Limited::new(req.into_body(), MAX_BODY).collect().await {
-        Ok(body) => body.to_bytes(),
-        Err(_) => return plain(StatusCode::PAYLOAD_TOO_LARGE, "That request is too large."),
     };
     let Ok(message) = serde_json::from_slice::<serde_json::Value>(&body) else {
         return json(StatusCode::BAD_REQUEST, &protocol::parse_error());

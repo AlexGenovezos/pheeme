@@ -173,7 +173,12 @@ impl<'a> Rows<'a> {
 #[serde(rename_all = "snake_case")]
 enum Cursor {
     Local(ThreadCursorDto),
-    Gmail(HashMap<String, String>),
+    /// A Gmail results page (`None`: the first) and how many of its conversations were
+    /// already returned.
+    Gmail {
+        tokens: Option<HashMap<String, String>>,
+        skip: usize,
+    },
 }
 
 fn encode_cursor(cursor: &Cursor) -> String {
@@ -267,7 +272,7 @@ async fn list_mailbox(api: &LocalApi, args: ListMailbox) -> Result<Value, ApiErr
     let before = match decode_cursor(args.cursor.as_deref())? {
         None => None,
         Some(Cursor::Local(c)) => Some(c),
-        Some(Cursor::Gmail(_)) => {
+        Some(Cursor::Gmail { .. }) => {
             return Err(ApiError::Invalid("That cursor is from a search.".into()))
         }
     };
@@ -347,22 +352,23 @@ async fn search_mail(api: &LocalApi, args: SearchMail) -> Result<Value, ApiError
     let cursor = decode_cursor(args.cursor.as_deref())?;
     let mut rows = Rows::new(api).await?;
 
+    let limit = limit(args.limit);
     let local_cursor = match cursor {
-        Some(Cursor::Gmail(tokens)) => {
-            return gmail_search(api, &mut rows, &account_ids, query, Some(tokens)).await
+        Some(Cursor::Gmail { tokens, skip }) => {
+            return gmail_search(api, &mut rows, &account_ids, query, tokens, skip, limit).await
         }
         Some(Cursor::Local(c)) => Some(c),
         None => None,
     };
     if args.gmail {
-        return gmail_search(api, &mut rows, &account_ids, query, None).await;
+        return gmail_search(api, &mut rows, &account_ids, query, None, 0, limit).await;
     }
     let page = api
         .mail
-        .search_messages(&account_ids, query, local_cursor, Some(limit(args.limit)))
+        .search_messages(&account_ids, query, local_cursor, Some(limit))
         .await?;
     if !page.local {
-        return gmail_search(api, &mut rows, &account_ids, query, None).await;
+        return gmail_search(api, &mut rows, &account_ids, query, None, 0, limit).await;
     }
     Ok(json!({
         "searched": "the mail cached on this computer",
@@ -372,20 +378,44 @@ async fn search_mail(api: &LocalApi, args: SearchMail) -> Result<Value, ApiError
     }))
 }
 
+/// Up to `limit` conversations of a Gmail results page, from `skip` on. Gmail's pages are
+/// bigger than most limits, so the cursor returns to the same page until it's used up.
 async fn gmail_search(
     api: &LocalApi,
     rows: &mut Rows<'_>,
     account_ids: &[String],
     query: &str,
     tokens: Option<HashMap<String, String>>,
+    skip: usize,
+    limit: i64,
 ) -> Result<Value, ApiError> {
-    let page = api.mail.search_gmail(account_ids, query, tokens).await?;
+    let page = api
+        .mail
+        .search_gmail(account_ids, query, tokens.clone())
+        .await?;
     let failed: Vec<String> = page.failed.iter().map(|a| rows.email(a)).collect();
+    let end = skip.saturating_add(limit as usize);
+    let next = if end < page.threads.len() {
+        Some(Cursor::Gmail { tokens, skip: end })
+    } else if !page.next.is_empty() {
+        Some(Cursor::Gmail {
+            tokens: Some(page.next),
+            skip: 0,
+        })
+    } else {
+        None
+    };
+    let threads: Vec<_> = page
+        .threads
+        .into_iter()
+        .skip(skip)
+        .take(limit as usize)
+        .collect();
     Ok(json!({
         "searched": "Gmail",
-        "threads": rows.rows(page.threads).await?,
+        "threads": rows.rows(threads).await?,
         "failed_accounts": failed,
-        "next_cursor": (!page.next.is_empty()).then(|| encode_cursor(&Cursor::Gmail(page.next))),
+        "next_cursor": next.map(|c| encode_cursor(&c)),
     }))
 }
 
@@ -516,7 +546,10 @@ mod tests {
         });
         let raw = encode_cursor(&local);
         assert_eq!(decode_cursor(Some(&raw)).unwrap(), Some(local));
-        let gmail = Cursor::Gmail(HashMap::from([("a".into(), "tok".into())]));
+        let gmail = Cursor::Gmail {
+            tokens: Some(HashMap::from([("a".into(), "tok".into())])),
+            skip: 3,
+        };
         assert_eq!(
             decode_cursor(Some(&encode_cursor(&gmail))).unwrap(),
             Some(gmail)
