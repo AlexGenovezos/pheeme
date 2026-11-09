@@ -35,7 +35,8 @@ export function CodeCard({ code }: { code: string }) {
     <section className="code-card" aria-label="Verification code">
       <div className="code-card__body">
         <span className="code-card__label">Verification code</span>
-        <span className="code-card__digits selectable" aria-label={code}>
+        {/* One image to assistive tech: the tiles are hidden, and aria-label on a plain span is ignored. */}
+        <span className="code-card__digits selectable" role="img" aria-label={code}>
           {[...code].map((char, i) =>
             char === "-" ? (
               <span key={i} className="code-card__dash" aria-hidden="true">
@@ -69,8 +70,10 @@ export function CodeChip({ code }: { code: string }) {
       className="code-chip"
       title="Copy verification code"
       aria-label={`Copy verification code ${code}`}
-      // Mouse target only: focus stays on the listbox, and Shift+C is the keyboard path.
+      // Mouse target only: focus stays on the listbox, and Shift+C is the keyboard path. Hidden from
+      // assistive tech too: a listbox option can't contain controls.
       tabIndex={-1}
+      aria-hidden="true"
       onMouseDown={(e) => e.preventDefault()}
       onClick={copy}
     >

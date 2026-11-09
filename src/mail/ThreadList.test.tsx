@@ -159,29 +159,29 @@ describe("selection", () => {
 
   test("visible checkboxes toggle selection without opening a conversation", () => {
     render(<ThreadList {...props()} />);
-    expect(within(row(1)).getByRole("checkbox")).not.toBeChecked();
+    expect(within(row(1)).getByRole("checkbox", { hidden: true })).not.toBeChecked();
 
-    fireEvent.click(within(row(2)).getByRole("checkbox"));
+    fireEvent.click(within(row(2)).getByRole("checkbox", { hidden: true }));
     expect(useUiStore.getState().openThread).toBeNull();
-    expect(within(row(1)).getByRole("checkbox")).not.toBeChecked();
-    expect(within(row(2)).getByRole("checkbox")).toBeChecked();
+    expect(within(row(1)).getByRole("checkbox", { hidden: true })).not.toBeChecked();
+    expect(within(row(2)).getByRole("checkbox", { hidden: true })).toBeChecked();
 
-    fireEvent.click(within(row(2)).getByRole("checkbox"));
+    fireEvent.click(within(row(2)).getByRole("checkbox", { hidden: true }));
     expect(useUiStore.getState().checked).toEqual([]);
-    expect(within(row(1)).getByRole("checkbox")).not.toBeChecked();
+    expect(within(row(1)).getByRole("checkbox", { hidden: true })).not.toBeChecked();
   });
 
   test("hovering shows the actions while selection stays available", () => {
     const onRowAction = vi.fn();
     render(<ThreadList {...props({ onRowAction })} />);
     fireEvent.mouseEnter(row(1));
-    fireEvent.click(within(row(1)).getByRole("button", { name: /Archive/ }));
+    fireEvent.click(within(row(1)).getByRole("button", { name: /Archive/, hidden: true }));
     expect(onRowAction).toHaveBeenCalledWith("archive", expect.objectContaining({ id: "t1" }));
     expect(useUiStore.getState().openThread).toBeNull();
-    fireEvent.click(within(row(1)).getByRole("checkbox"));
+    fireEvent.click(within(row(1)).getByRole("checkbox", { hidden: true }));
     expect(useUiStore.getState().checked).toEqual([key(1)]);
     fireEvent.mouseLeave(row(1));
-    expect(within(row(1)).getByRole("checkbox")).toBeInTheDocument();
+    expect(within(row(1)).getByRole("checkbox", { hidden: true })).toBeInTheDocument();
   });
 });
 
@@ -370,13 +370,19 @@ describe("focus and selection semantics", () => {
     expect(useUiStore.getState().openThread).toBe(key(0));
   });
 
-  test("nothing inside a row takes keyboard focus, and x acts on the active row", () => {
+  test("nothing inside a row takes keyboard focus or shows to assistive tech, and x acts on the active row", () => {
     useMailStore.setState({ threads: many(10) });
     render(<ThreadList {...props()} />);
     fireEvent.click(row(1), { metaKey: true });
     fireEvent.mouseEnter(row(2));
-    expect(within(row(2)).getByRole("checkbox")).toHaveAttribute("tabindex", "-1");
-    for (const button of within(row(2)).getAllByRole("button"))
+    // A listbox option can't contain controls: the checkbox and hover actions are mouse targets only.
+    expect(within(row(2)).queryByRole("checkbox")).toBeNull();
+    expect(within(row(2)).queryAllByRole("button")).toEqual([]);
+    expect(within(row(2)).getByRole("checkbox", { hidden: true })).toHaveAttribute(
+      "tabindex",
+      "-1",
+    );
+    for (const button of within(row(2)).getAllByRole("button", { hidden: true }))
       expect(button).toHaveAttribute("tabindex", "-1");
     act(() => useUiStore.getState().setOpenThread(key(4)));
     pressKey("x");

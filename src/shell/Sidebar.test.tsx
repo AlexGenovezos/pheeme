@@ -87,6 +87,8 @@ function seed(accounts: AccountInfo[]) {
 
 const link = (name: string, scope: HTMLElement = document.body) =>
   within(scope).getByRole("link", { name });
+/** A mailbox row's name: its visible title (the count is hidden from it and read as the description). */
+const rowName = (row: HTMLElement) => row.querySelector(".ui-row__title")?.textContent ?? "";
 const count = (row: HTMLElement) => row.querySelector(".ui-row__meta")?.textContent ?? "";
 const accountGroup = (email: string) =>
   screen.getByRole("group", { name: new RegExp(email.replace(".", "\\.")) });
@@ -109,14 +111,17 @@ describe("stacked layout", () => {
     const inboxes = region("Inboxes");
     const names = within(inboxes)
       .getAllByRole("link")
-      .map((row) => row.getAttribute("aria-label"));
+      .map((row) => rowName(row));
     const categories = ["Primary", "Social", "Promotions", "Updates", "Forums"];
     expect(names).toEqual(["All Inboxes", ...categories, ...categories]);
+    const all = link("All Inboxes", inboxes);
+    expect(all).toHaveAccessibleName("All Inboxes");
+    expect(all).toHaveAccessibleDescription("14 unread");
     for (const email of [ONE.email, TWO.email]) {
       expect(
         within(accountGroup(email))
           .getAllByRole("link")
-          .map((r) => r.getAttribute("aria-label")),
+          .map((r) => rowName(r)),
       ).toEqual(categories);
       expect(accountHeader(email)).toHaveAttribute("aria-expanded", "true");
     }
@@ -216,7 +221,7 @@ describe("stacked layout", () => {
     expect(
       within(favorites)
         .getAllByRole("link")
-        .map((r) => r.getAttribute("aria-label")),
+        .map((r) => rowName(r)),
     ).toEqual(["Starred", "Drafts", "Sent", "All Mail", "Spam", "Trash"]);
     expect(count(link("Starred", favorites))).toBe("5");
     expect(count(link("Drafts", favorites))).toBe("2");
@@ -248,7 +253,7 @@ describe("stacked layout", () => {
     expect(
       within(region("Inboxes"))
         .getAllByRole("link")
-        .map((r) => r.getAttribute("aria-label")),
+        .map((r) => rowName(r)),
     ).toEqual(["Primary", "Social", "Promotions", "Updates", "Forums"]);
     // All Inboxes has no row here, so the default mailbox becomes the account's Primary.
     expect(useUiStore.getState().mailbox).toEqual({

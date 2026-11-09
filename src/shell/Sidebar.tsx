@@ -157,14 +157,14 @@ function MailboxRow({
       role="link"
       tabIndex={0}
       density="compact"
-      aria-label={name}
       aria-description={text ? `${text} ${unit}` : undefined}
       selected={selected}
       className="sidebar__row"
       style={{ "--row-color": `var(${colorToken})` } as CSSProperties}
       leading={<Icon aria-hidden="true" />}
       title={name}
-      meta={text || undefined}
+      // The name comes from the visible title; aria-description carries the count, so the number is hidden.
+      meta={text ? <span aria-hidden="true">{text}</span> : undefined}
       onClick={go}
       onKeyDown={(e) => activateOnKey(e, go)}
       {...(droppable && target.accountId
@@ -431,7 +431,7 @@ function LabelRow({ accountId, node, folded, unread }: LabelRowProps) {
         style={{ "--row-color": "var(--color-foreground)" } as CSSProperties}
         leading={<LabelDot label={label} />}
         title={<span title={node.path}>{node.leaf}</span>}
-        meta={text || undefined}
+        meta={text ? <span aria-hidden="true">{text}</span> : undefined}
         onClick={label ? go : fold}
         onKeyDown={label ? onKeyDown : undefined}
         {...(label ? dropTarget(accountId, label.id) : {})}
