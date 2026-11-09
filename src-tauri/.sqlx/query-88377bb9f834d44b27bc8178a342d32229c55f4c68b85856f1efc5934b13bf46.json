@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO calendar_access (account_id, status, detail, checked_at, synced_at)\n         VALUES (?1, ?2, ?3, ?4, CASE WHEN ?2 = 'on' THEN ?4 END)\n         ON CONFLICT (account_id) DO UPDATE SET\n             status = excluded.status,\n             detail = excluded.detail,\n             checked_at = excluded.checked_at,\n             synced_at = CASE WHEN ?2 = 'on' THEN ?4 ELSE calendar_access.synced_at END",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "88377bb9f834d44b27bc8178a342d32229c55f4c68b85856f1efc5934b13bf46"
+}

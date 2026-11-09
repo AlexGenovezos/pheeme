@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE calendars SET sync_token = ? WHERE account_id = ? AND id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "c1d5791a496720e929c444063034bcc954a24af1c8ff37ad84b21d3581dd3c33"
+}

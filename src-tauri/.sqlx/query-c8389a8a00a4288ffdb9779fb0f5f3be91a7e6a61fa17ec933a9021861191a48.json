@@ -1,0 +1,158 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT account_id, id, summary, description, time_zone, background_color,\n                  foreground_color, access_role, is_primary AS \"primary: bool\",\n                  hidden AS \"hidden: bool\", default_reminders, sync_token\n           FROM calendars\n           WHERE ?1 IS NULL OR account_id = ?1\n           ORDER BY account_id, is_primary DESC, summary COLLATE NOCASE",
+  "describe": {
+    "columns": [
+      {
+        "name": "account_id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "name": "id",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "summary",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "name": "description",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "name": "time_zone",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "time_zone"
+          }
+        }
+      },
+      {
+        "name": "background_color",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "background_color"
+          }
+        }
+      },
+      {
+        "name": "foreground_color",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "foreground_color"
+          }
+        }
+      },
+      {
+        "name": "access_role",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "access_role"
+          }
+        }
+      },
+      {
+        "name": "primary: bool",
+        "ordinal": 8,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "is_primary"
+          }
+        }
+      },
+      {
+        "name": "hidden: bool",
+        "ordinal": 9,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "hidden"
+          }
+        }
+      },
+      {
+        "name": "default_reminders",
+        "ordinal": 10,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "default_reminders"
+          }
+        }
+      },
+      {
+        "name": "sync_token",
+        "ordinal": 11,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calendars",
+            "name": "sync_token"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "c8389a8a00a4288ffdb9779fb0f5f3be91a7e6a61fa17ec933a9021861191a48"
+}

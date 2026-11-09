@@ -1,0 +1,374 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT e.account_id, e.calendar_id, e.id, e.ical_uid, e.recurring_event_id,\n                  e.original_start_ms, e.original_start_date, e.status, e.start_ms, e.end_ms,\n                  e.start_date, e.end_date, e.time_zone, e.recurrence, e.recur_until_ms,\n                  e.summary, e.location, e.description, e.organizer_email, e.self_response,\n                  e.attendees, e.conference, e.color_id, e.transparency, e.visibility,\n                  e.reminders, e.html_link, e.etag, e.updated_ms, e.raw\n           FROM events e\n           JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar_id\n           WHERE c.hidden = 0 AND e.recurrence IS NULL AND (\n               (e.status != 'cancelled'\n                AND e.start_ms < ?2 + CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END\n                AND e.end_ms > ?1 - CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END)\n               OR (e.recurring_event_id IS NOT NULL\n                   AND coalesce(e.original_start_ms, e.start_ms) < ?2 + ?3))",
+  "describe": {
+    "columns": [
+      {
+        "name": "account_id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "name": "calendar_id",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "calendar_id"
+          }
+        }
+      },
+      {
+        "name": "id",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "ical_uid",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "ical_uid"
+          }
+        }
+      },
+      {
+        "name": "recurring_event_id",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "recurring_event_id"
+          }
+        }
+      },
+      {
+        "name": "original_start_ms",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "original_start_ms"
+          }
+        }
+      },
+      {
+        "name": "original_start_date",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "original_start_date"
+          }
+        }
+      },
+      {
+        "name": "status",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "start_ms",
+        "ordinal": 8,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "start_ms"
+          }
+        }
+      },
+      {
+        "name": "end_ms",
+        "ordinal": 9,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "end_ms"
+          }
+        }
+      },
+      {
+        "name": "start_date",
+        "ordinal": 10,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "start_date"
+          }
+        }
+      },
+      {
+        "name": "end_date",
+        "ordinal": 11,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "end_date"
+          }
+        }
+      },
+      {
+        "name": "time_zone",
+        "ordinal": 12,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "time_zone"
+          }
+        }
+      },
+      {
+        "name": "recurrence",
+        "ordinal": 13,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "recurrence"
+          }
+        }
+      },
+      {
+        "name": "recur_until_ms",
+        "ordinal": 14,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "recur_until_ms"
+          }
+        }
+      },
+      {
+        "name": "summary",
+        "ordinal": 15,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "name": "location",
+        "ordinal": 16,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "location"
+          }
+        }
+      },
+      {
+        "name": "description",
+        "ordinal": 17,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "name": "organizer_email",
+        "ordinal": 18,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "organizer_email"
+          }
+        }
+      },
+      {
+        "name": "self_response",
+        "ordinal": 19,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "self_response"
+          }
+        }
+      },
+      {
+        "name": "attendees",
+        "ordinal": 20,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "attendees"
+          }
+        }
+      },
+      {
+        "name": "conference",
+        "ordinal": 21,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "conference"
+          }
+        }
+      },
+      {
+        "name": "color_id",
+        "ordinal": 22,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "color_id"
+          }
+        }
+      },
+      {
+        "name": "transparency",
+        "ordinal": 23,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "transparency"
+          }
+        }
+      },
+      {
+        "name": "visibility",
+        "ordinal": 24,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "name": "reminders",
+        "ordinal": 25,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "reminders"
+          }
+        }
+      },
+      {
+        "name": "html_link",
+        "ordinal": 26,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "html_link"
+          }
+        }
+      },
+      {
+        "name": "etag",
+        "ordinal": 27,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "etag"
+          }
+        }
+      },
+      {
+        "name": "updated_ms",
+        "ordinal": 28,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "updated_ms"
+          }
+        }
+      },
+      {
+        "name": "raw",
+        "ordinal": 29,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "raw"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "23bc89f07cff56867ece54ac4a25f8bc8b374d80d33a85b650e6b3ceaeadb0fb"
+}
