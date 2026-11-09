@@ -79,6 +79,16 @@ impl GmailError {
         matches!(self, GmailError::Api { status: 410, .. })
     }
 
+    /// The API answered 412 (an `If-Match` etag that no longer matches: the event changed).
+    pub fn is_conflict(&self) -> bool {
+        matches!(self, GmailError::Api { status: 412, .. })
+    }
+
+    /// The API answered 409 (an insert whose client-made id already exists).
+    pub fn is_duplicate(&self) -> bool {
+        matches!(self, GmailError::Api { status: 409, .. })
+    }
+
     /// Gmail refused because the account didn't grant the scope this call needs (an account that
     /// signed in before Pheeme asked for it, or a user who unticked it on Google's consent screen).
     pub fn is_missing_scope(&self) -> bool {
