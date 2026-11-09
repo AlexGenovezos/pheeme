@@ -89,6 +89,14 @@ function seedsOf(theme: ThemeDefinition, file: ThemeFile | null): ThemeSeeds {
   );
 }
 
+/** A saved theme's derived colors that aren't what their base colors give: set by hand. */
+function handSet(file: ThemeFile): string[] {
+  const bases = Object.entries(file.colors).filter(([key]) => !DERIVED.has(key));
+  const following = draftTheme({ ...file, colors: Object.fromEntries(bases) }).tokens;
+  const saved = draftTheme(file).tokens;
+  return DERIVED_TOKENS.filter((t) => saved[t] !== following[t]).map(colorKey);
+}
+
 function update(patch: Partial<EditorState>) {
   useThemeEditorStore.setState({ ...patch, dirty: true });
   previewTheme(draftTheme(useThemeEditorStore.getState().draft));
@@ -149,7 +157,8 @@ export function openThemeEditor({
     slot: showing,
     advanced: !draft.seeds && editable,
     seeds: seedsOf(theme, file),
-    pinned: [],
+    // A theme still built from its two colors has nothing set by hand.
+    pinned: editable && !file.seeds ? handSet(file) : [],
     dirty: false,
     fromSettings,
     minimized: false,

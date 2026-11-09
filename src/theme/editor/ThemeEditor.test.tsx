@@ -113,6 +113,19 @@ describe("the theme editor", () => {
     expect(useThemeStore.getState().customThemes[0].id).toBe(id);
     expect(rootColor("--color-app-bg")).toBe("#fbf1d8");
   });
+
+  test("a color set by hand stays set after saving and reopening", () => {
+    render(<ThemeEditorHost />);
+    act(() => openThemeEditor({}));
+    fireEvent.click(within(panel()).getByRole("switch", { name: "Edit every color" }));
+    fireEvent.change(hexInput("Accent hover"), { target: { value: "#123456" } });
+    fireEvent.click(within(panel()).getByRole("button", { name: "Save theme" }));
+    const [{ id }] = useThemeStore.getState().customThemes;
+
+    act(() => openThemeEditor({ id, slot: "light" }));
+    fireEvent.change(hexInput("Accent"), { target: { value: "#e0457b" } });
+    expect(rootColor("--color-accent-hover")).toBe("#123456");
+  });
 });
 
 describe("the color picker", () => {

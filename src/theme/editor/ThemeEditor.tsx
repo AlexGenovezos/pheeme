@@ -137,9 +137,15 @@ function ThemeEditorPanel() {
   // Start at the right edge, clear of the title bar.
   useEffect(() => {
     setPos(clampPosition(window.innerWidth, 48, panel.current));
-    const onResize = () => setPos((p) => (p ? clampPosition(p.x, p.y, panel.current) : p));
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const reclamp = () => setPos((p) => (p ? clampPosition(p.x, p.y, panel.current) : p));
+    window.addEventListener("resize", reclamp);
+    // The panel grows too (Every color), which can push its footer off screen.
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(reclamp) : null;
+    if (panel.current) observer?.observe(panel.current);
+    return () => {
+      window.removeEventListener("resize", reclamp);
+      observer?.disconnect();
+    };
   }, []);
 
   // Outline the highlighted color's uses; redrawn as its value changes.
