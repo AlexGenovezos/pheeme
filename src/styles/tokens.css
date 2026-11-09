@@ -186,6 +186,31 @@
   --enter-offset: 4px;
   --enter-scale: 0.98;
 
+  /* Theme editor (src/theme/editor). */
+  --theme-editor-width: 340px;
+  --theme-editor-max-height: calc(100vh - 16px);
+  --theme-editor-hex-width: 92px;
+  --theme-swatch-size: 22px;
+  --theme-preview-dot: 12px;
+  --theme-picker-plane-height: 140px;
+  --theme-picker-hue-height: 12px;
+  --theme-picker-thumb: 14px;
+  --theme-picker-thumb-ring: 2px;
+  --theme-picker-plane-overlay:
+    linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent);
+  --theme-picker-hue: linear-gradient(
+    to right,
+    #f00 0%,
+    #ff0 17%,
+    #0f0 33%,
+    #0ff 50%,
+    #00f 67%,
+    #f0f 83%,
+    #f00 100%
+  );
+  --theme-picker-thumb-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  --theme-picker-thumb-border: #fff;
+
   /* Stacking. */
   --z-base: 0;
   --z-divider: 10;

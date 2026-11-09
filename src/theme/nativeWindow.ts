@@ -3,7 +3,7 @@ import type { ThemeDefinition } from "../styles/themes";
 import { themeColorToHex } from "../styles/themes/color";
 import { platform } from "../lib/platform";
 import { isTauri } from "../preview/runtime";
-import type { ThemeMode } from "./theme";
+import { systemPrefersDark, type ThemeMode } from "./theme";
 
 /** macOS app: the window is transparent over sidebar vibrancy (tauri.macos.conf.json). */
 export const vibrancy = platform === "macos" && isTauri();
@@ -16,7 +16,10 @@ export const vibrancy = platform === "macos" && isTauri();
 export function syncNativeWindow(mode: ThemeMode, theme: ThemeDefinition) {
   const win = getCurrentWindow();
   const warn = (what: string) => (err: unknown) => console.warn(`${what} failed`, err);
-  win.setTheme(mode === "system" ? null : theme.kind).catch(warn("setTheme"));
+  // System mode lets the OS drive the title bar, unless the theme is the other kind
+  // (a dark theme chosen for Light mode): then the title bar follows the theme.
+  const followOs = mode === "system" && theme.kind === (systemPrefersDark() ? "dark" : "light");
+  win.setTheme(followOs ? null : theme.kind).catch(warn("setTheme"));
   // A transparent window must stay transparent, or the vibrancy behind the sidebar is covered.
   if (!vibrancy)
     win

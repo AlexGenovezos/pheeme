@@ -392,6 +392,11 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     log_thread_shown: () => undefined,
     "plugin:dialog|save": () => "/Users/you/Downloads/pheeme-diagnostics.zip",
     reveal_download: () => undefined,
+    list_theme_folder: () => ({
+      path: "/Users/you/Library/Application Support/app.pheeme.desktop/themes",
+      files: [],
+    }),
+    open_theme_folder: () => undefined,
     "plugin:updater|check": () => null,
     ...createComposeHandlers(threads, () => accounts),
     ...createModHandlers(params),

@@ -9,6 +9,7 @@ import { useToastStore } from "../components/ui/Toast";
 import { useThemeStore } from "../theme/theme";
 import { SEQUENCE_WAIT_MS } from "./KeyboardSettings";
 import { Settings } from "./Settings";
+import { ThemeEditorHost } from "../theme/editor/ThemeEditor";
 import { useSettingsStore } from "./settingsStore";
 import { initReadingSize, READING_SIZE_KEY } from "./readingSettings";
 import { DEFAULT_PREFS, SPEED_READER_KEY, useSpeedReaderSettings } from "../speedread/settings";
@@ -144,7 +145,7 @@ test("Appearance imports a VS Code theme, picks it, and removes it", async () =>
     within(darkSelect)
       .getAllByRole("option")
       .map((o) => o.textContent),
-  ).toEqual(["Pheeme Dark", "Night Harbour"]);
+  ).toEqual(["Pheeme Dark", "Pheeme Light", "Night Harbour"]);
   const toasts = useToastStore.getState().toasts;
   expect(toasts.map((t) => t.title)).toEqual(
     expect.arrayContaining(["Installed Night Harbour", "Couldn't import the theme"]),
@@ -159,6 +160,30 @@ test("Appearance imports a VS Code theme, picks it, and removes it", async () =>
   fireEvent.click(within(dialog()).getByRole("button", { name: "Remove Night Harbour" }));
   expect(useThemeStore.getState().customThemes).toEqual([]);
   expect(darkSelect).toHaveValue("pheeme-dark");
+});
+
+test("Appearance opens the theme editor over the app, and Settings comes back when it closes", () => {
+  useThemeStore.setState({
+    mode: "dark",
+    resolved: "dark",
+    choices: { light: "pheeme-light", dark: "pheeme-dark" },
+    customThemes: [],
+    folderThemes: [],
+  });
+  render(
+    <>
+      <Harness />
+      <ThemeEditorHost />
+    </>,
+  );
+  open("appearance");
+  fireEvent.click(within(dialog()).getByRole("button", { name: "Customize Pheeme Dark" }));
+  expect(useSettingsStore.getState().open).toBe(false);
+  const editor = screen.getByRole("dialog", { name: "Create theme" });
+  expect(within(editor).getByRole("textbox", { name: "Name" })).toHaveValue("Pheeme Dark copy");
+  fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog", { name: "Create theme" })).toBeNull();
+  expect(useSettingsStore.getState()).toMatchObject({ open: true, page: "appearance" });
 });
 
 test("Appearance changes and persists the reading size", () => {

@@ -589,3 +589,25 @@
     transform: scale(var(--enter-scale));
   }
 }
+
+/* Appearance: the chosen theme's background, accent and text. */
+.settings-theme-dots {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.settings-theme-dots > span {
+  width: var(--theme-preview-dot);
+  height: var(--theme-preview-dot);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-full);
+}
+.settings-theme-dots > span + span {
+  margin-left: calc(var(--theme-preview-dot) / -3);
+}
+.settings-theme-folder-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-warning);
+  font-size: var(--font-size-sm);
+}

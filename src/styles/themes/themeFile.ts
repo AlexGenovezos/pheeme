@@ -20,6 +20,12 @@ import { THEME_TOKENS, type ThemeDefinition, type ThemeToken } from "./schema";
  */
 export const THEME_FILE_VERSION = 1;
 
+/** The two colors a theme from the editor's simple mode was built from (t3.ts). */
+export interface ThemeSeeds {
+  background: string;
+  accent: string;
+}
+
 export interface ThemeFile {
   version: typeof THEME_FILE_VERSION;
   id: string;
@@ -27,6 +33,8 @@ export interface ThemeFile {
   kind: "light" | "dark";
   /** Canonical OKLCH, keyed by short token name. */
   colors: Record<string, string>;
+  /** Set while the theme is still exactly what its two colors build. */
+  seeds?: ThemeSeeds;
 }
 
 /** Ids a custom theme may not take: the modes, and the built-in themes they resolve to. */
@@ -105,12 +113,29 @@ export function parseThemeFile(value: unknown): ThemeFile {
   if (Object.keys(colors).length === 0)
     throw new Error('A theme needs at least one color Pheeme knows, such as "app-bg".');
 
-  return { version: THEME_FILE_VERSION, id, name, kind: value.kind, colors };
+  const seeds = parseSeeds(value.seeds);
+  return {
+    version: THEME_FILE_VERSION,
+    id,
+    name,
+    kind: value.kind,
+    colors,
+    ...(seeds && { seeds }),
+  };
+}
+
+/** Seeds that aren't two colors are dropped, not fatal: the colors alone still make the theme. */
+function parseSeeds(value: unknown): ThemeSeeds | undefined {
+  if (!isRecord(value)) return undefined;
+  const background =
+    typeof value.background === "string" ? toCanonicalThemeColor(value.background) : null;
+  const accent = typeof value.accent === "string" ? toCanonicalThemeColor(value.accent) : null;
+  return background && accent ? { background, accent } : undefined;
 }
 
 export function serializeThemeFile(file: ThemeFile): string {
-  const { version, id, name, kind, colors } = file;
-  return `${JSON.stringify({ version, id, name, kind, colors }, null, 2)}\n`;
+  const { version, id, name, kind, colors, seeds } = file;
+  return `${JSON.stringify({ version, id, name, kind, colors, seeds }, null, 2)}\n`;
 }
 
 /** The full theme a file describes, ready to apply. */

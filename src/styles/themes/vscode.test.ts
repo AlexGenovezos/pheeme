@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseThemeText } from "../../theme/customThemes";
+import { parseThemeText as parseAll } from "../../theme/customThemes";
 import { themeColorToHex, toCanonicalThemeColor } from "./color";
 import { contrastFailures } from "./contrast";
 import { buildThemeFromFile } from "./themeFile";
@@ -27,6 +27,8 @@ const FIXTURES = [
 ] as const;
 
 const hex = (value: string) => themeColorToHex(value);
+/** A VS Code file holds one theme. */
+const parseThemeText = (text: string, file?: string) => parseAll(text, file)[0].file;
 
 describe("VS Code theme import", () => {
   test.each(FIXTURES)("$name imports as a readable $kind theme", ({ file, text, kind, name }) => {

@@ -302,6 +302,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::settings::desktop_settings,
+            commands::themes::list_theme_folder,
+            commands::themes::open_theme_folder,
             commands::settings::set_account_notifications,
             commands::settings::answer_notification_prompt,
             commands::settings::set_tray_icon,

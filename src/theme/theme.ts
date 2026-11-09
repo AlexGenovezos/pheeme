@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { builtInThemes, type ThemeDefinition } from "../styles/themes";
 import { themeColorToHex } from "../styles/themes/color";
 import { buildThemeFromFile, type ThemeFile } from "../styles/themes/themeFile";
-import { readCustomThemes, writeCustomThemes } from "./customThemes";
+import type { ImportedTheme } from "../styles/themes/t3";
+import { FOLDER_THEMES_KEY, readCustomThemes, writeCustomThemes } from "./customThemes";
 
 export type ThemeMode = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
@@ -98,39 +99,49 @@ export function applyTheme(theme: ThemeDefinition, root: HTMLElement = document.
 
 export type ThemeListener = (mode: ThemeMode, theme: ThemeDefinition) => void;
 
-/** One theme the user can pick for a kind. */
+/** Where a theme comes from: shipped with Pheeme, installed by the user, or a file in the themes folder. */
+export type ThemeSource = "built-in" | "custom" | "folder";
+
+/** One theme the user can pick. */
 export interface ThemeOption {
   id: string;
   name: string;
-  custom: boolean;
+  kind: ResolvedTheme;
+  source: ThemeSource;
 }
 
 interface ThemeState {
   mode: ThemeMode;
   resolved: ResolvedTheme;
-  /** The chosen theme id for each kind. */
+  /** The chosen theme id for Light and for Dark mode. Any theme can go in either, as in T3 Code. */
   choices: Record<ResolvedTheme, string>;
   /** Installed custom themes, in install order. */
   customThemes: ThemeFile[];
+  /** Themes read from the themes folder at launch (not saved; the files are the source). */
+  folderThemes: ThemeFile[];
   setMode(mode: ThemeMode): void;
   /** Flip between Light and Dark, starting from whatever is showing now. */
   toggle(): void;
   /** Use theme `id` whenever Pheeme is in `kind` mode. */
   chooseTheme(kind: ResolvedTheme, id: string): void;
   /**
-   * Install themes (replacing any with the same id), pick the last one of each
-   * kind (a light/dark pair sets both), and show the last one, so the user sees
-   * what they imported. Throws when the themes can't be saved.
+   * Install themes (replacing any with the same id), pick each for the mode it
+   * was meant for (a light/dark pair sets both), and show the last one, so the
+   * user sees what they imported. Throws when the themes can't be saved.
    */
-  installThemes(files: ThemeFile[]): void;
-  /** Uninstall a custom theme; a kind that used it goes back to the built-in theme. */
+  installThemes(themes: ImportedTheme[]): void;
+  /** Uninstall a custom theme; a mode that used it goes back to the built-in theme. */
   removeTheme(id: string): void;
+  /** Replace the themes-folder themes (launch, and whenever the folder is re-read). */
+  setFolderThemes(files: ThemeFile[]): void;
 }
 
 let listener: ThemeListener | null = null;
+/** A theme being edited: shown in place of the chosen one until the editor closes. */
+let preview: ThemeDefinition | null = null;
 
 const built = new WeakMap<ThemeFile, ThemeDefinition>();
-function definitionOf(file: ThemeFile): ThemeDefinition {
+export function definitionOf(file: ThemeFile): ThemeDefinition {
   let theme = built.get(file);
   if (!theme) {
     theme = buildThemeFromFile(file);
@@ -139,37 +150,76 @@ function definitionOf(file: ThemeFile): ThemeDefinition {
   return theme;
 }
 
-/** The theme shown for `kind`: the chosen custom theme when it is installed, else the built-in one. */
+/** Every theme file available, installed ones winning over a folder file with the same id. */
+export function availableThemes(customThemes: ThemeFile[], folderThemes: ThemeFile[] = []) {
+  const custom = new Set(customThemes.map((t) => t.id));
+  return [...folderThemes.filter((t) => !custom.has(t.id)), ...customThemes];
+}
+
+/** The theme shown in `kind` mode: the chosen one when it exists, else the built-in theme for that mode. */
 export function themeFor(
   kind: ResolvedTheme,
   choices: Record<ResolvedTheme, string>,
   customThemes: ThemeFile[],
+  folderThemes: ThemeFile[] = [],
 ): ThemeDefinition {
-  const file = customThemes.find((t) => t.id === choices[kind] && t.kind === kind);
-  return file ? definitionOf(file) : builtInThemes[kind];
+  const id = choices[kind];
+  const file = availableThemes(customThemes, folderThemes).find((t) => t.id === id);
+  if (file) return definitionOf(file);
+  return Object.values(builtInThemes).find((t) => t.id === id) ?? builtInThemes[kind];
 }
 
-/** Every theme that can be chosen for `kind`, the built-in one first. */
-export function themeOptions(kind: ResolvedTheme, customThemes: ThemeFile[]): ThemeOption[] {
-  const builtIn = builtInThemes[kind];
-  return [
-    { id: builtIn.id, name: builtIn.name, custom: false },
-    ...customThemes
-      .filter((t) => t.kind === kind)
-      .map((t) => ({ id: t.id, name: t.name, custom: true })),
-  ];
+/** Every theme that can be chosen: the built-in ones first (this mode's on top), then the rest by name. */
+export function themeOptions(
+  kind: ResolvedTheme,
+  customThemes: ThemeFile[],
+  folderThemes: ThemeFile[] = [],
+): ThemeOption[] {
+  const other: ResolvedTheme = kind === "light" ? "dark" : "light";
+  const custom = new Set(customThemes.map((t) => t.id));
+  const builtIn = [builtInThemes[kind], builtInThemes[other]].map((t) => ({
+    id: t.id,
+    name: t.name,
+    kind: t.kind,
+    source: "built-in" as const,
+  }));
+  const files = availableThemes(customThemes, folderThemes)
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      kind: t.kind,
+      source: custom.has(t.id) ? ("custom" as const) : ("folder" as const),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return [...builtIn, ...files];
+}
+
+/** The theme file behind an id, or null for a built-in theme. */
+export function themeFileById(id: string): ThemeFile | null {
+  const { customThemes, folderThemes } = useThemeStore.getState();
+  return availableThemes(customThemes, folderThemes).find((t) => t.id === id) ?? null;
 }
 
 function commit(mode: ThemeMode) {
-  const { choices, customThemes } = useThemeStore.getState();
+  const { choices, customThemes, folderThemes } = useThemeStore.getState();
   const resolved = resolveTheme(mode, systemPrefersDark());
-  const theme = themeFor(resolved, choices, customThemes);
+  const chosen = themeFor(resolved, choices, customThemes, folderThemes);
+  const theme = preview ?? chosen;
   applyTheme(theme);
   useThemeStore.setState({ mode, resolved });
   const appBg = (kind: ResolvedTheme) =>
-    themeColorToHex(themeFor(kind, choices, customThemes).tokens["--color-app-bg"]);
+    themeColorToHex(themeFor(kind, choices, customThemes, folderThemes).tokens["--color-app-bg"]);
   writeItem(THEME_BOOT_KEY, JSON.stringify({ light: appBg("light"), dark: appBg("dark") }));
   listener?.(mode, theme);
+}
+
+/**
+ * Show `theme` in place of the chosen one (the editor's live preview), or go back
+ * to the chosen theme with null. Mode changes keep showing the preview.
+ */
+export function previewTheme(theme: ThemeDefinition | null) {
+  preview = theme;
+  commit(useThemeStore.getState().mode);
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
@@ -177,6 +227,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   resolved: "light",
   choices: { light: builtInThemes.light.id, dark: builtInThemes.dark.id },
   customThemes: [],
+  folderThemes: [],
   setMode(mode) {
     writeThemeMode(mode);
     commit(mode);
@@ -189,33 +240,47 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     set({ choices: { ...get().choices, [kind]: id } });
     commit(get().mode);
   },
-  installThemes(files) {
-    if (files.length === 0) return;
+  installThemes(themes) {
+    if (themes.length === 0) return;
     // Two picked files with the same id: the later one wins, as it would on re-import.
-    files = [...new Map(files.map((f) => [f.id, f])).values()];
-    const ids = new Set(files.map((f) => f.id));
-    const customThemes = [...get().customThemes.filter((t) => !ids.has(t.id)), ...files];
+    const byId = new Map(themes.map((t) => [t.file.id, t]));
+    themes = [...byId.values()];
+    const customThemes = [
+      ...get().customThemes.filter((t) => !byId.has(t.id)),
+      ...themes.map((t) => t.file),
+    ];
     writeCustomThemes(customThemes, defaultStorage());
     const choices = { ...get().choices };
-    for (const file of files) {
-      choices[file.kind] = file.id;
-      writeItem(THEME_CHOICE_KEYS[file.kind], file.id);
+    for (const { file, slot } of themes) {
+      choices[slot] = file.id;
+      writeItem(THEME_CHOICE_KEYS[slot], file.id);
     }
     set({ customThemes, choices });
-    const last = files[files.length - 1];
-    if (resolveTheme(get().mode, systemPrefersDark()) === last.kind) commit(get().mode);
-    else get().setMode(last.kind);
+    const last = themes[themes.length - 1];
+    if (resolveTheme(get().mode, systemPrefersDark()) === last.slot) commit(get().mode);
+    else get().setMode(last.slot);
   },
   removeTheme(id) {
     const customThemes = get().customThemes.filter((t) => t.id !== id);
     writeCustomThemes(customThemes, defaultStorage());
+    const { folderThemes } = get();
     const choices = { ...get().choices };
     for (const kind of ["light", "dark"] as const) {
-      if (choices[kind] !== id) continue;
+      // A folder theme with the same id takes over; otherwise back to the built-in theme.
+      if (choices[kind] !== id || folderThemes.some((t) => t.id === id)) continue;
       choices[kind] = builtInThemes[kind].id;
       writeItem(THEME_CHOICE_KEYS[kind], choices[kind]);
     }
     set({ customThemes, choices });
+    commit(get().mode);
+  },
+  setFolderThemes(folderThemes) {
+    try {
+      writeCustomThemes(folderThemes, defaultStorage(), FOLDER_THEMES_KEY);
+    } catch {
+      // Only a launch-time cache: the folder is read again next launch.
+    }
+    set({ folderThemes });
     commit(get().mode);
   },
 }));
@@ -230,6 +295,8 @@ export function initTheme(onChange?: ThemeListener): () => void {
   useThemeStore.setState({
     choices: readThemeChoices(storage),
     customThemes: readCustomThemes(storage),
+    // Last launch's copy, so a chosen folder theme shows before the folder is read again.
+    folderThemes: readCustomThemes(storage, FOLDER_THEMES_KEY),
   });
   commit(readThemeMode(storage));
 

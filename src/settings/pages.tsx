@@ -34,7 +34,12 @@ import { InboxTabsSettings } from "./InboxTabsSettings";
 import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
 import { SenderRulesSettings } from "./SenderRulesSettings";
-import { ImportThemeControl, ThemeChoiceControl } from "./ThemeSettings";
+import {
+  CreateThemeControl,
+  ImportThemeControl,
+  ThemeChoiceControl,
+  ThemeFolderControl,
+} from "./ThemeSettings";
 import { READING_SIZES, type ReadingSize, useReadingSettings } from "./readingSettings";
 import {
   OfferControl,
@@ -176,24 +181,50 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
           {
             id: "theme.light",
             title: "Light theme",
-            description: "Used in Light mode, and in System mode when your system is light.",
-            keywords: ["color scheme", "custom theme"],
+            description:
+              "Used in Light mode, and in System mode when your system is light. Any theme fits, even a dark one.",
+            keywords: ["color scheme", "custom theme", "edit theme", "customize"],
             Control: LightThemeControl,
           },
           {
             id: "theme.dark",
             title: "Dark theme",
-            description: "Used in Dark mode, and in System mode when your system is dark.",
-            keywords: ["color scheme", "custom theme"],
+            description:
+              "Used in Dark mode, and in System mode when your system is dark. Any theme fits, even a light one.",
+            keywords: ["color scheme", "custom theme", "edit theme", "customize"],
             Control: DarkThemeControl,
+          },
+          {
+            id: "theme.create",
+            title: "Create a theme",
+            description:
+              "Pick a background and an accent and Pheeme builds the rest, or set every color yourself. Changes show live as you edit.",
+            keywords: ["theme editor", "color picker", "customize", "custom theme", "colors"],
+            Control: CreateThemeControl,
           },
           {
             id: "theme.import",
             title: "Import a theme",
             description:
-              "Add a VS Code color theme or a Pheeme theme file (.json). Pheeme adjusts imported colors so text stays readable.",
-            keywords: ["vs code", "vscode", "custom theme", "color scheme", "install"],
+              "Add a VS Code color theme, a T3 Code theme or a Pheeme theme file (.json). Pheeme adjusts imported colors so text stays readable.",
+            keywords: [
+              "vs code",
+              "vscode",
+              "t3",
+              "t3 code",
+              "custom theme",
+              "color scheme",
+              "install",
+            ],
             Control: ImportThemeControl,
+          },
+          {
+            id: "theme.folder",
+            title: "Themes folder",
+            description:
+              "Theme files in this folder can be chosen above, and stay in step with the files. Copy in the themes from T3 Code's ~/.t3/userdata/themes to use them here.",
+            keywords: ["t3", "t3 code", "folder", "directory", "custom theme"],
+            Control: ThemeFolderControl,
           },
         ],
       },

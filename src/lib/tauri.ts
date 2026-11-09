@@ -311,6 +311,15 @@ export const openAttachment = (accountId: string, messageId: string, attachmentI
   invoke<void>("open_attachment", { accountId, messageId, attachmentId });
 /** Shows a file saved by `saveAttachment` in the system file manager. */
 export const revealDownload = (path: string) => invoke<void>("reveal_download", { path });
+
+/** A file in the themes folder (`{app data}/themes`), unparsed. */
+export interface ThemeFolderFile {
+  name: string;
+  text: string;
+}
+export const listThemeFolder = () =>
+  invoke<{ path: string; files: ThemeFolderFile[] }>("list_theme_folder");
+export const openThemeFolder = () => invoke<void>("open_theme_folder");
 /** What `clearDownloadedMail` removed: emails whose text went, and bytes of attachments. */
 export interface ClearedDownloads {
   messages: number;
