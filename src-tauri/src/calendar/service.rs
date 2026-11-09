@@ -6,7 +6,7 @@ use super::edit::OriginalStart;
 use super::error::CalendarError;
 use super::recurrence::{self, Occurrence};
 use super::sync::{classify, sync_account, SyncError};
-use super::writes::{can_write, Target};
+use super::writes::{can_edit, can_write, Target};
 use super::{CalendarApi, CalendarFactory};
 use crate::db;
 use crate::db::calendar::{DbCalendarAccess, DbEvent};
@@ -451,8 +451,7 @@ impl CalendarService {
             guests_can_modify,
             guests_can_invite_others: flag("guestsCanInviteOthers", true),
             guests_can_see_other_guests: flag("guestsCanSeeOtherGuests", true),
-            can_edit: writable
-                && (organizer.as_ref().is_none_or(|o| o.is_self) || guests_can_modify),
+            can_edit: can_edit(&calendar, &raw_flags),
             can_rsvp,
             can_delete: writable,
         })
@@ -626,7 +625,7 @@ fn overlaps(e: &DbEvent, from_ms: i64, to_ms: i64, tz: chrono_tz::Tz) -> bool {
 
 /// An occurrence with no row of its own: the series' length from the occurrence's original
 /// start, and that start as the DTO reports it.
-fn unstored_occurrence(
+pub(super) fn unstored_occurrence(
     master: &DbEvent,
     event_id: &str,
     at: &OriginalStart,
@@ -736,7 +735,7 @@ fn dto(e: &DbEvent, occ: Option<&Occurrence>) -> CalendarEventDto {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::calendar::fake::{calendar, timed, FakeCalendar};
     use crate::db::accounts::{insert_account, DbAccount};
@@ -745,20 +744,20 @@ mod tests {
     use serde_json::json;
     use std::collections::HashMap;
 
-    fn ms(s: &str) -> i64 {
+    pub(in crate::calendar) fn ms(s: &str) -> i64 {
         chrono::DateTime::parse_from_rfc3339(s)
             .unwrap()
             .timestamp_millis()
     }
 
-    struct Harness {
+    pub(in crate::calendar) struct Harness {
         _db: TestDb,
         fakes: HashMap<String, Arc<FakeCalendar>>,
-        events: Arc<RecordingEvents>,
-        service: Arc<CalendarService>,
+        pub(in crate::calendar) events: Arc<RecordingEvents>,
+        pub(in crate::calendar) service: Arc<CalendarService>,
     }
 
-    async fn harness(accounts: &[&str]) -> Harness {
+    pub(in crate::calendar) async fn harness(accounts: &[&str]) -> Harness {
         let db = TestDb::new().await;
         let mut fakes = HashMap::new();
         for id in accounts {
@@ -798,16 +797,16 @@ mod tests {
     }
 
     impl Harness {
-        fn fake(&self, account: &str) -> &FakeCalendar {
+        pub(in crate::calendar) fn fake(&self, account: &str) -> &FakeCalendar {
             &self.fakes[account]
         }
 
-        async fn grant(&self, account: &str) {
+        pub(in crate::calendar) async fn grant(&self, account: &str) {
             self.service.sync_now(account).await.unwrap();
         }
     }
 
-    fn standup_series() -> serde_json::Value {
+    pub(in crate::calendar) fn standup_series() -> serde_json::Value {
         let mut e = timed(
             "standup",
             "Standup",
@@ -1103,7 +1102,7 @@ mod tests {
         assert_eq!(h.service.accounts().await.unwrap()[0].access.status, "on");
     }
 
-    fn guest_event() -> serde_json::Value {
+    pub(in crate::calendar) fn guest_event() -> serde_json::Value {
         let mut e = timed(
             "review",
             "Review",
