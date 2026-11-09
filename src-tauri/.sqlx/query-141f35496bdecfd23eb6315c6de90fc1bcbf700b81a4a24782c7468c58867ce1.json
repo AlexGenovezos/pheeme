@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM assistant_clients WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "141f35496bdecfd23eb6315c6de90fc1bcbf700b81a4a24782c7468c58867ce1"
+}

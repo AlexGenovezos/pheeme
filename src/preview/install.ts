@@ -1,4 +1,5 @@
 import { createModHandlers } from "./mods";
+import { createAssistantHandlers } from "./assistant";
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import {
@@ -402,6 +403,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     "plugin:updater|check": () => null,
     ...createComposeHandlers(threads, () => accounts),
     ...createModHandlers(params),
+    ...createAssistantHandlers(),
   };
 }
 

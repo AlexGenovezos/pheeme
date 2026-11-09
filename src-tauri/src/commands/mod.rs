@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod assistant;
 pub mod attachments;
 pub mod auth;
 pub mod calendar;
@@ -51,6 +52,15 @@ impl From<MailError> for CommandError {
 
 impl From<CalendarError> for CommandError {
     fn from(error: CalendarError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<crate::local_api::ApiError> for CommandError {
+    fn from(error: crate::local_api::ApiError) -> Self {
         Self {
             code: error.code().to_owned(),
             message: error.to_string(),

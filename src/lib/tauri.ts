@@ -262,6 +262,47 @@ export const undoSenderRules = (accountId: string, saved: SavedRules) =>
   invoke<void>("undo_sender_rules", { accountId, saved });
 export const deleteSenderRule = (accountId: string, ruleId: string) =>
   invoke<void>("delete_sender_rule", { accountId, ruleId });
+/** An MCP client (an AI assistant) connected in Settings › MCP. */
+export interface AssistantClient {
+  id: string;
+  name: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+/** Whether assistants are allowed, the MCP server's state, and the connected clients. */
+export interface AssistantStatus {
+  enabled: boolean;
+  server: { state: "off" | "running" | "failed"; url: string; message: string | null };
+  clients: AssistantClient[];
+}
+/** A newly connected assistant; `token` is shown once and never stored in the clear. */
+export interface NewAssistant {
+  client: AssistantClient;
+  token: string;
+}
+/** One tool call an MCP client made. */
+export interface AssistantActivity {
+  id: number;
+  clientName: string;
+  tool: string;
+  summary: string;
+  /** The arguments exactly as sent (JSON). */
+  arguments: string;
+  /** What came back (JSON): a change's whole answer, or the ids a read returned. Null when it failed. */
+  result: string | null;
+  error: string | null;
+  at: number;
+}
+/** Emitted after each assistant tool call. */
+export const ASSISTANT_ACTIVITY_EVENT = "assistant:activity";
+export const assistantStatus = () => invoke<AssistantStatus>("assistant_status");
+export const setAssistantEnabled = (enabled: boolean) =>
+  invoke<AssistantStatus>("set_assistant_enabled", { enabled });
+export const connectAssistant = (name: string) =>
+  invoke<NewAssistant>("connect_assistant", { name });
+export const removeAssistant = (clientId: string) => invoke<void>("remove_assistant", { clientId });
+export const assistantActivity = () => invoke<AssistantActivity[]>("assistant_activity");
+export const clearAssistantActivity = () => invoke<void>("clear_assistant_activity");
 /** A recipient suggestion for To, Cc or Bcc. */
 export interface ContactSuggestion {
   name: string | null;

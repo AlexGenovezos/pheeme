@@ -1,0 +1,110 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, client_name, tool, summary, arguments, result, error, at FROM assistant_activity\n         ORDER BY id DESC LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "assistant_activity",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "client_name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "assistant_activity",
+            "name": "client_name"
+          }
+        }
+      },
+      {
+        "name": "tool",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "assistant_activity",
+            "name": "tool"
+          }
+        }
+      },
+      {
+        "name": "summary",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "assistant_activity",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "name": "arguments",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "assistant_activity",
+            "name": "arguments"
+          }
+        }
+      },
+      {
+        "name": "result",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "assistant_activity",
+            "name": "result"
+          }
+        }
+      },
+      {
+        "name": "error",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "assistant_activity",
+            "name": "error"
+          }
+        }
+      },
+      {
+        "name": "at",
+        "ordinal": 7,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "assistant_activity",
+            "name": "at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "b6573a62009f3bee07fc73fe7f32b16654840a5801577dfade5e5996f01d8e8c"
+}

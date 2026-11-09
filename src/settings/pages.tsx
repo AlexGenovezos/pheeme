@@ -2,6 +2,7 @@ import { NotificationsSettings } from "./NotificationsSettings";
 import { ModsSettings } from "../mods/ModsSettings";
 import {
   Bell,
+  Bot,
   Contact,
   Info,
   Filter,
@@ -28,6 +29,7 @@ import { type ListDensity, useUiStore } from "../store/uiStore";
 import { THEME_MODES, type ThemeMode, useThemeStore } from "../theme/theme";
 import { AboutSettings } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
+import { AssistantSettings } from "./AssistantSettings";
 import { ClearDownloadedMail } from "./ClearDownloadedMail";
 import { ContactsSettings } from "./ContactsSettings";
 import { DiagnosticsSection } from "./DiagnosticsSection";
@@ -480,6 +482,27 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     keywords: ["alerts", "primary", "unread", "tray", "background", "sound", "focus"],
     Component: NotificationsSettings,
     matches: accountsMatch,
+  },
+  {
+    id: "mcp",
+    title: "MCP",
+    icon: Bot,
+    group: "App",
+    keywords: [
+      "ai",
+      "assistants",
+      "audit",
+      "activity",
+      "mcp",
+      "claude",
+      "claude code",
+      "agent",
+      "llm",
+      "chatgpt",
+      "token",
+      "automation",
+    ],
+    Component: AssistantSettings,
   },
   {
     id: "mods",
