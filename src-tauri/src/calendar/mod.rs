@@ -12,7 +12,7 @@ mod rsvp;
 pub mod series;
 pub mod service;
 pub mod sync;
-mod writes;
+pub mod writes;
 
 use crate::gmail::calendar::{
     ApiEvent, CalendarListPage, CalendarSettings, EventsPage, SendUpdates, WriteOptions,

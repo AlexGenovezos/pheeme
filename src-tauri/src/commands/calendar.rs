@@ -1,7 +1,12 @@
 //! Calendar commands: thin adapters over [`crate::calendar::service::CalendarService`].
 
 use super::CommandError;
-use crate::calendar::service::{CalendarAccessDto, CalendarAccountDto, CalendarEventDto};
+use crate::calendar::edit::EventEdit;
+use crate::calendar::service::{
+    CalendarAccessDto, CalendarAccountDto, CalendarEventDto, EventDetailDto,
+};
+use crate::calendar::writes::{EditScope, EventRef};
+use crate::gmail::calendar::SendUpdates;
 use crate::gmail::user_action;
 use crate::AppState;
 use tauri::State;
@@ -52,4 +57,160 @@ pub async fn calendar_sync_now(
 #[tauri::command]
 pub fn set_calendar_foreground(state: State<'_, AppState>, on: bool) {
     state.calendar.set_foreground(on);
+}
+
+/// The full detail of one event or occurrence (local).
+#[tauri::command]
+pub async fn calendar_event_detail(
+    state: State<'_, AppState>,
+    account_id: String,
+    calendar_id: String,
+    event_id: String,
+) -> Result<EventDetailDto, CommandError> {
+    Ok(state
+        .calendar
+        .event_detail(&account_id, &calendar_id, &event_id)
+        .await?)
+}
+
+/// Create an event.
+#[tauri::command]
+pub async fn create_calendar_event(
+    state: State<'_, AppState>,
+    account_id: String,
+    calendar_id: String,
+    edit: EventEdit,
+    send_updates: SendUpdates,
+) -> Result<EventRef, CommandError> {
+    Ok(user_action(
+        state
+            .calendar
+            .create_event(&account_id, &calendar_id, edit, send_updates),
+    )
+    .await?)
+}
+
+/// Change an event, or the occurrences of a series `scope` names.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn update_calendar_event(
+    state: State<'_, AppState>,
+    account_id: String,
+    calendar_id: String,
+    event_id: String,
+    scope: EditScope,
+    edit: EventEdit,
+    send_updates: SendUpdates,
+) -> Result<EventRef, CommandError> {
+    Ok(user_action(state.calendar.update_event(
+        &account_id,
+        &calendar_id,
+        &event_id,
+        scope,
+        edit,
+        send_updates,
+    ))
+    .await?)
+}
+
+/// Delete an event, or the occurrences of a series `scope` names.
+#[tauri::command]
+pub async fn delete_calendar_event(
+    state: State<'_, AppState>,
+    account_id: String,
+    calendar_id: String,
+    event_id: String,
+    scope: EditScope,
+    send_updates: SendUpdates,
+) -> Result<(), CommandError> {
+    Ok(user_action(state.calendar.delete_event(
+        &account_id,
+        &calendar_id,
+        &event_id,
+        scope,
+        send_updates,
+    ))
+    .await?)
+}
+
+/// Move an event (or whole series) to another calendar of the same account.
+#[tauri::command]
+pub async fn move_calendar_event(
+    state: State<'_, AppState>,
+    account_id: String,
+    calendar_id: String,
+    event_id: String,
+    destination_calendar_id: String,
+    send_updates: SendUpdates,
+) -> Result<EventRef, CommandError> {
+    Ok(user_action(state.calendar.move_event(
+        &account_id,
+        &calendar_id,
+        &event_id,
+        &destination_calendar_id,
+        send_updates,
+    ))
+    .await?)
+}
+
+/// Copy an event to a calendar of any account (Duplicate copies to the same calendar).
+#[tauri::command]
+pub async fn copy_calendar_event(
+    state: State<'_, AppState>,
+    account_id: String,
+    calendar_id: String,
+    event_id: String,
+    to_account_id: String,
+    to_calendar_id: String,
+) -> Result<EventRef, CommandError> {
+    Ok(user_action(state.calendar.copy_event(
+        &account_id,
+        &calendar_id,
+        &event_id,
+        &to_account_id,
+        &to_calendar_id,
+    ))
+    .await?)
+}
+
+/// Answer an invitation: `accepted`, `tentative` or `declined`.
+#[tauri::command]
+pub async fn respond_to_calendar_event(
+    state: State<'_, AppState>,
+    account_id: String,
+    calendar_id: String,
+    event_id: String,
+    scope: EditScope,
+    response: String,
+    comment: Option<String>,
+) -> Result<EventRef, CommandError> {
+    Ok(user_action(state.calendar.respond(
+        &account_id,
+        &calendar_id,
+        &event_id,
+        scope,
+        &response,
+        comment,
+    ))
+    .await?)
+}
+
+/// Answer the invitation with this iCalendar UID (Mail's invite card), importing it if needed.
+#[tauri::command]
+pub async fn respond_to_calendar_invite(
+    state: State<'_, AppState>,
+    account_id: String,
+    ical_uid: String,
+    response: String,
+    comment: Option<String>,
+    import: Option<serde_json::Value>,
+) -> Result<EventRef, CommandError> {
+    Ok(user_action(state.calendar.respond_to_invite(
+        &account_id,
+        &ical_uid,
+        &response,
+        comment,
+        import,
+    ))
+    .await?)
 }
