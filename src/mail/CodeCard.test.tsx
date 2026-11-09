@@ -1,5 +1,5 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { dismissToast, ToastProvider, useToastStore } from "../components/ui/Toast";
 import type { MessageDetail, ThreadDetail, ThreadSummary } from "../lib/tauri";
@@ -98,6 +98,8 @@ test("a code email shows the code on a card above the conversation, and Copy cod
 
   const card = screen.getByRole("region", { name: "Verification code" });
   expect(card).toHaveTextContent("779693");
+  // The tiles are hidden from assistive tech, so the code is announced as one image.
+  expect(within(card).getByRole("img", { name: "779693" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /Copy code/ }));
   expect(writeText).toHaveBeenCalledWith("779693");
   await waitFor(() => expect(toasts()).toContain("Copied 779693"));
@@ -128,7 +130,7 @@ test("the list row offers a recent code; clicking it copies without opening the 
   });
   render(<ThreadList title="Inbox" onRowAction={vi.fn()} rowMenu={() => []} />);
 
-  const chips = screen.getAllByRole("button", { name: "Copy verification code 779693" });
+  const chips = screen.getAllByLabelText("Copy verification code 779693");
   expect(chips).toHaveLength(1);
   fireEvent.click(chips[0]);
   expect(writeText).toHaveBeenCalledWith("779693");
@@ -139,7 +141,7 @@ test("compact rows keep the code chip on the subject line", () => {
   useUiStore.setState({ listDensity: "compact" });
   useMailStore.setState({ threads: [summary()] });
   render(<ThreadList title="Inbox" onRowAction={vi.fn()} rowMenu={() => []} />);
-  fireEvent.click(screen.getByRole("button", { name: "Copy verification code 779693" }));
+  fireEvent.click(screen.getByLabelText("Copy verification code 779693"));
   expect(writeText).toHaveBeenCalledWith("779693");
 });
 
@@ -148,9 +150,9 @@ test("the list chip goes away once the code is an hour old, without anything els
   try {
     useMailStore.setState({ threads: [summary({ date: Date.now() - LIST_CODE_MAX_AGE + 1000 })] });
     render(<ThreadList title="Inbox" onRowAction={vi.fn()} rowMenu={() => []} />);
-    expect(screen.getByRole("button", { name: "Copy verification code 779693" })).toBeTruthy();
+    expect(screen.getByLabelText("Copy verification code 779693")).toBeTruthy();
     act(() => vi.advanceTimersByTime(2000));
-    expect(screen.queryByRole("button", { name: "Copy verification code 779693" })).toBeNull();
+    expect(screen.queryByLabelText("Copy verification code 779693")).toBeNull();
   } finally {
     vi.useRealTimers();
   }

@@ -56,6 +56,7 @@
 }
 .settings__search:focus-within {
   border-color: var(--color-focus-border);
+  box-shadow: 0 0 0 var(--border-width) var(--color-focus-border);
 }
 .settings__search svg {
   width: var(--icon-size-sm);

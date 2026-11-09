@@ -130,7 +130,7 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
     const first = items[0];
     const last = items[items.length - 1];
     const active = document.activeElement;
-    if (e.shiftKey && (active === first || active === stageRef.current)) {
+    if (e.shiftKey && active === first) {
       e.preventDefault();
       last.focus();
     } else if (!e.shiftKey && active === last) {
@@ -209,7 +209,11 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
         <div
           ref={stageRef}
           className={`file-preview__stage file-preview__stage--${kind}`}
-          tabIndex={-1}
+          // In the Tab order, so the keyboard can come back to scroll it. The ring shows only when Tab
+          // brought focus here, not when opening the preview focused it.
+          tabIndex={0}
+          onKeyUp={(e) => e.key === "Tab" && e.currentTarget.setAttribute("data-tabbed", "")}
+          onBlur={(e) => e.currentTarget.removeAttribute("data-tabbed")}
         >
           {kind === "other" ? (
             <NoPreview file={file} openable={openable} />

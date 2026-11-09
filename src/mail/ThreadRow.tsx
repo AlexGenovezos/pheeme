@@ -115,8 +115,11 @@ export const ThreadRow = memo(function ThreadRow({
       }}
       onContextMenu={(e) => onContextMenu(e, thread)}
       leading={
+        // Mouse target only, so hidden from assistive tech: the option's aria-selected already says
+        // whether it's checked, and a listbox option can't contain controls.
         <label
           className="thread-row__lead"
+          aria-hidden="true"
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => e.stopPropagation()}
         >
@@ -165,7 +168,12 @@ export const ThreadRow = memo(function ThreadRow({
             )}
           </span>
           {hovered && (
-            <span className="thread-row__actions" onMouseDown={(e) => e.preventDefault()}>
+            <span
+              className="thread-row__actions"
+              // Mouse targets (tabIndex -1): the keyboard path is the shortcut each one shows.
+              aria-hidden="true"
+              onMouseDown={(e) => e.preventDefault()}
+            >
               <IconButton
                 size="sm"
                 tabIndex={-1}

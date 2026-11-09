@@ -79,6 +79,10 @@
 .file-preview__stage:focus-visible {
   outline: none;
 }
+.file-preview__stage[data-tabbed]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-inset);
+}
 
 .file-preview__message {
   display: flex;

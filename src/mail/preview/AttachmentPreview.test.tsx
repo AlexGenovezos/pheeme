@@ -113,3 +113,20 @@ test("a failed read explains why", async () => {
     await screen.findByText(/Couldn't load “plan.pdf”: Gmail is unavailable./),
   ).toBeInTheDocument();
 });
+
+test("the file stays in the Tab order, so the keyboard can come back to scroll it", () => {
+  render(<AttachmentPreview />);
+  open([file("csv", "costs.csv")]);
+  const stage = document.querySelector<HTMLElement>(".file-preview__stage")!;
+  expect(stage).toHaveFocus();
+  expect(stage).toHaveAttribute("tabindex", "0");
+  // Opening focuses it without a ring; Tab arriving there shows one.
+  expect(stage).not.toHaveAttribute("data-tabbed");
+  const close = screen.getByRole("button", { name: /Close preview/ });
+  close.focus();
+  stage.focus();
+  fireEvent.keyUp(stage, { key: "Tab" });
+  expect(stage).toHaveAttribute("data-tabbed");
+  close.focus();
+  expect(stage).not.toHaveAttribute("data-tabbed");
+});
