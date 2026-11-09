@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod attachments;
 pub mod auth;
+pub mod calendar;
 pub mod compose;
 pub mod contacts;
 pub mod labels;
