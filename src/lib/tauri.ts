@@ -426,6 +426,9 @@ export interface QueuedSend {
 
 export const composeTemplate = (accountId: string, messageId: string, mode: ComposeMode) =>
   invoke<ComposeDraft>("compose_template", { accountId, messageId, mode });
+/** The account's signature as set in Gmail (HTML), or `null` when it has none. */
+export const gmailSignature = (accountId: string) =>
+  invoke<string | null>("gmail_signature", { accountId });
 export const stageAttachment = (path: string) =>
   invoke<StagedAttachment>("stage_attachment", { path });
 /** Call when a compose panel closes (sent, saved or discarded). */

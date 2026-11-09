@@ -6,7 +6,7 @@ use crate::gmail::mime::encode_base64url;
 use crate::gmail::types::{
     Draft, DraftListResponse, Filter, Header, HistoryLabelChange, HistoryListResponse,
     HistoryMessage, HistoryRecord, Label, LabelColor, LabelUpdate, Message, MessageListResponse,
-    MessagePart, MessagePartBody, MessageRef, Thread, ThreadListResponse, UserProfile,
+    MessagePart, MessagePartBody, MessageRef, SendAs, Thread, ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailError, MessageFormat};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -277,6 +277,8 @@ struct State {
     /// Filters by id (`users.settings.filters`).
     filters: BTreeMap<String, Filter>,
     next_filter: u64,
+    /// `users.settings.sendAs`.
+    send_as: Vec<SendAs>,
 }
 
 pub struct FakeGmail {
@@ -362,6 +364,11 @@ impl FakeGmail {
         filter.id = Some(id.clone());
         s.filters.insert(id.clone(), filter);
         id
+    }
+
+    /// Set the account's send-as addresses (and their signatures).
+    pub fn set_send_as(&self, send_as: Vec<SendAs>) {
+        self.lock().send_as = send_as;
     }
 
     /// Every filter, by id.
@@ -1180,6 +1187,11 @@ impl MailApi for FakeGmail {
         self.lock().drafts.remove(id);
         self.delete(&message_id);
         Ok(())
+    }
+
+    async fn list_send_as(&self) -> Result<Vec<SendAs>, GmailError> {
+        self.enter("list_send_as")?;
+        Ok(self.lock().send_as.clone())
     }
 
     async fn list_filters(&self) -> Result<Vec<Filter>, GmailError> {

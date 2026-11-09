@@ -22,6 +22,7 @@ import {
 } from "../lib/tauri";
 import { useComposeSettings } from "./composeSettings";
 import { isValidAddress } from "./recipients";
+import { bodyWithSignature, useSignatures, withoutSignature } from "./signatures";
 
 export type ComposeKind = "new" | ComposeMode | "draft";
 
@@ -76,12 +77,12 @@ const bodyText = (html: string) =>
     .replace(/&nbsp;/g, " ")
     .trim();
 
-/** Nothing typed, nobody to send to, nothing attached. */
+/** Nothing typed (a signature alone doesn't count), nobody to send to, nothing attached. */
 export function isBlank(d: ComposeDraft): boolean {
   return (
     d.to.length + d.cc.length + d.bcc.length === 0 &&
     !d.subject.trim() &&
-    !bodyText(d.bodyHtml) &&
+    !bodyText(withoutSignature(d.bodyHtml)) &&
     d.attachments.length === 0
   );
 }
@@ -268,15 +269,26 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     focusRequest: null,
 
     compose(accountId, initial) {
-      return open(blank(accountId, "new", { ...emptyDraft(), ...initial }, false)) ?? -1;
+      const bodyHtml = bodyWithSignature(useSignatures.getState().signatureFor(accountId, "new"));
+      return open(blank(accountId, "new", { ...emptyDraft(), bodyHtml, ...initial }, false)) ?? -1;
     },
 
     async respond(accountId, messageId, mode) {
       const id = open(blank(accountId, mode, emptyDraft(), true));
       if (id === null) return;
       try {
-        const draft = await composeTemplate(accountId, messageId, mode);
+        const signatures = useSignatures.getState();
+        // Wait for a first fetch of the Gmail signature, never a refresh of one already known.
+        const fetching = signatures.refreshGmailOnce(accountId);
+        const known = signatures.gmail[accountId]?.html !== undefined;
+        const [draft] = await Promise.all([
+          composeTemplate(accountId, messageId, mode),
+          known ? null : fetching,
+        ]);
         if (!find(id)) return dropStaged(draft.attachments); // closed while loading
+        draft.bodyHtml = bodyWithSignature(
+          useSignatures.getState().signatureFor(accountId, "reply"),
+        );
         patch(id, { draft, loading: false });
         get().focus(id);
       } catch (e) {

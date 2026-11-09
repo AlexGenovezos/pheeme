@@ -292,3 +292,22 @@ pub struct FilterListResponse {
     #[serde(default)]
     pub filter: Vec<Filter>,
 }
+
+/// A send-as address (`users.settings.sendAs`): the account's own address, or an alias.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SendAs {
+    pub send_as_email: String,
+    pub display_name: Option<String>,
+    /// HTML; empty when there's none.
+    pub signature: Option<String>,
+    pub is_primary: bool,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendAsListResponse {
+    #[serde(default)]
+    pub send_as: Vec<SendAs>,
+}

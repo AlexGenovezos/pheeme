@@ -157,6 +157,8 @@
   --compose-header-height: 36px;
   --compose-field-label-width: 56px;
   --compose-editor-min-height: 160px;
+  /* Settings › Signatures: the editor for an account's own signature. */
+  --signature-editor-min-height: 96px;
   --compose-link-input-width: 220px;
   --compose-attachment-max-width: 240px;
   /* Onboarding and account screens. */

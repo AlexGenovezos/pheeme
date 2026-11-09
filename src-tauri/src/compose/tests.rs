@@ -356,3 +356,59 @@ async fn reply_carries_the_images_its_quote_shows_but_not_files() {
         b"PNG"
     );
 }
+
+fn send_as(email: &str, signature: Option<&str>, primary: bool) -> crate::gmail::types::SendAs {
+    crate::gmail::types::SendAs {
+        send_as_email: email.into(),
+        signature: signature.map(Into::into),
+        is_primary: primary,
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn gmail_signature_is_the_accounts_own_sanitized() {
+    let h = harness().await;
+    assert_eq!(h.compose.gmail_signature(ACCT).await.unwrap(), None);
+
+    h.fake.set_send_as(vec![
+        send_as("alias@example.com", Some("Alias"), false),
+        send_as(
+            "Me@Example.com",
+            Some("<b onclick=\"x()\">Me</b><script>bad()</script><img src=\"https://x/logo.png\">"),
+            false,
+        ),
+    ]);
+    let sig = h.compose.gmail_signature(ACCT).await.unwrap().unwrap();
+    assert!(sig.contains("<b>Me</b>"), "{sig}");
+    assert!(sig.contains("<img src=\"https://x/logo.png\">"), "{sig}");
+    assert!(!sig.contains("script") && !sig.contains("onclick"), "{sig}");
+
+    // No entry for the address itself: the primary one.
+    h.fake.set_send_as(vec![
+        send_as("other@example.com", Some(" "), true),
+        send_as("alias@example.com", Some("Alias"), false),
+    ]);
+    assert_eq!(
+        h.compose.gmail_signature(ACCT).await.unwrap(),
+        None,
+        "blank is none"
+    );
+}
+
+#[tokio::test]
+async fn gmail_signature_without_the_settings_scope_says_so() {
+    let h = harness().await;
+    h.fake.fail_next(
+        "list_send_as",
+        GmailError::Api {
+            status: 403,
+            reason: Some("insufficientPermissions".into()),
+            message: "Request had insufficient authentication scopes.".into(),
+        },
+    );
+    assert_eq!(
+        h.compose.gmail_signature(ACCT).await.unwrap_err().code(),
+        "missing_scope"
+    );
+}

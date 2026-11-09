@@ -373,6 +373,7 @@ pub fn run() {
             commands::contacts::google_contacts_status,
             commands::contacts::refresh_google_contacts,
             commands::compose::compose_template,
+            commands::compose::gmail_signature,
             commands::compose::stage_attachment,
             commands::compose::discard_attachments,
             commands::compose::save_draft,

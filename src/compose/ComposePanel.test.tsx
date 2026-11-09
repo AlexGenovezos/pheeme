@@ -6,6 +6,7 @@ import { useAccountStore } from "../store/accountStore";
 import { ComposeHost } from "./ComposeHost";
 import { __resetComposeSettingsForTests, useComposeSettings } from "./composeSettings";
 import { __resetComposeStoreForTests, useComposeStore } from "./composeStore";
+import { __resetSignaturesForTests, useSignatures } from "./signatures";
 
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
 
@@ -13,6 +14,7 @@ beforeEach(() => {
   localStorage.clear();
   __resetComposeSettingsForTests();
   __resetComposeStoreForTests();
+  __resetSignaturesForTests();
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
   useAccountStore.setState({
     accounts: [
@@ -311,4 +313,50 @@ test("the send prompt takes focus on its Send button", async () => {
   fireEvent.click(within(panel).getByRole("button", { name: "Send" }));
   const prompt = within(panel).getByRole("alertdialog", { name: "Send this message?" });
   await waitFor(() => expect(within(prompt).getByRole("button", { name: "Send" })).toHaveFocus());
+});
+
+test("the signature shows whole in the editor, stays one block, and follows the From account", async () => {
+  useSignatures.setState({
+    gmail: {
+      a1: {
+        html: '<table><tr><td><img src="https://x/logo.png" alt="Logo"></td><td><b>Me</b> One</td></tr></table>',
+        loading: false,
+      },
+      a2: { html: "<i>Me Two</i>", loading: false },
+    },
+  });
+  const panel = await openNew();
+  const editor = within(panel).getByRole("textbox", { name: "Message" });
+  const block = editor.querySelector(".gmail_signature")!;
+  expect(block.querySelector("img")?.getAttribute("src")).toBe("https://x/logo.png");
+  expect(block.querySelector("table b")?.textContent).toBe("Me");
+  expect(block.getAttribute("contenteditable")).toBe("false");
+
+  act(() => useComposeStore.getState().setAccount(1, "a2"));
+  await waitFor(
+    () =>
+      expect(useComposeStore.getState().windows[0].draft.bodyHtml).toBe(
+        '<p></p><div class="gmail_signature" data-smartmail="gmail_signature"><i>Me Two</i></div><p></p>',
+      ), // the editor keeps a line after a block, to click into
+  );
+  expect(editor.querySelectorAll(".gmail_signature")).toHaveLength(1);
+  expect(editor.querySelector(".gmail_signature")?.textContent).toBe("Me Two");
+});
+
+test("a new message opened before the first Gmail signature fetch gets it when it arrives", async () => {
+  let answer: (html: string) => void = () => {};
+  mockIPC((cmd) =>
+    cmd === "gmail_signature" ? new Promise<string>((resolve) => (answer = resolve)) : undefined,
+  );
+  const fetching = useSignatures.getState().refreshGmail("a1");
+  const panel = await openNew();
+  const editor = within(panel).getByRole("textbox", { name: "Message" });
+  expect(editor.querySelector(".gmail_signature")).toBeNull();
+
+  await act(async () => {
+    answer("<b>Late</b>");
+    await fetching;
+  });
+  await waitFor(() => expect(editor.querySelector(".gmail_signature b")?.textContent).toBe("Late"));
+  expect(editor.querySelectorAll(".gmail_signature")).toHaveLength(1);
 });

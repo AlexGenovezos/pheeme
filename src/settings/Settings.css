@@ -611,3 +611,38 @@
   color: var(--color-warning);
   font-size: var(--font-size-sm);
 }
+
+/* Settings › Signatures. */
+.settings-row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+.settings-row--signature .settings-row__text {
+  flex: 1;
+}
+.signature-preview {
+  color: var(--color-foreground);
+  font-size: var(--font-size-reading);
+  line-height: var(--line-height-reading);
+  overflow-wrap: anywhere;
+}
+.signature-preview img {
+  max-width: 100%;
+  height: auto;
+}
+.signature-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--signature-editor-min-height);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+}
+.signature-editor .compose-editor {
+  min-height: var(--signature-editor-min-height);
+  padding: var(--space-2);
+}
+.signature-editor .compose-toolbar {
+  border-top: var(--border-width) solid var(--color-border-subtle);
+  background: transparent;
+}
