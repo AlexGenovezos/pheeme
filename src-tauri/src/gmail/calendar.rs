@@ -342,7 +342,13 @@ impl GmailClient {
         match self.send_json::<Value>(req).await {
             Ok(raw) => ApiEvent::try_from(raw),
             Err(e) if e.is_duplicate() => match id {
-                Some(id) => self.get_event(calendar_id, &id).await,
+                // The earlier attempt landed, so whatever stops us reading it back leaves
+                // the outcome unconfirmed, never "didn't reach Google".
+                Some(id) => self.get_event(calendar_id, &id).await.map_err(|e| {
+                    GmailError::Network(format!(
+                        "the event was saved but couldn't be read back: {e}"
+                    ))
+                }),
                 None => Err(e),
             },
             Err(e) => Err(e),
@@ -744,6 +750,37 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(event.id, "abc123");
+    }
+
+    #[tokio::test]
+    async fn insert_duplicate_then_failed_get_is_network() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/calendars/primary/events"))
+            .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+                "error": {"code": 409, "message": "The requested identifier already exists.",
+                          "errors": [{"reason": "duplicate", "message": "exists"}]}
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/calendars/primary/events/abc123"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let err = client
+            .insert_event(
+                "primary",
+                json!({"id": "abc123"}),
+                opts(SendUpdates::None, None, false),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, crate::gmail::error::GmailError::Network(_)),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]
