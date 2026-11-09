@@ -2,7 +2,7 @@
  * How the preview panel shows an attachment. Mirrors `src-tauri/src/attachment_kind.rs`: the
  * extension decides first, because senders often label every file `application/octet-stream`.
  */
-export type PreviewKind = "pdf" | "image" | "text" | "csv" | "docx" | "xlsx" | "other";
+export type PreviewKind = "pdf" | "image" | "text" | "csv" | "docx" | "xlsx" | "pptx" | "other";
 
 const BY_EXTENSION: Record<string, PreviewKind> = {
   pdf: "pdf",
@@ -23,6 +23,7 @@ const BY_EXTENSION: Record<string, PreviewKind> = {
   tsv: "csv",
   docx: "docx",
   xlsx: "xlsx",
+  pptx: "pptx",
 };
 
 const BY_MIME: Record<string, PreviewKind> = {
@@ -39,6 +40,7 @@ const BY_MIME: Record<string, PreviewKind> = {
   "application/json": "text",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
 };
 
 /** Extensions the backend opens in the default app (`attachment_kind::OPENABLE`). */

@@ -6,6 +6,7 @@ const SAMPLES: Record<string, string> = {
   image: new URL("./files/sample.png", import.meta.url).href,
   docx: new URL("./files/sample.docx", import.meta.url).href,
   xlsx: new URL("./files/sample.xlsx", import.meta.url).href,
+  pptx: new URL("./files/sample.pptx", import.meta.url).href,
   csv: new URL("./files/sample.csv", import.meta.url).href,
 };
 

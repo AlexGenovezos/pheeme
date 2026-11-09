@@ -315,6 +315,7 @@ export function createFixtureThreads(): FixtureThread[] {
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
               2_568,
             ),
+            file("p-01-a8", "icon-review.pptx", "application/octet-stream", 118_264),
             file("p-01-a5", "favourite-direction.png", "image/png", 23_463),
             file("p-01-a6", "review-list.csv", "text/csv", 175),
             file("p-01-a7", "icon-sources.zip", "application/zip", 3_904_112),

@@ -5,6 +5,7 @@ test("the extension decides first, since senders often send octet-stream", () =>
   expect(previewKind("Meeting 31Aug24.PDF", "application/octet-stream")).toBe("pdf");
   expect(previewKind("notes.docx", null)).toBe("docx");
   expect(previewKind("budget.xlsx", null)).toBe("xlsx");
+  expect(previewKind("deck.PPTX", "application/octet-stream")).toBe("pptx");
   expect(previewKind("list.tsv", null)).toBe("csv");
   expect(previewKind("photo.JPG", null)).toBe("image");
   expect(previewKind("readme.md", null)).toBe("text");
@@ -14,10 +15,16 @@ test("without a known extension, the MIME type decides", () => {
   expect(previewKind("scan", "image/png; name=scan")).toBe("image");
   expect(previewKind(null, "application/pdf")).toBe("pdf");
   expect(previewKind("page.html", "text/html")).toBe("other");
+  expect(
+    previewKind(
+      "deck",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ),
+  ).toBe("pptx");
 });
 
 test("a known extension that can't be previewed isn't overridden by its MIME type", () => {
-  expect(previewKind("slides.pptx", "application/pdf")).toBe("other");
+  expect(previewKind("slides.ppt", "application/pdf")).toBe("other");
   expect(previewKind("old.doc", "text/plain")).toBe("other");
 });
 

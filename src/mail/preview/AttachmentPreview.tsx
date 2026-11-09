@@ -24,6 +24,7 @@ import "./preview.css";
 const PdfView = lazy(() => import("./PdfView"));
 const DocxView = lazy(() => import("./DocxView"));
 const SheetView = lazy(() => import("./SheetView"));
+const PptxView = lazy(() => import("./PptxView"));
 
 /** Plain text past this is cut off in the preview. */
 const MAX_TEXT_BYTES = 1024 * 1024;
@@ -252,6 +253,8 @@ function FileBody({
       return <PdfView data={data} name={name} />;
     case "docx":
       return <DocxView data={data} name={name} onFrameFocus={onFrameFocus} />;
+    case "pptx":
+      return <PptxView data={data} name={name} />;
     case "xlsx":
     case "csv":
       return <SheetView data={data} kind={kind} name={name} />;
@@ -266,7 +269,7 @@ function ImageView({ data, file }: { data: ArrayBuffer; file: AttachmentInfo }) 
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
-  // A data: URL (the app's CSP allows those for images, not blob:).
+  // A data: URL, so there's no blob: URL to revoke.
   useEffect(() => {
     const stop = new AbortController();
     const reader = new FileReader();

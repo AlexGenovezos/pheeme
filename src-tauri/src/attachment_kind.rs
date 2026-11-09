@@ -5,7 +5,7 @@
 /// Extensions the preview panel draws itself.
 const PREVIEWABLE: &[&str] = &[
     "pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg", "txt", "md", "log", "json",
-    "xml", "csv", "tsv", "docx", "xlsx",
+    "xml", "csv", "tsv", "docx", "xlsx", "pptx",
 ];
 
 /// Extensions safe to open in the default app: documents, images and media. Executables,
@@ -34,6 +34,7 @@ const PREVIEWABLE_MIME: &[&str] = &[
     "application/json",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ];
 
 /// The lowercased extension of a file name, if it has one.
@@ -90,7 +91,8 @@ mod tests {
         ));
         assert!(previewable(Some("budget.xlsx"), None));
         assert!(previewable(Some("scan"), Some("image/jpeg; name=scan")));
-        assert!(!previewable(Some("slides.pptx"), Some("application/pdf")));
+        assert!(previewable(Some("deck.PPTX"), Some("application/octet-stream")));
+        assert!(!previewable(Some("slides.ppt"), Some("application/pdf")));
         assert!(!previewable(Some("archive.zip"), Some("application/zip")));
         assert!(!previewable(Some("page.html"), Some("text/html")));
         assert!(!previewable(None, Some("text/html")));
