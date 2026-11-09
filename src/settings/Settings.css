@@ -645,6 +645,7 @@
 .signature-editor .compose-toolbar {
   border-top: var(--border-width) solid var(--color-border-subtle);
   background: transparent;
+}
 
 /* AI assistants (src/settings/AssistantSettings.tsx). */
 .settings-assistant__connect {
