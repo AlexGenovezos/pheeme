@@ -5,6 +5,7 @@ pub mod convert;
 #[cfg(test)]
 pub(crate) mod fake;
 pub mod recurrence;
+pub mod service;
 pub mod sync;
 
 use crate::gmail::calendar::{CalendarListPage, CalendarSettings, EventsPage};

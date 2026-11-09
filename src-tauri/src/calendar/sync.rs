@@ -444,7 +444,8 @@ mod tests {
         // `gone1` arrives cancelled with no series: nothing to store.
         sync_account(&db.pool, &fake, "a", 1, false).await.unwrap();
 
-        let rows: Vec<(String, String, Option<String>, Option<i64>, Option<String>)> = sqlx::query_as(
+        type Row = (String, String, Option<String>, Option<i64>, Option<String>);
+        let rows: Vec<Row> = sqlx::query_as(
             "SELECT id, status, recurring_event_id, original_start_ms, recurrence FROM events ORDER BY id",
         )
         .fetch_all(&db.pool)
