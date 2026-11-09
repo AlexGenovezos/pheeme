@@ -24,6 +24,18 @@ pub const SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/userinfo.profile",
 ];
 
+/// Calendar mode's scopes, asked for only when the user opens the calendar for an account
+/// (an incremental consent on top of [`SCOPES`]). Never the full `calendar` scope.
+pub const CALENDAR_SCOPES: &[&str] = &[
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    "https://www.googleapis.com/auth/calendar.settings.readonly",
+    "https://www.googleapis.com/auth/tasks",
+];
+
+/// The calendar scope without which Calendar mode can't show anything.
+pub const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
+
 /// Google's consent screen lets users untick scopes; without this one the app is useless.
 pub const REQUIRED_SCOPE: &str = "https://www.googleapis.com/auth/gmail.modify";
 
@@ -171,14 +183,19 @@ pub fn authorization_url(
     code_challenge: &str,
     state: &str,
     login_hint: Option<&str>,
+    extra_scopes: &[&str],
 ) -> String {
+    let scopes: Vec<&str> = SCOPES.iter().chain(extra_scopes).copied().collect();
     let mut url = Url::parse(&endpoints.auth).expect("auth endpoint is a valid URL");
     let mut query = url.query_pairs_mut();
     query
         .append_pair("client_id", client_id)
         .append_pair("redirect_uri", redirect_uri)
         .append_pair("response_type", "code")
-        .append_pair("scope", &SCOPES.join(" "))
+        .append_pair("scope", &scopes.join(" "))
+        // Keep what the account granted before (calendar access survives signing in again
+        // for mail, and vice versa).
+        .append_pair("include_granted_scopes", "true")
         .append_pair("code_challenge", code_challenge)
         .append_pair("code_challenge_method", "S256")
         .append_pair("state", state)
@@ -503,6 +520,7 @@ mod tests {
             "chal",
             "st",
             None,
+            &[],
         );
         let url = Url::parse(&url).unwrap();
         assert_eq!(url.host_str(), Some("accounts.google.com"));
@@ -518,6 +536,36 @@ mod tests {
         assert_eq!(q["scope"], SCOPES.join(" "));
         assert!(!q["scope"].contains("https://mail.google.com/"));
         assert!(!q.contains_key("login_hint"));
+    }
+
+    fn query_of(extra_scopes: &[&str]) -> std::collections::HashMap<String, String> {
+        let url = authorization_url(
+            &Endpoints::default(),
+            "cid",
+            "http://127.0.0.1:5000/oauth/callback",
+            "chal",
+            "st",
+            Some("me@example.com"),
+            extra_scopes,
+        );
+        Url::parse(&url).unwrap().query_pairs().into_owned().collect()
+    }
+
+    #[test]
+    fn authorization_url_always_includes_granted_scopes() {
+        // Signing in again for mail must keep calendar access granted earlier.
+        assert_eq!(query_of(&[])["include_granted_scopes"], "true");
+        assert_eq!(query_of(CALENDAR_SCOPES)["include_granted_scopes"], "true");
+    }
+
+    #[test]
+    fn calendar_consent_requests_mail_and_calendar_scopes() {
+        let q = query_of(CALENDAR_SCOPES);
+        let scopes: Vec<&str> = q["scope"].split(' ').collect();
+        let expected: Vec<&str> = SCOPES.iter().chain(CALENDAR_SCOPES).copied().collect();
+        assert_eq!(scopes, expected);
+        assert!(scopes.contains(&CALENDAR_SCOPE));
+        assert!(!scopes.contains(&"https://www.googleapis.com/auth/calendar"));
     }
 
     #[test]

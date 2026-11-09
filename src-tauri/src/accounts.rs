@@ -80,6 +80,9 @@ pub enum ClientChoice {
     /// Sign an existing account in again with its own client, keeping its cached mail.
     #[serde(rename_all = "camelCase")]
     Reconnect { account_id: String },
+    /// Allow calendar and tasks access for an existing account (incremental consent).
+    #[serde(rename_all = "camelCase")]
+    Calendar { account_id: String },
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -240,6 +243,10 @@ impl AccountService {
     /// Starts listening for Google's redirect and returns the URL to open in the browser.
     /// Starting a new sign-in abandons any earlier one.
     pub async fn begin_sign_in(&self, choice: ClientChoice) -> Result<SignInStart, AccountError> {
+        let extra_scopes = match &choice {
+            ClientChoice::Calendar { .. } => auth::CALENDAR_SCOPES,
+            _ => &[],
+        };
         let (creds, expected_email) = match choice {
             ClientChoice::New {
                 client_id,
@@ -249,7 +256,7 @@ impl AccountService {
                 let account = self.account(&account_id).await?;
                 (self.saved_credentials(&account).await?.0, None)
             }
-            ClientChoice::Reconnect { account_id } => {
+            ClientChoice::Reconnect { account_id } | ClientChoice::Calendar { account_id } => {
                 let account = self.account(&account_id).await?;
                 let creds = self.saved_credentials(&account).await?.0;
                 (creds, Some(account.email))
@@ -269,6 +276,7 @@ impl AccountService {
             &pkce.challenge,
             &state,
             expected_email.as_deref(),
+            extra_scopes,
         );
         let redirect_uri = loopback.redirect_uri.clone();
         let callback = tokio::spawn(loopback.wait_for_code(state, self.sign_in_timeout));
@@ -1055,6 +1063,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn calendar_consent_requires_the_same_account() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+
+        let start = h
+            .service
+            .begin_sign_in(ClientChoice::Calendar {
+                account_id: account.id.clone(),
+            })
+            .await
+            .unwrap();
+        let q: HashMap<_, _> = Url::parse(&start.auth_url)
+            .unwrap()
+            .query_pairs()
+            .into_owned()
+            .collect();
+        assert_eq!(q["login_hint"], "me@example.com");
+        assert!(q["scope"].split(' ').any(|s| s == auth::CALENDAR_SCOPE));
+        h.service.cancel_sign_in(&start.flow_id);
+
+        mock_google(&h.server, "other@example.com", "refresh-2").await;
+        let error = sign_in(
+            &h,
+            ClientChoice::Calendar {
+                account_id: account.id.clone(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code(), "wrong_account");
+        assert_eq!(
+            h.secrets.get(&account.id).unwrap().unwrap().refresh_token,
+            "refresh-1"
+        );
+    }
+
+    #[tokio::test]
     async fn missing_keychain_entry_asks_to_sign_in_again() {
         let h = harness().await;
         mock_google(&h.server, "me@example.com", "refresh-1").await;
@@ -1108,6 +1154,10 @@ mod tests {
             serde_json::from_value(serde_json::json!({"kind": "reconnect", "accountId": "a"}))
                 .unwrap();
         assert!(matches!(reconnect, ClientChoice::Reconnect { account_id } if account_id == "a"));
+        let calendar: ClientChoice =
+            serde_json::from_value(serde_json::json!({"kind": "calendar", "accountId": "a"}))
+                .unwrap();
+        assert!(matches!(calendar, ClientChoice::Calendar { account_id } if account_id == "a"));
     }
 
     #[test]
