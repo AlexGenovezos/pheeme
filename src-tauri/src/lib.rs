@@ -52,7 +52,7 @@ pub struct AppState {
     pub sync: Arc<SyncManager>,
     pub transfers: transfer::TransferService,
     /// The MCP server AI assistants connect to, over [`local_api::LocalApi`]; runs only while
-    /// Settings › AI assistants allows it.
+    /// Settings › MCP allows it.
     pub assistants: Arc<mcp::McpServer>,
     /// The Gmail per-user limit every account's client paces itself by (Settings › Sync).
     pub gmail_quota: gmail::QuotaSetting,

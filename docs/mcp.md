@@ -1,4 +1,4 @@
-# AI assistants (MCP)
+# MCP (AI assistants)
 
 Pheeme can let AI assistants such as Claude Code work with your mail while Pheeme is open. It runs a
 [Model Context Protocol](https://modelcontextprotocol.io) server on your computer only
@@ -8,8 +8,8 @@ directly.
 
 ## Turn it on
 
-1. Open **Settings › AI assistants** and turn on **Allow AI assistants**.
-2. Under **Connect an assistant**, name it (for example "Claude Code") and choose **Connect**.
+1. Open **Settings › MCP** and turn on **Allow MCP connections**.
+2. Under **Connect a client**, name it (for example "Claude Code") and choose **Connect**.
 3. Copy the command Pheeme shows and run it in a terminal:
 
    ```sh
@@ -40,6 +40,9 @@ Assistants can't send mail.
 - Loopback only: the server never listens on a network interface, and refuses requests whose `Host` or
   `Origin` isn't `127.0.0.1`/`localhost` on its port.
 - Each assistant has its own token. **Remove** revokes it at once.
-- **Activity** lists the latest tool calls (Pheeme keeps 1,000), with what each touched and any error.
+- **Activity** lists every tool call (Pheeme keeps the latest 1,000): which client, which tool, when, and
+  any error. Open a call to see exactly what it sent (its arguments, as received) and what came back: a
+  change's whole answer, or for a read, the ids of the conversations, messages and filters it returned
+  (the mail itself isn't copied into the log). Calls Pheeme refused are listed too.
 
 If port 43830 is taken, Settings says so; quit whatever is using it and turn the switch off and on.

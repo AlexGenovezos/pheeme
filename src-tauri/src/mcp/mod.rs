@@ -111,7 +111,7 @@ impl McpServer {
             Ok(true) => self.start().await,
             Ok(false) => self.stop().await,
             Err(e) => {
-                tracing::warn!(error = %e, "couldn't read the AI assistants setting");
+                tracing::warn!(error = %e, "couldn't read the MCP setting");
                 self.status().await
             }
         }
@@ -127,7 +127,7 @@ impl McpServer {
                         let port = listener.local_addr().map(|a| a.port()).unwrap_or(self.port);
                         let (shutdown, stopped) = watch::channel(false);
                         let task = tokio::spawn(serve(listener, port, self.api.clone(), stopped));
-                        tracing::info!(port, "AI assistant server listening");
+                        tracing::info!(port, "MCP server listening");
                         inner.failure = None;
                         inner.running = Some(Running {
                             port,
@@ -136,7 +136,7 @@ impl McpServer {
                         });
                     }
                     Err(e) => {
-                        tracing::warn!(error = %e, port = self.port, "AI assistant server couldn't start");
+                        tracing::warn!(error = %e, port = self.port, "MCP server couldn't start");
                         inner.failure = Some(format!(
                             "Pheeme couldn't listen on port {}: another app may be using it ({e}).",
                             self.port
@@ -158,7 +158,7 @@ impl McpServer {
         if let Some(r) = running {
             let _ = r.shutdown.send(true);
             let _ = r.task.await;
-            tracing::info!("AI assistant server stopped");
+            tracing::info!("MCP server stopped");
         }
         self.status().await
     }
@@ -178,7 +178,7 @@ async fn serve(
                 let stream = match accepted {
                     Ok((stream, _)) => stream,
                     Err(e) => {
-                        tracing::warn!(error = %e, "AI assistant server couldn't accept a connection");
+                        tracing::warn!(error = %e, "MCP server couldn't accept a connection");
                         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                         continue;
                     }

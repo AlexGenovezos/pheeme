@@ -262,7 +262,7 @@ export const undoSenderRules = (accountId: string, saved: SavedRules) =>
   invoke<void>("undo_sender_rules", { accountId, saved });
 export const deleteSenderRule = (accountId: string, ruleId: string) =>
   invoke<void>("delete_sender_rule", { accountId, ruleId });
-/** An AI assistant (MCP client) connected in Settings › AI assistants. */
+/** An MCP client (an AI assistant) connected in Settings › MCP. */
 export interface AssistantClient {
   id: string;
   name: string;
@@ -280,12 +280,16 @@ export interface NewAssistant {
   client: AssistantClient;
   token: string;
 }
-/** One tool call an assistant made. */
+/** One tool call an MCP client made. */
 export interface AssistantActivity {
   id: number;
   clientName: string;
   tool: string;
   summary: string;
+  /** The arguments exactly as sent (JSON). */
+  arguments: string;
+  /** What came back (JSON): a change's whole answer, or the ids a read returned. Null when it failed. */
+  result: string | null;
   error: string | null;
   at: number;
 }

@@ -1,4 +1,4 @@
-//! Settings › AI assistants: thin adapters over [`crate::local_api::LocalApi`] and the MCP
+//! Settings › MCP: thin adapters over [`crate::local_api::LocalApi`] and the MCP
 //! server that serves it.
 
 use super::CommandError;

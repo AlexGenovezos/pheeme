@@ -1,4 +1,4 @@
-/** Settings › AI assistants for browser preview (`src-tauri/src/local_api` and `src-tauri/src/mcp` in the app). */
+/** Settings › MCP for browser preview (`src-tauri/src/local_api` and `src-tauri/src/mcp` in the app). */
 
 import type {
   AssistantActivity,
@@ -39,6 +39,8 @@ export function createAssistantHandlers() {
           clientName: name,
           tool: "list_mailbox",
           summary: "inbox (unread)",
+          arguments: JSON.stringify({ mailbox: "inbox", unread_only: true }),
+          result: JSON.stringify({ thread_ids: ["t1", "t2"] }),
           error: null,
           at: Date.now(),
         },

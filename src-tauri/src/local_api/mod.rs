@@ -29,9 +29,9 @@ const NAME_MAX: usize = 60;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
-    #[error("AI assistants are turned off. Turn on Settings › AI assistants › Allow AI assistants in Pheeme.")]
+    #[error("MCP is turned off. Turn on Settings › MCP › Allow MCP connections in Pheeme.")]
     Disabled,
-    #[error("Pheeme doesn't recognise this token. Connect the assistant again from Settings › AI assistants.")]
+    #[error("Pheeme doesn't recognise this token. Connect the client again from Settings › MCP.")]
     Unauthorized,
     #[error("Pheeme has no tool called {0}.")]
     UnknownTool(String),
@@ -103,6 +103,10 @@ pub struct ActivityDto {
     pub client_name: String,
     pub tool: String,
     pub summary: String,
+    /// The arguments exactly as sent (JSON).
+    pub arguments: String,
+    /// What came back (JSON); see [`audit_result`]. `None` when the call failed.
+    pub result: Option<String>,
     pub error: Option<String>,
     pub at: i64,
 }
@@ -114,6 +118,8 @@ impl From<db::DbActivity> for ActivityDto {
             client_name: a.client_name,
             tool: a.tool,
             summary: a.summary,
+            arguments: a.arguments,
+            result: a.result,
             error: a.error,
             at: a.at,
         }
@@ -181,6 +187,7 @@ impl LocalApi {
         if !self.enabled().await? {
             return Err(ApiError::Disabled);
         }
+        let arguments = clip(args.to_string());
         let parsed = Request::parse(tool, args);
         let summary = parsed
             .as_ref()
@@ -191,18 +198,19 @@ impl LocalApi {
             Err(e) => Err(e),
         };
         let error = result.as_ref().err().map(|e| e.to_string());
+        let returned = result.as_ref().ok().map(|value| audit_result(tool, value));
         let at = now_ms();
-        if let Err(e) = db::add_activity(
-            &self.db,
-            &caller.client_id,
-            &caller.client_name,
+        let call = db::NewActivity {
+            client_id: &caller.client_id,
+            client_name: &caller.client_name,
             tool,
-            &summary,
-            error.as_deref(),
+            summary: &summary,
+            arguments: &arguments,
+            result: returned.as_deref(),
+            error: error.as_deref(),
             at,
-        )
-        .await
-        {
+        };
+        if let Err(e) = db::add_activity(&self.db, &call).await {
             tracing::warn!(error = %e, "couldn't log an assistant tool call");
         }
         if let Err(e) = db::touch_client(&self.db, &caller.client_id, at).await {
@@ -265,6 +273,60 @@ impl LocalApi {
 
     pub async fn clear_activity(&self) -> Result<(), ApiError> {
         Ok(db::clear_activity(&self.db).await?)
+    }
+}
+
+/// Longest arguments or result kept in the activity log.
+const AUDIT_MAX: usize = 32 * 1024;
+
+fn clip(mut text: String) -> String {
+    if text.len() > AUDIT_MAX {
+        let mut end = AUDIT_MAX;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+        text.push_str("…(cut)");
+    }
+    text
+}
+
+/// What the activity log keeps of a tool's answer. A change keeps it whole (it says what
+/// changed). A read keeps the ids of the conversations, messages and filters it returned,
+/// so the log shows what the client saw without copying the mail into it.
+fn audit_result(tool: &str, value: &Value) -> String {
+    let read_only = catalog()
+        .iter()
+        .find(|t| t.name == tool)
+        .is_none_or(|t| t.read_only);
+    if !read_only {
+        return clip(value.to_string());
+    }
+    let mut seen = serde_json::Map::new();
+    for key in ["thread_id", "message_id", "id"] {
+        let mut ids = Vec::new();
+        collect(value, key, &mut ids);
+        if !ids.is_empty() {
+            seen.insert(format!("{key}s"), ids.into());
+        }
+    }
+    clip(Value::Object(seen).to_string())
+}
+
+/// Every string value under `key`, anywhere in `value`, once each.
+fn collect(value: &Value, key: &str, out: &mut Vec<Value>) {
+    match value {
+        Value::Object(map) => {
+            for (k, v) in map {
+                if k == key && v.is_string() && !out.contains(v) {
+                    out.push(v.clone());
+                } else {
+                    collect(v, key, out);
+                }
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|v| collect(v, key, out)),
+        _ => {}
     }
 }
 

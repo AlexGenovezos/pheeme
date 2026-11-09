@@ -1,6 +1,6 @@
-// Settings › AI assistants: lets MCP clients (Claude Code and others) work with mail through Pheeme's local API
-// while the app is open. Off by default; each client connects with its own token, shown once; every tool call is
-// listed under Activity. See docs/ai-assistants.md.
+// Settings › MCP: lets MCP clients (Claude Code and others) work with mail through Pheeme's local API while the
+// app is open. Off by default; each client connects with its own token, shown once; every tool call is listed
+// under Activity with its exact arguments and what came back. See docs/mcp.md.
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
@@ -8,6 +8,7 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { Switch } from "../components/ui/Switch";
 import { TextInput } from "../components/ui/TextInput";
 import { formatListDate } from "../lib/dates";
+import { cx } from "../lib/utils";
 import {
   ASSISTANT_ACTIVITY_EVENT,
   type AssistantActivity,
@@ -31,7 +32,42 @@ export function claudeCommand(url: string, token: string): string {
 function serverText(status: AssistantStatus): string {
   if (status.server.state === "running") return `Listening at ${status.server.url}`;
   if (status.server.state === "failed") return status.server.message ?? "Couldn't start.";
-  return "Off. Turn on Allow AI assistants to start it.";
+  return "Off. Turn on Allow MCP connections to start it.";
+}
+
+/** A logged JSON value, indented; anything else as it was stored. */
+function pretty(json: string): string {
+  try {
+    return JSON.stringify(JSON.parse(json), null, 2);
+  } catch {
+    return json;
+  }
+}
+
+/** One tool call: the summary line, and on expanding, exactly what was sent and what came back. */
+function ActivityCall({ call }: { call: AssistantActivity }) {
+  return (
+    <details className={cx("settings-assistant__call", call.error && "settings-assistant__failed")}>
+      <summary className="settings-row">
+        <div className="settings-row__text">
+          <div className="settings-row__title">{`${call.tool} · ${call.summary}`}</div>
+          <div className="settings-row__description">
+            {`${call.clientName}, ${formatListDate(call.at)}${call.error ? `: ${call.error}` : ""}`}
+          </div>
+        </div>
+      </summary>
+      <div className="settings-assistant__detail">
+        <div className="settings-assistant__label">Arguments</div>
+        <pre className="settings-assistant__json" aria-label="Arguments">
+          {pretty(call.arguments)}
+        </pre>
+        <div className="settings-assistant__label">Returned</div>
+        <pre className="settings-assistant__json" aria-label="Returned">
+          {call.result ? pretty(call.result) : (call.error ?? "")}
+        </pre>
+      </div>
+    </details>
+  );
 }
 
 function Connected({ added, url, onDone }: { added: NewAssistant; url: string; onDone(): void }) {
@@ -41,7 +77,7 @@ function Connected({ added, url, onDone }: { added: NewAssistant; url: string; o
     <div className="settings-assistant__connect">
       <p className="settings-assistant__hint">
         Run this in a terminal to add Pheeme to Claude Code. The token is shown only now; if you
-        lose it, connect again.
+        lose it, connect the client again.
       </p>
       <code className="settings-assistant__command" aria-label="Claude Code command">
         {command}
@@ -158,23 +194,23 @@ export function AssistantSettings() {
   return (
     <>
       <p className="settings-empty">
-        AI assistants such as Claude Code can search and read your mail and list your Gmail filters
-        through Pheeme, while Pheeme is open. They work through the same actions as the app, never
-        straight on its database, and they can't send mail. Only programs on this computer with a
-        token you created can connect.
+        With MCP on, AI assistants such as Claude Code can search and read your mail and list your
+        Gmail filters through Pheeme, while Pheeme is open. They work through the same actions as
+        the app, never straight on its database, and they can't send mail. Only programs on this
+        computer with a token you created can connect, and Activity shows every call they make.
       </p>
       {error && (
         <p className="settings-assistant__error" role="alert">
           {error}
         </p>
       )}
-      <SettingsSection title="AI assistants">
+      <SettingsSection title="MCP server">
         <SettingsRow
-          title="Allow AI assistants"
+          title="Allow MCP connections"
           description="Runs Pheeme's MCP server on this computer only."
           control={
             <Switch
-              label="Allow AI assistants"
+              label="Allow MCP connections"
               checked={status?.enabled ?? false}
               disabled={status === null || busy}
               onChange={(next) => void toggle(next)}
@@ -208,26 +244,19 @@ export function AssistantSettings() {
           ) : activity.length === 0 ? (
             <SettingsRow
               title="No activity yet"
-              description="Each tool call an assistant makes shows here."
+              description="Each tool call a client makes shows here. Open one to see exactly what it sent and got back."
             />
           ) : (
-            activity.map((a) => (
-              <SettingsRow
-                key={a.id}
-                className={a.error ? "settings-assistant__failed" : undefined}
-                title={`${a.tool} · ${a.summary}`}
-                description={`${a.clientName}, ${formatListDate(a.at)}${a.error ? `: ${a.error}` : ""}`}
-              />
-            ))
+            activity.map((a) => <ActivityCall key={a.id} call={a} />)
           )}
         </div>
       </SettingsSection>
-      <SettingsSection title="Connected assistants">
+      <SettingsSection title="Connected clients">
         {added && status ? (
           <Connected added={added} url={status.server.url} onDone={() => setAdded(null)} />
         ) : (
           <SettingsRow
-            title="Connect an assistant"
+            title="Connect a client"
             description="Name it, then copy the command Pheeme gives you."
             control={
               <form
@@ -238,7 +267,7 @@ export function AssistantSettings() {
                 }}
               >
                 <TextInput
-                  aria-label="Assistant name"
+                  aria-label="Client name"
                   value={name}
                   maxLength={60}
                   onChange={(e) => setName(e.target.value)}

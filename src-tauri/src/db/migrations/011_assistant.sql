@@ -1,4 +1,4 @@
--- AI assistants (`local_api`, `mcp`): the MCP clients the user connected, and what they did.
+-- MCP (`local_api`, `mcp`): the MCP clients the user connected, and every tool they called.
 
 -- One row per connected client. Only the SHA-256 of its token is kept (hex), so a lost token
 -- means connecting again; deleting the row revokes it.
@@ -21,6 +21,11 @@ CREATE TABLE assistant_activity (
   tool TEXT NOT NULL,
   -- What it touched, in a few words (query, account, how many conversations).
   summary TEXT NOT NULL,
+  -- The tool's arguments exactly as the client sent them (JSON).
+  arguments TEXT NOT NULL,
+  -- What came back (JSON): a write tool's whole answer; for a read, the conversations it
+  -- returned (ids), not the mail itself. NULL when the call failed.
+  result TEXT,
   -- NULL when the call succeeded.
   error TEXT,
   at INTEGER NOT NULL

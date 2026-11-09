@@ -484,12 +484,15 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     matches: accountsMatch,
   },
   {
-    id: "assistants",
-    title: "AI assistants",
+    id: "mcp",
+    title: "MCP",
     icon: Bot,
     group: "App",
     keywords: [
       "ai",
+      "assistants",
+      "audit",
+      "activity",
       "mcp",
       "claude",
       "claude code",

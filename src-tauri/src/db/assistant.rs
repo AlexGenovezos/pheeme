@@ -19,7 +19,21 @@ pub struct DbActivity {
     pub client_name: String,
     pub tool: String,
     pub summary: String,
+    pub arguments: String,
+    pub result: Option<String>,
     pub error: Option<String>,
+    pub at: i64,
+}
+
+/// One tool call, for [`add_activity`].
+pub struct NewActivity<'a> {
+    pub client_id: &'a str,
+    pub client_name: &'a str,
+    pub tool: &'a str,
+    pub summary: &'a str,
+    pub arguments: &'a str,
+    pub result: Option<&'a str>,
+    pub error: Option<&'a str>,
     pub at: i64,
 }
 
@@ -83,25 +97,20 @@ pub async fn touch_client(pool: &SqlitePool, id: &str, at: i64) -> Result<()> {
 }
 
 /// Record a tool call and keep only the latest [`ACTIVITY_KEEP`] rows.
-pub async fn add_activity(
-    pool: &SqlitePool,
-    client_id: &str,
-    client_name: &str,
-    tool: &str,
-    summary: &str,
-    error: Option<&str>,
-    at: i64,
-) -> Result<()> {
+pub async fn add_activity(pool: &SqlitePool, call: &NewActivity<'_>) -> Result<()> {
     let mut tx = super::begin_write(pool).await?;
     sqlx::query!(
-        "INSERT INTO assistant_activity (client_id, client_name, tool, summary, error, at)
-         VALUES (?, ?, ?, ?, ?, ?)",
-        client_id,
-        client_name,
-        tool,
-        summary,
-        error,
-        at
+        "INSERT INTO assistant_activity
+           (client_id, client_name, tool, summary, arguments, result, error, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        call.client_id,
+        call.client_name,
+        call.tool,
+        call.summary,
+        call.arguments,
+        call.result,
+        call.error,
+        call.at
     )
     .execute(&mut *tx)
     .await?;
@@ -119,7 +128,7 @@ pub async fn add_activity(
 pub async fn list_activity(pool: &SqlitePool, limit: i64) -> Result<Vec<DbActivity>> {
     Ok(sqlx::query_as!(
         DbActivity,
-        "SELECT id, client_name, tool, summary, error, at FROM assistant_activity
+        "SELECT id, client_name, tool, summary, arguments, result, error, at FROM assistant_activity
          ORDER BY id DESC LIMIT ?",
         limit
     )
@@ -179,15 +188,20 @@ mod tests {
     async fn activity_is_newest_first_and_trimmed() {
         let db = TestDb::with_account("a").await;
         for n in 0..(ACTIVITY_KEEP + 5) {
+            let summary = n.to_string();
             let error = (n == ACTIVITY_KEEP + 4).then_some("nope");
             add_activity(
                 &db.pool,
-                "c",
-                "Claude",
-                "search_mail",
-                &n.to_string(),
-                error,
-                n,
+                &NewActivity {
+                    client_id: "c",
+                    client_name: "Claude",
+                    tool: "search_mail",
+                    summary: &summary,
+                    arguments: r#"{"query":"x"}"#,
+                    result: error.is_none().then_some("{}"),
+                    error,
+                    at: n,
+                },
             )
             .await
             .unwrap();
@@ -196,6 +210,9 @@ mod tests {
         assert_eq!(all.len() as i64, ACTIVITY_KEEP);
         assert_eq!(all[0].summary, (ACTIVITY_KEEP + 4).to_string());
         assert_eq!(all[0].error.as_deref(), Some("nope"));
+        assert_eq!(all[0].arguments, r#"{"query":"x"}"#);
+        assert_eq!(all[0].result, None);
+        assert_eq!(all[1].result.as_deref(), Some("{}"));
         assert_eq!(all.last().unwrap().summary, "5");
         assert_eq!(list_activity(&db.pool, 2).await.unwrap().len(), 2);
 

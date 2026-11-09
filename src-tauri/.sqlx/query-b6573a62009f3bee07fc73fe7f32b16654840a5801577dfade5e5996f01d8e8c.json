@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, client_name, tool, summary, error, at FROM assistant_activity\n         ORDER BY id DESC LIMIT ?",
+  "query": "SELECT id, client_name, tool, summary, arguments, result, error, at FROM assistant_activity\n         ORDER BY id DESC LIMIT ?",
   "describe": {
     "columns": [
       {
@@ -48,8 +48,30 @@
         }
       },
       {
-        "name": "error",
+        "name": "arguments",
         "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "assistant_activity",
+            "name": "arguments"
+          }
+        }
+      },
+      {
+        "name": "result",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "assistant_activity",
+            "name": "result"
+          }
+        }
+      },
+      {
+        "name": "error",
+        "ordinal": 6,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -60,7 +82,7 @@
       },
       {
         "name": "at",
-        "ordinal": 5,
+        "ordinal": 7,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -78,9 +100,11 @@
       false,
       false,
       false,
+      false,
+      true,
       true,
       false
     ]
   },
-  "hash": "b02895cbf16b8b36413e701a4127c19f869d146715b18d1528bd9860e6a6ee3a"
+  "hash": "b6573a62009f3bee07fc73fe7f32b16654840a5801577dfade5e5996f01d8e8c"
 }

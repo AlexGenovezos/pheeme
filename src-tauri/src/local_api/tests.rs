@@ -128,6 +128,10 @@ async fn calls_are_refused_while_turned_off_and_logged_when_on() {
     assert_eq!(log[2].client_name, "Claude Code");
     assert!(log[2].error.is_none());
     assert!(log[0].error.is_some());
+    // The exact arguments are kept, even ones the tool refused.
+    assert_eq!(log[0].arguments, r#"{"bogus":1,"mailbox":"inbox"}"#);
+    assert_eq!(log[0].result, None);
+    assert_eq!(log[2].arguments, "null");
     assert_eq!(h.notified.load(Ordering::SeqCst), 3);
     let client = &h.api.clients().await.unwrap()[0];
     assert!(client.last_used_at.is_some());
@@ -189,6 +193,11 @@ async fn lists_mailboxes_with_label_names() {
         .await
         .unwrap();
     assert_eq!(next["threads"][0]["thread_id"], "t3");
+
+    // The log keeps which conversations a read returned, not the mail.
+    let log = h.api.activity(10).await.unwrap();
+    let read: Value = serde_json::from_str(log[0].result.as_deref().unwrap()).unwrap();
+    assert_eq!(read, json!({ "thread_ids": ["t3"] }));
 
     let missing = h
         .call("list_mailbox", json!({ "mailbox": "Nope" }))
