@@ -558,6 +558,178 @@ async fn writes_new_drafts_and_replies_but_never_sends() {
     assert!(h.fake.sent().is_empty());
 }
 
+#[tokio::test]
+async fn reports_the_heaviest_senders() {
+    let fake = FakeGmail::new();
+    for n in 0..3 {
+        fake.seed(
+            msg(
+                &format!("d{n}"),
+                &format!("td{n}"),
+                &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"],
+                "Deals <DEALS@shop.com>",
+            )
+            .days_ago(n + 1),
+        );
+    }
+    // Initial sync caches the inbox; other mail arrives with the background backfill, so the
+    // test sticks to inbox mail.
+    fake.seed(msg("b1", "tb1", &["INBOX", "UNREAD"], "alerts@bank.com").days_ago(2));
+    fake.seed(msg("b2", "tb2", &["INBOX"], "alerts@bank.com").days_ago(3));
+    fake.seed(msg("old", "told", &["INBOX"], "old@x.com").days_ago(200));
+    fake.seed(msg("me", "tme", &["SENT"], "me@example.com").days_ago(1));
+    let h = setup(fake).await;
+
+    let out = h
+        .call("sender_report", json!({ "days": 90 }))
+        .await
+        .unwrap();
+    let senders = out["accounts"][0]["senders"].as_array().unwrap();
+    let names: Vec<_> = senders
+        .iter()
+        .map(|s| s["sender"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["deals@shop.com", "alerts@bank.com"]);
+    let deals = &senders[0];
+    assert_eq!(deals["messages"], 3);
+    assert_eq!(deals["unread"], 3);
+    assert_eq!(deals["in_inbox"], 3);
+    assert_eq!(deals["tab"], "promotions");
+    assert_eq!(deals["you_wrote"], 0);
+    assert_eq!(deals["thread_id"], "td0");
+    assert!(deals["last_date"].is_string());
+    let bank = &senders[1];
+    assert_eq!(bank["messages"], 2);
+    assert_eq!(bank["unread"], 1);
+    assert_eq!(bank["tab"], "primary");
+
+    let one = h
+        .call("sender_report", json!({ "limit": 1 }))
+        .await
+        .unwrap();
+    assert_eq!(one["accounts"][0]["senders"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn audits_what_filters_caught() {
+    let fake = FakeGmail::new();
+    fake.seed(msg("b1", "tb1", &["TRASH"], "alerts@bank.com").days_ago(2));
+    for (from, add, remove) in [
+        ("alerts@bank.com", vec!["TRASH"], vec![]),
+        ("news@x.com", vec!["STARRED"], vec![]),
+    ] {
+        fake.seed_filter(Filter {
+            id: None,
+            criteria: FilterCriteria {
+                from: Some(from.into()),
+                ..Default::default()
+            },
+            action: FilterAction {
+                add_label_ids: add.into_iter().map(String::from).collect(),
+                remove_label_ids: remove,
+                ..Default::default()
+            },
+        });
+    }
+    let h = setup(fake).await;
+    let out = h.call("filter_audit", json!({ "days": 7 })).await.unwrap();
+    let filters = out["accounts"][0]["filters"].as_array().unwrap();
+    assert_eq!(
+        filters.len(),
+        1,
+        "only the filter that deletes: {filters:?}"
+    );
+    assert_eq!(
+        filters[0]["gmail_query"],
+        "from:(alerts@bank.com) in:anywhere newer_than:7d"
+    );
+    let caught = &filters[0]["caught"][0];
+    assert_eq!(caught["thread_id"], "tb1");
+    assert!(caught["labels"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("TRASH")));
+
+    let all = h
+        .call("filter_audit", json!({ "all": true }))
+        .await
+        .unwrap();
+    assert_eq!(all["accounts"][0]["filters"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn unsubscribes_only_when_allowed_and_only_to_public_https() {
+    let raw = |id: &str, unsubscribe: &str, post: bool| {
+        format!(
+            "From: List <{id}@news.com>\r\nTo: me@example.com\r\nSubject: News {id}\r\n\
+             Message-ID: <{id}@news.com>\r\nDate: Mon, 2 Nov 2026 10:00:00 +0000\r\n\
+             List-Unsubscribe: {unsubscribe}\r\n{}\r\nHello\r\n",
+            if post {
+                "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n"
+            } else {
+                ""
+            }
+        )
+    };
+    let fake = FakeGmail::new();
+    fake.seed(FakeMsg::from_raw(
+        "n1",
+        "t1",
+        &["INBOX"],
+        raw(
+            "n1",
+            "<https://news.com/u?x=1>, <mailto:leave@news.com>",
+            false,
+        )
+        .as_bytes(),
+    ));
+    fake.seed(FakeMsg::from_raw(
+        "n2",
+        "t2",
+        &["INBOX"],
+        raw("n2", "<https://10.0.0.1/u>", true).as_bytes(),
+    ));
+    let h = setup(fake).await;
+
+    let err = h
+        .call("unsubscribe", json!({ "thread_id": "t1" }))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ApiError::NotAllowed(Permission::Unsubscribe)));
+    h.api
+        .set_allows(Permission::Unsubscribe, true)
+        .await
+        .unwrap();
+
+    let out = h
+        .call("unsubscribe", json!({ "thread_id": "t1" }))
+        .await
+        .unwrap();
+    assert_eq!(out["unsubscribed"], false);
+    assert_eq!(out["web"], "https://news.com/u?x=1");
+    assert_eq!(out["mailto"], "mailto:leave@news.com");
+    assert_eq!(out["sender"], "n1@news.com");
+
+    let err = h
+        .call("unsubscribe", json!({ "thread_id": "t2" }))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("public site"), "{err}");
+
+    let report = h.call("sender_report", json!({})).await.unwrap();
+    let kind = |sender: &str| {
+        report["accounts"][0]["senders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["sender"] == sender)
+            .unwrap()["unsubscribe"]
+            .clone()
+    };
+    assert_eq!(kind("n1@news.com"), "link");
+    assert_eq!(kind("n2@news.com"), "one_click");
+}
+
 #[test]
 fn every_catalog_example_parses() {
     for tool in catalog() {

@@ -5,7 +5,8 @@
 
 use super::read::resolve_accounts;
 use super::requests::{
-    ChangeLabels, CreateDraft, CreateFilter, CreateLabel, DeleteFilter, ThreadsArg, MAX_THREADS,
+    ChangeLabels, CreateDraft, CreateFilter, CreateLabel, DeleteFilter, ThreadsArg, Unsubscribe,
+    MAX_THREADS,
 };
 use super::{ApiError, LocalApi, Request};
 use crate::accounts::AccountInfo;
@@ -36,6 +37,7 @@ pub(super) async fn run(api: &LocalApi, request: Request) -> Result<Value, ApiEr
         Request::CreateFilter(f) => create_filter(api, f).await,
         Request::DeleteFilter(d) => delete_filter(api, d).await,
         Request::CreateDraft(d) => create_draft(api, d).await,
+        Request::Unsubscribe(u) => unsubscribe(api, u).await,
         _ => Err(ApiError::Invalid("That tool only reads.".into())),
     }
 }
@@ -315,5 +317,56 @@ async fn create_draft(api: &LocalApi, args: CreateDraft) -> Result<Value, ApiErr
         "message_id": saved.message_id,
         "thread_id": saved.thread_id,
         "note": "Saved in Drafts. The user reviews and sends it from Pheeme.",
+    }))
+}
+
+async fn unsubscribe(api: &LocalApi, args: Unsubscribe) -> Result<Value, ApiError> {
+    let account = resolve_account(api, args.account.as_deref()).await?;
+    let thread = api
+        .mail
+        .get_thread(&account.id, args.thread_id.trim(), false)
+        .await?;
+    let message = match args.message_id.as_deref().map(str::trim) {
+        Some(id) if !id.is_empty() => thread
+            .messages
+            .iter()
+            .find(|m| m.id == id)
+            .ok_or(ApiError::Mail(crate::mail::MailError::NotFound))?,
+        _ => thread
+            .messages
+            .iter()
+            .rev()
+            .find(|m| {
+                m.from_address
+                    .as_deref()
+                    .is_some_and(|a| !a.eq_ignore_ascii_case(&account.email))
+            })
+            .ok_or_else(|| {
+                ApiError::Invalid("Everything in that conversation is from the user.".into())
+            })?,
+    };
+    let sender = message.from_address.clone();
+    let headers = api.mail.message_headers(&account.id, &message.id).await?;
+    let options = crate::senders::options(&headers);
+    if let Some(url) = &options.one_click {
+        crate::senders::one_click(url).await?;
+        return Ok(json!({
+            "sender": sender,
+            "unsubscribed": true,
+            "method": "one_click",
+            "note": "The sender confirmed the request. Some lists take a few days to stop.",
+        }));
+    }
+    let note = match options.kind() {
+        "link" => "This sender has no one-click unsubscribe. Give the user the link to open.",
+        "email" => "This sender unsubscribes by email. Assistants can't send mail: give the user the address, or draft the email with create_draft for them to send.",
+        _ => "This message has no unsubscribe header. Suggest a filter instead.",
+    };
+    Ok(json!({
+        "sender": sender,
+        "unsubscribed": false,
+        "web": options.web,
+        "mailto": options.mailto,
+        "note": note,
     }))
 }

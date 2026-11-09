@@ -24,6 +24,7 @@ pub mod render;
 pub mod search;
 pub mod secrets;
 pub mod sender_rules;
+pub mod senders;
 pub mod support;
 pub mod sync;
 pub mod telemetry;

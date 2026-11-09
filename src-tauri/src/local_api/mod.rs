@@ -78,6 +78,8 @@ pub enum Permission {
     Filters,
     /// Create drafts.
     Drafts,
+    /// Unsubscribe in one click.
+    Unsubscribe,
 }
 
 impl Permission {
@@ -93,6 +95,7 @@ impl Permission {
             Permission::Organize => "organize",
             Permission::Filters => "filters",
             Permission::Drafts => "drafts",
+            Permission::Unsubscribe => "unsubscribe",
         }
     }
 
@@ -102,6 +105,7 @@ impl Permission {
             Permission::Organize => "Organize mail",
             Permission::Filters => "Change Gmail filters",
             Permission::Drafts => "Write drafts",
+            Permission::Unsubscribe => "Unsubscribe",
         }
     }
 
@@ -110,6 +114,7 @@ impl Permission {
             Permission::Organize => "archive, label, star, mark or delete mail",
             Permission::Filters => "create or delete Gmail filters",
             Permission::Drafts => "write drafts",
+            Permission::Unsubscribe => "unsubscribe from mailing lists",
         }
     }
 }

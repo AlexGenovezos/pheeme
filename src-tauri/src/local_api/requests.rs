@@ -7,6 +7,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 pub const DEFAULT_LIMIT: i64 = 25;
+/// The sender report's default window.
+pub const DEFAULT_DAYS: i64 = 90;
+/// The filter audit's default window.
+pub const AUDIT_DAYS: i64 = 30;
 pub const MAX_LIMIT: i64 = 100;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -30,6 +34,37 @@ pub enum Request {
     CreateFilter(CreateFilter),
     DeleteFilter(DeleteFilter),
     CreateDraft(CreateDraft),
+    SenderReport(SenderReport),
+    FilterAudit(FilterAudit),
+    Unsubscribe(Unsubscribe),
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SenderReport {
+    pub account: Option<String>,
+    pub days: Option<i64>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilterAudit {
+    pub account: Option<String>,
+    pub days: Option<i64>,
+    /// Conversations shown per filter.
+    pub sample: Option<usize>,
+    /// Every filter, not just those that delete, archive or mark read.
+    #[serde(default)]
+    pub all: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Unsubscribe {
+    pub thread_id: String,
+    pub account: Option<String>,
+    pub message_id: Option<String>,
 }
 
 /// Most conversations one call may change.
@@ -170,7 +205,9 @@ impl Request {
             | Request::ListMailbox(_)
             | Request::SearchMail(_)
             | Request::GetThread(_)
-            | Request::ListFilters(_) => None,
+            | Request::ListFilters(_)
+            | Request::SenderReport(_)
+            | Request::FilterAudit(_) => None,
             Request::Archive(_)
             | Request::MoveToInbox(_)
             | Request::MarkRead(_)
@@ -182,6 +219,7 @@ impl Request {
             | Request::CreateLabel(_) => Some(Permission::Organize),
             Request::CreateFilter(_) | Request::DeleteFilter(_) => Some(Permission::Filters),
             Request::CreateDraft(_) => Some(Permission::Drafts),
+            Request::Unsubscribe(_) => Some(Permission::Unsubscribe),
         }
     }
 
@@ -242,6 +280,17 @@ impl Request {
                 format!("filter {}{}", parts.join(" "), on(&f.account))
             }
             Request::DeleteFilter(d) => format!("filter {}{}", d.filter_id, on(&d.account)),
+            Request::SenderReport(r) => format!(
+                "top senders, {} days{}",
+                r.days.unwrap_or(DEFAULT_DAYS),
+                on(&r.account)
+            ),
+            Request::FilterAudit(a) => format!(
+                "filters' catches, {} days{}",
+                a.days.unwrap_or(AUDIT_DAYS),
+                on(&a.account)
+            ),
+            Request::Unsubscribe(u) => format!("conversation {}{}", u.thread_id, on(&u.account)),
             Request::CreateDraft(d) => format!(
                 "draft \"{}\"{}{}",
                 d.subject.as_deref().unwrap_or(""),
@@ -407,6 +456,48 @@ pub fn catalog() -> Vec<ToolDef> {
             destructive: false,
             example: json!({}),
         },
+        ToolDef {
+            name: "sender_report",
+            title: "Who sends the most mail",
+            description: "The senders with the most mail over the last N days (default 90), from Pheeme's \
+                local copy: how many messages, how many are unread or sit in Inbox, Trash or Spam, which \
+                inbox tab they land in, how often the user has written to them (0 suggests a list or \
+                notification, not a person), and whether their mail offers unsubscribe (one_click, link, \
+                email, none, or unknown). Use it to suggest filters or unsubscribing.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "account": account_prop(),
+                    "days": { "type": "integer", "minimum": 1, "maximum": 3650 },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": MAX_LIMIT, "description": "Senders (default 25)." }
+                },
+                "additionalProperties": false
+            }),
+            read_only: true,
+            destructive: false,
+            example: json!({ "days": 30, "limit": 10 }),
+        },
+        ToolDef {
+            name: "filter_audit",
+            title: "What filters caught",
+            description: "For each Gmail filter that deletes, archives or marks mail read (or every filter \
+                with all: true), the mail it matched over the last N days (default 30), found with Gmail's \
+                search, and where that mail is now (Trash, Inbox...). Use it to find filters that catch \
+                mail the user wants; fix them with delete_filter and create_filter.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "account": account_prop(),
+                    "days": { "type": "integer", "minimum": 1, "maximum": 3650 },
+                    "sample": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Conversations per filter (default 10)." },
+                    "all": { "type": "boolean" }
+                },
+                "additionalProperties": false
+            }),
+            read_only: true,
+            destructive: false,
+            example: json!({ "days": 14 }),
+        },
         threads_tool(
             "archive",
             "Archive",
@@ -512,6 +603,27 @@ pub fn catalog() -> Vec<ToolDef> {
             read_only: false,
             destructive: true,
             example: json!({ "filter_id": "f1" }),
+        },
+        ToolDef {
+            name: "unsubscribe",
+            title: "Unsubscribe",
+            description: "Unsubscribe from the mailing list a conversation came from, using its \
+                List-Unsubscribe header. One-click unsubscribes (RFC 8058) happen at once; otherwise the \
+                answer gives the link or address for the user to use themselves. Uses the newest message \
+                not sent by the user, or message_id.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "thread_id": { "type": "string" },
+                    "account": write_account_prop(),
+                    "message_id": { "type": "string" }
+                },
+                "required": ["thread_id"],
+                "additionalProperties": false
+            }),
+            read_only: false,
+            destructive: false,
+            example: json!({ "thread_id": "t1" }),
         },
         ToolDef {
             name: "create_draft",
