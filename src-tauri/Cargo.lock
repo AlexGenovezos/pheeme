@@ -3619,7 +3619,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
- "windows-version",
+ "windows-version 0.100.0",
  "wiremock",
  "zbus 5.14.0",
  "zeroize",
@@ -5322,7 +5322,7 @@ dependencies = [
  "url",
  "windows 0.62.2",
  "windows-core 0.62.2",
- "windows-version",
+ "windows-version 0.1.7",
  "x11-dl",
 ]
 
@@ -5744,7 +5744,7 @@ dependencies = [
  "quick-xml 0.37.5",
  "thiserror 2.0.21",
  "windows 0.61.3",
- "windows-version",
+ "windows-version 0.1.7",
 ]
 
 [[package]]
@@ -5755,7 +5755,7 @@ checksum = "f37a6c354fd28fc9e322ed9bd47e3959576dad28c9d58ea1cf888cce1c7ccb36"
 dependencies = [
  "thiserror 2.0.21",
  "windows 0.62.2",
- "windows-version",
+ "windows-version 0.1.7",
 ]
 
 [[package]]
@@ -6751,7 +6751,7 @@ dependencies = [
  "objc2-quartz-core",
  "raw-window-handle",
  "windows-sys 0.61.2",
- "windows-version",
+ "windows-version 0.1.7",
 ]
 
 [[package]]
@@ -6878,6 +6878,12 @@ name = "windows-link"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+
+[[package]]
+name = "windows-link"
+version = "0.100.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b39de7c7fe78858b0144c50c3fc000bab3be17d5e9b85b1053871693c7f7415"
 
 [[package]]
 name = "windows-numerics"
@@ -7064,6 +7070,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4060a1da109b9d0326b7262c8e12c84df67cc0dbc9e33cf49e01ccc2eb63631"
 dependencies = [
  "windows-link 0.2.1",
+]
+
+[[package]]
+name = "windows-version"
+version = "0.100.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5d2a42ae19ff386c4680514519a225a2a99bcfada6aff0ab3766f928ff84365"
+dependencies = [
+ "windows-link 0.100.0",
 ]
 
 [[package]]
@@ -7394,7 +7409,7 @@ dependencies = [
  "webview2-com",
  "windows 0.62.2",
  "windows-core 0.62.2",
- "windows-version",
+ "windows-version 0.1.7",
  "x11-dl",
 ]
 
