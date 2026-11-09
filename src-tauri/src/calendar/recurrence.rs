@@ -2,6 +2,7 @@
 //! RRULE, EXDATE, RDATE) plus its changed and cancelled occurrences; the views ask for the
 //! occurrences in a range, which are generated here so every view is instant and offline.
 
+use super::edit::OriginalStart;
 use crate::db::calendar::DbEvent;
 use chrono::{DateTime, Days, NaiveDate, TimeZone, Utc};
 use rrule::RRuleSet;
@@ -35,7 +36,7 @@ pub struct Occurrence {
     pub original_start_ms: Option<i64>,
 }
 
-fn zone(name: Option<&str>) -> chrono_tz::Tz {
+pub(crate) fn zone(name: Option<&str>) -> chrono_tz::Tz {
     name.and_then(|n| n.parse().ok()).unwrap_or(chrono_tz::UTC)
 }
 
@@ -110,12 +111,82 @@ fn parse_set(event: &DbEvent, recurrence: &[String]) -> Option<RRuleSet> {
     rule_text(recurrence, start_ms, all_day, tz).parse().ok()
 }
 
-fn recurrence_lines(event: &DbEvent) -> Vec<String> {
+pub(crate) fn recurrence_lines(event: &DbEvent) -> Vec<String> {
     event
         .recurrence
         .as_deref()
         .and_then(|r| serde_json::from_str(r).ok())
         .unwrap_or_default()
+}
+
+/// `at` as the ms `expand` generates for it: an all-day occurrence is its date's UTC
+/// midnight.
+pub(crate) fn at_ms(at: &OriginalStart) -> i64 {
+    match at {
+        OriginalStart::Ms(ms) => *ms,
+        OriginalStart::Date(d) => d
+            .and_time(chrono::NaiveTime::MIN)
+            .and_utc()
+            .timestamp_millis(),
+    }
+}
+
+/// Where a point in time falls among the occurrences `recurrence` generates from `master`'s
+/// start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Position {
+    /// Occurrences before it.
+    pub before: usize,
+    /// It is an occurrence itself.
+    pub is_occurrence: bool,
+    /// Something occurs at or after it.
+    pub continues: bool,
+}
+
+/// [`Position`] of `at` among `recurrence`'s occurrences for `master`. `None` when the lines
+/// can't be read or `at` lies too many occurrences in.
+pub(crate) fn position(
+    master: &DbEvent,
+    recurrence: &[String],
+    at: &OriginalStart,
+) -> Option<Position> {
+    let set = parse_set(master, recurrence)?;
+    let at_ms = at_ms(at);
+    let mut p = Position {
+        before: 0,
+        is_occurrence: false,
+        continues: false,
+    };
+    for (i, start) in set.into_iter().enumerate() {
+        if i >= MAX_STEPS {
+            return None;
+        }
+        let start = start.timestamp_millis();
+        if start < at_ms {
+            p.before += 1;
+        } else {
+            p.is_occurrence = start == at_ms;
+            p.continues = true;
+            break;
+        }
+    }
+    Some(p)
+}
+
+fn is_rrule(line: &str) -> bool {
+    line.trim_start()
+        .get(..6)
+        .is_some_and(|h| h.eq_ignore_ascii_case("RRULE:") || h.eq_ignore_ascii_case("RRULE;"))
+}
+
+/// How many occurrences `master`'s RRULE lines alone generate before `at`. EXDATE and RDATE
+/// are left out, as RFC 5545 counts COUNT before exclusions; 0 for a rule that can't be read.
+pub(crate) fn rule_count_before(master: &DbEvent, at: &OriginalStart) -> usize {
+    let rules: Vec<String> = recurrence_lines(master)
+        .into_iter()
+        .filter(|l| is_rrule(l))
+        .collect();
+    position(master, &rules, at).map_or(0, |p| p.before)
 }
 
 /// The occurrences of `master` overlapping `[from_ms, to_ms)`, minus those replaced by one
