@@ -147,7 +147,9 @@ async fn lists_mailboxes_with_label_names() {
         .days_ago(1),
     );
     fake.seed(msg("m2", "t2", &["INBOX"], "Friend <f@x.com>").days_ago(2));
-    fake.seed(msg("m3", "t3", &["Label_1"], "Shop <shop@x.com>").days_ago(3));
+    // Inbox mail only: the first sync caches the inbox, the rest arrives with the background
+    // backfill, which the test doesn't wait for.
+    fake.seed(msg("m3", "t3", &["INBOX", "Label_1"], "Shop <shop@x.com>").days_ago(3));
     let h = setup(fake).await;
 
     let inbox = h.call("list_mailbox", json!({})).await.unwrap();
@@ -157,7 +159,7 @@ async fn lists_mailboxes_with_label_names() {
         .iter()
         .map(|t| t["thread_id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, ["t1", "t2"]);
+    assert_eq!(ids, ["t1", "t2", "t3"]);
     let first = &inbox["threads"][0];
     assert_eq!(first["account"], "me@example.com");
     assert_eq!(first["from"], "Shop <shop@x.com>");
