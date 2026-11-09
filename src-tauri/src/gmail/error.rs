@@ -74,6 +74,11 @@ impl GmailError {
         matches!(self, GmailError::Api { status: 404, .. })
     }
 
+    /// The API answered 410 Gone (a Calendar sync token that expired: sync in full).
+    pub fn is_gone(&self) -> bool {
+        matches!(self, GmailError::Api { status: 410, .. })
+    }
+
     /// Gmail refused because the account didn't grant the scope this call needs (an account that
     /// signed in before Pheeme asked for it, or a user who unticked it on Google's consent screen).
     pub fn is_missing_scope(&self) -> bool {

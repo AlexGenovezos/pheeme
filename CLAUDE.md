@@ -67,6 +67,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `body_retention.rs` | Periodic trim (launch, then every 6 h): bodies of mail older than the 180-day body window go back to metadata only 30 days after they were downloaded; `clear_all` (Clear downloaded mail) does it for every body at once |
 | `mail.rs` | Tauri-free mail service the commands call: cached list/thread/label reads, changes via the outbox |
 | `contacts.rs` | Tauri-free recipient suggestions for To/Cc/Bcc, answered locally: addresses from synced mail (the `contacts` table, kept by a trigger on `messages`) plus Google Contacts and "Other contacts" downloaded through the People API (`gmail/people.rs`) after launch and every 6 h. Settings › Contacts walks an account through turning the People API on and signing in again |
+| `calendar/` | Tauri-free Calendar mode backend (no UI yet). `service.rs` answers calendars and the events in a range from the cache and runs its own sync loop (60 s, 15 s while Calendar mode is in front), apart from mail sync; `sync.rs` syncs each calendar with its Calendar API `syncToken` (`singleEvents=false`; 410 Gone means a full re-sync); `recurrence.rs` expands repeating events locally (`rrule`); `gmail/calendar.rs` is the API client. Access is an incremental consent (`ClientChoice::Calendar`, `auth::CALENDAR_SCOPES`) asked only when the user opens the calendar; status changes emit `calendar:access`, cache changes `calendar:updated` |
 | `labels.rs` | Tauri-free label service: create, rename/re-nest (cascading to sublabels), colour, visibility and delete (with sublabels), straight to Gmail's labels API (not the outbox), then written to the cache |
 | `compose/` | Tauri-free compose service: MIME building (`lettre`), Reply/Reply All/Forward templates, staged attachments, Gmail drafts, sends (with undo window) via the outbox |
 | `accounts.rs` | Tauri-free account service: sign-in flow, list/remove, access tokens (cached in memory) |
@@ -95,7 +96,7 @@ The speed reader (`src/speedread/`) flashes one word at a time from emails that 
 
 ### Database Schema Summary
 
-Twelve tables.
+Fifteen tables.
 - `accounts` — Account identity and Gmail history_id for sync (no tokens; those are in the keychain)
 - `labels` — Gmail labels with message/thread unread/total counters
 - `threads` — Conversation rows, derived from their messages by `threads::recompute_threads` (never written directly by sync)
@@ -106,6 +107,8 @@ Twelve tables.
 - `sync_state` — Per-account backfill position
 - `contacts` — Every address an account has exchanged mail with (sent/received counts, last dates), kept by a trigger on `messages`, for recipient suggestions
 - `google_contacts` / `google_contacts_sync` — The account's downloaded Google Contacts and how the last download went
+- `calendars` / `events` — Each account's Google calendars (with `hidden`, Pheeme's local sidebar tick, and the sync token) and their events; a repeating event is stored once (`recurrence`) with its changed or cancelled occurrences (`recurring_event_id`), and expanded when read
+- `calendar_access` — Per account: whether calendar access was allowed and how the last calendar sync went, plus the user's Calendar time zone and week start
 
 ## Key Conventions
 

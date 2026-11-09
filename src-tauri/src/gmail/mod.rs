@@ -1,5 +1,6 @@
 //! Typed Gmail REST client. Independent of Tauri so the sync engine and commands can both use it.
 pub mod auth;
+pub mod calendar;
 pub mod client;
 pub mod drafts;
 pub mod error;

@@ -4,6 +4,7 @@ mod app_menu;
 pub mod attachment_cache;
 pub mod attachment_kind;
 pub mod body_retention;
+pub mod calendar;
 pub mod commands;
 pub mod compose;
 pub mod contacts;
@@ -44,6 +45,7 @@ pub struct AppState {
     pub sender_rules: sender_rules::SenderRuleService,
     pub compose: compose::ComposeService,
     pub contacts: Arc<contacts::ContactService>,
+    pub calendar: Arc<calendar::service::CalendarService>,
     pub sync: Arc<SyncManager>,
     pub transfers: transfer::TransferService,
     /// The Gmail per-user limit every account's client paces itself by (Settings › Sync).
@@ -77,13 +79,19 @@ pub async fn build_state(
         Arc::new(gmail::GmailClient::new(provider).with_quota_setting(&quota))
             as Arc<dyn sync::MailApi>
     });
-    let sync = SyncManager::new(db.clone(), api_for, events);
+    let sync = SyncManager::new(db.clone(), api_for, events.clone());
     let tokens = accounts.clone();
     let people_for: contacts::PeopleFactory = Arc::new(move |account_id: &str| {
         let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
         Arc::new(gmail::GmailClient::people(provider)) as Arc<dyn contacts::PeopleApi>
     });
     let contacts = contacts::ContactService::new(db.clone(), people_for);
+    let tokens = accounts.clone();
+    let calendar_for: calendar::CalendarFactory = Arc::new(move |account_id: &str| {
+        let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
+        Arc::new(gmail::GmailClient::calendar(provider)) as Arc<dyn calendar::CalendarApi>
+    });
+    let calendar = calendar::service::CalendarService::new(db.clone(), calendar_for, events);
     let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
@@ -95,6 +103,7 @@ pub async fn build_state(
     });
     tokio::spawn(body_retention::run(db.clone()));
     tokio::spawn(contacts.clone().run());
+    tokio::spawn(calendar.clone().run());
     Ok(AppState {
         db,
         accounts,
@@ -103,6 +112,7 @@ pub async fn build_state(
         sender_rules,
         compose,
         contacts,
+        calendar,
         sync,
         transfers: transfer::TransferService::default(),
         gmail_quota,
@@ -372,6 +382,11 @@ pub fn run() {
             commands::contacts::suggest_contacts,
             commands::contacts::google_contacts_status,
             commands::contacts::refresh_google_contacts,
+            commands::calendar::calendar_accounts,
+            commands::calendar::calendar_events,
+            commands::calendar::set_calendar_hidden,
+            commands::calendar::calendar_sync_now,
+            commands::calendar::set_calendar_foreground,
             commands::compose::compose_template,
             commands::compose::gmail_signature,
             commands::compose::stage_attachment,

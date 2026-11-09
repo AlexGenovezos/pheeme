@@ -21,6 +21,8 @@ pub async fn complete_oauth(
 ) -> Result<AccountInfo, CommandError> {
     let account = state.accounts.complete_sign_in(&flow_id).await?;
     state.sync.trigger(Some(account.id.clone()));
+    // Allowing calendar access is a sign-in too: find out at once whether it now has it.
+    state.calendar.trigger(Some(account.id.clone()));
     // Signing in again is how an account allows contacts: pick them up straight away.
     let contacts = state.contacts.clone();
     let account_id = account.id.clone();

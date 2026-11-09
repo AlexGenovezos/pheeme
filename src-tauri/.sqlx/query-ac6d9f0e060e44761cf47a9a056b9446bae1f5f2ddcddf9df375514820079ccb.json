@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO calendar_access (account_id, status, checked_at, settings_checked_at,\n             time_zone, week_start)\n         VALUES (?1, 'unknown', ?4, ?4, ?2, ?3)\n         ON CONFLICT (account_id) DO UPDATE SET\n             settings_checked_at = excluded.settings_checked_at,\n             time_zone = excluded.time_zone,\n             week_start = excluded.week_start",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "ac6d9f0e060e44761cf47a9a056b9446bae1f5f2ddcddf9df375514820079ccb"
+}
