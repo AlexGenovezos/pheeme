@@ -3,7 +3,7 @@ import type { ThemeDefinition } from "../styles/themes";
 import { themeColorToHex } from "../styles/themes/color";
 import { platform } from "../lib/platform";
 import { isTauri } from "../preview/runtime";
-import type { ThemeMode } from "./theme";
+import { systemPrefersDark, type ThemeMode } from "./theme";
 
 /** macOS app: the window is transparent over sidebar vibrancy (tauri.macos.conf.json). */
 export const vibrancy = platform === "macos" && isTauri();
@@ -16,9 +16,18 @@ export const vibrancy = platform === "macos" && isTauri();
 export function syncNativeWindow(mode: ThemeMode, theme: ThemeDefinition) {
   const win = getCurrentWindow();
   const warn = (what: string) => (err: unknown) => console.warn(`${what} failed`, err);
+  // System mode leaves the appearance to the OS. setTheme sets it app-wide, which is
+  // what prefers-color-scheme reports, so overriding it here would re-resolve the
+  // theme from the override and flip back and forth forever.
   win.setTheme(mode === "system" ? null : theme.kind).catch(warn("setTheme"));
-  // A transparent window must stay transparent, or the vibrancy behind the sidebar is covered.
-  if (!vibrancy)
+  if (vibrancy) {
+    // The vibrancy material has the window's appearance. Under a theme of the other
+    // kind (a light theme in dark mode) it would show dark through a light sidebar,
+    // so the sidebar and window go solid instead.
+    const appearance = mode === "system" ? (systemPrefersDark() ? "dark" : "light") : theme.kind;
+    if (theme.kind === appearance) document.documentElement.dataset.vibrancy = "";
+    else delete document.documentElement.dataset.vibrancy;
+  } else
     win
       .setBackgroundColor(themeColorToHex(theme.tokens["--color-app-bg"]))
       .catch(warn("setBackgroundColor"));

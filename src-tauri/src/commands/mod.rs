@@ -10,6 +10,7 @@ pub mod sender_rules;
 pub mod settings;
 pub mod support;
 pub mod sync;
+pub mod themes;
 pub mod threads;
 pub mod transfer;
 pub mod updater;

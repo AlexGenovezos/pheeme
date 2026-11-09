@@ -8,7 +8,9 @@ import { contrastFailures, MAILBOX_TOKENS } from "../styles/themes/contrast";
 import { serializeThemeFile, type ThemeFile } from "../styles/themes/themeFile";
 import { CUSTOM_THEMES_KEY, parseThemeText } from "./customThemes";
 import {
+  definitionOf,
   initTheme,
+  previewTheme,
   readThemeMode,
   resolveTheme,
   THEME_BOOT_KEY,
@@ -108,10 +110,12 @@ describe("persistence", () => {
 describe("custom themes", () => {
   const harbour = parseThemeText(
     JSON.stringify({ version: 1, name: "Harbour", kind: "dark", colors: { "app-bg": "#10161c" } }),
-  );
+  )[0].file;
   const paper = parseThemeText(
     JSON.stringify({ version: 1, name: "Paper", kind: "light", colors: { "app-bg": "#fdf6e3" } }),
-  );
+  )[0].file;
+  /** Installed for the mode of its own kind, as an import does. */
+  const own = (...files: ThemeFile[]) => files.map((file) => ({ file, slot: file.kind }));
   const appBg = () => themeColorToHex(root.style.getPropertyValue("--color-app-bg"));
 
   beforeEach(() =>
@@ -119,6 +123,7 @@ describe("custom themes", () => {
       mode: "system",
       choices: { light: "pheeme-light", dark: "pheeme-dark" },
       customThemes: [],
+      folderThemes: [],
     }),
   );
 
@@ -126,7 +131,7 @@ describe("custom themes", () => {
     mockSystemDark(false);
     const onChange = vi.fn();
     const stop = initTheme(onChange);
-    useThemeStore.getState().installThemes([harbour]);
+    useThemeStore.getState().installThemes(own(harbour));
     expect(useThemeStore.getState()).toMatchObject({ mode: "dark", resolved: "dark" });
     expect(appBg()).toBe("#10161c");
     expect(onChange).toHaveBeenLastCalledWith("dark", expect.objectContaining({ id: "harbour" }));
@@ -142,7 +147,7 @@ describe("custom themes", () => {
   test("importing a light and a dark theme together picks both", () => {
     mockSystemDark(false);
     const stop = initTheme();
-    useThemeStore.getState().installThemes([paper, harbour]);
+    useThemeStore.getState().installThemes(own(paper, harbour));
     expect(useThemeStore.getState().choices).toEqual({ light: "paper", dark: "harbour" });
     expect(useThemeStore.getState().mode).toBe("dark");
     useThemeStore.getState().setMode("light");
@@ -154,7 +159,7 @@ describe("custom themes", () => {
     mockSystemDark(true);
     const stop = initTheme();
     const later = { ...harbour, name: "Harbour 2" };
-    useThemeStore.getState().installThemes([harbour, later]);
+    useThemeStore.getState().installThemes(own(harbour, later));
     expect(useThemeStore.getState().customThemes).toEqual([later]);
     stop();
   });
@@ -162,7 +167,7 @@ describe("custom themes", () => {
   test("a theme for the kind already showing keeps the mode", () => {
     mockSystemDark(false);
     const stop = initTheme();
-    useThemeStore.getState().installThemes([paper]);
+    useThemeStore.getState().installThemes(own(paper));
     expect(useThemeStore.getState().mode).toBe("system");
     expect(appBg()).toBe("#fdf6e3");
     stop();
@@ -176,8 +181,10 @@ describe("custom themes", () => {
     expect(useThemeStore.getState().customThemes).toEqual([harbour, paper]);
     expect(appBg()).toBe("#10161c");
     expect(themeOptions("dark", useThemeStore.getState().customThemes)).toEqual([
-      { id: "pheeme-dark", name: "Pheeme Dark", custom: false },
-      { id: "harbour", name: "Harbour", custom: true },
+      { id: "pheeme-dark", name: "Pheeme Dark", kind: "dark", source: "built-in" },
+      { id: "pheeme-light", name: "Pheeme Light", kind: "light", source: "built-in" },
+      { id: "harbour", name: "Harbour", kind: "dark", source: "custom" },
+      { id: "paper", name: "Paper", kind: "light", source: "custom" },
     ]);
     stop();
   });
@@ -196,9 +203,9 @@ describe("custom themes", () => {
   test("re-importing a theme replaces it rather than adding a second", () => {
     mockSystemDark(true);
     const stop = initTheme();
-    useThemeStore.getState().installThemes([harbour]);
+    useThemeStore.getState().installThemes(own(harbour));
     const updated = { ...harbour, colors: { "app-bg": "oklch(0.3 0 0)" } };
-    useThemeStore.getState().installThemes([updated]);
+    useThemeStore.getState().installThemes(own(updated));
     expect(useThemeStore.getState().customThemes).toEqual([updated]);
     expect(root.style.getPropertyValue("--color-app-bg")).toBe("oklch(0.3 0 0)");
     stop();
@@ -207,7 +214,7 @@ describe("custom themes", () => {
   test("removing the theme in use goes back to the built-in theme", () => {
     mockSystemDark(true);
     const stop = initTheme();
-    useThemeStore.getState().installThemes([harbour]);
+    useThemeStore.getState().installThemes(own(harbour));
     useThemeStore.getState().removeTheme("harbour");
     expect(useThemeStore.getState().customThemes).toEqual([]);
     expect(useThemeStore.getState().choices.dark).toBe("pheeme-dark");
@@ -233,14 +240,70 @@ describe("custom themes", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("full", "QuotaExceededError");
     });
-    expect(() => useThemeStore.getState().installThemes([harbour])).toThrow(/storage is full/);
+    expect(() => useThemeStore.getState().installThemes(own(harbour))).toThrow(/storage is full/);
     expect(useThemeStore.getState().customThemes).toEqual([]);
     vi.restoreAllMocks();
     stop();
   });
 
+  test("any theme fits either mode: a dark theme chosen for Light mode shows as dark", () => {
+    mockSystemDark(false);
+    const stop = initTheme();
+    useThemeStore.getState().installThemes([{ file: harbour, slot: "light" }]);
+    expect(useThemeStore.getState()).toMatchObject({ mode: "system", resolved: "light" });
+    expect(useThemeStore.getState().choices.light).toBe("harbour");
+    expect(appBg()).toBe("#10161c");
+    expect(root.dataset.theme).toBe("dark");
+    stop();
+  });
+
+  test("the built-in dark theme can be chosen for Light mode", () => {
+    mockSystemDark(false);
+    const stop = initTheme();
+    useThemeStore.getState().chooseTheme("light", "pheeme-dark");
+    expect(root.style.getPropertyValue("--color-app-bg")).toBe(darkTheme.tokens["--color-app-bg"]);
+    stop();
+  });
+
+  test("themes-folder themes can be chosen, are cached for the next launch, and lose to an installed copy", () => {
+    mockSystemDark(true);
+    const stop = initTheme();
+    useThemeStore.getState().setFolderThemes([harbour]);
+    useThemeStore.getState().chooseTheme("dark", "harbour");
+    expect(appBg()).toBe("#10161c");
+    expect(themeOptions("dark", [], [harbour])[2]).toMatchObject({
+      id: "harbour",
+      source: "folder",
+    });
+    stop();
+
+    const relaunch = initTheme();
+    expect(useThemeStore.getState().folderThemes).toEqual([harbour]);
+    expect(appBg()).toBe("#10161c");
+    const edited = { ...harbour, colors: { "app-bg": "#202830" } };
+    useThemeStore.getState().installThemes(own(edited));
+    expect(appBg()).toBe("#202830");
+    // Removing the installed copy falls back to the folder's, not the built-in theme.
+    useThemeStore.getState().removeTheme("harbour");
+    expect(useThemeStore.getState().choices.dark).toBe("harbour");
+    expect(appBg()).toBe("#10161c");
+    relaunch();
+  });
+
+  test("a preview shows over the chosen theme until it is cleared, and survives a mode change", () => {
+    mockSystemDark(false);
+    const stop = initTheme();
+    previewTheme(definitionOf(harbour));
+    expect(appBg()).toBe("#10161c");
+    useThemeStore.getState().setMode("dark");
+    expect(appBg()).toBe("#10161c");
+    previewTheme(null);
+    expect(root.style.getPropertyValue("--color-app-bg")).toBe(darkTheme.tokens["--color-app-bg"]);
+    stop();
+  });
+
   test("serialized files load back as the same theme", () => {
-    expect(parseThemeText(serializeThemeFile(harbour))).toEqual(harbour);
+    expect(parseThemeText(serializeThemeFile(harbour))[0].file).toEqual(harbour);
   });
 });
 

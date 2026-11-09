@@ -9,6 +9,7 @@ import { loadBindings } from "./keyboard/bindings";
 import { isPreview, isTauri } from "./preview/runtime";
 import { syncNativeWindow, vibrancy } from "./theme/nativeWindow";
 import { initTheme } from "./theme/theme";
+import { watchThemeFolder } from "./theme/themeFolder";
 import { initReadingSize } from "./settings/readingSettings";
 import { openTimer } from "./mail/openTiming";
 
@@ -25,6 +26,8 @@ loadBindings();
 openTimer();
 
 function render() {
+  // After the preview fixtures are in, so the browser preview answers the folder read too.
+  watchThemeFolder();
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <App />

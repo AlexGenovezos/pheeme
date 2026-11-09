@@ -18,6 +18,7 @@ import { type OutboxRejected, SYNC_EVENTS } from "./lib/tauri";
 import { listenForManualChecks, startUpdateChecks } from "./lib/updater";
 import { CommandPalette } from "./palette/CommandPalette";
 import { Settings } from "./settings/Settings";
+import { ThemeEditorHost } from "./theme/editor/ThemeEditor";
 import { AttachmentPreview } from "./mail/preview/AttachmentPreview";
 import { useSettingsStore } from "./settings/settingsStore";
 import { isTauri } from "./preview/runtime";
@@ -94,6 +95,7 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
       <ComposeHost />
       <CommandPalette />
       <Settings onAddAccount={onAddAccount} />
+      <ThemeEditorHost />
       <AttachmentPreview />
       <ContextMenuHost />
       <SpeedReaderHost />
