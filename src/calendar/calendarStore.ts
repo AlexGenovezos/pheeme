@@ -181,6 +181,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
 
     // Read here rather than through the tasks store, so the grid on screen keeps its tasks until
     // these show together with the events. `undefined`: the read failed.
+    const datedBefore = tasks.dated;
     const datedRead = tasksMoved
       ? getDatedTasks(around.first, end).then(
           (d) => d ?? [],
@@ -194,8 +195,10 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
       ]);
       if (ticket !== eventsTicket) return;
       pending = null;
-      if (dated) useTasksStore.getState().setDated(around.first, end, dated);
-      else if (dated === undefined) void useTasksStore.getState().loadDated(around.first, end);
+      // A task edited or synced meanwhile may be missing from what was read: read again.
+      const changed = useTasksStore.getState().dated !== datedBefore;
+      if (dated && !changed) useTasksStore.getState().setDated(around.first, end, dated);
+      else if (dated !== null) void useTasksStore.getState().loadDated(around.first, end);
       // The open popover's event may have moved or gone; keep it only while it's still there.
       const open = get().open;
       const still =

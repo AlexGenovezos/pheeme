@@ -142,6 +142,22 @@ describe("dated tasks on the calendar", () => {
     expect(heading).toHaveTextContent("Jun 6 – 12, 2027");
   });
 
+  test("tasks that change while a far day is being read are read again for it", async () => {
+    renderCalendar();
+    await settle();
+
+    const release = hold("calendar_events");
+    act(() => void useCalendarStore.getState().goTo("2027-06-10"));
+    await settle();
+    // A task ticked off meanwhile: the read already done may not have it.
+    act(() => useTasksStore.setState((s) => ({ dated: [...(s.dated ?? [])] })));
+    const reads = calls.filter((c) => c.cmd === "dated_tasks").length;
+    release();
+    await settle();
+    expect(calls.filter((c) => c.cmd === "dated_tasks")).toHaveLength(reads + 1);
+    expect(useTasksStore.getState().datedFor).toBe("2027-04-25:2027-08-01");
+  });
+
   test("switching view while a far day is being read waits for its tasks too", async () => {
     renderCalendar();
     await settle();
