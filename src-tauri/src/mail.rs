@@ -295,6 +295,9 @@ impl From<&SyncError> for BodyErrorDto {
             SyncError::Gmail(GmailError::RateLimit { .. }) => {
                 "Gmail asked Pheeme to slow down. Try again in a minute."
             }
+            SyncError::Gmail(GmailError::KeychainLocked(_)) => {
+                "Pheeme can't read this account's sign-in from the keychain right now. Unlock your Mac and try again."
+            }
             SyncError::Gmail(GmailError::Auth(_) | GmailError::SignedOut(_)) => {
                 "Gmail didn't accept this account's sign-in. Sign in again from Settings."
             }

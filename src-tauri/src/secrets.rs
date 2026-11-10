@@ -21,8 +21,8 @@ impl std::fmt::Debug for AccountSecrets {
 pub enum SecretsError {
     #[error("{}", unavailable_message(.0))]
     Unavailable(#[source] keyring::Error),
-    /// The keychain exists but refused to prompt: it's locked, or this process runs
-    /// outside the user's desktop session (e.g. started over SSH).
+    /// The keychain exists but refused to prompt: it's locked, the Mac is asleep (Power
+    /// Nap), or this process runs outside the user's desktop session (e.g. started over SSH).
     #[error("{LOCKED_MESSAGE}")]
     Locked(#[source] keyring::Error),
     #[error("Stored credentials for this account are unreadable; please sign in again.")]
@@ -45,11 +45,18 @@ const LOCKED_MESSAGE: &str = "Your keychain is locked, or Pheeme can't ask for k
 #[cfg(target_os = "macos")]
 const ERR_SEC_INTERACTION_NOT_ALLOWED: i32 = -25308;
 
+/// macOS errors that mean "not now" rather than "no keychain": a prompt can't be shown
+/// (`errSecInteractionNotAllowed`, `errSecInteractionRequired`), the Mac is asleep and only
+/// Power Nap is running (`errSecInDarkWake`), or a prompt was cut off by sleep
+/// (`errAuthorizationInternal`, "Unable to obtain authorization for this operation").
+#[cfg(target_os = "macos")]
+const CANT_PROMPT_NOW: [i32; 4] = [ERR_SEC_INTERACTION_NOT_ALLOWED, -25315, -25320, -60008];
+
 #[cfg(target_os = "macos")]
 fn interaction_not_allowed(cause: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
     cause
         .downcast_ref::<security_framework::base::Error>()
-        .is_some_and(|error| error.code() == ERR_SEC_INTERACTION_NOT_ALLOWED)
+        .is_some_and(|error| CANT_PROMPT_NOW.contains(&error.code()))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -94,6 +101,9 @@ impl Keychain for OsKeychain {
         }
     }
 }
+
+/// A keychain read this slow was probably waiting on a prompt.
+const SLOW_READ_MS: u64 = 2_000;
 
 /// The keychain item holding every account's secrets. Renaming it orphans every
 /// stored sign-in.
@@ -189,7 +199,24 @@ impl<K: Keychain> KeyringStore<K> {
     ) -> Result<T, SecretsError> {
         let mut guard = self.loaded.lock().unwrap_or_else(PoisonError::into_inner);
         if guard.is_none() {
-            *guard = Some(self.load().map_err(map_keyring_error)?);
+            // Timed: a macOS access prompt nobody answers (the Mac asleep after an update)
+            // holds every sync until it returns, and this line says how long that was.
+            let start = std::time::Instant::now();
+            let loaded = self.load();
+            let elapsed_ms = start.elapsed().as_millis() as u64;
+            match &loaded {
+                Ok(l) => tracing::info!(
+                    accounts = l.vault.accounts.len(),
+                    elapsed_ms,
+                    "read saved sign-ins from the keychain"
+                ),
+                Err(e) if elapsed_ms >= SLOW_READ_MS => {
+                    tracing::warn!(elapsed_ms, error = %e, "keychain read failed after a long wait")
+                }
+                // Quick failures repeat at every sync; the sync manager says those once.
+                Err(_) => {}
+            }
+            *guard = Some(loaded.map_err(map_keyring_error)?);
         }
         op(guard.as_mut().expect("vault loaded above"))
     }
@@ -413,6 +440,13 @@ mod tests {
         assert!(matches!(error, SecretsError::Locked(_)));
         assert!(error.to_string().contains("keychain is locked"));
 
+        // Asleep (Power Nap's dark wake), or a prompt cut off by sleep: the same wait.
+        for code in [-25315, -25320, -60008] {
+            let cause = security_framework::base::Error::from_code(code);
+            let error = map_keyring_error(keyring::Error::PlatformFailure(Box::new(cause)));
+            assert!(matches!(error, SecretsError::Locked(_)), "{code}");
+        }
+
         let other = security_framework::base::Error::from_code(-25293); // errSecAuthFailed
         let error = map_keyring_error(keyring::Error::PlatformFailure(Box::new(other)));
         assert!(matches!(error, SecretsError::Unavailable(_)));
@@ -493,6 +527,17 @@ mod tests {
         for id in &ids {
             assert_eq!(reopened.get(id).unwrap(), None);
         }
+    }
+
+    #[test]
+    fn the_log_records_when_saved_sign_ins_were_read() {
+        let (_guard, logs) = crate::test_logs::capture();
+        let store = store(FakeKeychain::default());
+        store.put("a", &secrets()).unwrap();
+        store.get("a").unwrap();
+        let line = logs.lines("read saved sign-ins from the keychain");
+        assert_eq!(line.len(), 1, "once per launch: {}", logs.text());
+        assert!(line[0].contains("elapsed_ms="), "{}", line[0]);
     }
 
     /// An in-memory keychain that counts reads and can fail its next call.

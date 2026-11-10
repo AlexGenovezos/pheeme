@@ -75,11 +75,24 @@ pub struct SyncManager {
     backfill_pause: Duration,
     rate_limit_pause: Duration,
     connectivity: Connectivity,
+    /// The last sync couldn't read the keychain (the Mac is asleep or locked). Retried on the
+    /// usual ticks, but logged once per spell rather than every 90 s all night.
+    keychain_waiting: AtomicBool,
 }
 
 /// The sync failed because Google couldn't be reached at all, not because of Gmail.
 fn is_offline(e: &SyncError) -> bool {
     matches!(e, SyncError::Gmail(GmailError::Offline(_)))
+}
+
+/// The sync failed because the keychain can't be read right now: it passes by itself.
+fn is_keychain_locked(e: &SyncError) -> bool {
+    matches!(e, SyncError::Gmail(GmailError::KeychainLocked(_)))
+}
+
+/// Records whether the keychain could be read; true when that changed, so it's worth saying.
+fn note_keychain(waiting: &AtomicBool, locked: bool) -> bool {
+    waiting.swap(locked, Ordering::SeqCst) != locked
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -119,6 +132,7 @@ impl SyncManager {
             backfill_pause,
             rate_limit_pause,
             connectivity: Connectivity::new(probe, probe_interval),
+            keychain_waiting: AtomicBool::new(false),
         })
     }
 
@@ -146,6 +160,23 @@ impl SyncManager {
             this.events.emit(SyncEvent::Network { online: true });
             this.trigger(None);
         });
+    }
+
+    /// The last sync couldn't read the keychain (asleep or locked).
+    pub fn keychain_waiting(&self) -> bool {
+        self.keychain_waiting.load(Ordering::SeqCst)
+    }
+
+    /// Log a failure, except a keychain that can't be read: that's said once when it starts.
+    fn log_failure(&self, account_id: &str, e: &SyncError, what: &str) {
+        if !is_keychain_locked(e) {
+            tracing::warn!(account = account_id, error = %e, "{what}");
+        } else if note_keychain(&self.keychain_waiting, true) {
+            tracing::info!(
+                error = %e,
+                "can't read the keychain (the Mac is asleep or locked); syncing again once it can"
+            );
+        }
     }
 
     /// Report a failed sync: going offline is one app-wide `network:status`, not an error for
@@ -277,6 +308,9 @@ impl SyncManager {
         let result = result.map(|_| ());
         match result {
             Ok(()) => {
+                if note_keychain(&self.keychain_waiting, false) {
+                    tracing::info!("the keychain can be read again; syncing");
+                }
                 self.ensure_backfill(account_id);
                 Ok(())
             }
@@ -285,7 +319,7 @@ impl SyncManager {
                 Ok(())
             }
             Err(e) => {
-                tracing::warn!(account = account_id, error = %e, "sync failed");
+                self.log_failure(account_id, &e, "sync failed");
                 self.report_error(account_id, &e);
                 Err(e)
             }
@@ -351,7 +385,7 @@ impl SyncManager {
                 return;
             }
             if let Err(e) = this.process_outbox(&id).await {
-                tracing::warn!(account = %id, error = %e, "scheduled outbox dispatch failed");
+                this.log_failure(&id, &e, "scheduled outbox dispatch failed");
                 this.report_error(&id, &e);
             }
             this.run_coalesced(&id).await;
@@ -675,6 +709,40 @@ mod tests {
             manager.online(),
             "a timeout reached Google, so it isn't offline"
         );
+    }
+
+    #[tokio::test]
+    async fn unreadable_keychain_waits_quietly_until_it_can_be_read() {
+        let (_dir, _pool, fake, events, manager) = setup().await;
+        for _ in 0..2 {
+            fake.fail_next(
+                "profile_history_id",
+                crate::gmail::GmailError::KeychainLocked("in dark wake".into()),
+            );
+            assert!(manager.sync_account("a1").await.is_err());
+            assert!(manager.keychain_waiting());
+        }
+        let codes: Vec<String> = events
+            .take()
+            .into_iter()
+            .filter_map(|e| match e {
+                SyncEvent::Error { code, .. } => Some(code),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(codes, ["keychain_locked", "keychain_locked"]);
+
+        manager.sync_account("a1").await.unwrap();
+        assert!(!manager.keychain_waiting());
+    }
+
+    #[test]
+    fn keychain_wait_is_said_once_per_spell() {
+        let waiting = AtomicBool::new(false);
+        assert!(note_keychain(&waiting, true), "the first failure says so");
+        assert!(!note_keychain(&waiting, true), "later ones don't");
+        assert!(note_keychain(&waiting, false), "reading it again says so");
+        assert!(!note_keychain(&waiting, false), "routine syncs don't");
     }
 
     /// A check that answers whatever `reachable` holds.
