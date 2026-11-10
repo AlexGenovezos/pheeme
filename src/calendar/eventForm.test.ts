@@ -125,6 +125,13 @@ describe("the event form", () => {
     });
   });
 
+  test("changing guests keeps booked rooms", () => {
+    const initial = formFromDetail(detail(), TZ);
+    expect(formEdit({ ...initial, guests: [] }, initial).attendees).toEqual([
+      { email: "room@resource.calendar.google.com", optional: false },
+    ]);
+  });
+
   test("moving the start keeps the length; times are sent as UTC ms with the zone", () => {
     const form = moveStart(formFromDetail(detail(), TZ), "2026-11-12", 23 * 60 + 30);
     expect(form).toMatchObject({ endDate: "2026-11-13", endMinutes: 30 });

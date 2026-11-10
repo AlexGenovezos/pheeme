@@ -34,21 +34,24 @@ export function CalendarSearch() {
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
+  const latest = useRef(0);
   const trimmed = query.trim();
   const today = dateOf(useNow(), tz);
 
   useEffect(() => input.current?.focus(), []);
 
   useEffect(() => {
+    // Only the latest search's answer is kept: an older one arriving late is dropped.
+    const ticket = ++latest.current;
     if (!trimmed) return;
-    // Answers carry their query: one for older typing is never shown.
     const timer = setTimeout(() => {
       const from = zonedMs(addDays(today, -365), 0, tz);
       const to = zonedMs(addDays(today, 2 * 365), 0, tz);
+      const answer = (r: Results) => ticket === latest.current && setResults(r);
       searchCalendarEvents(trimmed, from, to, tz).then(
-        (events) => setResults({ query: trimmed, state: "ready", events }),
+        (events) => answer({ query: trimmed, state: "ready", events }),
         (e: unknown) =>
-          setResults({ query: trimmed, state: "failed", message: toCommandError(e).message }),
+          answer({ query: trimmed, state: "failed", message: toCommandError(e).message }),
       );
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);

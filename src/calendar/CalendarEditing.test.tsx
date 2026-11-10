@@ -28,7 +28,10 @@ const key = (k: string) =>
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
 const sent = (cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
 
-function backend(fail?: Record<string, unknown>) {
+function backend(
+  fail?: Record<string, unknown>,
+  slow?: (cmd: string, args: Record<string, unknown>) => Promise<void> | undefined,
+) {
   const handlers = createCalendarHandlers(ACCOUNTS, null, NOW) as Record<
     string,
     (args?: Record<string, unknown>) => unknown
@@ -38,7 +41,8 @@ function backend(fail?: Record<string, unknown>) {
       const a = (args ?? {}) as Record<string, unknown>;
       calls.push({ cmd, args: a });
       if (fail?.[cmd]) throw fail[cmd];
-      return handlers[cmd]?.(a);
+      const wait = slow?.(cmd, a);
+      return wait ? wait.then(() => handlers[cmd]?.(a)) : handlers[cmd]?.(a);
     },
     { shouldMockEvents: true },
   );
@@ -337,5 +341,32 @@ describe("search", () => {
     await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(null))));
     expect(screen.queryByRole("search")).toBeNull();
     expect(dialog("Lunch with Dana")).toBeInTheDocument();
+  });
+
+  test("a late answer to an older search doesn't replace the newer one", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    backend(undefined, (cmd, args) =>
+      cmd === "search_calendar_events" && args.query === "lunch" ? held : undefined,
+    );
+    await open();
+
+    key("/");
+    await flush();
+    const input = screen.getByRole("combobox", { name: "Search events" });
+    fireEvent.change(input, { target: { value: "lunch" } });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    fireEvent.change(input, { target: { value: "planning" } });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    await flush();
+    release();
+    await settle();
+
+    const results = screen.getByRole("listbox", { name: "Matching events" });
+    expect(
+      within(results)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual([expect.stringContaining("Team planning")]);
   });
 });

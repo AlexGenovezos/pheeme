@@ -50,6 +50,8 @@ export interface EventForm {
   /** EXDATE/RDATE lines of the series, kept with whatever rule it gets. */
   extraLines: string[];
   guests: Guest[];
+  /** Rooms and other resources booked for it: not shown, but kept when the guests change. */
+  resources: { email: string; optional: boolean }[];
   guestsCanModify: boolean;
   guestsCanInviteOthers: boolean;
   guestsCanSeeOtherGuests: boolean;
@@ -304,6 +306,7 @@ export function newForm(init: {
     repeat: { kind: "none" },
     extraLines: [],
     guests: [],
+    resources: [],
     guestsCanModify: false,
     guestsCanInviteOthers: true,
     guestsCanSeeOtherGuests: true,
@@ -355,6 +358,9 @@ export function formFromDetail(d: EventDetail, displayZone: string): EventForm {
     guests: d.attendees
       .filter((a) => !a.resource && a.email)
       .map((a) => ({ name: a.name, address: a.email!, optional: a.optional })),
+    resources: d.attendees
+      .filter((a) => a.resource && a.email)
+      .map((a) => ({ email: a.email!, optional: a.optional })),
     guestsCanModify: d.guestsCanModify,
     guestsCanInviteOthers: d.guestsCanInviteOthers,
     guestsCanSeeOtherGuests: d.guestsCanSeeOtherGuests,
@@ -443,7 +449,10 @@ export function formEdit(form: EventForm, initial: EventForm | null): EventEdit 
   if (initial ? !sameList(recurrence, formRecurrence(initial)) : recurrence.length)
     edit.recurrence = recurrence;
   if (changed("guests") && (initial || form.guests.length))
-    edit.attendees = form.guests.map((g) => ({ email: g.address, optional: g.optional }));
+    edit.attendees = [
+      ...form.guests.map((g) => ({ email: g.address, optional: g.optional })),
+      ...form.resources,
+    ];
   if (changed("guestsCanModify")) edit.guestsCanModify = form.guestsCanModify;
   if (changed("guestsCanInviteOthers")) edit.guestsCanInviteOthers = form.guestsCanInviteOthers;
   if (changed("guestsCanSeeOtherGuests"))
