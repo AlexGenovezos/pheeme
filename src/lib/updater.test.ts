@@ -113,9 +113,12 @@ test("does not swap the update while it installs", async () => {
   stop = startUpdateChecks(deps);
   await vi.advanceTimersByTimeAsync(0);
   const applying = useUpdateStore.getState().apply();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(first.install).toHaveBeenCalled();
   deps.check.mockImplementation(async () => fakeUpdate(undefined, "0.3.0"));
   await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
-  expect(deps.check).toHaveBeenCalledTimes(1);
+  // The launch check and the one apply runs before installing; none while installing.
+  expect(deps.check).toHaveBeenCalledTimes(2);
   finish();
   await applying;
   expect(useUpdateStore.getState().available).toBe("0.2.0");
@@ -123,17 +126,59 @@ test("does not swap the update while it installs", async () => {
 
 test("a check that finishes during an install leaves the update alone", async () => {
   let resolve!: (u: PendingUpdate | null) => void;
-  const deps = fakeDeps(async () => fakeUpdate(() => new Promise<void>(() => {})));
+  const first = fakeUpdate(() => new Promise<void>(() => {}));
+  const deps = fakeDeps(async () => first);
   stop = startUpdateChecks(deps);
   await vi.advanceTimersByTimeAsync(0);
   deps.check.mockImplementation(() => new Promise((r) => (resolve = r)));
   await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+  const background = resolve;
+  deps.check.mockImplementation(async () => fakeUpdate(undefined, "0.2.0"));
   void useUpdateStore.getState().apply();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(first.install).toHaveBeenCalled();
   const late = fakeUpdate(undefined, "0.3.0");
-  resolve(late);
+  background(late);
   await vi.advanceTimersByTimeAsync(0);
   expect(useUpdateStore.getState().available).toBe("0.2.0");
   expect(late.close).toHaveBeenCalled();
+});
+
+test("apply installs a release published since the update was offered", async () => {
+  const first = fakeUpdate(undefined, "0.2.0");
+  const newer = fakeUpdate(undefined, "0.3.0");
+  const deps = fakeDeps(async () => first);
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+  deps.check.mockImplementation(async () => newer);
+
+  await useUpdateStore.getState().apply();
+
+  expect(newer.install).toHaveBeenCalled();
+  expect(first.install).not.toHaveBeenCalled();
+  expect(first.close).toHaveBeenCalled();
+  expect(deps.relaunch).toHaveBeenCalledTimes(1);
+  expect(deps.report.mock.calls).toEqual([
+    ["available", "0.2.0"],
+    ["available", "0.3.0"],
+    ["installing", "0.3.0"],
+    ["installed", "0.3.0"],
+  ]);
+});
+
+test("apply installs the offered update when checking again fails", async () => {
+  const first = fakeUpdate();
+  const deps = fakeDeps(async () => first);
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+  deps.check.mockImplementation(async () => {
+    throw new Error("offline");
+  });
+
+  await useUpdateStore.getState().apply();
+
+  expect(first.install).toHaveBeenCalled();
+  expect(deps.relaunch).toHaveBeenCalledTimes(1);
 });
 
 test("catches up on the next tick after the computer wakes", async () => {

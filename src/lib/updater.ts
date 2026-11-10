@@ -91,11 +91,14 @@ const initialState: UpdateState = {
   manualCheck: "idle",
   dismissManualCheck: () => useUpdateStore.setState({ manualCheck: "idle" }),
   // Nothing downloads until the user clicks, so the Windows installer never appears unasked.
+  // The update on offer may be hours old, so check again first: installing it when a newer
+  // release is out would mean a second update right after the restart.
   // On Windows install() launches the NSIS installer and exits the app, so relaunch() is
   // never reached there; the tests cover the ordering, not that platform behavior.
   apply: async () => {
     if (!pending || useUpdateStore.getState().applying) return;
     useUpdateStore.setState({ applying: true });
+    await doCheck(true);
     const { version } = pending;
     try {
       deps.report("installing", version);
@@ -111,7 +114,8 @@ const initialState: UpdateState = {
 
 export const useUpdateStore = create<UpdateState>(() => initialState);
 
-async function doCheck(): Promise<CheckResult> {
+/** `forApply`: the check `apply` runs before installing, so it may still swap the update. */
+async function doCheck(forApply = false): Promise<CheckResult> {
   try {
     const update = await deps.check();
     if (!update) {
@@ -120,7 +124,7 @@ async function doCheck(): Promise<CheckResult> {
     }
     // Keep the update already offered unless this one is newer, and never swap mid-install.
     const keep = pending && !isNewer(update.version, pending.version);
-    if (keep || useUpdateStore.getState().applying) {
+    if (keep || (!forApply && useUpdateStore.getState().applying)) {
       release(update);
       return "available";
     }
