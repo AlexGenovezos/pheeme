@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO calendar_reminders_fired\n             (account_id, calendar_id, event_id, start_ms, minutes, fired_at)\n         VALUES (?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "c8477fc7aadfd5af97c25ff9be51e0646f731d2f5ff914da527664e073f6fcdf"
+}

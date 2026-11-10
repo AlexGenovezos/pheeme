@@ -7,6 +7,7 @@ pub mod desktop;
 pub mod labels;
 pub mod messages;
 pub mod outbox;
+pub mod reminders;
 pub mod search;
 pub mod settings;
 pub mod sync_state;

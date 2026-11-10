@@ -23,17 +23,28 @@ export interface DesktopSettings {
   trayEnabled: boolean;
   /** When alerts may appear, for every account. */
   schedule: NotifySchedule;
+  /** Event reminders pop up as notifications. */
+  calendarReminders: boolean;
 }
 export interface ThreadTarget {
   accountId: string;
   threadId: string;
 }
+export interface EventTarget {
+  accountId: string;
+  calendarId: string;
+  eventId: string;
+}
+/** What a clicked notification opens: new mail's conversation, or a reminder's event. */
+export type NotifyTarget = ({ kind: "thread" } & ThreadTarget) | ({ kind: "event" } & EventTarget);
 export const getDesktopSettings = () => invoke<DesktopSettings>("desktop_settings");
 export const setAccountNotifications = (accountId: string, enabled: boolean) =>
   invoke<DesktopSettings>("set_account_notifications", { accountId, enabled });
 export const answerNotificationPrompt = (enable: boolean) =>
   invoke<DesktopSettings>("answer_notification_prompt", { enable });
 export const setTrayIcon = (shown: boolean) => invoke<DesktopSettings>("set_tray_icon", { shown });
-export const takeNotificationTarget = () => invoke<ThreadTarget | null>("take_notification_target");
+export const takeNotificationTarget = () => invoke<NotifyTarget | null>("take_notification_target");
+export const setCalendarReminders = (enabled: boolean) =>
+  invoke<DesktopSettings>("set_calendar_reminders", { enabled });
 export const setNotificationSchedule = (schedule: NotifySchedule) =>
   invoke<DesktopSettings>("set_notification_schedule", { schedule });

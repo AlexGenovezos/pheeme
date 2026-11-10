@@ -10,6 +10,7 @@ const TELEMETRY: &str = "telemetry";
 const TELEMETRY_INSTALL_ID: &str = "telemetry_install_id";
 const TELEMETRY_LAST_PING: &str = "telemetry_last_ping_ms";
 const ASSISTANT_ENABLED: &str = "assistant_enabled";
+const CALENDAR_REMINDERS: &str = "calendar_reminders";
 
 /// The Gmail per-user limit the user entered (units per minute), if they changed it.
 pub async fn gmail_quota(pool: &SqlitePool) -> Result<Option<u32>> {
@@ -100,6 +101,15 @@ pub async fn notify_schedule(pool: &SqlitePool) -> Result<NotifySchedule> {
 
 pub async fn set_notify_schedule(pool: &SqlitePool, schedule: &NotifySchedule) -> Result<()> {
     set(pool, NOTIFY_SCHEDULE, &serde_json::to_string(schedule)?).await
+}
+
+/// Whether event reminders pop up as desktop notifications. On unless the user turned it off.
+pub async fn calendar_reminders(pool: &SqlitePool) -> Result<bool> {
+    Ok(get(pool, CALENDAR_REMINDERS).await?.as_deref() != Some("0"))
+}
+
+pub async fn set_calendar_reminders(pool: &SqlitePool, enabled: bool) -> Result<()> {
+    set(pool, CALENDAR_REMINDERS, if enabled { "1" } else { "0" }).await
 }
 
 /// Whether AI assistants may connect (the MCP server runs). Off unless the user turned it on.

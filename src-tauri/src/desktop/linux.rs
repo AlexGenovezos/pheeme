@@ -1,5 +1,5 @@
 //! One D-Bus connection and signal listener for all notification clicks, without blocked threads.
-use super::super::{activate, ThreadTarget};
+use super::super::{activate, NotifyTarget};
 use futures::StreamExt;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
@@ -8,7 +8,7 @@ use tokio::sync::{mpsc, oneshot};
 use zbus::{Connection, Proxy};
 
 struct Delivery {
-    target: ThreadTarget,
+    target: NotifyTarget,
     title: String,
     body: String,
     result: oneshot::Sender<anyhow::Result<()>>,
@@ -31,7 +31,7 @@ pub fn init(app: &AppHandle) {
 async fn serve(
     mut rx: mpsc::Receiver<Delivery>,
     address: Option<String>,
-    on_click: Arc<dyn Fn(ThreadTarget) + Send + Sync>,
+    on_click: Arc<dyn Fn(NotifyTarget) + Send + Sync>,
 ) {
     // A notification daemon may start late or restart. Reconnect on the next delivery.
     while let Some(first) = rx.recv().await {
@@ -78,29 +78,31 @@ async fn serve(
             }
         };
         // The desktop owns notification history. Bound our in-process routing map too.
-        let mut targets = BTreeMap::<u32, ThreadTarget>::new();
+        let mut targets = BTreeMap::<u32, NotifyTarget>::new();
         let mut next = Some(first);
         loop {
             if let Some(delivery) = next.take() {
                 // Notification bodies are Pango markup on some desktops; mail is plain text.
                 let body = escape_markup(&delivery.body);
-                let hints: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::from([
-                    ("category", zbus::zvariant::Value::from("email.arrived")),
-                    (
-                        "desktop-entry",
-                        zbus::zvariant::Value::from(crate::identity::APP_IDENTIFIER),
-                    ),
-                ]);
+                let (icon, action) = presentation(&delivery.target);
+                let mut hints: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::from([(
+                    "desktop-entry",
+                    zbus::zvariant::Value::from(crate::identity::APP_IDENTIFIER),
+                )]);
+                // The spec has a category for new mail but none for event reminders.
+                if matches!(delivery.target, NotifyTarget::Thread(_)) {
+                    hints.insert("category", zbus::zvariant::Value::from("email.arrived"));
+                }
                 let result: zbus::Result<u32> = proxy
                     .call(
                         "Notify",
                         &(
                             "Pheeme",
                             0u32,
-                            "mail-unread",
+                            icon,
                             delivery.title.as_str(),
                             body,
-                            vec!["default", "Open conversation"],
+                            vec!["default", action],
                             hints,
                             -1i32,
                         ),
@@ -145,9 +147,17 @@ async fn serve(
 pub async fn permission(_: bool) -> anyhow::Result<String> {
     Ok("system".into())
 }
+/// The icon and the click action's label for a notification.
+fn presentation(target: &NotifyTarget) -> (&'static str, &'static str) {
+    match target {
+        NotifyTarget::Thread(_) => ("mail-unread", "Open conversation"),
+        NotifyTarget::Event(_) => ("x-office-calendar", "Open event"),
+    }
+}
+
 pub async fn show(
     _app: &AppHandle,
-    target: ThreadTarget,
+    target: NotifyTarget,
     title: String,
     body: String,
 ) -> anyhow::Result<()> {
@@ -355,13 +365,19 @@ mod protocol_tests {
                 let _ = clicked.send(target);
             }),
         ));
-        for account in ["a", "b"] {
+        let event = NotifyTarget::Event(crate::calendar::reminders::EventTarget {
+            account_id: "b".into(),
+            calendar_id: "b@example.com".into(),
+            event_id: "review".into(),
+        });
+        let thread = NotifyTarget::Thread(crate::desktop::ThreadTarget {
+            account_id: "a".into(),
+            thread_id: "same-thread-id".into(),
+        });
+        for (target, action) in [(&thread, "Open conversation"), (&event, "Open event")] {
             let (result, done) = oneshot::channel();
             tx.send(Delivery {
-                target: ThreadTarget {
-                    account_id: account.into(),
-                    thread_id: "same-thread-id".into(),
-                },
+                target: target.clone(),
                 title: "Sender".into(),
                 body: "<b>Subject</b> & snippet".into(),
                 result,
@@ -376,7 +392,7 @@ mod protocol_tests {
             let (title, body, actions) = calls.recv().await.unwrap();
             assert_eq!(title, "Sender");
             assert_eq!(body, "&lt;b&gt;Subject&lt;/b&gt; &amp; snippet");
-            assert_eq!(actions, ["default", "Open conversation"]);
+            assert_eq!(actions, ["default", action]);
         }
         let fake = server
             .object_server()
@@ -393,13 +409,7 @@ mod protocol_tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            target,
-            ThreadTarget {
-                account_id: "b".into(),
-                thread_id: "same-thread-id".into()
-            }
-        );
+        assert_eq!(target, event);
         FakeDesktop::action_invoked(fake.signal_emitter(), 1, "default")
             .await
             .unwrap();
@@ -407,9 +417,8 @@ mod protocol_tests {
             tokio::time::timeout(std::time::Duration::from_secs(5), clicks.recv())
                 .await
                 .unwrap()
-                .unwrap()
-                .account_id,
-            "a"
+                .unwrap(),
+            thread
         );
         drop(tx);
         worker.await.unwrap();

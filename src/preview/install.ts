@@ -145,6 +145,15 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   let trayIcon = true;
   let notifySchedule = { mode: "always", startHour: 9, endHour: 17, weekdaysOnly: true };
   let telemetry = true;
+  let calendarReminders = true;
+  let notificationTarget: unknown = null;
+  // Preview only: `__pheemeNotificationClick({ kind: "event", ... })` acts as a clicked notification.
+  (
+    globalThis as { __pheemeNotificationClick?: (target: unknown) => void }
+  ).__pheemeNotificationClick = (target) => {
+    notificationTarget = target;
+    void emit("desktop:open-thread").catch(() => {});
+  };
   const inboxTabs = new Map<string, string[]>();
   const hiddenTabs = (accountId: string) => inboxTabs.get(accountId) ?? [];
   const desktopSettings = () => ({
@@ -158,6 +167,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     trayAvailable: false,
     trayEnabled: trayIcon,
     schedule: notifySchedule,
+    calendarReminders,
   });
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
@@ -193,7 +203,15 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       notifySchedule = { ...notifySchedule, ...(args?.schedule as typeof notifySchedule) };
       return desktopSettings();
     },
-    take_notification_target: () => null,
+    take_notification_target: () => {
+      const target = notificationTarget;
+      notificationTarget = null;
+      return target;
+    },
+    set_calendar_reminders: (args) => {
+      calendarReminders = args?.enabled === true;
+      return desktopSettings();
+    },
     gmail_quota: () => gmailQuota,
     set_gmail_quota: (args) => {
       gmailQuota = Math.min(1_200_000, Math.max(600, Number(args?.perMinute) || 6000));

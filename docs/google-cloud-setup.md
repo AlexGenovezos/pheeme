@@ -44,11 +44,19 @@ through it.
 ## 4. Turn on the Google Calendar API
 
 Open the [Google Calendar API](https://console.cloud.google.com/apis/library/calendar-json.googleapis.com)
-page and click **Enable**. Calendar is coming to Pheeme; enabling it now means
-you won't repeat setup later. Pheeme doesn't ask for calendar access until you
-open the calendar.
+page and click **Enable**. Pheeme's Calendar shows, creates and changes your
+events and answers invites through the Calendar API. Pheeme doesn't ask for
+calendar access until you open the calendar.
 
-## 5. Set up the sign-in screen
+## 5. Turn on the Google Tasks API (optional)
+
+Open the [Google Tasks API](https://console.cloud.google.com/apis/library/tasks.googleapis.com)
+page and click **Enable**. Pheeme shows and changes your Google Tasks in the
+Tasks panel and on the calendar. Without it the calendar still works. Pheeme
+asks for tasks access together with calendar access, when you open the
+calendar.
+
+## 6. Set up the sign-in screen
 
 1. Open [Google Auth Platform](https://console.cloud.google.com/auth/overview)
    and click **Get started**.
@@ -58,8 +66,10 @@ open the calendar.
 4. **Contact information:** your email. Agree to the policy and click **Create**.
 5. Optional: under **Data access**, add these scopes. Pheeme requests them at
    sign-in either way. `gmail.settings.basic` only lets Pheeme save sender
-   rules (Gmail filters that file a sender's mail in an inbox tab), and the two
-   contacts scopes only let it read your contacts to suggest recipients.
+   rules (Gmail filters that file a sender's mail in an inbox tab), the two
+   contacts scopes only let it read your contacts to suggest recipients, and
+   the calendar scopes (the last four) are asked for when you first open the
+   calendar.
    ```
    https://www.googleapis.com/auth/gmail.modify
    https://www.googleapis.com/auth/gmail.settings.basic
@@ -67,9 +77,13 @@ open the calendar.
    https://www.googleapis.com/auth/contacts.other.readonly
    https://www.googleapis.com/auth/userinfo.email
    https://www.googleapis.com/auth/userinfo.profile
+   https://www.googleapis.com/auth/calendar.events
+   https://www.googleapis.com/auth/calendar.calendarlist.readonly
+   https://www.googleapis.com/auth/calendar.settings.readonly
+   https://www.googleapis.com/auth/tasks
    ```
 
-## 6. Add Pheeme's links to the branding
+## 7. Add Pheeme's links to the branding
 
 1. Open [Branding](https://console.cloud.google.com/auth/branding) and check
    your project is selected.
@@ -84,20 +98,20 @@ Google keeps **Publish app** turned off until the app has a home page, privacy
 policy and terms of service. These are Pheeme's own pages, so you don't need a
 website. They give nobody access to your project or your mail.
 
-## 7. Publish the app
+## 8. Publish the app
 
 Open [Audience](https://console.cloud.google.com/auth/audience). Under
 **Publishing status**, click **Publish app**, then **Confirm**. (Internal apps
 skip this step.)
 
 If **Publish app** is greyed out, go back to **Branding**, check all four values
-from step 6 are there, click **Save**, then reload **Audience**.
+from step 7 are there, click **Save**, then reload **Audience**.
 
 An app left in **Testing** signs you out of Gmail every 7 days. Publishing stops
 that. It doesn't submit anything for review or make the app public: only people
 you give the client ID to can use it.
 
-## 8. Create a desktop client
+## 9. Create a desktop client
 
 1. Open [Create client](https://console.cloud.google.com/auth/clients/create).
 2. **Application type:** Desktop app. **Name:** `Pheeme desktop`.
@@ -106,7 +120,7 @@ you give the client ID to can use it.
 
 Use the **Desktop app** type: other types fail with `redirect_uri_mismatch`.
 
-## 9. Connect Pheeme
+## 10. Connect Pheeme
 
 1. Paste the client ID and secret into Pheeme (or paste the downloaded JSON
    file's contents into the client ID box). The secret is stored in your system
@@ -133,8 +147,8 @@ its own.
 | `Error 403: org_internal` | The audience is Internal: only accounts in that Workspace organization can sign in. Use one, or switch the audience to External. |
 | `Error 403: access_denied` ("has not completed the Google verification process") | The app is in Testing and this account isn't a test user. Publish the app, or add the address under Test users. |
 | `Error 400: admin_policy_enforced` | Your Workspace administrator blocks unapproved apps. Ask them to trust your client ID (Admin console → Security → API controls). |
-| **Publish app** is greyed out ("complete your configuration on the Branding page") | The Branding page is missing Pheeme's links. Add the three links and the `pheeme.app` domain from step 6, then click **Save**. |
+| **Publish app** is greyed out ("complete your configuration on the Branding page") | The Branding page is missing Pheeme's links. Add the three links and the `pheeme.app` domain from step 7, then click **Save**. |
 | `Missing domain: pheeme.app` on the Branding page | Under **Authorized domains**, click **Add domain**, enter `pheeme.app`, then click **Save**. |
-| Signed out after 7 days | The app is still in Testing. Publish it (step 7), then sign in again. |
+| Signed out after 7 days | The app is still in Testing. Publish it (step 8), then sign in again. |
 | "No system keychain is available" (Linux) | Install and unlock a Secret Service provider such as GNOME Keyring or KWallet. |
 | "Your keychain is locked" (macOS) | Unlock your Mac and try again. If you started Pheeme from a terminal over SSH, start it on the Mac itself: macOS only lets apps in your desktop session use the keychain. |
