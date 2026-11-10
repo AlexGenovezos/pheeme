@@ -7,6 +7,9 @@ import { useCalendarStore } from "./calendarStore";
 import { formatDay, formatHour, wallClock } from "./dates";
 import { BarEvent, eventKey, TimedEventBlock, timeSpan, useCalendarLookup } from "./EventBlock";
 import { layoutBand, layoutDay, MIN_EVENT_MINUTES } from "./layout";
+import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
+import { layoutTasks } from "../tasks/gridLayout";
+import { taskKey } from "../tasks/outline";
 import { useNow } from "./useNow";
 
 /** Height of one hour, in px. */
@@ -55,7 +58,9 @@ export function TimeGrid({
   const list = useMemo(() => events ?? [], [events]);
 
   const band = useMemo(() => layoutBand(list, days, tz), [list, days, tz]);
-  const bandRows = band.reduce((n, s) => Math.max(n, s.row + 1), 0);
+  const tasks = useDatedTasks(days);
+  const taskBand = useMemo(() => layoutTasks(tasks ?? [], days, band), [tasks, days, band]);
+  const bandRows = [...band, ...taskBand].reduce((n, s) => Math.max(n, s.row + 1), 0);
   const columns = useMemo(() => days.map((d) => layoutDay(list, d, tz)), [list, days, tz]);
 
   // Open scrolled to the working day (an hour before now, when today is on screen).
@@ -83,7 +88,7 @@ export function TimeGrid({
       role="grid"
       aria-label="Calendar"
       // Held invisible for the first (local) read, so the all-day band doesn't grow under the user.
-      data-loading={events === null || undefined}
+      data-loading={events === null || tasks === null || undefined}
     >
       <div className="cal-grid__head" role="row">
         <div className="cal-grid__gutter cal-grid__zone" title={tz}>
@@ -108,6 +113,13 @@ export function TimeGrid({
               continuesBefore={s.continuesBefore}
               continuesAfter={s.continuesAfter}
               style={{ gridColumn: `${s.start + 1} / span ${s.span}`, gridRow: s.row + 1 }}
+            />
+          ))}
+          {taskBand.map((s) => (
+            <TaskChip
+              key={taskKey(s.task)}
+              task={s.task}
+              style={{ gridColumn: s.start + 1, gridRow: s.row + 1 }}
             />
           ))}
         </div>

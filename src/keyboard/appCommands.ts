@@ -29,6 +29,7 @@ import { useInboxTabs } from "../store/inboxTabsStore";
 import { useUiStore } from "../store/uiStore";
 import { useThemeStore } from "../theme/theme";
 import { type AppMode, useCalendarStore } from "../calendar/calendarStore";
+import { TOGGLE_TASKS_COMMAND, TOGGLE_TASKS_SHORTCUT, useTasksStore } from "../tasks/tasksStore";
 import type { Command } from "./registry";
 import { useCommands } from "./useCommands";
 
@@ -234,6 +235,15 @@ export function appCommands(): Command[] {
       shortcut: "mod+b",
       keywords: ["hide", "show", "panel"],
       run: () => ui().toggleSidebar(),
+    },
+    {
+      id: TOGGLE_TASKS_COMMAND,
+      title: "Show or hide Tasks",
+      group: "View",
+      shortcut: TOGGLE_TASKS_SHORTCUT,
+      keywords: ["tasks", "to-do", "todo", "panel", "google tasks"],
+      global: true,
+      run: () => useTasksStore.getState().togglePanel(),
     },
     {
       id: "theme.toggle",

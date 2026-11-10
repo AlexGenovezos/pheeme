@@ -140,6 +140,13 @@
   --calendar-goto-offset-top: 18vh;
   --calendar-guest-list-max-height: 168px;
   --calendar-declined-opacity: 0.55;
+  /* Tasks: the panel at the right edge, its rail, and the tick-off circle. */
+  --tasks-panel-width: 340px;
+  --tasks-rail-width: 44px;
+  --task-check-size: 18px;
+  --task-check-size-sm: 14px;
+  --task-subtask-indent: 26px;
+  --task-notes-lines: 2;
   --speed-control-slider-width: 160px;
   --speed-control-value-width: 72px;
   /* Settings dialog: a floating window over the blurred app. */
