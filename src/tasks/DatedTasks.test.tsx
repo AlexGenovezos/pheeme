@@ -22,6 +22,17 @@ const settle = async () => {
 };
 
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
+/** Commands whose answers wait until their gate is released. */
+let held: Map<string, Promise<void>>;
+
+function hold(cmd: string): () => void {
+  let release!: () => void;
+  held.set(cmd, new Promise((resolve) => (release = resolve)));
+  return () => {
+    held.delete(cmd);
+    release();
+  };
+}
 
 function renderCalendar() {
   const handlers = {
@@ -32,7 +43,8 @@ function renderCalendar() {
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
       calls.push({ cmd, args: a });
-      return handlers[cmd]?.(a);
+      const gate = held.get(cmd);
+      return gate ? gate.then(() => handlers[cmd]?.(a)) : handlers[cmd]?.(a);
     },
     { shouldMockEvents: true },
   );
@@ -52,6 +64,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   localStorage.clear();
   calls = [];
+  held = new Map();
   useAccountStore.setState({ accounts: ACCOUNTS as never });
   useCalendarStore.setState({
     mode: "calendar",
@@ -109,6 +122,63 @@ describe("dated tasks on the calendar", () => {
       completed: true,
     });
     expect(chip("Send the lease back")).toHaveClass("task-chip--done");
+  });
+
+  test("jumping outside the months in memory keeps the grid's tasks until the new days show", async () => {
+    renderCalendar();
+    await settle();
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(5);
+
+    const release = hold("calendar_events");
+    act(() => void useCalendarStore.getState().goTo("2027-06-10"));
+    await settle();
+    // The tasks there have been read; the events haven't, so the week stays as it was.
+    expect(heading).toHaveTextContent("Nov 8 – 14, 2026");
+    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(5);
+
+    release();
+    await settle();
+    expect(heading).toHaveTextContent("Jun 6 – 12, 2027");
+  });
+
+  test("tasks that change while a far day is being read are read again for it", async () => {
+    renderCalendar();
+    await settle();
+
+    const release = hold("calendar_events");
+    act(() => void useCalendarStore.getState().goTo("2027-06-10"));
+    await settle();
+    // A task ticked off meanwhile: the read already done may not have it.
+    act(() => useTasksStore.setState((s) => ({ dated: [...(s.dated ?? [])] })));
+    const reads = calls.filter((c) => c.cmd === "dated_tasks").length;
+    release();
+    await settle();
+    expect(calls.filter((c) => c.cmd === "dated_tasks")).toHaveLength(reads + 1);
+    expect(useTasksStore.getState().datedFor).toBe("2027-04-25:2027-08-01");
+  });
+
+  test("switching view while a far day is being read waits for its tasks too", async () => {
+    renderCalendar();
+    await settle();
+    await act(() => useCalendarStore.getState().goTo("2027-06-10"));
+    await settle();
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent("Jun 6 – 12, 2027");
+
+    const releaseEvents = hold("calendar_events");
+    const releaseTasks = hold("dated_tasks");
+    act(() => void useCalendarStore.getState().goTo("2026-11-11"));
+    act(() => useCalendarStore.getState().setView("month"));
+    releaseEvents();
+    await settle();
+    // Never the month without its tasks: it waits for them.
+    expect(heading).toHaveTextContent("Jun 6 – 12, 2027");
+
+    releaseTasks();
+    await settle();
+    expect(heading).toHaveTextContent("November 2026");
+    expect(screen.getByRole("button", { name: /^Task: Plan the Lisbon trip/ })).toBeInTheDocument();
   });
 
   test("the sidebar lists each account's task lists; unticking one takes its tasks off the grid", async () => {

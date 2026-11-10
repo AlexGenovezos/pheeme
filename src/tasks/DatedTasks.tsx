@@ -10,12 +10,18 @@ import { taskTitle } from "./outline";
 import { useTasksStore } from "./tasksStore";
 import "./tasks.css";
 
-/** The tasks due on `days` (read again when the days change); `null` until the first read. */
+/** The tasks due on `days` (read when they aren't in memory yet); `null` until the first read. */
 export function useDatedTasks(days: string[]): Task[] | null {
   const first = days[0];
   const last = days[days.length - 1];
   useEffect(() => {
-    if (first && last) void useTasksStore.getState().loadDated(first, addDays(last, 1));
+    if (!first || !last) return;
+    const to = addDays(last, 1);
+    // The calendar reads the months around the days shown along with its events; read just these
+    // days only when they aren't covered yet.
+    const [from, until] = useTasksStore.getState().datedFor?.split(":") ?? [];
+    if (from && until && from <= first && until >= to) return;
+    void useTasksStore.getState().loadDated(first, to);
   }, [first, last]);
   return useTasksStore((s) => s.dated);
 }

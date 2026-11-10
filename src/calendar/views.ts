@@ -32,6 +32,18 @@ export function visibleDays(view: CalendarView, anchor: string, weekStart: numbe
   return Array.from({ length: count }, (_, i) => addDays(first, i));
 }
 
+/**
+ * The days the calendar keeps in memory around `anchor`: the grid of its month and of the months
+ * either side, so switching Day, Week and Month, or stepping once, draws without waiting on a read.
+ */
+export function windowDays(anchor: string, weekStart: number): { first: string; last: string } {
+  const after = visibleDays("month", addMonths(anchor, 1), weekStart);
+  return {
+    first: visibleDays("month", addMonths(anchor, -1), weekStart)[0],
+    last: after[after.length - 1],
+  };
+}
+
 /** The UTC ms range `[from, to)` covering `days` in `tz`. */
 export function daysRange(days: string[], tz: string): { from: number; to: number } {
   return { from: zonedMs(days[0], 0, tz), to: zonedMs(addDays(days[days.length - 1], 1), 0, tz) };

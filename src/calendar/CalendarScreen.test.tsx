@@ -167,6 +167,33 @@ describe("CalendarScreen", () => {
     });
   });
 
+  test("Week to Month draws the whole month's events in its first frame", async () => {
+    backend(null);
+    render(<CalendarScreen />);
+    await flush();
+    await flush();
+    // This week's standup was moved; the month's other Mondays keep theirs.
+    expect(screen.queryAllByRole("button", { name: /^Standup,/ })).toHaveLength(0);
+
+    act(() => useCalendarStore.getState().setView("month"));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("November 2026");
+    // No read in between: the months around the week were already in memory.
+    expect(screen.getAllByRole("button", { name: /^Standup,/ })).toHaveLength(4);
+  });
+
+  test("a day outside the months in memory shows once its events are read, not before", async () => {
+    backend(null);
+    render(<CalendarScreen />);
+    await flush();
+    await flush();
+
+    act(() => void useCalendarStore.getState().goTo("2027-06-10"));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Nov 8 – 14, 2026");
+    await flush();
+    await flush();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Jun 6 – 12, 2027");
+  });
+
   test("with no account allowed yet, the first-open screen asks for access", async () => {
     backend(null, ["unknown", "api_disabled"]);
     render(<CalendarScreen />);
