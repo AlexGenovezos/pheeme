@@ -40,6 +40,8 @@ export interface QuickAdd {
   people: Person[];
   /** The `Target` key `/name` picked. */
   target: string | null;
+  /** The length "for 30 min" asked for (ms), also when the time is left to the caller. */
+  length: number | null;
 }
 
 const HOUR = 60 * 60_000;
@@ -59,7 +61,7 @@ const SIMPLE_RE =
   /\b(daily|weekly|monthly|yearly|annually|fortnightly|biweekly|bi-weekly|weekdays)\b/i;
 const DURATION_RE =
   /\bfor\s+(an?|one|half an?|\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/i;
-const UNTIL_RE = /^\s*,?\s*(?:until|till|til|through|thru|ending)\s+/i;
+const UNTIL_RE = /(?:^|[\s,])((?:until|till|til|through|thru|ending)\s+)/i;
 const TIMES_RE = /(?:^|\s)((?:for\s+)?(\d+)\s+times)\b/i;
 
 /** Words after "with" that aren't someone to look up. */
@@ -146,18 +148,18 @@ function findRepeat(
     else if (word === "weekdays") byDay = ["MO", "TU", "WE", "TH", "FR"];
     else if (word !== "weekly") interval = 2;
   }
-  let end = m.index + m[0].length;
+  const end = m.index + m[0].length;
   let until: string | null = null;
   let count: number | null = null;
   const spans: Span[] = [];
-  const rest = text.slice(end);
-  const u = UNTIL_RE.exec(rest);
-  const times = TIMES_RE.exec(
-    masked.slice(0, m.index) + " ".repeat(m[0].length) + masked.slice(end),
-  );
+  // The limit can come anywhere: "daily until Dec 1", "every Tue at 10 until Dec 1", "5 times".
+  const others = masked.slice(0, m.index) + " ".repeat(m[0].length) + masked.slice(end);
+  const u = UNTIL_RE.exec(others);
+  const times = TIMES_RE.exec(others);
   if (u) {
     // Only the day: "until Dec 1 at 7am" ends on Dec 1, and each one is at 7.
-    const after = rest.slice(u[0].length);
+    const from = u.index + u[0].length;
+    const after = text.slice(from);
     const stop = /\s+(?:at|from|@)\s/i.exec(after);
     const found = chrono.parse(stop ? after.slice(0, stop.index) : after, ref, {
       forwardDate: true,
@@ -165,7 +167,8 @@ function findRepeat(
     if (found && found.index === 0) {
       const c = found.start;
       until = `${c.get("year")}-${pad(c.get("month") ?? 1)}-${pad(c.get("day") ?? 1)}`;
-      end += u[0].length + found.text.length;
+      const start = from - u[1].length;
+      spans.push({ kind: "repeat", start, end: from + found.text.length });
     }
   } else if (times) {
     count = Number(times[2]);
@@ -294,6 +297,8 @@ export function parseQuickAdd(
         endMinutes += 12 * 60;
         at = instant(e, endDate, endMinutes, tz);
       }
+      // "11pm to 1am": past midnight, the next day.
+      if (at <= start && !e.isCertain("day")) at = instant(e, addDays(endDate, 1), endMinutes, tz);
       if (at > start) end = at;
     }
     when = { allDay: false, start, end };
@@ -322,7 +327,9 @@ export function parseQuickAdd(
         repeat.freq === "WEEKLY"
           ? repeatDays.length
             ? repeatDays
-            : [WEEKDAYS[weekday(startDate)]]
+            : when
+              ? [WEEKDAYS[weekday(startDate)]]
+              : [] // No day yet: the caller's start day (QuickAdd fills it in).
           : [],
       ends: repeat.until
         ? { kind: "on", date: repeat.until }
@@ -362,6 +369,7 @@ export function parseQuickAdd(
     place,
     people,
     target,
+    length,
   };
 }
 

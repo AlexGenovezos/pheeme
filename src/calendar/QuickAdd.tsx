@@ -19,10 +19,10 @@ import {
   writableCalendars,
 } from "./actions";
 import { displayZone, useCalendarStore } from "./calendarStore";
-import { dateOf, formatDay, formatTime } from "./dates";
+import { dateOf, formatDay, formatTime, weekday } from "./dates";
 import { useEditStore } from "./editStore";
 import { CalendarSelect } from "./EventFields";
-import { describeRule, type EventForm, type Guest, newForm } from "./eventForm";
+import { describeRule, type EventForm, type Guest, newForm, WEEKDAYS } from "./eventForm";
 import { parseQuickAdd, type Person, type Span, type Target } from "./quickAdd";
 
 export function QuickAdd() {
@@ -131,7 +131,12 @@ function QuickAddDialog() {
   }
 
   const when = parsed.when;
-  const times = when ?? { allDay: false as const, ...defaultTimes() };
+  const fallbackStart = defaultTimes().start;
+  const times = when ?? {
+    allDay: false as const,
+    start: fallbackStart,
+    end: fallbackStart + (parsed.length ?? 60 * 60_000),
+  };
   const form: EventForm = {
     ...(times.allDay
       ? newForm({
@@ -153,8 +158,17 @@ function QuickAddDialog() {
     summary: parsed.title,
     location: parsed.place,
     guests,
-    repeat: parsed.repeat ? { kind: "rule", rule: parsed.repeat } : { kind: "none" },
+    repeat: { kind: "none" },
   };
+  if (parsed.repeat) {
+    const rule = parsed.repeat;
+    // "weekly" with no day said: the day it starts on.
+    const byDay =
+      rule.freq === "WEEKLY" && !rule.byDay.length
+        ? [WEEKDAYS[weekday(form.startDate)]]
+        : rule.byDay;
+    form.repeat = { kind: "rule", rule: { ...rule, byDay } };
+  }
 
   const listKey =
     (isTask && parsed.target) ||
@@ -243,8 +257,8 @@ function QuickAddDialog() {
           {!isTask && (
             <>
               <Row icon={<Repeat />} label="Repeat">
-                {parsed.repeat ? (
-                  describeRule(parsed.repeat)
+                {form.repeat.kind === "rule" ? (
+                  describeRule(form.repeat.rule)
                 ) : (
                   <span className="cal-qa__empty">Doesn't repeat</span>
                 )}

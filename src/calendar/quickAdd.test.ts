@@ -81,6 +81,9 @@ describe("parseQuickAdd", () => {
     const d = timed("Review tomorrow at 10 for 30 min");
     expect([d.title, d.start, d.end]).toEqual(["Review", "2026-11-11 10:00", "2026-11-11 10:30"]);
     expect(timed("Call at 4 for an hour and a bit").end).toBe("2026-11-10 17:00");
+    expect(parse("Review for 30 min").length).toBe(30 * 60_000);
+    const late = timed("Call at 11pm to 1am");
+    expect([late.start, late.end]).toEqual(["2026-11-10 23:00", "2026-11-11 01:00"]);
   });
 
   test("a date without a time is all day", () => {
@@ -123,6 +126,13 @@ describe("parseQuickAdd", () => {
     expect(parse("Rent monthly on Dec 1").repeat).toMatchObject({ freq: "MONTHLY", byDay: [] });
     const w = parse("1:1 weekly thursday at 3 for 6 times");
     expect(w.repeat).toMatchObject({ byDay: ["TH"], ends: { kind: "after", count: 6 } });
+    // The limit after the time, and "weekly" with no day yet leaves the day to the start.
+    expect(parse("Meet every Tuesday at 10 until Dec 1").repeat?.ends).toEqual({
+      kind: "on",
+      date: "2026-12-01",
+    });
+    expect(timed("Meet every Tuesday at 10 until Dec 1").title).toBe("Meet");
+    expect(parse("Standup weekly").repeat?.byDay).toEqual([]);
     expect(parse("Bins every Thursday").when).toEqual({
       allDay: true,
       date: "2026-11-12",
