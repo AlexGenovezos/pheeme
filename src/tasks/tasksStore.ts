@@ -83,6 +83,8 @@ interface TasksState {
   loadList(accountId: string, listId: string): Promise<void>;
   /** Read the tasks due on `[from, to)` (the days on screen). */
   loadDated(from: string, to: string): Promise<void>;
+  /** Show `dated` as the tasks due in `[from, to)`: read by the calendar along with its events. */
+  setDated(from: string, to: string, dated: Task[]): void;
   /** Ask Google for every account's latest tasks (the panel opened). */
   syncAll(): void;
   setListHidden(accountId: string, listId: string, hidden: boolean): Promise<void>;
@@ -211,6 +213,12 @@ export const useTasksStore = create<TasksState>((set, get) => {
         // The grid waits for tasks before it shows; don't keep it waiting.
         if (ticket === datedTicket && get().dated === null) set({ dated: [] });
       }
+    },
+
+    setDated: (from, to, dated) => {
+      // Anything still reading the old days is out of date now.
+      ++datedTicket;
+      set({ dated, datedFor: `${from}:${to}` });
     },
 
     syncAll: () => {

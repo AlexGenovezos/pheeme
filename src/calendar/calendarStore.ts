@@ -11,6 +11,7 @@ import {
   type CalendarEvent,
   getCalendarAccounts,
   getCalendarEvents,
+  getDatedTasks,
   setCalendarHidden,
   toCommandError,
 } from "../lib/tauri";
@@ -178,11 +179,23 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
     const tasksMoved = tasks.datedFor !== `${around.first}:${end}`;
     if (ready && !moved && !reload && !tasksMoved) return;
 
-    const dated = tasksMoved ? tasks.loadDated(around.first, end) : null;
+    // Read here rather than through the tasks store, so the grid on screen keeps its tasks until
+    // these show together with the events. `undefined`: the read failed.
+    const datedRead = tasksMoved
+      ? getDatedTasks(around.first, end).then(
+          (d) => d ?? [],
+          () => undefined,
+        )
+      : null;
     try {
-      const [events] = await Promise.all([getCalendarEvents(want.from, want.to, tz), dated]);
+      const [events, dated] = await Promise.all([
+        getCalendarEvents(want.from, want.to, tz),
+        datedRead,
+      ]);
       if (ticket !== eventsTicket) return;
       pending = null;
+      if (dated) useTasksStore.getState().setDated(around.first, end, dated);
+      else if (dated === undefined) void useTasksStore.getState().loadDated(around.first, end);
       // The open popover's event may have moved or gone; keep it only while it's still there.
       const open = get().open;
       const still =
