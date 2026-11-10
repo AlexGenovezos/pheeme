@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { wallClock } from "./dates";
-import { parseQuickAdd, type Target } from "./quickAdd";
+import { parseQuickAdd, type Target } from "./sentence";
 
 const NY = "America/New_York";
 /** Tuesday 10 November 2026, 10:00 in New York. */

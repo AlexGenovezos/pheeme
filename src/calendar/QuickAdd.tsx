@@ -1,7 +1,7 @@
 // Quick add (`c`, Create): type "Meet with Kevin tomorrow at 9 am" and see the event before adding
 // it. The words read as the time, repeat, place, people and calendar are highlighted as you type;
 // each "with" name offers the matching contacts, and only a picked one is invited. "todo …" adds a
-// Google Task instead. Rules and chrono-node only (`quickAdd.ts`), no AI.
+// Google Task instead. Rules and chrono-node only (`sentence.ts`), no AI.
 import { CalendarDays, CheckSquare, Clock, MapPin, Repeat, Users, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
@@ -23,7 +23,7 @@ import { dateOf, formatDay, formatTime, weekday } from "./dates";
 import { useEditStore } from "./editStore";
 import { CalendarSelect } from "./EventFields";
 import { describeRule, type EventForm, type Guest, newForm, WEEKDAYS } from "./eventForm";
-import { parseQuickAdd, type Person, type Span, type Target } from "./quickAdd";
+import { parseQuickAdd, type Person, type Span, type Target } from "./sentence";
 
 export function QuickAdd() {
   const open = useEditStore((s) => s.quickAdd);
