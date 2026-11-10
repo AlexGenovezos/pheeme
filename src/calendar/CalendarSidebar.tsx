@@ -5,11 +5,14 @@ import {
   ChevronLeft,
   ChevronRight,
   PanelLeftClose,
+  Plus,
   Settings,
   TriangleAlert,
 } from "lucide-react";
 import { useId, useMemo, useState } from "react";
+import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { describeShortcut } from "../keyboard/format";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useKeybinding } from "../keyboard/useCommands";
 import type { CalendarAccount, CalendarInfo } from "../lib/tauri";
@@ -18,6 +21,7 @@ import { useSettingsStore } from "../settings/settingsStore";
 import { dragRegion } from "../shell/chrome";
 import { useUiStore } from "../store/uiStore";
 import { AccountAccess, syncLine } from "./AccessControls";
+import { startDraftNow } from "./actions";
 import { screenDays, useCalendarStore, weekStartOf, displayZone } from "./calendarStore";
 import { calendarColor, textOn } from "./colors";
 import { addMonths, dateOf, formatDay, startOfMonth } from "./dates";
@@ -169,6 +173,7 @@ export function CalendarSidebar() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
   const settingsShortcut = useKeybinding("settings.open");
+  const createShortcut = useKeybinding("calendar.create", "c");
   return (
     <div className="sidebar cal-sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
@@ -182,6 +187,18 @@ export function CalendarSidebar() {
         />
       </div>
       <nav className="sidebar__scroll" aria-label="Calendars">
+        <div className="cal-sidebar__create">
+          <Button
+            variant="primary"
+            icon={<Plus aria-hidden="true" />}
+            title={
+              createShortcut ? `Create event (${describeShortcut(createShortcut)})` : undefined
+            }
+            onClick={startDraftNow}
+          >
+            Create
+          </Button>
+        </div>
         <MiniMonth />
         {accounts === null ? (
           <section className="sidebar__section" aria-hidden="true">

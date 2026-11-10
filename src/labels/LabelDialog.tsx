@@ -1,17 +1,8 @@
 // The create / edit / delete label dialogs: modal, like Settings (scrim, focus trap, Esc closes, focus returns).
-import {
-  type FormEvent,
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type FormEvent, useEffect, useId, useMemo, useState } from "react";
 import { Button } from "../components/ui/Button";
+import { Modal as BaseModal, type ModalProps } from "../components/ui/Modal";
 import { TextInput } from "../components/ui/TextInput";
-import { registry } from "../keyboard/registry";
 import {
   createLabel,
   deleteLabel,
@@ -28,9 +19,6 @@ import { editLabel } from "./edit";
 import { LabelChip } from "./LabelChip";
 import { labelColor } from "./palette";
 import "./labels.css";
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const NO_LABELS: LabelInfo[] = [];
 
@@ -60,83 +48,15 @@ function nameProblem(name: string): string | null {
   return null;
 }
 
-/** The modal shell: scrim, focus trap, Esc, and focus back to whatever opened it. */
-function Modal({
-  title,
-  titleId,
-  returnTo,
-  onClose,
-  children,
-}: {
-  title: string;
-  titleId: string;
-  returnTo?: HTMLElement | null;
-  onClose(): void;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [returnFocus] = useState(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    // A closing picker's own field is about to unmount: prefer what it saved, if it's still on the page.
-    return returnTo?.isConnected ? returnTo : opener?.isConnected ? opener : null;
-  });
-
-  // While the dialog is open, keys belong to it.
-  useEffect(() => registry.suspend(), []);
-  useEffect(() => {
-    const first = ref.current?.querySelector<HTMLElement>("[data-autofocus]");
-    (first ?? ref.current)?.focus();
-    return () => {
-      if (returnFocus?.isConnected) returnFocus.focus();
-    };
-  }, [returnFocus]);
-
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      onClose();
-      return;
-    }
-    if (e.key !== "Tab") return;
-    const items = [...(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
-    if (!items.length) return;
-    const first = items[0];
-    const last = items[items.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || active === ref.current)) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
-
-  return (
-    <div
-      className="label-dialog-scrim"
-      onPointerDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div
-        ref={ref}
-        className="label-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        data-owns-keys=""
-        onKeyDown={onKeyDown}
-      >
-        <h2 id={titleId} className="label-dialog__title">
-          {title}
-        </h2>
-        {children}
-      </div>
-    </div>
-  );
-}
+/** The modal shell in the label dialogs' look. */
+const Modal = (props: Omit<ModalProps, "className" | "scrimClassName" | "titleClassName">) => (
+  <BaseModal
+    {...props}
+    scrimClassName="label-dialog-scrim"
+    className="label-dialog"
+    titleClassName="label-dialog__title"
+  />
+);
 
 function splitPath(path: string): { parent: string | null; leaf: string } {
   const cut = path.lastIndexOf("/");

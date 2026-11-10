@@ -6,6 +6,7 @@ import { useHeight } from "../lib/useWidth";
 import { cx } from "../lib/utils";
 import { useCalendarStore } from "./calendarStore";
 import { dateOf, formatDay } from "./dates";
+import { createOnDays } from "./drag";
 import { BarEvent, DotEvent, eventKey, timeSpan, useCalendarLookup } from "./EventBlock";
 import { fitRows, inAllDayBand, layoutBand } from "./layout";
 import { useNow } from "./useNow";
@@ -53,6 +54,9 @@ function Week({
             d === today && "cal-month__cell--today",
           )}
           style={{ gridColumn: i + 1, gridRow: "1 / -1" }}
+          data-cal-drop="day"
+          data-date={d}
+          onPointerDown={(e) => createOnDays(e, d)}
         >
           <button
             type="button"

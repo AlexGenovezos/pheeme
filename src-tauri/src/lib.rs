@@ -429,6 +429,7 @@ pub fn run() {
             commands::contacts::refresh_google_contacts,
             commands::calendar::calendar_accounts,
             commands::calendar::calendar_events,
+            commands::calendar::search_calendar_events,
             commands::calendar::set_calendar_hidden,
             commands::calendar::calendar_sync_now,
             commands::calendar::set_calendar_foreground,

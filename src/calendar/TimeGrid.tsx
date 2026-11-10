@@ -5,6 +5,7 @@ import type { CalendarEvent } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { useCalendarStore } from "./calendarStore";
 import { formatDay, formatHour, wallClock } from "./dates";
+import { createInColumn, createOnDays } from "./drag";
 import { BarEvent, eventKey, TimedEventBlock, timeSpan, useCalendarLookup } from "./EventBlock";
 import { layoutBand, layoutDay, MIN_EVENT_MINUTES } from "./layout";
 import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
@@ -102,7 +103,14 @@ export function TimeGrid({
         <div className="cal-grid__gutter" />
         <div className="cal-grid__band-cells">
           {days.map((d, i) => (
-            <div key={d} className="cal-grid__band-cell" style={{ gridColumn: i + 1 }} />
+            <div
+              key={d}
+              className="cal-grid__band-cell"
+              style={{ gridColumn: i + 1 }}
+              data-cal-drop="day"
+              data-date={d}
+              onPointerDown={(e) => createOnDays(e, d)}
+            />
           ))}
           {band.map((s) => (
             <BarEvent
@@ -139,6 +147,9 @@ export function TimeGrid({
               className={cx("cal-grid__column", d === now.date && "cal-grid__column--today")}
               role="gridcell"
               aria-label={formatDay(d, { weekday: "long", month: "long", day: "numeric" })}
+              data-cal-drop="time"
+              data-date={d}
+              onPointerDown={(e) => createInColumn(e, d, tz)}
             >
               {columns[i].map((b) => {
                 const shown = Math.max(b.end - b.start, MIN_EVENT_MINUTES);

@@ -24,6 +24,7 @@ function timed(start: number, end: number, extra: Partial<CalendarEvent> = {}): 
     colorId: null,
     transparency: null,
     recurring: false,
+    canEdit: false,
     ...extra,
   };
 }
