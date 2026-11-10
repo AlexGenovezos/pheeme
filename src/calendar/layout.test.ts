@@ -51,6 +51,11 @@ describe("dates", () => {
     // Chile springs forward at midnight: 2026-09-06 00:00 doesn't exist, the day starts at 01:00.
     const start = zonedMs("2026-09-06", 0, "America/Santiago");
     expect(wallClock(start, "America/Santiago")).toEqual({ date: "2026-09-06", minutes: 60 });
+    // Far from UTC too: Auckland skips 02:00–03:00 on 2026-09-27.
+    expect(wallClock(zonedMs("2026-09-27", 150, "Pacific/Auckland"), "Pacific/Auckland")).toEqual({
+      date: "2026-09-27",
+      minutes: 210,
+    });
     // The repeated hour on fall-back day resolves to its first occurrence.
     expect(zonedMs("2026-11-01", 90, NY)).toBe(Date.UTC(2026, 10, 1, 5, 30));
   });

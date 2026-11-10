@@ -306,7 +306,7 @@ function useCalendarData() {
     scope
       .add((signal) => useCalendarStore.getState().subscribe(signal))
       .catch((err: unknown) => console.warn("calendar event listener failed", err));
-    void useCalendarStore.getState().loadEvents();
+    // Events are read by loadAccounts (above), once the zone and week start are known.
     void setCalendarForeground(true).catch(() => {});
     return () => {
       scope.dispose();

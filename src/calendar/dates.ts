@@ -65,10 +65,10 @@ function offsetAt(ms: number, tz: string): number {
 export function zonedMs(date: string, minutes: number, tz: string): number {
   const [y, m, d] = date.split("-").map(Number);
   const local = Date.UTC(y, m - 1, d, 0, minutes);
-  // The offsets half a day either side cover any transition near this time.
+  // The offsets a day either side cover any transition near this time (zones reach ±14 h).
   const candidates = [
-    local - offsetAt(local - 43_200_000, tz),
-    local - offsetAt(local + 43_200_000, tz),
+    local - offsetAt(local - 86_400_000, tz),
+    local - offsetAt(local + 86_400_000, tz),
   ];
   const exact = candidates.filter((ms) => offsetAt(ms, tz) === local - ms);
   return exact.length ? Math.min(...exact) : Math.max(...candidates);
