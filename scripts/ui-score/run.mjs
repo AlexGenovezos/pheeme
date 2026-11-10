@@ -23,6 +23,10 @@ fs.mkdirSync(OUT, { recursive: true });
 // from x 16 to 76, centred on the 44 px title bar. The app is told it has an overlay title bar.
 const MAC = `(() => {
   const apply = () => {
+    // Toasts (the first-run notifications offer) float over whatever is scored; keep them out.
+    if (document.head && !document.getElementById('__no-toasts')) {
+      const st = document.createElement('style'); st.id = '__no-toasts'; st.textContent = '.ui-toast-viewport{display:none!important}'; document.head.appendChild(st);
+    }
     for (const s of document.querySelectorAll('.shell')) if (!s.hasAttribute('data-overlay-titlebar')) s.setAttribute('data-overlay-titlebar', '');
     if (document.body && !document.getElementById('__mac-traffic-lights')) {
       const d = document.createElement('div'); d.id = '__mac-traffic-lights';
