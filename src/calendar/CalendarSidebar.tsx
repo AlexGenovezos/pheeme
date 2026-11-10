@@ -21,7 +21,7 @@ import { useSettingsStore } from "../settings/settingsStore";
 import { dragRegion } from "../shell/chrome";
 import { useUiStore } from "../store/uiStore";
 import { AccountAccess, syncLine } from "./AccessControls";
-import { startDraftNow } from "./actions";
+import { openQuickAdd } from "./actions";
 import { screenDays, useCalendarStore, weekStartOf, displayZone } from "./calendarStore";
 import { calendarColor, textOn } from "./colors";
 import { addMonths, dateOf, formatDay, startOfMonth } from "./dates";
@@ -194,7 +194,7 @@ export function CalendarSidebar() {
             title={
               createShortcut ? `Create event (${describeShortcut(createShortcut)})` : undefined
             }
-            onClick={startDraftNow}
+            onClick={openQuickAdd}
           >
             Create
           </Button>

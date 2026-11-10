@@ -57,7 +57,7 @@ export type FoundTime =
   | { allDay: true; date: string; lastDate: string };
 
 /** `tz`'s offset from UTC at `ms`, in minutes, as chrono-node takes it. */
-function offsetMinutes(ms: number, tz: string): number {
+export function offsetMinutes(ms: number, tz: string): number {
   const { date, minutes } = wallClock(ms, tz);
   const [y, m, d] = date.split("-").map(Number);
   return Math.round((Date.UTC(y, m - 1, d) + minutes * 60_000 - ms) / 60_000);

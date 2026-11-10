@@ -52,6 +52,8 @@ interface EditState {
   removed: string[];
   /** Calendar search is showing, with what's typed. */
   search: string | null;
+  /** Quick add (a sentence becomes the event) is open. */
+  quickAdd: boolean;
 }
 
 export const useEditStore = create<EditState>(() => ({
@@ -61,6 +63,7 @@ export const useEditStore = create<EditState>(() => ({
   moving: null,
   removed: [],
   search: null,
+  quickAdd: false,
 }));
 
 /** Ask the user, and wait for the answer (null: they backed out). */

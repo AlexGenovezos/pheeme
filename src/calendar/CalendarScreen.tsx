@@ -22,7 +22,7 @@ import {
   openApiPage,
   TASKS_API_URL,
 } from "./AccessControls";
-import { deleteEvent, editEvent, openEventNow, startDraftNow } from "./actions";
+import { deleteEvent, editEvent, openEventNow, openQuickAdd } from "./actions";
 import { CalendarSearch } from "./CalendarSearch";
 import { CalendarSidebar } from "./CalendarSidebar";
 import { displayZone, screenDays, useCalendarStore } from "./calendarStore";
@@ -33,6 +33,7 @@ import { eventKey } from "./EventBlock";
 import { EventEditor } from "./EventEditor";
 import { type EventForm, formTimes } from "./eventForm";
 import { EventPopover } from "./EventPopover";
+import { QuickAdd } from "./QuickAdd";
 import { QuickCreate } from "./QuickCreate";
 import { MonthGrid } from "./MonthGrid";
 import { PinnedEmail } from "./PinnedEmail";
@@ -361,8 +362,8 @@ function useCalendarCommands() {
       title: "Create event",
       group: "Calendar",
       shortcut: "c",
-      keywords: ["new event", "add"],
-      run: startDraftNow,
+      keywords: ["new event", "add", "quick add", "task", "todo"],
+      run: openQuickAdd,
     },
     {
       id: "calendar.edit",
@@ -500,6 +501,7 @@ export function CalendarScreen() {
       </main>
       <EventPopover />
       <QuickCreate />
+      <QuickAdd />
       <EventEditor />
       <EditPrompt />
       <GoToDate />
