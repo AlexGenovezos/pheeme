@@ -24,6 +24,8 @@ import { useSettingsStore } from "./settings/settingsStore";
 import { isTauri } from "./preview/runtime";
 import { revealWindow } from "./theme/nativeWindow";
 import { AppShell } from "./shell/AppShell";
+import { CalendarScreen } from "./calendar/CalendarScreen";
+import { useCalendarStore } from "./calendar/calendarStore";
 import { ContextMenuHost } from "./shell/ContextMenuHost";
 import { useInboxTabs } from "./store/inboxTabsStore";
 import { useLabelStore } from "./store/labelStore";
@@ -89,9 +91,11 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
   useLabelsAndCounts();
   useNotificationPrompt();
 
+  const mode = useCalendarStore((s) => s.mode);
+
   return (
     <>
-      <AppShell onAddAccount={onAddAccount} />
+      {mode === "calendar" ? <CalendarScreen /> : <AppShell onAddAccount={onAddAccount} />}
       <ComposeHost />
       <CommandPalette />
       <Settings onAddAccount={onAddAccount} />

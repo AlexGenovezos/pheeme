@@ -1,0 +1,383 @@
+// Calendar mode: the calendar sidebar beside a Day, Week or Month view of every account's
+// calendars, with the event popover over it.
+import { ChevronLeft, ChevronRight, PanelLeftOpen } from "lucide-react";
+import { type CSSProperties, type FormEvent, useEffect, useRef, useState } from "react";
+import { Button } from "../components/ui/Button";
+import { IconButton } from "../components/ui/IconButton";
+import { SegmentedControl } from "../components/ui/SegmentedControl";
+import { TextInput } from "../components/ui/TextInput";
+import { describeShortcut } from "../keyboard/format";
+import { useCommands, useKeybinding } from "../keyboard/useCommands";
+import { createSubscriptionScope } from "../lib/subscriptions";
+import { calendarSyncNow, setCalendarForeground } from "../lib/tauri";
+import { overlayTitleBar, dragRegion } from "../shell/chrome";
+import { Divider } from "../shell/Divider";
+import { useAccountStore } from "../store/accountStore";
+import { PANE, useUiStore } from "../store/uiStore";
+import {
+  AllowButton,
+  CALENDAR_API_URL,
+  CheckAgainButton,
+  needsAllow,
+  openApiPage,
+  TASKS_API_URL,
+} from "./AccessControls";
+import { CalendarSidebar } from "./CalendarSidebar";
+import { displayZone, screenDays, useCalendarStore } from "./calendarStore";
+import { dateOf, formatDay } from "./dates";
+import { EventPopover } from "./EventPopover";
+import { MonthGrid } from "./MonthGrid";
+import { TimeGrid } from "./TimeGrid";
+import { type CalendarView, viewTitle } from "./views";
+import { useNow } from "./useNow";
+import "./calendar.css";
+
+const VIEW_OPTIONS = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+] as const;
+
+function Toolbar({ title }: { title: string }) {
+  const view = useCalendarStore((s) => s.view);
+  const accounts = useCalendarStore((s) => s.accounts);
+  const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
+  const todayShortcut = useKeybinding("calendar.today", "t");
+  const prevShortcut = useKeybinding("calendar.previous", "k");
+  const nextShortcut = useKeybinding("calendar.next", "j");
+  const store = useCalendarStore.getState;
+  const today = formatDay(dateOf(useNow(), displayZone(accounts)), {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+  const unit = view === "day" ? "day" : view === "week" ? "week" : "month";
+  return (
+    <div
+      className="toolbar toolbar--view cal-toolbar"
+      data-sidebar-collapsed={collapsed || undefined}
+      {...dragRegion}
+    >
+      {collapsed && (
+        <IconButton
+          label="Show sidebar"
+          shortcut={sidebarShortcut}
+          icon={<PanelLeftOpen />}
+          onClick={() => useUiStore.getState().toggleSidebar()}
+        />
+      )}
+      <Button
+        size="sm"
+        title={todayShortcut ? `${today} (${describeShortcut(todayShortcut)})` : today}
+        onClick={() => store().today()}
+      >
+        Today
+      </Button>
+      <IconButton
+        label={`Previous ${unit}`}
+        shortcut={prevShortcut}
+        icon={<ChevronLeft />}
+        onClick={() => store().step(-1)}
+      />
+      <IconButton
+        label={`Next ${unit}`}
+        shortcut={nextShortcut}
+        icon={<ChevronRight />}
+        onClick={() => store().step(1)}
+      />
+      <h1 className="toolbar__title cal-toolbar__title" aria-live="polite">
+        {title}
+      </h1>
+      <span className="toolbar__spacer" {...dragRegion} />
+      <SegmentedControl
+        label="View"
+        value={view}
+        options={VIEW_OPTIONS}
+        onChange={(v: CalendarView) => store().setView(v)}
+      />
+    </div>
+  );
+}
+
+/** Shown in place of the grid until at least one account has allowed calendar access. */
+function FirstOpen() {
+  const accounts = useCalendarStore((s) => s.accounts) ?? [];
+  return (
+    <div className="cal-first">
+      <div className="cal-first__content">
+        <h2 className="cal-first__title">Your Google Calendar, in Pheeme</h2>
+        <p className="cal-first__lead">
+          Pheeme shows every account's calendars together and keeps them in step with Google. Each
+          account needs two things from your own Google Cloud project.
+        </p>
+        <ol className="cal-first__steps">
+          <li>
+            <h3>Turn on the Calendar and Tasks APIs</h3>
+            <p>
+              Open each one in your Google Cloud project, check it's the project you made for
+              Pheeme, then click Enable. Skip this if you already did.
+            </p>
+            <div className="cal-first__buttons">
+              <Button size="sm" onClick={() => openApiPage(CALENDAR_API_URL)}>
+                Open Calendar API
+              </Button>
+              <Button size="sm" onClick={() => openApiPage(TASKS_API_URL)}>
+                Open Tasks API
+              </Button>
+            </div>
+          </li>
+          <li>
+            <h3>Allow calendar access</h3>
+            <p>
+              Google asks you to let Pheeme see and edit your calendars and tasks. Your mail stays
+              as it is.
+            </p>
+            <ul className="cal-first__accounts">
+              {accounts.map((a) => (
+                <li key={a.accountId} className="cal-first__account">
+                  <span className="cal-first__email">{a.email}</span>
+                  {needsAllow(a) ? (
+                    <AllowButton account={a} />
+                  ) : a.access.status === "api_disabled" ? (
+                    <span className="cal-access__allow">
+                      <span className="cal-first__note">The Calendar API is still off.</span>
+                      <CheckAgainButton account={a} label="Check again" />
+                    </span>
+                  ) : (
+                    <span className="cal-access__allow">
+                      <span className="cal-first__note">
+                        {a.access.message ?? "Couldn't reach Google Calendar."}
+                      </span>
+                      <CheckAgainButton account={a} label="Try again" />
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </li>
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+function GoToDate() {
+  const open = useCalendarStore((s) => s.goToOpen);
+  return open ? <GoToDateForm /> : null;
+}
+
+function GoToDateForm() {
+  const [value, setValue] = useState(() => useCalendarStore.getState().anchor);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => input.current?.focus(), []);
+  const close = () => useCalendarStore.getState().setGoToOpen(false);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) useCalendarStore.getState().goTo(value);
+    close();
+  };
+  return (
+    <div className="cal-goto__scrim" onPointerDown={(e) => e.target === e.currentTarget && close()}>
+      <form
+        className="cal-goto"
+        role="dialog"
+        aria-label="Go to date"
+        data-owns-keys=""
+        onSubmit={submit}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+          }
+        }}
+      >
+        <label className="cal-goto__label" htmlFor="cal-goto-date">
+          Go to date
+        </label>
+        <TextInput
+          ref={input}
+          id="cal-goto-date"
+          type="date"
+          className="cal-goto__input"
+          value={value}
+          required
+          onChange={(e) => setValue(e.currentTarget.value)}
+        />
+        <Button type="submit" size="sm" variant="primary">
+          Go
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+function useCalendarCommands() {
+  const store = useCalendarStore.getState;
+  const syncAll = () => {
+    for (const a of store().accounts ?? [])
+      if (a.access.status === "on") void calendarSyncNow(a.accountId).catch(() => {});
+  };
+  useCommands([
+    {
+      id: "calendar.day",
+      title: "Day view",
+      group: "Calendar",
+      shortcut: "d",
+      run: () => store().setView("day"),
+    },
+    {
+      id: "calendar.week",
+      title: "Week view",
+      group: "Calendar",
+      shortcut: "w",
+      run: () => store().setView("week"),
+    },
+    {
+      id: "calendar.month",
+      title: "Month view",
+      group: "Calendar",
+      shortcut: "m",
+      run: () => store().setView("month"),
+    },
+    {
+      id: "calendar.today",
+      title: "Go to today",
+      group: "Calendar",
+      shortcut: "t",
+      run: () => store().today(),
+    },
+    {
+      id: "calendar.next",
+      title: "Next period",
+      group: "Calendar",
+      shortcut: "j",
+      run: () => store().step(1),
+    },
+    {
+      id: "calendar.previous",
+      title: "Previous period",
+      group: "Calendar",
+      shortcut: "k",
+      run: () => store().step(-1),
+    },
+    {
+      id: "calendar.next-alt",
+      title: "Next period",
+      group: "Calendar",
+      shortcut: "n",
+      hidden: true,
+      run: () => store().step(1),
+    },
+    {
+      id: "calendar.previous-alt",
+      title: "Previous period",
+      group: "Calendar",
+      shortcut: "p",
+      hidden: true,
+      run: () => store().step(-1),
+    },
+    {
+      id: "calendar.goto",
+      title: "Go to date…",
+      group: "Calendar",
+      shortcut: "g",
+      run: () => store().setGoToOpen(true),
+    },
+    {
+      id: "calendar.sync",
+      title: "Update calendars now",
+      group: "Calendar",
+      keywords: ["sync", "refresh"],
+      run: syncAll,
+    },
+  ]);
+}
+
+/** Load calendars and events, follow sync, and tell the backend Calendar is in front. */
+function useCalendarData() {
+  const accountIds = useAccountStore((s) => s.accounts.map((a) => a.id).join("\n"));
+  useEffect(() => {
+    void useCalendarStore.getState().loadAccounts();
+  }, [accountIds]);
+  useEffect(() => {
+    const scope = createSubscriptionScope();
+    scope
+      .add((signal) => useCalendarStore.getState().subscribe(signal))
+      .catch((err: unknown) => console.warn("calendar event listener failed", err));
+    // Events are read by loadAccounts (above), once the zone and week start are known.
+    void setCalendarForeground(true).catch(() => {});
+    return () => {
+      scope.dispose();
+      void setCalendarForeground(false).catch(() => {});
+    };
+  }, []);
+}
+
+export function CalendarScreen() {
+  useCalendarCommands();
+  useCalendarData();
+  const ref = useRef<HTMLDivElement>(null);
+  const { sidebarWidth, sidebarCollapsed } = useUiStore();
+  const { setSidebarWidth, resetSidebarWidth } = useUiStore.getState();
+  const view = useCalendarStore((s) => s.view);
+  const anchor = useCalendarStore((s) => s.anchor);
+  const accounts = useCalendarStore((s) => s.accounts);
+  const events = useCalendarStore((s) => s.events);
+  const loadError = useCalendarStore((s) => s.loadError);
+  const { tz, days } = screenDays({ view, anchor, accounts });
+
+  const anyOn = accounts?.some((a) => a.access.status === "on") ?? true;
+  const style = {
+    "--shell-sidebar-w": `${sidebarWidth}px`,
+    "--shell-view-min": `${PANE.viewMin}px`,
+  } as CSSProperties;
+
+  return (
+    <div
+      ref={ref}
+      className="shell"
+      data-mode="calendar"
+      style={style}
+      data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
+      data-overlay-titlebar={overlayTitleBar || undefined}
+    >
+      <aside
+        className="shell__sidebar"
+        aria-label="Sidebar"
+        aria-hidden={sidebarCollapsed || undefined}
+      >
+        <CalendarSidebar />
+      </aside>
+      {!sidebarCollapsed && (
+        <Divider
+          className="shell__divider--sidebar"
+          label="Resize sidebar"
+          value={sidebarWidth}
+          min={PANE.sidebarMin}
+          max={PANE.sidebarMax}
+          onResize={setSidebarWidth}
+          onReset={resetSidebarWidth}
+        />
+      )}
+      <main className="shell__view cal-main" aria-label="Calendar">
+        <Toolbar title={viewTitle(view, anchor, days)} />
+        {loadError && (
+          <p className="cal-main__error" role="alert">
+            {loadError}
+          </p>
+        )}
+        {!anyOn ? (
+          <FirstOpen />
+        ) : view === "month" ? (
+          <MonthGrid days={days} anchor={anchor} tz={tz} events={events} />
+        ) : (
+          <TimeGrid key={view} days={days} tz={tz} events={events} />
+        )}
+      </main>
+      <EventPopover />
+      <GoToDate />
+    </div>
+  );
+}

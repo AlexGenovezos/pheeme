@@ -12,3 +12,16 @@ export function useWidth(ref: RefObject<HTMLElement | null>): number {
   }, [ref]);
   return width;
 }
+
+/** Live height of an element (0 until measured, or where ResizeObserver is missing). */
+export function useHeight(ref: RefObject<HTMLElement | null>): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => setHeight(entry.contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return height;
+}

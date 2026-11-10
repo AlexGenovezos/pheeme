@@ -1,7 +1,10 @@
 import { UserPlus } from "lucide-react";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { Button } from "../components/ui/Button";
+import { Skeleton } from "../components/ui/Skeleton";
+import { syncLine } from "../calendar/AccessControls";
+import { useCalendarStore } from "../calendar/calendarStore";
 import {
   type AccountInfo,
   type CommandError,
@@ -23,8 +26,28 @@ export const accountsMatch = (query: string) =>
     .getState()
     .accounts.some((a) => matchesQuery(`${a.displayName ?? ""} ${a.email}`, query));
 
+/** How the account's calendar sync is going, beside its mail sync (always one line, so nothing shifts). */
+function CalendarSyncLine({ accountId }: { accountId: string }) {
+  const calendar = useCalendarStore((s) => s.accounts?.find((a) => a.accountId === accountId));
+  return (
+    <div className="settings-sync">
+      <span className="settings-sync__detail">
+        Calendar:{" "}
+        {calendar ? (
+          syncLine(calendar)
+        ) : (
+          <Skeleton className="settings-sync__pending" width="16ch" />
+        )}
+      </span>
+    </div>
+  );
+}
+
 export function AccountsSettings() {
   const accounts = useAccountStore((s) => s.accounts);
+  useEffect(() => {
+    void useCalendarStore.getState().loadAccounts();
+  }, []);
   const onAdd = useContext(AddAccountContext);
   const { progress, unavailable } = useSyncProgress();
   return (
@@ -114,6 +137,7 @@ function AccountRow({
         progress={progress}
         unavailable={progressUnavailable}
       />
+      <CalendarSyncLine accountId={account.id} />
       {confirming && (
         <div className="settings-account__confirm">
           <span>
