@@ -5,6 +5,7 @@ import { Switch } from "../components/ui/Switch";
 import {
   getDesktopSettings,
   setAccountNotifications,
+  setCalendarReminders,
   setNotificationSchedule,
   setTrayIcon,
   type DesktopSettings,
@@ -105,7 +106,7 @@ export function NotificationsSettings() {
       <SettingsSection title="Schedule">
         <SettingsRow
           title="When to alert"
-          description="Outside these hours new mail arrives quietly. Your system's Focus / Do Not Disturb still applies."
+          description="Outside these hours new mail and event reminders arrive quietly. Your system's Focus / Do Not Disturb still applies."
           control={
             <SegmentedControl
               label="When to alert"
@@ -190,6 +191,20 @@ export function NotificationsSettings() {
           <SettingsRow title="Connect an account to enable notifications" />
         )}
         {!settings && !error && <SettingsRow title="Loading notification settings…" />}
+      </SettingsSection>
+      <SettingsSection title="Calendar">
+        <SettingsRow
+          title="Event reminders"
+          description="Get an alert at each event's notification reminders (its own, or its calendar's default), for every calendar you show. Click it to open the event. Declined events stay silent, and email reminders still come from Google."
+          control={
+            <Switch
+              label="Event reminders"
+              checked={settings?.calendarReminders ?? true}
+              disabled={busy || !settings}
+              onChange={(enabled) => void change(() => setCalendarReminders(enabled))}
+            />
+          }
+        />
       </SettingsSection>
       <SettingsSection title="Tray and background sync">
         <SettingsRow

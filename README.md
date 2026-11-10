@@ -2,12 +2,13 @@
 
 # Pheeme
 
-A fast, open-source desktop client for Gmail, with Google Calendar coming next, for macOS, Windows and Linux.
+A fast, open-source desktop client for Gmail and Google Calendar, for macOS, Windows and Linux.
 
 - **Gmail-native:** uses the Gmail API, with real labels and category tabs (Primary, Social, Promotions, Updates, Forums).
 - **Instant:** reads come from a local cache and actions apply immediately, with Gmail syncing in the background.
 - **Free to run:** you bring your own Google Cloud OAuth client, so there's no subscription and no server between you and your mail.
 - **Multi-account:** one combined inbox, or switch between accounts.
+- **Calendar and Tasks:** every account's Google calendars in Day, Week and Month views. Create, edit, drag and delete events, answer invites, and get event reminders as notifications. Google Tasks sit in a side panel and dated tasks on the calendar.
 
 > **Status:** beta. Pheeme works as a day-to-day Gmail client and updates itself; 1.0 will be the first non-beta release.
 

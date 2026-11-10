@@ -1,6 +1,6 @@
 //! Desktop preferences, the Gmail quota, and queued notification navigation.
 use super::CommandError;
-use crate::desktop::{self, DesktopSettings, NotifySchedule, ThreadTarget};
+use crate::desktop::{self, DesktopSettings, NotifySchedule, NotifyTarget};
 use crate::AppState;
 use tauri::{AppHandle, State};
 
@@ -50,8 +50,19 @@ pub async fn set_notification_schedule(
     desktop::set_schedule(&app, schedule).await.map_err(error)
 }
 
+/// Turn event reminder notifications on or off (Settings › Notifications).
 #[tauri::command]
-pub fn take_notification_target(app: AppHandle) -> Option<ThreadTarget> {
+pub async fn set_calendar_reminders(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<DesktopSettings, CommandError> {
+    desktop::set_calendar_reminders(&app, enabled)
+        .await
+        .map_err(error)
+}
+
+#[tauri::command]
+pub fn take_notification_target(app: AppHandle) -> Option<NotifyTarget> {
     desktop::take_target(&app)
 }
 

@@ -10,11 +10,20 @@ export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/userinfo.profile",
 ];
 
+/** Asked for when Calendar mode first opens (`auth::CALENDAR_SCOPES` in Rust). */
+export const CALENDAR_SCOPES = [
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+  "https://www.googleapis.com/auth/calendar.settings.readonly",
+  "https://www.googleapis.com/auth/tasks",
+];
+
 export type StepId =
   | "project"
   | "gmail-api"
   | "people-api"
   | "calendar-api"
+  | "tasks-api"
   | "consent"
   | "branding"
   | "publish"
@@ -112,10 +121,24 @@ export const STEPS: GuideStep[] = [
       "Open the Google Calendar API page and check your project is selected.",
       "Click Enable.",
     ],
-    why: "Calendar is coming to Pheeme. Enabling it now means you won't repeat this setup later. Pheeme won't ask for calendar access until you open the calendar.",
+    why: "Pheeme's Calendar shows, creates and changes your events and answers invites through the Calendar API. Pheeme won't ask for calendar access until you open the calendar.",
     link: {
       label: "Open Calendar API",
       url: "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com",
+    },
+  },
+  {
+    id: "tasks-api",
+    short: "Enable Tasks API",
+    title: "Turn on the Google Tasks API",
+    actions: [
+      "Open the Google Tasks API page and check your project is selected.",
+      "Click Enable.",
+    ],
+    why: "Optional. Pheeme shows and changes your Google Tasks in the Tasks panel and on the calendar. Without it the calendar still works. Pheeme asks for tasks access together with calendar access, when you open the calendar.",
+    link: {
+      label: "Open Tasks API",
+      url: "https://console.cloud.google.com/apis/library/tasks.googleapis.com",
     },
   },
   {
@@ -127,7 +150,7 @@ export const STEPS: GuideStep[] = [
       "App information: enter the app name below and your email as the support email.",
       "Audience: choose External. Choose Internal only for a Google Workspace project used by your organization's accounts alone.",
       "Contact information: your email. Agree to the policy and click Create.",
-      "Optional: under Data access, add the scopes below. Pheeme asks for them when you sign in either way. gmail.settings.basic only lets Pheeme save sender rules (Gmail filters that file a sender's mail in an inbox tab), and the two contacts scopes only let it read your contacts to suggest recipients.",
+      "Optional: under Data access, add the scopes below. Pheeme asks for them when you sign in either way. gmail.settings.basic only lets Pheeme save sender rules (Gmail filters that file a sender's mail in an inbox tab), the two contacts scopes only let it read your contacts to suggest recipients, and the calendar scopes are asked for when you first open the calendar.",
     ],
     why: "Google shows this screen when you sign in. The app is yours, so you're both its developer and its only user.",
     link: {
@@ -137,6 +160,7 @@ export const STEPS: GuideStep[] = [
     copy: [
       { label: "App name", value: "Pheeme" },
       { label: "Scopes (optional)", value: GMAIL_SCOPES.join(",") },
+      { label: "Calendar scopes (optional)", value: CALENDAR_SCOPES.join(",") },
     ],
   },
   {

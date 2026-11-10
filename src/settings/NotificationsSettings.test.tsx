@@ -12,6 +12,7 @@ const snapshot = {
   trayAvailable: true,
   trayEnabled: true,
   schedule: { mode: "always", startHour: 9, endHour: 17, weekdaysOnly: true },
+  calendarReminders: true,
 };
 
 test("notification choices are per account and reflect the persisted backend value", async () => {
@@ -49,6 +50,27 @@ test("denied permission keeps the choice disabled and explains how to recover", 
   expect(await screen.findByRole("alert")).toHaveTextContent("Allow Pheeme");
   expect(toggle).toHaveAttribute("aria-checked", "false");
   expect(toggle).not.toBeDisabled();
+});
+
+test("event reminders can be turned off, and the row is there before settings load", async () => {
+  const calls: unknown[] = [];
+  let answer: (value: typeof snapshot) => void = () => {};
+  mockIPC((command, args) => {
+    if (command === "desktop_settings") return new Promise((resolve) => (answer = resolve));
+    if (command === "set_calendar_reminders") {
+      calls.push(args);
+      return { ...snapshot, calendarReminders: false };
+    }
+  });
+  render(<NotificationsSettings />);
+  const toggle = screen.getByRole("switch", { name: "Event reminders" });
+  expect(toggle).toBeDisabled();
+  answer(snapshot);
+  await waitFor(() => expect(toggle).not.toBeDisabled());
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
+  expect(calls).toEqual([{ enabled: false }]);
 });
 
 test("the tray icon can be turned off, and then closing the window quits", async () => {

@@ -282,6 +282,8 @@ function useShownEvents(events: CalendarEvent[] | null): CalendarEvent[] | null 
 
 function useCalendarCommands() {
   const store = useCalendarStore.getState;
+  // Edit and Delete act on the open event: listed in the palette only while one is open.
+  const noEventOpen = useCalendarStore((s) => s.open === null);
   const syncAll = () => {
     for (const a of store().accounts ?? [])
       if (a.access.status === "on") void calendarSyncNow(a.accountId).catch(() => {});
@@ -365,6 +367,7 @@ function useCalendarCommands() {
       title: "Edit event",
       group: "Calendar",
       shortcut: "e",
+      hidden: noEventOpen,
       run: () => {
         const event = openEventNow();
         if (event) void editEvent(event);
@@ -375,6 +378,7 @@ function useCalendarCommands() {
       title: "Delete event",
       group: "Calendar",
       shortcut: "delete",
+      hidden: noEventOpen,
       run: removeOpen,
     },
     {

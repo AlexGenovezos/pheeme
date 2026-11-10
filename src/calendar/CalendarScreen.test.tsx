@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { appCommands, commandsForMode } from "../keyboard/appCommands";
 import { registry } from "../keyboard/registry";
+import { filterCommands } from "../palette/match";
 import { useAccountStore } from "../store/accountStore";
 import { createCalendarHandlers } from "../preview/calendar";
 import type { CalendarAccess } from "../lib/tauri";
@@ -117,6 +118,30 @@ describe("CalendarScreen", () => {
 
     fireEvent.keyDown(pop, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Design review" })).toBeNull();
+  });
+
+  test("Edit and Delete event are in the palette only while an event is open", async () => {
+    backend(null);
+    render(<CalendarScreen />);
+    await flush();
+    await flush();
+    const palette = () => filterCommands(registry.list(), "").map((r) => r.command.id);
+
+    expect(palette()).toContain("calendar.create");
+    expect(palette()).not.toContain("calendar.edit");
+    expect(palette()).not.toContain("calendar.delete");
+    // Still registered, so the shortcuts and Settings › Keyboard keep them.
+    expect(registry.list().map((c) => c.id)).toEqual(
+      expect.arrayContaining(["calendar.edit", "calendar.delete"]),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Team planning,/ }));
+    await flush();
+    expect(palette()).toEqual(expect.arrayContaining(["calendar.edit", "calendar.delete"]));
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Team planning" }), { key: "Escape" });
+    await flush();
+    expect(palette()).not.toContain("calendar.edit");
   });
 
   test("view keys switch views and move by period, and the view is remembered", async () => {

@@ -246,6 +246,15 @@ describe("search", () => {
     expect(useSettingsStore.getState().open).toBe(true);
   });
 
+  test("finds event reminders under Notifications", () => {
+    render(<Harness />);
+    open();
+    const search = screen.getByRole("searchbox", { name: "Search settings" });
+    const nav = within(screen.getByRole("navigation", { name: "Settings sections" }));
+    fireEvent.change(search, { target: { value: "event reminders" } });
+    expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["Notifications"]);
+  });
+
   test("finds Send diagnostics on its own page", () => {
     render(<Harness />);
     open();

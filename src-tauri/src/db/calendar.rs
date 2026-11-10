@@ -478,6 +478,18 @@ pub async fn access<'e>(
     .await?)
 }
 
+/// Every account's calendar access status and Google Calendar time zone.
+pub async fn access_all(pool: &SqlitePool) -> Result<Vec<(String, String, Option<String>)>> {
+    Ok(
+        sqlx::query!("SELECT account_id, status, time_zone FROM calendar_access")
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .map(|r| (r.account_id, r.status, r.time_zone))
+            .collect(),
+    )
+}
+
 /// Record a sync attempt at `now_ms`; `on` also records it as the last sync that worked.
 pub async fn set_access<'e>(
     ex: impl SqliteExecutor<'e>,
