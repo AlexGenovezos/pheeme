@@ -36,6 +36,10 @@ function backend(
   const handlers = {
     ...createCalendarHandlers(ACCOUNTS, null, NOW),
     ...createTasksHandlers(ACCOUNTS, null, NOW),
+    suggest_contacts: (a?: Record<string, unknown>) =>
+      "grace hopper".startsWith(String(a?.query).toLowerCase())
+        ? [{ name: "Grace Hopper", address: "grace@example.net" }]
+        : [],
   } as Record<string, (args?: Record<string, unknown>) => unknown>;
   mockIPC(
     (cmd, args) => {
@@ -81,6 +85,7 @@ beforeEach(() => {
     moving: null,
     removed: [],
     search: null,
+    quickAdd: false,
   });
   useToastStore.setState({ toasts: [] });
 });
@@ -153,14 +158,14 @@ describe("creating events", () => {
     );
   });
 
-  test("`c` opens quick create; More options keeps the title, and guests get asked about", async () => {
+  test("`c` opens quick add; More options keeps the title, and guests get asked about", async () => {
     backend();
     await open();
 
     key("c");
     await flush();
-    const quick = dialog("New event");
-    fireEvent.change(within(quick).getByRole("textbox", { name: "Title" }), {
+    const quick = dialog("Quick add");
+    fireEvent.change(within(quick).getByRole("textbox", { name: "Event, in words" }), {
       target: { value: "Offsite" },
     });
     fireEvent.click(within(quick).getByRole("button", { name: "More options" }));
@@ -183,6 +188,104 @@ describe("creating events", () => {
       edit: { summary: "Offsite", attendees: [{ email: "dana@example.com", optional: false }] },
     });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("quick add", () => {
+  const type = (text: string) =>
+    fireEvent.change(
+      within(dialog("Quick add")).getByRole("textbox", { name: "Event, in words" }),
+      { target: { value: text } },
+    );
+
+  test("a sentence becomes the event; a picked contact is invited; Undo deletes it", async () => {
+    backend();
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: /^Create/ }));
+    await flush();
+
+    type("Lunch with Grace tomorrow at 1 at Joe's /team");
+    await act(() => new Promise((r) => setTimeout(r, 200)));
+    await settle();
+    const quick = dialog("Quick add");
+    expect(quick.querySelector(".cal-qa__mark--time")).toHaveTextContent("tomorrow at 1");
+    expect(quick.querySelector(".cal-qa__mark--place")).toHaveTextContent("at Joe's");
+    expect(quick.querySelector(".cal-qa__mark--guest")).toHaveTextContent("Grace");
+    expect(quick.querySelector(".cal-qa__mark--calendar")).toHaveTextContent("/team");
+    expect(within(quick).getByText("Lunch with Grace")).toBeInTheDocument();
+
+    const who = within(quick).getByRole("combobox", { name: "Who Grace is" });
+    expect(who).toHaveValue("");
+    fireEvent.change(who, { target: { value: "grace@example.net" } });
+    fireEvent.submit(quick.querySelector("form")!);
+    await flush();
+    fireEvent.click(
+      within(dialog("Send invitation emails to guests?")).getByRole("button", { name: "Send" }),
+    );
+    await settle();
+
+    expect(sent("create_calendar_event")).toEqual([
+      {
+        accountId: "acc-personal",
+        calendarId: "team",
+        sendUpdates: "all",
+        edit: expect.objectContaining({
+          summary: "Lunch with Grace",
+          location: "Joe's",
+          start: { ms: zonedMs("2026-11-12", 13 * 60, tz), timeZone: tz },
+          end: { ms: zonedMs("2026-11-12", 14 * 60, tz), timeZone: tz },
+          attendees: [{ email: "grace@example.net", optional: false }],
+        }),
+      },
+    ]);
+    expect(screen.queryByRole("dialog", { name: "Quick add" })).toBeNull();
+
+    const toast = useToastStore.getState().toasts.slice(-1)[0];
+    expect(toast.title).toBe("Added “Lunch with Grace”");
+    await act(async () => toast.action!.run());
+    await settle();
+    expect(sent("delete_calendar_event")).toEqual([
+      expect.objectContaining({ calendarId: "team", scope: "all", sendUpdates: "all" }),
+    ]);
+  });
+
+  test("a name nobody picks invites no one, and a repeat is sent as a rule", async () => {
+    backend();
+    await open();
+    key("c");
+    await flush();
+    type("Standup with Grace every other Tue at 10");
+    fireEvent.submit(dialog("Quick add").querySelector("form")!);
+    await settle();
+    const [created] = sent("create_calendar_event");
+    expect(created).toMatchObject({
+      sendUpdates: "none",
+      edit: {
+        summary: "Standup with Grace",
+        recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU"],
+      },
+    });
+    expect((created.edit as Record<string, unknown>).attendees).toBeUndefined();
+  });
+
+  test("todo adds a Google Task with its due date", async () => {
+    backend();
+    await open();
+    key("c");
+    await flush();
+    type("todo buy milk friday");
+    const quick = dialog("Quick add");
+    expect(within(quick).getByText("Buy milk")).toBeInTheDocument();
+    fireEvent.submit(quick.querySelector("form")!);
+    await settle();
+    expect(sent("create_task")).toEqual([
+      expect.objectContaining({
+        accountId: "acc-personal",
+        listId: "my-tasks",
+        edit: { title: "Buy milk", due: "2026-11-13" },
+      }),
+    ]);
+    expect(useToastStore.getState().toasts.slice(-1)[0]?.title).toBe("Added task “Buy milk”");
   });
 });
 

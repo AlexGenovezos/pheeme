@@ -11,9 +11,11 @@ import {
   copyCalendarEvent,
   createCalendarEvent,
   deleteCalendarEvent,
+  deleteTask,
   type EditScope,
   type EventDetail,
   type EventEdit,
+  type EventRef,
   type EventTime,
   getCalendarEventDetail,
   moveCalendarEvent,
@@ -22,7 +24,8 @@ import {
   updateCalendarEvent,
 } from "../lib/tauri";
 import { displayZone, screenDays, useCalendarStore } from "./calendarStore";
-import { dateOf, wallClock, zonedMs } from "./dates";
+import { useTasksStore } from "../tasks/tasksStore";
+import { dateOf, formatDay, wallClock, zonedMs } from "./dates";
 import { ask, type EditorSpec, useEditStore } from "./editStore";
 import { eventKey, eventTitle } from "./EventBlock";
 import {
@@ -30,6 +33,7 @@ import {
   formEdit,
   formFromDetail,
   formProblem,
+  formTimes,
   hasOtherGuests,
   isEmptyEdit,
   newForm,
@@ -66,7 +70,7 @@ function rememberCalendar(accountId: string, calendarId: string) {
 }
 
 /** Where a new event goes: the calendar used last, else the first account's own calendar. */
-function defaultCalendar(): WritableCalendar | undefined {
+export function defaultCalendar(): WritableCalendar | undefined {
   const list = writableCalendars(calendars().accounts);
   try {
     const [accountId, calendarId] = JSON.parse(localStorage.getItem(LAST_CALENDAR_KEY) ?? "[]");
@@ -117,20 +121,34 @@ export function startDraft(
   return true;
 }
 
-/** Create (`c`, the Create button): the next half hour today if it's on screen, else 9 AM on the day shown. */
-export function startDraftNow() {
+/** A new event's time when nothing says: the next half hour today if it's on screen, else 9 AM on the day shown. */
+export function defaultTimes(): { start: number; end: number } {
   const { tz, days } = screenDays(calendars());
   const now = wallClock(Date.now(), tz);
   const day = days.includes(now.date) ? now.date : calendars().anchor;
   const minutes =
     day === now.date ? Math.min(Math.ceil((now.minutes + 1) / 30) * 30, 23 * 60) : 9 * 60;
   const start = zonedMs(day, minutes, tz);
-  if (!startDraft({ allDay: false, start, end: start + 60 * 60_000 }))
-    toast({
-      title: "No calendar to add events to",
-      description: "Allow calendar access for an account first.",
-    });
+  return { start, end: start + 60 * 60_000 };
 }
+
+function noCalendarToast() {
+  toast({
+    title: "No calendar to add events to",
+    description: "Allow calendar access for an account first.",
+  });
+}
+
+/** Create (`c`, the Create button): quick add, where a sentence becomes the event. */
+export function openQuickAdd() {
+  const tasks = useTasksStore.getState();
+  if (tasks.accounts === null) void tasks.loadAccounts();
+  if (!defaultCalendar()) return noCalendarToast();
+  calendars().openEvent(null);
+  useEditStore.setState({ draft: null, quickAdd: true });
+}
+
+export const closeQuickAdd = () => useEditStore.setState({ quickAdd: false });
 
 export const updateDraft = (form: EventForm) =>
   useEditStore.setState((s) => (s.draft ? { draft: { ...s.draft, form } } : {}));
@@ -146,27 +164,118 @@ export async function saveDraft(): Promise<boolean> {
     toast({ title: problem, tone: "danger" });
     return false;
   }
-  return saveNew(draft.form, () => cancelDraft());
+  return (await saveNew(draft.form, () => cancelDraft())) !== null;
 }
 
-async function saveNew(form: EventForm, done: () => void): Promise<boolean> {
+interface Created {
+  ref: EventRef;
+  sendUpdates: SendUpdates;
+}
+
+async function saveNew(form: EventForm, done: () => void): Promise<Created | null> {
   const account = calendars().accounts?.find((a) => a.accountId === form.accountId);
   let sendUpdates: SendUpdates = "none";
   if (hasOtherGuests(form.guests, account?.email)) {
     const answer = await askSendUpdates("invite");
-    if (!answer) return false;
+    if (!answer) return null;
     sendUpdates = answer;
   }
+  let ref: EventRef;
   try {
-    await createCalendarEvent(form.accountId, form.calendarId, formEdit(form, null), sendUpdates);
+    ref = await createCalendarEvent(
+      form.accountId,
+      form.calendarId,
+      formEdit(form, null),
+      sendUpdates,
+    );
   } catch (e) {
     reportError(e, "Couldn't create the event");
-    return false;
+    return null;
   }
   rememberCalendar(form.accountId, form.calendarId);
   await calendars().loadEvents();
   done();
+  return { ref, sendUpdates };
+}
+
+/** Quick add's event: saved, shown on its day, and undoable from the toast. */
+export async function saveQuickAdd(form: EventForm): Promise<boolean> {
+  const problem = formProblem(form);
+  if (problem) {
+    toast({ title: problem, tone: "danger" });
+    return false;
+  }
+  const created = await saveNew(form, closeQuickAdd);
+  if (!created) return false;
+  const { tz, days } = screenDays(calendars());
+  const day = form.allDay ? form.startDate : dateOf(formTimes(form).start!.ms!, tz);
+  if (!days.includes(day)) await calendars().goTo(day);
+  const title = form.summary.trim() || "(No title)";
+  toast({
+    title: `Added “${title}”`,
+    description: formatDay(day, { weekday: "short", month: "short", day: "numeric" }),
+    action: { label: "Undo", run: () => void undoCreate(created, title) },
+  });
   return true;
+}
+
+/** Undo quick add: delete what it made (a whole series), emailing the guests if it invited them. */
+async function undoCreate({ ref, sendUpdates }: Created, title: string) {
+  try {
+    await deleteCalendarEvent(ref.accountId, ref.calendarId, ref.id, "all", sendUpdates);
+  } catch (e) {
+    reportError(e, `Couldn't remove “${title}”`, ref.accountId);
+    return;
+  }
+  await calendars().loadEvents();
+  toast({ title: `Removed “${title}”` });
+}
+
+/** Quick add's task ("todo …"): added to the list, undoable from the toast. */
+export async function saveQuickTask(
+  accountId: string,
+  listId: string,
+  edit: { title: string; due: string | null },
+): Promise<boolean> {
+  const tasks = useTasksStore.getState();
+  const ref = await tasks.addTask(accountId, listId, edit);
+  if (!ref) return false;
+  closeQuickAdd();
+  const title = edit.title || "(No title)";
+  toast({
+    title: `Added task “${title}”`,
+    description: edit.due
+      ? `Due ${formatDay(edit.due, { weekday: "short", month: "short", day: "numeric" })}`
+      : undefined,
+    action: {
+      label: "Undo",
+      run: () =>
+        void (async () => {
+          try {
+            await deleteTask(ref.accountId, ref.listId, ref.id);
+          } catch (e) {
+            toast({
+              title: `Couldn't remove “${title}”`,
+              description: toCommandError(e).message,
+              tone: "danger",
+            });
+          }
+          const store = useTasksStore.getState();
+          await store.loadList(ref.accountId, ref.listId);
+          const range = store.datedFor?.split(":");
+          if (range) await store.loadDated(range[0], range[1]);
+        })(),
+    },
+  });
+  return true;
+}
+
+/** Quick add's "More options": its event in the full editor. */
+export function openFormInEditor(form: EventForm) {
+  useEditStore.setState({
+    quickAdd: false,
+    editor: { form, initial: null, event: null, detail: null },
+  });
 }
 
 /** "More options": the quick-create's event in the full editor. */
