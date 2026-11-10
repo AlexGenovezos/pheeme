@@ -463,7 +463,11 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
         .collect();
     let ids = async {
         if let Some(q) = &payload.sweep {
-            return swept_ids(engine, q, op.created_at).await;
+            // The cached threads' own messages too: an unread message outside the Inbox in an
+            // inbox thread doesn't match the search.
+            let mut ids = recorded.clone();
+            ids.extend(swept_ids(engine, q, op.created_at).await?);
+            return Ok(ids.into_iter().collect());
         }
         // The thread as Gmail has it now: older messages we never cached are included,
         // mail that arrived after the user acted is not.

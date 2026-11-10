@@ -733,6 +733,8 @@ async fn sweep_marks_the_whole_tab_read_on_gmail_but_not_later_mail() {
         .map(|n| FakeMsg::new(&format!("n{n}"), &format!("tn{n}"), &["INBOX"]).days_ago(n))
         .collect();
     msgs.push(FakeMsg::new("m1", "t1", promo));
+    // Unread but archived on its own, in a conversation that is in the Inbox.
+    msgs.push(FakeMsg::new("m0", "t1", &["UNREAD", "CATEGORY_PROMOTIONS"]).days_ago(1));
     msgs.push(FakeMsg::new(
         "social",
         "t2",
@@ -764,6 +766,7 @@ async fn sweep_marks_the_whole_tab_read_on_gmail_but_not_later_mail() {
         server_labels(&h, "m1"),
         s(&["CATEGORY_PROMOTIONS", "INBOX"])
     );
+    assert_eq!(server_labels(&h, "m0"), s(&["CATEGORY_PROMOTIONS"]));
     assert_eq!(
         server_labels(&h, "old"),
         s(&["CATEGORY_PROMOTIONS", "INBOX"])
