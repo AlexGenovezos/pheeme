@@ -57,20 +57,20 @@ export async function createEventFromEmail() {
   const { accountId } = parseThreadKey(open.key);
   if (calendar().accounts === null) await calendar().loadAccounts();
   const accounts = calendar().accounts;
-  const writable = writableCalendars(accounts);
-  // The receiving account's own calendar; else any the user can write to.
-  const target = writable.find((w) => w.account.accountId === accountId) ?? writable[0];
+  // Saved to the calendar of the account that received the email (design §2.9).
+  const target = writableCalendars(accounts).find((w) => w.account.accountId === accountId);
   if (!target) {
+    const email = accounts?.find((a) => a.accountId === accountId)?.email;
     toast({
-      title: "No calendar to add events to",
-      description: "Allow calendar access for this account first.",
+      title: "No calendar to add this event to",
+      description: `Allow calendar access for ${email ?? "this account"} first.`,
     });
     calendar().setMode("calendar");
     return;
   }
   const message = open.detail.messages[open.detail.messages.length - 1];
   if (!message) return;
-  const email = accounts?.find((a) => a.accountId === accountId)?.email ?? target.account.email;
+  const email = target.account.email;
   const tz = displayZone(accounts);
   const { form } = formFromEmail(open.detail, message, {
     email,

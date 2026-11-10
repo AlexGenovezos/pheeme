@@ -23,7 +23,9 @@ const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
 
-function backend(access: string | null) {
+function backend(
+  access: string | null,
+): Record<string, (args?: Record<string, unknown>) => unknown> {
   const handlers = createCalendarHandlers(ACCOUNTS, access, NOW) as Record<
     string,
     (args?: Record<string, unknown>) => unknown
@@ -36,6 +38,7 @@ function backend(access: string | null) {
     },
     { shouldMockEvents: true },
   );
+  return handlers;
 }
 
 const sent = (cmd: string) => calls.filter((c) => c.cmd === cmd);
@@ -97,6 +100,35 @@ describe("InviteCard", () => {
       },
     ]);
     expect(screen.getByRole("radio", { name: "Yes" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("a change made elsewhere replaces the answer just given, and re-reads the day", async () => {
+    const handlers = backend(null);
+    render(<InviteCard pinned={PINNED} />);
+    await flush();
+    await flush();
+    await flush();
+    fireEvent.click(screen.getByRole("radio", { name: "Yes" }));
+    await flush();
+    await flush();
+    expect(screen.getByRole("radio", { name: "Yes" })).toHaveAttribute("aria-checked", "true");
+    const dayReads = sent("calendar_events").length;
+
+    // Declined on the website; the next sync reports it.
+    await act(async () => {
+      handlers.respond_to_calendar_event({
+        accountId: "acc-work",
+        calendarId: "avery@example.org",
+        eventId: "design-review",
+        scope: "all",
+        response: "declined",
+      });
+    });
+    await flush();
+    await flush();
+    await flush();
+    expect(screen.getByRole("radio", { name: "No" })).toHaveAttribute("aria-checked", "true");
+    expect(sent("calendar_events").length).toBeGreaterThan(dayReads);
   });
 
   test("More options sends a note with the answer", async () => {
@@ -219,22 +251,15 @@ describe("createEventFromEmail", () => {
     });
   });
 
-  test("with no calendar to write to, says how to get one", async () => {
+  test("only the receiving account's calendar: without its access, says how to get it", async () => {
+    // The work account hasn't allowed calendar access; the personal one has.
     backend("missing_scope");
-    useCalendarStore.setState({
-      accounts: [
-        {
-          accountId: "acc-personal",
-          email: "avery@example.com",
-          access: { status: "missing_scope", message: null, enableUrl: null, syncedAt: null },
-          timeZone: null,
-          weekStart: null,
-          calendars: [],
-        },
-      ],
-    });
-    useThreadStore.setState({ details: new Map([["acc-personal:p-21", detail]]) });
-    useUiStore.setState({ openThread: "acc-personal:p-21" });
+    const work = {
+      ...detail,
+      thread: { ...detail.thread, accountId: "acc-work" },
+    } as ThreadDetail;
+    useThreadStore.setState({ details: new Map([["acc-work:p-21", work]]) });
+    useUiStore.setState({ openThread: "acc-work:p-21" });
     await act(() => createEventFromEmail());
     expect(useEditStore.getState().editor).toBeNull();
     expect(useCalendarStore.getState().mode).toBe("calendar");

@@ -73,7 +73,10 @@ function useInvite(accountId: string, messageId: string): Load {
     };
   }, [accountId, messageId, version]);
   useEffect(() => {
+    // Any account's change can move the day around the invitation (and Mail doesn't otherwise follow
+    // calendar sync): read the accounts again, which also re-reads the mini day view.
     const reread = (e: { payload: { accountId?: string } }) => {
+      void useCalendarStore.getState().loadAccounts();
       if (!e.payload?.accountId || e.payload.accountId === accountId) setVersion((v) => v + 1);
     };
     const scope = createSubscriptionScope();
@@ -178,12 +181,14 @@ function AnswerRow({
   const accounts = useCalendarStore((s) => s.accounts);
   const account = accounts?.find((a) => a.accountId === accountId);
   const [pending, setPending] = useState<Answer | null>(null);
-  const [answered, setAnswered] = useState<Answer | null>(null);
+  // What Google accepted, shown until a fresh read of the invitation says what the calendar has.
+  const [answered, setAnswered] = useState<{ response: Answer; on: Invite } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [more, setMore] = useState(false);
   const [note, setNote] = useState("");
   const [onlyFirst, setOnlyFirst] = useState(false);
-  const current = answered ?? (invite ? selfAnswer(invite) : null);
+  const current =
+    answered && answered.on === invite ? answered.response : invite ? selfAnswer(invite) : null;
   const series = Boolean(
     invite?.live && invite.live.recurrence.length > 0 && !invite.live.masterId,
   );
@@ -200,7 +205,7 @@ function AnswerRow({
         withNote ? note.trim() || null : null,
         onlyFirst,
       );
-      setAnswered(response);
+      setAnswered({ response, on: invite });
       setMore(false);
       void useCalendarStore.getState().loadEvents();
     } catch (e) {
