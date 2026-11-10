@@ -398,6 +398,8 @@ export interface CalendarEvent {
   /** `transparent` shows as free. */
   transparency: string | null;
   recurring: boolean;
+  /** The account may change it (move, resize, edit): a writable calendar, and yours or open to guests. */
+  canEdit: boolean;
 }
 
 export const CALENDAR_EVENTS = {
@@ -412,6 +414,13 @@ export const getCalendarAccounts = () => invoke<CalendarAccount[]>("calendar_acc
 /** Events of shown calendars overlapping `[fromMs, toMs)`, series expanded, sorted by start (local). */
 export const getCalendarEvents = (fromMs: number, toMs: number, timeZone: string) =>
   invoke<CalendarEvent[]>("calendar_events", { fromMs, toMs, timeZone });
+/** Events of shown calendars in `[fromMs, toMs)` whose title, place, description or guests hold every word of `query` (local). */
+export const searchCalendarEvents = (
+  query: string,
+  fromMs: number,
+  toMs: number,
+  timeZone: string,
+) => invoke<CalendarEvent[]>("search_calendar_events", { query, fromMs, toMs, timeZone });
 /** Show or hide a calendar's events (local). */
 export const setCalendarHidden = (accountId: string, calendarId: string, hidden: boolean) =>
   invoke<void>("set_calendar_hidden", { accountId, calendarId, hidden });

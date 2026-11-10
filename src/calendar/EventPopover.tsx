@@ -4,9 +4,12 @@ import {
   Check,
   CircleHelp,
   Clock,
+  EllipsisVertical,
   ExternalLink,
   MapPin,
+  Pencil,
   Repeat,
+  Trash2,
   Users,
   Video,
   X,
@@ -14,6 +17,8 @@ import {
 import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { Menu, type MenuItem } from "../components/ui/Menu";
+import { useKeybinding } from "../keyboard/useCommands";
 import {
   type Attendee,
   type CalendarEvent,
@@ -25,9 +30,12 @@ import {
   toCommandError,
 } from "../lib/tauri";
 import { cx } from "../lib/utils";
+import { copyEvent, deleteEvent, duplicateEvent, editEvent, writableCalendars } from "./actions";
 import { displayZone, type OpenEvent, useCalendarStore } from "./calendarStore";
 import { eventColors } from "./colors";
 import { addDays, dateOf, formatDay, formatTime } from "./dates";
+import { plainText } from "./eventForm";
+import { noteDismiss } from "./drag";
 import { eventTitle, useCalendarLookup } from "./EventBlock";
 
 type Answer = "accepted" | "tentative" | "declined";
@@ -59,12 +67,6 @@ export function describeWhen(e: CalendarEvent, tz: string): string {
   const end = formatTime(e.end.ms, tz);
   if (endDay === startDay) return `${formatDay(startDay, long)} · ${start} – ${end}`;
   return `${formatDay(startDay, { month: "short", day: "numeric" })}, ${start} – ${formatDay(endDay, { month: "short", day: "numeric" })}, ${end}`;
-}
-
-/** Descriptions are often HTML from Google's editor: show them as plain text. */
-function plainText(html: string): string {
-  const doc = new DOMParser().parseFromString(html.replace(/<br\s*\/?>/gi, "\n"), "text/html");
-  return (doc.body.textContent ?? "").trim();
 }
 
 const answerWord: Record<string, string> = {
@@ -175,6 +177,77 @@ function Rsvp({ detail }: { detail: EventDetail }) {
 
 const close = () => useCalendarStore.getState().openEvent(null);
 
+/** Edit, delete, and Options (duplicate, copy to another calendar), where this account may. */
+function EventTools({ event }: { event: CalendarEvent }) {
+  const accounts = useCalendarStore((s) => s.accounts);
+  const lookup = useCalendarLookup();
+  const editShortcut = useKeybinding("calendar.edit", "e");
+  const deleteShortcut = useKeybinding("calendar.delete", "delete");
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const role = lookup(event)?.accessRole;
+  const canDelete = role === "owner" || role === "writer";
+  const targets = writableCalendars(accounts);
+  const items: MenuItem[] = [
+    {
+      id: "duplicate",
+      label: "Duplicate",
+      disabled: targets.length === 0,
+      onSelect: () => void duplicateEvent(event),
+    },
+    ...targets
+      .filter(
+        (t) => !(t.account.accountId === event.accountId && t.calendar.id === event.calendarId),
+      )
+      .map<MenuItem>((t) => ({
+        id: `copy:${t.account.accountId}\n${t.calendar.id}`,
+        label: `Copy to ${t.calendar.primary ? t.account.email : `${t.calendar.summary} (${t.account.email})`}`,
+        onSelect: () => void copyEvent(event, t),
+      })),
+  ];
+  return (
+    <>
+      {event.canEdit && (
+        <IconButton
+          size="sm"
+          label="Edit event"
+          shortcut={editShortcut}
+          icon={<Pencil />}
+          onClick={() => void editEvent(event)}
+        />
+      )}
+      {canDelete && (
+        <IconButton
+          size="sm"
+          label="Delete event"
+          shortcut={deleteShortcut}
+          icon={<Trash2 />}
+          onClick={() => void deleteEvent(event)}
+        />
+      )}
+      <IconButton
+        size="sm"
+        label="Options"
+        aria-haspopup="menu"
+        aria-expanded={menu !== null}
+        icon={<EllipsisVertical />}
+        onClick={(e) => {
+          const box = e.currentTarget.getBoundingClientRect();
+          setMenu({ x: box.left, y: box.bottom + 4 });
+        }}
+      />
+      {menu && (
+        <Menu
+          aria-label="Event options"
+          items={items}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+        />
+      )}
+    </>
+  );
+}
+
 type Load =
   | { kind: "loading" }
   | { kind: "ready"; detail: EventDetail }
@@ -244,7 +317,9 @@ function PopoverBody({ open }: { open: OpenEvent }) {
 
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) close();
+      if (ref.current?.contains(e.target as Node)) return;
+      noteDismiss(e);
+      close();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
@@ -263,26 +338,18 @@ function PopoverBody({ open }: { open: OpenEvent }) {
   const guests = detail?.attendees.filter((a) => !a.resource) ?? [];
   const description = detail?.description ? plainText(detail.description) : "";
 
+  // Not a `data-owns-keys` region: `e` and Delete act on this event through the command registry.
   return (
     <div
       ref={ref}
       className="cal-pop"
       role="dialog"
       aria-label={eventTitle(event)}
-      data-owns-keys=""
       style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden" }}
       onKeyDown={onKeyDown}
     >
-      <div className="cal-pop__head">
-        <span className="cal-pop__swatch" style={{ background }} aria-hidden="true" />
-        <h2
-          className={cx(
-            "cal-pop__title",
-            event.selfResponse === "declined" && "cal-pop__title--declined",
-          )}
-        >
-          {eventTitle(event)}
-        </h2>
+      <div className="cal-pop__tools">
+        <EventTools event={event} />
         {detail?.htmlLink && (
           <IconButton
             size="sm"
@@ -298,6 +365,17 @@ function PopoverBody({ open }: { open: OpenEvent }) {
           icon={<X />}
           onClick={close}
         />
+      </div>
+      <div className="cal-pop__head">
+        <span className="cal-pop__swatch" style={{ background }} aria-hidden="true" />
+        <h2
+          className={cx(
+            "cal-pop__title",
+            event.selfResponse === "declined" && "cal-pop__title--declined",
+          )}
+        >
+          {eventTitle(event)}
+        </h2>
       </div>
       <div className="cal-pop__row">
         <Clock aria-hidden="true" />

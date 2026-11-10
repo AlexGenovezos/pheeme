@@ -7,6 +7,7 @@ import {
   type CalendarAccount,
   type CalendarEvent,
   type CalendarInfo,
+  type Attendee,
   type EventDetail,
   type EventEdit,
   type EventRef,
@@ -90,6 +91,7 @@ export function createCalendarHandlers(
     colorId: null,
     transparency: null,
     recurring: false,
+    canEdit: false,
   });
   const timed = (
     account: { id: string; email: string },
@@ -181,7 +183,52 @@ export function createCalendarHandlers(
 
   // Who organizes each fixture event, when it isn't the account itself.
   const organizers = new Map<string, string>([["design-review", "morgan@example.org"]]);
-  const descriptions = new Map<string, string>();
+  const descriptions = new Map<string, string>([
+    ["planning", "Agenda: Q1 goals, hiring, the offsite."],
+  ]);
+  /** What the editor sets beyond the listed fields, by event id. */
+  type Extra = Pick<
+    EventDetail,
+    | "reminders"
+    | "visibility"
+    | "recurrence"
+    | "guestsCanModify"
+    | "guestsCanInviteOthers"
+    | "guestsCanSeeOtherGuests"
+  > & { guests: Attendee[] };
+  const extras = new Map<string, Extra>();
+  const guest = (email: string, name: string | null, response: string): Attendee => ({
+    email,
+    name,
+    response,
+    optional: false,
+    organizer: false,
+    isSelf: false,
+    resource: false,
+    comment: null,
+  });
+  const extraOf = (e: CalendarEvent): Extra => {
+    let x = extras.get(e.id);
+    if (!x) {
+      x = {
+        reminders: { useDefault: true, overrides: [] },
+        visibility: null,
+        recurrence: e.recurring ? ["RRULE:FREQ=WEEKLY;BYDAY=MO"] : [],
+        guestsCanModify: false,
+        guestsCanInviteOthers: true,
+        guestsCanSeeOtherGuests: true,
+        guests:
+          e.id === "planning"
+            ? [
+                guest("dana@example.com", "Dana Whitaker", "accepted"),
+                guest("sam@example.com", null, "needsAction"),
+              ]
+            : [],
+      };
+      extras.set(e.id, x);
+    }
+    return x;
+  };
   const find = (args: Args) =>
     events.find(
       (e) =>
@@ -212,8 +259,35 @@ export function createCalendarHandlers(
     if (edit.start) e.start = timeOf(edit.start, e.start);
     if (edit.end) e.end = timeOf(edit.end, e.end);
     if (edit.start || edit.end) e.allDay = e.start.date !== null;
+    const x = extraOf(e);
+    if (edit.reminders)
+      x.reminders = {
+        useDefault: edit.reminders.useDefault,
+        overrides: edit.reminders.overrides ?? [],
+      };
+    if (edit.visibility != null) x.visibility = edit.visibility;
+    if (edit.recurrence != null) x.recurrence = edit.recurrence;
+    if (edit.guestsCanModify != null) x.guestsCanModify = edit.guestsCanModify;
+    if (edit.guestsCanInviteOthers != null) x.guestsCanInviteOthers = edit.guestsCanInviteOthers;
+    if (edit.guestsCanSeeOtherGuests != null)
+      x.guestsCanSeeOtherGuests = edit.guestsCanSeeOtherGuests;
+    if (edit.attendees != null)
+      x.guests = edit.attendees.map(
+        (a) =>
+          x.guests.find((g) => g.email?.toLowerCase() === a.email.toLowerCase()) ??
+          guest(a.email, null, "needsAction"),
+      );
   };
   const isOrganizer = (e: CalendarEvent) => !organizers.has(e.id);
+  const writable = (e: CalendarEvent) =>
+    ["owner", "writer"].includes(
+      calendars.get(e.accountId)?.find((c) => c.id === e.calendarId)?.accessRole ?? "",
+    );
+  /** As the app lists it: with whether this account may change it. */
+  const listed = (e: CalendarEvent): CalendarEvent => ({
+    ...e,
+    canEdit: isOrganizer(e) && writable(e),
+  });
   const ref = (e: CalendarEvent): EventRef => ({
     accountId: e.accountId,
     calendarId: e.calendarId,
@@ -271,7 +345,32 @@ export function createCalendarHandlers(
             startKey(a) - startKey(b) ||
             Number(b.allDay) - Number(a.allDay) ||
             a.id.localeCompare(b.id),
-        );
+        )
+        .map(listed);
+    },
+    search_calendar_events: (args: Args): CalendarEvent[] => {
+      const words = String(args?.query ?? "")
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+      if (!words.length) return [];
+      const from = Number(args?.fromMs);
+      const to = Number(args?.toMs);
+      const text = (e: CalendarEvent) =>
+        [
+          e.summary,
+          e.location,
+          descriptions.get(e.id),
+          ...extraOf(e).guests.flatMap((g) => [g.email, g.name]),
+        ]
+          .filter(Boolean)
+          .join("\n")
+          .toLowerCase();
+      return events
+        .filter((e) => shown(e) && startKey(e) < to && endKey(e) > from)
+        .filter((e) => words.every((w) => text(e).includes(w)))
+        .sort((a, b) => startKey(a) - startKey(b))
+        .map(listed);
     },
     set_calendar_hidden: (args: Args) => {
       const accountId = String(args?.accountId);
@@ -293,37 +392,34 @@ export function createCalendarHandlers(
       const account = accounts.find((a) => a.id === e.accountId);
       const organizer = organizers.get(e.id) ?? account?.email ?? null;
       const mine = isOrganizer(e);
+      const { guests, ...x } = extraOf(e);
+      const self: Attendee[] = e.selfResponse
+        ? [
+            {
+              email: account?.email ?? null,
+              name: null,
+              response: e.selfResponse,
+              optional: false,
+              organizer: false,
+              isSelf: true,
+              resource: false,
+              comment: null,
+            },
+          ]
+        : [];
       return {
-        ...e,
+        ...listed(e),
+        ...x,
         description: descriptions.get(e.id) ?? null,
         organizer: { email: organizer, name: null, isSelf: mine },
-        attendees: e.selfResponse
-          ? [
-              {
-                email: account?.email ?? null,
-                name: null,
-                response: e.selfResponse,
-                optional: false,
-                organizer: false,
-                isSelf: true,
-                resource: false,
-                comment: null,
-              },
-            ]
-          : [],
+        attendees: [...self, ...guests],
         meetUrl: e.hasConference ? "https://meet.google.com/abc-defg-hij" : null,
         conferencePending: false,
-        recurrence: e.recurring ? ["RRULE:FREQ=WEEKLY"] : [],
         originalStart: null,
-        reminders: { useDefault: true, overrides: [] },
-        visibility: null,
         htmlLink: null,
-        guestsCanModify: false,
-        guestsCanInviteOthers: true,
-        guestsCanSeeOtherGuests: true,
-        canEdit: mine && e.calendarId !== "en.usa#holiday@group.v.calendar.google.com",
+        canEdit: listed(e).canEdit,
         canRsvp: e.selfResponse !== null,
-        canDelete: mine,
+        canDelete: writable(e),
       };
     },
     create_calendar_event: (args: Args): EventRef => {
@@ -337,15 +433,29 @@ export function createCalendarHandlers(
       const e = find(args);
       if (!e) throw missing();
       if (!isOrganizer(e)) throw readOnly();
-      // "following" behaves like "all" here.
-      for (const o of inScope(e, args?.scope)) apply(o, (args?.edit ?? {}) as EventEdit);
+      // "following" behaves like "all" here. Other occurrences move by as much as this one did.
+      const edit = (args?.edit ?? {}) as EventEdit;
+      const shift = (t: EventEdit["start"], from: EventTime) =>
+        t?.ms != null && from.ms != null ? t.ms - from.ms : 0;
+      const startBy = shift(edit.start, e.start);
+      const endBy = shift(edit.end, e.end);
+      for (const o of inScope(e, args?.scope)) {
+        if (o === e || (!startBy && !endBy)) apply(o, edit);
+        else
+          apply(o, {
+            ...edit,
+            start: o.start.ms != null ? { ...edit.start, ms: o.start.ms + startBy } : edit.start,
+            end: o.end.ms != null ? { ...edit.end, ms: o.end.ms + endBy } : edit.end,
+          });
+      }
       changed(e.accountId);
       return ref(e);
     },
     delete_calendar_event: (args: Args) => {
       const e = find(args);
       if (!e) throw missing();
-      if (!isOrganizer(e)) throw readOnly();
+      // A guest can take an invite off their own calendar.
+      if (!writable(e)) throw readOnly();
       for (const o of inScope(e, args?.scope)) events.splice(events.indexOf(o), 1);
       changed(e.accountId);
     },

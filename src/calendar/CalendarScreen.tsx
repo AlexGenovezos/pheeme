@@ -1,7 +1,7 @@
 // Calendar mode: the calendar sidebar beside a Day, Week or Month view of every account's
 // calendars, with the event popover over it.
-import { ChevronLeft, ChevronRight, PanelLeftOpen } from "lucide-react";
-import { type CSSProperties, type FormEvent, useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, PanelLeftOpen, Search } from "lucide-react";
+import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
@@ -9,7 +9,7 @@ import { TextInput } from "../components/ui/TextInput";
 import { describeShortcut } from "../keyboard/format";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import { createSubscriptionScope } from "../lib/subscriptions";
-import { calendarSyncNow, setCalendarForeground } from "../lib/tauri";
+import { type CalendarEvent, calendarSyncNow, setCalendarForeground } from "../lib/tauri";
 import { overlayTitleBar, dragRegion } from "../shell/chrome";
 import { Divider } from "../shell/Divider";
 import { useAccountStore } from "../store/accountStore";
@@ -22,15 +22,24 @@ import {
   openApiPage,
   TASKS_API_URL,
 } from "./AccessControls";
+import { deleteEvent, editEvent, openEventNow, startDraftNow } from "./actions";
+import { CalendarSearch } from "./CalendarSearch";
 import { CalendarSidebar } from "./CalendarSidebar";
 import { displayZone, screenDays, useCalendarStore } from "./calendarStore";
 import { dateOf, formatDay } from "./dates";
+import { DRAFT_ID, useEditStore } from "./editStore";
+import { EditPrompt } from "./EditPrompt";
+import { eventKey } from "./EventBlock";
+import { EventEditor } from "./EventEditor";
+import { type EventForm, formTimes } from "./eventForm";
 import { EventPopover } from "./EventPopover";
+import { QuickCreate } from "./QuickCreate";
 import { MonthGrid } from "./MonthGrid";
 import { TimeGrid } from "./TimeGrid";
 import { type CalendarView, viewTitle } from "./views";
 import { useNow } from "./useNow";
 import "./calendar.css";
+import "./editing.css";
 
 const VIEW_OPTIONS = [
   { value: "day", label: "Day" },
@@ -46,6 +55,7 @@ function Toolbar({ title }: { title: string }) {
   const todayShortcut = useKeybinding("calendar.today", "t");
   const prevShortcut = useKeybinding("calendar.previous", "k");
   const nextShortcut = useKeybinding("calendar.next", "j");
+  const searchShortcut = useKeybinding("calendar.search", "/");
   const store = useCalendarStore.getState;
   const today = formatDay(dateOf(useNow(), displayZone(accounts)), {
     weekday: "long",
@@ -90,6 +100,12 @@ function Toolbar({ title }: { title: string }) {
         {title}
       </h1>
       <span className="toolbar__spacer" {...dragRegion} />
+      <IconButton
+        label="Search events"
+        shortcut={searchShortcut}
+        icon={<Search />}
+        onClick={() => useEditStore.setState({ search: "" })}
+      />
       <SegmentedControl
         label="View"
         value={view}
@@ -213,6 +229,57 @@ function GoToDateForm() {
   );
 }
 
+/** Delete the open event (Delete, Backspace). */
+function removeOpen() {
+  const event = openEventNow();
+  if (event) void deleteEvent(event);
+}
+
+/** The new event as the grid draws it. */
+function draftEvent(form: EventForm): CalendarEvent {
+  const { start, end } = formTimes(form);
+  const time = (t: typeof start) => ({
+    ms: t?.ms ?? null,
+    date: t?.date ?? null,
+    timeZone: t?.timeZone ?? null,
+  });
+  return {
+    accountId: form.accountId,
+    calendarId: form.calendarId,
+    id: DRAFT_ID,
+    masterId: null,
+    summary: form.summary.trim() || null,
+    start: time(start),
+    end: time(end),
+    allDay: form.allDay,
+    status: "confirmed",
+    selfResponse: null,
+    location: null,
+    hasConference: false,
+    colorId: form.colorId || null,
+    transparency: form.transparency,
+    recurring: false,
+    canEdit: false,
+  };
+}
+
+/** The events as drawn: without those being deleted, moved ones at their new times, and the new one. */
+function useShownEvents(events: CalendarEvent[] | null): CalendarEvent[] | null {
+  const draft = useEditStore((s) => s.draft?.form ?? null);
+  const moving = useEditStore((s) => s.moving);
+  const removed = useEditStore((s) => s.removed);
+  return useMemo(() => {
+    if (events === null) return null;
+    let list = events;
+    if (removed.length) list = list.filter((e) => !removed.includes(eventKey(e)));
+    if (moving)
+      list = list.map((e) =>
+        eventKey(e) === moving.key ? { ...e, start: moving.start, end: moving.end } : e,
+      );
+    return draft ? [...list, draftEvent(draft)] : list;
+  }, [events, draft, moving, removed]);
+}
+
 function useCalendarCommands() {
   const store = useCalendarStore.getState;
   const syncAll = () => {
@@ -286,6 +353,47 @@ function useCalendarCommands() {
       run: () => store().setGoToOpen(true),
     },
     {
+      id: "calendar.create",
+      title: "Create event",
+      group: "Calendar",
+      shortcut: "c",
+      keywords: ["new event", "add"],
+      run: startDraftNow,
+    },
+    {
+      id: "calendar.edit",
+      title: "Edit event",
+      group: "Calendar",
+      shortcut: "e",
+      run: () => {
+        const event = openEventNow();
+        if (event) void editEvent(event);
+      },
+    },
+    {
+      id: "calendar.delete",
+      title: "Delete event",
+      group: "Calendar",
+      shortcut: "delete",
+      run: removeOpen,
+    },
+    {
+      id: "calendar.delete-alt",
+      title: "Delete event",
+      group: "Calendar",
+      shortcut: "backspace",
+      hidden: true,
+      run: removeOpen,
+    },
+    {
+      id: "calendar.search",
+      title: "Search events",
+      group: "Calendar",
+      shortcut: "/",
+      keywords: ["find"],
+      run: () => useEditStore.setState({ search: "" }),
+    },
+    {
       id: "calendar.sync",
       title: "Update calendars now",
       group: "Calendar",
@@ -324,8 +432,9 @@ export function CalendarScreen() {
   const view = useCalendarStore((s) => s.view);
   const anchor = useCalendarStore((s) => s.anchor);
   const accounts = useCalendarStore((s) => s.accounts);
-  const events = useCalendarStore((s) => s.events);
+  const events = useShownEvents(useCalendarStore((s) => s.events));
   const loadError = useCalendarStore((s) => s.loadError);
+  const searching = useEditStore((s) => s.search !== null);
   const { tz, days } = screenDays({ view, anchor, accounts });
 
   const anyOn = accounts?.some((a) => a.access.status === "on") ?? true;
@@ -370,6 +479,8 @@ export function CalendarScreen() {
         )}
         {!anyOn ? (
           <FirstOpen />
+        ) : searching ? (
+          <CalendarSearch />
         ) : view === "month" ? (
           <MonthGrid days={days} anchor={anchor} tz={tz} events={events} />
         ) : (
@@ -377,6 +488,9 @@ export function CalendarScreen() {
         )}
       </main>
       <EventPopover />
+      <QuickCreate />
+      <EventEditor />
+      <EditPrompt />
       <GoToDate />
     </div>
   );

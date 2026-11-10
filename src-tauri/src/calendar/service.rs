@@ -71,6 +71,8 @@ pub struct CalendarEventDto {
     pub color_id: Option<String>,
     pub transparency: Option<String>,
     pub recurring: bool,
+    /// The account may change its details (move, resize, edit): see [`can_edit`].
+    pub can_edit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -281,9 +283,76 @@ impl CalendarService {
         to_ms: i64,
         display_tz: &str,
     ) -> Result<Vec<CalendarEventDto>, MailError> {
-        let tz: chrono_tz::Tz = display_tz.parse().unwrap_or(chrono_tz::UTC);
         let rows = db::calendar::events_overlapping(&self.db, from_ms, to_ms).await?;
+        self.expand_rows(&rows, from_ms, to_ms, display_tz).await
+    }
+
+    /// Events of shown calendars in `[from_ms, to_ms)` whose title, location, description or
+    /// guests contain every word of `query` (any case), sorted by start, at most `limit`.
+    pub async fn search_events(
+        &self,
+        query: &str,
+        from_ms: i64,
+        to_ms: i64,
+        display_tz: &str,
+        limit: usize,
+    ) -> Result<Vec<CalendarEventDto>, MailError> {
+        let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+        if words.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = db::calendar::events_overlapping(&self.db, from_ms, to_ms).await?;
+        let key = |a: &str, c: &str, id: &str| (a.to_owned(), c.to_owned(), id.to_owned());
+        let stored: HashSet<_> = rows
+            .iter()
+            .map(|e| key(&e.account_id, &e.calendar_id, &e.id))
+            .collect();
+        let matching: HashSet<_> = rows
+            .iter()
+            .filter(|e| matches_words(e, &words))
+            .map(|e| key(&e.account_id, &e.calendar_id, &e.id))
+            .collect();
+        let mut found: Vec<CalendarEventDto> = self
+            .expand_rows(&rows, from_ms, to_ms, display_tz)
+            .await?
+            .into_iter()
+            .filter(|e| {
+                let own = key(&e.account_id, &e.calendar_id, &e.id);
+                // A changed occurrence matches by its own text; any other by its series'.
+                if stored.contains(&own) {
+                    return matching.contains(&own);
+                }
+                e.master_id
+                    .as_deref()
+                    .is_some_and(|m| matching.contains(&key(&e.account_id, &e.calendar_id, m)))
+            })
+            .collect();
+        found.truncate(limit);
+        Ok(found)
+    }
+
+    /// `rows` as the events in `[from_ms, to_ms)`: series expanded, all-day events counted by
+    /// their dates in `display_tz`, sorted by start.
+    async fn expand_rows(
+        &self,
+        rows: &[DbEvent],
+        from_ms: i64,
+        to_ms: i64,
+        display_tz: &str,
+    ) -> Result<Vec<CalendarEventDto>, MailError> {
+        let tz: chrono_tz::Tz = display_tz.parse().unwrap_or(chrono_tz::UTC);
+        let calendars: HashMap<(String, String), db::calendar::DbCalendar> =
+            db::calendar::calendars(&self.db, None)
+                .await?
+                .into_iter()
+                .map(|c| ((c.account_id.clone(), c.id.clone()), c))
+                .collect();
         let key = |e: &DbEvent| (e.account_id.clone(), e.calendar_id.clone());
+        let editable = |e: &DbEvent| {
+            calendars
+                .get(&key(e))
+                .is_some_and(|c| can_edit(c, &serde_json::from_str(&e.raw).unwrap_or_default()))
+        };
         let mut overrides: HashMap<(String, String, String), Vec<&DbEvent>> = HashMap::new();
         for e in rows.iter() {
             if let Some(master) = &e.recurring_event_id {
@@ -292,18 +361,25 @@ impl CalendarService {
             }
         }
         let mut out = Vec::new();
-        for e in &rows {
+        for e in rows {
             if e.recurrence.is_some() {
                 let (a, c) = key(e);
                 let replaced = overrides
                     .get(&(a, c, e.id.clone()))
                     .map(Vec::as_slice)
                     .unwrap_or_default();
+                let can = editable(e);
                 for occ in recurrence::expand(e, replaced, from_ms, to_ms, tz) {
-                    out.push(dto(e, Some(&occ)));
+                    out.push(CalendarEventDto {
+                        can_edit: can,
+                        ..dto(e, Some(&occ))
+                    });
                 }
             } else if e.status != "cancelled" && overlaps(e, from_ms, to_ms, tz) {
-                out.push(dto(e, None));
+                out.push(CalendarEventDto {
+                    can_edit: editable(e),
+                    ..dto(e, None)
+                });
             }
         }
         let start_key = |e: &CalendarEventDto| {
@@ -421,7 +497,10 @@ impl CalendarService {
         };
         let can_rsvp = attendees.iter().any(|a| a.is_self && !a.organizer);
         Ok(EventDetailDto {
-            event: dto(&row, occurrence.as_ref()),
+            event: CalendarEventDto {
+                can_edit: can_edit(&calendar, &raw_flags),
+                ..dto(&row, occurrence.as_ref())
+            },
             description: row.description.clone(),
             organizer: organizer.as_ref().map(|o| PersonDto {
                 email: o.email.clone(),
@@ -737,7 +816,30 @@ fn dto(e: &DbEvent, occ: Option<&Occurrence>) -> CalendarEventDto {
         has_conference: e.conference.is_some(),
         color_id: e.color_id.clone(),
         transparency: e.transparency.clone(),
+        can_edit: false,
     }
+}
+
+/// Whether the event's title, location, description or a guest's name or address holds
+/// every one of `words` (lowercase).
+fn matches_words(e: &DbEvent, words: &[String]) -> bool {
+    let attendees: Vec<ApiAttendee> = serde_json::from_str(&e.attendees).unwrap_or_default();
+    let mut text = String::new();
+    for part in [&e.summary, &e.location, &e.description]
+        .into_iter()
+        .flatten()
+    {
+        text.push_str(part);
+        text.push('\n');
+    }
+    for a in &attendees {
+        for part in [&a.email, &a.display_name].into_iter().flatten() {
+            text.push_str(part);
+            text.push('\n');
+        }
+    }
+    let text = text.to_lowercase();
+    words.iter().all(|w| text.contains(w.as_str()))
 }
 
 #[cfg(test)]
@@ -1295,6 +1397,90 @@ pub(super) mod tests {
             .await
             .unwrap();
         assert!(!reader.can_edit && !reader.can_delete);
+    }
+
+    #[tokio::test]
+    async fn listed_events_say_whether_they_can_be_edited() {
+        let h = harness(&["a"]).await;
+        h.fake("a").put("a@example.com", guest_event());
+        h.fake("a").put("a@example.com", standup_series());
+        let mut ro = calendar("holidays");
+        ro.access_role = "reader".into();
+        h.fake("a").add_calendar(ro);
+        h.fake("a").put(
+            "holidays",
+            timed(
+                "holiday",
+                "Holiday",
+                "2026-11-11T10:00:00-05:00",
+                "2026-11-11T11:00:00-05:00",
+            ),
+        );
+        h.grant("a").await;
+
+        let got = h
+            .service
+            .events(
+                ms("2026-11-08T00:00:00Z"),
+                ms("2026-11-15T00:00:00Z"),
+                "UTC",
+            )
+            .await
+            .unwrap();
+        let can = |id: &str| got.iter().find(|e| e.id.starts_with(id)).unwrap().can_edit;
+        assert!(can("standup_"), "an occurrence of your own series");
+        assert!(!can("review"), "someone else's invite");
+        assert!(!can("holiday"), "a read-only calendar");
+    }
+
+    #[tokio::test]
+    async fn search_matches_every_word_and_finds_occurrences() {
+        let h = harness(&["a"]).await;
+        h.fake("a").put("a@example.com", standup_series());
+        let mut lunch = timed(
+            "lunch",
+            "Lunch",
+            "2026-11-10T12:00:00-05:00",
+            "2026-11-10T13:00:00-05:00",
+        );
+        lunch["location"] = json!("Tartine Bakery");
+        lunch["attendees"] = json!([{"email": "dana@example.com", "displayName": "Dana Scully"}]);
+        h.fake("a").put("a@example.com", lunch);
+        h.grant("a").await;
+        let search = |q: &'static str| {
+            let service = h.service.clone();
+            async move {
+                service
+                    .search_events(
+                        q,
+                        ms("2026-11-01T00:00:00Z"),
+                        ms("2026-12-01T00:00:00Z"),
+                        "UTC",
+                        100,
+                    )
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|e| e.id)
+                    .collect::<Vec<_>>()
+            }
+        };
+
+        assert_eq!(search("tartine LUNCH").await, vec!["lunch"]);
+        assert_eq!(search("scully").await, vec!["lunch"], "a guest's name");
+        assert_eq!(
+            search("dana@example").await,
+            vec!["lunch"],
+            "a guest's address"
+        );
+        assert!(
+            search("lunch dinner").await.is_empty(),
+            "every word must match"
+        );
+        assert!(search("  ").await.is_empty());
+        let standups = search("standup").await;
+        assert_eq!(standups.len(), 5, "each Monday in November: {standups:?}");
+        assert!(standups.iter().all(|id| id.starts_with("standup_")));
     }
 
     #[tokio::test]

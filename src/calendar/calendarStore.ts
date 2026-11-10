@@ -89,8 +89,8 @@ interface CalendarState extends Prefs {
   setMode(mode: AppMode): void;
   toggleMode(): void;
   setView(view: CalendarView): void;
-  /** Show `date` (and switch to `view`, if given). */
-  goTo(date: string, view?: CalendarView): void;
+  /** Show `date` (and switch to `view`, if given); resolves once its events are read. */
+  goTo(date: string, view?: CalendarView): Promise<void>;
   today(): void;
   step(dir: 1 | -1): void;
   openEvent(open: OpenEvent | null): void;
@@ -139,10 +139,10 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
     goTo: (date, view) => {
       set({ anchor: date, open: null, ...(view ? { view } : {}) });
       if (view) save();
-      void get().loadEvents();
+      return get().loadEvents();
     },
-    today: () => get().goTo(dateOf(Date.now(), displayZone(get().accounts))),
-    step: (dir) => get().goTo(shiftAnchor(get().view, get().anchor, dir)),
+    today: () => void get().goTo(dateOf(Date.now(), displayZone(get().accounts))),
+    step: (dir) => void get().goTo(shiftAnchor(get().view, get().anchor, dir)),
     openEvent: (open) => set({ open }),
     setGoToOpen: (goToOpen) => set({ goToOpen }),
 

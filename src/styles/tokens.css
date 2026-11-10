@@ -147,6 +147,18 @@
   --task-check-size-sm: 14px;
   --task-subtask-indent: 26px;
   --task-notes-lines: 2;
+  /* Calendar editing: quick create, the editor dialog, prompts, search. */
+  --calendar-quick-width: 440px;
+  --calendar-editor-width: 680px;
+  --calendar-editor-max-height: 88vh;
+  --calendar-prompt-width: 380px;
+  --calendar-resize-handle: 6px;
+  --calendar-number-width: 72px;
+  --calendar-description-min-height: 96px;
+  --calendar-search-width: 760px;
+  --calendar-search-day-width: 150px;
+  --calendar-search-time-width: 150px;
+  --calendar-draft-opacity: 0.85;
   --speed-control-slider-width: 160px;
   --speed-control-value-width: 72px;
   /* Settings dialog: a floating window over the blurred app. */

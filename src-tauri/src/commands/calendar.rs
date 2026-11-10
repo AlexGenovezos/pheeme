@@ -30,6 +30,24 @@ pub async fn calendar_events(
     Ok(state.calendar.events(from_ms, to_ms, &time_zone).await?)
 }
 
+/// Events of shown calendars in `[from_ms, to_ms)` matching every word of `query` (local).
+#[tauri::command]
+pub async fn search_calendar_events(
+    state: State<'_, AppState>,
+    query: String,
+    from_ms: i64,
+    to_ms: i64,
+    time_zone: String,
+) -> Result<Vec<CalendarEventDto>, CommandError> {
+    Ok(state
+        .calendar
+        .search_events(&query, from_ms, to_ms, &time_zone, SEARCH_LIMIT)
+        .await?)
+}
+
+/// The most events a calendar search answers with.
+const SEARCH_LIMIT: usize = 500;
+
 /// Show or hide a calendar's events (local).
 #[tauri::command]
 pub async fn set_calendar_hidden(
