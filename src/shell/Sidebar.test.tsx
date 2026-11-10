@@ -883,4 +883,33 @@ describe("inbox tabs", () => {
       within(accountGroup("me@work.test")).getByRole("link", { name: "Social" }),
     ).toBeInTheDocument();
   });
+
+  test("right-click or the context-menu key on a tab marks all of it read", async () => {
+    seed([ONE, TWO]);
+    const marked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "mark_inbox_tab_read") marked.push(args);
+    });
+    render(
+      <>
+        <Sidebar />
+        <ContextMenuHost />
+      </>,
+    );
+    const promotions = within(accountGroup("me@work.test")).getByRole("link", {
+      name: "Promotions",
+    });
+    fireEvent.contextMenu(promotions, { clientX: 10, clientY: 20 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Mark all as read" }));
+    await waitFor(() =>
+      expect(marked).toEqual([{ accountId: "a2", category: "CATEGORY_PROMOTIONS" }]),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+    const primary = within(accountGroup("me@home.test")).getByRole("link", { name: "Primary" });
+    fireEvent.keyDown(primary, { key: "ContextMenu" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Mark all as read" }));
+    await waitFor(() => expect(marked).toHaveLength(2));
+    expect(marked[1]).toEqual({ accountId: "a1", category: "CATEGORY_PERSONAL" });
+  });
 });

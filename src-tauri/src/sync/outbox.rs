@@ -58,6 +58,11 @@ struct Payload {
     /// Sends: the saved Gmail draft this message came from, deleted once it is sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     draft_id: Option<String>,
+    /// Modify ops that change a whole mailbox (Mark all as read): a Gmail search for its
+    /// mail. The change goes to every message it finds that arrived before the op was
+    /// queued, cached or not, in place of reading each of `thread_ids` back from Gmail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sweep: Option<String>,
 }
 
 impl Payload {
@@ -110,6 +115,25 @@ pub async fn enqueue_modify(
     enqueue(pool, account_id, KIND_MODIFY, payload).await
 }
 
+/// Queue a label change on a whole mailbox: `thread_ids` are its cached threads, changed
+/// now; Gmail gets the change for every message `sweep` finds there (see [`Payload::sweep`]),
+/// so mail not cached yet changes too. Queued even when nothing is cached.
+pub async fn enqueue_sweep(
+    pool: &SqlitePool,
+    account_id: &str,
+    thread_ids: &[String],
+    remove: &[String],
+    sweep: &str,
+) -> Result<Option<EnqueueResult>, SyncError> {
+    let payload = Payload {
+        thread_ids: thread_ids.to_vec(),
+        remove: remove.to_vec(),
+        sweep: Some(sweep.to_owned()),
+        ..Default::default()
+    };
+    enqueue(pool, account_id, KIND_MODIFY, payload).await
+}
+
 /// Queue moving whole threads to Trash and apply it to the cache now.
 pub async fn enqueue_trash(
     pool: &SqlitePool,
@@ -137,7 +161,7 @@ async fn enqueue(
             targets.push((msg.id.clone(), thread_id.clone(), msg.labels()));
         }
     }
-    if targets.is_empty() {
+    if targets.is_empty() && payload.sweep.is_none() {
         return Ok(None);
     }
     let now = now_ms();
@@ -438,6 +462,9 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
         .map(|t| t.message_id)
         .collect();
     let ids = async {
+        if let Some(q) = &payload.sweep {
+            return swept_ids(engine, q, op.created_at).await;
+        }
         // The thread as Gmail has it now: older messages we never cached are included,
         // mail that arrived after the user acted is not.
         let mut ids = Vec::new();
@@ -510,6 +537,32 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
         Err(e) => {
             defer(engine, op, now, &e).await?;
             Ok(Step::Blocked)
+        }
+    }
+}
+
+/// Messages per Gmail search page while sweeping a mailbox (the API's maximum).
+const SWEEP_PAGE: u32 = 500;
+
+/// Every message `q` finds on Gmail that arrived before `before_ms` (to the second), so mail
+/// that came in after the user acted is left alone.
+async fn swept_ids(
+    engine: &SyncEngine,
+    q: &str,
+    before_ms: i64,
+) -> Result<Vec<String>, GmailError> {
+    let q = format!("{q} before:{}", before_ms.div_euclid(1000) + 1);
+    let mut ids = Vec::new();
+    let mut page_token: Option<String> = None;
+    loop {
+        let page = engine
+            .api
+            .search_messages(&q, false, page_token.as_deref(), SWEEP_PAGE)
+            .await?;
+        ids.extend(page.messages.into_iter().map(|m| m.id));
+        match page.next_page_token {
+            Some(next) if !next.is_empty() => page_token = Some(next),
+            _ => return Ok(ids),
         }
     }
 }

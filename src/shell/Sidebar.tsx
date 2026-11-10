@@ -52,7 +52,7 @@ import {
   type MailboxRef,
   resolveActiveAccount,
 } from "../mail/mailboxes";
-import { composeNew } from "../mail/actions";
+import { composeNew, markTabRead } from "../mail/actions";
 import { dropTarget } from "../mail/dragMail";
 import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
 import { type SyncFailure, useAccountStore } from "../store/accountStore";
@@ -128,6 +128,12 @@ function activateOnKey(e: KeyboardEvent, run: () => void) {
   }
 }
 
+/** Below the row, left-aligned: where a menu or popover for it opens. */
+const below = (el: HTMLElement) => {
+  const r = el.getBoundingClientRect();
+  return { x: r.left, y: r.bottom };
+};
+
 interface MailboxRowProps {
   name: string;
   icon: LucideIcon;
@@ -139,6 +145,8 @@ interface MailboxRowProps {
   target: MailboxRef;
   /** Dragged conversations can be dropped here (a category or Trash of `target`'s account). */
   droppable?: boolean;
+  /** The row's right-click (and Menu key) menu, if it has one. */
+  menu?: () => ContextMenuItem[];
 }
 
 function MailboxRow({
@@ -149,10 +157,17 @@ function MailboxRow({
   unit,
   target,
   droppable,
+  menu,
 }: MailboxRowProps) {
   const selected = useUiStore((s) => sameMailbox(s.mailbox, target));
   const go = () => useUiStore.getState().setMailbox(target);
   const text = formatCount(count);
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (menu && (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))) {
+      e.preventDefault();
+      void showContextMenu(menu(), below(e.currentTarget));
+    } else activateOnKey(e, go);
+  };
   return (
     <ListRow
       role="link"
@@ -167,7 +182,15 @@ function MailboxRow({
       // The name comes from the visible title; aria-description carries the count, so the number is hidden.
       meta={text ? <span aria-hidden="true">{text}</span> : undefined}
       onClick={go}
-      onKeyDown={(e) => activateOnKey(e, go)}
+      onKeyDown={onKeyDown}
+      onContextMenu={
+        menu &&
+        ((e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void showContextMenu(menu(), { x: e.clientX, y: e.clientY });
+        })
+      }
       {...(droppable && target.accountId
         ? dropTarget(target.accountId, target.category ?? target.labelId)
         : {})}
@@ -191,6 +214,13 @@ function CategoryRows({ accountId }: { accountId: string }) {
           unit="unread"
           target={categoryMailbox(accountId, c.labelId)}
           droppable
+          menu={() => [
+            {
+              id: "mark-read",
+              label: "Mark all as read",
+              onSelect: () => void markTabRead(accountId, c.labelId),
+            },
+          ]}
         />
       ))}
     </>
@@ -315,12 +345,6 @@ function Favorites({ accountId }: { accountId: string }) {
 }
 
 const NO_FOLDS: string[] = [];
-
-/** Below the row, left-aligned: where a menu or popover for it opens. */
-const below = (el: HTMLElement) => {
-  const r = el.getBoundingClientRect();
-  return { x: r.left, y: r.bottom };
-};
 
 const LIST_VISIBILITY = [
   { value: "labelShow", text: "Show in label list" },

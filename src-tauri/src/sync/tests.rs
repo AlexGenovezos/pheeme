@@ -726,6 +726,81 @@ async fn archive_includes_older_uncached_messages() {
 }
 
 #[tokio::test]
+async fn sweep_marks_the_whole_tab_read_on_gmail_but_not_later_mail() {
+    let h = harness().await;
+    let promo = &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"];
+    let mut msgs: Vec<FakeMsg> = (0..super::engine::INITIAL_THREADS as i64)
+        .map(|n| FakeMsg::new(&format!("n{n}"), &format!("tn{n}"), &["INBOX"]).days_ago(n))
+        .collect();
+    msgs.push(FakeMsg::new("m1", "t1", promo));
+    msgs.push(FakeMsg::new(
+        "social",
+        "t2",
+        &["INBOX", "UNREAD", "CATEGORY_SOCIAL"],
+    ));
+    msgs.push(FakeMsg::new("old", "t3", promo).days_ago(100));
+    synced_inbox(&h, msgs).await;
+    assert!(
+        cached_labels(&h.pool, "old").await.is_none(),
+        "not downloaded yet"
+    );
+
+    let sweep = "in:inbox is:unread category:promotions";
+    outbox::enqueue_sweep(&h.pool, ACCT, &s(&["t1"]), &s(&["UNREAD"]), sweep)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        cached_labels(&h.pool, "m1").await,
+        Some(s(&["CATEGORY_PROMOTIONS", "INBOX"])),
+        "read in the cache at once"
+    );
+    h.fake
+        .add(FakeMsg::new("later", "t4", promo).at(now_ms() + 60_000));
+
+    let reads = h.fake.calls("get_thread");
+    assert!(outbox::process(&h.engine, now_ms()).await.unwrap());
+    assert_eq!(
+        server_labels(&h, "m1"),
+        s(&["CATEGORY_PROMOTIONS", "INBOX"])
+    );
+    assert_eq!(
+        server_labels(&h, "old"),
+        s(&["CATEGORY_PROMOTIONS", "INBOX"])
+    );
+    assert_eq!(
+        server_labels(&h, "social"),
+        s(&["CATEGORY_SOCIAL", "INBOX", "UNREAD"])
+    );
+    assert_eq!(
+        server_labels(&h, "later"),
+        sorted(s(promo)),
+        "arrived after the click"
+    );
+    assert_eq!(h.fake.calls("get_thread"), reads, "no per-thread reads");
+    assert!(ops(&h).await.is_empty());
+}
+
+#[tokio::test]
+async fn sweep_is_queued_with_nothing_cached() {
+    let h = harness().await;
+    let sweep = "in:inbox is:unread category:promotions";
+    assert!(
+        outbox::enqueue_sweep(&h.pool, ACCT, &[], &s(&["UNREAD"]), sweep)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    h.fake
+        .add(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"]).days_ago(1));
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert_eq!(
+        server_labels(&h, "m1"),
+        s(&["CATEGORY_PROMOTIONS", "INBOX"])
+    );
+}
+
+#[tokio::test]
 async fn rejected_op_rolls_back_with_later_ops_reapplied() {
     let h = harness().await;
     synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX"])]).await;

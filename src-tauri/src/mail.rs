@@ -49,6 +49,25 @@ pub fn primary_excludes(hidden: &[String]) -> Vec<String> {
         .map(|l| (*l).to_owned())
         .collect()
 }
+/// The Gmail search for the unread mail of an inbox tab: `tab` (`CATEGORY_*`), or Primary
+/// (`None`) as the inbox minus the `excludes` categories.
+fn inbox_tab_search(tab: Option<&str>, excludes: &[String]) -> String {
+    let category = |label: &str| {
+        label
+            .strip_prefix("CATEGORY_")
+            .unwrap_or(label)
+            .to_lowercase()
+    };
+    let mut q = String::from("in:inbox is:unread");
+    if let Some(tab) = tab {
+        q += &format!(" category:{}", category(tab));
+    }
+    for label in excludes {
+        q += &format!(" -category:{}", category(label));
+    }
+    q
+}
+
 pub const MAX_PAGE: i64 = 500;
 
 #[derive(Debug, thiserror::Error)]
@@ -841,6 +860,37 @@ impl MailService {
         Ok(())
     }
 
+    /// Mark everything in one inbox tab of `account_id` read (`category` is `CATEGORY_*`;
+    /// Primary takes in the tabs the account hides, like its count). The cached threads change
+    /// now; on Gmail it covers every unread message in the tab, including mail not
+    /// downloaded yet.
+    pub async fn mark_inbox_tab_read(
+        &self,
+        account_id: &str,
+        category: &str,
+    ) -> Result<(), MailError> {
+        let (tab, excludes) = if category == PRIMARY_CATEGORY {
+            let hidden = settings::inbox_tabs(&self.db, account_id).await?;
+            (None, primary_excludes(&hidden))
+        } else if OTHER_CATEGORIES.contains(&category) {
+            (Some(category), Vec::new())
+        } else {
+            return Err(MailError::Invalid("That isn't an inbox tab.".into()));
+        };
+        let thread_ids =
+            threads::unread_inbox_tab_threads(&self.db, account_id, tab, &excludes).await?;
+        let queued = outbox::enqueue_sweep(
+            &self.db,
+            account_id,
+            &thread_ids,
+            &["UNREAD".to_owned()],
+            &inbox_tab_search(tab, &excludes),
+        )
+        .await?;
+        self.after_change(account_id, queued);
+        Ok(())
+    }
+
     pub async fn trash_threads(
         &self,
         account_id: &str,
@@ -1483,6 +1533,36 @@ mod tests {
             mail.modify_threads("a1", &[], &[], &["INBOX".into()]).await,
             Err(MailError::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn inbox_tab_search_names_the_tab_or_what_primary_leaves_out() {
+        assert_eq!(
+            inbox_tab_search(Some("CATEGORY_PROMOTIONS"), &[]),
+            "in:inbox is:unread category:promotions"
+        );
+        assert_eq!(
+            inbox_tab_search(None, &primary_excludes(&["CATEGORY_SOCIAL".into()])),
+            "in:inbox is:unread -category:promotions -category:updates -category:forums"
+        );
+    }
+
+    #[tokio::test]
+    async fn mark_inbox_tab_read_refuses_other_labels() {
+        let db = TestDb::with_account("a1").await;
+        let fake = Arc::new(FakeGmail::new());
+        let sync = SyncManager::new(
+            db.pool.clone(),
+            Arc::new(move |_| fake.clone() as Arc<dyn MailApi>),
+            Arc::new(RecordingEvents::default()),
+        );
+        let mail = MailService::new(db.pool.clone(), sync, db.dir().join("cache"));
+        for label in ["INBOX", "STARRED", "Label_1"] {
+            assert!(matches!(
+                mail.mark_inbox_tab_read("a1", label).await,
+                Err(MailError::Invalid(_))
+            ));
+        }
     }
 
     #[tokio::test]
