@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useToastStore } from "../components/ui/Toast";
 import { registry } from "../keyboard/registry";
 import { createCalendarHandlers } from "../preview/calendar";
+import { createTasksHandlers } from "../preview/tasks";
 import { useAccountStore } from "../store/accountStore";
 import { CalendarScreen } from "./CalendarScreen";
 import { useCalendarStore } from "./calendarStore";
@@ -32,10 +33,10 @@ function backend(
   fail?: Record<string, unknown>,
   slow?: (cmd: string, args: Record<string, unknown>) => Promise<void> | undefined,
 ) {
-  const handlers = createCalendarHandlers(ACCOUNTS, null, NOW) as Record<
-    string,
-    (args?: Record<string, unknown>) => unknown
-  >;
+  const handlers = {
+    ...createCalendarHandlers(ACCOUNTS, null, NOW),
+    ...createTasksHandlers(ACCOUNTS, null, NOW),
+  } as Record<string, (args?: Record<string, unknown>) => unknown>;
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -126,6 +127,30 @@ describe("creating events", () => {
     expect(
       screen.getByRole("button", { name: /^Dentist, 12:00 AM – 1:00 AM/ }),
     ).toBeInTheDocument();
+  });
+
+  test("a press on a dated task doesn't place an event; an empty day in the band does", async () => {
+    backend();
+    await open();
+
+    const task = screen
+      .getByRole("button", { name: /^Task: Pick up dry cleaning/ })
+      .closest<HTMLElement>(".task-chip")!;
+    fireEvent.pointerDown(task, { button: 0 });
+    fireEvent.pointerUp(window);
+    await flush();
+    expect(screen.queryByRole("dialog", { name: "New event" })).toBeNull();
+
+    const sunday = document.querySelector<HTMLElement>(
+      '[data-cal-drop="day"][data-date="2026-11-08"]',
+    )!;
+    fireEvent.pointerDown(sunday, { button: 0 });
+    fireEvent.pointerUp(window);
+    await flush();
+    expect(within(dialog("New event")).getByRole("checkbox", { name: "All day" })).toBeChecked();
+    expect(screen.getByRole("button", { name: /^\(No title\), all day/ })).toHaveClass(
+      "cal-event--draft",
+    );
   });
 
   test("`c` opens quick create; More options keeps the title, and guests get asked about", async () => {
