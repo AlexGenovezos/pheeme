@@ -184,17 +184,17 @@ export function layoutBand(
  * Fit band segments into cells of `capacity` rows. A day with more than fit shows `capacity - 1`
  * rows and a "+N more" line counting the rest.
  */
-export function fitRows(
-  segments: BandSegment[],
+export function fitRows<S extends Pick<BandSegment, "start" | "span" | "row">>(
+  segments: S[],
   dayCount: number,
   capacity: number,
-): { visible: BandSegment[]; more: number[] } {
+): { visible: S[]; more: number[] } {
   const perDay = Array.from({ length: dayCount }, () => 0);
   for (const s of segments)
     for (let d = s.start; d < s.start + s.span; d++) perDay[d] = Math.max(perDay[d], s.row + 1);
   const rowsFor = (d: number) => (perDay[d] > capacity ? Math.max(0, capacity - 1) : capacity);
   const more = Array.from({ length: dayCount }, () => 0);
-  const visible: BandSegment[] = [];
+  const visible: S[] = [];
   for (const s of segments) {
     let fits = true;
     for (let d = s.start; d < s.start + s.span; d++) if (s.row >= rowsFor(d)) fits = false;

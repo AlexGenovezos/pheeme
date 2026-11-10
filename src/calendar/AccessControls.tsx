@@ -20,7 +20,7 @@ export function AllowButton({
   account,
   size = "sm",
 }: {
-  account: CalendarAccount;
+  account: Pick<CalendarAccount, "accountId">;
   size?: "sm" | "md";
 }) {
   const { state, start, cancel } = useSignIn();

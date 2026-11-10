@@ -22,6 +22,7 @@ import { screenDays, useCalendarStore, weekStartOf, displayZone } from "./calend
 import { calendarColor, textOn } from "./colors";
 import { addMonths, dateOf, formatDay, startOfMonth } from "./dates";
 import { ModeSwitch } from "./ModeSwitch";
+import { SidebarTaskLists } from "../tasks/SidebarTaskLists";
 import { useNow } from "./useNow";
 import { visibleDays } from "./views";
 
@@ -153,6 +154,7 @@ function AccountGroup({ account }: { account: CalendarAccount }) {
       {calendars.map((c) => (
         <CalendarRow key={c.id} account={account} calendar={c} />
       ))}
+      <SidebarTaskLists accountId={account.accountId} />
       <p className={cx("cal-sidebar__status", failing && "cal-sidebar__status--error")}>
         {failing && <TriangleAlert aria-hidden="true" />}
         <span>{syncLine(account)}</span>

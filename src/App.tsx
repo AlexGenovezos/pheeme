@@ -33,6 +33,7 @@ import { useMailStore } from "./store/mailStore";
 import { useThreadStore } from "./store/threadStore";
 import { startPreloading } from "./mail/preload";
 import { SpeedReaderHost } from "./speedread/SpeedReader";
+import { TasksPanelHost } from "./tasks/TasksPanel";
 
 /** Hide the webview's own menu (Reload, Inspect…) outside text; dev builds keep it for devtools. */
 function useNativeContextMenuOnly() {
@@ -95,7 +96,10 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
 
   return (
     <>
-      {mode === "calendar" ? <CalendarScreen /> : <AppShell onAddAccount={onAddAccount} />}
+      <div className="tasks-frame">
+        {mode === "calendar" ? <CalendarScreen /> : <AppShell onAddAccount={onAddAccount} />}
+        <TasksPanelHost />
+      </div>
       <ComposeHost />
       <CommandPalette />
       <Settings onAddAccount={onAddAccount} />

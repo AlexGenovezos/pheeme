@@ -1,7 +1,7 @@
 // Month: whole weeks of day cells. Bars for all-day and multi-day events, a dot line for each
 // shorter one, and "+N more" where a day has more than fits. Clicking a day opens it in Day view.
 import { type CSSProperties, useMemo, useRef } from "react";
-import type { CalendarEvent } from "../lib/tauri";
+import type { CalendarEvent, Task } from "../lib/tauri";
 import { useHeight } from "../lib/useWidth";
 import { cx } from "../lib/utils";
 import { useCalendarStore } from "./calendarStore";
@@ -9,6 +9,9 @@ import { dateOf, formatDay } from "./dates";
 import { BarEvent, DotEvent, eventKey, timeSpan, useCalendarLookup } from "./EventBlock";
 import { fitRows, inAllDayBand, layoutBand } from "./layout";
 import { useNow } from "./useNow";
+import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
+import { layoutTasks } from "../tasks/gridLayout";
+import { taskKey } from "../tasks/outline";
 
 /** One event line in a cell, in px. */
 export const MONTH_ROW_PX = 22;
@@ -21,6 +24,7 @@ function Week({
   today,
   tz,
   events,
+  tasks,
   capacity,
 }: {
   days: string[];
@@ -28,13 +32,14 @@ function Week({
   today: string;
   tz: string;
   events: CalendarEvent[];
+  tasks: Task[];
   capacity: number;
 }) {
   const lookup = useCalendarLookup();
-  const { visible, more } = useMemo(
-    () => fitRows(layoutBand(events, days, tz, true), days.length, capacity),
-    [events, days, tz, capacity],
-  );
+  const { visible, more } = useMemo(() => {
+    const placed = layoutBand(events, days, tz, true);
+    return fitRows([...placed, ...layoutTasks(tasks, days, placed)], days.length, capacity);
+  }, [events, tasks, days, tz, capacity]);
   const openDay = (d: string) => useCalendarStore.getState().goTo(d, "day");
   return (
     <div className="cal-month__week" role="row">
@@ -67,6 +72,7 @@ function Week({
           gridColumn: `${s.start + 1} / span ${s.span}`,
           gridRow: s.row + 2,
         };
+        if ("task" in s) return <TaskChip key={taskKey(s.task)} task={s.task} style={style} />;
         return inAllDayBand(s.event) ? (
           <BarEvent
             key={eventKey(s.event)}
@@ -124,6 +130,8 @@ export function MonthGrid({
   const today = dateOf(useNow(), tz);
   const month = anchor.slice(0, 7);
   const list = useMemo(() => events ?? [], [events]);
+  const dated = useDatedTasks(days);
+  const tasks = useMemo(() => dated ?? [], [dated]);
 
   const style = {
     "--cal-month-row-h": `${MONTH_ROW_PX}px`,
@@ -150,6 +158,7 @@ export function MonthGrid({
             today={today}
             tz={tz}
             events={list}
+            tasks={tasks}
             capacity={capacity}
           />
         ))}
