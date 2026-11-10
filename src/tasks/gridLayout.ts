@@ -19,7 +19,8 @@ export function layoutTasks(tasks: Task[], days: string[], taken: Taken[]): Task
   for (const s of taken) for (let d = s.start; d < s.start + s.span; d++) used[d]?.add(s.row);
   const segments: TaskSegment[] = [];
   for (const task of tasks) {
-    const day = task.due ? index.get(task.due) : undefined;
+    // Cleared from its list (completed and hidden): the panel doesn't show it either.
+    const day = task.due && !task.hidden ? index.get(task.due) : undefined;
     if (day === undefined) continue;
     let row = 0;
     while (used[day].has(row)) row++;

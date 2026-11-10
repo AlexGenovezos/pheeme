@@ -13,10 +13,10 @@ import {
   X,
 } from "lucide-react";
 import {
-  type DragEvent,
   type FocusEvent,
   type KeyboardEvent,
   type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
   useRef,
@@ -315,6 +315,8 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
   const [drop, setDrop] = useState<{ id: string; half: "before" | "after" } | null>(null);
   const { open, completed } = useMemo(() => splitCompleted(tasks ?? []), [tasks]);
   const adding = newTaskIn(editing, accountId, list.id);
+  // A completed task opened from the calendar shows its editor, so Completed opens for it.
+  const completedShown = showCompleted || completed.some((t) => taskKey(t) === editing);
   const otherLists = account.lists.filter((l) => l.id !== list.id);
 
   // Where the new-task field sits: placed like a task, so it shows where the task will land.
@@ -360,41 +362,56 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
     );
   };
 
-  const placementFor = (target: Task, e: DragEvent): Placement | null => {
-    if (!dragged) return null;
-    const r = e.currentTarget.getBoundingClientRect();
-    const half = e.clientY < r.top + r.height / 2 ? "before" : "after";
-    return dropPlacement(open, dragged, target, half);
+  // Dragging by the grip uses pointer events, not HTML5 drag and drop: the desktop app keeps the
+  // webview's native file drop on (compose attachments), which swallows HTML5 drags on Windows.
+  const sectionRef = useRef<HTMLElement>(null);
+  const startDrag = (task: Task) => (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const grip = e.currentTarget;
+    try {
+      // Keeps the moves and the release coming to the grip wherever the pointer goes.
+      grip.setPointerCapture(e.pointerId);
+    } catch {
+      // Not an active pointer (synthetic events): the drag still works over the list.
+    }
+    setDragged(task);
+    let landing: Placement | null = null;
+    const over = (ev: PointerEvent) => {
+      const li = document
+        .elementFromPoint?.(ev.clientX, ev.clientY)
+        ?.closest<HTMLElement>("li[data-task-id]");
+      const target =
+        li && sectionRef.current?.contains(li) && open.find((t) => t.id === li.dataset.taskId);
+      if (!li || !target) return { drop: null, placement: null };
+      const r = li.getBoundingClientRect();
+      const half: "before" | "after" = ev.clientY < r.top + r.height / 2 ? "before" : "after";
+      const placement = dropPlacement(open, task, target, half);
+      return { drop: placement ? { id: target.id, half } : null, placement };
+    };
+    const move = (ev: PointerEvent) => {
+      const at = over(ev);
+      landing = at.placement;
+      setDrop(at.drop);
+    };
+    const end = (ev: PointerEvent) => {
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", end);
+      grip.removeEventListener("pointercancel", end);
+      grip.removeEventListener("lostpointercapture", end);
+      setDragged(null);
+      setDrop(null);
+      if (ev.type === "pointerup" && landing) void store().moveTask(task, landing);
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", end);
+    grip.addEventListener("pointercancel", end);
+    grip.addEventListener("lostpointercapture", end);
   };
-  const dragHandlers = (task: Task) => ({
-    onDragStart: (e: DragEvent) => {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", taskTitle(task));
-      setDragged(task);
-    },
-    onDragOver: (e: DragEvent) => {
-      if (!dragged || !placementFor(task, e)) return setDrop(null);
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      const r = e.currentTarget.getBoundingClientRect();
-      setDrop({ id: task.id, half: e.clientY < r.top + r.height / 2 ? "before" : "after" });
-    },
-    onDrop: (e: DragEvent) => {
-      const placement = placementFor(task, e);
-      e.preventDefault();
-      if (dragged && placement) void store().moveTask(dragged, placement);
-      setDragged(null);
-      setDrop(null);
-    },
-    onDragEnd: () => {
-      setDragged(null);
-      setDrop(null);
-    },
-  });
 
   const titleId = `tasks-list-${accountId}-${list.id}`;
   return (
-    <section className="tasks-list" aria-labelledby={titleId}>
+    <section ref={sectionRef} className="tasks-list" aria-labelledby={titleId}>
       <div className="tasks-list__head">
         {renaming ? (
           <NameField
@@ -473,8 +490,7 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
                   drop?.id === row.task.id && `task-row--drop-${drop.half}`,
                   dragged?.id === row.task.id && "task-row--dragging",
                 )}
-                draggable={editing !== taskKey(row.task)}
-                {...dragHandlers(row.task)}
+                data-task-id={row.task.id}
               >
                 {editing === taskKey(row.task) ? (
                   <TaskEditor accountId={accountId} listId={list.id} task={row.task} />
@@ -483,6 +499,7 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
                     task={row.task}
                     open={open}
                     otherLists={otherLists}
+                    onGripPointerDown={startDrag(row.task)}
                     onAddSubtask={() =>
                       startAdding({
                         parent: row.task.id,
@@ -506,17 +523,17 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
           <button
             type="button"
             className="tasks-completed"
-            aria-expanded={showCompleted}
-            onClick={() => setShowCompleted((v) => !v)}
+            aria-expanded={completedShown}
+            onClick={() => setShowCompleted(!completedShown)}
           >
-            {showCompleted ? (
+            {completedShown ? (
               <ChevronDown aria-hidden="true" />
             ) : (
               <ChevronRight aria-hidden="true" />
             )}
             Completed ({completed.length})
           </button>
-          {showCompleted && (
+          {completedShown && (
             <ul className="tasks-list__items" aria-label={`${list.title} completed tasks`}>
               {completed.map((t) => (
                 <li key={t.id}>
@@ -540,12 +557,15 @@ function TaskRow({
   open,
   otherLists,
   onAddSubtask,
+  onGripPointerDown,
 }: {
   task: Task;
   /** The list's open tasks, for indenting and moving. */
   open: Task[];
   otherLists: TaskListInfo[];
   onAddSubtask?: () => void;
+  /** Starts dragging the task into another place. */
+  onGripPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
 }) {
   const title = taskTitle(task);
   const now = today();
@@ -603,7 +623,11 @@ function TaskRow({
       onContextMenu={(e) => openContextMenuFromEvent(e, items)}
       onKeyDown={onKeyDown}
     >
-      {!task.completed && <GripVertical className="task-row__grip" aria-hidden="true" />}
+      {!task.completed && (
+        <span className="task-row__grip" aria-hidden="true" onPointerDown={onGripPointerDown}>
+          <GripVertical />
+        </span>
+      )}
       <button
         type="button"
         role="checkbox"

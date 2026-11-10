@@ -142,5 +142,16 @@ describe("dated tasks on the calendar", () => {
     const panel = screen.getByRole("complementary", { name: "Tasks" });
     const editor = within(panel).getByRole("form", { name: "Edit task: Plan the Lisbon trip" });
     expect(within(editor).getByRole("textbox", { name: "Title" })).toHaveFocus();
+
+    // A completed one opens its list's Completed section to show it.
+    fireEvent.click(screen.getByRole("button", { name: /^Task: Pay the electricity bill/ }));
+    await settle();
+    expect(
+      within(panel).getByRole("form", { name: "Edit task: Pay the electricity bill" }),
+    ).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Completed (2)" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 });

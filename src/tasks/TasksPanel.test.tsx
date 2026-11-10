@@ -190,16 +190,18 @@ describe("Tasks panel", () => {
       "Book flights",
     ]);
 
-    // Drag "Send the lease back" below "Plan the Lisbon trip" (jsdom rects are 0: the lower half).
+    // Drag "Send the lease back" by its grip below "Book flights" (jsdom rects are 0: the lower half).
     const from = screen
       .getByRole("button", { name: "Edit task: Send the lease back" })
       .closest("li")!;
     const onto = screen.getByRole("button", { name: "Edit task: Book flights" }).closest("li")!;
-    const dataTransfer = { setData: () => {}, effectAllowed: "", dropEffect: "" };
-    fireEvent.dragStart(from, { dataTransfer });
-    fireEvent.dragOver(onto, { dataTransfer, clientY: 10 });
+    const grip = from.querySelector(".task-row__grip")!;
+    document.elementFromPoint = () => onto;
+    fireEvent.pointerDown(grip, { button: 0, pointerId: 1 });
+    expect(from).toHaveClass("task-row--dragging");
+    fireEvent.pointerMove(grip, { pointerId: 1, clientY: 10 });
     expect(onto).toHaveClass("task-row--drop-after");
-    fireEvent.drop(onto, { dataTransfer, clientY: 10 });
+    fireEvent.pointerUp(grip, { pointerId: 1, clientY: 10 });
     await settle();
     expect(rows("My Tasks")).toEqual([
       "Renew passport",
@@ -210,6 +212,21 @@ describe("Tasks panel", () => {
     expect(
       screen.getByRole("button", { name: "Edit task: Send the lease back" }).closest("li"),
     ).toHaveClass("task-row--sub");
+  });
+
+  test("closing the panel from the keyboard keeps what was being typed", async () => {
+    await openPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Edit task: Renew passport" }));
+    const title = screen.getByRole("textbox", { name: "Title" });
+    title.focus();
+    fireEvent.change(title, { target: { value: "Renew both passports" } });
+    act(() => useTasksStore.getState().togglePanel());
+    await settle();
+    expect(screen.queryByRole("complementary", { name: "Tasks" })).toBeNull();
+    expect(last(writes())).toMatchObject({
+      cmd: "update_task",
+      args: { edit: { title: "Renew both passports" } },
+    });
   });
 
   test("a change Google refuses snaps back and says why", async () => {

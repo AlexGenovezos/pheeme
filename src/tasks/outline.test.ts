@@ -163,6 +163,7 @@ test("layoutTasks puts each task in its day's first free row", () => {
     task("z", { due: "2026-11-10" }),
     task("w", { due: "2026-11-11" }),
     task("off", { due: "2026-11-20" }),
+    task("cleared", { due: "2026-11-11", completed: true, hidden: true }),
     task("none"),
   ];
   expect(layoutTasks(tasks, days, taken).map((s) => [s.task.id, s.start, s.row])).toEqual([

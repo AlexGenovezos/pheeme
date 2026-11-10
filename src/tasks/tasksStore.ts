@@ -152,6 +152,10 @@ export const useTasksStore = create<TasksState>((set, get) => {
 
     setPanelOpen: (open) => {
       if (open === get().panelOpen) return;
+      // Closing from the keyboard: leave the editor first, so its blur saves what was typed.
+      const focused = globalThis.document?.activeElement;
+      if (!open && focused instanceof HTMLElement && focused.closest("#tasks-panel"))
+        focused.blur();
       set({ panelOpen: open, ...(open ? {} : { editing: null }) });
       writePanelOpen(open);
       if (open) {

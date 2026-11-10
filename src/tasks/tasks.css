@@ -168,15 +168,26 @@
 }
 
 .task-row__grip {
+  display: inline-flex;
   flex: none;
+  align-items: center;
   width: var(--icon-size-sm);
   height: var(--task-check-size);
   margin-right: calc(-1 * var(--space-1-5));
   color: var(--color-foreground-subtle);
   opacity: 0;
   cursor: grab;
+  touch-action: none;
 }
-.task-row:hover .task-row__grip {
+.task-row__grip svg {
+  width: 100%;
+  height: 100%;
+}
+.task-row--dragging .task-row__grip {
+  cursor: grabbing;
+}
+.task-row:hover .task-row__grip,
+.task-row--dragging .task-row__grip {
   opacity: 1;
 }
 /* Completed rows have no grip; keep their circles in line with the open ones. */
