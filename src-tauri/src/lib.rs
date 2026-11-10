@@ -27,6 +27,7 @@ pub mod sender_rules;
 pub mod senders;
 pub mod support;
 pub mod sync;
+pub mod tasks;
 pub mod telemetry;
 mod text;
 pub mod transfer;
@@ -50,6 +51,7 @@ pub struct AppState {
     pub compose: compose::ComposeService,
     pub contacts: Arc<contacts::ContactService>,
     pub calendar: Arc<calendar::service::CalendarService>,
+    pub tasks: Arc<tasks::service::TasksService>,
     pub sync: Arc<SyncManager>,
     pub transfers: transfer::TransferService,
     /// The MCP server AI assistants connect to, over [`local_api::LocalApi`]; runs only while
@@ -98,7 +100,14 @@ pub async fn build_state(
         let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
         Arc::new(gmail::GmailClient::calendar(provider)) as Arc<dyn calendar::CalendarApi>
     });
-    let calendar = calendar::service::CalendarService::new(db.clone(), calendar_for, events);
+    let calendar =
+        calendar::service::CalendarService::new(db.clone(), calendar_for, events.clone());
+    let tokens = accounts.clone();
+    let tasks_for: tasks::TasksFactory = Arc::new(move |account_id: &str| {
+        let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
+        Arc::new(gmail::GmailClient::tasks(provider)) as Arc<dyn tasks::TasksApi>
+    });
+    let tasks = tasks::service::TasksService::new(db.clone(), tasks_for, events);
     let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
@@ -119,6 +128,7 @@ pub async fn build_state(
     tokio::spawn(body_retention::run(db.clone()));
     tokio::spawn(contacts.clone().run());
     tokio::spawn(calendar.clone().run());
+    tokio::spawn(tasks.clone().run());
     Ok(AppState {
         db,
         accounts,
@@ -128,6 +138,7 @@ pub async fn build_state(
         compose,
         contacts,
         calendar,
+        tasks,
         sync,
         transfers: transfer::TransferService::default(),
         assistants,
@@ -429,6 +440,20 @@ pub fn run() {
             commands::calendar::copy_calendar_event,
             commands::calendar::respond_to_calendar_event,
             commands::calendar::respond_to_calendar_invite,
+            commands::tasks::tasks_accounts,
+            commands::tasks::tasks_in_list,
+            commands::tasks::dated_tasks,
+            commands::tasks::set_task_list_hidden,
+            commands::tasks::tasks_sync_now,
+            commands::tasks::create_task,
+            commands::tasks::update_task,
+            commands::tasks::set_task_completed,
+            commands::tasks::delete_task,
+            commands::tasks::move_task,
+            commands::tasks::move_task_to_list,
+            commands::tasks::create_task_list,
+            commands::tasks::rename_task_list,
+            commands::tasks::delete_task_list,
             commands::compose::compose_template,
             commands::compose::gmail_signature,
             commands::compose::stage_attachment,

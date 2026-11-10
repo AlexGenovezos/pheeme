@@ -1,0 +1,122 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT account_id, id, title, sort_order, etag, updated_ms, hidden AS \"hidden: bool\",\n                  synced_through_ms, full_synced_at\n           FROM task_lists\n           WHERE ?1 IS NULL OR account_id = ?1\n           ORDER BY account_id, sort_order",
+  "describe": {
+    "columns": [
+      {
+        "name": "account_id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "task_lists",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "name": "id",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "task_lists",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "title",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "task_lists",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "name": "sort_order",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "task_lists",
+            "name": "sort_order"
+          }
+        }
+      },
+      {
+        "name": "etag",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "task_lists",
+            "name": "etag"
+          }
+        }
+      },
+      {
+        "name": "updated_ms",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "task_lists",
+            "name": "updated_ms"
+          }
+        }
+      },
+      {
+        "name": "hidden: bool",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "task_lists",
+            "name": "hidden"
+          }
+        }
+      },
+      {
+        "name": "synced_through_ms",
+        "ordinal": 7,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "task_lists",
+            "name": "synced_through_ms"
+          }
+        }
+      },
+      {
+        "name": "full_synced_at",
+        "ordinal": 8,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "task_lists",
+            "name": "full_synced_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "3ea803c37c85a8e468e50a16b7256e998403c7c9caf68d45f7ca6bd1ae905b4e"
+}

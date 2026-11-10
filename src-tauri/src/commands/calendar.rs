@@ -53,10 +53,11 @@ pub async fn calendar_sync_now(
     Ok(user_action(state.calendar.sync_now(&account_id)).await?)
 }
 
-/// Calendar mode is (or stopped being) in front.
+/// Calendar mode is (or stopped being) in front: calendars and tasks are checked more often.
 #[tauri::command]
 pub fn set_calendar_foreground(state: State<'_, AppState>, on: bool) {
     state.calendar.set_foreground(on);
+    state.tasks.set_foreground(on);
 }
 
 /// The full detail of one event or occurrence (local).

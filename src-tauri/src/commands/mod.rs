@@ -12,6 +12,7 @@ pub mod sender_rules;
 pub mod settings;
 pub mod support;
 pub mod sync;
+pub mod tasks;
 pub mod themes;
 pub mod threads;
 pub mod transfer;
@@ -52,6 +53,15 @@ impl From<MailError> for CommandError {
 
 impl From<CalendarError> for CommandError {
     fn from(error: CalendarError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<crate::tasks::error::TasksError> for CommandError {
+    fn from(error: crate::tasks::error::TasksError) -> Self {
         Self {
             code: error.code().to_owned(),
             message: error.to_string(),

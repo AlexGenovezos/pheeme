@@ -1,0 +1,182 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT t.account_id, t.list_id, t.id, t.parent, t.position, t.title, t.notes,\n                  t.due_date, t.status, t.completed_ms, t.updated_ms, t.hidden AS \"hidden: bool\",\n                  t.etag, t.raw\n           FROM tasks t\n           JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id\n           WHERE t.due_date >= ? AND t.due_date < ? AND l.hidden = 0\n           ORDER BY t.due_date, t.account_id, l.sort_order, t.position, t.id",
+  "describe": {
+    "columns": [
+      {
+        "name": "account_id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "name": "list_id",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "list_id"
+          }
+        }
+      },
+      {
+        "name": "id",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "parent",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "parent"
+          }
+        }
+      },
+      {
+        "name": "position",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "name": "title",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "name": "notes",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "notes"
+          }
+        }
+      },
+      {
+        "name": "due_date",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "due_date"
+          }
+        }
+      },
+      {
+        "name": "status",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "completed_ms",
+        "ordinal": 9,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "completed_ms"
+          }
+        }
+      },
+      {
+        "name": "updated_ms",
+        "ordinal": 10,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "updated_ms"
+          }
+        }
+      },
+      {
+        "name": "hidden: bool",
+        "ordinal": 11,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "hidden"
+          }
+        }
+      },
+      {
+        "name": "etag",
+        "ordinal": 12,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "etag"
+          }
+        }
+      },
+      {
+        "name": "raw",
+        "ordinal": 13,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tasks",
+            "name": "raw"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c343102db74d0606cd87688c5ae7663269878da1cc793e0cac68747c9c1cc8c2"
+}

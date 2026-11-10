@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE task_lists SET synced_through_ms = ?, full_synced_at = ?\n         WHERE account_id = ? AND id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "043fd7a92d3e80888bd7161425bf31df38ec10d314a5e1e42cecab1f2ffd588e"
+}

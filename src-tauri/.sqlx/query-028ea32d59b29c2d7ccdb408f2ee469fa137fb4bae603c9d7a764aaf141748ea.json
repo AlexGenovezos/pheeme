@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM tasks WHERE account_id = ?1 AND list_id = ?2 AND (id = ?3 OR parent = ?3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "028ea32d59b29c2d7ccdb408f2ee469fa137fb4bae603c9d7a764aaf141748ea"
+}
