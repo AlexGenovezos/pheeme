@@ -54,18 +54,19 @@ export function FindBar({
     latest.current = { query, state };
   });
 
+  // Where focus was before the bar opened, to give it back on close. Read before the field takes it.
+  const returnTo = useRef<Element | null>(null);
+  useLayoutEffect(() => {
+    const active = document.activeElement;
+    returnTo.current = active && !bar.current?.contains(active) ? active : null;
+  }, []);
+
   // Focus the field (and select what's there, to type over) every time mod+f is pressed.
   useLayoutEffect(() => {
     input.current?.focus();
     input.current?.select();
   }, [request]);
 
-  // Where focus was before the bar opened, to give it back on close.
-  const returnTo = useRef<Element | null>(null);
-  useLayoutEffect(() => {
-    const active = document.activeElement;
-    returnTo.current = active && !bar.current?.contains(active) ? active : null;
-  }, []);
   const close = useCallback(() => {
     const back = returnTo.current;
     if (back instanceof HTMLElement && back.isConnected && back !== document.body)
@@ -173,10 +174,16 @@ export function FindBar({
       // Its buttons mustn't pass `e` or `#` on to the conversation.
       data-owns-keys
       onKeyDown={(e) => {
-        if (e.key !== "Escape" || e.nativeEvent.isComposing) return;
+        if (e.nativeEvent.isComposing) return;
+        const mod = platform === "macos" ? e.metaKey : e.ctrlKey;
+        if (e.key === "Escape") close();
+        else if (mod && e.key.toLowerCase() === "f") {
+          // The bar owns its keys, so mod+f in it never reaches the command: refocus the field here.
+          input.current?.focus();
+          input.current?.select();
+        } else return;
         e.preventDefault();
         e.stopPropagation();
-        close();
       }}
     >
       <TextInput
@@ -198,7 +205,6 @@ export function FindBar({
           const mod = platform === "macos" ? e.metaKey : e.ctrlKey;
           const key = e.key.toLowerCase();
           if (e.key === "Enter" || (mod && key === "g")) step(e.shiftKey ? -1 : 1);
-          else if (mod && key === "f") e.currentTarget.select();
           else return;
           e.preventDefault();
           e.stopPropagation();

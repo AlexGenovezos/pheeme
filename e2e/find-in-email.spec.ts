@@ -79,5 +79,7 @@ test("mod+f finds text in an HTML email, steps to a match far down and closes", 
 
   await field.press("Escape");
   await expect(bar).toBeHidden();
+  // Focus goes back where it was: the list, from the row click.
+  await expect(page.getByRole("listbox", { name: /conversations$/ })).toBeFocused();
   expect(await highlights()).toEqual({ all: [], current: [] });
 });
