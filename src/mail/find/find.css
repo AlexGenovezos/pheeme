@@ -1,0 +1,40 @@
+/* Find in conversation: a bar over the reading pane's top right corner (FindBar.tsx). */
+
+.find-bar {
+  position: absolute;
+  z-index: var(--z-popover);
+  top: var(--space-2);
+  right: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-0-5);
+  width: min(var(--find-bar-width), calc(100% - var(--space-8)));
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--color-pane-bg);
+  box-shadow: var(--shadow-popover);
+}
+
+.find-bar__input {
+  flex: 1;
+}
+
+/* Always there, so the field doesn't change width as the count appears. */
+.find-bar__count {
+  min-width: var(--find-count-width);
+  color: var(--color-foreground-subtle);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Matches in the conversation's own text; email frames get the same colors written into them. */
+::highlight(pheeme-find) {
+  background-color: var(--find-match-bg);
+  color: var(--find-match-foreground);
+}
+::highlight(pheeme-find-current) {
+  background-color: var(--find-match-current-bg);
+  color: var(--find-match-foreground);
+}
