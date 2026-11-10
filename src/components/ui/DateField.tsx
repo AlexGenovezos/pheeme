@@ -15,7 +15,7 @@ import {
 } from "react";
 import { cx } from "../../lib/utils";
 import { IconButton } from "./IconButton";
-import { PickerPopover } from "./Picker";
+import { focusOnPress, PickerPopover } from "./Picker";
 
 const DAY_MS = 86_400_000;
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -179,6 +179,10 @@ export const DateField = forwardRef<HTMLButtonElement, DateFieldProps>(function 
         aria-activedescendant={open ? dayId(cursor) : undefined}
         disabled={disabled}
         className={cx("ui-field ui-date-field", className)}
+        onMouseDown={(e) => {
+          rest.onMouseDown?.(e);
+          focusOnPress(e);
+        }}
         onClick={() => (open ? close() : show())}
         onKeyDown={onKeyDown}
         onKeyUp={(e) => {

@@ -154,6 +154,27 @@ describe("Select", () => {
   });
 });
 
+test("pressing a Select or DateField focuses it, as WebKit won't for a button", () => {
+  render(
+    <>
+      <input aria-label="Title" />
+      <Select
+        aria-label="Repeat"
+        value="a"
+        onChange={() => {}}
+        options={[{ value: "a", label: "A" }]}
+      />
+      <DateField aria-label="Due" value="2026-11-13" onChange={() => {}} />
+    </>,
+  );
+  for (const name of ["Repeat", "Due"]) {
+    screen.getByLabelText("Title").focus();
+    // jsdom, like WebKit, doesn't move focus on a mousedown by itself.
+    fireEvent.mouseDown(screen.getByRole("combobox", { name }));
+    expect(screen.getByRole("combobox", { name })).toHaveFocus();
+  }
+});
+
 describe("DateField", () => {
   test("shows the date as Google does and picks a day with a click", () => {
     const h = harness("2026-11-13", (value, onChange) => (

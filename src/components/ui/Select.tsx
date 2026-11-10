@@ -15,6 +15,7 @@ import {
 import { cx } from "../../lib/utils";
 import {
   edge,
+  focusOnPress,
   isPrintable,
   Listbox,
   type ListOption,
@@ -166,6 +167,10 @@ export function Select<T>({
         aria-activedescendant={open && active >= 0 ? optionId(active) : undefined}
         disabled={disabled}
         className={cx("ui-field ui-select", className)}
+        onMouseDown={(e) => {
+          rest.onMouseDown?.(e);
+          focusOnPress(e);
+        }}
         onClick={() => (open ? close() : show(startAt))}
         onKeyDown={onKeyDown}
         // A Space that opened or chose mustn't also click the button (Firefox clicks on keyup).

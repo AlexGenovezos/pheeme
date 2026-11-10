@@ -6,6 +6,7 @@
 import { Check } from "lucide-react";
 import {
   type CSSProperties,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -22,6 +23,17 @@ import "./Picker.css";
 const GAP = 4;
 
 /** Whether an event target is inside a picker's popover (for outside-click handlers). */
+/**
+ * Mousedown on a picker's field: focus it ourselves. WebKit (macOS) doesn't focus a clicked
+ * button, so without this the field never gets its keys and the field before it (a task's
+ * title, which saves on blur) sees focus go nowhere.
+ */
+export function focusOnPress(e: MouseEvent<HTMLElement>) {
+  if (e.button !== 0 || e.currentTarget.matches(":disabled")) return;
+  e.preventDefault();
+  e.currentTarget.focus();
+}
+
 export const inPicker = (target: EventTarget | null) =>
   target instanceof Element && target.closest("[data-picker]") !== null;
 

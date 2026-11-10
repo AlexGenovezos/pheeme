@@ -426,12 +426,17 @@
   height: calc(100% - var(--calendar-event-inset));
   margin: var(--space-0) var(--space-0-5);
   padding: var(--space-0) var(--space-1) var(--space-0) var(--space-0);
-  border: var(--border-width) solid var(--color-accent);
+  /* An inner outline, not a border: the buttons inside get the chip's full height. */
+  box-shadow: inset 0 0 0 var(--border-width) var(--color-accent);
   border-radius: var(--radius-xs);
   background: var(--color-pane-bg);
   color: var(--color-foreground);
   font-size: var(--font-size-xs);
   line-height: var(--line-height-tight);
+}
+.task-chip .task-check {
+  height: 100%;
+  max-height: var(--control-height-sm);
 }
 .task-chip .task-check__ring {
   border-color: var(--color-accent);
@@ -456,7 +461,7 @@
   outline-offset: var(--focus-ring-offset);
 }
 .task-chip--done {
-  border-color: var(--color-border);
+  box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
 }
 .task-chip--done .task-chip__title {
   color: var(--color-foreground-muted);
