@@ -86,6 +86,20 @@ pub async fn modify_threads(
         .await?)
 }
 
+/// Mark every unread conversation in one inbox tab of an account read (`category` is the
+/// tab's `CATEGORY_*` id; `CATEGORY_PERSONAL` is Primary).
+#[tauri::command]
+pub async fn mark_inbox_tab_read(
+    state: State<'_, AppState>,
+    account_id: String,
+    category: String,
+) -> Result<(), CommandError> {
+    Ok(state
+        .mail
+        .mark_inbox_tab_read(&account_id, &category)
+        .await?)
+}
+
 #[tauri::command]
 pub async fn trash_threads(
     state: State<'_, AppState>,

@@ -10,6 +10,7 @@ import {
   type ComposeMode,
   getThread,
   type InboxThread,
+  markInboxTabRead,
   modifyThreads,
   type SavedRules,
   type ThreadDetail,
@@ -836,4 +837,16 @@ export function closeConversation(): void {
   const open = ui().openThread;
   if (open !== null) ui().setCursor(open);
   ui().setOpenThread(null);
+}
+
+/**
+ * Mark every unread conversation in one inbox tab of an account read (`category`: `CATEGORY_*`), including
+ * mail not downloaded yet. The cache changes at once and its `sync:messages_updated` reloads the list and counts.
+ */
+export async function markTabRead(accountId: string, category: string) {
+  try {
+    await markInboxTabRead(accountId, category);
+  } catch (e) {
+    toast({ title: toCommandError(e).message, tone: "danger" });
+  }
 }

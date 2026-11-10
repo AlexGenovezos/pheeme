@@ -430,6 +430,9 @@ export const modifyThreads = (
   add: string[],
   remove: string[],
 ) => invoke<void>("modify_threads", { accountId, threadIds, add, remove });
+/** Marks every unread conversation in one inbox tab read (`category`: `CATEGORY_*`; Primary is `CATEGORY_PERSONAL`), including mail not downloaded yet. */
+export const markInboxTabRead = (accountId: string, category: string) =>
+  invoke<void>("mark_inbox_tab_read", { accountId, category });
 export const trashThreads = (accountId: string, threadIds: string[]) =>
   invoke<void>("trash_threads", { accountId, threadIds });
 /** Saves an attachment into the Downloads folder and resolves to the file's absolute path. */

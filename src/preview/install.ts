@@ -334,6 +334,16 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
         }
       });
     },
+    mark_inbox_tab_read: (args) => {
+      const accountId = String(args?.accountId);
+      const category = String(args?.category);
+      const ids = threadsIn(threads, "INBOX", category, [accountId], hiddenTabs)
+        .filter((t) => hasLabel(t, "UNREAD"))
+        .map((t) => t.id);
+      changeThreads({ accountId, threadIds: ids }, (t) =>
+        t.messages.forEach((m) => (m.unread = false)),
+      );
+    },
     trash_threads: (args) =>
       changeThreads(args, (t) => {
         t.labelIds = [...t.labelIds.filter((l) => l !== "INBOX"), "TRASH"];

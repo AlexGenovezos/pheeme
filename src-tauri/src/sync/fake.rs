@@ -664,6 +664,24 @@ impl FakeGmail {
         }
     }
 
+    /// The search operators the app sends: `in:inbox`, `is:unread`, `category:x` (and
+    /// `-category:x`) and `before:<epoch seconds>`. Other terms match everything.
+    fn operator_matches(m: &FakeMsg, term: &str) -> bool {
+        let (negated, term) = match term.strip_prefix('-') {
+            Some(rest) => (true, rest),
+            None => (false, term),
+        };
+        let has = |label: &str| m.labels.iter().any(|l| l == label);
+        let hit = match term.split_once(':') {
+            Some(("in", "inbox")) => has("INBOX"),
+            Some(("is", "unread")) => has("UNREAD"),
+            Some(("category", name)) => has(&format!("CATEGORY_{}", name.to_uppercase())),
+            Some(("before", secs)) => secs.parse::<i64>().is_ok_and(|s| m.date_ms < s * 1000),
+            _ => return true,
+        };
+        hit != negated
+    }
+
     fn page<T: Clone>(items: &[T], token: Option<&str>, size: usize) -> (Vec<T>, Option<String>) {
         let start: usize = token.and_then(|t| t.parse().ok()).unwrap_or(0);
         let end = (start + size).min(items.len());
@@ -974,6 +992,10 @@ impl MailApi for FakeGmail {
                     .filter(|m| {
                         let text = format!("{} {}", m.subject, m.body).to_lowercase();
                         words.iter().all(|w| text.contains(w.as_str()))
+                    })
+                    .filter(|m| {
+                        q.split_whitespace()
+                            .all(|term| Self::operator_matches(m, term))
                     })
                     .collect()
             }
