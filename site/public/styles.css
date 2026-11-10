@@ -40,13 +40,25 @@
 
   --radius-lg: 18px;
   --radius-sm: 8px;
+
+  /* gradients: a night sky with brass and dawn light in it */
+  --brass: linear-gradient(180deg, #f8e2a8 0%, var(--gold) 48%, #d9a24c 100%);
+  --rule: linear-gradient(90deg, transparent, var(--line) 18%, #3a5aa8 50%, var(--line) 82%, transparent);
+  --rule-dawn: linear-gradient(90deg, transparent, rgba(74, 141, 242, .55) 25%, rgba(232, 197, 121, .8) 50%, rgba(74, 141, 242, .55) 75%, transparent);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { color-scheme: dark; scroll-behavior: smooth; }
+html { color-scheme: dark; scroll-behavior: smooth; min-height: 100%; } /* the body's gradients span at least the viewport */
 body {
   margin: 0;
-  background: var(--midnight);
+  background-color: var(--midnight);
+  /* dawn at the foot of the page, and the sky over the hero: a blue aurora at the top left, fading into midnight */
+  background-image:
+    radial-gradient(64rem 30rem at 50% calc(100% + 8rem), rgba(232, 197, 121, .2), rgba(74, 141, 242, .1) 55%, transparent 75%),
+    radial-gradient(58rem 38rem at 6% -6%, rgba(74, 141, 242, .30), transparent 70%),
+    radial-gradient(44rem 30rem at 62% 4%, rgba(103, 92, 220, .16), transparent 70%),
+    linear-gradient(180deg, #0c2058 0, var(--midnight) 60rem);
+  background-repeat: no-repeat;
   color: var(--paper);
   font: 400 1.0625rem/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -64,9 +76,10 @@ kbd {
   height: 1.9em;
   padding: 0 0.45em;
   border-radius: 6px;
-  background: var(--panel);
+  background: linear-gradient(180deg, #1a3a85, var(--panel) 70%);
   border: 1px solid var(--line);
-  border-bottom-width: 2px;
+  border-top-color: #33539f;
+  border-bottom: 2px solid #081a44;
   color: var(--paper);
 }
 :focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; border-radius: 4px; }
@@ -83,12 +96,17 @@ kbd {
   padding: .95rem 1.4rem;
   border-radius: 999px;
   text-decoration: none;
-  transition: background-color .15s, border-color .15s, color .15s;
+  transition: background-color .15s, border-color .15s, color .15s, filter .15s, box-shadow .15s;
 }
-.btn-gold { background: var(--gold); color: var(--midnight); }
-.btn-gold:hover { background: #f3d690; }
-.btn-ghost { border: 1px solid var(--line); color: var(--paper); }
-.btn-ghost:hover { border-color: var(--muted); }
+/* polished brass, like Pheme's trumpet */
+.btn-gold {
+  background: var(--brass);
+  color: var(--midnight);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), inset 0 -1px 0 rgba(120, 72, 10, .35), 0 10px 28px -12px rgba(232, 197, 121, .75);
+}
+.btn-gold:hover { filter: brightness(1.07) saturate(1.05); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), inset 0 -1px 0 rgba(120, 72, 10, .35), 0 14px 34px -12px rgba(232, 197, 121, .9); }
+.btn-ghost { border: 1px solid var(--line); color: var(--paper); background: linear-gradient(180deg, rgba(74, 141, 242, .16), rgba(74, 141, 242, .02)); }
+.btn-ghost:hover { border-color: var(--muted); background-color: rgba(74, 141, 242, .08); }
 .btn-sm { padding: .6rem 1rem; font-size: .95rem; }
 .gh { width: 1.05em; height: 1.05em; }
 
@@ -113,6 +131,12 @@ kbd {
   font-weight: 650;
   line-height: .92;
   letter-spacing: -0.025em;
+  /* moonlit: white at the top, cooling to periwinkle */
+  background: linear-gradient(180deg, #ffffff 20%, #c3d3fb 75%, #9fb6f2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  padding-bottom: .08em; /* keeps descenders inside the clipped background */
 }
 .hero .lede { margin-top: 1.75rem; }
 .lede { font-size: var(--t-1); line-height: 1.45; color: var(--paper); max-width: 34ch; }
@@ -121,7 +145,15 @@ kbd {
 .fine a { color: var(--paper); }
 
 /* the stamp + postmark */
-.post { position: relative; justify-self: center; width: min(430px, 100%); }
+.post { position: relative; isolation: isolate; justify-self: center; width: min(430px, 100%); }
+/* warm light behind the stamp, as if it's caught in a sunrise */
+.post::before {
+  content: ""; position: absolute; z-index: -1; inset: -22% -30%;
+  background:
+    radial-gradient(closest-side, rgba(232, 197, 121, .28), rgba(217, 168, 71, .08) 55%, transparent),
+    radial-gradient(closest-side at 30% 70%, rgba(74, 141, 242, .22), transparent);
+  pointer-events: none;
+}
 .stamp { display: block; width: 100%; height: auto; transform: rotate(-3.5deg); filter: drop-shadow(0 30px 50px rgba(0, 0, 0, .45)); }
 .postmark { position: absolute; left: 62%; top: 68%; width: 150%; height: auto; overflow: visible; pointer-events: none; }
 .postmark g { fill: none; stroke: var(--postmark); stroke-width: 4; }
@@ -133,11 +165,14 @@ kbd {
 /* ---------- demo window ---------- */
 .window {
   position: relative;
-  background: var(--deep);
-  border: 1px solid var(--line);
+  /* a gradient rim: blue light from the top left, brass at the bottom right */
+  background:
+    linear-gradient(var(--deep), var(--deep)) padding-box,
+    linear-gradient(135deg, rgba(110, 165, 255, .9), var(--line) 35%, var(--line) 65%, rgba(232, 197, 121, .85)) border-box;
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  box-shadow: 0 40px 120px -40px rgba(23, 60, 146, .9);
+  box-shadow: 0 40px 120px -40px rgba(41, 92, 214, .95), 0 30px 90px -50px rgba(232, 197, 121, .45);
   outline: none;
 }
 .window:focus-within { border-color: var(--gold); }
@@ -155,6 +190,7 @@ kbd {
   display: flex; align-items: center; justify-content: space-between; gap: .75rem 1.5rem; flex-wrap: wrap;
   padding: .8rem 1rem;
   border-top: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(23, 60, 146, .35), transparent);
   font-size: .88rem;
   color: var(--muted);
 }
@@ -180,7 +216,7 @@ kbd {
 .term {
   margin: 1.5rem 0 0;
   padding: 1.1rem 1.2rem;
-  background: var(--deep);
+  background: linear-gradient(160deg, #12286a, var(--deep) 55%, #0a173d);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   font: 400 .78rem/1.9 var(--mono);
@@ -226,6 +262,18 @@ kbd {
   letter-spacing: -0.015em;
   max-width: 24ch;
 }
+/* a violet-to-blue glow that holds still behind the statement while it scrolls by,
+   faded at the section's top and bottom so it has no edges */
+.scene-words { position: relative; isolation: isolate; }
+.scene-words::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(42rem 28rem at 88% 55%, rgba(103, 92, 220, .22), transparent 70%),
+    radial-gradient(36rem 26rem at 12% 40%, rgba(74, 141, 242, .14), transparent 70%);
+  background-attachment: fixed;
+  -webkit-mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+  mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+}
 .motion .scene-words { height: 230vh; }
 .motion .statement .w { opacity: clamp(.16, calc(var(--p, 1) * (var(--n) + 4) - var(--i)), 1); }
 
@@ -242,7 +290,12 @@ kbd {
 .cap { font-size: clamp(1.6rem, 3.2vw, 2.75rem); font-stretch: 85%; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; max-width: 17ch; }
 .cap + .cap { margin-top: 1.5rem; }
 .motion .cap { grid-area: 1 / 1; margin: 0; opacity: var(--o, 0); transform: translateY(calc((1 - var(--o, 0)) * 28px)); }
-.lens { margin: 0; justify-self: center; width: min(100%, calc(74svh * 600 / 792)); }
+.lens { position: relative; isolation: isolate; margin: 0; justify-self: center; width: min(100%, calc(74svh * 600 / 792)); }
+.lens::before {
+  content: ""; position: absolute; z-index: -1; inset: -18% -28%;
+  background: radial-gradient(closest-side, rgba(74, 141, 242, .32), rgba(103, 92, 220, .1) 60%, transparent);
+  pointer-events: none;
+}
 .lens-frame { aspect-ratio: 600 / 792; overflow: hidden; border-radius: 6px; }
 .zoom { display: block; width: 100%; height: 100%; transform-origin: 27% 23%; transform: scale(var(--z, 1)); will-change: transform; }
 .lens figcaption { margin-top: .9rem; font-size: .85rem; color: var(--muted); }
@@ -301,7 +354,8 @@ kbd {
 .closer {
   display: flex; flex-direction: column; align-items: center; text-align: center;
   padding: clamp(4rem, 8vw, 6rem) 1.5rem;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid;
+  border-image: var(--rule-dawn) 1;
 }
 .closer img { width: 88px; height: auto; }
 .closer h2 { margin-top: 1.5rem; font-size: var(--t-3); font-stretch: 80%; line-height: 1; letter-spacing: -0.02em; }
@@ -310,7 +364,8 @@ kbd {
 .foot {
   display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
   padding-block: 2rem 2.5rem;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid;
+  border-image: var(--rule) 1;
   color: var(--muted); font-size: .92rem;
 }
 .foot img { height: 26px; width: auto; opacity: .85; }
@@ -324,7 +379,7 @@ kbd {
 .legal { max-width: 72ch; padding-block: 3rem 5rem; }
 .legal h1 { font-size: var(--t-3); font-stretch: 80%; line-height: 1; letter-spacing: -0.02em; }
 .legal .updated { margin-top: .9rem; color: var(--muted); font-family: var(--mono); font-size: .8rem; }
-.legal .summary { margin-top: 2rem; padding: 1.25rem 1.5rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--deep); }
+.legal .summary { margin-top: 2rem; padding: 1.25rem 1.5rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: linear-gradient(150deg, var(--panel), var(--deep) 60%); }
 .legal .summary ul { margin: .5rem 0 0; padding-left: 1.2rem; }
 .legal h2 { margin-top: 2.75rem; font-size: var(--t-1); }
 .legal h3 { margin-top: 1.5rem; font-size: 1.05rem; }
@@ -336,7 +391,7 @@ kbd {
 .legal strong { color: var(--paper); }
 
 /* ---------- changelog ---------- */
-.changelog .release { margin-top: 3rem; padding-top: 2.25rem; border-top: 1px solid var(--line); }
+.changelog .release { margin-top: 3rem; padding-top: 2.25rem; border-top: 1px solid; border-image: var(--rule) 1; }
 .changelog .release:first-child { border-top: 0; padding-top: 0; }
 .changelog .release h2 { margin-top: 0; font-size: var(--t-2); font-stretch: 80%; letter-spacing: -0.01em; }
 .changelog .release h2 a { color: var(--paper); text-decoration: none; }
