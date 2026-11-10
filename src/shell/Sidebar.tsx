@@ -64,6 +64,7 @@ import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import { useSettingsStore } from "../settings/settingsStore";
 import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
+import { ModeSwitch } from "../calendar/ModeSwitch";
 import { Button } from "../components/ui/Button";
 import { describeShortcut } from "../keyboard/format";
 
@@ -671,6 +672,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   return (
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
+        <ModeSwitch />
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton
           label="Hide sidebar"
