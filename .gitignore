@@ -32,3 +32,4 @@ coverage
 # Playwright
 test-results/
 playwright-report/
+scripts/ui-score/out/
