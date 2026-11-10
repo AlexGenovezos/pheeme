@@ -129,6 +129,20 @@ describe("InviteCard", () => {
     await flush();
     expect(screen.getByRole("radio", { name: "No" })).toHaveAttribute("aria-checked", "true");
     expect(sent("calendar_events").length).toBeGreaterThan(dayReads);
+
+    // The clashing 1:1 is deleted (a local write: no new sync time); the day is read again.
+    expect(screen.getByText(/^Overlaps 1:1 Alex/)).toBeInTheDocument();
+    await act(async () => {
+      handlers.delete_calendar_event({
+        accountId: "acc-work",
+        calendarId: "avery@example.org",
+        eventId: "one-on-one",
+        scope: "this",
+      });
+    });
+    await flush();
+    await flush();
+    expect(screen.getByText("Nothing else at this time.")).toBeInTheDocument();
   });
 
   test("More options sends a note with the answer", async () => {

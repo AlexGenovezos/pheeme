@@ -58,10 +58,14 @@ type Load =
   | { kind: "ready"; invite: Invite | null }
   | { kind: "failed"; message: string };
 
-/** The message's invitation, read again when the account's calendar changes (an answer, a sync). */
-function useInvite(accountId: string, messageId: string): Load {
+/**
+ * The message's invitation, read again when the account's calendar changes (an answer, a sync), and
+ * `changes`: a count of every account's calendar changes, for the mini day view to read its day again.
+ */
+function useInvite(accountId: string, messageId: string): { load: Load; changes: number } {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [version, setVersion] = useState(0);
+  const [changes, setChanges] = useState(0);
   useEffect(() => {
     let live = true;
     getMessageInvite(accountId, messageId).then(
@@ -73,9 +77,10 @@ function useInvite(accountId: string, messageId: string): Load {
     };
   }, [accountId, messageId, version]);
   useEffect(() => {
-    // Any account's change can move the day around the invitation (and Mail doesn't otherwise follow
-    // calendar sync): read the accounts again, which also re-reads the mini day view.
+    // Any account's change can move the day around the invitation, and Mail doesn't otherwise follow
+    // calendar sync: count it, and read the accounts (access, Allow) again.
     const reread = (e: { payload: { accountId?: string } }) => {
+      setChanges((c) => c + 1);
       void useCalendarStore.getState().loadAccounts();
       if (!e.payload?.accountId || e.payload.accountId === accountId) setVersion((v) => v + 1);
     };
@@ -84,7 +89,7 @@ function useInvite(accountId: string, messageId: string): Load {
       scope.add(() => listen(name, reread)).catch(() => {});
     return () => scope.dispose();
   }, [accountId]);
-  return load;
+  return { load, changes };
 }
 
 /** Every account's calendars, read once in Mail (Calendar mode keeps them current itself). */
@@ -328,7 +333,7 @@ function AnswerRow({
 }
 
 /** The hours around the invitation: the user's events and the invitation (dashed), clashes named below. */
-function MiniDay({ event }: { event: CalendarEvent | null }) {
+function MiniDay({ event, changes }: { event: CalendarEvent | null; changes: number }) {
   const accounts = useCalendarStore((s) => s.accounts);
   const lookup = useCalendarLookup();
   const tz = displayZone(accounts);
@@ -336,10 +341,9 @@ function MiniDay({ event }: { event: CalendarEvent | null }) {
   const day = event ? startDay(event, tz) : null;
   const anyOn = accounts?.some((a) => a.access.status === "on") ?? false;
 
-  // Read the day again after every sync (the accounts' sync times change).
-  const synced = accounts?.map((a) => a.access.syncedAt).join() ?? null;
+  // Read the day again after any calendar change (`changes`).
   useEffect(() => {
-    if (!day || !anyOn || synced === null) return;
+    if (!day || !anyOn || changes < 0) return;
     const stale = new AbortController();
     const from = zonedMs(day, 0, tz);
     const to = zonedMs(addDays(day, 1), 0, tz);
@@ -348,7 +352,7 @@ function MiniDay({ event }: { event: CalendarEvent | null }) {
       () => !stale.signal.aborted && setEvents([]),
     );
     return () => stale.abort();
-  }, [day, tz, anyOn, synced]);
+  }, [day, tz, anyOn, changes]);
 
   const others = useMemo(
     () => (event ? (events ?? []).filter((e) => !isSameEvent(e, event)) : []),
@@ -483,7 +487,7 @@ export function InviteCard({
   compact?: boolean;
 }) {
   const { accountId, messageId } = pinned;
-  const load = useInvite(accountId, messageId);
+  const { load, changes } = useInvite(accountId, messageId);
   const accounts = useCalendarAccounts();
   const tz = displayZone(accounts);
   const invite = load.kind === "ready" ? load.invite : null;
@@ -575,7 +579,7 @@ export function InviteCard({
       <AnswerRow invite={invite} accountId={accountId} compact={compact} />
       {!compact && (
         <>
-          <MiniDay event={event} />
+          <MiniDay event={event} changes={changes} />
           <div className="invite-card__footer">
             <Button
               size="sm"
