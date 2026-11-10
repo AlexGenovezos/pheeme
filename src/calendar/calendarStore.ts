@@ -1,6 +1,7 @@
 // Calendar mode state: Mail or Calendar in front, the view and the day it shows, every account's
-// calendars, and the events of the days on screen. Mode and view survive a restart; the day doesn't
-// (Calendar opens on today, as the website does).
+// calendars, and the events of the months around the days on screen, read from the local cache and
+// kept, so changing the view or the day draws at once. Mode and view survive a restart; the day
+// doesn't (Calendar opens on today, as the website does).
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { subscribeAll } from "../lib/subscriptions";
@@ -13,8 +14,9 @@ import {
   setCalendarHidden,
   toCommandError,
 } from "../lib/tauri";
-import { dateOf, isValidZone, systemZone } from "./dates";
-import { type CalendarView, daysRange, shiftAnchor, visibleDays } from "./views";
+import { useTasksStore } from "../tasks/tasksStore";
+import { addDays, dateOf, isValidZone, systemZone } from "./dates";
+import { type CalendarView, daysRange, shiftAnchor, visibleDays, windowDays } from "./views";
 
 export type AppMode = "mail" | "calendar";
 
@@ -80,15 +82,31 @@ export interface OpenEvent {
   anchor: HTMLElement | null;
 }
 
+/** A UTC ms range `[from, to)` in a zone. */
+export interface EventsRange {
+  from: number;
+  to: number;
+  tz: string;
+}
+
+const covers = (have: EventsRange | null, want: EventsRange) =>
+  have !== null && have.tz === want.tz && have.from <= want.from && have.to >= want.to;
+
+/** A view and the day it's built around. */
+interface Place {
+  view: CalendarView;
+  anchor: string;
+}
+
 interface CalendarState extends Prefs {
   /** The day the view is built around. */
   anchor: string;
   /** `null` until the first load. */
   accounts: CalendarAccount[] | null;
-  /** The events of `eventsFor`'s days; `null` until the first load. */
+  /** The events of `eventsFor` (more than the days on screen); `null` until the first load. */
   events: CalendarEvent[] | null;
-  /** The range the events were read for (`from:to:zone`). */
-  eventsFor: string | null;
+  /** The range the events were read for: the months around the days on screen. */
+  eventsFor: EventsRange | null;
   loadError: string | null;
   open: OpenEvent | null;
   /** The "Go to date" dialog is open. */
@@ -109,7 +127,7 @@ interface CalendarState extends Prefs {
   /** Pin an email beside the calendar (null unpins it), and scroll Day and Week to `reveal` minutes. */
   pin(pinned: PinnedEmail | null, reveal?: number | null): void;
   loadAccounts(): Promise<void>;
-  /** Read the events of the days on screen (again). */
+  /** Read the events around the days on screen (again). */
   loadEvents(): Promise<void>;
   setHidden(accountId: string, calendarId: string, hidden: boolean): Promise<void>;
   /** Reload on calendar sync events. Resolves to the unsubscribe function. */
@@ -124,10 +142,71 @@ export function screenDays(s: Pick<CalendarState, "view" | "anchor" | "accounts"
 
 let accountsTicket = 0;
 let eventsTicket = 0;
+/** Where the calendar is going while it waits for the events there (they weren't in memory). */
+let pending: Place | null = null;
 
 export const useCalendarStore = create<CalendarState>((set, get) => {
   const prefs = readPrefs();
-  const save = () => writePrefs({ mode: get().mode, view: get().view });
+  const save = (view = get().view) => writePrefs({ mode: get().mode, view });
+  /** The place on screen, or the one it's on its way to. */
+  const target = (): Place => pending ?? { view: get().view, anchor: get().anchor };
+
+  /**
+   * Show `place`. Its events are read with those of the months either side and kept: when the
+   * days are already in memory it shows at once (and reads the new months in the background);
+   * otherwise it stays where it is until they're read, then shows with them, never half-filled.
+   * `reload` reads the events again even when they're in memory (sync, a write).
+   */
+  const show = async (place: Place, reload: boolean) => {
+    const ticket = ++eventsTicket;
+    const s = get();
+    const tz = displayZone(s.accounts);
+    const weekStart = weekStartOf(s.accounts);
+    const screen = { ...daysRange(visibleDays(place.view, place.anchor, weekStart), tz), tz };
+    const around = windowDays(place.anchor, weekStart);
+    const want = { ...daysRange([around.first, around.last], tz), tz };
+    const ready = covers(s.eventsFor, screen);
+    if (ready) {
+      pending = null;
+      if (place.view !== s.view || place.anchor !== s.anchor) set(place);
+    } else pending = place;
+    const have = s.eventsFor;
+    const moved = !have || have.from !== want.from || have.to !== want.to || have.tz !== tz;
+    // Dated tasks come along for the same days, so a new view shows them in its first frame too.
+    const tasks = useTasksStore.getState();
+    const end = addDays(around.last, 1);
+    const tasksMoved = tasks.datedFor !== `${around.first}:${end}`;
+    if (ready && !moved && !reload && !tasksMoved) return;
+
+    const dated = tasksMoved ? tasks.loadDated(around.first, end) : null;
+    try {
+      const [events] = await Promise.all([getCalendarEvents(want.from, want.to, tz), dated]);
+      if (ticket !== eventsTicket) return;
+      pending = null;
+      // The open popover's event may have moved or gone; keep it only while it's still there.
+      const open = get().open;
+      const still =
+        open &&
+        events.find(
+          (e) =>
+            e.accountId === open.event.accountId &&
+            e.calendarId === open.event.calendarId &&
+            e.id === open.event.id,
+        );
+      set({
+        ...(ready ? {} : place),
+        events,
+        eventsFor: want,
+        loadError: null,
+        open: open && still ? { ...open, event: still } : null,
+      });
+    } catch (e) {
+      if (ticket !== eventsTicket) return;
+      pending = null;
+      set({ ...(ready ? {} : place), loadError: toCommandError(e).message });
+    }
+  };
+
   return {
     ...prefs,
     anchor: dateOf(Date.now(), systemZone()),
@@ -147,17 +226,20 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
     },
     toggleMode: () => get().setMode(get().mode === "mail" ? "calendar" : "mail"),
     setView: (view) => {
-      set({ view, open: null });
-      save();
-      void get().loadEvents();
+      set({ open: null });
+      save(view);
+      void show({ view, anchor: target().anchor }, false);
     },
     goTo: (date, view) => {
-      set({ anchor: date, open: null, ...(view ? { view } : {}) });
-      if (view) save();
-      return get().loadEvents();
+      set({ open: null });
+      if (view) save(view);
+      return show({ view: view ?? target().view, anchor: date }, false);
     },
     today: () => void get().goTo(dateOf(Date.now(), displayZone(get().accounts))),
-    step: (dir) => void get().goTo(shiftAnchor(get().view, get().anchor, dir)),
+    step: (dir) => {
+      const { view, anchor } = target();
+      void get().goTo(shiftAnchor(view, anchor, dir));
+    },
     openEvent: (open) => set({ open }),
     setGoToOpen: (goToOpen) => set({ goToOpen }),
     pin: (pinned, reveal = null) => set({ pinned, reveal }),
@@ -178,34 +260,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
       }
     },
 
-    loadEvents: async () => {
-      const { tz, days } = screenDays(get());
-      const { from, to } = daysRange(days, tz);
-      const key = `${from}:${to}:${tz}`;
-      const ticket = ++eventsTicket;
-      try {
-        const events = await getCalendarEvents(from, to, tz);
-        if (ticket !== eventsTicket) return;
-        // The open popover's event may have moved or gone; keep it only while it's still there.
-        const open = get().open;
-        const still =
-          open &&
-          events.find(
-            (e) =>
-              e.accountId === open.event.accountId &&
-              e.calendarId === open.event.calendarId &&
-              e.id === open.event.id,
-          );
-        set({
-          events,
-          eventsFor: key,
-          loadError: null,
-          open: open && still ? { ...open, event: still } : null,
-        });
-      } catch (e) {
-        if (ticket === eventsTicket) set({ loadError: toCommandError(e).message });
-      }
-    },
+    loadEvents: () => show(target(), true),
 
     setHidden: async (accountId, calendarId, hidden) => {
       const patch = (value: boolean) =>
