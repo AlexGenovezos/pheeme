@@ -195,18 +195,27 @@
   padding-left: calc(var(--icon-size-sm) + var(--space-0-5));
 }
 
+/* The button is a full 24 px target; the ring inside it is what shows. */
 .task-check {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: var(--task-check-size);
-  height: var(--task-check-size);
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  margin: calc((var(--task-check-size) - var(--control-height-sm)) / 2);
   padding: var(--space-0);
-  border: var(--focus-ring-width) solid var(--color-foreground-subtle);
+  border: none;
   border-radius: var(--radius-full);
   background: transparent;
   color: transparent;
+}
+.task-check__ring {
+  display: inline-flex;
+  width: var(--task-check-size);
+  height: var(--task-check-size);
+  border: var(--focus-ring-width) solid var(--color-foreground-subtle);
+  border-radius: var(--radius-full);
 }
 .task-check svg {
   width: 100%;
@@ -215,19 +224,26 @@
   stroke-width: 3;
 }
 .task-check:hover {
-  border-color: var(--color-accent);
   color: var(--color-accent);
 }
+.task-check:hover .task-check__ring {
+  border-color: var(--color-accent);
+}
 .task-check[aria-checked="true"] {
+  color: var(--color-accent-foreground);
+}
+.task-check[aria-checked="true"] .task-check__ring {
   border-color: var(--color-accent);
   background: var(--color-accent);
-  color: var(--color-accent-foreground);
 }
 .task-check:focus-visible {
   outline: var(--focus-ring-width) solid var(--color-focus-border);
-  outline-offset: var(--focus-ring-offset);
+  outline-offset: var(--focus-ring-inset);
 }
 .task-check--sm {
+  margin: var(--space-0);
+}
+.task-check--sm .task-check__ring {
   width: var(--task-check-size-sm);
   height: var(--task-check-size-sm);
   border-width: var(--border-width);
@@ -248,7 +264,9 @@
   display: flex;
   flex: 1;
   flex-direction: column;
+  justify-content: center;
   align-items: flex-start;
+  min-height: var(--control-height-sm);
   gap: var(--space-0-5);
   min-width: var(--space-0);
   padding: var(--space-0);
@@ -407,11 +425,11 @@
 .task-chip {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-0);
   min-width: var(--space-0);
   height: calc(100% - var(--calendar-event-inset));
   margin: var(--space-0) var(--space-0-5);
-  padding: var(--space-0) var(--space-1);
+  padding: var(--space-0) var(--space-1) var(--space-0) var(--space-0);
   border: var(--border-width) solid var(--color-accent);
   border-radius: var(--radius-xs);
   background: var(--color-pane-bg);
@@ -419,11 +437,12 @@
   font-size: var(--font-size-xs);
   line-height: var(--line-height-tight);
 }
-.task-chip .task-check {
+.task-chip .task-check__ring {
   border-color: var(--color-accent);
 }
 .task-chip__title {
   flex: 1;
+  align-self: stretch;
   min-width: var(--space-0);
   overflow: hidden;
   padding: var(--space-0);

@@ -83,14 +83,24 @@ function MiniMonth() {
         <tbody>
           {weeks.map((week) => (
             <tr key={week[0]}>
-              {week.map((d) => (
-                <td key={d}>
+              {week.map((d, i) => (
+                <td
+                  key={d}
+                  className={cx(
+                    onScreen.has(d) && "mini-month__cell--shown",
+                    onScreen.has(d) &&
+                      !onScreen.has(week[i - 1] ?? "") &&
+                      "mini-month__cell--shown-start",
+                    onScreen.has(d) &&
+                      !onScreen.has(week[i + 1] ?? "") &&
+                      "mini-month__cell--shown-end",
+                  )}
+                >
                   <button
                     type="button"
                     className={cx(
                       "mini-month__day",
                       d.slice(0, 7) !== month.slice(0, 7) && "mini-month__day--other",
-                      onScreen.has(d) && "mini-month__day--shown",
                       d === today && "mini-month__day--today",
                     )}
                     aria-current={d === today ? "date" : undefined}

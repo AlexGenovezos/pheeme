@@ -6,7 +6,7 @@ import { addDays, daysBetween, wallClock, zonedMs } from "./dates";
 const DAY_MINUTES = 24 * 60;
 const DAY_MS = DAY_MINUTES * 60_000;
 /** Events shorter than this still take this much room, so their titles fit and overlaps show. */
-export const MIN_EVENT_MINUTES = 20;
+export const MIN_EVENT_MINUTES = 30;
 
 /** Days an event covers: `[first, last]` inclusive. */
 export function eventDays(e: CalendarEvent, tz: string): { first: string; last: string } | null {

@@ -11,7 +11,7 @@ import {
 /** Pane geometry in CSS px. The shell writes these into CSS variables. */
 export const PANE = {
   sidebarDefault: 220,
-  sidebarMin: 180,
+  sidebarMin: 200,
   sidebarMax: 320,
   listDefault: 380,
   listMin: 280,

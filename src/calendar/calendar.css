@@ -86,12 +86,18 @@
 }
 .mini-month__title {
   flex: 1;
+  min-width: var(--space-0);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
 }
 .mini-month__grid {
   width: 100%;
-  border-collapse: collapse;
+  /* Separate, so the band's rounded ends (border-radius on cells) draw. */
+  border-collapse: separate;
+  border-spacing: var(--space-0);
   table-layout: fixed;
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
@@ -105,9 +111,23 @@
   padding: var(--space-0);
   text-align: center;
 }
+/* The days on screen share one band behind their circles, rounded at its ends. */
+.mini-month__cell--shown {
+  background: var(--color-control-active-bg);
+}
+.mini-month__cell--shown-start {
+  border-top-left-radius: var(--radius-full);
+  border-bottom-left-radius: var(--radius-full);
+}
+.mini-month__cell--shown-end {
+  border-top-right-radius: var(--radius-full);
+  border-bottom-right-radius: var(--radius-full);
+}
 .mini-month__day {
-  width: var(--calendar-mini-day-size);
-  height: var(--calendar-mini-day-size);
+  display: block;
+  width: min(var(--calendar-mini-day-size), 100%);
+  aspect-ratio: 1;
+  margin: var(--space-0) auto;
   padding: var(--space-0);
   border: none;
   border-radius: var(--radius-full);
@@ -121,9 +141,6 @@
 }
 .mini-month__day--other {
   color: var(--color-foreground-subtle);
-}
-.mini-month__day--shown {
-  background: var(--color-control-active-bg);
 }
 .mini-month__day--today,
 .mini-month__day--today:hover {
@@ -497,17 +514,21 @@
   background: transparent;
 }
 
-/* Declined: struck through and dimmed. */
-.cal-event--declined {
-  opacity: var(--calendar-declined-opacity);
-}
+/* Declined: struck through, in muted ink on the pane (not faded: that took the text under 4.5:1). */
 .cal-event--declined .cal-event__title {
   text-decoration: line-through;
+}
+.cal-event--declined,
+.cal-event--declined .cal-event__time {
+  color: var(--color-foreground-muted);
 }
 .cal-event--declined:not(.cal-event--dot) {
   border-color: var(--cal-event-bg);
   background: var(--color-pane-bg);
-  color: var(--color-foreground);
+}
+.cal-event--declined .cal-event__dot {
+  border: var(--border-width) solid var(--cal-event-bg);
+  background: transparent;
 }
 
 /* Maybe: a lighter fill. */

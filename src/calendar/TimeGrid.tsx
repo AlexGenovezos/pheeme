@@ -16,7 +16,7 @@ import { useNow } from "./useNow";
 /** Height of one hour, in px. */
 export const HOUR_PX = 48;
 /** Height of one row in the all-day band, in px. */
-export const BAND_ROW_PX = 24;
+export const BAND_ROW_PX = 26;
 /** Blocks this short (minutes) show title and time on one line. */
 const COMPACT_MINUTES = 45;
 
@@ -170,8 +170,11 @@ export function TimeGrid({
                       top: (b.start / 60) * HOUR_PX,
                       height: (shown / 60) * HOUR_PX,
                       left: `${(b.column / b.columns) * 100}%`,
-                      // A sliver stays free on the right, for clicking the grid behind.
-                      width: `calc(${(b.span / b.columns) * 100}% - var(--space-2))`,
+                      // A sliver stays free at the column's right edge, for clicking the grid
+                      // behind; events side by side keep only a hairline gap between them.
+                      width: `calc(${(b.span / b.columns) * 100}% - ${
+                        b.column + b.span === b.columns ? "var(--space-2)" : "var(--space-0-5)"
+                      })`,
                     }}
                   />
                 );

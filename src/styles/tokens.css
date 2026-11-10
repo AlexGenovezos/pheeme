@@ -99,9 +99,10 @@
   --code-digit-height: 34px;
   --divider-hit-area: 7px;
   --divider-hit-offset: -3px;
-  /* Space the macOS traffic lights occupy (trafficLightPosition x = 16 in tauri.conf.json;
-     its y = 24 centres the lights on --titlebar-height, so change them together). */
-  --traffic-light-inset: 76px;
+  /* Space the macOS traffic lights occupy, plus 12 px clear of them: on macOS 26+ the lights run
+     from x 16 to 76 (trafficLightPosition x = 16 in tauri.conf.json; its y = 24 centres them on
+     --titlebar-height, so change them together). */
+  --traffic-light-inset: 88px;
   --menu-min-width: 200px;
   --menu-max-width: 320px;
   --palette-width: 560px;
@@ -139,13 +140,12 @@
   --calendar-goto-width: 360px;
   --calendar-goto-offset-top: 18vh;
   --calendar-guest-list-max-height: 168px;
-  --calendar-declined-opacity: 0.55;
   /* Mail's invite card: its mini day view, and the email pinned beside the calendar. */
   --invite-mini-day-height: 168px;
   --invite-mini-gutter-width: 52px;
   --pinned-email-width: 320px;
   /* Tasks: the panel at the right edge, its rail, and the tick-off circle. */
-  --tasks-panel-width: 340px;
+  --tasks-panel-width: 300px;
   --tasks-rail-width: 44px;
   --task-check-size: 18px;
   --task-check-size-sm: 14px;

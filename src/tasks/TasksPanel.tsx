@@ -636,7 +636,9 @@ function TaskRow({
         className="task-check"
         onClick={() => void store().setCompleted(task, !task.completed)}
       >
-        <Check aria-hidden="true" />
+        <span className="task-check__ring">
+          <Check aria-hidden="true" />
+        </span>
       </button>
       <button
         type="button"
@@ -745,7 +747,9 @@ function TaskEditor({
         void save(!task);
       }}
     >
-      <span className="task-check task-check--placeholder" aria-hidden="true" />
+      <span className="task-check task-check--placeholder" aria-hidden="true">
+        <span className="task-check__ring" />
+      </span>
       <div className="task-editor__fields">
         <input
           autoFocus

@@ -42,7 +42,9 @@ export function TaskChip({ task, style }: { task: Task; style: CSSProperties }) 
           void store().setCompleted(task, !task.completed);
         }}
       >
-        <Check aria-hidden="true" />
+        <span className="task-check__ring">
+          <Check aria-hidden="true" />
+        </span>
       </button>
       <button
         type="button"
