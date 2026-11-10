@@ -32,13 +32,28 @@ async function openEvent(target: EventTarget) {
   calendar.setMode("calendar");
   try {
     // The first load moves the view to today, so let it finish before going to the event's day.
-    if (!calendar.accounts) await calendar.loadAccounts();
+    // Calendar's own mount starts a load too, and only the latest one lands: wait for the store.
+    if (!calendar.accounts) await firstCalendarLoad();
     const event = await getCalendarEventDetail(target.accountId, target.calendarId, target.eventId);
     await revealEvent(event);
   } catch (error) {
     // Deleted since the reminder: Calendar mode is still the right place to land.
     console.warn("Could not open the reminder's event", error);
   }
+}
+
+/** Resolves once calendar accounts are loaded (or the load failed), whichever load did it. */
+function firstCalendarLoad(): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (s: ReturnType<typeof useCalendarStore.getState>) =>
+      s.accounts !== null || s.loadError !== null;
+    const stop = useCalendarStore.subscribe((s) => {
+      if (!done(s)) return;
+      stop();
+      resolve();
+    });
+    void useCalendarStore.getState().loadAccounts();
+  });
 }
 
 function openThread(target: ThreadTarget) {

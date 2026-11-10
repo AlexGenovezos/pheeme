@@ -80,7 +80,13 @@ test("a reminder opens Calendar mode on the event's day with its popover open", 
     string,
     (args?: Record<string, unknown>) => unknown
   >;
-  mockIPC((command, args) => handlers[command]?.((args ?? {}) as Record<string, unknown>));
+  let accountReads = 0;
+  mockIPC((command, args) => {
+    // Calendar's mount reads accounts too; that later read answers last.
+    if (command === "calendar_accounts" && ++accountReads === 2)
+      return new Promise((resolve) => setTimeout(() => resolve(handlers[command]()), 50));
+    return handlers[command]?.((args ?? {}) as Record<string, unknown>);
+  });
   try {
     expect(
       openNotificationTarget({
@@ -91,10 +97,14 @@ test("a reminder opens Calendar mode on the event's day with its popover open", 
       }),
     ).toBe(true);
     expect(useCalendarStore.getState().mode).toBe("calendar");
+    void useCalendarStore.getState().loadAccounts(); // as CalendarScreen does when it mounts
     await waitFor(() => expect(useCalendarStore.getState().open?.event.id).toBe("design-review"));
     const { open, anchor, accounts: loaded } = useCalendarStore.getState();
     expect(anchor).toBe(dateOf(open!.event.start.ms!, displayZone(loaded)));
     expect(anchor).toBe("2026-11-12");
+    // Nothing moves it back to today once both reads are in.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(useCalendarStore.getState().anchor).toBe("2026-11-12");
   } finally {
     vi.useRealTimers();
   }
