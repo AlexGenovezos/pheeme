@@ -350,6 +350,10 @@
   font: inherit;
   font-size: var(--font-size-md);
 }
+.task-editor__title,
+.tasks-name-field {
+  height: var(--control-height-md);
+}
 .task-editor__notes {
   font-size: var(--font-size-sm);
   resize: vertical;

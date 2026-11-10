@@ -163,7 +163,13 @@ interface UiState extends PaneLayout, NavPrefs {
   setListWidth(width: number, available?: number): void;
   resetSidebarWidth(): void;
   resetListWidth(): void;
+  /** Show or hide the sidebar; with no room for it beside the content, open it over the content. */
   toggleSidebar(): void;
+  /** The window has no room for the sidebar beside the content (set by the shell on screen). */
+  sidebarSqueezed: boolean;
+  /** While squeezed: the sidebar is open over the content. */
+  sidebarPeek: boolean;
+  setSidebarSqueezed(squeezed: boolean): void;
   setListDensity(density: ListDensity): void;
   setReadingPane(on: boolean): void;
   /** Go to a mailbox: clears the open thread, highlight and selection. An account mailbox also becomes the active account. */
@@ -193,6 +199,21 @@ interface UiState extends PaneLayout, NavPrefs {
  * The row the keyboard acts on: the open conversation, or with the reading pane off and nothing open, the
  * highlighted row.
  */
+/**
+ * How the sidebar shows: beside the content, hidden, or over the content (there's no room for it
+ * beside the content, and it was opened). It never shrinks below its narrowest width.
+ */
+export const sidebarLayout = (
+  s: Pick<UiState, "sidebarCollapsed" | "sidebarSqueezed" | "sidebarPeek">,
+): "expanded" | "collapsed" | "overlay" =>
+  s.sidebarCollapsed
+    ? "collapsed"
+    : !s.sidebarSqueezed
+      ? "expanded"
+      : s.sidebarPeek
+        ? "overlay"
+        : "collapsed";
+
 export const focusedThread = (
   s: Pick<UiState, "readingPane" | "openThread" | "cursor">,
 ): ThreadKey | null => (s.readingPane || s.openThread !== null ? s.openThread : s.cursor);
@@ -260,7 +281,18 @@ export const useUiStore = create<UiState>((set, get) => {
     setListWidth: (w, available) => persist({ listWidth: clampList(w, available) }),
     resetSidebarWidth: () => persist({ sidebarWidth: PANE.sidebarDefault }),
     resetListWidth: () => persist({ listWidth: PANE.listDefault }),
-    toggleSidebar: () => persist({ sidebarCollapsed: !get().sidebarCollapsed }),
+    toggleSidebar: () => {
+      const s = get();
+      if (!s.sidebarSqueezed) persist({ sidebarCollapsed: !s.sidebarCollapsed });
+      else if (s.sidebarCollapsed) {
+        persist({ sidebarCollapsed: false });
+        set({ sidebarPeek: true });
+      } else set({ sidebarPeek: !s.sidebarPeek });
+    },
+    sidebarSqueezed: false,
+    sidebarPeek: false,
+    setSidebarSqueezed: (squeezed) =>
+      set((s) => ({ sidebarSqueezed: squeezed, sidebarPeek: squeezed && s.sidebarPeek })),
     setListDensity: (listDensity) => persist({ listDensity }),
     setReadingPane: (readingPane) => persist({ readingPane }),
     setMailbox: (ref) => {
@@ -344,6 +376,8 @@ export const useUiStore = create<UiState>((set, get) => {
 /** Test helper: reload persisted state from storage and reset navigation. */
 export function __resetUiStoreForTests() {
   useUiStore.setState({
+    sidebarSqueezed: false,
+    sidebarPeek: false,
     unreadMailboxes: {},
     ...readLayout(),
     ...readNavPrefs(),

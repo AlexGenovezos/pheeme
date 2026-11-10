@@ -161,6 +161,10 @@
   padding: var(--space-1) var(--space-4);
   overflow-y: auto;
 }
+/* The body scrolls; its rows keep their size instead of squeezing to fit a short window. */
+.cal-editor__body > * {
+  flex-shrink: 0;
+}
 .cal-editor__summary {
   height: var(--control-height-lg);
   font-size: var(--font-size-lg);

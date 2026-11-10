@@ -90,3 +90,9 @@
     transform: translateY(var(--enter-offset));
   }
 }
+
+/* A modal dialog has the screen: an offer that waits for an answer (the notifications prompt)
+   hides until it closes, so it can't sit over the dialog's buttons. Errors still show. */
+:root:has([role="dialog"][aria-modal="true"]) .ui-toast--waits {
+  visibility: hidden;
+}

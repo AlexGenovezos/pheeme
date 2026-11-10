@@ -12,8 +12,10 @@ import { createSubscriptionScope } from "../lib/subscriptions";
 import { type CalendarEvent, calendarSyncNow, setCalendarForeground } from "../lib/tauri";
 import { overlayTitleBar, dragRegion } from "../shell/chrome";
 import { Divider } from "../shell/Divider";
+import { useSidebarFit } from "../shell/sidebarFit";
+import { useWidth } from "../lib/useWidth";
 import { useAccountStore } from "../store/accountStore";
-import { PANE, useUiStore } from "../store/uiStore";
+import { PANE, sidebarLayout, useUiStore } from "../store/uiStore";
 import {
   AllowButton,
   CALENDAR_API_URL,
@@ -53,7 +55,7 @@ const VIEW_OPTIONS = [
 function Toolbar({ title }: { title: string }) {
   const view = useCalendarStore((s) => s.view);
   const accounts = useCalendarStore((s) => s.accounts);
-  const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const collapsed = useUiStore((s) => sidebarLayout(s) !== "expanded");
   const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
   const todayShortcut = useKeybinding("calendar.today", "t");
   const prevShortcut = useKeybinding("calendar.previous", "k");
@@ -75,6 +77,7 @@ function Toolbar({ title }: { title: string }) {
       {collapsed && (
         <IconButton
           label="Show sidebar"
+          data-sidebar-toggle=""
           shortcut={sidebarShortcut}
           icon={<PanelLeftOpen />}
           onClick={() => useUiStore.getState().toggleSidebar()}
@@ -434,12 +437,28 @@ function useCalendarData() {
   }, []);
 }
 
+/** The pinned email column's width (--pinned-email-width). */
+function pinnedEmailWidth(): number {
+  return (
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--pinned-email-width"),
+    ) || 0
+  );
+}
+
 export function CalendarScreen() {
   useCalendarCommands();
   useCalendarData();
   const ref = useRef<HTMLDivElement>(null);
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
-  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
+  const pinned = useCalendarStore((s) => s.pinned !== null);
+  const aside = useRef<HTMLElement>(null);
+  // The calendar needs its own minimum, plus the email pinned beside it.
+  const layout = useSidebarFit(
+    aside,
+    useWidth(ref),
+    PANE.viewMin + (pinned ? pinnedEmailWidth() : 0),
+  );
   const { setSidebarWidth, resetSidebarWidth } = useUiStore.getState();
   const view = useCalendarStore((s) => s.view);
   const anchor = useCalendarStore((s) => s.anchor);
@@ -461,17 +480,18 @@ export function CalendarScreen() {
       className="shell"
       data-mode="calendar"
       style={style}
-      data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
+      data-sidebar={layout}
       data-overlay-titlebar={overlayTitleBar || undefined}
     >
       <aside
+        ref={aside}
         className="shell__sidebar"
         aria-label="Sidebar"
-        aria-hidden={sidebarCollapsed || undefined}
+        aria-hidden={layout === "collapsed" || undefined}
       >
         <CalendarSidebar />
       </aside>
-      {!sidebarCollapsed && (
+      {layout === "expanded" && (
         <Divider
           className="shell__divider--sidebar"
           label="Resize sidebar"

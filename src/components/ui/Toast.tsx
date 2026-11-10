@@ -58,7 +58,12 @@ function ToastViewport({ pinned }: { pinned?: ReactNode }) {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={cx("ui-toast", t.tone === "danger" && "ui-toast--danger")}
+          className={cx(
+            "ui-toast",
+            t.tone === "danger" && "ui-toast--danger",
+            // An offer that stays until answered (not an error): it waits behind a dialog.
+            t.duration === 0 && t.tone !== "danger" && "ui-toast--waits",
+          )}
           role={t.tone === "danger" ? "alert" : "status"}
         >
           <div className="ui-toast__text">

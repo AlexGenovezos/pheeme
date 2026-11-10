@@ -1,6 +1,6 @@
-// UI scorecard runner: drives the browser preview (`npm run dev`) through each part of the UI at a
-// 1280x800 window, at the default and the narrowest sidebar, light and dark, and scores each with
-// score.js. A part's score is its worst variant. See scripts/ui-score/README.md.
+// UI scorecard runner: drives the browser preview (`npm run dev`) through each part of the UI in a
+// 1280x800 and the smallest (900x600) window, at the default and the narrowest sidebar, light and
+// dark, and scores each with score.js. A part's score is its worst variant. See scripts/ui-score/README.md.
 // Usage: npm run ui:score -- [--url http://localhost:1420] [--out dir] [--shots] [--only id,id]
 import { chromium } from "playwright";
 import fs from "node:fs";
@@ -23,10 +23,6 @@ fs.mkdirSync(OUT, { recursive: true });
 // from x 16 to 76, centred on the 44 px title bar. The app is told it has an overlay title bar.
 const MAC = `(() => {
   const apply = () => {
-    // Toasts (the first-run notifications offer) float over whatever is scored; keep them out.
-    if (document.head && !document.getElementById('__no-toasts')) {
-      const st = document.createElement('style'); st.id = '__no-toasts'; st.textContent = '.ui-toast-viewport{display:none!important}'; document.head.appendChild(st);
-    }
     for (const s of document.querySelectorAll('.shell')) if (!s.hasAttribute('data-overlay-titlebar')) s.setAttribute('data-overlay-titlebar', '');
     if (document.body && !document.getElementById('__mac-traffic-lights')) {
       const d = document.createElement('div'); d.id = '__mac-traffic-lights';
@@ -52,6 +48,12 @@ async function clickCenter(page, locator) {
 }
 const calendar = (page) => key(page, "Control+2");
 const mail = (page) => key(page, "Control+1");
+/** With no room for it beside the content the sidebar hides; open it (over the content) to score it. */
+async function sidebarShown(page) {
+  if (await page.locator("aside.shell__sidebar").first().isVisible()) return;
+  await page.getByRole("button", { name: "Show sidebar" }).first().click();
+  await wait(page, 400);
+}
 async function tasksPanel(page, open) {
   const is = (await page.locator(".tasks-panel").count()) > 0;
   if (is !== open) await key(page, "Control+Shift+T");
@@ -68,6 +70,13 @@ async function openInvite(page) {
   await page.locator(".invite-card").waitFor();
   await wait(page, 600);
 }
+async function openEditor(p) {
+  await view(p, "w");
+  await key(p, "c");
+  await p.locator(".cal-quick button", { hasText: "More options" }).click();
+  await p.locator(".cal-editor").waitFor();
+  await wait(p, 400);
+}
 const event = (page, name) => page.locator(".cal-main .cal-event", { hasText: name }).first();
 
 /** Each part: how to reach it, and the element(s) scored. `hide` is removed from the score. */
@@ -76,7 +85,10 @@ const PARTS = [
     id: "mail-sidebar",
     name: "Mail sidebar",
     base: true,
-    go: (p) => mail(p),
+    go: async (p) => {
+      await mail(p);
+      await sidebarShown(p);
+    },
     root: "aside.shell__sidebar",
   },
   { id: "mail-list", name: "Mail list", base: true, go: (p) => mail(p), root: ".thread-list" },
@@ -86,13 +98,15 @@ const PARTS = [
     base: true,
     go: openInvite,
     root: ".shell__view",
-    hide: ".invite-card",
   },
   { id: "invite-card", name: "Invite card (Mail)", go: openInvite, root: ".invite-card" },
   {
     id: "cal-sidebar",
     name: "Calendar sidebar",
-    go: (p) => view(p, "w"),
+    go: async (p) => {
+      await view(p, "w");
+      await sidebarShown(p);
+    },
     root: "aside.shell__sidebar",
   },
   { id: "week", name: "Week", go: (p) => view(p, "w"), root: ".cal-main" },
@@ -186,15 +200,95 @@ const PARTS = [
     },
     root: ".cal-main",
   },
+  {
+    id: "editor-custom-repeat",
+    name: "Event editor: custom repeat",
+    go: async (p) => {
+      await openEditor(p);
+      await p.getByRole("combobox", { name: "Repeat" }).click();
+      await p.getByRole("option", { name: /Custom/ }).click();
+      await wait(p, 300);
+    },
+    root: ".cal-editor",
+  },
+  {
+    id: "editor-reminders",
+    name: "Event editor: notifications",
+    go: async (p) => {
+      await openEditor(p);
+      await p.locator(".cal-editor button", { hasText: /^Change$/ }).click();
+      await wait(p, 300);
+    },
+    root: ".cal-editor",
+  },
+  {
+    id: "picker-date",
+    name: "Date picker",
+    go: async (p) => {
+      await openEditor(p);
+      await p.locator(".cal-editor").getByRole("combobox", { name: "Date" }).first().click();
+      await wait(p, 300);
+    },
+    root: ".ui-picker",
+  },
+  {
+    id: "picker-time",
+    name: "Time list",
+    go: async (p) => {
+      await view(p, "w");
+      await key(p, "c");
+      await p.getByRole("combobox", { name: "End time" }).click();
+      await wait(p, 300);
+    },
+    root: ".ui-picker",
+  },
+  {
+    id: "picker-select",
+    name: "Dropdown list (time zone)",
+    go: async (p) => {
+      await openEditor(p);
+      await p.locator(".cal-editor [role=combobox]", { hasText: "America/" }).first().click();
+      await wait(p, 300);
+    },
+    root: ".ui-picker",
+  },
+  {
+    id: "task-editor",
+    name: "Task editor",
+    go: async (p) => {
+      await view(p, "w");
+      await tasksPanel(p, true);
+      await p.locator(".task-row__main").first().click();
+      await wait(p, 300);
+    },
+    root: ".task-editor",
+  },
+  {
+    id: "go-to-date",
+    name: "Go to date",
+    go: async (p) => {
+      await view(p, "w");
+      await key(p, "g");
+      await wait(p, 300);
+    },
+    root: ".cal-goto",
+  },
 ];
 
 // The default sidebar width, and the narrowest the app allows (a stored 1 px is clamped up to it).
-const VARIANTS = [
-  { id: "light-default", scheme: "light", sidebar: 220 },
-  { id: "light-narrowest", scheme: "light", sidebar: 1 },
-  { id: "dark-default", scheme: "dark", sidebar: 220 },
-  { id: "dark-narrowest", scheme: "dark", sidebar: 1 },
+// Two windows: 1280x800, and the smallest the app allows (tauri.conf.json minWidth/minHeight).
+const WINDOWS = [
+  { id: "1280", width: 1280, height: 800 },
+  { id: "900", width: 900, height: 600 },
 ];
+const VARIANTS = WINDOWS.flatMap((w) =>
+  ["light", "dark"].flatMap((scheme) =>
+    [
+      ["default", 220],
+      ["narrowest", 1],
+    ].map(([side, sidebar]) => ({ id: `${w.id}-${scheme}-${side}`, scheme, sidebar, w })),
+  ),
+);
 
 const browser = await chromium.launch();
 const results = {};
@@ -202,7 +296,7 @@ for (const part of PARTS.filter((p) => !ONLY || ONLY.split(",").includes(p.id)))
   results[part.id] = { name: part.name, base: !!part.base, variants: {} };
   for (const v of VARIANTS) {
     const ctx = await browser.newContext({
-      viewport: { width: 1280, height: 800 },
+      viewport: { width: v.w.width, height: v.w.height },
       deviceScaleFactor: 2,
       colorScheme: v.scheme,
     });
@@ -246,15 +340,15 @@ for (const part of PARTS.filter((p) => !ONLY || ONLY.split(",").includes(p.id)))
         },
         [part.root, part.hide],
       );
-      if (SHOTS && v.scheme === "light") {
+      if (SHOTS) {
         const el = page.locator(part.root).first();
         const box = await el.boundingBox();
         const pad = 8;
         const clip = {
           x: Math.max(0, box.x - pad),
           y: Math.max(0, box.y - pad),
-          width: Math.min(1280 - Math.max(0, box.x - pad), box.width + 2 * pad),
-          height: Math.min(800 - Math.max(0, box.y - pad), box.height + 2 * pad),
+          width: Math.min(v.w.width - Math.max(0, box.x - pad), box.width + 2 * pad),
+          height: Math.min(v.w.height - Math.max(0, box.y - pad), box.height + 2 * pad),
         };
         await page.screenshot({ path: path.join(OUT, `${part.id}-${v.id}.png`), clip });
         await page.screenshot({ path: path.join(OUT, `${part.id}-${v.id}-full.png`) });

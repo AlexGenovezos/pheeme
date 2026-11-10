@@ -64,7 +64,13 @@ export function PickerPopover({
     const at = anchor.current?.getBoundingClientRect();
     if (!el || !at) return;
     const width = Math.max(el.offsetWidth, matchWidth ? at.width : 0);
-    const height = el.scrollHeight;
+    // A list is capped by its CSS (--picker-list-max-height); placing it must not lift the cap.
+    const cap = el.classList.contains("ui-picker--list")
+      ? parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue("--picker-list-max-height"),
+        )
+      : Infinity;
+    const height = Math.min(el.scrollHeight, cap);
     const below = window.innerHeight - at.bottom - 2 * GAP;
     const above = at.top - 2 * GAP;
     const down = below >= height || below >= above;
@@ -76,7 +82,7 @@ export function PickerPopover({
       left,
       top,
       minWidth: matchWidth ? at.width : undefined,
-      maxHeight: room < height ? room : undefined,
+      maxHeight: Math.min(room, cap) < el.scrollHeight ? Math.min(room, cap) : undefined,
     });
   }, [anchor, matchWidth]);
 

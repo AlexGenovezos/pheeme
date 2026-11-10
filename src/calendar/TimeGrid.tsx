@@ -8,6 +8,7 @@ import { formatDay, formatHour, wallClock } from "./dates";
 import { createInColumn, createOnDays } from "./drag";
 import { BarEvent, eventKey, TimedEventBlock, timeSpan, useCalendarLookup } from "./EventBlock";
 import { layoutBand, layoutDay, MIN_EVENT_MINUTES } from "./layout";
+import { useWidth } from "../lib/useWidth";
 import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
 import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
@@ -19,6 +20,17 @@ export const HOUR_PX = 48;
 export const BAND_ROW_PX = 26;
 /** Blocks this short (minutes) show title and time on one line. */
 const COMPACT_MINUTES = 45;
+/** Narrower than this, an event shows only its title, edge to edge. */
+const NARROW_EVENT_PX = 64;
+
+/** The hour labels' column (--calendar-gutter-width). */
+function gutterWidth(): number {
+  return (
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--calendar-gutter-width"),
+    ) || 0
+  );
+}
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
@@ -63,6 +75,10 @@ export function TimeGrid({
   const taskBand = useMemo(() => layoutTasks(tasks ?? [], days, band), [tasks, days, band]);
   const bandRows = [...band, ...taskBand].reduce((n, s) => Math.max(n, s.row + 1), 0);
   const columns = useMemo(() => days.map((d) => layoutDay(list, d, tz)), [list, days, tz]);
+  // Each day's width, for events too narrow for more than a few letters of their title.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const bodyWidth = useWidth(bodyRef);
+  const dayWidth = bodyWidth > 0 ? (bodyWidth - gutterWidth()) / days.length : Infinity;
 
   // Open scrolled to the working day (an hour before now, when today is on screen), or to a pinned invitation.
   useLayoutEffect(() => {
@@ -139,7 +155,7 @@ export function TimeGrid({
         </div>
       </div>
       <div className="cal-grid__scroll" ref={scrollRef}>
-        <div className="cal-grid__body">
+        <div className="cal-grid__body" ref={bodyRef}>
           <div className="cal-grid__gutter cal-grid__hours" aria-hidden="true">
             {HOURS.map((h) => (
               <span key={h} className="cal-grid__hour" style={{ top: h * HOUR_PX }}>
@@ -166,6 +182,7 @@ export function TimeGrid({
                     calendar={lookup(b.event)}
                     tz={tz}
                     compact={shown < COMPACT_MINUTES}
+                    narrow={(dayWidth * b.span) / b.columns < NARROW_EVENT_PX}
                     style={{
                       top: (b.start / 60) * HOUR_PX,
                       height: (shown / 60) * HOUR_PX,

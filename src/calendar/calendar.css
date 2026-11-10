@@ -6,7 +6,7 @@
     min(var(--shell-sidebar-w), calc(100% - var(--shell-view-min)))
     minmax(var(--shell-view-min), 1fr);
 }
-.shell[data-mode="calendar"][data-sidebar="collapsed"] {
+.shell[data-mode="calendar"]:is([data-sidebar="collapsed"], [data-sidebar="overlay"]) {
   grid-template-columns: 0 minmax(var(--shell-view-min), 1fr);
 }
 
@@ -65,7 +65,8 @@
 .cal-toolbar {
   gap: var(--space-1-5);
 }
-.shell[data-overlay-titlebar][data-sidebar="collapsed"] .cal-toolbar {
+.shell[data-overlay-titlebar]:is([data-sidebar="collapsed"], [data-sidebar="overlay"])
+  .cal-toolbar {
   padding-left: var(--traffic-light-inset);
 }
 .cal-toolbar__title {
@@ -436,6 +437,13 @@
 .cal-event--timed.cal-event--compact .cal-event__time {
   flex-shrink: 0;
 }
+/* A sliver of a day: the title alone, cut at the edge rather than spending room on "…". */
+.cal-event--timed.cal-event--narrow {
+  padding-inline: var(--space-0-5);
+}
+.cal-event--timed.cal-event--narrow .cal-event__title {
+  text-overflow: clip;
+}
 .cal-event--open {
   z-index: 1;
   box-shadow: var(--shadow-popover);
@@ -549,6 +557,10 @@
 }
 
 /* ---- Month --------------------------------------------------------------- */
+
+.cal-month--narrow .cal-event--dot .cal-event__time {
+  display: none;
+}
 
 .cal-month {
   display: flex;
