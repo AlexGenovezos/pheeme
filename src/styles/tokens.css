@@ -252,6 +252,16 @@
   --theme-picker-thumb-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
   --theme-picker-thumb-border: #fff;
 
+  /*
+   * Find in conversation (src/mail/find/). Match colors are the same in every theme, like a browser's
+   * find: they tint email content, whose colors no theme controls. The bar fits the field and its count.
+   */
+  --find-bar-width: 360px;
+  --find-count-width: 76px;
+  --find-match-bg: #ffe14d;
+  --find-match-current-bg: #ff9632;
+  --find-match-foreground: #000;
+
   /* Stacking. */
   --z-base: 0;
   --z-divider: 10;

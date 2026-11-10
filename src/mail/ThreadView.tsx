@@ -16,6 +16,8 @@ import { MessageCard } from "./MessageCard";
 import { ThreadLoading } from "./ThreadLoading";
 import { applyLabel, archive } from "./actions";
 import { focusFromKeyboard } from "../keyboard/focus";
+import { registry } from "../keyboard/registry";
+import { FindBar } from "./find/FindBar";
 import { handleScrollKeyDown, handleScrollKeyUp, stopKeyScroll } from "./keyScroll";
 import { parseThreadKey, threadKey } from "./mailboxes";
 import { openTimer } from "./openTiming";
@@ -121,6 +123,9 @@ export function ThreadView() {
   const preloadImages = useReadingSettings((s) => s.preloadImages);
   const scroller = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState<string[]>([]);
+  // Find in conversation: 0 is closed; each mod+f counts up, which refocuses the open bar.
+  const [find, setFind] = useState(0);
+  if (find && !openKey) setFind(0);
   // The open conversation, plus (with Preload images on) two rows either side rendered out of sight, so the next
   // arrow shows a finished email. Images a server won't let us cache only survive in a live document.
   const keys = rows.map((row) => threadKey(row.accountId, row.id));
@@ -163,6 +168,18 @@ export function ThreadView() {
       run: () => {
         if (useUiStore.getState().openThread)
           focusFromKeyboard(scroller.current, { preventScroll: true });
+      },
+    },
+    {
+      id: "conversation.find",
+      title: "Find in conversation",
+      group: "Conversation",
+      shortcut: "mod+f",
+      keywords: ["search", "find in page", "find in email"],
+      run: () => {
+        // With no conversation open there's nothing to find in: search mail instead.
+        if (useUiStore.getState().openThread) setFind((n) => n + 1);
+        else registry.run("search.focus");
       },
     },
   ]);
@@ -228,6 +245,9 @@ export function ThreadView() {
           </div>
         ))}
       </div>
+      {find > 0 && openKey && (
+        <FindBar pane={scroller} openKey={openKey} request={find} onClose={() => setFind(0)} />
+      )}
     </div>
   );
 }
