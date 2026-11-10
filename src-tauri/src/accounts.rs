@@ -532,7 +532,8 @@ impl crate::gmail::TokenProvider for AccountTokens {
 }
 
 /// A dead or missing sign-in is `SignedOut`, so the UI can offer to sign in again. Not reaching
-/// Google to refresh the token is `Offline` (no Gmail request went out), not a sign-in problem.
+/// Google to refresh the token is `Offline` (no Gmail request went out), not a sign-in problem,
+/// and neither is a keychain that can't be read right now (`KeychainLocked`: asleep or locked).
 fn token_error(error: AccountError) -> crate::gmail::GmailError {
     match error {
         AccountError::OAuth(OAuthError::InvalidGrant) | AccountError::NoSavedSignIn => {
@@ -540,6 +541,9 @@ fn token_error(error: AccountError) -> crate::gmail::GmailError {
         }
         AccountError::OAuth(OAuthError::Network(message)) => {
             crate::gmail::GmailError::Offline(message)
+        }
+        AccountError::Secrets(SecretsError::Locked(_)) => {
+            crate::gmail::GmailError::KeychainLocked(error.to_string())
         }
         other => crate::gmail::GmailError::Auth(other.to_string()),
     }
@@ -1171,6 +1175,18 @@ mod tests {
             matches!(error, crate::gmail::GmailError::Offline(_)),
             "{error:?}"
         );
+    }
+
+    #[test]
+    fn unreadable_keychain_is_a_wait_not_a_sign_in_problem() {
+        let error = token_error(AccountError::Secrets(SecretsError::Locked(
+            keyring::Error::NoEntry,
+        )));
+        assert!(
+            matches!(error, crate::gmail::GmailError::KeychainLocked(_)),
+            "{error:?}"
+        );
+        assert_eq!(error.code(), "keychain_locked");
     }
 
     #[test]

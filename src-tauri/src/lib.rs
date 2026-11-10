@@ -29,6 +29,8 @@ pub mod support;
 pub mod sync;
 pub mod tasks;
 pub mod telemetry;
+#[cfg(test)]
+mod test_logs;
 mod text;
 pub mod transfer;
 

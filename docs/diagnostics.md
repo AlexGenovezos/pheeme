@@ -18,7 +18,19 @@ took: `thread opened` times the backend read (logged when over 1 s or fetched
 from Gmail), and `thread shown` times the window from the click until the
 conversation painted and every image in it loaded or failed (logged when over
 1 s). The last 50 of each are also kept in memory for Send diagnostics
-(`recentOpens` and `recentShown` in `summary.json`). Requests' authorization headers,
+(`recentOpens` and `recentShown` in `summary.json`).
+
+Every mail change (archive, read, star, label, move to an inbox category, trash) is
+recorded when it's made (`change queued`: its `op` id, thread ids, labels added and
+removed) and again when Gmail applies it (`Gmail applied the change`, with how many
+messages and attempts), waits on a problem the first time (`change waiting for
+Gmail`), or refuses it (`Gmail rejected a queued change`); match them by `op`. A
+thread id leads back to its sender through the local database. Sender rules (future
+mail from a sender to a category) are recorded when saved, undone or deleted, with
+the sender, category and Gmail filter ids. `read saved sign-ins from the keychain`
+says once per launch how long the keychain took (a long wait means an access prompt
+nobody answered); while the keychain can't be read (the Mac asleep or locked), sync
+says so once rather than at every attempt. Requests' authorization headers,
 OAuth secrets, and message bodies are not added to the logs. Error messages and
 local paths can still contain personal information; review logs before sharing.
 

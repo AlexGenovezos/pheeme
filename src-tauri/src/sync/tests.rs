@@ -1508,3 +1508,69 @@ async fn list_with_colors_skips_get() {
     );
     assert_eq!(cached_color(&h, "Label_2").await, None);
 }
+
+#[tokio::test]
+async fn the_log_records_each_change_from_queued_to_applied() {
+    let (_guard, logs) = crate::test_logs::capture();
+    let h = harness().await;
+    synced_inbox(
+        &h,
+        vec![FakeMsg::new("m1", "t1", &["INBOX", "CATEGORY_UPDATES"])],
+    )
+    .await;
+    let op = outbox::enqueue_modify(
+        &h.pool,
+        ACCT,
+        &s(&["t1"]),
+        &s(&["CATEGORY_PROMOTIONS"]),
+        &s(&["CATEGORY_UPDATES"]),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .op_id;
+
+    let queued = logs.lines("change queued");
+    assert_eq!(queued.len(), 1, "{}", logs.text());
+    for field in [
+        &format!("op={op}"),
+        "kind=modify",
+        "threads=t1",
+        "messages=1",
+        "add=[\"CATEGORY_PROMOTIONS\"]",
+        "remove=[\"CATEGORY_UPDATES\"]",
+    ] {
+        assert!(queued[0].contains(field), "{field} in {}", queued[0]);
+    }
+
+    // A failure Gmail may recover from is said once, not at every retry.
+    let hour = 3_600_000;
+    for n in 1..=2 {
+        h.fake
+            .fail_next("batch_modify", GmailError::Network("timed out".into()));
+        outbox::process(&h.engine, now_ms() + n * hour)
+            .await
+            .unwrap();
+    }
+    let waiting = logs.lines("change waiting for Gmail");
+    assert_eq!(waiting.len(), 1, "{}", logs.text());
+    assert!(waiting[0].contains(&format!("op={op}")), "{}", waiting[0]);
+
+    outbox::process(&h.engine, now_ms() + 3 * hour)
+        .await
+        .unwrap();
+    let applied = logs.lines("Gmail applied the change");
+    assert_eq!(applied.len(), 1, "{}", logs.text());
+    for field in [&format!("op={op}"), "messages=1", "attempts=3"] {
+        assert!(applied[0].contains(field), "{field} in {}", applied[0]);
+    }
+}
+
+#[test]
+fn logged_thread_lists_stay_short() {
+    let ids: Vec<String> = (0..25).map(|n| format!("t{n}")).collect();
+    assert_eq!(outbox::id_sample(&ids[..2]), "t0,t1");
+    let sample = outbox::id_sample(&ids);
+    assert!(sample.starts_with("t0,t1,"), "{sample}");
+    assert!(sample.ends_with("t9 (+15 more)"), "{sample}");
+}

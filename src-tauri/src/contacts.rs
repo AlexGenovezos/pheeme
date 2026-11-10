@@ -329,6 +329,7 @@ fn is_transient(e: &GmailError) -> bool {
         | GmailError::Offline(_)
         | GmailError::RateLimit { .. }
         | GmailError::Auth(_)
+        | GmailError::KeychainLocked(_)
         | GmailError::SignedOut(_) => true,
         GmailError::Api { status, .. } => *status >= 500,
         GmailError::Decode(_) => false,

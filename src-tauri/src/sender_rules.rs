@@ -120,10 +120,21 @@ impl SenderRuleService {
             .collect();
         for sender in &senders {
             if let Err(e) = save_one(api.as_ref(), &rules, sender, category, &mut saved).await {
+                tracing::warn!(account = account_id, ?senders, category, error = %e, "couldn't save sender rules; putting back what changed");
                 undo(api.as_ref(), &saved).await;
                 return Err(gmail(e));
             }
         }
+        // Rules aren't cached, so this is the only local record that a sender's mail was sent
+        // somewhere (the filters themselves live in Gmail).
+        tracing::info!(
+            account = account_id,
+            ?senders,
+            category,
+            created = ?saved.created,
+            replaced = ?saved.replaced.iter().map(|r| (&r.id, &r.sender, &r.category)).collect::<Vec<_>>(),
+            "sender rules saved"
+        );
         Ok(saved)
     }
 
@@ -143,6 +154,12 @@ impl SenderRuleService {
                 .await
                 .map_err(gmail)?;
         }
+        tracing::info!(
+            account = account_id,
+            deleted = ?saved.created,
+            restored = ?saved.replaced.iter().map(|r| (&r.sender, &r.category)).collect::<Vec<_>>(),
+            "sender rules undone"
+        );
         Ok(())
     }
 
@@ -155,7 +172,18 @@ impl SenderRuleService {
             Some(f) if rule_of(f).is_none() => Err(MailError::Invalid(
                 "That filter isn't a sender rule, so Pheeme leaves it alone.".into(),
             )),
-            Some(_) => delete(api.as_ref(), rule_id).await.map_err(gmail),
+            Some(f) => {
+                delete(api.as_ref(), rule_id).await.map_err(gmail)?;
+                let rule = rule_of(f);
+                tracing::info!(
+                    account = account_id,
+                    rule = rule_id,
+                    sender = rule.as_ref().map(|r| r.sender.as_str()),
+                    category = rule.as_ref().map(|r| r.category.as_str()),
+                    "sender rule deleted"
+                );
+                Ok(())
+            }
         }
     }
 
@@ -436,6 +464,45 @@ mod tests {
                 category: "CATEGORY_UPDATES".into()
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn the_log_records_rules_saved_undone_and_deleted() {
+        let (_guard, logs) = crate::test_logs::capture();
+        let fake = FakeGmail::new();
+        let old = fake.seed_filter(filter("moved@x.com", &["CATEGORY_UPDATES"]));
+        let h = setup(fake).await;
+
+        let saved = h
+            .rules
+            .save_rules("a1", &senders(&["moved@x.com"]), "CATEGORY_PROMOTIONS")
+            .await
+            .unwrap();
+        let line = logs.lines("sender rules saved");
+        assert_eq!(line.len(), 1, "{}", logs.text());
+        for field in [
+            "account=\"a1\"",
+            "moved@x.com",
+            "category=\"CATEGORY_PROMOTIONS\"",
+            &saved.created[0],
+            &old,
+        ] {
+            assert!(line[0].contains(field), "{field} in {}", line[0]);
+        }
+
+        h.rules.undo_rules("a1", &saved).await.unwrap();
+        assert_eq!(
+            logs.lines("sender rules undone").len(),
+            1,
+            "{}",
+            logs.text()
+        );
+
+        let rule = h.rules.list_rules("a1").await.unwrap().remove(0);
+        h.rules.delete_rule("a1", &rule.id).await.unwrap();
+        let line = logs.lines("sender rule deleted");
+        assert_eq!(line.len(), 1, "{}", logs.text());
+        assert!(line[0].contains("moved@x.com"), "{}", line[0]);
     }
 
     #[tokio::test]
