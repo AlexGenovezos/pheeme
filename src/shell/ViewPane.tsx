@@ -1,6 +1,7 @@
 import {
   Archive,
   ArrowLeft,
+  CalendarPlus,
   Forward,
   Mail,
   MailOpen,
@@ -32,6 +33,11 @@ import {
   trash,
 } from "../mail/actions";
 import { threadKey } from "../mail/mailboxes";
+import {
+  CREATE_EVENT_COMMAND,
+  CREATE_EVENT_SHORTCUT,
+  createEventFromEmail,
+} from "../calendar/mailActions";
 import { ThreadView } from "../mail/ThreadView";
 import { speedReadOpenConversation, useCanSpeedRead } from "../speedread/open";
 import { useSpeedReaderSettings } from "../speedread/settings";
@@ -101,6 +107,7 @@ export function ViewPane() {
     replyAll: useKeybinding("conversation.reply-all", "a"),
     forward: useKeybinding("conversation.forward", "f"),
     speedRead: useKeybinding("conversation.speed-read", "shift+r"),
+    createEvent: useKeybinding(CREATE_EVENT_COMMAND, CREATE_EVENT_SHORTCUT),
   };
   // Offered only on simple prose emails; the shortcut still says so when there's nothing to read.
   const offerSpeedRead = useSpeedReaderSettings((s) => s.offer);
@@ -121,6 +128,13 @@ export function ViewPane() {
           label: "Move to…",
           shortcut: registry.shortcutFor("conversation.move", "v"),
           onSelect: () => openMoveMenu({ x: r.left, y: r.bottom }),
+        },
+        {
+          id: "create-event",
+          label: "Create event from email",
+          shortcut: registry.shortcutFor(CREATE_EVENT_COMMAND, CREATE_EVENT_SHORTCUT),
+          disabled: off,
+          onSelect: () => void createEventFromEmail(),
         },
         { type: "separator" },
         { id: "original", label: "Show original", onSelect: () => notYet("Show original") },
@@ -233,6 +247,13 @@ export function ViewPane() {
           />
         )}
         <span className="toolbar__spacer" {...dragRegion} />
+        <IconButton
+          label="Create event from email"
+          shortcut={keys.createEvent}
+          icon={<CalendarPlus />}
+          disabled={off}
+          onClick={() => void createEventFromEmail()}
+        />
         <IconButton
           label="More actions"
           icon={<MoreHorizontal />}

@@ -12,6 +12,7 @@ import {
   type EventEdit,
   type EventRef,
   type EventTime,
+  type Invite,
 } from "../lib/tauri";
 
 type Args = Record<string, unknown> | undefined;
@@ -223,7 +224,13 @@ export function createCalendarHandlers(
                 guest("dana@example.com", "Dana Whitaker", "accepted"),
                 guest("sam@example.com", null, "needsAction"),
               ]
-            : [],
+            : e.id === "design-review"
+              ? [
+                  { ...guest("morgan@example.org", "Morgan Lee", "accepted"), organizer: true },
+                  guest("sam@example.com", "Sam Ortiz", "tentative"),
+                  guest("priya@example.org", "Priya Raman", "needsAction"),
+                ]
+              : [],
       };
       extras.set(e.id, x);
     }
@@ -322,7 +329,14 @@ export function createCalendarHandlers(
     };
   };
 
-  return {
+  /** The invitations the fixture mail carries (`fixtures.ts`), by message id. */
+  const invitations = new Map<string, { eventId: string | null; cancelled: boolean }>([
+    ["w-13-m1", { eventId: "design-review", cancelled: false }],
+    ["p-20-m1", { eventId: null, cancelled: true }],
+  ]);
+  const morgan = { email: "morgan@example.org", name: "Morgan Lee", isSelf: false };
+
+  const handlers = {
     calendar_accounts: (): CalendarAccount[] =>
       accounts.map((a) => {
         const on = statuses.get(a.id) === "on";
@@ -490,6 +504,73 @@ export function createCalendarHandlers(
       changed(e.accountId);
       return ref(e);
     },
+    message_invite: (args: Args): Invite | null => {
+      const accountId = String(args?.accountId);
+      const spec = invitations.get(String(args?.messageId));
+      if (!spec) return null;
+      const account = accounts.find((a) => a.id === accountId);
+      const self = (response: string): Attendee => ({
+        ...guest(account?.email ?? "", null, response),
+        isSelf: true,
+      });
+      if (spec.cancelled) {
+        const start = at(4, 18, 30);
+        return {
+          method: "CANCEL",
+          uid: "book-club@google.com",
+          sequence: 2,
+          cancelled: true,
+          summary: "Book club",
+          description: null,
+          location: "Mira's place",
+          meetingUrl: null,
+          start: { ms: start, date: null, timeZone: "America/New_York" },
+          end: { ms: start + 90 * 60_000, date: null, timeZone: "America/New_York" },
+          allDay: false,
+          recurrence: [],
+          recurrenceId: null,
+          organizer: { email: "mira@example.net", name: "Mira Okafor", isSelf: false },
+          attendees: [self("needsAction")],
+          live: null,
+          liveSequence: null,
+          import: null,
+        };
+      }
+      const e = events.find((o) => o.accountId === accountId && o.id === spec.eventId);
+      if (!e) return null;
+      const live = shown(e)
+        ? handlers.calendar_event_detail({
+            accountId,
+            calendarId: e.calendarId,
+            eventId: e.id,
+          })
+        : null;
+      return {
+        method: "REQUEST",
+        uid: e.id,
+        sequence: 0,
+        cancelled: false,
+        summary: e.summary,
+        description: "Walk through the new onboarding flow, then decide on the copy.",
+        location: "Room 4, Studio",
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        start: e.start,
+        end: e.end,
+        allDay: e.allDay,
+        recurrence: [],
+        recurrenceId: null,
+        organizer: morgan,
+        attendees: [
+          { ...guest(morgan.email, morgan.name, "accepted"), organizer: true },
+          self("needsAction"),
+          guest("sam@example.com", "Sam Ortiz", "tentative"),
+          guest("priya@example.org", "Priya Raman", "needsAction"),
+        ],
+        live,
+        liveSequence: live ? 0 : null,
+        import: { summary: e.summary },
+      };
+    },
     respond_to_calendar_invite: (args: Args): EventRef => {
       // The preview's invites carry their event id as iCalendar UID.
       const uid = String(args?.icalUid);
@@ -500,4 +581,5 @@ export function createCalendarHandlers(
       return ref(e);
     },
   };
+  return handlers;
 }

@@ -442,6 +442,7 @@ pub fn run() {
             commands::calendar::copy_calendar_event,
             commands::calendar::respond_to_calendar_event,
             commands::calendar::respond_to_calendar_invite,
+            commands::calendar::message_invite,
             commands::tasks::tasks_accounts,
             commands::tasks::tasks_in_list,
             commands::tasks::dated_tasks,

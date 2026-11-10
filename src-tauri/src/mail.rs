@@ -970,6 +970,22 @@ impl MailService {
         self.bytes_of(row).await
     }
 
+    /// The text of the message's calendar invitation (its `text/calendar` part, else an `.ics`
+    /// file), from the disk cache or Gmail; `None` when it has none.
+    pub async fn invite_text(
+        &self,
+        account_id: &str,
+        message_id: &str,
+    ) -> Result<Option<String>, MailError> {
+        let rows =
+            attachments::get_attachments_for_message(&self.db, account_id, message_id).await?;
+        let Some(row) = invite_part(&rows) else {
+            return Ok(None);
+        };
+        let bytes = self.bytes_of(row.clone()).await?.bytes;
+        Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+    }
+
     /// The image behind a `cid:` reference; anything that isn't an `image/*` is `NotFound`.
     pub async fn inline_image(
         &self,
@@ -1362,6 +1378,43 @@ fn emit_loading(sync: &SyncManager, account_id: &str, thread_id: &str, stage: Op
         reason,
         sync_busy: sync.sync_busy(account_id),
     });
+}
+
+/// Invitations bigger than this aren't read (a real one is a few kilobytes).
+const INVITE_MAX_BYTES: i64 = 1024 * 1024;
+
+/// Whether an attachment is a calendar file, and how good a source of the invitation it is:
+/// the `text/calendar` part Google and Outlook put beside the body (`2`) beats a named `.ics`
+/// file (`1`), which may be a forwarded copy.
+fn invite_rank(a: &DbAttachment) -> Option<u8> {
+    let mime = a
+        .mime_type
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let ics_name = a
+        .filename
+        .as_deref()
+        .is_some_and(|f| f.to_ascii_lowercase().ends_with(".ics"));
+    if a.size.is_some_and(|s| s > INVITE_MAX_BYTES) {
+        return None;
+    }
+    if mime == "text/calendar" && !ics_name {
+        Some(2)
+    } else if mime == "text/calendar" || mime == "application/ics" || ics_name {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+/// The attachment row to read a message's invitation from.
+pub fn invite_part(rows: &[DbAttachment]) -> Option<&DbAttachment> {
+    rows.iter()
+        .filter_map(|a| Some((invite_rank(a)?, a)))
+        .max_by_key(|(rank, _)| *rank)
+        .map(|(_, a)| a)
 }
 
 /// Bytes of an attachment that has no Gmail attachment id, from the full message.
@@ -2795,5 +2848,36 @@ mod tests {
         mail.add_recent_search("  from:alice  ").await.unwrap();
         mail.add_recent_search("   ").await.unwrap();
         assert_eq!(mail.recent_searches().await.unwrap(), ["from:alice"]);
+    }
+
+    #[test]
+    fn invite_part_prefers_the_calendar_part() {
+        let att = |id: &str, name: Option<&str>, mime: &str, size: i64| DbAttachment {
+            id: id.into(),
+            message_id: "m".into(),
+            account_id: "a".into(),
+            filename: name.map(Into::into),
+            mime_type: Some(mime.into()),
+            size: Some(size),
+            attachment_id: None,
+            content_id: None,
+            is_inline: 0,
+        };
+        let pdf = att("0", Some("agenda.pdf"), "application/pdf", 900);
+        let file = att("1", Some("invite.ics"), "application/ics", 900);
+        let part = att("2", None, "text/calendar", 900);
+        assert_eq!(
+            invite_part(&[pdf.clone(), file.clone(), part.clone()]).map(|a| a.id.as_str()),
+            Some("2")
+        );
+        assert_eq!(
+            invite_part(&[pdf.clone(), file]).map(|a| a.id.as_str()),
+            Some("1")
+        );
+        let octet = att("3", Some("Meeting.ICS"), "application/octet-stream", 900);
+        assert_eq!(invite_part(&[octet]).map(|a| a.id.as_str()), Some("3"));
+        assert!(invite_part(&[pdf]).is_none());
+        let huge = att("4", None, "text/calendar", 2 * INVITE_MAX_BYTES);
+        assert!(invite_part(&[huge]).is_none());
     }
 }

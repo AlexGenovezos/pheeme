@@ -904,6 +904,39 @@ export const respondToCalendarInvite = (
     import: importEvent ?? null,
   });
 
+/** A calendar invitation an email carries (Mail's invite card), with the event as it is now on the calendar when cached. */
+export interface Invite {
+  /** `REQUEST`, `CANCEL`, `REPLY`, `PUBLISH`, … */
+  method: string;
+  uid: string;
+  sequence: number;
+  /** The email cancels the event. */
+  cancelled: boolean;
+  summary: string | null;
+  description: string | null;
+  location: string | null;
+  /** The video meeting link (Meet, Teams, Zoom, FaceTime, …). */
+  meetingUrl: string | null;
+  start: EventTime;
+  /** Exclusive: the day after the last, for an all-day event. */
+  end: EventTime;
+  allDay: boolean;
+  recurrence: string[];
+  /** The email is about one changed occurrence of a series, originally at this time. */
+  recurrenceId: EventTime | null;
+  organizer: { email: string | null; name: string | null; isSelf: boolean } | null;
+  attendees: Attendee[];
+  /** The event as it is now on the account's calendar (the occurrence, for one occurrence). */
+  live: EventDetail | null;
+  /** Higher than `sequence`: the email is out of date. */
+  liveSequence: number | null;
+  /** The event to import when answering an invitation the calendar lacks; null when there's nothing to answer. */
+  import: Record<string, unknown> | null;
+}
+/** The calendar invitation in a message, or null when it has none. May download it from Gmail. */
+export const getMessageInvite = (accountId: string, messageId: string) =>
+  invoke<Invite | null>("message_invite", { accountId, messageId });
+
 // ── Google Tasks ─────────────────────────────────────────────────────────────
 
 /** Whether an account's tasks can be read, apart from its calendar access. */
