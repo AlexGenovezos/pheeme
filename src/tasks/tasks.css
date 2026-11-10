@@ -340,7 +340,6 @@
 }
 .task-editor__title,
 .task-editor__notes,
-.task-editor__date,
 .tasks-name-field {
   width: 100%;
   padding: var(--space-1) var(--space-1-5);
@@ -362,7 +361,6 @@
 }
 .task-editor__title:focus,
 .task-editor__notes:focus,
-.task-editor__date:focus,
 .tasks-name-field:focus {
   border-color: var(--color-focus-border);
   outline: none;
@@ -374,8 +372,6 @@
 }
 .task-editor__date {
   flex: 1;
-  font-size: var(--font-size-sm);
-  color-scheme: inherit;
 }
 .task-editor__actions {
   display: flex;

@@ -163,6 +163,12 @@
   --calendar-search-day-width: 150px;
   --calendar-search-time-width: 150px;
   --calendar-draft-opacity: 0.85;
+  /* Pickers (components/ui: Select, DateField, TimeField) and the editor's hit targets. The picker
+     popover sits above dialogs (--z-overlay) and under toasts. */
+  --z-picker: 250;
+  --picker-list-max-height: 288px;
+  --time-field-width: 96px;
+  --calendar-swatch-size: 24px;
   --speed-control-slider-width: 160px;
   --speed-control-value-width: 72px;
   /* Settings dialog: a floating window over the blurred app. */

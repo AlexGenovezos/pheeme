@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { inPicker } from "../components/ui/Picker";
 import { TextInput } from "../components/ui/TextInput";
 import { cancelDraft, openDraftInEditor, saveDraft, updateDraft } from "./actions";
 import { noteDismiss } from "./drag";
@@ -52,7 +53,9 @@ function QuickCreateBody() {
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Element;
-      if (ref.current?.contains(target) || target.closest?.('[role="dialog"]')) return;
+      // Its own date, time and calendar pickers open outside it.
+      if (ref.current?.contains(target) || target.closest?.('[role="dialog"]') || inPicker(target))
+        return;
       noteDismiss(e);
       cancelDraft();
     };

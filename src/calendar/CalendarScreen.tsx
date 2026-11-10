@@ -5,7 +5,7 @@ import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useStat
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
-import { TextInput } from "../components/ui/TextInput";
+import { DateField } from "../components/ui/DateField";
 import { describeShortcut } from "../keyboard/format";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import { createSubscriptionScope } from "../lib/subscriptions";
@@ -25,7 +25,7 @@ import {
 import { deleteEvent, editEvent, openEventNow, openQuickAdd } from "./actions";
 import { CalendarSearch } from "./CalendarSearch";
 import { CalendarSidebar } from "./CalendarSidebar";
-import { displayZone, screenDays, useCalendarStore } from "./calendarStore";
+import { displayZone, screenDays, useCalendarStore, weekStartOf } from "./calendarStore";
 import { dateOf, formatDay } from "./dates";
 import { DRAFT_ID, useEditStore } from "./editStore";
 import { EditPrompt } from "./EditPrompt";
@@ -187,14 +187,17 @@ function GoToDate() {
 }
 
 function GoToDateForm() {
-  const [value, setValue] = useState(() => useCalendarStore.getState().anchor);
-  const input = useRef<HTMLInputElement>(null);
+  const [value] = useState(() => useCalendarStore.getState().anchor);
+  const input = useRef<HTMLButtonElement>(null);
   useEffect(() => input.current?.focus(), []);
   const close = () => useCalendarStore.getState().setGoToOpen(false);
+  const go = (date: string) => {
+    useCalendarStore.getState().goTo(date);
+    close();
+  };
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) useCalendarStore.getState().goTo(value);
-    close();
+    go(value);
   };
   return (
     <div className="cal-goto__scrim" onPointerDown={(e) => e.target === e.currentTarget && close()}>
@@ -212,17 +215,18 @@ function GoToDateForm() {
           }
         }}
       >
-        <label className="cal-goto__label" htmlFor="cal-goto-date">
+        <span className="cal-goto__label" id="cal-goto-date">
           Go to date
-        </label>
-        <TextInput
+        </span>
+        {/* Opens on the month grid: arrows and Enter (or a click) go straight to the day. */}
+        <DateField
           ref={input}
-          id="cal-goto-date"
-          type="date"
+          aria-labelledby="cal-goto-date"
           className="cal-goto__input"
           value={value}
-          required
-          onChange={(e) => setValue(e.currentTarget.value)}
+          weekStart={weekStartOf(useCalendarStore.getState().accounts)}
+          defaultOpen
+          onChange={go}
         />
         <Button type="submit" size="sm" variant="primary">
           Go

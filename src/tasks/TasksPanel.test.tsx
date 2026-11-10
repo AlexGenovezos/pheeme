@@ -154,9 +154,8 @@ describe("Tasks panel", () => {
     fireEvent.change(within(editor).getByRole("textbox", { name: "Details" }), {
       target: { value: "For Sam" },
     });
-    fireEvent.change(within(editor).getByLabelText("Due date"), {
-      target: { value: "2026-11-12" },
-    });
+    fireEvent.click(within(editor).getByRole("combobox", { name: "Due date" }));
+    fireEvent.click(screen.getByRole("gridcell", { name: "Thursday, November 12, 2026" }));
     fireEvent.click(within(editor).getByRole("button", { name: "Done" }));
     await settle();
     expect(last(writes())).toMatchObject({

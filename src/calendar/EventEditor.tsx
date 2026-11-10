@@ -15,8 +15,10 @@ import {
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useId, useMemo, useState } from "react";
 import { Button } from "../components/ui/Button";
+import { DateField } from "../components/ui/DateField";
 import { IconButton } from "../components/ui/IconButton";
 import { Modal } from "../components/ui/Modal";
+import { Select } from "../components/ui/Select";
 import { TextInput } from "../components/ui/TextInput";
 import { RecipientField } from "../compose/RecipientField";
 import { type EmailAddress, suggestContacts } from "../lib/tauri";
@@ -25,7 +27,7 @@ import { closeEditor, saveEditor } from "./actions";
 import { useCalendarStore } from "./calendarStore";
 import { calendarColor, EVENT_COLORS } from "./colors";
 import { ask, type EditorSpec, useEditStore } from "./editStore";
-import { CalendarSelect, TimeFields } from "./EventFields";
+import { CalendarSelect, TimeFields, useWeekStart } from "./EventFields";
 import {
   type EventForm,
   type Freq,
@@ -256,32 +258,24 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
           </Section>
           <Section icon={<Briefcase />} label="Availability and visibility">
             <div className="cal-editor__inline">
-              <select
-                className="cal-field cal-select"
+              <Select
+                className="cal-select"
                 aria-label="Show as"
                 value={form.transparency}
-                onChange={(e) =>
-                  set({ transparency: e.currentTarget.value as EventForm["transparency"] })
-                }
-              >
-                <option value="opaque">Busy</option>
-                <option value="transparent">Free</option>
-              </select>
-              <select
-                className="cal-field cal-select"
+                options={TRANSPARENCY}
+                onChange={(transparency) => set({ transparency })}
+              />
+              <Select
+                className="cal-select"
                 aria-label="Visibility"
                 value={form.visibility}
-                onChange={(e) =>
-                  set({ visibility: e.currentTarget.value as EventForm["visibility"] })
+                options={
+                  form.visibility === "confidential"
+                    ? [...VISIBILITY, { value: "confidential" as const, label: "Confidential" }]
+                    : VISIBILITY
                 }
-              >
-                <option value="default">Default visibility</option>
-                <option value="public">Public</option>
-                <option value="private">Private</option>
-                {form.visibility === "confidential" && (
-                  <option value="confidential">Confidential</option>
-                )}
-              </select>
+                onChange={(visibility) => set({ visibility })}
+              />
             </div>
           </Section>
         </div>
@@ -302,6 +296,16 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
     </Modal>
   );
 }
+
+const TRANSPARENCY: { value: EventForm["transparency"]; label: string }[] = [
+  { value: "opaque", label: "Busy" },
+  { value: "transparent", label: "Free" },
+];
+const VISIBILITY: { value: EventForm["visibility"]; label: string }[] = [
+  { value: "default", label: "Default visibility" },
+  { value: "public", label: "Public" },
+  { value: "private", label: "Private" },
+];
 
 // ── Repeat ───────────────────────────────────────────────────────────────────
 
@@ -335,20 +339,17 @@ function RepeatField({ form, onChange }: { form: EventForm; onChange(form: Event
 
   return (
     <div className="cal-repeat">
-      <select
-        className="cal-field cal-select"
+      <Select
+        className="cal-select cal-repeat__select"
         aria-label="Repeat"
         value={showCustom ? "custom" : choice}
-        onChange={(e) => pick(e.currentTarget.value)}
-      >
-        <option value="none">Does not repeat</option>
-        {presets.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.label}
-          </option>
-        ))}
-        <option value="custom">Custom…</option>
-      </select>
+        options={[
+          { value: "none", label: "Does not repeat" },
+          ...presets.map((p) => ({ value: p.id, label: p.label })),
+          { value: "custom", label: "Custom…" },
+        ]}
+        onChange={pick}
+      />
       {showCustom && form.repeat.kind === "rule" && (
         <CustomRepeat
           rule={form.repeat.rule}
@@ -376,6 +377,7 @@ function CustomRepeat({
   onChange(rule: RepeatRule): void;
 }) {
   const id = useId();
+  const weekStart = useWeekStart();
   const set = (patch: Partial<RepeatRule>) => onChange({ ...rule, ...patch });
   const unit = FREQS.find((f) => f.value === rule.freq)!;
   const toggleDay = (code: string) => {
@@ -404,21 +406,18 @@ function CustomRepeat({
             set({ interval: Math.max(1, Math.floor(Number(e.currentTarget.value) || 1)) })
           }
         />
-        <select
-          className="cal-field cal-select"
+        <Select
+          className="cal-select"
           aria-label="Repeat unit"
           value={rule.freq}
-          onChange={(e) => {
-            const freq = e.currentTarget.value as Freq;
-            set({ freq, byDay: freq === "WEEKLY" ? [WEEKDAYS[weekday(startDate)]] : [] });
-          }}
-        >
-          {FREQS.map((f) => (
-            <option key={f.value} value={f.value}>
-              {rule.interval === 1 ? f.one : f.many}
-            </option>
-          ))}
-        </select>
+          options={FREQS.map((f) => ({
+            value: f.value,
+            label: rule.interval === 1 ? f.one : f.many,
+          }))}
+          onChange={(freq) =>
+            set({ freq, byDay: freq === "WEEKLY" ? [WEEKDAYS[weekday(startDate)]] : [] })
+          }
+        />
       </div>
       {rule.freq === "WEEKLY" && (
         <div className="cal-repeat__days" role="group" aria-label={`Repeat on (every ${unit.one})`}>
@@ -440,17 +439,19 @@ function CustomRepeat({
         </div>
       )}
       {rule.freq === "MONTHLY" && (
-        <select
-          className="cal-field cal-select"
+        <Select
+          className="cal-select cal-repeat__select"
           aria-label="Repeat on"
           value={rule.byDay.length ? "weekday" : "day"}
-          onChange={(e) => set({ byDay: e.currentTarget.value === "weekday" ? [nth] : [] })}
-        >
-          <option value="day">Monthly on day {Number(startDate.slice(8))}</option>
-          <option value="weekday">
-            Monthly on the {repeatPresets(startDate)[2].label.replace(/^Monthly on the /, "")}
-          </option>
-        </select>
+          options={[
+            { value: "day", label: `Monthly on day ${Number(startDate.slice(8))}` },
+            {
+              value: "weekday",
+              label: `Monthly on the ${repeatPresets(startDate)[2].label.replace(/^Monthly on the /, "")}`,
+            },
+          ]}
+          onChange={(by) => set({ byDay: by === "weekday" ? [nth] : [] })}
+        />
       )}
       <div className="cal-repeat__ends" role="radiogroup" aria-label="Ends">
         <span className="cal-editor__muted">Ends</span>
@@ -473,17 +474,13 @@ function CustomRepeat({
             />
             On
           </label>
-          <input
-            type="date"
-            className="cal-field"
+          <DateField
             aria-label="Ends on"
             disabled={rule.ends.kind !== "on"}
             min={startDate}
+            weekStart={weekStart}
             value={rule.ends.kind === "on" ? rule.ends.date : addDays(startDate, 30)}
-            onChange={(e) => {
-              const date = e.currentTarget.value;
-              if (/^\d{4}-\d{2}-\d{2}$/.test(date)) set({ ends: { kind: "on", date } });
-            }}
+            onChange={(date) => set({ ends: { kind: "on", date } })}
           />
         </span>
         <span className="cal-editor__inline">
@@ -556,6 +553,17 @@ function ColorField({
 
 // ── Notifications ────────────────────────────────────────────────────────────
 
+const METHODS: { value: Reminder["method"]; label: string }[] = [
+  { value: "popup", label: "Notification" },
+  { value: "email", label: "Email" },
+];
+const UNITS: { value: Reminder["unit"]; label: string }[] = [
+  { value: "minutes", label: "minutes" },
+  { value: "hours", label: "hours" },
+  { value: "days", label: "days" },
+  { value: "weeks", label: "weeks" },
+];
+
 function RemindersField({ form, onChange }: { form: EventForm; onChange(form: EventForm): void }) {
   const setList = (reminders: Reminder[]) =>
     onChange({ ...form, remindersDefault: false, reminders });
@@ -581,15 +589,13 @@ function RemindersField({ form, onChange }: { form: EventForm; onChange(form: Ev
             role="group"
             aria-label={`Notification ${i + 1}`}
           >
-            <select
-              className="cal-field cal-select"
+            <Select
+              className="cal-select"
               aria-label="Notify by"
               value={r.method}
-              onChange={(e) => update({ method: e.currentTarget.value as Reminder["method"] })}
-            >
-              <option value="popup">Notification</option>
-              <option value="email">Email</option>
-            </select>
+              options={METHODS}
+              onChange={(method) => update({ method })}
+            />
             <input
               type="number"
               min={0}
@@ -600,17 +606,13 @@ function RemindersField({ form, onChange }: { form: EventForm; onChange(form: Ev
                 update({ amount: Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)) })
               }
             />
-            <select
-              className="cal-field cal-select"
+            <Select
+              className="cal-select"
               aria-label="Unit"
               value={r.unit}
-              onChange={(e) => update({ unit: e.currentTarget.value as Reminder["unit"] })}
-            >
-              <option value="minutes">minutes</option>
-              <option value="hours">hours</option>
-              <option value="days">days</option>
-              <option value="weeks">weeks</option>
-            </select>
+              options={UNITS}
+              onChange={(unit) => update({ unit })}
+            />
             <span>before</span>
             <IconButton
               size="sm"

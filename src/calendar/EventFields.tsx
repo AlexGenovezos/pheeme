@@ -1,26 +1,38 @@
 // Fields the quick-create popover and the editor share: when (dates, times, all day, time
 // zones) and which calendar.
 import { useId, useMemo, useState } from "react";
-import { useCalendarStore } from "./calendarStore";
+import { DateField } from "../components/ui/DateField";
+import { Select, type SelectOption } from "../components/ui/Select";
+import { TimeField } from "../components/ui/TimeField";
+import { useCalendarStore, weekStartOf } from "./calendarStore";
 import { writableCalendars } from "./actions";
 import { addDays, daysBetween } from "./dates";
 import { type EventForm, moveStart } from "./eventForm";
 
-const pad = (n: number) => String(n).padStart(2, "0");
-export const timeValue = (minutes: number) =>
-  `${pad(Math.floor(minutes / 60) % 24)}:${pad(minutes % 60)}`;
-const parseTime = (value: string): number | null => {
-  const m = /^(\d{1,2}):(\d{2})/.exec(value);
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-};
-const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+const DAY = 24 * 60;
 
 /** Every IANA zone this runtime knows, with `current` in the list. */
-function zones(current: string[]): string[] {
+function zones(current: string[]): SelectOption<string>[] {
   const all =
     (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ??
     [];
-  return [...new Set([...all, ...current])].sort();
+  return [...new Set([...all, ...current])]
+    .sort()
+    .map((z) => ({ value: z, label: z.replace(/_/g, " ") }));
+}
+
+/** The calendar's first weekday, for the date pickers. */
+export const useWeekStart = () => useCalendarStore((s) => weekStartOf(s.accounts));
+
+/**
+ * Whether a timed event is under a day long in one zone: its end is then picked as a length from
+ * the start ("11:30 AM (30 mins)"), and an end at or before the start is the next day.
+ */
+function shortEvent(form: EventForm): boolean {
+  if (form.allDay || form.startZone !== form.endZone) return false;
+  const days = daysBetween(form.startDate, form.endDate);
+  const length = days * DAY + form.endMinutes - form.startMinutes;
+  return days >= 0 && days <= 1 && length > 0 && length <= DAY;
 }
 
 /**
@@ -37,31 +49,32 @@ export function TimeFields({
   compact?: boolean;
 }) {
   const id = useId();
+  const weekStart = useWeekStart();
   const zoneList = useMemo(
     () => (compact ? [] : zones([form.startZone, form.endZone])),
     [compact, form.startZone, form.endZone],
   );
   const [separateZones, setSeparateZones] = useState(form.startZone !== form.endZone);
+  const short = shortEvent(form);
 
-  const setStartDate = (v: string) => isDate(v) && onChange(moveStart(form, v, form.startMinutes));
-  const setStartTime = (v: string) => {
-    const m = parseTime(v);
-    if (m != null) onChange(moveStart(form, form.startDate, m));
-  };
+  const setStartDate = (v: string) => onChange(moveStart(form, v, form.startMinutes));
+  const setStartTime = (m: number) => onChange(moveStart(form, form.startDate, m));
   const setEndDate = (v: string) => {
-    if (!isDate(v)) return;
     // An all-day end before the start moves the start with it.
     if (form.allDay && v < form.startDate) onChange({ ...form, startDate: v, endDate: v });
     else onChange({ ...form, endDate: v });
   };
-  const setEndTime = (v: string) => {
-    const m = parseTime(v);
-    if (m == null) return;
-    // An end earlier than the start on the same day means the next day, as on the website.
-    const endDate =
-      form.endDate === form.startDate && m <= form.startMinutes && form.startZone === form.endZone
-        ? addDays(form.startDate, 1)
-        : form.endDate;
+  const setEndTime = (m: number) => {
+    // Under a day long, the end is a length from the start: at or before the start's time it's the
+    // next day, as on the website.
+    let endDate = form.endDate;
+    if (short) endDate = m <= form.startMinutes ? addDays(form.startDate, 1) : form.startDate;
+    else if (
+      form.endDate === form.startDate &&
+      m <= form.startMinutes &&
+      form.startZone === form.endZone
+    )
+      endDate = addDays(form.startDate, 1);
     onChange({ ...form, endMinutes: m, endDate });
   };
   const setAllDay = (allDay: boolean) => {
@@ -89,46 +102,39 @@ export function TimeFields({
   return (
     <div className="cal-when">
       <div className="cal-when__row">
-        <input
-          type="date"
-          className="cal-field cal-when__date"
+        <DateField
+          className="cal-when__date"
           aria-label={form.allDay ? "Start date" : "Date"}
           value={form.startDate}
-          required
-          onChange={(e) => setStartDate(e.currentTarget.value)}
+          weekStart={weekStart}
+          onChange={setStartDate}
         />
         {!form.allDay && (
-          <input
-            type="time"
-            step={900}
-            className="cal-field cal-when__time"
+          <TimeField
+            className="cal-when__time"
             aria-label="Start time"
-            value={timeValue(form.startMinutes)}
-            required
-            onChange={(e) => setStartTime(e.currentTarget.value)}
+            value={form.startMinutes}
+            onChange={setStartTime}
           />
         )}
         <span className="cal-when__to">to</span>
         {!form.allDay && (
-          <input
-            type="time"
-            step={900}
-            className="cal-field cal-when__time"
+          <TimeField
+            className="cal-when__time"
             aria-label="End time"
-            value={timeValue(form.endMinutes)}
-            required
-            onChange={(e) => setEndTime(e.currentTarget.value)}
+            value={form.endMinutes}
+            durationFrom={short ? form.startMinutes : undefined}
+            onChange={setEndTime}
           />
         )}
         {(form.allDay || multiDay || !compact) && (
-          <input
-            type="date"
-            className="cal-field cal-when__date"
+          <DateField
+            className="cal-when__date"
             aria-label="End date"
             value={form.endDate}
             min={form.allDay ? form.startDate : undefined}
-            required
-            onChange={(e) => setEndDate(e.currentTarget.value)}
+            weekStart={weekStart}
+            onChange={setEndDate}
           />
         )}
       </div>
@@ -143,28 +149,22 @@ export function TimeFields({
         </label>
         {!compact && !form.allDay && (
           <>
-            <label className="cal-when__zone" htmlFor={`${id}-zone`}>
+            <span className="cal-when__zone" id={`${id}-zone`}>
               {separateZones ? "Start time zone" : "Time zone"}
-            </label>
-            <select
-              id={`${id}-zone`}
-              className="cal-field cal-select"
+            </span>
+            <Select
+              aria-labelledby={`${id}-zone`}
+              className="cal-select cal-when__zone-select"
               value={form.startZone}
-              onChange={(e) => {
-                const zone = e.currentTarget.value;
+              options={zoneList}
+              onChange={(zone) =>
                 onChange({
                   ...form,
                   startZone: zone,
                   endZone: separateZones ? form.endZone : zone,
-                });
-              }}
-            >
-              {zoneList.map((z) => (
-                <option key={z} value={z}>
-                  {z.replace(/_/g, " ")}
-                </option>
-              ))}
-            </select>
+                })
+              }
+            />
             <label className="cal-check">
               <input
                 type="checkbox"
@@ -182,21 +182,16 @@ export function TimeFields({
       </div>
       {!compact && !form.allDay && separateZones && (
         <div className="cal-when__row">
-          <label className="cal-when__zone" htmlFor={`${id}-end-zone`}>
+          <span className="cal-when__zone" id={`${id}-end-zone`}>
             End time zone
-          </label>
-          <select
-            id={`${id}-end-zone`}
-            className="cal-field cal-select"
+          </span>
+          <Select
+            aria-labelledby={`${id}-end-zone`}
+            className="cal-select cal-when__zone-select"
             value={form.endZone}
-            onChange={(e) => onChange({ ...form, endZone: e.currentTarget.value })}
-          >
-            {zoneList.map((z) => (
-              <option key={z} value={z}>
-                {z.replace(/_/g, " ")}
-              </option>
-            ))}
-          </select>
+            options={zoneList}
+            onChange={(zone) => onChange({ ...form, endZone: zone })}
+          />
         </div>
       )}
     </div>
@@ -235,34 +230,31 @@ export function CalendarSelect({
   const known = groups.some((g) =>
     g.some((w) => w.account.accountId === form.accountId && w.calendar.id === form.calendarId),
   );
+  const options: SelectOption<string>[] = [
+    ...(known
+      ? []
+      : [{ value: calendarValue(form.accountId, form.calendarId), label: form.calendarId }]),
+    ...groups.flatMap((g) =>
+      g.map((w) => ({
+        value: calendarValue(w.account.accountId, w.calendar.id),
+        label: w.calendar.primary ? w.account.email : w.calendar.summary,
+        group: g[0].account.email,
+        disabled: lockAccount && w.account.accountId !== form.accountId,
+      })),
+    ),
+  ];
   return (
-    <select
+    <Select
       id={id}
-      className="cal-field cal-select"
+      className="cal-select"
       aria-label={id ? undefined : "Calendar"}
       value={calendarValue(form.accountId, form.calendarId)}
+      options={options}
       disabled={disabled}
-      onChange={(e) => {
-        const [accountId, calendarId] = e.currentTarget.value.split("\n");
+      onChange={(value) => {
+        const [accountId, calendarId] = value.split("\n");
         onChange({ ...form, accountId, calendarId });
       }}
-    >
-      {!known && (
-        <option value={calendarValue(form.accountId, form.calendarId)}>{form.calendarId}</option>
-      )}
-      {groups.map((g) => (
-        <optgroup key={g[0].account.accountId} label={g[0].account.email}>
-          {g.map((w) => (
-            <option
-              key={w.calendar.id}
-              value={calendarValue(w.account.accountId, w.calendar.id)}
-              disabled={lockAccount && w.account.accountId !== form.accountId}
-            >
-              {w.calendar.primary ? w.account.email : w.calendar.summary}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
+    />
   );
 }
