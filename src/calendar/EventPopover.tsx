@@ -40,7 +40,6 @@ const ANSWERS: { value: Answer; label: string }[] = [
 
 const SCOPES: { value: EditScope; label: string }[] = [
   { value: "this", label: "This event" },
-  { value: "following", label: "This and following events" },
   { value: "all", label: "All events" },
 ];
 

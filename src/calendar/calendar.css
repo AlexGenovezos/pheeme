@@ -231,6 +231,10 @@
   font-size: var(--font-size-sm);
 }
 
+.cal-grid[data-loading] {
+  visibility: hidden;
+}
+
 .cal-grid__head,
 .cal-grid__band,
 .cal-grid__body {

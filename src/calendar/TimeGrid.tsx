@@ -77,7 +77,14 @@ export function TimeGrid({
   } as CSSProperties;
 
   return (
-    <div className="cal-grid" style={style} role="grid" aria-label="Calendar">
+    <div
+      className="cal-grid"
+      style={style}
+      role="grid"
+      aria-label="Calendar"
+      // Held invisible for the first (local) read, so the all-day band doesn't grow under the user.
+      data-loading={events === null || undefined}
+    >
       <div className="cal-grid__head" role="row">
         <div className="cal-grid__gutter cal-grid__zone" title={tz}>
           {zoneAbbreviation(tz)}

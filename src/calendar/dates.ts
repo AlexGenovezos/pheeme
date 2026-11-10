@@ -58,13 +58,20 @@ function offsetAt(ms: number, tz: string): number {
   return asUtc - Math.floor(ms / 1000) * 1000;
 }
 
-/** UTC ms of `minutes` past midnight of `date` in `tz` (a time skipped by DST lands after the gap). */
+/**
+ * UTC ms of `minutes` past midnight of `date` in `tz`. A time repeated by DST is its first
+ * occurrence; a time skipped by DST lands just after the gap (Santiago's midnight is 1:00).
+ */
 export function zonedMs(date: string, minutes: number, tz: string): number {
   const [y, m, d] = date.split("-").map(Number);
   const local = Date.UTC(y, m - 1, d, 0, minutes);
-  const first = local - offsetAt(local, tz);
-  const second = local - offsetAt(first, tz);
-  return second;
+  // The offsets half a day either side cover any transition near this time.
+  const candidates = [
+    local - offsetAt(local - 43_200_000, tz),
+    local - offsetAt(local + 43_200_000, tz),
+  ];
+  const exact = candidates.filter((ms) => offsetAt(ms, tz) === local - ms);
+  return exact.length ? Math.min(...exact) : Math.max(...candidates);
 }
 
 const utcOf = (date: string) => {

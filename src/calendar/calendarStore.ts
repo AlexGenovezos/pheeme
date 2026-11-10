@@ -152,11 +152,11 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
         const accounts = (await getCalendarAccounts()) ?? [];
         if (ticket !== accountsTicket) return;
         const firstLoad = get().accounts === null;
-        const zoneBefore = displayZone(get().accounts);
         set({ accounts, loadError: null });
         // Today in the Calendar zone can differ from the computer's.
         if (firstLoad) set({ anchor: dateOf(Date.now(), displayZone(accounts)) });
-        if (firstLoad || zoneBefore !== displayZone(accounts)) void get().loadEvents();
+        // Accounts, zone or week start may have changed what's on screen (a local read).
+        void get().loadEvents();
       } catch (e) {
         if (ticket === accountsTicket) set({ loadError: toCommandError(e).message });
       }
@@ -220,11 +220,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
     subscribe: (signal) =>
       subscribeAll(
         [
-          () =>
-            listen(CALENDAR_EVENTS.updated, () => {
-              void get().loadAccounts();
-              void get().loadEvents();
-            }),
+          () => listen(CALENDAR_EVENTS.updated, () => void get().loadAccounts()),
           () => listen(CALENDAR_EVENTS.access, () => void get().loadAccounts()),
         ],
         signal,

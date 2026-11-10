@@ -47,6 +47,14 @@ describe("dates", () => {
     });
   });
 
+  test("a midnight skipped by DST starts the day just after the gap", () => {
+    // Chile springs forward at midnight: 2026-09-06 00:00 doesn't exist, the day starts at 01:00.
+    const start = zonedMs("2026-09-06", 0, "America/Santiago");
+    expect(wallClock(start, "America/Santiago")).toEqual({ date: "2026-09-06", minutes: 60 });
+    // The repeated hour on fall-back day resolves to its first occurrence.
+    expect(zonedMs("2026-11-01", 90, NY)).toBe(Date.UTC(2026, 10, 1, 5, 30));
+  });
+
   test("weeks start on the chosen day and months step by first-of-month", () => {
     expect(startOfWeek("2026-11-11", 0)).toBe("2026-11-08");
     expect(startOfWeek("2026-11-11", 1)).toBe("2026-11-09");

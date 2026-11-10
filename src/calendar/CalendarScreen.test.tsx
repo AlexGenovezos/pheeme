@@ -160,11 +160,9 @@ describe("commandsForMode", () => {
   test("Calendar drops conversation commands and the keys of mailbox ones", () => {
     const calendar = commandsForMode(appCommands(), "calendar");
     expect(calendar.some((c) => c.id.startsWith("conversation."))).toBe(false);
-    expect(calendar.find((c) => c.id === "go.inbox")?.shortcut).toBeUndefined();
+    expect(calendar.some((c) => c.id.startsWith("go."))).toBe(false);
+    expect(calendar.find((c) => c.id === "compose.new")?.shortcut).toBeUndefined();
     expect(calendar.find((c) => c.id === "mode.mail")?.shortcut).toBe("mod+1");
-
-    calendar.find((c) => c.id === "go.inbox")!.run();
-    expect(useCalendarStore.getState().mode).toBe("mail");
 
     const mail = commandsForMode(appCommands(), "mail");
     expect(mail.find((c) => c.id === "go.inbox")?.shortcut).toBe("g i");

@@ -292,26 +292,16 @@ function modeCommands(): Command[] {
 
 /**
  * The app commands for `mode`. Calendar has its own single keys (d, w, m, t, j, k, g), so there the
- * conversation commands are left out, and mailbox commands keep their palette entries (switching
- * back to Mail) without their keys.
+ * conversation and mailbox commands are left out (a saved binding such as `g i` would otherwise
+ * swallow `g`), and New message keeps its palette entry without its key.
  */
 export function commandsForMode(commands: Command[], mode: AppMode): Command[] {
   if (mode === "mail") return [...commands, ...modeCommands()];
-  const mailOnly = (c: Command) => c.id.startsWith("conversation.") || c.id === COPY_CODE_COMMAND;
+  const mailOnly = (c: Command) =>
+    c.id.startsWith("conversation.") || c.id.startsWith("go.") || c.id === COPY_CODE_COMMAND;
   return [
     ...commands.flatMap<Command>((c) => {
       if (mailOnly(c)) return [];
-      if (c.id.startsWith("go."))
-        return [
-          {
-            ...c,
-            shortcut: undefined,
-            run: () => {
-              useCalendarStore.getState().setMode("mail");
-              c.run();
-            },
-          },
-        ];
       if (c.id === "compose.new") return [{ ...c, shortcut: undefined }];
       return [c];
     }),
