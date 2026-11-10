@@ -1,0 +1,42 @@
+BEGIN:VCALENDAR
+PRODID:-//Google Inc//Google Calendar 70.9054//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+DTSTART:20261112T190000Z
+DTEND:20261112T200000Z
+DTSTAMP:20261109T151200Z
+ORGANIZER;CN=Morgan Lee:mailto:morgan@example.org
+UID:5k2l9m3n4o5p6q7r8s9t0u1v2w@google.com
+ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=TRUE
+ ;CN=Morgan Lee;X-NUM-GUESTS=0:mailto:morgan@example.org
+ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=
+ TRUE;CN=avery@example.org;X-NUM-GUESTS=0:mailto:avery@example.org
+ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=OPT-PARTICIPANT;PARTSTAT=TENTATIVE;RSVP=TRUE
+ ;CN=Sam Ortiz;X-NUM-GUESTS=0:mailto:sam@example.com
+ATTENDEE;CUTYPE=RESOURCE;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE;
+ CN=Studio-4-Room 4 (8);X-NUM-GUESTS=0:mailto:c_1882abc4d5e6f@resource.calen
+ dar.google.com
+X-GOOGLE-CONFERENCE:https://meet.google.com/abc-defg-hij
+X-MICROSOFT-CDO-OWNERAPPTID:-1906475339
+CREATED:20261109T151100Z
+DESCRIPTION:Walk through the new onboarding flow\, then decide on the copy.
+ \n\n-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~
+ :~:~:~:~:~:~:~:~::~:~::-\nJoin with Google Meet: https://meet.google.com/ab
+ c-defg-hij\n\nLearn more about Meet at: https://support.google.com/a/users/
+ answer/9282720\n\nPlease do not edit this section.\n-::~:~::~:~:~:~:~:~:~:~
+ :~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-
+LAST-MODIFIED:20261109T151200Z
+LOCATION:Room 4\, Studio\; 2nd floor
+SEQUENCE:0
+STATUS:CONFIRMED
+SUMMARY:Design review
+TRANSP:OPAQUE
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:This is an event reminder
+TRIGGER:-P0DT0H30M0S
+END:VALARM
+END:VEVENT
+END:VCALENDAR

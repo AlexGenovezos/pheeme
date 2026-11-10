@@ -35,11 +35,13 @@ import { type EventForm, formTimes } from "./eventForm";
 import { EventPopover } from "./EventPopover";
 import { QuickCreate } from "./QuickCreate";
 import { MonthGrid } from "./MonthGrid";
+import { PinnedEmail } from "./PinnedEmail";
 import { TimeGrid } from "./TimeGrid";
 import { type CalendarView, viewTitle } from "./views";
 import { useNow } from "./useNow";
 import "./calendar.css";
 import "./editing.css";
+import "./invite.css";
 
 const VIEW_OPTIONS = [
   { value: "day", label: "Day" },
@@ -481,15 +483,20 @@ export function CalendarScreen() {
             {loadError}
           </p>
         )}
-        {!anyOn ? (
-          <FirstOpen />
-        ) : searching ? (
-          <CalendarSearch />
-        ) : view === "month" ? (
-          <MonthGrid days={days} anchor={anchor} tz={tz} events={events} />
-        ) : (
-          <TimeGrid key={view} days={days} tz={tz} events={events} />
-        )}
+        <div className="cal-main__body">
+          <PinnedEmail />
+          <div className="cal-main__grid">
+            {!anyOn ? (
+              <FirstOpen />
+            ) : searching ? (
+              <CalendarSearch />
+            ) : view === "month" ? (
+              <MonthGrid days={days} anchor={anchor} tz={tz} events={events} />
+            ) : (
+              <TimeGrid key={view} days={days} tz={tz} events={events} />
+            )}
+          </div>
+        </div>
       </main>
       <EventPopover />
       <QuickCreate />

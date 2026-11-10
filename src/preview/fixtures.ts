@@ -175,6 +175,26 @@ const file = (id: string, filename: string, mimeType: string, size: number): Att
   isInline: false,
   contentId: null,
 });
+/** An invitation's two calendar files, as Google sends them: the `text/calendar` part beside the body and `invite.ics`. */
+const invite = (id: string): AttachmentInfo[] => [
+  {
+    id: `${id}-cal`,
+    filename: null,
+    mimeType: "text/calendar",
+    size: 1_834,
+    isInline: false,
+    contentId: null,
+  },
+  {
+    id: `${id}-ics`,
+    filename: "invite.ics",
+    mimeType: "application/ics",
+    size: 1_834,
+    isInline: false,
+    contentId: null,
+  },
+];
+
 const pdf = (id: string, filename: string, size: number) =>
   file(id, filename, "application/pdf", size);
 
@@ -517,6 +537,28 @@ export function createFixtureThreads(): FixtureThread[] {
       ),
     ]),
 
+    // A cancelled invitation: the card says so and offers no answer.
+    thread("p-20", P, ["INBOX"], "Cancelled event: Book club @ Fri 6:30pm (avery@example.com)", [
+      message(
+        "p-20-m1",
+        mira,
+        daysAgo(1),
+        "This event has been cancelled.\n\nBook club\n\nInvitation from Google Calendar",
+        me,
+        { attachments: invite("p-20") },
+      ),
+    ]),
+    // A plain email that names a time: Create event from email starts there.
+    thread("p-21", P, ["INBOX"], "Coffee next week?", [
+      message(
+        "p-21-m1",
+        jonas,
+        hoursAgo(3),
+        "Hi Avery,\n\nAre you free for coffee next Thursday at 3pm? Tartine on Guerrero works for me.\n\nJonas",
+        me,
+      ),
+    ]),
+
     // ── Work ──
     thread("w-01", W, ["INBOX", "STARRED", "Label_10"], "Pilot for the support team", [
       message(
@@ -623,6 +665,17 @@ export function createFixtureThreads(): FixtureThread[] {
         hoursAgo(30),
         "Notes from Tuesday:\n\n- ship the mail UI beta\n- start Phase 7 compose\n\nSee https://example.com/roadmap",
         work,
+      ),
+    ]),
+    // An invitation that clashes with a 1:1 (the calendar preview's "Design review", see `calendar.ts`).
+    thread("w-13", W, ["INBOX"], "Invitation: Design review @ Thu 2pm – 3pm (avery@example.org)", [
+      message(
+        "w-13-m1",
+        ["Morgan Lee", "morgan@example.org"],
+        hoursAgo(4),
+        "Morgan Lee has invited you to an event.\n\nDesign review\nWalk through the new onboarding flow, then decide on the copy.\n\nJoin with Google Meet: https://meet.google.com/abc-defg-hij\n\nInvitation from Google Calendar",
+        work,
+        { attachments: invite("w-13") },
       ),
     ]),
     thread("w-11", W, ["SENT", "Label_10"], "Re: Pilot for the support team", [

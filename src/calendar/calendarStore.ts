@@ -65,6 +65,14 @@ export function weekStartOf(accounts: CalendarAccount[] | null): number {
   return start ?? 0;
 }
 
+/** The email pinned beside the calendar (Open in Calendar, Create event from email). */
+export interface PinnedEmail {
+  accountId: string;
+  threadId: string;
+  /** The message it's about (the invitation's, or the newest). */
+  messageId: string;
+}
+
 /** Where an event popover is open, and what it shows. */
 export interface OpenEvent {
   event: CalendarEvent;
@@ -85,6 +93,9 @@ interface CalendarState extends Prefs {
   open: OpenEvent | null;
   /** The "Go to date" dialog is open. */
   goToOpen: boolean;
+  pinned: PinnedEmail | null;
+  /** Minutes past midnight Day and Week open scrolled to (a pinned invitation's time) until Mail is back in front. */
+  reveal: number | null;
 
   setMode(mode: AppMode): void;
   toggleMode(): void;
@@ -95,6 +106,8 @@ interface CalendarState extends Prefs {
   step(dir: 1 | -1): void;
   openEvent(open: OpenEvent | null): void;
   setGoToOpen(open: boolean): void;
+  /** Pin an email beside the calendar (null unpins it), and scroll Day and Week to `reveal` minutes. */
+  pin(pinned: PinnedEmail | null, reveal?: number | null): void;
   loadAccounts(): Promise<void>;
   /** Read the events of the days on screen (again). */
   loadEvents(): Promise<void>;
@@ -124,10 +137,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
     loadError: null,
     open: null,
     goToOpen: false,
+    pinned: null,
+    reveal: null,
 
     setMode: (mode) => {
       if (mode === get().mode) return;
-      set({ mode, open: null });
+      set({ mode, open: null, ...(mode === "mail" ? { reveal: null } : {}) });
       save();
     },
     toggleMode: () => get().setMode(get().mode === "mail" ? "calendar" : "mail"),
@@ -145,6 +160,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
     step: (dir) => void get().goTo(shiftAnchor(get().view, get().anchor, dir)),
     openEvent: (open) => set({ open }),
     setGoToOpen: (goToOpen) => set({ goToOpen }),
+    pin: (pinned, reveal = null) => set({ pinned, reveal }),
 
     loadAccounts: async () => {
       const ticket = ++accountsTicket;

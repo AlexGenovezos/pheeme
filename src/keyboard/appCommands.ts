@@ -13,6 +13,11 @@ import {
 } from "../mail/actions";
 import { openCreateLabel } from "../labels/create";
 import { COPY_CODE_COMMAND, COPY_CODE_SHORTCUT, copyOpenConversationCode } from "../mail/CodeCard";
+import {
+  CREATE_EVENT_COMMAND,
+  CREATE_EVENT_SHORTCUT,
+  createEventFromEmail,
+} from "../calendar/mailActions";
 import { useSetupGuide } from "../onboarding/guideStore";
 import {
   CATEGORIES,
@@ -227,6 +232,14 @@ export function appCommands(): Command[] {
       shortcut: COPY_CODE_SHORTCUT,
       keywords: ["otp", "2fa", "login code", "one-time", "passcode"],
       run: copyOpenConversationCode,
+    },
+    {
+      id: CREATE_EVENT_COMMAND,
+      title: "Create event from email",
+      group: "Conversation",
+      shortcut: CREATE_EVENT_SHORTCUT,
+      keywords: ["calendar", "meeting", "schedule", "new event", "add to calendar"],
+      run: () => void createEventFromEmail(),
     },
     {
       id: "view.toggleSidebar",

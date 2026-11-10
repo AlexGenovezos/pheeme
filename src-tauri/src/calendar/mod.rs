@@ -6,6 +6,8 @@ pub mod edit;
 pub mod error;
 #[cfg(test)]
 pub(crate) mod fake;
+pub mod ics;
+pub mod invite;
 pub mod recurrence;
 pub mod reminders;
 mod repeating;

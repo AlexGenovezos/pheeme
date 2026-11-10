@@ -9,6 +9,8 @@ import { useMailStore } from "../store/mailStore";
 import { useLabelStore } from "../store/labelStore";
 import { isComplete, useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
+import { InviteCard } from "../calendar/InviteCard";
+import { inviteMessage } from "./invitePart";
 import { CodeCard } from "./CodeCard";
 import { MessageCard } from "./MessageCard";
 import { ThreadLoading } from "./ThreadLoading";
@@ -269,6 +271,7 @@ function Conversation({
     : null;
   const subject = detail.thread.subject || "(no subject)";
   const code = useMemo(() => conversationCode(detail.messages), [detail.messages]);
+  const invite = useMemo(() => inviteMessage(detail.messages), [detail.messages]);
   usePrefetchAttachments(detail, active);
   return (
     <div className="thread-view">
@@ -282,6 +285,13 @@ function Conversation({
         }
       />
       {code && <CodeCard code={code.code} />}
+      {/* Only on screen: reading the invitation may download it, and neighbours are speculative. */}
+      {invite && active && (
+        <InviteCard
+          key={invite.id}
+          pinned={{ accountId, threadId: detail.thread.id, messageId: invite.id }}
+        />
+      )}
       <div className="thread-view__messages">
         {detail.messages.map((m) => (
           <MessageCard

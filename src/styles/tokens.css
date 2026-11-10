@@ -140,6 +140,10 @@
   --calendar-goto-offset-top: 18vh;
   --calendar-guest-list-max-height: 168px;
   --calendar-declined-opacity: 0.55;
+  /* Mail's invite card: its mini day view, and the email pinned beside the calendar. */
+  --invite-mini-day-height: 168px;
+  --invite-mini-gutter-width: 52px;
+  --pinned-email-width: 320px;
   /* Tasks: the panel at the right edge, its rail, and the tick-off circle. */
   --tasks-panel-width: 340px;
   --tasks-rail-width: 44px;

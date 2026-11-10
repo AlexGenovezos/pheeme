@@ -64,12 +64,18 @@ export function TimeGrid({
   const bandRows = [...band, ...taskBand].reduce((n, s) => Math.max(n, s.row + 1), 0);
   const columns = useMemo(() => days.map((d) => layoutDay(list, d, tz)), [list, days, tz]);
 
-  // Open scrolled to the working day (an hour before now, when today is on screen).
+  // Open scrolled to the working day (an hour before now, when today is on screen), or to a pinned invitation.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const showsToday = days.includes(now.date);
-    const minutes = showsToday ? Math.max(0, now.minutes - 60) : 8 * 60;
+    const reveal = useCalendarStore.getState().reveal;
+    const minutes =
+      reveal !== null
+        ? Math.max(0, reveal - 60)
+        : showsToday
+          ? Math.max(0, now.minutes - 60)
+          : 8 * 60;
     el.scrollTop = (minutes / 60) * HOUR_PX;
     // Only when the view opens; moving between weeks keeps the scroll position.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -2,6 +2,7 @@
 
 use super::CommandError;
 use crate::calendar::edit::EventEdit;
+use crate::calendar::invite::InviteDto;
 use crate::calendar::service::{
     CalendarAccessDto, CalendarAccountDto, CalendarEventDto, EventDetailDto,
 };
@@ -232,4 +233,18 @@ pub async fn respond_to_calendar_invite(
         import,
     ))
     .await?)
+}
+
+/// The calendar invitation in a message (Mail's invite card), with the event as it is now on
+/// the account's calendar when the cache has it. `None` when the message carries none.
+#[tauri::command]
+pub async fn message_invite(
+    state: State<'_, AppState>,
+    account_id: String,
+    message_id: String,
+) -> Result<Option<InviteDto>, CommandError> {
+    let Some(text) = user_action(state.mail.invite_text(&account_id, &message_id)).await? else {
+        return Ok(None);
+    };
+    Ok(state.calendar.invite(&account_id, &text).await?)
 }
