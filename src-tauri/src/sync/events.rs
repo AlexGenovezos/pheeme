@@ -114,6 +114,15 @@ pub enum SyncEvent {
         account_id: String,
         status: String,
     },
+    /// The account's cached task lists or tasks changed.
+    TasksUpdated {
+        account_id: String,
+    },
+    /// The account's tasks access changed: `on`, `missing_scope`, `api_disabled` or `error`.
+    TasksAccess {
+        account_id: String,
+        status: String,
+    },
     /// Google stopped (`false`) or started again (`true`) answering this device.
     Network {
         online: bool,
@@ -135,6 +144,8 @@ impl SyncEvent {
             SyncEvent::Network { .. } => "network:status",
             SyncEvent::CalendarUpdated { .. } => "calendar:updated",
             SyncEvent::CalendarAccess { .. } => "calendar:access",
+            SyncEvent::TasksUpdated { .. } => "tasks:updated",
+            SyncEvent::TasksAccess { .. } => "tasks:access",
         }
     }
 

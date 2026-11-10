@@ -29,6 +29,7 @@ import { sampleAttachment } from "./attachments";
 import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel } from "./labels";
 import { createSenderRuleHandlers } from "./senderRules";
 import { createCalendarHandlers } from "./calendar";
+import { createTasksHandlers } from "./tasks";
 import { createContactHandlers } from "./contacts";
 import { createTransferHandlers } from "./transfer";
 
@@ -222,6 +223,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       params.get("contacts"),
     ),
     ...createCalendarHandlers(accounts, params.get("calendar")),
+    ...createTasksHandlers(accounts, params.get("tasks")),
     list_threads: (args): ThreadPage => ({
       threads: threadsIn(
         threads,

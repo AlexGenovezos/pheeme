@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE task_lists SET hidden = ? WHERE account_id = ? AND id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "192509230f8f7c8d4810e5dc1686bac25dc7a64f41744ffc5bab41a786e69384"
+}

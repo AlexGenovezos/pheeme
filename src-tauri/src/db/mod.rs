@@ -10,6 +10,7 @@ pub mod outbox;
 pub mod search;
 pub mod settings;
 pub mod sync_state;
+pub mod tasks;
 pub mod threads;
 
 #[cfg(test)]

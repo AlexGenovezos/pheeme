@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO tasks_access (account_id, status, detail, checked_at, synced_at)\n         VALUES (?1, ?2, ?3, ?4, CASE WHEN ?2 = 'on' THEN ?4 END)\n         ON CONFLICT (account_id) DO UPDATE SET\n             status = excluded.status,\n             detail = excluded.detail,\n             checked_at = excluded.checked_at,\n             synced_at = CASE WHEN ?2 = 'on' THEN ?4 ELSE tasks_access.synced_at END",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "73daa0229034f34f29ed7639cd571cae912c18faebceaea5d99b93ed0d0c9695"
+}

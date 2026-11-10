@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO tasks (account_id, list_id, id, parent, position, title, notes, due_date,\n             status, completed_ms, updated_ms, hidden, etag, raw)\n         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n         ON CONFLICT (account_id, list_id, id) DO UPDATE SET\n             parent = excluded.parent,\n             position = excluded.position,\n             title = excluded.title,\n             notes = excluded.notes,\n             due_date = excluded.due_date,\n             status = excluded.status,\n             completed_ms = excluded.completed_ms,\n             updated_ms = excluded.updated_ms,\n             hidden = excluded.hidden,\n             etag = excluded.etag,\n             raw = excluded.raw\n         WHERE tasks.raw IS NOT excluded.raw",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 14
+    },
+    "nullable": []
+  },
+  "hash": "06d8214b9ec5a5ceb24c6438bf6e873dc64a832549b18e28cea51417a86016b7"
+}
