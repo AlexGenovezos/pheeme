@@ -2,7 +2,7 @@
 //! the cache, plus the background loop that keeps the cache current. Runs apart from mail and
 //! calendar sync, so a Tasks problem never holds either up.
 
-use super::sync::{classify, sync_account, SyncError};
+use super::sync::{classify, sync_account, SyncError, SyncReport};
 use super::{TasksApi, TasksFactory};
 use crate::db;
 use crate::db::tasks::{DbTask, DbTasksAccess};
@@ -343,15 +343,16 @@ impl TasksService {
             .await?
             .map(|a| a.status);
         let api: Arc<dyn TasksApi> = (self.api_for)(account_id);
-        let (status, detail) = match sync_account(&self.db, api.as_ref(), account_id, now).await {
-            Ok(report) => {
-                if report.changed {
-                    self.events.emit(SyncEvent::TasksUpdated {
-                        account_id: account_id.to_owned(),
-                    });
-                }
-                ("on", None)
-            }
+        let mut report = SyncReport::default();
+        let result = sync_account(&self.db, api.as_ref(), account_id, now, &mut report).await;
+        // Lists synced before a failure are in the cache: tell the UI either way.
+        if report.changed {
+            self.events.emit(SyncEvent::TasksUpdated {
+                account_id: account_id.to_owned(),
+            });
+        }
+        let (status, detail) = match result {
+            Ok(()) => ("on", None),
             Err(SyncError::Api(e)) if is_transient(&e) => {
                 warn!(error = %e, "tasks sync will retry");
                 // An account the regular ticks skip was asked for: keep asking until Google
@@ -641,6 +642,22 @@ pub(super) mod tests {
             .fail_with(|| GmailError::Offline("no network".into()));
         let access = h.service.sync_now("a").await.unwrap();
         assert_eq!(access.status, "error");
+    }
+
+    #[tokio::test]
+    async fn changes_cached_before_a_later_list_fails_are_announced() {
+        let h = harness(&["a"]).await;
+        h.fake("a").add_list("W", "Work");
+        h.grant("a").await;
+        h.fake("a").put("L", task("t", "Milk"));
+        h.fake("a").fail_list("W", || GmailError::Api {
+            status: 503,
+            reason: None,
+            message: "Backend Error".into(),
+        });
+        h.service.sync_now("a").await.unwrap();
+        assert_eq!(h.titles("a", "L").await, vec!["Milk"]);
+        assert_eq!(h.events.names(), vec!["tasks:updated"]);
     }
 
     #[tokio::test]

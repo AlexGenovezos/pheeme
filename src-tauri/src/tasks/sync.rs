@@ -57,13 +57,15 @@ fn is_account_wide(e: &GmailError) -> bool {
     e.is_missing_scope() || e.is_api_disabled() || !e.is_not_found()
 }
 
-/// Bring the account's task lists and tasks up to date.
+/// Bring the account's task lists and tasks up to date. `report` says what was committed,
+/// even when a later list fails, so the UI still hears about it.
 pub async fn sync_account(
     db: &SqlitePool,
     api: &dyn TasksApi,
     account_id: &str,
     now_ms: i64,
-) -> Result<SyncReport, SyncError> {
+    report: &mut SyncReport,
+) -> Result<(), SyncError> {
     let mut rows = Vec::new();
     let mut page_token: Option<String> = None;
     for _ in 0..MAX_LIST_PAGES {
@@ -74,9 +76,7 @@ pub async fn sync_account(
             break;
         }
     }
-    let mut report = SyncReport {
-        changed: cache::replace_task_lists(db, account_id, &rows).await?,
-    };
+    report.changed |= cache::replace_task_lists(db, account_id, &rows).await?;
     for list in cache::task_lists(db, Some(account_id)).await? {
         match sync_list(db, api, &list, now_ms).await {
             Ok(changed) => report.changed |= changed,
@@ -87,7 +87,7 @@ pub async fn sync_account(
             Err(e) => return Err(e),
         }
     }
-    Ok(report)
+    Ok(())
 }
 
 /// Sync one list: in full when it never was, or 6 hours ago, otherwise only what changed
@@ -179,11 +179,22 @@ mod tests {
 
     const HOUR: i64 = 60 * 60 * 1000;
 
+    async fn sync(
+        pool: &SqlitePool,
+        api: &dyn TasksApi,
+        account_id: &str,
+        now_ms: i64,
+    ) -> Result<SyncReport, SyncError> {
+        let mut report = SyncReport::default();
+        sync_account(pool, api, account_id, now_ms, &mut report).await?;
+        Ok(report)
+    }
+
     #[tokio::test]
     async fn first_sync_reads_every_list_in_full() {
         let db = TestDb::with_account("a").await;
         let fake = fake_with_tasks();
-        let report = sync_account(&db.pool, &fake, "a", HOUR).await.unwrap();
+        let report = sync(&db.pool, &fake, "a", HOUR).await.unwrap();
         assert!(report.changed);
         assert_eq!(
             cached(&db.pool, "L").await,
@@ -212,14 +223,14 @@ mod tests {
     async fn later_syncs_poll_with_updated_min_and_apply_changes_and_deletions() {
         let db = TestDb::with_account("a").await;
         let fake = fake_with_tasks();
-        sync_account(&db.pool, &fake, "a", HOUR).await.unwrap();
+        sync(&db.pool, &fake, "a", HOUR).await.unwrap();
         fake.reads();
         let mark = cache::task_lists(&db.pool, Some("a")).await.unwrap()[0]
             .synced_through_ms
             .unwrap();
 
         // Nothing changed: polls, and nothing is reported.
-        let report = sync_account(&db.pool, &fake, "a", 2 * HOUR).await.unwrap();
+        let report = sync(&db.pool, &fake, "a", 2 * HOUR).await.unwrap();
         assert!(!report.changed);
         let reads = fake.reads();
         assert_eq!(
@@ -234,7 +245,7 @@ mod tests {
         );
         fake.put("L", task("t4", "Butter"));
         fake.remove("L", "t1");
-        let report = sync_account(&db.pool, &fake, "a", 2 * HOUR).await.unwrap();
+        let report = sync(&db.pool, &fake, "a", 2 * HOUR).await.unwrap();
         assert!(report.changed);
         assert_eq!(
             cached(&db.pool, "L").await,
@@ -264,14 +275,14 @@ mod tests {
     async fn every_six_hours_lists_are_read_in_full_and_vanished_tasks_go() {
         let db = TestDb::with_account("a").await;
         let fake = fake_with_tasks();
-        sync_account(&db.pool, &fake, "a", HOUR).await.unwrap();
+        sync(&db.pool, &fake, "a", HOUR).await.unwrap();
         // Gone without a trace: a poll can't see it.
         fake.forget("L", "t2");
-        sync_account(&db.pool, &fake, "a", 2 * HOUR).await.unwrap();
+        sync(&db.pool, &fake, "a", 2 * HOUR).await.unwrap();
         assert_eq!(cached(&db.pool, "L").await.len(), 3);
         fake.reads();
 
-        let report = sync_account(&db.pool, &fake, "a", HOUR + FULL_INTERVAL_MS)
+        let report = sync(&db.pool, &fake, "a", HOUR + FULL_INTERVAL_MS)
             .await
             .unwrap();
         assert!(report.changed);
@@ -291,12 +302,12 @@ mod tests {
     async fn new_renamed_and_removed_lists_follow_google() {
         let db = TestDb::with_account("a").await;
         let fake = fake_with_tasks();
-        sync_account(&db.pool, &fake, "a", HOUR).await.unwrap();
+        sync(&db.pool, &fake, "a", HOUR).await.unwrap();
         fake.remove_list("W");
         fake.rename_list("L", "Groceries");
         fake.add_list("N", "New");
         fake.put("N", task("n1", "First"));
-        let report = sync_account(&db.pool, &fake, "a", 2 * HOUR).await.unwrap();
+        let report = sync(&db.pool, &fake, "a", 2 * HOUR).await.unwrap();
         assert!(report.changed);
         let titles: Vec<String> = cache::task_lists(&db.pool, Some("a"))
             .await
@@ -328,7 +339,7 @@ mod tests {
             json!({"id": "c", "title": "Done", "status": "completed",
                              "completed": "2026-11-01T00:00:05.000Z", "hidden": true}),
         );
-        sync_account(&db.pool, &fake, "a", HOUR).await.unwrap();
+        sync(&db.pool, &fake, "a", HOUR).await.unwrap();
         let s = cache::task(&db.pool, "a", "L", "s").await.unwrap().unwrap();
         assert_eq!(s.parent.as_deref(), Some("p"));
         assert_eq!(s.due_date.as_deref(), Some("2026-11-12"));
@@ -348,7 +359,7 @@ mod tests {
             message: "Google Tasks API has not been used in project 42 before or it is disabled."
                 .into(),
         });
-        let Err(SyncError::Api(e)) = sync_account(&db.pool, &fake, "a", HOUR).await else {
+        let Err(SyncError::Api(e)) = sync(&db.pool, &fake, "a", HOUR).await else {
             panic!("expected an API error");
         };
         assert_eq!(classify(&e), ("api_disabled", Some("42".into())));
@@ -424,7 +435,7 @@ mod tests {
             }
         }
         let api = LosesW(fake_with_tasks());
-        sync_account(&db.pool, &api, "a", HOUR).await.unwrap();
+        sync(&db.pool, &api, "a", HOUR).await.unwrap();
         assert_eq!(cached(&db.pool, "L").await.len(), 3);
         assert!(cached(&db.pool, "W").await.is_empty());
     }

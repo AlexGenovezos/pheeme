@@ -47,6 +47,8 @@ struct State {
     tasks: HashMap<String, Vec<Value>>,
     seq: u64,
     fail: Option<fn() -> GmailError>,
+    /// `list_tasks` of these lists fails with the error.
+    list_fail: HashMap<String, fn() -> GmailError>,
     /// `list_tasks` calls: (list, updatedMin, showDeleted).
     reads: Vec<(String, Option<String>, bool)>,
     writes: Vec<FakeWrite>,
@@ -308,7 +310,14 @@ impl FakeTasks {
     }
 
     pub fn succeed(&self) {
-        self.lock().fail = None;
+        let mut s = self.lock();
+        s.fail = None;
+        s.list_fail.clear();
+    }
+
+    /// Reading this list's tasks fails with `make()` until [`Self::succeed`].
+    pub fn fail_list(&self, list_id: &str, make: fn() -> GmailError) {
+        self.lock().list_fail.insert(list_id.into(), make);
     }
 
     /// `list_tasks` calls so far: (list, updatedMin, showDeleted).
@@ -430,6 +439,9 @@ impl TasksApi for FakeTasks {
     ) -> Result<TasksPage, GmailError> {
         let mut s = self.lock();
         if let Some(make) = s.fail {
+            return Err(make());
+        }
+        if let Some(make) = s.list_fail.get(list_id) {
             return Err(make());
         }
         if !s.list_exists(list_id) {
