@@ -16,6 +16,14 @@ const STRONG =
 /** Wording that's enough for an all-digit code. */
 const WEAK =
   /\b(?:confirmation|temporary|access)\s+(?:code|pin)\b|\b(?:is|as) your (?:[\w-]+ ){0,3}(?:code|passcode|pin)\b|\byour code is\b|\benter (?:this|the following) code\b/gi;
+/**
+ * Wording that, just before the code wording, makes it a meeting's passcode ("Join Zoom Meeting … Meeting
+ * ID: 812 3456 7890 Passcode: 351904"): a meeting invite or reminder, not a sign-in code email.
+ */
+const MEETING =
+  /\bmeeting (?:id|number)\b|\b(?:zoom|teams|webex|meeting|webinar) (?:passcode|password|pin)\b|\bzoom\.us\/|\bteams\.microsoft\.com\/|\bwebex\.com\//i;
+/** How far (in characters) before the code wording `MEETING` is looked for. */
+const MEETING_NEAR = 160;
 /** How far (in characters) a code may sit from that wording. */
 const NEAR = 80;
 /** What comes just before a number that only identifies something: "the phone ending in 1234". */
@@ -71,7 +79,9 @@ export function findCode(text: string): string | null {
   const anchors = [
     ...[...flat.matchAll(STRONG)].map((m) => ({ m, strong: true })),
     ...[...flat.matchAll(WEAK)].map((m) => ({ m, strong: false })),
-  ].map(({ m, strong }) => ({ start: m.index, end: m.index + m[0].length, strong }));
+  ]
+    .map(({ m, strong }) => ({ start: m.index, end: m.index + m[0].length, strong }))
+    .filter((a) => !MEETING.test(flat.slice(Math.max(0, a.start - MEETING_NEAR), a.end)));
   if (!anchors.length) return null;
   let best: { code: string; distance: number } | null = null;
   for (const c of candidates(flat)) {
