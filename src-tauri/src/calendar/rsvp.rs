@@ -185,29 +185,36 @@ impl CalendarService {
                 .filter(|e| e.recurring_event_id.is_none() && e.status != "cancelled")
                 .collect();
         cached.sort_by_key(|e| Some(&e.calendar_id) != primary.as_ref());
-        let (calendar_id, id) = match cached.into_iter().next() {
-            Some(e) => (e.calendar_id, e.id),
+        let (calendar_id, id, newly_cached) = match cached.into_iter().next() {
+            Some(e) => (e.calendar_id, e.id, false),
             None => {
                 let primary = primary.ok_or(CalendarError::NotFound)?;
                 let found = self
                     .find_or_import(account_id, &primary, ical_uid, import)
                     .await?;
-                (found.calendar_id, found.id)
+                (found.calendar_id, found.id, true)
             }
         };
-        self.respond(
-            account_id,
-            &calendar_id,
-            &id,
-            EditScope::All,
-            response,
-            comment,
-        )
-        .await
+        let answered = self
+            .respond(
+                account_id,
+                &calendar_id,
+                &id,
+                EditScope::All,
+                response,
+                comment,
+            )
+            .await;
+        // The answer's save tells the UI; if it failed, the event just cached still has to.
+        if answered.is_err() && newly_cached {
+            self.updated(account_id);
+        }
+        answered
     }
 
     /// The invite on Google's copy of the primary calendar (the series rather than one of
-    /// its changed occurrences), or `import` imported there, cached.
+    /// its changed occurrences), or `import` imported there, cached without telling the UI:
+    /// the answer that follows does.
     async fn find_or_import(
         &self,
         account_id: &str,
@@ -237,7 +244,13 @@ impl CalendarService {
             }
             (None, None) => return Err(CalendarError::NotFound),
         };
-        self.save(account_id, primary, event).await
+        let id = event.id.clone();
+        self.cache_all(account_id, primary, vec![event]).await?;
+        Ok(EventRef {
+            account_id: account_id.to_owned(),
+            calendar_id: primary.to_owned(),
+            id,
+        })
     }
 }
 
@@ -566,6 +579,7 @@ mod tests {
             .unwrap();
         assert_eq!(r.id, "review");
         assert_eq!(methods(&h), vec!["patch"]);
+        assert_eq!(h.events.names(), vec!["calendar:updated"], "one refresh");
         let w = h.fake("a").writes().pop().unwrap();
         assert_eq!(w.if_match.as_deref(), Some("\"review\""));
         let google = h.fake("a").event(CAL, "review").unwrap();
@@ -593,6 +607,7 @@ mod tests {
             .unwrap();
         let writes = h.fake("a").writes();
         assert_eq!(methods(&h), vec!["import", "patch"]);
+        assert_eq!(h.events.names(), vec!["calendar:updated"], "one refresh");
         assert_eq!(writes[0].calendar_id, CAL);
         assert_eq!(writes[1].event_id.as_deref(), Some(r.id.as_str()));
         let google = h.fake("a").event(CAL, &r.id).unwrap();
@@ -608,6 +623,29 @@ mod tests {
         );
         let row = cached(&h, CAL, &r.id).await.unwrap();
         assert_eq!(json!(row.etag), google["etag"]);
+    }
+
+    #[tokio::test]
+    async fn respond_to_invite_shows_the_import_when_the_answer_fails() {
+        let h = synced(vec![]).await;
+        let mut invite = review();
+        for key in ["id", "etag", "updated", "status"] {
+            invite.as_object_mut().unwrap().remove(key);
+        }
+        // The import (write 0) lands; the answer (write 1) fails.
+        h.fake("a").fail_write(1, || GmailError::Api {
+            status: 500,
+            reason: Some("backendError".into()),
+            message: "Backend Error".into(),
+        });
+        let err = h
+            .service
+            .respond_to_invite("a", "review@google.com", "accepted", None, Some(invite))
+            .await
+            .unwrap_err();
+        assert!(!matches!(err, CalendarError::NotFound), "{err:?}");
+        assert_eq!(methods(&h), vec!["import", "patch"]);
+        assert_eq!(h.events.names(), vec!["calendar:updated"]);
     }
 
     #[tokio::test]
