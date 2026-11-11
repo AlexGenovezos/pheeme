@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM outbox_messages WHERE op_id = ? AND thread_id IN (SELECT value FROM json_each(?))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "aa8af21cd9cf4fccf82c9a6a0459931704d9e4e70158c10f36fa13044a7e1167"
+}

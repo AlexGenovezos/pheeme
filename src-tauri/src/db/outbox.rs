@@ -167,6 +167,27 @@ pub async fn messages_of<'e>(ex: impl SqliteExecutor<'e>, op_id: &str) -> Result
     .await?)
 }
 
+/// Give a label/trash op the `payload` left once Gmail has `done_threads`, and drop their targets.
+pub async fn drop_threads(
+    conn: &mut SqliteConnection,
+    op_id: &str,
+    payload: &str,
+    done_threads: &[String],
+) -> Result<()> {
+    let done = serde_json::to_string(done_threads)?;
+    sqlx::query!("UPDATE outbox SET payload = ? WHERE id = ?", payload, op_id)
+        .execute(&mut *conn)
+        .await?;
+    sqlx::query!(
+        "DELETE FROM outbox_messages WHERE op_id = ? AND thread_id IN (SELECT value FROM json_each(?))",
+        op_id,
+        done
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
 /// Remove an op (done, or rolled back); its target rows cascade.
 pub async fn delete<'e>(ex: impl SqliteExecutor<'e>, op_id: &str) -> Result<()> {
     sqlx::query!("DELETE FROM outbox WHERE id = ?", op_id)

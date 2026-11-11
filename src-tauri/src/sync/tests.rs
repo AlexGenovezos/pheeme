@@ -654,6 +654,93 @@ async fn moving_trashed_mail_to_the_inbox_takes_it_out_of_trash() {
 }
 
 #[tokio::test]
+async fn a_big_change_keeps_what_gmail_took_when_it_is_refused_partway() {
+    let h = harness().await;
+    let threads: Vec<String> = (0..40).map(|n| format!("t{n}")).collect();
+    synced_inbox(
+        &h,
+        (0..40)
+            .map(|n| FakeMsg::new(&format!("m{n}"), &format!("t{n}"), &["INBOX"]).days_ago(1))
+            .collect(),
+    )
+    .await;
+    outbox::enqueue_modify(&h.pool, ACCT, &threads, &s(&["STARRED"]), &[])
+        .await
+        .unwrap()
+        .unwrap();
+    // Gmail's quota runs out partway through the second batch.
+    let limited = || GmailError::RateLimit { retry_after: None };
+    h.fake
+        .fail_after("get_thread", outbox::OP_BATCH_THREADS + 5, limited());
+
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    let first: Vec<String> = (0..outbox::OP_BATCH_THREADS)
+        .map(|n| format!("m{n}"))
+        .collect();
+    for id in &first {
+        assert_eq!(server_labels(&h, id), s(&["INBOX", "STARRED"]), "{id}");
+    }
+    assert_eq!(server_labels(&h, "m39"), s(&["INBOX"]), "not yet");
+    let payload: serde_json::Value = serde_json::from_str(&ops(&h).await[0].payload).unwrap();
+    assert_eq!(
+        payload["thread_ids"].as_array().unwrap().len(),
+        40 - outbox::OP_BATCH_THREADS,
+        "done batches leave the op"
+    );
+
+    let reads = h.fake.calls("get_thread");
+    outbox::process(&h.engine, now_ms() + 3_600_000)
+        .await
+        .unwrap();
+    assert_eq!(server_labels(&h, "m39"), s(&["INBOX", "STARRED"]));
+    assert!(ops(&h).await.is_empty());
+    assert_eq!(
+        h.fake.calls("get_thread") - reads,
+        40 - outbox::OP_BATCH_THREADS,
+        "only the rest is read again"
+    );
+}
+
+#[tokio::test]
+async fn a_change_to_other_conversations_goes_ahead_of_one_waiting_for_gmail() {
+    let h = harness().await;
+    synced_inbox(
+        &h,
+        vec![
+            FakeMsg::new("m1", "t1", &["INBOX"]).days_ago(1),
+            FakeMsg::new("m2", "t2", &["INBOX", "UNREAD"]).days_ago(2),
+        ],
+    )
+    .await;
+    star(&h, "t1").await;
+    h.fake
+        .fail_next("get_thread", GmailError::RateLimit { retry_after: None });
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert_eq!(ops(&h).await.len(), 1, "the star waits out its backoff");
+
+    // The user reads t2, then archives t1, while the star is still waiting.
+    outbox::enqueue_modify(&h.pool, ACCT, &s(&["t2"]), &[], &s(&["UNREAD"]))
+        .await
+        .unwrap()
+        .unwrap();
+    archive(&h, "t1").await;
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert_eq!(server_labels(&h, "m2"), s(&["INBOX"]), "read went ahead");
+    assert_eq!(
+        server_labels(&h, "m1"),
+        s(&["INBOX"]),
+        "the archive stays behind the star on its conversation"
+    );
+    assert_eq!(ops(&h).await.len(), 2);
+
+    outbox::process(&h.engine, now_ms() + 3_600_000)
+        .await
+        .unwrap();
+    assert_eq!(server_labels(&h, "m1"), s(&["STARRED"]));
+    assert!(ops(&h).await.is_empty());
+}
+
+#[tokio::test]
 async fn ops_survive_restart_and_replay_in_order() {
     let h = harness().await;
     synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX"]).days_ago(1)]).await;
@@ -863,18 +950,11 @@ async fn rejected_op_rolls_back_with_later_ops_reapplied() {
 }
 
 #[tokio::test]
-async fn network_failure_keeps_op_pending_and_blocks_later_ops() {
+async fn network_failure_keeps_op_pending_and_blocks_later_ops_on_its_conversation() {
     let h = harness().await;
-    synced_inbox(
-        &h,
-        vec![
-            FakeMsg::new("m1", "t1", &["INBOX"]),
-            FakeMsg::new("m2", "t2", &["INBOX"]),
-        ],
-    )
-    .await;
+    synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX"])]).await;
     archive(&h, "t1").await;
-    archive(&h, "t2").await;
+    star(&h, "t1").await;
     h.fake
         .fail_next("get_thread", GmailError::Offline("no route".into()));
 
@@ -895,7 +975,7 @@ async fn network_failure_keeps_op_pending_and_blocks_later_ops() {
 
     assert!(outbox::process(&h.engine, now + 60_000).await.unwrap());
     assert!(ops(&h).await.is_empty());
-    assert_eq!(server_labels(&h, "m2"), Vec::<String>::new());
+    assert_eq!(server_labels(&h, "m1"), s(&["STARRED"]));
 }
 
 #[tokio::test]
