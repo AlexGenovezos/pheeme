@@ -71,11 +71,28 @@
  * whatever is on either side. No line under it: the bar and the day names read as one header.
  */
 .toolbar.cal-toolbar {
+  /* How far right of the bar's middle the days' middle is: the hours column, the pinned email. */
+  --cal-toolbar-offset: var(--space-0);
   display: grid;
-  /* Equal while there's room; when there isn't, the switch moves over rather than overlap. */
-  grid-template-columns: minmax(min-content, 1fr) auto minmax(min-content, 1fr);
-  gap: var(--space-3);
+  /*
+   * The left side spans an extra track as wide as the offset, so the two equal sides centre the
+   * switch over the days. That track gives way first when room runs short, then the sides stop
+   * being equal (the switch moves over rather than overlap).
+   */
+  grid-template-columns:
+    minmax(var(--space-0), var(--cal-toolbar-offset)) minmax(min-content, 1fr)
+    auto minmax(min-content, 1fr);
+  column-gap: var(--space-0);
   border-bottom: none;
+}
+.cal-toolbar:is([data-view="day"], [data-view="week"]) {
+  --cal-toolbar-offset: var(--calendar-gutter-width);
+}
+.cal-toolbar[data-pinned] {
+  --cal-toolbar-offset: var(--pinned-email-width);
+}
+.cal-toolbar[data-pinned]:is([data-view="day"], [data-view="week"]) {
+  --cal-toolbar-offset: calc(var(--pinned-email-width) + var(--calendar-gutter-width));
 }
 .cal-toolbar__start,
 .cal-toolbar__end {
@@ -85,19 +102,14 @@
   gap: var(--space-1-5);
   min-width: var(--space-0);
 }
+.cal-toolbar__start {
+  grid-column: 1 / 3;
+}
 .cal-toolbar__end {
   justify-content: flex-end;
 }
-/* Day and Week: over the middle of the days, not of the days plus the hours column. */
-.cal-toolbar:is([data-view="day"], [data-view="week"]) .ui-segmented {
-  margin-left: var(--calendar-gutter-width);
-}
-/* With an email pinned beside the calendar, over the calendar rather than the email. */
-.cal-toolbar[data-pinned] .ui-segmented {
-  margin-left: var(--pinned-email-width);
-}
-.cal-toolbar[data-pinned]:is([data-view="day"], [data-view="week"]) .ui-segmented {
-  margin-left: calc(var(--pinned-email-width) + var(--calendar-gutter-width));
+.cal-toolbar .ui-segmented {
+  margin-inline: var(--space-3);
 }
 /* A filled track with a raised thumb, no outline (like the Mail | Calendar switch). */
 .cal-toolbar .ui-segmented {
