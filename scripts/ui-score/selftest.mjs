@@ -86,10 +86,10 @@ const CASES = [
     (r) => r.n.contrastFail === 1,
   ],
   [
-    "a label cut off whole by a box that shows is clipped, not skipped",
+    "a label cut off whole by a box that shows is clipped and cut",
     `<div style="height:2px; overflow:hidden; ${FONT} line-height:20px; padding-top:4px">Due tomorrow</div>
      <button style="${FONT} height:28px">Save</button>`,
-    (r) => r.n.clipped >= 1,
+    (r) => r.n.clipped >= 1 && r.defects.some((d) => d.startsWith("cut to 0")),
   ],
   [
     "text over the middle of a black-to-white gradient fails contrast",
@@ -101,6 +101,12 @@ const CASES = [
     `<button style="${FONT} height:28px; margin:40px">Open in Calendar</button>
      <div class="ui-toast" style="position:fixed; left:0; top:0; width:300px; height:140px; ${FONT} background:#333; color:#fff">Turn on notifications?</div>`,
     (r) => r.defects.some((d) => d.startsWith("covered")),
+  ],
+  [
+    "a field's frame is its target only when the frame holds nothing else clickable",
+    `<div class="compose-field" style="display:flex; ${FONT}"><input style="${FONT} height:24px; box-sizing:border-box; width:120px; margin-right:8px">
+       <button style="${FONT} height:24px">Cc</button></div>`,
+    (r) => !r.defects.some((d) => d.startsWith("overlap")) && r.s.controls === 10,
   ],
 ];
 

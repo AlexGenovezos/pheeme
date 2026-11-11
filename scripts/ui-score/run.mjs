@@ -84,6 +84,13 @@ async function quickCreate(p) {
   await p.locator(".cal-quick").waitFor();
   await wait(p, 300);
 }
+async function openSettings(p, page) {
+  await mail(p);
+  await key(p, "Control+,");
+  await p.locator(".settings").waitFor();
+  await p.locator(".settings__page", { hasText: page }).first().click();
+  await wait(p, 500);
+}
 async function openEditor(p) {
   await view(p, "w");
   await quickCreate(p);
@@ -309,6 +316,113 @@ const PARTS = [
       await wait(p, 300);
     },
     root: ".cal-goto",
+  },
+  {
+    id: "mail-tasks",
+    name: "Mail + Tasks panel (conversation open)",
+    base: true,
+    go: async (p) => {
+      await openInvite(p);
+      await tasksPanel(p, true);
+      await wait(p, 300);
+    },
+    root: ".tasks-frame",
+  },
+  {
+    id: "compose",
+    name: "Compose (new message)",
+    base: true,
+    go: async (p) => {
+      await mail(p);
+      await key(p, "c");
+      await p.locator(".compose").first().waitFor();
+      await wait(p, 600);
+    },
+    root: ".compose",
+  },
+  {
+    id: "settings-appearance",
+    name: "Settings: Appearance",
+    base: true,
+    go: (p) => openSettings(p, "Appearance"),
+    root: ".settings",
+  },
+  {
+    id: "settings-keyboard",
+    name: "Settings: Keyboard shortcuts",
+    base: true,
+    go: (p) => openSettings(p, "Keyboard shortcuts"),
+    root: ".settings",
+  },
+  {
+    id: "settings-accounts",
+    name: "Settings: Accounts",
+    base: true,
+    go: (p) => openSettings(p, "Accounts"),
+    root: ".settings",
+  },
+  {
+    id: "settings-contacts",
+    name: "Settings: Contacts",
+    base: true,
+    go: (p) => openSettings(p, "Contacts"),
+    root: ".settings",
+  },
+  {
+    id: "settings-compose",
+    name: "Settings: Compose",
+    base: true,
+    go: (p) => openSettings(p, "Compose"),
+    root: ".settings",
+  },
+  {
+    id: "settings-signatures",
+    name: "Settings: Signatures",
+    base: true,
+    go: (p) => openSettings(p, "Signatures"),
+    root: ".settings",
+  },
+  {
+    id: "settings-sync",
+    name: "Settings: Sync",
+    base: true,
+    go: (p) => openSettings(p, "Sync"),
+    root: ".settings",
+  },
+  {
+    id: "settings-notifications",
+    name: "Settings: Notifications",
+    base: true,
+    go: (p) => openSettings(p, "Notifications"),
+    root: ".settings",
+  },
+  {
+    id: "settings-mcp",
+    name: "Settings: MCP",
+    base: true,
+    go: (p) => openSettings(p, "MCP"),
+    root: ".settings",
+  },
+  {
+    id: "settings-mods",
+    name: "Settings: Mods",
+    base: true,
+    go: (p) => openSettings(p, "Mods"),
+    root: ".settings",
+  },
+  {
+    id: "settings-diagnostics",
+    name: "Settings: Diagnostics",
+    base: true,
+    go: (p) => openSettings(p, "Diagnostics"),
+    root: ".settings",
+  },
+  {
+    id: "settings-about",
+    name: "Settings: About",
+    base: true,
+    go: (p) => openSettings(p, "About"),
+    root: ".settings",
   },
 ];
 

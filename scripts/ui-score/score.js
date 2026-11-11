@@ -147,7 +147,8 @@
   function hitBox(el, r) {
     if (!el.matches("input,select,textarea")) return r;
     const w = el.parentElement && el.parentElement.closest('label, .ui-input, [class*="field"]');
-    if (w && w.querySelectorAll("input,select,textarea").length === 1) {
+    // Only a frame that holds just this field (no buttons or chips of its own) is its target.
+    if (w && w.querySelectorAll(INTERACTIVE).length === 1) {
       const b = w.getBoundingClientRect();
       if (b.width >= r.width && b.height >= r.height) return b;
     }
@@ -246,13 +247,18 @@
       o.text++;
       if (clipped) {
         o.clipped.push(t.slice(0, 40));
-        const box = clipTo(el, inField ? el.getBoundingClientRect() : r, !!inField);
+        const box = clipTo(el, inField ? el.getBoundingClientRect() : r, !inField);
         const pad = inField ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) : 0;
         const em = parseFloat(cs.fontSize);
-        const chars = Math.floor(
-          (box.right - box.left - pad - (cs.textOverflow === "ellipsis" ? 0.6 * em : 0)) /
-            (0.55 * em),
-        );
+        // Less than half a line showing reads as nothing, however wide it is.
+        const line = parseFloat(cs.lineHeight) || 1.25 * em;
+        const chars =
+          box.bottom - box.top < line / 2
+            ? 0
+            : Math.floor(
+                (box.right - box.left - pad - (cs.textOverflow === "ellipsis" ? 0.6 * em : 0)) /
+                  (0.55 * em),
+              );
         if (t.length > 3 && chars < 3)
           defects.push("cut to " + Math.max(0, chars) + ' characters: "' + t.slice(0, 24) + '"');
       }
