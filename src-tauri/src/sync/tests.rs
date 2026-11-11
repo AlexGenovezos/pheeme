@@ -623,6 +623,37 @@ async fn enqueue_archive_applies_locally_and_persists_op() {
 }
 
 #[tokio::test]
+async fn moving_trashed_mail_to_the_inbox_takes_it_out_of_trash() {
+    let h = harness().await;
+    synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"])]).await;
+    // A filter (or another device) trashed it.
+    h.fake.relabel("m1", &["TRASH"], &["INBOX"]);
+    h.engine.run_incremental_sync().await.unwrap();
+    assert_eq!(
+        cached_labels(&h.pool, "m1").await,
+        Some(s(&["TRASH", "UNREAD"]))
+    );
+
+    outbox::enqueue_modify(&h.pool, ACCT, &s(&["t1"]), &s(&["INBOX"]), &[])
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        cached_labels(&h.pool, "m1").await,
+        Some(s(&["INBOX", "UNREAD"]))
+    );
+    assert!(listed(&h.pool, "TRASH").await.is_empty());
+
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    h.engine.run_incremental_sync().await.unwrap();
+    assert_eq!(server_labels(&h, "m1"), s(&["INBOX", "UNREAD"]));
+    assert_eq!(
+        cached_labels(&h.pool, "m1").await,
+        Some(s(&["INBOX", "UNREAD"]))
+    );
+}
+
+#[tokio::test]
 async fn ops_survive_restart_and_replay_in_order() {
     let h = harness().await;
     synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX"]).days_ago(1)]).await;
