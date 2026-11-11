@@ -24,8 +24,12 @@ import { useUiStore } from "../store/uiStore";
 import { AccountAccess, syncLine } from "./AccessControls";
 import { openQuickAdd } from "./actions";
 import { screenDays, useCalendarStore, weekStartOf, displayZone } from "./calendarStore";
-import { calendarColor, textOn } from "./colors";
-import { addMonths, dateOf, formatDay, startOfMonth } from "./dates";
+import { calendarColor, eventColors, textOn } from "./colors";
+import { addDays, addMonths, dateOf, formatDay, startOfMonth } from "./dates";
+import { useCalendarLookup } from "./EventBlock";
+import { eventDays } from "./layout";
+import { useRangeEvents } from "./rangeEvents";
+import { SidebarAgenda } from "./SidebarAgenda";
 import { ModeSwitch } from "./ModeSwitch";
 import { SidebarTaskLists } from "../tasks/SidebarTaskLists";
 import { useNow } from "./useNow";
@@ -51,12 +55,32 @@ function MiniMonth() {
   );
   const labelId = useId();
   const weeks = Array.from({ length: days.length / 7 }, (_, w) => days.slice(w * 7, w * 7 + 7));
+  // Up to three dots under a day, in the colours of what's on it.
+  const events = useRangeEvents(days[0], days[days.length - 1]);
+  const lookup = useCalendarLookup();
+  const tz = displayZone(accounts);
+  const dots = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const e of events ?? []) {
+      if (e.selfResponse === "declined") continue;
+      const span = eventDays(e, tz);
+      if (!span) continue;
+      const color = eventColors(e, lookup(e)).background;
+      for (let d = span.first; d <= span.last && d <= days[days.length - 1]; d = addDays(d, 1)) {
+        const list = map.get(d) ?? [];
+        if (list.length < 3 && !list.includes(color)) list.push(color);
+        map.set(d, list);
+      }
+    }
+    return map;
+  }, [events, lookup, tz, days]);
 
   return (
     <div className="mini-month">
       <div className="mini-month__head">
         <span id={labelId} className="mini-month__title">
-          {formatDay(month, { month: "long", year: "numeric" })}
+          {formatDay(month, { month: "long" })}{" "}
+          <span className="mini-month__year">{formatDay(month, { year: "numeric" })}</span>
         </span>
         <IconButton
           size="sm"
@@ -110,6 +134,11 @@ function MiniMonth() {
                     onClick={() => useCalendarStore.getState().goTo(d)}
                   >
                     {Number(d.slice(8))}
+                    <span className="mini-month__dots" aria-hidden="true">
+                      {(dots.get(d) ?? []).map((c) => (
+                        <span key={c} className="mini-month__dot" style={{ background: c }} />
+                      ))}
+                    </span>
                   </button>
                 </td>
               ))}
@@ -211,6 +240,7 @@ export function CalendarSidebar() {
           </Button>
         </div>
         <MiniMonth />
+        <SidebarAgenda />
         {accounts === null ? (
           <section className="sidebar__section" aria-hidden="true">
             <span className="sidebar__heading">

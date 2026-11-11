@@ -13,7 +13,7 @@ export function NotificationOffer() {
         <Bell aria-hidden="true" />
         <div>
           <h2 id="notify-offer-title" className="notify-offer__title">
-            Turn on notifications?
+            New mail alerts
           </h2>
           <p className="notify-offer__description">{offer}</p>
         </div>

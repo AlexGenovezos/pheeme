@@ -95,6 +95,40 @@ export function applyTheme(theme: ThemeDefinition, root: HTMLElement = document.
   }
   root.dataset.theme = theme.kind;
   root.style.colorScheme = theme.kind;
+  applySidebarSurface(theme, oklch);
+}
+
+const SIDEBAR_STYLE_ID = "pheeme-sidebar-surface";
+
+/**
+ * The sidebar is the window's dark surface, so it stands apart from the light panes beside it:
+ * with Pheeme Light it wears Pheeme Dark's colours (custom themes keep their own sidebar).
+ */
+export function sidebarSurfaceCss(theme: ThemeDefinition, oklch = true): string {
+  if (theme.id !== builtInThemes.light.id) return "";
+  const dark = builtInThemes.dark.tokens;
+  const value = (token: string, v: string) =>
+    !oklch && token.startsWith("--color-") ? themeColorToHex(v) : v;
+  const vars = Object.entries(dark)
+    .map(([token, v]) => `${token}:${value(token, v)}`)
+    .join(";");
+  // Solid, not a tint over macOS vibrancy: the material under it is the light one.
+  const solid = value("--color-sidebar-bg", dark["--color-sidebar-bg"]);
+  return (
+    `:root{--color-sidebar-surface:${solid}}` +
+    `.shell__sidebar{${vars};--color-sidebar-vibrant-bg:${solid};color-scheme:dark;color:var(--color-sidebar-foreground)}`
+  );
+}
+
+function applySidebarSurface(theme: ThemeDefinition, oklch: boolean) {
+  if (typeof document === "undefined") return;
+  let style = document.getElementById(SIDEBAR_STYLE_ID) as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement("style");
+    style.id = SIDEBAR_STYLE_ID;
+    document.head.appendChild(style);
+  }
+  style.textContent = sidebarSurfaceCss(theme, oklch);
 }
 
 export type ThemeListener = (mode: ThemeMode, theme: ThemeDefinition) => void;

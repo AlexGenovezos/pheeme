@@ -15,6 +15,10 @@
   flex-direction: column;
   min-height: var(--space-0);
 }
+/* Beside the sidebar, the calendar is a page with a rounded corner on the sidebar's surface. */
+.shell[data-mode="calendar"][data-sidebar="expanded"] .cal-main {
+  border-top-left-radius: var(--pane-corner-radius);
+}
 
 .cal-main__error {
   margin: var(--space-0);
@@ -62,14 +66,49 @@
 
 /* ---- Toolbar ------------------------------------------------------------- */
 
-.cal-toolbar {
+/*
+ * Three columns, the outer two equal, so the view switch sits in the middle of the calendar
+ * whatever is on either side. No line under it: the bar and the day names read as one header.
+ */
+.toolbar.cal-toolbar {
+  display: grid;
+  /* Equal while there's room; when there isn't, the switch moves over rather than overlap. */
+  grid-template-columns: minmax(min-content, 1fr) auto minmax(min-content, 1fr);
+  gap: var(--space-3);
+  border-bottom: none;
+}
+.cal-toolbar__start,
+.cal-toolbar__end {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
   gap: var(--space-1-5);
+  min-width: var(--space-0);
+}
+.cal-toolbar__end {
+  justify-content: flex-end;
+}
+/* Day and Week: over the middle of the days, not of the days plus the hours column. */
+.cal-toolbar:is([data-view="day"], [data-view="week"]) .ui-segmented {
+  margin-left: var(--calendar-gutter-width);
+}
+/* A filled track with a raised thumb, no outline (like the Mail | Calendar switch). */
+.cal-toolbar .ui-segmented {
+  border: none;
+  background: var(--color-control-hover-bg);
+}
+.cal-toolbar .ui-segmented__option[aria-checked="true"] {
+  background: var(--color-pane-bg);
+  box-shadow: var(--segmented-thumb-shadow);
 }
 .shell[data-overlay-titlebar]:is([data-sidebar="collapsed"], [data-sidebar="overlay"])
   .cal-toolbar {
   padding-left: var(--traffic-light-inset);
 }
+/* Takes what's left of its side and ellipsizes, so it never pushes the switch over. */
 .cal-toolbar__title {
+  contain: inline-size;
+  flex: 1;
   margin: var(--space-0) var(--space-0) var(--space-0) var(--space-1);
   font-variant-numeric: tabular-nums;
 }
@@ -83,16 +122,21 @@
   display: flex;
   align-items: center;
   gap: var(--space-0-5);
-  padding: var(--space-0) var(--space-0) var(--space-1) var(--space-2);
+  padding: var(--space-0) var(--space-0) var(--space-1) var(--space-1);
 }
+/* The month in bold, the year in the accent: the sidebar's headline. */
 .mini-month__title {
   flex: 1;
   min-width: var(--space-0);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-tight);
+}
+.mini-month__year {
+  color: var(--color-accent);
 }
 .mini-month__grid {
   width: 100%;
@@ -125,6 +169,7 @@
   border-bottom-right-radius: var(--radius-full);
 }
 .mini-month__day {
+  position: relative;
   display: block;
   width: min(var(--calendar-mini-day-size), 100%);
   aspect-ratio: 1;
@@ -148,6 +193,142 @@
   background: var(--color-accent);
   color: var(--color-accent-foreground);
   font-weight: var(--font-weight-semibold);
+}
+
+/* What's on a day: up to three dots under its number. */
+.mini-month__dots {
+  position: absolute;
+  bottom: var(--space-0-5);
+  left: 50%;
+  display: flex;
+  gap: var(--space-px);
+  transform: translateX(-50%);
+}
+.mini-month__dot {
+  width: var(--mini-month-dot-size);
+  height: var(--mini-month-dot-size);
+  border-radius: var(--radius-full);
+}
+.mini-month__day--today .mini-month__dot {
+  outline: var(--hairline) solid var(--color-accent-foreground);
+}
+
+/* ---- Sidebar: the agenda (today and the next two days) -------------------- */
+
+.cal-agenda {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-1);
+}
+.cal-agenda__date {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+  margin: var(--space-0) var(--space-0) var(--space-1);
+  color: var(--color-foreground);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+.cal-agenda__today {
+  color: var(--color-accent);
+}
+.cal-agenda__date-sub {
+  color: var(--color-foreground-subtle);
+  font-weight: var(--font-weight-regular);
+}
+.cal-agenda__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+.cal-agenda__empty {
+  margin: var(--space-0);
+  color: var(--color-foreground-subtle);
+  font-size: var(--font-size-sm);
+}
+.cal-agenda__row,
+.cal-agenda__pill {
+  width: 100%;
+  min-height: var(--control-height-sm);
+  border: none;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+/* Rows reach a little past the column on hover; their dots line up with everything at 12 px. */
+.cal-agenda__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: calc(100% + 2 * var(--space-1-5));
+  margin-inline: calc(-1 * var(--space-1-5));
+  padding: var(--space-1) var(--space-1-5);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+}
+.cal-agenda__row:hover {
+  background: var(--color-control-hover-bg);
+}
+.cal-agenda__dot {
+  flex: none;
+  width: var(--label-dot-size);
+  height: var(--label-dot-size);
+  margin-top: var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--cal-event-bg, var(--color-border));
+}
+.cal-agenda__text {
+  display: flex;
+  flex-direction: column;
+  min-width: var(--space-0);
+}
+.cal-agenda__text > * {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cal-agenda__next {
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+.cal-agenda__time {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.cal-agenda__title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+}
+.cal-agenda__place {
+  color: var(--color-foreground-subtle);
+  font-size: var(--font-size-xs);
+}
+.cal-agenda__pill {
+  overflow: hidden;
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: color-mix(
+    in srgb,
+    var(--cal-event-bg) var(--calendar-event-tint-strong),
+    var(--color-sidebar-bg)
+  );
+  color: color-mix(in srgb, var(--cal-event-bg) var(--calendar-event-ink), var(--color-foreground));
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cal-agenda__row:focus-visible,
+.cal-agenda__pill:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-inset);
 }
 
 .cal-sidebar__account {
@@ -275,10 +456,6 @@
   overflow-y: hidden;
 }
 
-.cal-grid__gutter {
-  border-right: var(--border-width) solid var(--color-border-subtle);
-}
-
 .cal-grid__zone {
   align-self: end;
   padding: var(--space-0) var(--space-1) var(--space-1);
@@ -287,12 +464,12 @@
   text-align: right;
 }
 
+/* "MON 9" on one line, aligned with the events below it; today's date is a small pill. */
 .cal-grid__day-head {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: var(--space-0-5);
-  padding: var(--space-1-5) var(--space-0) var(--space-1);
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1-5) var(--space-1-5);
   color: var(--color-foreground-muted);
 }
 .cal-grid__weekday {
@@ -302,14 +479,15 @@
   text-transform: uppercase;
 }
 .cal-grid__date {
-  min-width: var(--control-height-lg);
-  height: var(--control-height-lg);
-  padding: var(--space-0) var(--space-1);
+  min-width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  padding: var(--space-0) var(--space-1-5);
   border: none;
   border-radius: var(--radius-full);
   background: transparent;
   color: var(--color-foreground);
-  font-size: var(--font-size-xl);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
   cursor: default;
 }
@@ -329,7 +507,6 @@
 
 .cal-grid__band {
   max-height: var(--calendar-band-max-height);
-  border-bottom: var(--border-width) solid var(--color-border);
   overflow-y: auto;
 }
 .cal-grid__band-cells {
@@ -342,7 +519,6 @@
 }
 .cal-grid__band-cell {
   grid-row: 1 / -1;
-  border-left: var(--border-width) solid var(--color-border-subtle);
 }
 
 .cal-grid__scroll {
@@ -369,14 +545,14 @@
 }
 .cal-grid__column {
   position: relative;
-  border-left: var(--border-width) solid var(--color-border-subtle);
+  border-left: var(--border-width) solid var(--calendar-grid-line);
   /* Hour lines. */
   background: repeating-linear-gradient(
     to bottom,
     transparent var(--space-0),
     transparent calc(var(--cal-hour-h) - var(--hairline)),
-    var(--color-border-subtle) calc(var(--cal-hour-h) - var(--hairline)),
-    var(--color-border-subtle) var(--cal-hour-h)
+    var(--calendar-grid-line) calc(var(--cal-hour-h) - var(--hairline)),
+    var(--calendar-grid-line) var(--cal-hour-h)
   );
 }
 .cal-grid__now {
@@ -403,14 +579,29 @@
 
 /* ---- Events -------------------------------------------------------------- */
 
+/*
+ * Events are tinted, not painted: a wash of the calendar's colour, a stripe of it down the
+ * left edge, and the text in a deep shade of it. The open one fills solid.
+ */
 .cal-event {
+  --cal-event-tint: color-mix(
+    in srgb,
+    var(--cal-event-bg) var(--calendar-event-tint),
+    var(--color-pane-bg)
+  );
+  --cal-event-ink: color-mix(
+    in srgb,
+    var(--cal-event-bg) var(--calendar-event-ink),
+    var(--color-foreground)
+  );
   display: flex;
   min-width: var(--space-0);
   overflow: hidden;
-  border: var(--border-width) solid var(--cal-event-bg);
-  border-radius: var(--radius-xs);
-  background: var(--cal-event-bg);
-  color: var(--cal-event-fg);
+  border: none;
+  border-left: var(--calendar-event-stripe) solid var(--cal-event-bg);
+  border-radius: var(--radius-sm);
+  background: var(--cal-event-tint);
+  color: var(--cal-event-ink);
   font: inherit;
   font-size: var(--font-size-xs);
   line-height: var(--line-height-tight);
@@ -445,22 +636,24 @@
 }
 /* A sliver of a day: the title alone, cut at the edge rather than spending room on "…". */
 .cal-event--timed.cal-event--narrow {
-  padding-inline: var(--space-0-5);
+  padding-inline: var(--space-0-5) var(--space-0);
 }
 .cal-event--timed.cal-event--narrow .cal-event__title {
+  font-weight: var(--font-weight-medium);
   text-overflow: clip;
 }
 .cal-event--open {
   z-index: 1;
+  background: var(--cal-event-bg);
+  color: var(--cal-event-fg);
   box-shadow: var(--shadow-popover);
 }
 
 .cal-event__title {
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
 }
-.cal-event__time,
-.cal-event__location {
-  opacity: 0.9;
+.cal-event--timed .cal-event__time {
+  font-variant-numeric: tabular-nums;
 }
 
 .cal-event--bar {
@@ -468,6 +661,7 @@
   height: calc(100% - var(--calendar-event-inset));
   margin: var(--space-0) var(--space-0-5);
   padding: var(--space-0) var(--space-1-5);
+  border-left: none;
   white-space: nowrap;
 }
 .cal-event--bar .cal-event__title {
@@ -491,7 +685,7 @@
   height: calc(100% - var(--calendar-event-inset));
   margin: var(--space-0) var(--space-0-5);
   padding: var(--space-0) var(--space-1);
-  border-color: transparent;
+  border: none;
   background: transparent;
   color: var(--color-foreground);
   white-space: nowrap;
@@ -515,13 +709,11 @@
   text-overflow: ellipsis;
 }
 
-/* Unanswered invites: dashed outline in the calendar's colour, on the pane. */
+/* Unanswered invites: a dashed outline in the calendar's colour, on the pane. */
 .cal-event--invite:not(.cal-event--dot) {
-  border-width: var(--focus-ring-width);
-  border-style: dashed;
-  border-color: var(--cal-event-bg);
+  border: var(--border-width) dashed var(--cal-event-bg);
+  border-left: var(--calendar-event-stripe) dashed var(--cal-event-bg);
   background: var(--color-pane-bg);
-  color: var(--color-foreground);
 }
 .cal-event--dot.cal-event--invite .cal-event__dot {
   border: var(--border-width) dashed var(--cal-event-bg);
@@ -537,7 +729,6 @@
   color: var(--color-foreground-muted);
 }
 .cal-event--declined:not(.cal-event--dot) {
-  border-color: var(--cal-event-bg);
   background: var(--color-pane-bg);
 }
 .cal-event--declined .cal-event__dot {
@@ -545,21 +736,15 @@
   background: transparent;
 }
 
-/* Maybe: a lighter fill. */
+/* Maybe: the tint in fine stripes. */
 .cal-event--tentative:not(.cal-event--dot) {
   background: repeating-linear-gradient(
     -45deg,
-    var(--cal-event-bg) var(--space-0),
-    var(--cal-event-bg) var(--space-1),
+    var(--cal-event-tint) var(--space-0),
+    var(--cal-event-tint) var(--space-1),
     var(--color-pane-bg) var(--space-1),
     var(--color-pane-bg) var(--space-2)
   );
-  color: var(--color-foreground);
-}
-.cal-event--tentative:not(.cal-event--dot) .cal-event__title {
-  padding: 0 var(--space-0-5);
-  border-radius: var(--radius-xs);
-  background: var(--color-pane-bg);
 }
 
 /* ---- Month --------------------------------------------------------------- */
@@ -599,7 +784,10 @@
 .cal-month__week {
   display: grid;
   grid-template-columns: repeat(7, minmax(var(--space-0), 1fr));
-  grid-template-rows: var(--cal-month-date-h) repeat(var(--cal-month-rows), var(--cal-month-row-h));
+  /* The last row takes what's left, so the day lines (cells span every row) reach the week's line. */
+  grid-template-rows:
+    var(--cal-month-date-h) repeat(var(--cal-month-rows), var(--cal-month-row-h))
+    minmax(var(--space-0), 1fr);
   min-height: var(--space-0);
   overflow: hidden;
   border-bottom: var(--border-width) solid var(--color-border-subtle);

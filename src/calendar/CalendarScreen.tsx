@@ -75,59 +75,63 @@ function Toolbar({ title, pinnedFolded }: { title: string; pinnedFolded: boolean
     <div
       className="toolbar toolbar--view cal-toolbar"
       data-sidebar-collapsed={collapsed || undefined}
+      data-view={view}
       {...dragRegion}
     >
-      {collapsed && (
+      <div className="cal-toolbar__start" {...dragRegion}>
+        {collapsed && (
+          <IconButton
+            label="Show sidebar"
+            data-sidebar-toggle=""
+            shortcut={sidebarShortcut}
+            icon={<PanelLeftOpen />}
+            onClick={() => useUiStore.getState().toggleSidebar()}
+          />
+        )}
+        {pinnedFolded && (
+          <IconButton
+            label="Show the pinned email (hides Tasks)"
+            icon={<Mail />}
+            onClick={() => useTasksStore.getState().setPanelOpen(false)}
+          />
+        )}
+        <Button
+          size="sm"
+          title={todayShortcut ? `${today} (${describeShortcut(todayShortcut)})` : today}
+          onClick={() => store().today()}
+        >
+          Today
+        </Button>
         <IconButton
-          label="Show sidebar"
-          data-sidebar-toggle=""
-          shortcut={sidebarShortcut}
-          icon={<PanelLeftOpen />}
-          onClick={() => useUiStore.getState().toggleSidebar()}
+          label={`Previous ${unit}`}
+          shortcut={prevShortcut}
+          icon={<ChevronLeft />}
+          onClick={() => store().step(-1)}
         />
-      )}
-      {pinnedFolded && (
         <IconButton
-          label="Show the pinned email (hides Tasks)"
-          icon={<Mail />}
-          onClick={() => useTasksStore.getState().setPanelOpen(false)}
+          label={`Next ${unit}`}
+          shortcut={nextShortcut}
+          icon={<ChevronRight />}
+          onClick={() => store().step(1)}
         />
-      )}
-      <Button
-        size="sm"
-        title={todayShortcut ? `${today} (${describeShortcut(todayShortcut)})` : today}
-        onClick={() => store().today()}
-      >
-        Today
-      </Button>
-      <IconButton
-        label={`Previous ${unit}`}
-        shortcut={prevShortcut}
-        icon={<ChevronLeft />}
-        onClick={() => store().step(-1)}
-      />
-      <IconButton
-        label={`Next ${unit}`}
-        shortcut={nextShortcut}
-        icon={<ChevronRight />}
-        onClick={() => store().step(1)}
-      />
-      <h1 className="toolbar__title cal-toolbar__title" aria-live="polite">
-        {title}
-      </h1>
-      <span className="toolbar__spacer" {...dragRegion} />
-      <IconButton
-        label="Search events"
-        shortcut={searchShortcut}
-        icon={<Search />}
-        onClick={() => useEditStore.setState({ search: "" })}
-      />
+        <h1 className="toolbar__title cal-toolbar__title" aria-live="polite">
+          {title}
+        </h1>
+      </div>
       <SegmentedControl
         label="View"
         value={view}
         options={VIEW_OPTIONS}
         onChange={(v: CalendarView) => store().setView(v)}
       />
+      <div className="cal-toolbar__end" {...dragRegion}>
+        <IconButton
+          label="Search events"
+          shortcut={searchShortcut}
+          icon={<Search />}
+          onClick={() => useEditStore.setState({ search: "" })}
+        />
+      </div>
     </div>
   );
 }
