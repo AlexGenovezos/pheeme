@@ -1,4 +1,5 @@
 import { useRef, type CSSProperties } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useWidth } from "../lib/useWidth";
 import { ColorPopoverHost } from "../labels/ColorPopover";
 import { LabelDialogHost } from "../labels/LabelDialog";
@@ -23,7 +24,15 @@ import "./shell.css";
  */
 export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const { sidebarWidth, listWidth, sidebarCollapsed, readingPane } = useUiStore();
+  // Only the fields it draws: the whole store changes on every selection and open, which would re-render every pane.
+  const { sidebarWidth, listWidth, sidebarCollapsed, readingPane } = useUiStore(
+    useShallow(({ sidebarWidth, listWidth, sidebarCollapsed, readingPane }) => ({
+      sidebarWidth,
+      listWidth,
+      sidebarCollapsed,
+      readingPane,
+    })),
+  );
   const conversationOpen = useUiStore((s) => s.openThread !== null);
   const { setSidebarWidth, setListWidth, resetSidebarWidth, resetListWidth } =
     useUiStore.getState();

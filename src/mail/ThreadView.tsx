@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
 import { LabelChip } from "../labels/LabelChip";
@@ -252,7 +252,11 @@ export function ThreadView() {
   );
 }
 
-function Conversation({
+/**
+ * Memoized: the view re-renders whenever any cached conversation changes (prefetching neighbours, marking read),
+ * and the conversations kept mounted beside the open one only need to when their own detail does.
+ */
+const Conversation = memo(function Conversation({
   openKey,
   detail,
   active,
@@ -327,7 +331,7 @@ function Conversation({
       </div>
     </div>
   );
-}
+});
 
 /**
  * Opening a conversation starts caching its attachments in the background, so a preview opens at once.

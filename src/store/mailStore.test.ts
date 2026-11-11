@@ -3,7 +3,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { ThreadPage, ThreadSummary } from "../lib/tauri";
 import { threadKey } from "../mail/mailboxes";
-import { __resetMailStoreForTests, newOp, useMailStore } from "./mailStore";
+import { __resetMailStoreForTests, newOp, reuseUnchanged, useMailStore } from "./mailStore";
 
 const summary = (id: string, accountId = "a"): ThreadSummary => ({
   id,
@@ -555,4 +555,23 @@ test("a row restored in the unread list comes back with the full list", async ()
   hold = true;
   void useMailStore.getState().load(inbox);
   expect(ids()).toEqual(["t1", "t2", "t3"]);
+});
+
+test("a reload keeps the objects of rows that didn't change, so memoized rows don't re-render", () => {
+  const before = [summary("t1"), summary("t2"), summary("t3")];
+  const fresh = [summary("t1"), { ...summary("t2"), unread: true }, summary("t3")];
+  const after = reuseUnchanged(before, fresh);
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).toBe(fresh[1]);
+  expect(after[2]).toBe(before[2]);
+  // Label lists are compared by value.
+  const relabelled = [summary("t1"), summary("t2"), { ...summary("t3"), labelIds: ["L1"] }];
+  expect(reuseUnchanged(before, relabelled)[2]).toBe(relabelled[2]);
+  // Nothing changed: the same array, so the list doesn't re-render at all.
+  expect(reuseUnchanged(before, [summary("t1"), summary("t2"), summary("t3")])).toBe(before);
+  // Same rows, new order: the rows are kept, the array is new.
+  const reordered = reuseUnchanged(before, [summary("t3"), summary("t1"), summary("t2")]);
+  expect(reordered).not.toBe(before);
+  expect(reordered).toEqual([before[2], before[0], before[1]]);
+  expect(reordered[0]).toBe(before[2]);
 });

@@ -121,14 +121,35 @@ it never touches a real keychain, and records:
 |---------|---------------|--------|
 | Start (WebDriver session request to the first list row), median of 5 launches | single starts 0.9 to 2.1 s | 3 s |
 | Memory after a minute idle: app plus its WebKit processes, PSS | 236 to 239 MiB | 330 MiB |
-| The same after a scripted 10-minute session (mailboxes, scrolling, conversations) | 300 MiB | 400 MiB |
+| The same after a scripted 10-minute session (mailboxes, scrolling, conversations) | 300 MiB | 460 MiB |
+| The app's own (Rust) process after the session, PSS | 134 to 138 MiB | 165 MiB |
+| WebKit's web process: the lowest reading in the last third of the session minus the lowest in passes 20 to 40 | 17 to 26 MiB | 45 MiB |
 
 The budgets sit about 20% above the measurements on an `ubuntu-22.04` runner, which renders
-in software under Xvfb. They were first set at 290 and 360 MiB. Preloading ahead of the
+in software under Xvfb. The idle and session budgets were first set at 290 and 360 MiB. Preloading ahead of the
 reader (below) keeps 160 conversations cached instead of 30 and 5 rendered instead of 1,
 for about 25 MiB more both idle and after the session (269 to 281 and 355 to 365 MiB on
 2026-11-08), so they were raised to 330 and 400 MiB. Idle memory is well over the issue's
 starting target of 150 MiB, and the session adds about 85 MiB: both are worth a look.
+
+The session total depends on when WebKit collects garbage, not only on the app (#274). The
+log prints each process's memory every 10 passes. On 2026-11-10, six runs on three commits
+(including two the same) ended at 375 to 434 MiB. In about half the runs, WebKit's web process let the
+session's garbage pile up for 40 to 70 passes (to 650 MiB once) before a full collection,
+then kept 25 to 60 MiB of that peak, which put the total over 400 MiB at random. The Rust
+process stayed at 134 to 138 MiB and Chromium's JS heap levelled off, so this was WebKit's
+timing, not a leak. So the session total only has a ceiling (460 MiB), and two figures
+that don't depend on that timing catch leaks: the Rust process, and the web process's growth
+measured from its lowest readings, which a leak keeps raising and a late collection doesn't.
+A pile-up early in the session raises the early floor and can hide growth for that run;
+the next night's run usually doesn't pile up.
+
+Less garbage means fewer pile-ups. The same investigation cut what a pass allocates (measured in
+the browser preview with Chromium's sampling heap profiler) by about a quarter, mostly by not
+re-rendering what didn't change on every `j`: memoized conversations and sidebar rows,
+stable row callbacks, unchanged thread rows kept across list reloads, and cached label chip colours.
+The nightly build points the updater at an unreachable address, so no update banner
+appears in some runs and not others.
 
 The seeded mailbox is a returning user's: the one-time "Turn on notifications?" prompt is
 already answered, and usage pings are off. Left up for the whole run, that prompt's toast
@@ -136,8 +157,8 @@ alone added 40 to 90 MiB and made the session figure swing by as much.
 
 Memory is PSS (proportional set size), which splits shared pages between the processes
 using them, so the total isn't inflated by WebKit's shared libraries the way summed RSS is.
-A run fails when it exceeds a budget, or when a memory measure gets more than 20% worse than
-the previous nightly run. Start time is tracked over runs too, but a 20% swing isn't a
+A run fails when it exceeds a budget, or when a memory measure (idle, session, Rust process)
+gets more than 20% worse than the previous nightly run. Start time is tracked over runs too, but a 20% swing isn't a
 failure: one start varies by a factor of two on shared runners. github-action-benchmark keeps that history in the Actions cache, and
 the job summary shows the comparison. A PR that changes the harness itself runs it too.
 
