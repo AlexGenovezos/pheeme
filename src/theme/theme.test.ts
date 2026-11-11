@@ -432,6 +432,7 @@ describe("sidebarSurfaceCss", () => {
     expect(css).toContain(`.shell__sidebar{`);
     expect(css).toContain(`--color-foreground:${darkTheme.tokens["--color-foreground"]}`);
     expect(css).toContain("color-scheme:dark");
+    expect(css).toContain("--color-pane-border:transparent");
   });
 
   test("without oklch support the colours are hex", () => {

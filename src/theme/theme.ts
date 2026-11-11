@@ -116,7 +116,8 @@ export function sidebarSurfaceCss(theme: ThemeDefinition, oklch = true): string 
   const solid = value("--color-sidebar-bg", dark["--color-sidebar-bg"]);
   return (
     `:root{--color-sidebar-surface:${solid}}` +
-    `.shell__sidebar{${vars};--color-sidebar-vibrant-bg:${solid};color-scheme:dark;color:var(--color-sidebar-foreground)}`
+    // No pane lines (its edge, above its footer): the dark surface is edge enough.
+    `.shell__sidebar{${vars};--color-sidebar-vibrant-bg:${solid};--color-pane-border:transparent;color-scheme:dark;color:var(--color-sidebar-foreground)}`
   );
 }
 
