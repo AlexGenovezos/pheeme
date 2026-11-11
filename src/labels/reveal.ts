@@ -1,6 +1,6 @@
 // "Manage labels": opens the sidebar on its Labels section, which takes focus once it has rendered.
 import { create } from "zustand";
-import { useUiStore } from "../store/uiStore";
+import { sidebarLayout, useUiStore } from "../store/uiStore";
 
 /** A pending reveal for the sidebar's Labels section to act on; `0` when there is none. */
 export const useRevealStore = create<{ pending: number }>(() => ({ pending: 0 }));
@@ -14,6 +14,7 @@ let seq = 0;
 export function revealLabels(accountId?: string): void {
   const ui = useUiStore.getState();
   if (accountId) ui.setActiveAccount(accountId);
-  if (ui.sidebarCollapsed) ui.toggleSidebar();
+  // Hidden by the user or for lack of room: open it (over the content when there's no room).
+  if (sidebarLayout(ui) === "collapsed") ui.toggleSidebar();
   useRevealStore.setState({ pending: ++seq });
 }

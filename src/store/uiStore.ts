@@ -165,6 +165,8 @@ interface UiState extends PaneLayout, NavPrefs {
   resetListWidth(): void;
   /** Show or hide the sidebar; with no room for it beside the content, open it over the content. */
   toggleSidebar(): void;
+  /** The Show sidebar preference itself (Settings), apart from opening it over the content. */
+  setSidebarCollapsed(collapsed: boolean): void;
   /** The window has no room for the sidebar beside the content (set by the shell on screen). */
   sidebarSqueezed: boolean;
   /** While squeezed: the sidebar is open over the content. */
@@ -296,6 +298,10 @@ export const useUiStore = create<UiState>((set, get) => {
         persist({ sidebarCollapsed: false });
         set({ sidebarPeek: true });
       } else set({ sidebarPeek: !s.sidebarPeek });
+    },
+    setSidebarCollapsed: (sidebarCollapsed) => {
+      persist({ sidebarCollapsed });
+      set({ sidebarPeek: false });
     },
     sidebarSqueezed: false,
     sidebarPeek: false,

@@ -8,6 +8,7 @@ import {
   sidebarLayout,
   useUiStore,
 } from "./uiStore";
+import { revealLabels } from "../labels/reveal";
 
 const ui = () => useUiStore.getState();
 const stored = () => JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "null");
@@ -275,4 +276,22 @@ test("with no room for the reading pane, mail works as with it off until there's
 
   ui().setReadingPaneSqueezed(false);
   expect(readingPaneShown(ui())).toBe(true);
+});
+
+test("the Show sidebar preference turns off and on even while there's no room for it", () => {
+  ui().setSidebarSqueezed(true);
+  ui().toggleSidebar(); // opened over the content
+  ui().setSidebarCollapsed(true);
+  expect(ui().sidebarCollapsed).toBe(true);
+  expect(sidebarLayout(ui())).toBe("collapsed");
+  expect(stored()?.sidebarCollapsed).toBe(true);
+  ui().setSidebarCollapsed(false);
+  expect(ui().sidebarCollapsed).toBe(false);
+  expect(sidebarLayout(ui())).toBe("collapsed"); // still no room: hidden until opened
+});
+
+test("Manage labels opens the sidebar even when it hid for lack of room", () => {
+  ui().setSidebarSqueezed(true);
+  revealLabels();
+  expect(sidebarLayout(ui())).toBe("overlay");
 });
