@@ -286,12 +286,39 @@
   --find-match-current-bg: #ff9632;
   --find-match-foreground: #000;
 
+  /*
+   * Settings › Accounts: the Gmail quota chart (src/settings/QuotaUsage.tsx), one hue per thing
+   * spending the quota, in this fixed order. A categorical chart palette checked for colour-blind
+   * separation against the light and dark panes; the dark theme steps each hue (below). Bars are
+   * at most 24 px wide with a 2 px gap between minutes and between stacked parts.
+   */
+  --quota-new-mail: #2a78d6;
+  --quota-older-mail: #eb6834;
+  --quota-your-changes: #1baf7a;
+  --quota-you-asked: #eda100;
+  --quota-assistants: #e87ba4;
+  --quota-chart-height: 112px;
+  --quota-bar-max-width: 24px;
+  --quota-gap: 2px;
+  --quota-bar-radius: 2px;
+  --quota-swatch-size: 8px;
+  --quota-refused-mark: 6px;
+  --quota-tooltip-width: 200px;
+
   /* Stacking. */
   --z-base: 0;
   --z-divider: 10;
   --z-popover: 100;
   --z-overlay: 200;
   --z-toast: 300;
+}
+
+:root[data-theme="dark"] {
+  --quota-new-mail: #3987e5;
+  --quota-older-mail: #d95926;
+  --quota-your-changes: #199e70;
+  --quota-you-asked: #c98500;
+  --quota-assistants: #d55181;
 }
 
 :root[data-reading-size="large"] {

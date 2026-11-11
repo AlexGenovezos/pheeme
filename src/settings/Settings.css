@@ -424,6 +424,206 @@
   vertical-align: text-bottom;
 }
 
+/* Gmail quota, last hour (QuotaUsage.tsx): stacked bars per minute under the limit line. */
+.settings-usage__peak {
+  color: var(--color-foreground-muted);
+  font-weight: var(--font-weight-regular);
+}
+
+.settings-usage__plot {
+  position: relative;
+  height: var(--quota-chart-height);
+  border-bottom: var(--hairline) solid var(--color-border);
+  border-radius: var(--radius-xs);
+  outline: none;
+}
+.settings-usage__plot:focus-visible {
+  box-shadow: 0 0 0 var(--focus-ring-width) var(--color-focus-border);
+}
+
+.settings-usage__limit {
+  position: absolute;
+  right: var(--space-0);
+  left: var(--space-0);
+  border-top: var(--hairline) solid var(--color-border);
+  pointer-events: none;
+}
+.settings-usage__limit > span {
+  position: absolute;
+  right: var(--space-0);
+  bottom: var(--space-0-5);
+  padding-left: var(--space-1);
+  background: var(--color-sidebar-bg);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-usage__bars,
+.settings-usage__marks {
+  display: grid;
+  grid-template-columns: repeat(60, minmax(0, 1fr));
+  gap: var(--quota-gap);
+}
+.settings-usage__bars {
+  position: absolute;
+  inset: var(--space-0);
+}
+
+/* The whole column is the hover target, however low its bar. */
+.settings-usage__minute {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  min-width: var(--space-0);
+}
+.settings-usage__minute[data-active] {
+  background: var(--color-control-hover-bg);
+}
+
+.settings-usage__stack {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--quota-gap);
+  width: 100%;
+  max-width: var(--quota-bar-max-width);
+  overflow: hidden;
+  border-radius: var(--quota-bar-radius) var(--quota-bar-radius) var(--space-0) var(--space-0);
+}
+
+/* A minute with any use shows, however small next to the limit. */
+.settings-usage__stack:not(:empty) {
+  min-height: var(--quota-gap);
+}
+
+.settings-usage__part {
+  flex-basis: var(--space-0);
+  min-height: var(--space-px);
+}
+
+.settings-usage__mark {
+  display: flex;
+  justify-content: center;
+  height: var(--quota-refused-mark);
+}
+
+.settings-usage__refused-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: var(--quota-refused-mark);
+  height: var(--quota-refused-mark);
+  border-radius: var(--radius-full);
+  background: var(--color-danger);
+}
+
+.settings-usage__axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}
+
+.settings-usage__legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+
+.settings-usage__key {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: var(--space-0);
+}
+
+.settings-usage__swatch {
+  flex-shrink: 0;
+  width: var(--quota-swatch-size);
+  height: var(--quota-swatch-size);
+  border-radius: var(--radius-xs);
+}
+
+.settings-usage__key-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-usage__key-value {
+  margin-left: auto;
+  color: var(--color-foreground-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.settings-usage__refusals {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.settings-usage__note {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  line-height: var(--line-height-normal);
+}
+.settings-usage__note > svg {
+  flex-shrink: 0;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  margin-top: var(--space-0-5);
+  color: var(--color-warning);
+}
+
+.settings-usage__tooltip {
+  position: absolute;
+  bottom: calc(100% + var(--space-1));
+  z-index: var(--z-popover);
+  display: grid;
+  gap: var(--space-1);
+  width: var(--quota-tooltip-width);
+  padding: var(--space-2);
+  border: var(--border-width) solid var(--color-menu-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-menu-bg);
+  color: var(--color-menu-foreground);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--font-size-xs);
+  pointer-events: none;
+}
+
+.settings-usage__tooltip-title {
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-usage__tooltip-row {
+  display: grid;
+  grid-template-columns: var(--quota-swatch-size) 1fr auto;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-usage__tooltip-total {
+  padding-top: var(--space-1);
+  border-top: var(--hairline) solid var(--color-menu-separator);
+}
+
+/* For screen readers only: the chart's numbers as a table. */
+.settings-usage__table {
+  position: absolute;
+  width: var(--hairline);
+  height: var(--hairline);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .settings-account__failure {
   margin: var(--space-0);
   padding: var(--space-0) var(--space-4) var(--space-3);

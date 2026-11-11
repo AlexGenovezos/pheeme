@@ -62,6 +62,8 @@ pub struct AppState {
     pub assistants: Arc<mcp::McpServer>,
     /// The Gmail per-user limit every account's client paces itself by (Settings › Sync).
     pub gmail_quota: gmail::QuotaSetting,
+    /// What each account's Gmail client spent in the last hour, by source (Settings › Accounts).
+    pub gmail_usage: gmail::QuotaUsage,
     /// Where the logs are written (for Send diagnostics); `None` when there is no log dir.
     pub log_dir: Option<PathBuf>,
 }
@@ -86,10 +88,15 @@ pub async fn build_state(
     };
     let tokens = accounts.clone();
     let quota = gmail_quota.clone();
+    let gmail_usage = gmail::QuotaUsage::default();
+    let usage = gmail_usage.clone();
     let api_for: sync::manager::ApiFactory = Arc::new(move |account_id: &str| {
         let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
-        Arc::new(gmail::GmailClient::new(provider).with_quota_setting(&quota))
-            as Arc<dyn sync::MailApi>
+        Arc::new(
+            gmail::GmailClient::new(provider)
+                .with_quota_setting(&quota)
+                .with_usage(usage.account(account_id)),
+        ) as Arc<dyn sync::MailApi>
     });
     let sync = SyncManager::new(db.clone(), api_for, events.clone());
     let tokens = accounts.clone();
@@ -146,6 +153,7 @@ pub async fn build_state(
         transfers: transfer::TransferService::default(),
         assistants,
         gmail_quota,
+        gmail_usage,
         log_dir: None,
     })
 }
@@ -363,6 +371,7 @@ pub fn run() {
             commands::settings::set_calendar_reminders,
             commands::settings::gmail_quota,
             commands::settings::set_gmail_quota,
+            commands::settings::gmail_quota_usage,
             commands::mods::list_mods,
             commands::mods::prepare_mod_install,
             commands::mods::discard_mod_install,

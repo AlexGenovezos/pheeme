@@ -8,6 +8,7 @@
 
 use super::error::GmailError;
 use super::probe::{self, ProbeStage, RetryReason};
+use super::usage::{AccountUsage, UsageSource};
 use rand::RngExt;
 use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
@@ -463,6 +464,9 @@ pub struct GmailClient {
     quota: Arc<QuotaLimiter>,
     bulk_quota: Arc<QuotaLimiter>,
     users_waiting: Arc<watch::Sender<usize>>,
+    /// Where the account's Gmail usage is counted (Settings › Accounts); `None` for clients of
+    /// other Google APIs, whose quotas are their own.
+    usage: Option<Arc<AccountUsage>>,
 }
 
 impl GmailClient {
@@ -483,6 +487,7 @@ impl GmailClient {
             quota: Arc::new(QuotaLimiter::new(&QuotaSetting::default(), CLIENT_SHARE)),
             bulk_quota: Arc::new(QuotaLimiter::new(&QuotaSetting::default(), BULK_SHARE)),
             users_waiting: Arc::new(watch::Sender::new(0)),
+            usage: None,
         }
     }
 
@@ -507,6 +512,12 @@ impl GmailClient {
     pub fn with_quota_setting(mut self, limit: &QuotaSetting) -> Self {
         self.quota = Arc::new(QuotaLimiter::new(limit, CLIENT_SHARE));
         self.bulk_quota = Arc::new(QuotaLimiter::new(limit, BULK_SHARE));
+        self
+    }
+
+    /// Count what this client spends, and what Gmail refuses, in `usage`.
+    pub fn with_usage(mut self, usage: Arc<AccountUsage>) -> Self {
+        self.usage = Some(usage);
         self
     }
 
@@ -599,6 +610,7 @@ impl GmailClient {
         let mut refreshed = false;
         let mut attempt = 0;
         let units = req.quota_units();
+        let source = UsageSource::current(priority);
 
         loop {
             // Every attempt spends quota, retries included.
@@ -650,9 +662,16 @@ impl GmailClient {
             }
 
             let sent = Instant::now();
+            let sent_ms = self.usage.as_ref().map(|u| u.now_ms());
             let response = send_and_read(builder).await;
             if let Some(p) = &probe {
                 p.sent(sent.elapsed());
+            }
+            // Gmail charges every attempt that reached it; a connect failure never left.
+            if let (Some(usage), Some(sent_ms)) = (&self.usage, sent_ms) {
+                if !matches!(&response, Err(e) if e.is_connect()) {
+                    usage.record_at(sent_ms, source, units);
+                }
             }
             let (status, retry_after, body) = match response {
                 Ok(parts) => parts,
@@ -709,6 +728,9 @@ impl GmailClient {
                         Some("rateLimitExceeded" | "userRateLimitExceeded")
                     ));
             if rate_limited {
+                if let Some(usage) = &self.usage {
+                    usage.refused();
+                }
                 self.quota.rate_limited();
                 // Whichever request saw it, background work stays off Gmail for a while.
                 self.bulk_quota.cool_down();
@@ -899,6 +921,7 @@ mod tests {
     use super::test_support::*;
     use super::*;
     use crate::gmail::types::UserProfile;
+    use crate::gmail::usage::{usage_source, QuotaUsage, SourceUnits};
     use std::sync::atomic::Ordering;
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1701,6 +1724,165 @@ mod tests {
             sent_paths(&server).await,
             ["/history", "/history", "/labels/L1"]
         );
+    }
+
+    fn metered(server: &MockServer) -> (GmailClient, QuotaUsage) {
+        let usage = QuotaUsage::default();
+        let client = client_for(server).0.with_usage(usage.account("a1"));
+        (client, usage)
+    }
+
+    /// The units and refusals of the last hour, summed.
+    fn hour(usage: &QuotaUsage) -> (SourceUnits, u32) {
+        let mut total = SourceUnits::default();
+        let mut refused = 0;
+        for m in usage.report("a1", 6_000).minutes {
+            total.new_mail += m.units.new_mail;
+            total.older_mail += m.units.older_mail;
+            total.your_changes += m.units.your_changes;
+            total.you_asked += m.units.you_asked;
+            total.assistants += m.units.assistants;
+            refused += m.refused;
+        }
+        (total, refused)
+    }
+
+    #[tokio::test]
+    async fn usage_is_counted_by_source() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        let (client, usage) = metered(&server);
+        let get = |segments: &[&str]| client.send_json::<Value>(ApiRequest::get(segments));
+
+        // Sync: `history` is 2 units.
+        get(&["history"]).await.unwrap();
+        // The backfill: a message is 5.
+        client
+            .send_json::<Value>(ApiRequest::get(&["messages", "m1"]).background())
+            .await
+            .unwrap();
+        // The user opened a thread: 10.
+        user_action(get(&["threads", "t1"])).await.unwrap();
+        // The outbox, inside `user_action`: a label read is 1.
+        user_action(usage_source(
+            UsageSource::YourChanges,
+            get(&["labels", "L1"]),
+        ))
+        .await
+        .unwrap();
+        // An assistant's call: its scope wins over `user_action` and an outer scope.
+        user_action(usage_source(
+            UsageSource::YourChanges,
+            usage_source(UsageSource::Assistants, get(&["threads", "t2"])),
+        ))
+        .await
+        .unwrap();
+        // A scope wins over the backfill's priority too.
+        usage_source(
+            UsageSource::Assistants,
+            client.send_json::<Value>(ApiRequest::get(&["messages", "m2"]).background()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            hour(&usage),
+            (
+                SourceUnits {
+                    new_mail: 2,
+                    older_mail: 5,
+                    your_changes: 1,
+                    you_asked: 10,
+                    assistants: 15,
+                },
+                0
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn every_attempt_and_every_refusal_is_counted() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(error_json(
+                429,
+                "rateLimitExceeded",
+                "slow down",
+            )))
+            .up_to_n_times(2)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/profile"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(profile_json()))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/labels"))
+            .respond_with(ResponseTemplate::new(403).set_body_json(error_json(
+                403,
+                "insufficientPermissions",
+                "no",
+            )))
+            .mount(&server)
+            .await;
+        let (client, usage) = metered(&server);
+
+        // Refused twice, then answered: three attempts of 1 unit, two refusals.
+        let _: UserProfile = client
+            .send_json(ApiRequest::get(&["profile"]))
+            .await
+            .unwrap();
+        // A 403 that isn't the rate limit is charged but isn't a refusal.
+        client
+            .send_json::<Value>(ApiRequest::get(&["labels"]))
+            .await
+            .unwrap_err();
+        let (units, refused) = hour(&usage);
+        assert_eq!(units.new_mail, 4);
+        assert_eq!(refused, 2);
+    }
+
+    #[tokio::test]
+    async fn a_refused_background_request_is_counted_once() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(403).set_body_json(error_json(
+                403,
+                "rateLimitExceeded",
+                "User-rate limit exceeded",
+            )))
+            .mount(&server)
+            .await;
+        let (client, usage) = metered(&server);
+        client
+            .send_json::<Value>(ApiRequest::get(&["messages", "m1"]).background())
+            .await
+            .unwrap_err();
+        let (units, refused) = hour(&usage);
+        assert_eq!(units.older_mail, 5);
+        assert_eq!(refused, 1);
+    }
+
+    #[tokio::test]
+    async fn requests_that_never_reach_gmail_cost_nothing() {
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let usage = QuotaUsage::default();
+        let client = GmailClient::new(Arc::new(CountingTokens::default()))
+            .with_base_url(format!("http://127.0.0.1:{port}"))
+            .with_retry_policy(fast_retry())
+            .with_usage(usage.account("a1"));
+        client
+            .send_json::<Value>(ApiRequest::get(&["profile"]))
+            .await
+            .unwrap_err();
+        assert_eq!(hour(&usage), (SourceUnits::default(), 0));
     }
 
     async fn sent_paths(server: &MockServer) -> Vec<String> {

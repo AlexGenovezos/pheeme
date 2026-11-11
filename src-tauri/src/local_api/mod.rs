@@ -15,6 +15,7 @@ use crate::accounts::{AccountError, AccountService};
 use crate::compose::ComposeService;
 use crate::db::{assistant as db, settings};
 use crate::filters::FilterService;
+use crate::gmail;
 use crate::labels::LabelService;
 use crate::mail::{MailError, MailService};
 use crate::sync::engine::now_ms;
@@ -268,7 +269,11 @@ impl LocalApi {
         let result = match parsed {
             Ok(request) => match request.permission() {
                 Some(p) if !self.allows(p).await? => Err(ApiError::NotAllowed(p)),
-                _ => crate::gmail::user_action(self.run(request)).await,
+                _ => {
+                    let run =
+                        gmail::usage_source(gmail::UsageSource::Assistants, self.run(request));
+                    gmail::user_action(run).await
+                }
             },
             Err(e) => Err(e),
         };

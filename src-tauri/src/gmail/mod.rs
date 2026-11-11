@@ -16,6 +16,7 @@ pub mod send_as;
 pub mod tasks;
 pub mod threads;
 pub mod types;
+pub mod usage;
 pub mod user;
 
 pub use client::{
@@ -24,3 +25,4 @@ pub use client::{
 pub use error::GmailError;
 pub use mime::{ParsedAttachment, ParsedMessage};
 pub use types::MessageFormat;
+pub use usage::{usage_source, QuotaUsage, UsageReport, UsageSource};

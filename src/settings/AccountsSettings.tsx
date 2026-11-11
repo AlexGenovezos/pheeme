@@ -17,6 +17,7 @@ import { SendCredentials } from "../transfer/SendCredentials";
 import { SettingsRow, SettingsSection } from "./rows";
 import { matchesQuery } from "./schema";
 import { MailSyncProgress, useSyncProgress } from "./MailSyncProgress";
+import { GmailQuotaUsage } from "./QuotaUsage";
 
 /** How the Accounts page starts adding an account (onboarding lives outside the dialog). */
 export const AddAccountContext = createContext<(() => void) | undefined>(undefined);
@@ -138,6 +139,7 @@ function AccountRow({
         unavailable={progressUnavailable}
       />
       <CalendarSyncLine accountId={account.id} />
+      <GmailQuotaUsage accountId={account.id} email={account.email} />
       {confirming && (
         <div className="settings-account__confirm">
           <span>

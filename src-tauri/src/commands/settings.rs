@@ -89,6 +89,18 @@ pub async fn set_gmail_quota(
     Ok(state.gmail_quota.set(stored))
 }
 
+/// What `account_id`'s Gmail client spent in each of the last 60 minutes, by source, and how
+/// often Gmail refused it, against the user's limit (Settings › Accounts).
+#[tauri::command]
+pub fn gmail_quota_usage(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> Result<crate::gmail::UsageReport, CommandError> {
+    Ok(state
+        .gmail_usage
+        .report(&account_id, state.gmail_quota.get()))
+}
+
 /// Whether the daily anonymous usage ping is on (Settings › Diagnostics, the welcome screen).
 #[tauri::command]
 pub async fn telemetry_enabled(state: State<'_, AppState>) -> Result<bool, CommandError> {
