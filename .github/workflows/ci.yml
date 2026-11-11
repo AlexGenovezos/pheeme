@@ -37,6 +37,11 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run test:ci
+      - name: Use public DNS for apt
+        # Ubuntu runners' resolver intermittently fails on every Ubuntu mirror
+        # (2026-11-11), which breaks `playwright install --with-deps`.
+        if: matrix.os == 'ubuntu-22.04'
+        run: sudo resolvectl dns "$(ip route show default | awk '{print $5; exit}')" 1.1.1.1 8.8.8.8
       - name: Install browser for mod UI proof
         if: matrix.os == 'ubuntu-22.04'
         run: npx playwright install --with-deps chromium
