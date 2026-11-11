@@ -143,6 +143,8 @@ struct Moved {
     end: TimeInput,
     /// The new first start, when the series moved in time without changing kind.
     shift: Option<OriginalStart>,
+    /// The series' new zone, when the move also changes it.
+    zone: Option<chrono_tz::Tz>,
 }
 
 /// Switching a whole series between all-day and timed keeps its RRULE as is, which is
@@ -161,8 +163,8 @@ fn check_kind_switch(master: &DbEvent, own_rule: bool) -> Result<(), CalendarErr
 }
 
 /// The times `master` gets when its occurrence `at` is moved to `start`..`end`: the series
-/// moves by the same change, in wall-clock time in `zone` (days for all-day series), and
-/// keeps the edit's length. Between all-day and timed, the first date stays and takes the
+/// moves by the same change, in wall-clock time from `zone` to the edit's zone (days for
+/// all-day series), and keeps the edit's length. Between all-day and timed, the first date stays and takes the
 /// edit's time; that can't also change the day.
 fn series_times(
     master: &DbEvent,
@@ -173,12 +175,13 @@ fn series_times(
     own_rule: bool,
 ) -> Result<Moved, CalendarError> {
     let tz = recurrence::zone(Some(zone));
-    let local = |ms: i64| -> Result<NaiveDateTime, CalendarError> {
+    let local_in = |tz: chrono_tz::Tz, ms: i64| -> Result<NaiveDateTime, CalendarError> {
         tz.timestamp_millis_opt(ms)
             .single()
             .map(|t| t.naive_local())
             .ok_or_else(|| invalid(UNREADABLE_TIMES))
     };
+    let local = |ms: i64| local_in(tz, ms);
     let instant = |zone: chrono_tz::Tz, t: NaiveDateTime| {
         zone.from_local_datetime(&t)
             .earliest()
@@ -198,12 +201,20 @@ fn series_times(
         end.date.as_deref(),
     ) {
         (OriginalStart::Ms(at), Some(s), Some(e), None, None) => {
+            // The edit's wall clock is read in its own zone, which the series moves to.
+            let new_tz = start
+                .time_zone
+                .as_deref()
+                .and_then(|z| z.parse().ok())
+                .unwrap_or(tz);
+            let rezoned = (new_tz != tz).then_some(new_tz);
             let from = master.start_ms.ok_or_else(|| invalid(UNREADABLE_TIMES))?;
-            let first = instant(tz, local(from)? + (local(s)? - local(*at)?))?;
+            let first = instant(new_tz, local(from)? + (local_in(new_tz, s)? - local(*at)?))?;
             Ok(Moved {
                 start: timed(first, start),
                 end: timed(first + (e - s), end),
-                shift: (first != from).then_some(OriginalStart::Ms(first)),
+                shift: (first != from || rezoned.is_some()).then_some(OriginalStart::Ms(first)),
+                zone: rezoned,
             })
         }
         (OriginalStart::Date(at), None, None, Some(s), Some(e)) => {
@@ -214,6 +225,7 @@ fn series_times(
                 start: date_input(first),
                 end: date_input(first + (e - s)),
                 shift: (first != from).then_some(OriginalStart::Date(first)),
+                zone: None,
             })
         }
         (OriginalStart::Ms(at), None, None, Some(s), Some(e)) => {
@@ -228,6 +240,7 @@ fn series_times(
                 start: date_input(first),
                 end: date_input(first + (e - s)),
                 shift: None,
+                zone: None,
             })
         }
         (OriginalStart::Date(at), Some(s), Some(e), None, None) => {
@@ -247,6 +260,7 @@ fn series_times(
                 start: timed(first, start),
                 end: timed(first + (e - s), end),
                 shift: None,
+                zone: None,
             })
         }
         _ => Err(invalid(UNREADABLE_TIMES)),
@@ -388,7 +402,7 @@ impl CalendarService {
             let own_rule = edit.recurrence.is_some();
             let moved = series_times(master, at, start, end, zone, own_rule)?;
             if let (false, Some(first)) = (own_rule, &moved.shift) {
-                edit.recurrence = Some(series::shift(master, first)?);
+                edit.recurrence = Some(series::shift(master, first, moved.zone)?);
             }
             edit.start = Some(moved.start);
             edit.end = Some(moved.end);
@@ -630,7 +644,7 @@ fn new_series_body(
             let own_rule = edit.recurrence.is_some();
             let moved = series_times(&tail, at, start, end, zone, own_rule)?;
             if let (false, Some(first)) = (own_rule, &moved.shift) {
-                lines = series::shift(&tail, first)?;
+                lines = series::shift(&tail, first, moved.zone)?;
             }
             edit.start = Some(moved.start);
             edit.end = Some(moved.end);
@@ -1149,6 +1163,104 @@ mod tests {
         assert_eq!(shown[3], "Tue 10 Nov 10:00 Renamed");
         assert_eq!(shown[9], "Tue 22 Dec 10:00 Renamed");
         assert_eq!(h.events.names(), vec!["calendar:updated"]);
+    }
+
+    /// `ms` as "Tue 03 Nov 10:00" in Tokyo.
+    fn tokyo(ms: i64) -> String {
+        chrono_tz::Asia::Tokyo
+            .timestamp_millis_opt(ms)
+            .unwrap()
+            .format("%a %d %b %H:%M")
+            .to_string()
+    }
+
+    fn in_tokyo(ms: i64) -> TimeInput {
+        TimeInput {
+            time_zone: Some("Asia/Tokyo".into()),
+            ..at(ms)
+        }
+    }
+
+    /// Tuesday 10:00 in Tokyo is Monday evening in New York: the days follow the new zone.
+    #[tokio::test]
+    async fn all_edit_new_zone_keeps_days_in_the_new_zone() {
+        let mut master = weekly();
+        master["recurrence"] = json!([RULE, "EXDATE;TZID=America/New_York:20261201T100000"]);
+        let h = seeded_with(master).await;
+        let edit = times(
+            in_tokyo(ms("2026-11-03T01:00:00Z")),
+            in_tokyo(ms("2026-11-03T02:00:00Z")),
+        );
+        update(&h, &occ(3), EditScope::All, edit).await.unwrap();
+        let w = h.fake("a").writes().pop().unwrap();
+        assert_eq!(w.body["start"]["dateTime"], "2026-10-20T10:00:00+09:00");
+        assert_eq!(w.body["start"]["timeZone"], "Asia/Tokyo");
+        assert_eq!(
+            w.body["recurrence"],
+            json!([RULE, "EXDATE;TZID=America/New_York:20261130T200000"])
+        );
+
+        let series: Vec<String> = shown(&h)
+            .await
+            .iter()
+            .filter(|e| e.id != WEEK_6)
+            .map(|e| tokyo(e.start.ms.unwrap()))
+            .collect();
+        assert_eq!(series.len(), 9, "{series:?}");
+        assert!(
+            series
+                .iter()
+                .all(|l| l.starts_with("Tue") && l.ends_with(" 10:00")),
+            "{series:?}"
+        );
+        assert!(!series.iter().any(|l| l.contains("01 Dec")), "{series:?}");
+    }
+
+    #[tokio::test]
+    async fn following_edit_new_zone_keeps_days_in_the_new_zone() {
+        let mut master = weekly();
+        master["recurrence"] = json!([RULE, "EXDATE;TZID=America/New_York:20261201T100000"]);
+        let h = seeded_with(master).await;
+        let edit = times(
+            in_tokyo(ms("2026-11-10T01:00:00Z")),
+            in_tokyo(ms("2026-11-10T02:00:00Z")),
+        );
+        update(&h, &occ(4), EditScope::Following, edit)
+            .await
+            .unwrap();
+        let insert = &h.fake("a").writes()[0];
+        assert_eq!(
+            insert.body["start"]["dateTime"],
+            "2026-11-10T10:00:00+09:00"
+        );
+        assert_eq!(
+            insert.body["recurrence"],
+            json!([
+                "RRULE:FREQ=WEEKLY;COUNT=7;BYDAY=TU",
+                "EXDATE;TZID=America/New_York:20261130T200000"
+            ])
+        );
+        let shown = shown(&h).await;
+        assert_eq!(
+            shown.len(),
+            9,
+            "{:?}",
+            shown.iter().map(line).collect::<Vec<_>>()
+        );
+        assert!(shown[..3]
+            .iter()
+            .all(|e| line(e).contains("Tue") && line(e).contains(" 10:00 ")));
+        let later: Vec<String> = shown[3..]
+            .iter()
+            .map(|e| tokyo(e.start.ms.unwrap()))
+            .collect();
+        assert!(
+            later
+                .iter()
+                .all(|l| l.starts_with("Tue") && l.ends_with(" 10:00")),
+            "{later:?}"
+        );
+        assert!(!later.iter().any(|l| l.contains("01 Dec")), "{later:?}");
     }
 
     #[tokio::test]

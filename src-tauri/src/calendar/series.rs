@@ -223,11 +223,14 @@ fn value_ms(v: &str, zone: chrono_tz::Tz) -> Option<i64> {
         .map(|t| t.timestamp_millis())
 }
 
-/// How a series moves: by wall-clock time in its zone.
+/// How a series moves: by wall-clock time, from its old zone's clock to its new zone's.
 struct Move {
-    /// The series' zone (UTC for all-day series, which are pinned to UTC midnight).
-    tz: chrono_tz::Tz,
-    /// Whole days between the old and new local start dates.
+    /// The series' zone before the move (UTC for all-day series, which are pinned to UTC
+    /// midnight).
+    from_tz: chrono_tz::Tz,
+    /// Its zone after the move, the one Google reads the moved rule in.
+    to_tz: chrono_tz::Tz,
+    /// Whole days between the old local start date and the new one, each in its own zone.
     days: i64,
     /// The full wall-clock change, days and time of day.
     delta: TimeDelta,
@@ -237,8 +240,8 @@ struct Move {
 
 impl Move {
     /// A date or date-time value moved in the series' wall clock, written in its own form:
-    /// dates by the day part, `…Z` in UTC, and local times in `value_zone` (their TZID) or
-    /// the series' zone.
+    /// dates by the day part, `…Z` in UTC, and local times in `value_zone` (their TZID) or,
+    /// without one, the series' zone (read in the old, written in the new).
     fn value(&self, v: &str, value_zone: Option<chrono_tz::Tz>) -> Option<String> {
         if v.len() == 8 {
             let d = NaiveDate::parse_from_str(v, "%Y%m%d").ok()?;
@@ -249,8 +252,8 @@ impl Move {
             );
         }
         let moved = |instant: chrono::DateTime<Utc>| {
-            let local = instant.with_timezone(&self.tz).naive_local();
-            self.tz
+            let local = instant.with_timezone(&self.from_tz).naive_local();
+            self.to_tz
                 .from_local_datetime(&local.checked_add_signed(self.delta)?)
                 .earliest()
         };
@@ -259,21 +262,31 @@ impl Move {
             let m = moved(t.and_utc())?;
             return Some(m.with_timezone(&Utc).format("%Y%m%dT%H%M%SZ").to_string());
         }
-        let zone = value_zone.unwrap_or(self.tz);
         let t = NaiveDateTime::parse_from_str(v, "%Y%m%dT%H%M%S").ok()?;
-        let instant = zone.from_local_datetime(&t).earliest()?.with_timezone(&Utc);
+        let instant = value_zone
+            .unwrap_or(self.from_tz)
+            .from_local_datetime(&t)
+            .earliest()?
+            .with_timezone(&Utc);
         let m = moved(instant)?;
+        let zone = value_zone.unwrap_or(self.to_tz);
         Some(m.with_timezone(&zone).format("%Y%m%dT%H%M%S").to_string())
     }
 }
 
 /// `master`'s recurrence lines once the series moves so its first occurrence starts at
-/// `new_start`, measured in wall-clock time in the series' zone. BYDAY weekdays and
-/// BYMONTHDAY move by the whole days; UNTIL and every EXDATE/RDATE move by the whole change,
-/// so excluded occurrences stay excluded. Refuses moves a rule can't follow exactly.
-pub fn shift(master: &DbEvent, new_start: &OriginalStart) -> Result<Vec<String>, CalendarError> {
+/// `new_start`, measured in wall-clock time: from the series' zone to `new_zone` when the
+/// move also changes it (`None` keeps it), since Google reads the moved rule in the new one.
+/// BYDAY weekdays and BYMONTHDAY move by the whole days; UNTIL and every EXDATE/RDATE move
+/// by the whole change, so excluded occurrences stay excluded. Refuses moves a rule can't
+/// follow exactly.
+pub fn shift(
+    master: &DbEvent,
+    new_start: &OriginalStart,
+    new_zone: Option<chrono_tz::Tz>,
+) -> Result<Vec<String>, CalendarError> {
     let lines = recurrence::recurrence_lines(master);
-    let (tz, from, to) = match (master.is_all_day(), new_start) {
+    let (from_tz, to_tz, from, to) = match (master.is_all_day(), new_start) {
         (true, OriginalStart::Date(to)) => {
             let from = master
                 .start_date
@@ -283,30 +296,34 @@ pub fn shift(master: &DbEvent, new_start: &OriginalStart) -> Result<Vec<String>,
             let midnight = chrono::NaiveTime::MIN;
             (
                 chrono_tz::UTC,
+                chrono_tz::UTC,
                 from.and_time(midnight),
                 to.and_time(midnight),
             )
         }
         (false, OriginalStart::Ms(to)) => {
-            let tz = recurrence::zone(master.time_zone.as_deref());
-            let local = |ms: i64| {
+            let from_tz = recurrence::zone(master.time_zone.as_deref());
+            let to_tz = new_zone.unwrap_or(from_tz);
+            let local = |tz: chrono_tz::Tz, ms: i64| {
                 tz.timestamp_millis_opt(ms)
                     .single()
                     .map(|t| t.naive_local())
                     .ok_or_else(|| invalid(UNREADABLE))
             };
             let from = master.start_ms.ok_or_else(|| invalid(UNREADABLE))?;
-            (tz, local(from)?, local(*to)?)
+            (from_tz, to_tz, local(from_tz, from)?, local(to_tz, *to)?)
         }
         _ => return Err(invalid(KIND_CHANGE)),
     };
     let mv = Move {
-        tz,
+        from_tz,
+        to_tz,
         days: (to.date() - from.date()).num_days(),
         delta: to - from,
         new_day: to.date(),
     };
-    if mv.delta.is_zero() {
+    // The same wall clock in another zone is another instant, so EXDATEs still move.
+    if mv.delta.is_zero() && from_tz == to_tz {
         return Ok(lines);
     }
     lines
@@ -766,7 +783,7 @@ mod tests {
     fn by_days(rules: &[&str], days: i64) -> Result<Vec<String>, CalendarError> {
         let master = december(rules);
         let at = OriginalStart::Ms(master.start_ms.unwrap() + days * 24 * 3_600_000);
-        shift(&master, &at)
+        shift(&master, &at, None)
     }
 
     fn refused(got: Result<Vec<String>, CalendarError>) -> bool {
@@ -777,7 +794,7 @@ mod tests {
     fn moved(e: &DbEvent, new_start: &str) -> DbEvent {
         let duration = e.end_ms.unwrap() - e.start_ms.unwrap();
         let at = OriginalStart::Ms(ms(new_start));
-        let mut m = with_rules(e, &shift(e, &at).unwrap());
+        let mut m = with_rules(e, &shift(e, &at, None).unwrap());
         m.start_ms = Some(ms(new_start));
         m.end_ms = Some(ms(new_start) + duration);
         m
@@ -824,7 +841,7 @@ mod tests {
         let master = december(&["RRULE:FREQ=MONTHLY;BYDAY=1MO"]);
         let later = OriginalStart::Ms(ms("2026-12-07T11:00:00-05:00"));
         assert_eq!(
-            shift(&master, &later).unwrap(),
+            shift(&master, &later, None).unwrap(),
             lines(&["RRULE:FREQ=MONTHLY;BYDAY=1MO"])
         );
     }
@@ -846,7 +863,7 @@ mod tests {
         // A change of time alone keeps the day of the month.
         let master = december(&["RRULE:FREQ=MONTHLY;BYMONTHDAY=31"]);
         let later = OriginalStart::Ms(ms("2026-12-07T11:00:00-05:00"));
-        assert!(shift(&master, &later).is_ok());
+        assert!(shift(&master, &later, None).is_ok());
     }
 
     #[test]
@@ -857,8 +874,12 @@ mod tests {
             &["RRULE:FREQ=MONTHLY;COUNT=6"],
         );
         let to = |s: &str| OriginalStart::Ms(ms(s));
-        assert!(refused(shift(&master, &to("2026-11-29T09:00:00-05:00"))));
-        assert!(shift(&master, &to("2026-11-28T09:00:00-05:00")).is_ok());
+        assert!(refused(shift(
+            &master,
+            &to("2026-11-29T09:00:00-05:00"),
+            None
+        )));
+        assert!(shift(&master, &to("2026-11-28T09:00:00-05:00"), None).is_ok());
     }
 
     #[test]
@@ -872,15 +893,15 @@ mod tests {
                 &[rule],
             );
             assert!(
-                refused(shift(&master, &to("2028-02-29T09:00:00-05:00"))),
+                refused(shift(&master, &to("2028-02-29T09:00:00-05:00"), None)),
                 "{rule}"
             );
             assert!(
-                shift(&master, &to("2028-02-28T09:00:00-05:00")).is_ok(),
+                shift(&master, &to("2028-02-28T09:00:00-05:00"), None).is_ok(),
                 "{rule}"
             );
             assert!(
-                shift(&master, &to("2028-03-01T09:00:00-05:00")).is_ok(),
+                shift(&master, &to("2028-03-01T09:00:00-05:00"), None).is_ok(),
                 "{rule}"
             );
         }
@@ -890,7 +911,7 @@ mod tests {
             "2028-02-29T09:15:00-05:00",
             &["RRULE:FREQ=YEARLY"],
         );
-        assert!(shift(&leap, &to("2028-02-29T11:00:00-05:00")).is_ok());
+        assert!(shift(&leap, &to("2028-02-29T11:00:00-05:00"), None).is_ok());
     }
 
     #[test]
@@ -931,7 +952,12 @@ mod tests {
                 "RDATE;VALUE=DATE:20261231",
             ],
         );
-        let got = shift(&master, &OriginalStart::Ms(ms("2026-11-10T09:00:00-05:00"))).unwrap();
+        let got = shift(
+            &master,
+            &OriginalStart::Ms(ms("2026-11-10T09:00:00-05:00")),
+            None,
+        )
+        .unwrap();
         assert_eq!(
             got,
             lines(&[
@@ -983,6 +1009,70 @@ mod tests {
     }
 
     #[test]
+    fn shift_into_another_zone_reads_days_there() {
+        // Mondays 09:00 New York to Mondays 09:00 Tokyo: in New York that's Sunday evening,
+        // but the rule is read in Tokyo, so it stays on Mondays. UNTIL and the excluded
+        // Monday follow the wall clock into the new zone.
+        let master = series(
+            "2026-11-09T09:00:00-05:00",
+            "2026-11-09T09:15:00-05:00",
+            &[
+                "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261222T045959Z",
+                "EXDATE:20261116T140000Z",
+                "EXDATE;TZID=America/New_York:20261130T090000",
+            ],
+        );
+        let tokyo: chrono_tz::Tz = "Asia/Tokyo".parse().unwrap();
+        let new_start = "2026-11-09T09:00:00+09:00";
+        let at = OriginalStart::Ms(ms(new_start));
+        let got = shift(&master, &at, Some(tokyo)).unwrap();
+        assert_eq!(
+            got,
+            lines(&[
+                "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261221T145959Z",
+                "EXDATE:20261116T000000Z",
+                "EXDATE;TZID=America/New_York:20261129T190000",
+            ])
+        );
+        let mut moved = with_rules(&master, &got);
+        moved.time_zone = Some("Asia/Tokyo".into());
+        moved.start_ms = Some(ms(new_start));
+        moved.end_ms = Some(ms(new_start) + 15 * 60_000);
+        assert_eq!(
+            all(&moved),
+            [
+                "2026-11-09T00:00Z",
+                "2026-11-23T00:00Z",
+                "2026-12-07T00:00Z",
+                "2026-12-14T00:00Z",
+                "2026-12-21T00:00Z",
+            ]
+        );
+
+        // A value without a zone is local to the series, so it's read in the old zone and
+        // written in the new one.
+        let floating = series(
+            "2026-11-09T09:00:00-05:00",
+            "2026-11-09T09:15:00-05:00",
+            &["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261116T090000"],
+        );
+        assert_eq!(
+            shift(&floating, &at, Some(tokyo)).unwrap(),
+            lines(&["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261116T090000"])
+        );
+        // The same wall clock in another zone still rewrites values written in UTC.
+        let utc = series(
+            "2026-11-09T09:00:00-05:00",
+            "2026-11-09T09:15:00-05:00",
+            &["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261116T140000Z"],
+        );
+        assert_eq!(
+            shift(&utc, &at, Some(tokyo)).unwrap(),
+            lines(&["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261116T000000Z"])
+        );
+    }
+
+    #[test]
     fn shift_across_dst_keeps_wall_clock() {
         // Daily at 10:00 New York; Saturday Oct 31 (EDT, 14:00Z) is excluded. A day later
         // it is Sunday Nov 1, after the clocks went back: 10:00 EST is 15:00Z.
@@ -1010,7 +1100,7 @@ mod tests {
                 "EXDATE;VALUE=DATE:20261123",
             ],
         );
-        let got = shift(&master, &OriginalStart::Date(day("2026-11-11"))).unwrap();
+        let got = shift(&master, &OriginalStart::Date(day("2026-11-11")), None).unwrap();
         assert_eq!(
             got,
             lines(&[
@@ -1019,7 +1109,11 @@ mod tests {
             ])
         );
         assert!(matches!(
-            shift(&master, &OriginalStart::Ms(ms("2026-11-11T00:00:00Z"))),
+            shift(
+                &master,
+                &OriginalStart::Ms(ms("2026-11-11T00:00:00Z")),
+                None
+            ),
             Err(CalendarError::Invalid(_))
         ));
     }
