@@ -2853,11 +2853,8 @@ mod tests {
             "the cached match is read at once, the rest isn't touched"
         );
 
-        let ops = crate::db::outbox::for_account(&mail.db, "a1")
-            .await
-            .unwrap();
-        assert_eq!(ops.len(), 1);
-        assert!(ops[0].payload.contains(r#""sweep":"(invoice) is:unread""#));
+        // The background sync `mark_search_read` starts may already have sent the change, so look
+        // at Gmail rather than the outbox; sending it again is harmless.
         outbox::process(&mail.sync.engine("a1"), now_ms())
             .await
             .unwrap();
