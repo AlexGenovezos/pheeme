@@ -18,14 +18,13 @@ export function useRangeEvents(first: string, last: string): CalendarEvent[] | n
 
   useEffect(() => {
     if (!ready) return;
-    let stopped = false;
-    getCalendarEvents(zonedMs(first, 0, tz), zonedMs(addDays(last, 1), 0, tz), tz)
-      .then((list) => {
-        if (!stopped) setEvents(list);
-      })
-      .catch((error) => console.warn("Could not read the sidebar's events", error));
+    const read = { live: true };
+    getCalendarEvents(zonedMs(first, 0, tz), zonedMs(addDays(last, 1), 0, tz), tz).then(
+      (list) => read.live && setEvents(list),
+      (error: unknown) => console.warn("Could not read the sidebar's events", error),
+    );
     return () => {
-      stopped = true;
+      read.live = false;
     };
   }, [first, last, tz, ready, version]);
 

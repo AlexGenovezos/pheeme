@@ -16,7 +16,7 @@ import { IconButton } from "../components/ui/IconButton";
 import { describeShortcut } from "../keyboard/format";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useKeybinding } from "../keyboard/useCommands";
-import type { CalendarAccount, CalendarInfo } from "../lib/tauri";
+import type { CalendarAccount, CalendarEvent, CalendarInfo } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { useSettingsStore } from "../settings/settingsStore";
 import { dragRegion } from "../shell/chrome";
@@ -34,6 +34,28 @@ import { ModeSwitch } from "./ModeSwitch";
 import { SidebarTaskLists } from "../tasks/SidebarTaskLists";
 import { useNow } from "./useNow";
 import { visibleDays } from "./views";
+
+/** Each day's dots: the colours of up to three of its calendars, through `last`. */
+function dayDots(
+  events: CalendarEvent[] | null,
+  tz: string,
+  lookup: ReturnType<typeof useCalendarLookup>,
+  last: string,
+): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const e of events ?? []) {
+    if (e.selfResponse === "declined") continue;
+    const span = eventDays(e, tz);
+    if (!span) continue;
+    const color = eventColors(e, lookup(e)).background;
+    for (let d = span.first; d <= span.last && d <= last; d = addDays(d, 1)) {
+      const list = map.get(d) ?? [];
+      if (list.length < 3 && !list.includes(color)) list.push(color);
+      map.set(d, list);
+    }
+  }
+  return map;
+}
 
 function MiniMonth() {
   const anchor = useCalendarStore((s) => s.anchor);
@@ -59,21 +81,7 @@ function MiniMonth() {
   const events = useRangeEvents(days[0], days[days.length - 1]);
   const lookup = useCalendarLookup();
   const tz = displayZone(accounts);
-  const dots = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const e of events ?? []) {
-      if (e.selfResponse === "declined") continue;
-      const span = eventDays(e, tz);
-      if (!span) continue;
-      const color = eventColors(e, lookup(e)).background;
-      for (let d = span.first; d <= span.last && d <= days[days.length - 1]; d = addDays(d, 1)) {
-        const list = map.get(d) ?? [];
-        if (list.length < 3 && !list.includes(color)) list.push(color);
-        map.set(d, list);
-      }
-    }
-    return map;
-  }, [events, lookup, tz, days]);
+  const dots = dayDots(events, tz, lookup, days[days.length - 1]);
 
   return (
     <div className="mini-month">

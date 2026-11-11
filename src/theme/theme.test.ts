@@ -13,6 +13,7 @@ import {
   previewTheme,
   readThemeMode,
   resolveTheme,
+  sidebarSurfaceCss,
   THEME_BOOT_KEY,
   THEME_CHOICE_KEYS,
   THEME_MODE_KEY,
@@ -421,5 +422,25 @@ describe("no white flash", () => {
 
   test("the window stays hidden until the frontend has painted", () => {
     expect(tauriConf.app.windows[0].visible).toBe(false);
+  });
+});
+
+describe("sidebarSurfaceCss", () => {
+  test("Pheeme Light's sidebar wears Pheeme Dark's colours, solid", () => {
+    const css = sidebarSurfaceCss(lightTheme);
+    expect(css).toContain(`--color-sidebar-surface:${darkTheme.tokens["--color-sidebar-bg"]}`);
+    expect(css).toContain(`.shell__sidebar{`);
+    expect(css).toContain(`--color-foreground:${darkTheme.tokens["--color-foreground"]}`);
+    expect(css).toContain("color-scheme:dark");
+  });
+
+  test("without oklch support the colours are hex", () => {
+    const css = sidebarSurfaceCss(lightTheme, false);
+    expect(css).not.toMatch(/oklch\(/);
+    expect(css).toMatch(/--color-sidebar-surface:#[0-9a-f]{6}/i);
+  });
+
+  test("every other theme keeps its own sidebar", () => {
+    expect(sidebarSurfaceCss(darkTheme)).toBe("");
   });
 });
