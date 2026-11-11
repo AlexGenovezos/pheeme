@@ -41,7 +41,7 @@ test("prompts for an account that hasn't been asked and turns notifications on",
     }
   });
   render(<Host />);
-  expect(await screen.findByText("Turn on notifications?")).toBeInTheDocument();
+  expect(await screen.findByText("New mail alerts")).toBeInTheDocument();
   expect(screen.getByText(/a@example\.com/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
   await waitFor(() => expect(answers).toEqual([{ enable: true }]));
@@ -58,10 +58,10 @@ test("Not now records the answer so it isn't asked again", async () => {
     }
   });
   render(<Host />);
-  await screen.findByText("Turn on notifications?");
+  await screen.findByText("New mail alerts");
   fireEvent.click(screen.getByRole("button", { name: "Not now" }));
   await waitFor(() => expect(answers).toEqual([{ enable: false }]));
-  expect(screen.queryByText("Turn on notifications?")).not.toBeInTheDocument();
+  expect(screen.queryByText("New mail alerts")).not.toBeInTheDocument();
 });
 
 test("a blocked permission explains how to recover", async () => {
@@ -71,7 +71,7 @@ test("a blocked permission explains how to recover", async () => {
       throw { code: "desktop_settings", message: "Notifications are blocked." };
   });
   render(<Host />);
-  await screen.findByText("Turn on notifications?");
+  await screen.findByText("New mail alerts");
   fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Notifications are blocked.");
 });
@@ -86,5 +86,5 @@ test("doesn't prompt once every account has been asked", async () => {
   });
   render(<Host />);
   await waitFor(() => expect(reads).toBe(1));
-  expect(screen.queryByText("Turn on notifications?")).not.toBeInTheDocument();
+  expect(screen.queryByText("New mail alerts")).not.toBeInTheDocument();
 });

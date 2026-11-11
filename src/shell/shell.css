@@ -4,6 +4,8 @@
   position: relative;
   display: grid;
   height: 100%;
+  /* Shows at the content's rounded corner: the sidebar's surface. */
+  background: var(--color-sidebar-surface, var(--color-sidebar-bg));
   grid-template-areas: "sidebar list view";
   grid-template-rows: 100%;
   grid-template-columns:
@@ -88,6 +90,10 @@ html[data-vibrancy] .shell__sidebar {
 .shell__list {
   grid-area: list;
   border-right: var(--border-width) solid var(--color-pane-border);
+}
+.shell[data-sidebar="expanded"] .shell__list,
+.shell[data-sidebar="expanded"][data-reading-pane="off"] .shell__view {
+  border-top-left-radius: var(--pane-corner-radius);
 }
 
 .shell__view {

@@ -11,7 +11,8 @@ export const darkSource: ThemeSource = {
   kind: "dark",
   tokens: {
     "--color-app-bg": "#15191a",
-    "--color-sidebar-bg": "#1b2021",
+    // The deepest surface: a step darker than the panes (--color-app-bg), so it stands apart.
+    "--color-sidebar-bg": "#0f1213",
     "--color-sidebar-foreground": "#cdd4d4",
     "--color-pane-border": "#262c2d",
     "--color-border": "#353c3d",

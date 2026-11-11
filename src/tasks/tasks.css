@@ -21,6 +21,10 @@
   border-left: var(--border-width) solid var(--color-pane-border);
   background: var(--color-pane-bg);
 }
+/* Beside the calendar page, the rail is part of it: no line between them. */
+.tasks-frame:has(> .shell[data-mode="calendar"]) > .tasks-rail {
+  border-left-color: transparent;
+}
 .tasks-rail .ui-icon-button[aria-pressed="true"] {
   background: var(--color-control-active-bg);
   color: var(--color-accent);
@@ -430,11 +434,14 @@
   height: calc(100% - var(--calendar-event-inset));
   margin: var(--space-0) var(--space-0-5);
   padding: var(--space-0) var(--space-1) var(--space-0) var(--space-0);
-  /* An inner outline, not a border: the buttons inside get the chip's full height. */
-  box-shadow: inset 0 0 0 var(--border-width) var(--color-accent);
-  border-radius: var(--radius-xs);
-  background: var(--color-pane-bg);
-  color: var(--color-foreground);
+  /* A tasks chip is tinted with the accent, like an event with its calendar's colour. */
+  background: color-mix(
+    in srgb,
+    var(--color-accent) var(--calendar-event-tint),
+    var(--color-pane-bg)
+  );
+  color: color-mix(in srgb, var(--color-accent) var(--calendar-event-ink), var(--color-foreground));
+  border-radius: var(--radius-sm);
   font-size: var(--font-size-xs);
   line-height: var(--line-height-tight);
 }
@@ -465,7 +472,8 @@
   outline-offset: var(--focus-ring-offset);
 }
 .task-chip--done {
-  box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
+  background: var(--color-control-hover-bg);
+  color: var(--color-foreground-muted);
 }
 .task-chip--done .task-chip__title {
   color: var(--color-foreground-muted);

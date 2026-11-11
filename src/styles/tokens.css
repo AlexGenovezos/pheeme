@@ -7,9 +7,12 @@
  * allowed (the other is the theme files). tokens.test.ts enforces it.
  */
 :root {
-  /* Type. One bundled family so the app looks the same on every OS. */
+  /* Type. */
+  /* The system's own face on macOS (SF Pro) and Windows (Segoe UI), so Pheeme looks native;
+     elsewhere (Linux) the bundled IBM Plex Sans, rather than whatever the desktop's default is. */
   --font-family-ui:
-    "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI",
+    "IBM Plex Sans Variable", "IBM Plex Sans", sans-serif;
   --font-family-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --font-size-xs: 11px;
   --font-size-sm: 12px;
@@ -128,12 +131,23 @@
   --speed-panel-chip-width: 52px;
   /* Calendar mode */
   --calendar-gutter-width: 56px;
+  /* The time grid's hour and column lines: fainter than other borders, there are so many. */
+  --calendar-grid-line: color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
+  --segmented-thumb-shadow: 0 0 0 0.5px var(--color-shadow), 0 1px 2px var(--color-shadow);
   --calendar-band-max-height: 132px;
   --calendar-mini-day-size: 26px;
   --calendar-check-size: 14px;
   --calendar-now-dot-size: 10px;
   --calendar-now-line: 2px;
   --calendar-event-inset: 2px;
+  /* The content pages' rounded corner where they meet the sidebar. */
+  --pane-corner-radius: 12px;
+  /* Events: how much of the calendar's colour tints the fill, deepens the text, and the stripe. */
+  --calendar-event-tint: 24%;
+  --calendar-event-ink: 40%;
+  --calendar-event-stripe: 3px;
+  --calendar-event-tint-strong: 34%;
+  --mini-month-dot-size: 3px;
   --calendar-popover-width: 380px;
   --calendar-popover-max-height: 80vh;
   --calendar-first-width: 560px;
@@ -144,6 +158,8 @@
   --invite-mini-day-height: 168px;
   --invite-mini-gutter-width: 52px;
   --pinned-email-width: 320px;
+  /* The calendar sidebar's agenda (today and the next two days), which scrolls inside. */
+  --calendar-agenda-height: 280px;
   /* Tasks: the panel at the right edge, its rail, and the tick-off circle. */
   --tasks-panel-width: 300px;
   --tasks-rail-width: 44px;

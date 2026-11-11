@@ -142,7 +142,7 @@
     "button,a[href],input:not([type=hidden]),select,textarea,[role=button],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=option],[role=switch],[role=combobox],[role=gridcell][tabindex]";
   // Variable-size content (events, chips, rows, mini-month days): no fixed control height.
   const CONTENT =
-    ".cal-event,.task-chip,.thread-row,.cal-search__row,.message-card__summary,.mail-search__suggestion,.mini-month button,.task-row__main,.ui-picker [role=option],.ui-picker [role=gridcell]";
+    ".cal-event,.task-chip,.thread-row,.cal-search__row,.cal-agenda__row,.cal-agenda__pill,.message-card__summary,.mail-search__suggestion,.mini-month button,.task-row__main,.ui-picker [role=option],.ui-picker [role=gridcell]";
   /** The box that takes a click: a wrapped field's frame, a checkbox's label. */
   /**
    * The box a field looks like: its own, or the nearest frame around it (an ancestor drawn with
