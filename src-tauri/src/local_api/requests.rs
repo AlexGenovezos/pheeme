@@ -80,7 +80,10 @@ pub struct ThreadsArg {
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChangeLabels {
+    #[serde(default)]
     pub thread_ids: Vec<String>,
+    /// Instead of `thread_ids`: every message this Gmail search finds.
+    pub query: Option<String>,
     pub account: Option<String>,
     #[serde(default)]
     pub add: Vec<String>,
@@ -259,7 +262,10 @@ impl Request {
             }
             Request::ChangeLabels(c) => format!(
                 "{}: +[{}] -[{}]{}",
-                conversations(c.thread_ids.len()),
+                match &c.query {
+                    Some(q) => format!("every match for \"{q}\""),
+                    None => conversations(c.thread_ids.len()),
+                },
                 c.add.join(", "),
                 c.remove.join(", "),
                 on(&c.account)
@@ -525,17 +531,20 @@ pub fn catalog() -> Vec<ToolDef> {
         ToolDef {
             name: "change_labels",
             title: "Change labels",
-            description: "Add and remove user labels (by name) on conversations. Use archive, trash, \
-                star and the other tools for Inbox, Trash, Starred and read state.",
+            description: "Add and remove user labels (by name) on conversations: the thread_ids \
+                given, or with query every message that Gmail search finds, including mail not \
+                downloaded yet (use query for more than a few hundred; it is far lighter on Gmail's \
+                quota). Use archive, trash, star and the other tools for Inbox, Trash, Starred and \
+                read state.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "thread_ids": thread_ids_prop(),
+                    "query": { "type": "string", "description": "Instead of thread_ids: a Gmail search; every message it finds is changed." },
                     "account": write_account_prop(),
                     "add": { "type": "array", "items": { "type": "string" }, "description": "Label names to add." },
                     "remove": { "type": "array", "items": { "type": "string" }, "description": "Label names to remove." }
                 },
-                "required": ["thread_ids"],
                 "additionalProperties": false
             }),
             read_only: false,
