@@ -397,6 +397,7 @@ pub fn run() {
             commands::threads::get_thread,
             commands::threads::modify_threads,
             commands::threads::mark_inbox_tab_read,
+            commands::threads::mark_search_read,
             commands::threads::trash_threads,
             commands::threads::inbox_tabs,
             commands::threads::set_inbox_tabs,

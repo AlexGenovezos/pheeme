@@ -24,6 +24,7 @@ import { showContextMenu } from "../lib/contextMenu";
 import {
   archive,
   closeConversation,
+  findSimilar,
   respond,
   openLabelMenu,
   openMoveMenu,
@@ -135,6 +136,17 @@ export function ViewPane() {
           shortcut: registry.shortcutFor(CREATE_EVENT_COMMAND, CREATE_EVENT_SHORTCUT),
           disabled: off,
           onSelect: () => void createEventFromEmail(),
+        },
+        { type: "separator" },
+        {
+          id: "similar-sender",
+          label: "Find emails from this sender",
+          onSelect: () => void findSimilar("sender"),
+        },
+        {
+          id: "similar-subject",
+          label: "Find emails with this subject",
+          onSelect: () => void findSimilar("subject"),
         },
         { type: "separator" },
         { id: "original", label: "Show original", onSelect: () => notYet("Show original") },

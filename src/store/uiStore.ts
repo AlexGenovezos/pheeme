@@ -143,7 +143,8 @@ interface UiState extends PaneLayout, NavPrefs {
   mailbox: MailboxRef;
   searchText: string;
   searchAccountId: string | null;
-  setSearch(text: string): void;
+  /** `accountId` scopes the search to one account (`null`: all); left out, a new search takes the mailbox's. */
+  setSearch(text: string, accountId?: string | null): void;
   setSearchAccount(accountId: string | null): void;
   /** Per-mailbox filters for this session only. */
   unreadMailboxes: Record<string, boolean>;
@@ -275,10 +276,15 @@ export const useUiStore = create<UiState>((set, get) => {
     ...navReset(),
     searchText: "",
     searchAccountId: null,
-    setSearch: (text) =>
+    setSearch: (text, accountId) =>
       set((s) => ({
         searchText: text,
-        searchAccountId: s.searchText.trim() ? s.searchAccountId : s.mailbox.accountId,
+        searchAccountId:
+          accountId !== undefined
+            ? accountId
+            : s.searchText.trim()
+              ? s.searchAccountId
+              : s.mailbox.accountId,
         openThread: null,
         cursor: null,
         checked: [],

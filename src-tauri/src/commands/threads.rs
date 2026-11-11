@@ -100,6 +100,17 @@ pub async fn mark_inbox_tab_read(
         .await?)
 }
 
+/// Mark every unread match of a search read in each of the accounts searched, including mail
+/// not downloaded yet.
+#[tauri::command]
+pub async fn mark_search_read(
+    state: State<'_, AppState>,
+    account_ids: Vec<String>,
+    query: String,
+) -> Result<(), CommandError> {
+    Ok(state.mail.mark_search_read(&account_ids, &query).await?)
+}
+
 #[tauri::command]
 pub async fn trash_threads(
     state: State<'_, AppState>,
