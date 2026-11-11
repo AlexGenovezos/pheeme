@@ -484,7 +484,6 @@
 .settings-usage__stack {
   display: flex;
   flex-direction: column-reverse;
-  gap: var(--quota-gap);
   width: 100%;
   max-width: var(--quota-bar-max-width);
   overflow: hidden;
@@ -498,7 +497,6 @@
 
 .settings-usage__part {
   flex-basis: var(--space-0);
-  min-height: var(--space-px);
 }
 
 .settings-usage__mark {
@@ -577,7 +575,19 @@
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
   margin-top: var(--space-0-5);
+}
+.settings-usage__note[data-warning] > svg {
   color: var(--color-warning);
+}
+/* Both texts in one cell: the note keeps the taller one's height whichever shows. */
+.settings-usage__note-text {
+  display: grid;
+}
+.settings-usage__note-text > * {
+  grid-area: 1 / 1;
+}
+.settings-usage__note-text > [aria-hidden] {
+  visibility: hidden;
 }
 
 .settings-usage__tooltip {

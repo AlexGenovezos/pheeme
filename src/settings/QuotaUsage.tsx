@@ -73,13 +73,16 @@ export function summarizeQuota(usage: QuotaUsage): QuotaSummary {
   let peak = 0;
   let refused = 0;
   let somethingElse = false;
-  let before = 0;
+  // The oldest minute's predecessor isn't known, so it can't clear Pheeme.
+  let before: number | null = null;
   for (const minute of usage.minutes) {
     for (const s of QUOTA_SOURCES) totals[s.id] += minute.units[s.id];
     const total = minuteTotal(minute);
     peak = Math.max(peak, total);
     refused += minute.refused;
-    if (minute.refused > 0 && before + total < usage.limitPerMinute) somethingElse = true;
+    if (minute.refused > 0 && before !== null && before + total < usage.limitPerMinute) {
+      somethingElse = true;
+    }
     before = total;
   }
   const total = QUOTA_SOURCES.reduce((sum, s) => sum + totals[s.id], 0);
@@ -134,6 +137,7 @@ export function GmailQuotaUsage({ accountId, email }: { accountId: string; email
 export function QuotaUsageChart({ email, usage }: { email: string; usage: QuotaUsage | null }) {
   const [active, setActive] = useState<number | null>(null);
   const summary = usage && summarizeQuota(usage);
+  const warn = summary?.somethingElse ?? false;
   const limit = usage?.limitPerMinute ?? 0;
   // The limit is always in view, so a low bar reads as "well under it", with headroom above the
   // line for its label.
@@ -251,17 +255,24 @@ export function QuotaUsageChart({ email, usage }: { email: string; usage: QuotaU
           <Skeleton className="settings-sync__pending" width="30ch" />
         )}
       </span>
-      {summary?.somethingElse && (
-        <p className="settings-usage__note" role="note">
-          <Info aria-hidden="true" />
-          <span>
+      {/* Both texts share one grid cell, so the note is as tall from the first frame as when
+          the warning shows. */}
+      <p className="settings-usage__note" role="note" data-warning={warn || undefined}>
+        <Info aria-hidden="true" />
+        <span className="settings-usage__note-text">
+          <span aria-hidden={warn || undefined}>
+            The limit is shared by everything signed in to this Gmail account through the same
+            Google Cloud client: Pheeme on your other devices and any other app using it. Gmail
+            counts them all against it.
+          </span>
+          <span aria-hidden={!warn || undefined}>
             Gmail refused requests while this copy of Pheeme was under its share of the limit. The
             limit is shared by everything signed in to this Gmail account through the same Google
             Cloud client, so something else (Pheeme on another device, or another app) is probably
             using the quota.
           </span>
-        </p>
-      )}
+        </span>
+      </p>
       <QuotaTable usage={usage} />
     </div>
   );

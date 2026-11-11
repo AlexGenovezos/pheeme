@@ -104,29 +104,29 @@ test("the something-else note shows only when this Pheeme couldn't have reached 
 
   // Refused while using little: something else is spending the quota.
   const { rerender } = render(<QuotaUsageChart email="me@example.com" usage={at(120, 3)} />);
-  expect(note()).toHaveTextContent(/something else .* is probably using the quota/);
+  expect(note()).toHaveAttribute("data-warning");
   expect(screen.getByText("Gmail refused 3 requests in the last hour")).toBeInTheDocument();
 
   // Refused near the limit: this Pheeme could have done it itself.
   rerender(<QuotaUsageChart email="me@example.com" usage={at(6_000, 2)} />);
-  expect(note()).toBeNull();
+  expect(note()).not.toHaveAttribute("data-warning");
 
   // Refused just after a busy minute: Gmail's minute can straddle two of ours.
   const afterBusy = withMinute(at(120, 2), 29, {
     units: { newMail: 0, olderMail: 5_900, yourChanges: 0, youAsked: 0, assistants: 0 },
   });
   rerender(<QuotaUsageChart email="me@example.com" usage={afterBusy} />);
-  expect(note()).toBeNull();
+  expect(note()).not.toHaveAttribute("data-warning");
 
   // Busy but never refused.
   rerender(<QuotaUsageChart email="me@example.com" usage={at(100, 0)} />);
-  expect(note()).toBeNull();
+  expect(note()).not.toHaveAttribute("data-warning");
 
   // It follows the user's limit.
   rerender(
     <QuotaUsageChart email="me@example.com" usage={{ ...at(6_000, 2), limitPerMinute: 12_000 }} />,
   );
-  expect(note()).not.toBeNull();
+  expect(note()).toHaveAttribute("data-warning");
 });
 
 test("before usage loads, the block already has every element it will have after", () => {
@@ -142,12 +142,34 @@ test("before usage loads, the block already has every element it will have after
   expect(container.querySelectorAll(".settings-usage__key")).toHaveLength(5);
   expect(container.querySelectorAll(".settings-usage .ui-skeleton").length).toBeGreaterThan(0);
   // Nothing about refusals is claimed until the answer is in.
-  expect(screen.queryByText(/Gmail refused/)).toBeNull();
+  expect(container.querySelector(".settings-usage__refusals")).not.toHaveTextContent(
+    /Gmail refused/,
+  );
+  expect(screen.getByRole("note")).not.toHaveAttribute("data-warning");
 
   rerender(<QuotaUsageChart email="me@example.com" usage={quiet()} />);
   expect(elements()).toBe(before);
   expect(container.querySelectorAll(".settings-usage .ui-skeleton")).toHaveLength(0);
   expect(screen.getByText("Gmail refused nothing in the last hour")).toBeInTheDocument();
+
+  // Loading straight into a report that blames something else adds nothing either.
+  rerender(<QuotaUsageChart email="me@example.com" usage={null} />);
+  const refused = withMinute(quiet(), 30, {
+    units: { newMail: 120, olderMail: 0, yourChanges: 0, youAsked: 0, assistants: 0 },
+    refused: 2,
+  });
+  rerender(<QuotaUsageChart email="me@example.com" usage={refused} />);
+  expect(elements()).toBe(before);
+  expect(screen.getByRole("note")).toHaveAttribute("data-warning");
+});
+
+test("the oldest minute's refusals don't blame anything else: the minute before it is unknown", () => {
+  const usage = withMinute(quiet(), 0, {
+    units: { newMail: 120, olderMail: 0, yourChanges: 0, youAsked: 0, assistants: 0 },
+    refused: 2,
+  });
+  expect(summarizeQuota(usage).somethingElse).toBe(false);
+  expect(summarizeQuota(withMinute(usage, 1, { refused: 1 })).somethingElse).toBe(true);
 });
 
 test("hovering a minute shows what it was spent on", () => {
