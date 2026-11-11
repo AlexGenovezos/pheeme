@@ -354,13 +354,15 @@ fn shift_rule(rule: &str, mv: &Move) -> Result<String, CalendarError> {
         {
             return Err(invalid(CHANGE_DAY_IN_EDITOR));
         }
-        // A monthly rule without days takes its day from the start; days 29–31 skip some
-        // months, so moving onto them would lose occurrences.
-        let monthly = part_value(&parts, "FREQ").is_some_and(|f| f.eq_ignore_ascii_case("MONTHLY"));
-        if monthly
-            && part_value(&parts, "BYDAY").is_none()
-            && part_value(&parts, "BYMONTHDAY").is_none()
-            && mv.new_day.day() > 28
+        // Monthly and yearly rules without days take their day from the start. Days 29–31
+        // skip some months and February 29 skips three years in four, so moving onto them
+        // would lose occurrences.
+        let freq = |f: &str| part_value(&parts, "FREQ").is_some_and(|v| v.eq_ignore_ascii_case(f));
+        let day_from_start =
+            part_value(&parts, "BYDAY").is_none() && part_value(&parts, "BYMONTHDAY").is_none();
+        let (month, day) = (mv.new_day.month(), mv.new_day.day());
+        if day_from_start
+            && ((freq("MONTHLY") && day > 28) || (freq("YEARLY") && month == 2 && day == 29))
         {
             return Err(invalid(CHANGE_DAY_IN_EDITOR));
         }
@@ -857,6 +859,38 @@ mod tests {
         let to = |s: &str| OriginalStart::Ms(ms(s));
         assert!(refused(shift(&master, &to("2026-11-29T09:00:00-05:00"))));
         assert!(shift(&master, &to("2026-11-28T09:00:00-05:00")).is_ok());
+    }
+
+    #[test]
+    fn shift_refuses_yearly_start_day_onto_feb_29() {
+        // Yearly on its start date: on February 29 it would only happen in leap years.
+        let to = |s: &str| OriginalStart::Ms(ms(s));
+        for rule in ["RRULE:FREQ=YEARLY;COUNT=4", "RRULE:FREQ=YEARLY;BYMONTH=2"] {
+            let master = series(
+                "2028-02-27T09:00:00-05:00",
+                "2028-02-27T09:15:00-05:00",
+                &[rule],
+            );
+            assert!(
+                refused(shift(&master, &to("2028-02-29T09:00:00-05:00"))),
+                "{rule}"
+            );
+            assert!(
+                shift(&master, &to("2028-02-28T09:00:00-05:00")).is_ok(),
+                "{rule}"
+            );
+            assert!(
+                shift(&master, &to("2028-03-01T09:00:00-05:00")).is_ok(),
+                "{rule}"
+            );
+        }
+        // A yearly series that already falls on February 29 can still change its time.
+        let leap = series(
+            "2028-02-29T09:00:00-05:00",
+            "2028-02-29T09:15:00-05:00",
+            &["RRULE:FREQ=YEARLY"],
+        );
+        assert!(shift(&leap, &to("2028-02-29T11:00:00-05:00")).is_ok());
     }
 
     #[test]
