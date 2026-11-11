@@ -108,6 +108,12 @@ const CASES = [
        <button style="${FONT} height:24px">Cc</button></div>`,
     (r) => !r.defects.some((d) => d.startsWith("overlap")) && r.s.controls === 10,
   ],
+  [
+    "a label half scrolled out of a list inside a panel that hides overflow is just scrolling",
+    `<div style="height:60px; overflow:hidden; display:flex; flex-direction:column; ${FONT}">
+       <div style="overflow:auto; flex:1">${Array.from({ length: 4 }, (_, i) => `<div style="height:22px">Row ${i}</div>`).join("")}</div></div>`,
+    (r) => r.n.clipped === 0 && !r.defects.some((d) => d.startsWith("cut")),
+  ],
 ];
 
 const browser = await chromium.launch();

@@ -1,4 +1,4 @@
-import { useRef, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useWidth } from "../lib/useWidth";
 import { ColorPopoverHost } from "../labels/ColorPopover";
@@ -26,11 +26,11 @@ import "./shell.css";
 export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   // Only the fields it draws: the whole store changes on every selection and open, which would re-render every pane.
-  const { sidebarWidth, listWidth, readingPane } = useUiStore(
+  const { sidebarWidth, listWidth, readingPaneOn } = useUiStore(
     useShallow(({ sidebarWidth, listWidth, readingPane }) => ({
       sidebarWidth,
       listWidth,
-      readingPane,
+      readingPaneOn: readingPane,
     })),
   );
   const conversationOpen = useUiStore((s) => s.openThread !== null);
@@ -38,6 +38,14 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
     useUiStore.getState();
 
   const width = useWidth(ref);
+  // No room for the list beside the reading pane even with the sidebar hidden (the Tasks panel
+  // took it): one shows at a time, as with the reading pane off.
+  const squeezed = readingPaneOn && width > 0 && width < PANE.listMin + PANE.viewMin;
+  useEffect(() => {
+    useUiStore.getState().setReadingPaneSqueezed(squeezed);
+  }, [squeezed]);
+  useEffect(() => () => useUiStore.getState().setReadingPaneSqueezed(false), []);
+  const readingPane = readingPaneOn && !squeezed;
   const aside = useRef<HTMLElement>(null);
   const layout = useSidebarFit(
     aside,

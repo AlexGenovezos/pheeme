@@ -22,6 +22,8 @@ export const BAND_ROW_PX = 26;
 const COMPACT_MINUTES = 45;
 /** Narrower than this, an event shows only its title, edge to edge. */
 const NARROW_EVENT_PX = 64;
+/** A short event puts its time beside its title; narrower than this, the time gives way. */
+const COMPACT_TIME_MIN_PX = 140;
 /** The narrowest a day can be for two events side by side to still read. */
 export const MIN_DAY_PX = NARROW_EVENT_PX;
 
@@ -184,7 +186,10 @@ export function TimeGrid({
                     calendar={lookup(b.event)}
                     tz={tz}
                     compact={shown < COMPACT_MINUTES}
-                    narrow={(dayWidth * b.span) / b.columns < NARROW_EVENT_PX}
+                    narrow={
+                      (dayWidth * b.span) / b.columns <
+                      (shown < COMPACT_MINUTES ? COMPACT_TIME_MIN_PX : NARROW_EVENT_PX)
+                    }
                     style={{
                       top: (b.start / 60) * HOUR_PX,
                       height: (shown / 60) * HOUR_PX,

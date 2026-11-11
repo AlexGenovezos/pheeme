@@ -170,6 +170,9 @@ interface UiState extends PaneLayout, NavPrefs {
   /** While squeezed: the sidebar is open over the content. */
   sidebarPeek: boolean;
   setSidebarSqueezed(squeezed: boolean): void;
+  /** No room for the list beside the reading pane: one shows at a time, as with the reading pane off. */
+  readingPaneSqueezed: boolean;
+  setReadingPaneSqueezed(squeezed: boolean): void;
   setListDensity(density: ListDensity): void;
   setReadingPane(on: boolean): void;
   /** Go to a mailbox: clears the open thread, highlight and selection. An account mailbox also becomes the active account. */
@@ -214,9 +217,14 @@ export const sidebarLayout = (
         ? "overlay"
         : "collapsed";
 
+/** The reading pane is on and there's room for it beside the list. */
+export const readingPaneShown = (
+  s: Pick<UiState, "readingPane" | "readingPaneSqueezed">,
+): boolean => s.readingPane && !s.readingPaneSqueezed;
+
 export const focusedThread = (
-  s: Pick<UiState, "readingPane" | "openThread" | "cursor">,
-): ThreadKey | null => (s.readingPane || s.openThread !== null ? s.openThread : s.cursor);
+  s: Pick<UiState, "readingPane" | "readingPaneSqueezed" | "openThread" | "cursor">,
+): ThreadKey | null => (readingPaneShown(s) || s.openThread !== null ? s.openThread : s.cursor);
 
 type Persisted = PaneLayout & NavPrefs & Pick<UiState, "mailbox">;
 
@@ -291,6 +299,8 @@ export const useUiStore = create<UiState>((set, get) => {
     },
     sidebarSqueezed: false,
     sidebarPeek: false,
+    readingPaneSqueezed: false,
+    setReadingPaneSqueezed: (readingPaneSqueezed) => set({ readingPaneSqueezed }),
     setSidebarSqueezed: (squeezed) =>
       set((s) => ({ sidebarSqueezed: squeezed, sidebarPeek: squeezed && s.sidebarPeek })),
     setListDensity: (listDensity) => persist({ listDensity }),
@@ -376,6 +386,7 @@ export const useUiStore = create<UiState>((set, get) => {
 /** Test helper: reload persisted state from storage and reset navigation. */
 export function __resetUiStoreForTests() {
   useUiStore.setState({
+    readingPaneSqueezed: false,
     sidebarSqueezed: false,
     sidebarPeek: false,
     unreadMailboxes: {},

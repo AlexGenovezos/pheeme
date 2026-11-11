@@ -2,7 +2,9 @@ import { beforeEach, expect, test } from "vitest";
 import {
   LAYOUT_KEY,
   __resetUiStoreForTests,
+  focusedThread,
   readLayout,
+  readingPaneShown,
   sidebarLayout,
   useUiStore,
 } from "./uiStore";
@@ -259,4 +261,18 @@ test("with no room beside the content the sidebar hides, and Show sidebar opens 
   expect(sidebarLayout(ui())).toBe("collapsed");
   ui().toggleSidebar();
   expect(sidebarLayout(ui())).toBe("overlay");
+});
+
+test("with no room for the reading pane, mail works as with it off until there's room again", () => {
+  ui().setCursor("a:1");
+  expect(readingPaneShown(ui())).toBe(true);
+  expect(focusedThread(ui())).toBeNull(); // reading pane on: the open thread (none)
+
+  ui().setReadingPaneSqueezed(true);
+  expect(readingPaneShown(ui())).toBe(false);
+  expect(focusedThread(ui())).toBe("a:1"); // one pane: the highlight
+  expect(stored()?.readingPane ?? true).toBe(true); // the setting itself is untouched
+
+  ui().setReadingPaneSqueezed(false);
+  expect(readingPaneShown(ui())).toBe(true);
 });

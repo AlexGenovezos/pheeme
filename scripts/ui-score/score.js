@@ -205,6 +205,8 @@
       // a textarea that can't scroll shows what fits its height. Elsewhere, check every
       // clipping/scrolling ancestor.
       let clipped = false;
+      let clippedY = false; // cut top or bottom by a box that doesn't scroll
+      let scrolledY = false; // inside a vertical scroller: boxes further out clip what it scrolls
       let hidden = false;
       if (inField === "input") {
         cx.font = cs.font || `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
@@ -236,12 +238,17 @@
             break;
           }
           clipped = true;
+          if (allOutY) clippedY = true;
           continue;
         }
         // Sideways overflow always hides part of a label (nobody scrolls sideways to read it);
         // vertical overflow in a scrolling list is just scrolling.
         if (c.overflowX !== "visible" && (outL || outR)) clipped = true;
-        if (c.overflowY !== "visible" && !scrolls(c.overflowY) && (outT || outB)) clipped = true;
+        if (c.overflowY !== "visible" && !scrolls(c.overflowY) && !scrolledY && (outT || outB)) {
+          clipped = true;
+          clippedY = true;
+        }
+        if (scrolls(c.overflowY)) scrolledY = true;
       }
       if (hidden) return;
       o.text++;
@@ -253,7 +260,7 @@
         // Less than half a line showing reads as nothing, however wide it is.
         const line = parseFloat(cs.lineHeight) || 1.25 * em;
         const chars =
-          box.bottom - box.top < line / 2
+          clippedY && box.bottom - box.top < line / 2
             ? 0
             : Math.floor(
                 (box.right - box.left - pad - (cs.textOverflow === "ellipsis" ? 0.6 * em : 0)) /

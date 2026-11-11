@@ -156,6 +156,16 @@ body[data-resizing] .shell__divider:active::after {
   .toolbar--list {
   padding-left: var(--traffic-light-inset);
 }
+/* One pane at a time with nothing to its left: the open conversation's toolbar clears them too. */
+.shell[data-overlay-titlebar]:is(
+    [data-sidebar="collapsed"],
+    [data-sidebar="overlay"]
+  )[data-reading-pane="off"]
+  .shell__view
+  > .view-pane
+  > .toolbar--view {
+  padding-left: var(--traffic-light-inset);
+}
 
 .toolbar--list {
   gap: var(--space-2);

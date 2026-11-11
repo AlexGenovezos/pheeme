@@ -42,7 +42,7 @@ import { ThreadView } from "../mail/ThreadView";
 import { speedReadOpenConversation, useCanSpeedRead } from "../speedread/open";
 import { useSpeedReaderSettings } from "../speedread/settings";
 import { useMailStore } from "../store/mailStore";
-import { useUiStore } from "../store/uiStore";
+import { readingPaneShown, useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
 import { notYet } from "./ListPane";
 
@@ -82,7 +82,7 @@ export function ViewPane() {
   const compact = width > 0 && width < LABELED_REPLIES_MIN;
   const openKey = useUiStore((s) => s.openThread);
   const checked = useUiStore((s) => s.checked);
-  const readingPane = useUiStore((s) => s.readingPane);
+  const readingPane = useUiStore(readingPaneShown);
   const defaultReply = useComposeSettings((s) => s.defaultReply);
   const threads = useMailStore((s) => s.threads);
   const off = !openKey; // Reply and Forward need an open conversation
