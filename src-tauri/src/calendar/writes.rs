@@ -192,6 +192,27 @@ impl CalendarService {
         calendar_id: &str,
         api_events: Vec<ApiEvent>,
     ) -> Result<(), CalendarError> {
+        self.cache_all(account_id, calendar_id, api_events).await?;
+        self.updated(account_id);
+        Ok(())
+    }
+
+    /// Tells the UI an account's cached events changed, and asks for a sync soon.
+    pub(super) fn updated(&self, account_id: &str) {
+        self.events.emit(SyncEvent::CalendarUpdated {
+            account_id: account_id.to_owned(),
+        });
+        self.trigger(Some(account_id.to_owned()));
+    }
+
+    /// Caches Google's confirmed versions of events without telling the UI, for a write
+    /// that another save follows straight away.
+    pub(super) async fn cache_all(
+        &self,
+        account_id: &str,
+        calendar_id: &str,
+        api_events: Vec<ApiEvent>,
+    ) -> Result<(), CalendarError> {
         let calendar = self.calendar(account_id, calendar_id).await?;
         let (mut upserts, mut deleted) = (Vec::new(), Vec::new());
         for api_event in &api_events {
@@ -214,10 +235,6 @@ impl CalendarService {
             None,
         )
         .await?;
-        self.events.emit(SyncEvent::CalendarUpdated {
-            account_id: account_id.to_owned(),
-        });
-        self.trigger(Some(account_id.to_owned()));
         Ok(())
     }
 
