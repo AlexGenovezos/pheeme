@@ -10,7 +10,7 @@ use super::engine::{
 use super::events::{SyncEvent, SyncEvents};
 use super::outbox;
 use crate::db::accounts;
-use crate::gmail::{user_action, GmailError, RATE_LIMIT_COOLDOWN};
+use crate::gmail::{usage_source, user_action, GmailError, UsageSource, RATE_LIMIT_COOLDOWN};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -256,8 +256,11 @@ impl SyncManager {
     async fn process_outbox(&self, account_id: &str) -> Result<(), SyncError> {
         let a = self.account(account_id);
         let _processing = a.outbox_lock.lock().await;
-        // Every queued change is something the user did: it goes ahead of sync and backfill.
-        user_action(outbox::process(&self.engine(account_id), now_ms())).await?;
+        // Every queued change is something the user did: it goes ahead of sync and backfill, and
+        // its Gmail quota counts as theirs.
+        let engine = self.engine(account_id);
+        let dispatch = outbox::process(&engine, now_ms());
+        user_action(usage_source(UsageSource::YourChanges, dispatch)).await?;
         Ok(())
     }
 

@@ -57,6 +57,29 @@ export const getGmailQuota = () => invoke<number>("gmail_quota");
 export const setGmailQuota = (perMinute: number) =>
   invoke<number>("set_gmail_quota", { perMinute });
 
+/** What spends an account's Gmail quota, by id (`gmail::usage::UsageSource`). */
+export type QuotaSource = "newMail" | "olderMail" | "yourChanges" | "youAsked" | "assistants";
+
+export interface QuotaMinute {
+  /** When the minute began (ms since the epoch). */
+  startMs: number;
+  /** Quota units this copy of Pheeme sent in the minute, by source. */
+  units: Record<QuotaSource, number>;
+  /** Requests Gmail refused for its rate limit (retried ones included). */
+  refused: number;
+}
+
+export interface QuotaUsage {
+  /** The user's Gmail limit (Settings › Sync). */
+  limitPerMinute: number;
+  /** The last 60 minutes, oldest first, the current minute last. */
+  minutes: QuotaMinute[];
+}
+
+/** What the account's Gmail client spent in each of the last 60 minutes, and what Gmail refused. */
+export const getGmailQuotaUsage = (accountId: string) =>
+  invoke<QuotaUsage>("gmail_quota_usage", { accountId });
+
 // ── Mail (Phase 4 sync engine) ───────────────────────────────────────────────
 
 export interface ThreadCursor {

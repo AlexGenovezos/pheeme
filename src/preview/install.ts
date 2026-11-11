@@ -32,6 +32,7 @@ import { createCalendarHandlers } from "./calendar";
 import { createTasksHandlers } from "./tasks";
 import { createContactHandlers } from "./contacts";
 import { createTransferHandlers } from "./transfer";
+import { previewQuotaUsage } from "./quota";
 
 type Args = Record<string, unknown> | undefined;
 /** Browser-test hook installed before startup, so speculative reads see the same fixtures as opens. */
@@ -232,6 +233,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       return desktopSettings();
     },
     gmail_quota: () => gmailQuota,
+    gmail_quota_usage: (args) => previewQuotaUsage(String(args?.accountId), gmailQuota),
     set_gmail_quota: (args) => {
       gmailQuota = Math.min(1_200_000, Math.max(600, Number(args?.perMinute) || 6000));
       return gmailQuota;
