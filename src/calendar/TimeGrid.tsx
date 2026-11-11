@@ -22,9 +22,11 @@ export const BAND_ROW_PX = 26;
 const COMPACT_MINUTES = 45;
 /** Narrower than this, an event shows only its title, edge to edge. */
 const NARROW_EVENT_PX = 64;
+/** The narrowest a day can be for two events side by side to still read. */
+export const MIN_DAY_PX = NARROW_EVENT_PX;
 
 /** The hour labels' column (--calendar-gutter-width). */
-function gutterWidth(): number {
+export function gutterWidth(): number {
   return (
     parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue("--calendar-gutter-width"),

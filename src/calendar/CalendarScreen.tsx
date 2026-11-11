@@ -40,7 +40,7 @@ import { QuickAdd } from "./QuickAdd";
 import { QuickCreate } from "./QuickCreate";
 import { MonthGrid } from "./MonthGrid";
 import { PinnedEmail } from "./PinnedEmail";
-import { TimeGrid } from "./TimeGrid";
+import { gutterWidth, MIN_DAY_PX, TimeGrid } from "./TimeGrid";
 import { type CalendarView, viewTitle } from "./views";
 import { useNow } from "./useNow";
 import "./calendar.css";
@@ -462,14 +462,20 @@ export function CalendarScreen() {
   const pinned = useCalendarStore((s) => s.pinned !== null);
   const aside = useRef<HTMLElement>(null);
   const width = useWidth(ref);
+  const shownDays = useCalendarStore((s) => (s.view === "week" ? 7 : s.view === "day" ? 1 : 0));
+  // What the calendar needs: a week, 7 days wide enough for two events side by side to read.
+  const calendarMin = Math.max(
+    PANE.viewMin,
+    shownDays > 1 ? gutterWidth() + shownDays * MIN_DAY_PX : 0,
+  );
   // No room for the calendar beside the pinned email (the Tasks panel took it): the email folds
   // away behind a toolbar button until there's room again.
-  const pinnedFolded = pinned && width > 0 && width - pinnedEmailWidth() < PANE.viewMin;
+  const pinnedFolded = pinned && width > 0 && width - pinnedEmailWidth() < calendarMin;
   // The calendar needs its own minimum, plus the email pinned beside it.
   const layout = useSidebarFit(
     aside,
     width,
-    PANE.viewMin + (pinned && !pinnedFolded ? pinnedEmailWidth() : 0),
+    calendarMin + (pinned && !pinnedFolded ? pinnedEmailWidth() : 0),
   );
   const { setSidebarWidth, resetSidebarWidth } = useUiStore.getState();
   const view = useCalendarStore((s) => s.view);
