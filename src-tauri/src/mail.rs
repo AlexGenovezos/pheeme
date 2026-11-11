@@ -886,10 +886,31 @@ impl MailService {
             &self.db,
             account_id,
             &thread_ids,
+            &[],
             &["UNREAD".to_owned()],
             &inbox_tab_search(tab, &excludes),
         )
         .await?;
+        self.after_change(account_id, queued);
+        Ok(())
+    }
+
+    /// Add and remove user labels on every message a Gmail search (`query`) finds, cached or
+    /// not: Gmail finds them 500 at a time and changes up to 1,000 per request, so a big job
+    /// costs a few hundred quota units instead of a read per conversation. The cache follows on
+    /// the next sync.
+    pub async fn modify_matching(
+        &self,
+        account_id: &str,
+        query: &str,
+        add: &[String],
+        remove: &[String],
+    ) -> Result<(), MailError> {
+        let query = query.trim();
+        if query.is_empty() || (add.is_empty() && remove.is_empty()) {
+            return Err(MailError::Invalid("Nothing to change.".into()));
+        }
+        let queued = outbox::enqueue_sweep(&self.db, account_id, &[], add, remove, query).await?;
         self.after_change(account_id, queued);
         Ok(())
     }

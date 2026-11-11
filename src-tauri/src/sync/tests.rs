@@ -779,7 +779,7 @@ async fn sweep_marks_the_whole_tab_read_on_gmail_but_not_later_mail() {
     );
 
     let sweep = "in:inbox is:unread category:promotions";
-    outbox::enqueue_sweep(&h.pool, ACCT, &s(&["t1"]), &s(&["UNREAD"]), sweep)
+    outbox::enqueue_sweep(&h.pool, ACCT, &s(&["t1"]), &[], &s(&["UNREAD"]), sweep)
         .await
         .unwrap()
         .unwrap();
@@ -820,7 +820,7 @@ async fn sweep_is_queued_with_nothing_cached() {
     let h = harness().await;
     let sweep = "in:inbox is:unread category:promotions";
     assert!(
-        outbox::enqueue_sweep(&h.pool, ACCT, &[], &s(&["UNREAD"]), sweep)
+        outbox::enqueue_sweep(&h.pool, ACCT, &[], &[], &s(&["UNREAD"]), sweep)
             .await
             .unwrap()
             .is_some()

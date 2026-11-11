@@ -131,18 +131,20 @@ pub async fn enqueue_modify(
     enqueue(pool, account_id, KIND_MODIFY, payload).await
 }
 
-/// Queue a label change on a whole mailbox: `thread_ids` are its cached threads, changed
-/// now; Gmail gets the change for every message `sweep` finds there (see [`Payload::sweep`]),
-/// so mail not cached yet changes too. Queued even when nothing is cached.
+/// Queue a label change on every message a Gmail search finds: `thread_ids` are cached
+/// threads to change now; Gmail gets the change for every message `sweep` finds (see
+/// [`Payload::sweep`]), so mail not cached yet changes too. Queued even when nothing is cached.
 pub async fn enqueue_sweep(
     pool: &SqlitePool,
     account_id: &str,
     thread_ids: &[String],
+    add: &[String],
     remove: &[String],
     sweep: &str,
 ) -> Result<Option<EnqueueResult>, SyncError> {
     let payload = Payload {
         thread_ids: thread_ids.to_vec(),
+        add: add.to_vec(),
         remove: remove.to_vec(),
         sweep: Some(sweep.to_owned()),
         ..Default::default()

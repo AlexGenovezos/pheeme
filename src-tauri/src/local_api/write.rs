@@ -131,7 +131,22 @@ async fn change_labels(api: &LocalApi, args: ChangeLabels) -> Result<Value, ApiE
     if args.add.is_empty() && args.remove.is_empty() {
         return Err(ApiError::Invalid("Give labels to add or remove.".into()));
     }
-    let (account, found, missing) = targets(api, args.account.as_deref(), &args.thread_ids).await?;
+    let query = args
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|q| !q.is_empty());
+    if query.is_some() != args.thread_ids.is_empty() {
+        return Err(ApiError::Invalid("Give either thread_ids or query.".into()));
+    }
+    let (account, found, missing) = match query {
+        Some(_) => (
+            resolve_account(api, args.account.as_deref()).await?,
+            Vec::new(),
+            Vec::new(),
+        ),
+        None => targets(api, args.account.as_deref(), &args.thread_ids).await?,
+    };
     let labels = api.mail.list_labels(&account.id).await?;
     let ids = |names: &[String]| -> Result<Vec<String>, ApiError> {
         names
@@ -140,6 +155,17 @@ async fn change_labels(api: &LocalApi, args: ChangeLabels) -> Result<Value, ApiE
             .collect()
     };
     let (add, remove) = (ids(&args.add)?, ids(&args.remove)?);
+    if let Some(query) = query {
+        api.mail
+            .modify_matching(&account.id, query, &add, &remove)
+            .await?;
+        return Ok(json!({
+            "account": account.email,
+            "query": query,
+            "queued": true,
+            "note": "Gmail changes every message the search finds; Pheeme shows it after its next sync.",
+        }));
+    }
     api.mail
         .modify_threads(&account.id, &found, &add, &remove)
         .await?;

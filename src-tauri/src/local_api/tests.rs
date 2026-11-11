@@ -15,6 +15,7 @@ pub(crate) struct Harness {
     pub api: LocalApi,
     pub caller: Caller,
     pub notified: Arc<AtomicUsize>,
+    pub sync: Arc<SyncManager>,
 }
 
 pub(crate) async fn setup(fake: FakeGmail) -> Harness {
@@ -41,7 +42,7 @@ pub(crate) async fn setup(fake: FakeGmail) -> Harness {
     );
     let notified = Arc::new(AtomicUsize::new(0));
     let count = notified.clone();
-    let api = LocalApi::new(pool, accounts, mail, compose, sync);
+    let api = LocalApi::new(pool, accounts, mail, compose, sync.clone());
     api.on_activity(Arc::new(move || {
         count.fetch_add(1, Ordering::SeqCst);
     }));
@@ -54,6 +55,7 @@ pub(crate) async fn setup(fake: FakeGmail) -> Harness {
         api,
         caller,
         notified,
+        sync,
     }
 }
 
@@ -462,6 +464,50 @@ async fn organizes_mail_through_the_outbox() {
         .await
         .unwrap();
     assert_eq!(label["name"], "Clients/Acme");
+}
+
+#[tokio::test]
+async fn labels_every_match_of_a_search_without_reading_each_conversation() {
+    let fake = FakeGmail::new();
+    fake.add_user_label("Label_1", "Receipts", None);
+    fake.seed(msg("m1", "t1", &["INBOX", "CATEGORY_UPDATES"], "shop@x.com").days_ago(1));
+    fake.seed(msg("m2", "t2", &["INBOX", "CATEGORY_SOCIAL"], "b@x.com").days_ago(2));
+    let h = setup(fake).await;
+    h.api.set_allows(Permission::Organize, true).await.unwrap();
+    // Old mail Pheeme hasn't downloaded is labelled too.
+    h.fake
+        .add(msg("old", "t3", &["CATEGORY_UPDATES"], "shop@x.com").days_ago(400));
+
+    let reads = h.fake.calls("get_thread");
+    let out = h
+        .call(
+            "change_labels",
+            json!({ "query": "category:updates", "add": ["receipts"] }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(out["query"], "category:updates");
+    h.sync.sync_account("a1").await.unwrap();
+
+    let labels = |id: &str| h.fake.message(id).unwrap().labels;
+    assert!(labels("m1").contains(&"Label_1".to_string()));
+    assert!(labels("old").contains(&"Label_1".to_string()));
+    assert!(!labels("m2").contains(&"Label_1".to_string()));
+    assert_eq!(
+        h.fake.calls("get_thread"),
+        reads,
+        "no per-conversation reads"
+    );
+    assert_eq!(mailbox(&h, "Receipts").await, ["t1", "t3"]);
+
+    let err = h
+        .call(
+            "change_labels",
+            json!({ "query": "x", "thread_ids": ["t1"], "add": ["receipts"] }),
+        )
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("thread_ids or query"), "{err}");
 }
 
 #[tokio::test]
