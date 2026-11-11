@@ -179,13 +179,15 @@
   --settings-content-width: 680px;
   --settings-backdrop-blur: 6px;
   --settings-recorder-min-width: 120px;
+  /* The nav's and body's corners inside the dialog's rounded border. */
+  --settings-inner-radius: calc(var(--radius-lg) - var(--border-width));
   /* Keyboard map on the Keyboard shortcuts page. */
   --kbmap-key-height: 32px;
   --kbmap-tip-max-width: 280px;
-  /* A numeric settings field, e.g. the Gmail API limit ("1,200,000 / min"). */
-  --settings-number-width: 140px;
-  /* A dropdown in a settings row, e.g. Appearance › Light theme. */
-  --settings-select-max-width: 220px;
+  /* A numeric settings field, e.g. the Gmail API limit ("1,200,000"; its unit sits beside it). */
+  --settings-number-width: 112px;
+  /* A dropdown in a settings row, e.g. Appearance › Light theme: one width whatever is chosen. */
+  --settings-select-width: 200px;
   /* Attachment preview: a Quick Look-style panel over the blurred app. */
   --preview-max-width: 1100px;
   --preview-margin: 40px;

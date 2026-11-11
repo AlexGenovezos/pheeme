@@ -50,8 +50,9 @@
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
+/* Keys share the theme's three border colours; a used key's group shows in its fill. */
 .kbmap__key[data-kind="used"] {
-  border-color: color-mix(in srgb, var(--kbmap-color) 65%, transparent);
+  border-color: var(--color-border);
   background: color-mix(in srgb, var(--kbmap-color) 20%, transparent);
 }
 .kbmap__key[data-kind="used"]:hover {
@@ -59,7 +60,8 @@
 }
 
 .kbmap__key[data-kind="opens"] {
-  border: var(--border-width) dashed var(--color-focus-border);
+  border-color: var(--color-input-border);
+  background: var(--color-button-secondary-bg);
 }
 .kbmap__key[data-kind="opens"]:hover,
 .kbmap__key[data-kind="held"]:hover {
@@ -67,8 +69,9 @@
 }
 
 .kbmap__key[data-kind="held"] {
-  border-color: var(--color-focus-border);
-  background: var(--color-button-secondary-bg);
+  border-color: var(--color-input-border);
+  background: var(--color-list-active-bg);
+  color: var(--color-list-active-foreground);
 }
 
 .kbmap__tip {
@@ -140,12 +143,12 @@
   content: "";
   width: var(--space-2-5);
   height: var(--space-2-5);
-  border: var(--border-width) solid color-mix(in srgb, var(--kbmap-color) 65%, transparent);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--kbmap-color) 20%, transparent);
 }
 .kbmap__swatch--free::before {
-  border-color: var(--color-border);
+  border-color: var(--color-border-subtle);
   background: transparent;
 }
 

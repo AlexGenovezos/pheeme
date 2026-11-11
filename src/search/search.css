@@ -10,15 +10,8 @@
   color: var(--color-foreground-muted);
   font-size: var(--font-size-xs);
 }
-.mail-search__scope select {
+.mail-search__account {
   flex: 1;
-  min-width: var(--space-0);
-  padding: var(--space-1);
-  border: var(--border-width) solid var(--color-input-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-input-bg);
-  color: var(--color-input-foreground);
-  font: inherit;
 }
 .mail-search__status {
   justify-content: space-between;

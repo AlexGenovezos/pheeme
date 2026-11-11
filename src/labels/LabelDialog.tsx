@@ -2,6 +2,7 @@
 import { type FormEvent, useEffect, useId, useMemo, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Modal as BaseModal, type ModalProps } from "../components/ui/Modal";
+import { Select } from "../components/ui/Select";
 import { TextInput } from "../components/ui/TextInput";
 import {
   createLabel,
@@ -171,19 +172,14 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
         />
         Nest label under
       </label>
-      <select
+      <Select
         className="label-dialog__select"
         aria-label="Parent label"
         disabled={!nested || !canNest}
         value={parent}
-        onChange={(e) => setParent(e.target.value)}
-      >
-        {parentOptions.map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </select>
+        options={parentOptions.map((name) => ({ value: name, label: name }))}
+        onChange={setParent}
+      />
       {spec.mode === "create" && (
         <>
           <div className="label-dialog__colour-head">

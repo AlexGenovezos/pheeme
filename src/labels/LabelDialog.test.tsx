@@ -76,7 +76,11 @@ beforeEach(() => {
 afterEach(() => clearMocks());
 
 const nameField = () => screen.getByLabelText("Name") as HTMLInputElement;
-const parentSelect = () => screen.getByLabelText("Parent label") as HTMLSelectElement;
+const parentSelect = () => screen.getByRole("combobox", { name: "Parent label" });
+const pickParent = (name: string) => {
+  fireEvent.click(parentSelect());
+  fireEvent.click(screen.getByRole("option", { name }));
+};
 const nest = () => screen.getByRole("checkbox", { name: "Nest label under" });
 const type = (v: string) => fireEvent.change(nameField(), { target: { value: v } });
 
@@ -86,7 +90,7 @@ test("create_sends_full_path", async () => {
   expect(screen.getByRole("dialog", { name: "New label" })).toBeInTheDocument();
   type("Acme2");
   fireEvent.click(nest());
-  fireEvent.change(parentSelect(), { target: { value: "Clients" } });
+  pickParent("Clients");
   fireEvent.click(screen.getByRole("button", { name: "Create" }));
   await flush();
   expect(callsOf("create_label")).toEqual([
@@ -145,7 +149,7 @@ test("a slash in the prefilled name splits parent and leaf", () => {
   act(() => openLabelDialog({ mode: "create", accountId: "a1", name: "Clients/Globex" }));
   expect(nameField().value).toBe("Globex");
   expect(nest()).toBeChecked();
-  expect(parentSelect().value).toBe("Clients");
+  expect(parentSelect()).toHaveTextContent("Clients");
 });
 
 test("invalid and duplicate names are refused before asking Gmail", async () => {
@@ -167,9 +171,11 @@ test("edit_prefills_and_excludes_descendants", () => {
   expect(screen.getByRole("dialog", { name: "Edit label" })).toBeInTheDocument();
   expect(nameField().value).toBe("Acme");
   expect(nest()).toBeChecked();
-  expect(parentSelect().value).toBe("Clients");
-  const options = [...parentSelect().options].map((o) => o.value);
+  expect(parentSelect()).toHaveTextContent("Clients");
+  fireEvent.click(parentSelect());
+  const options = screen.getAllByRole("option").map((o) => o.textContent);
   expect(options).toEqual(["Clients", "Receipts"]);
+  fireEvent.keyDown(parentSelect(), { key: "Escape" });
   expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
 });
 

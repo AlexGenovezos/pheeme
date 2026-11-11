@@ -1,17 +1,27 @@
 .ui-switch {
-  position: relative;
+  display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
   width: var(--switch-width);
-  height: var(--switch-height);
+  height: var(--control-height-sm);
   padding: var(--space-0);
   border: none;
   border-radius: var(--radius-full);
-  background: var(--color-border);
+  background: transparent;
   cursor: default;
+}
+
+.ui-switch__track {
+  position: relative;
+  width: var(--switch-width);
+  height: var(--switch-height);
+  border-radius: var(--radius-full);
+  background: var(--color-border);
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
-.ui-switch[aria-checked="true"] {
+.ui-switch[aria-checked="true"] .ui-switch__track {
   background: var(--color-accent);
 }
 

@@ -171,11 +171,12 @@ test("work hours shows the hour pickers and saves the schedule; any time hides t
   expect(calls).toEqual([
     { schedule: { mode: "workHours", startHour: 9, endHour: 17, weekdaysOnly: true } },
   ]);
-  expect(from).toHaveValue("9");
-  expect(screen.getByRole("combobox", { name: "Until" })).toHaveValue("17");
+  expect(from).toHaveTextContent("09:00");
+  expect(screen.getByRole("combobox", { name: "Until" })).toHaveTextContent("17:00");
   expect(screen.getByRole("switch", { name: "Weekdays only" })).toBeInTheDocument();
+  fireEvent.click(from);
   expect(screen.getByRole("option", { name: "09:00", selected: true })).toBeInTheDocument();
-  fireEvent.change(from, { target: { value: "8" } });
+  fireEvent.click(screen.getByRole("option", { name: "08:00" }));
   await waitFor(() => expect(calls).toHaveLength(2));
   expect(calls[1]).toEqual({
     schedule: { mode: "workHours", startHour: 8, endHour: 17, weekdaysOnly: true },

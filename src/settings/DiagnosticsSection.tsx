@@ -1,6 +1,7 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
 import { Button } from "../components/ui/Button";
+import { Select } from "../components/ui/Select";
 import { TextInput } from "../components/ui/TextInput";
 import { saveDiagnostics, sendDiagnostics, toCommandError } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
@@ -69,22 +70,17 @@ export function DiagnosticsSection() {
     );
   } else if (account) {
     sender = (
-      <p className="settings-diagnostics__sender">
-        Sent as{" "}
-        <select
+      <div className="settings-diagnostics__sender settings-diagnostics__reply">
+        <span>Sent as</span>
+        <Select
           className="settings-diagnostics__select"
           aria-label="Reply address"
           value={account.email}
-          onChange={(e) => setPicked(e.target.value)}
-        >
-          {accounts.map((a) => (
-            <option key={a.id} value={a.email}>
-              {a.email}
-            </option>
-          ))}
-        </select>{" "}
-        so the developer can reply
-      </p>
+          options={accounts.map((a) => ({ value: a.email, label: a.email }))}
+          onChange={setPicked}
+        />
+        <span>so the developer can reply</span>
+      </div>
     );
   } else {
     sender = (

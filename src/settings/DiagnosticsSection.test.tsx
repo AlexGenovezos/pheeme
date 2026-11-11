@@ -62,8 +62,9 @@ test("with several accounts the reply address is picked from them", async () => 
   const calls = backend();
   render(<DiagnosticsSection />);
   const picker = screen.getByRole("combobox", { name: "Reply address" });
-  expect(picker).toHaveValue("me@gmail.com");
-  fireEvent.change(picker, { target: { value: "work@example.com" } });
+  expect(picker).toHaveTextContent("me@gmail.com");
+  fireEvent.click(picker);
+  fireEvent.click(screen.getByRole("option", { name: "work@example.com" }));
   send();
   await screen.findByText("Sent. Thanks, Alex will take a look.");
   expect(calls).toEqual([["send_diagnostics", { note: "", replyTo: "work@example.com" }]]);

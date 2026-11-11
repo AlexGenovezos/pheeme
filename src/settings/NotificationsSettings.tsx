@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
+import { Select } from "../components/ui/Select";
 import { Switch } from "../components/ui/Switch";
 import {
   getDesktopSettings,
@@ -20,7 +21,10 @@ const MODES = [
   { value: "workHours", label: "Work hours" },
   { value: "off", label: "Off" },
 ] as const;
-const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
+  value: hour,
+  label: `${String(hour).padStart(2, "0")}:00`,
+}));
 
 function HourSelect({
   label,
@@ -34,19 +38,14 @@ function HourSelect({
   onChange(hour: number): void;
 }) {
   return (
-    <select
-      className="settings-select"
+    <Select
+      className="settings-select settings-select--time"
       aria-label={label}
       value={value}
       disabled={disabled}
-      onChange={(e) => onChange(Number(e.target.value))}
-    >
-      {HOURS.map((hour) => (
-        <option key={hour} value={hour}>
-          {String(hour).padStart(2, "0")}:00
-        </option>
-      ))}
-    </select>
+      options={HOUR_OPTIONS}
+      onChange={onChange}
+    />
   );
 }
 
