@@ -1,7 +1,8 @@
 //! One clock for the background checks (mail, calendar, tasks), so they wake the computer
 //! together rather than each on its own schedule. Every check sleeps until the next whole
-//! multiple of its period after a shared starting point; periods that divide one another
-//! (mail's 10 s, the calendar's 15 s and 60 s) then land on the same moments, and a check
+//! multiple of its period after a shared starting point, so their turns meet wherever the
+//! periods' multiples do: every calendar and tasks check in the background (60 s) lands on a
+//! mail check (10 s), and with Calendar mode in front (15 s) every other one does. A check
 //! triggered early falls back into step at its next regular one.
 
 use std::sync::OnceLock;
