@@ -248,6 +248,12 @@
   min-height: var(--space-0);
   font-size: var(--font-size-sm);
 }
+/* Days sliding in when moving to another period (slide.ts) stay inside their rows. */
+.cal-grid__head,
+.cal-grid__band,
+.cal-grid__scroll {
+  overflow-x: hidden;
+}
 
 .cal-grid[data-loading] {
   visibility: hidden;
@@ -567,6 +573,7 @@
   flex: 1;
   flex-direction: column;
   min-height: var(--space-0);
+  overflow-x: clip;
   font-size: var(--font-size-sm);
 }
 .cal-month__head {

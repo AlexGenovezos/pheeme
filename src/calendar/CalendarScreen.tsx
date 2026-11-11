@@ -38,6 +38,8 @@ import { type EventForm, formTimes } from "./eventForm";
 import { EventPopover } from "./EventPopover";
 import { QuickAdd } from "./QuickAdd";
 import { QuickCreate } from "./QuickCreate";
+import { useSlideIn } from "./slide";
+import { useSwipeStep } from "./swipe";
 import { MonthGrid } from "./MonthGrid";
 import { PinnedEmail } from "./PinnedEmail";
 import { gutterWidth, MIN_DAY_PX, TimeGrid } from "./TimeGrid";
@@ -366,6 +368,22 @@ function useCalendarCommands() {
       run: () => store().step(-1),
     },
     {
+      id: "calendar.next-arrow",
+      title: "Next period",
+      group: "Calendar",
+      shortcut: "right",
+      hidden: true,
+      run: () => store().step(1),
+    },
+    {
+      id: "calendar.previous-arrow",
+      title: "Previous period",
+      group: "Calendar",
+      shortcut: "left",
+      hidden: true,
+      run: () => store().step(-1),
+    },
+    {
       id: "calendar.goto",
       title: "Go to date…",
       group: "Calendar",
@@ -445,6 +463,10 @@ function useCalendarData() {
   }, []);
 }
 
+function stepCalendar(direction: 1 | -1) {
+  useCalendarStore.getState().step(direction);
+}
+
 /** The pinned email column's width (--pinned-email-width). */
 function pinnedEmailWidth(): number {
   return (
@@ -487,6 +509,9 @@ export function CalendarScreen() {
   const { tz, days } = screenDays({ view, anchor, accounts });
 
   const anyOn = accounts?.some((a) => a.access.status === "on") ?? true;
+  const grid = useRef<HTMLDivElement>(null);
+  useSwipeStep(grid, anyOn && !searching, stepCalendar);
+  useSlideIn(grid, view, days[0] ?? anchor);
   const style = {
     "--shell-sidebar-w": `${sidebarWidth}px`,
     "--shell-view-min": `${PANE.viewMin}px`,
@@ -529,7 +554,7 @@ export function CalendarScreen() {
         )}
         <div className="cal-main__body">
           {!pinnedFolded && <PinnedEmail />}
-          <div className="cal-main__grid">
+          <div ref={grid} className="cal-main__grid">
             {!anyOn ? (
               <FirstOpen />
             ) : searching ? (
