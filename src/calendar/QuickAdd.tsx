@@ -7,6 +7,7 @@ import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useS
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { Modal } from "../components/ui/Modal";
+import { Select } from "../components/ui/Select";
 import { type ContactSuggestion, suggestContacts } from "../lib/tauri";
 import { useTasksStore } from "../tasks/tasksStore";
 import {
@@ -287,24 +288,19 @@ function QuickAddDialog() {
           )}
           <Row icon={<CalendarDays />} label={isTask ? "List" : "Calendar"}>
             {isTask ? (
-              <select
-                className="cal-field cal-select"
+              <Select
+                className="cal-select"
                 aria-label="Task list"
                 value={listKey}
-                onChange={(e) => setPickedList(e.currentTarget.value)}
-              >
-                {lists.length === 0 && <option value="">No task lists</option>}
-                {lists.map((l) => (
-                  <option
-                    key={key(l.account.accountId, l.list.id)}
-                    value={key(l.account.accountId, l.list.id)}
-                  >
-                    {lists.some((o) => o.account.accountId !== l.account.accountId)
-                      ? `${l.list.title} (${l.account.email})`
-                      : l.list.title}
-                  </option>
-                ))}
-              </select>
+                placeholder="No task lists"
+                onChange={setPickedList}
+                options={lists.map((l) => ({
+                  value: key(l.account.accountId, l.list.id),
+                  label: lists.some((o) => o.account.accountId !== l.account.accountId)
+                    ? `${l.list.title} (${l.account.email})`
+                    : l.list.title,
+                }))}
+              />
             ) : (
               <CalendarSelect
                 form={form}

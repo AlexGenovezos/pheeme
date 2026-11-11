@@ -70,9 +70,23 @@ async function openInvite(page) {
   await page.locator(".invite-card").waitFor();
   await wait(page, 600);
 }
+/** Quick create: click an empty hour (Saturday, 3 PM) in the week. */
+async function quickCreate(p) {
+  const col = p.locator(".cal-grid__column").last();
+  await col.evaluate((el) => {
+    const scroll = el.closest(".cal-grid__scroll");
+    scroll.scrollTop = 14 * 48;
+  });
+  await wait(p, 200);
+  const box = await col.boundingBox();
+  const top = await col.evaluate((el) => el.getBoundingClientRect().top);
+  await p.mouse.click(box.x + box.width / 2, top + 15 * 48 + 12);
+  await p.locator(".cal-quick").waitFor();
+  await wait(p, 300);
+}
 async function openEditor(p) {
   await view(p, "w");
-  await key(p, "c");
+  await quickCreate(p);
   await p.locator(".cal-quick button", { hasText: "More options" }).click();
   await p.locator(".cal-editor").waitFor();
   await wait(p, 400);
@@ -144,16 +158,27 @@ const PARTS = [
     name: "Quick create",
     go: async (p) => {
       await view(p, "w");
-      await key(p, "c");
+      await quickCreate(p);
     },
     root: ".cal-quick",
+  },
+  {
+    id: "quick-add",
+    name: "Quick add (type a sentence)",
+    go: async (p) => {
+      await view(p, "w");
+      await key(p, "c");
+      await p.keyboard.type("Coffee with Sam tomorrow at 3pm at Tartine");
+      await wait(p, 500);
+    },
+    root: ".cal-qa",
   },
   {
     id: "event-editor",
     name: "Event editor",
     go: async (p) => {
       await view(p, "w");
-      await key(p, "c");
+      await quickCreate(p);
       await p.locator(".cal-quick button", { hasText: "More options" }).click();
       await wait(p, 500);
     },
@@ -236,7 +261,7 @@ const PARTS = [
     name: "Time list",
     go: async (p) => {
       await view(p, "w");
-      await key(p, "c");
+      await quickCreate(p);
       await p.getByRole("combobox", { name: "End time" }).click();
       await wait(p, 300);
     },
@@ -299,6 +324,8 @@ for (const part of PARTS.filter((p) => !ONLY || ONLY.split(",").includes(p.id)))
       viewport: { width: v.w.width, height: v.w.height },
       deviceScaleFactor: 2,
       colorScheme: v.scheme,
+      // Fixed, so a run is repeatable: the fixtures and where things open follow the clock.
+      timezoneId: "America/Chicago",
     });
     await ctx.addInitScript(
       ([w]) => {
@@ -320,6 +347,7 @@ for (const part of PARTS.filter((p) => !ONLY || ONLY.split(",").includes(p.id)))
     );
     await ctx.addInitScript(MAC);
     const page = await ctx.newPage();
+    await page.clock.setFixedTime(new Date("2026-11-10T13:00:00-06:00"));
     page.setDefaultTimeout(8000);
     let r;
     try {

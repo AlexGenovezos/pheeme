@@ -91,8 +91,8 @@
   }
 }
 
-/* A modal dialog has the screen: an offer that waits for an answer (the notifications prompt)
-   hides until it closes, so it can't sit over the dialog's buttons. Errors still show. */
-:root:has([role="dialog"][aria-modal="true"]) .ui-toast--waits {
+/* A dialog or popover is open: an offer that waits for an answer (the notifications prompt)
+   hides until it closes, so it can't sit over its buttons. Errors still show. */
+:root:has([role="dialog"]) .ui-toast--waits {
   visibility: hidden;
 }
