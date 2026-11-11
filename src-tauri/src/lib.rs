@@ -4,6 +4,7 @@ mod app_menu;
 pub mod attachment_cache;
 pub mod attachment_kind;
 pub mod body_retention;
+mod cadence;
 pub mod calendar;
 pub mod commands;
 pub mod compose;

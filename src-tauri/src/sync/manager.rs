@@ -412,15 +412,14 @@ impl SyncManager {
     pub fn start(self: &Arc<Self>) {
         let this = self.clone();
         self.runtime.spawn(async move {
-            let mut tick = tokio::time::interval(SYNC_INTERVAL);
-            // After the computer sleeps, check once rather than catching up on every missed tick.
-            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // On the shared clock, so the calendar's and tasks' checks share mail's wakeups.
+            // After the computer sleeps, this checks once rather than catching up.
             loop {
-                tick.tick().await;
                 // Offline, the connection check takes over until Google answers.
                 if this.online() {
                     this.trigger(None);
                 }
+                crate::cadence::sleep_until_next(SYNC_INTERVAL).await;
             }
         });
     }

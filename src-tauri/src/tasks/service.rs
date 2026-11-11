@@ -376,7 +376,8 @@ impl TasksService {
     }
 
     /// Check tasks soon after launch, then every minute (15 s while Calendar mode is in
-    /// front), or sooner when triggered.
+    /// front) on the shared clock, so this check wakes the computer together with the others,
+    /// or sooner when triggered.
     pub async fn run(self: Arc<Self>) {
         tokio::time::sleep(FIRST_DELAY).await;
         loop {
@@ -387,7 +388,7 @@ impl TasksService {
                 INTERVAL
             };
             tokio::select! {
-                () = tokio::time::sleep(wait) => {}
+                () = crate::cadence::sleep_until_next(wait) => {}
                 () = self.wake.notified() => {}
             }
         }
