@@ -84,6 +84,11 @@ async function quickCreate(p) {
   await p.locator(".cal-quick").waitFor();
   await wait(p, 300);
 }
+async function openThread(p, subject) {
+  await mail(p);
+  await clickCenter(p, p.locator(".thread-row", { hasText: subject }).first());
+  await wait(p, 1200);
+}
 async function openSettings(p, page) {
   await mail(p);
   await key(p, "Control+,");
@@ -456,6 +461,56 @@ const PARTS = [
       await wait(p, 1200);
     },
     root: ".shell__list",
+  },
+  {
+    id: "attachments",
+    name: "Attachment list",
+    base: true,
+    go: (p) => openThread(p, "Icon sketches for the dock"),
+    root: ".attachments",
+  },
+  {
+    id: "conversation-many",
+    name: "Conversation with many messages",
+    base: true,
+    go: (p) => openThread(p, "Re: Lisbon in March?"),
+    root: ".shell__view",
+  },
+  {
+    id: "reading-options",
+    name: "Speed reader: reading options",
+    base: true,
+    go: async (p) => {
+      await openThread(p, "Notes from the garden club");
+      await key(p, "Shift+R");
+      await p.locator(".speed-reader").waitFor();
+      await p.getByRole("button", { name: "Reading options" }).first().click();
+      await wait(p, 400);
+    },
+    root: ".speed-reader",
+  },
+  {
+    id: "recent-searches",
+    name: "Recent searches",
+    base: true,
+    go: async (p) => {
+      await mail(p);
+      const box = p.getByLabel("Search mail").first();
+      await box.click();
+      await p.keyboard.type("review");
+      await key(p, "Enter");
+      await wait(p, 800);
+      await box.fill("");
+      await key(p, "Escape");
+      await p
+        .locator(".thread-list")
+        .first()
+        .click({ position: { x: 5, y: 5 } })
+        .catch(() => {});
+      await box.click();
+      await wait(p, 600);
+    },
+    root: ".mail-search__recent",
   },
 ];
 
