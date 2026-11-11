@@ -60,8 +60,13 @@ jobs:
         with:
           tool: tauri-driver@2.1.0
       - run: npm ci
+      # The updater points nowhere (https: release builds refuse plain http): a found update showed a banner
+      # in some runs and not others. A failed check is retried after 15 minutes, past the end of the run.
       - name: Build the release app
-        run: npx tauri build --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
+        run: >-
+          npx tauri build --no-bundle --config
+          '{"bundle":{"createUpdaterArtifacts":false},"plugins":{"updater":{"endpoints":["https://127.0.0.1:9/latest.json"]}}}'
+          -- --locked
       - name: Seed a 20,000-conversation mailbox
         working-directory: src-tauri
         run: |
