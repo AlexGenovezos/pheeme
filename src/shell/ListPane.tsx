@@ -1,4 +1,4 @@
-import { PanelLeftOpen, SquareCheckBig, SquarePen, X } from "lucide-react";
+import { MailOpen, PanelLeftOpen, SquareCheckBig, SquarePen, X } from "lucide-react";
 import { useEffect } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
@@ -6,7 +6,16 @@ import { toast } from "../components/ui/Toast";
 import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import type { ThreadSummary } from "../lib/tauri";
-import { archive, composeNew, moveSelection, setRead, setStarred, trash } from "../mail/actions";
+import {
+  archive,
+  composeNew,
+  findSimilar,
+  markSearchResultsRead,
+  moveSelection,
+  setRead,
+  setStarred,
+  trash,
+} from "../mail/actions";
 import { mailboxKey, mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
 import { ThreadList } from "../mail/ThreadList";
 import { senderOf } from "../mail/ThreadRow";
@@ -61,6 +70,17 @@ export const rowMenu = (t: ThreadSummary) => {
       label: t.starred ? "Remove star" : "Add star",
       shortcut: registry.shortcutFor("conversation.star", "s"),
       onSelect: () => void setStarred(!t.starred, keys),
+    },
+    { type: "separator" as const },
+    {
+      id: "similar-sender",
+      label: "Find emails from this sender",
+      onSelect: () => void findSimilar("sender", key),
+    },
+    {
+      id: "similar-subject",
+      label: "Find emails with this subject",
+      onSelect: () => void findSimilar("subject", key),
     },
     { type: "separator" as const },
     {
@@ -143,6 +163,17 @@ export function ListPane() {
       keywords: ["find"],
       run: () => document.getElementById(SEARCH_INPUT_ID)?.focus(),
     },
+    ...(searchText
+      ? [
+          {
+            id: "search.mark-all-read",
+            title: "Mark all search results as read",
+            group: "Conversation",
+            keywords: ["matches", "unread"],
+            run: () => void markSearchResultsRead(),
+          },
+        ]
+      : []),
     // Registered only while something is checked, so Escape stays free for everything else.
     ...(anyChecked
       ? [
@@ -255,6 +286,17 @@ export function ListPane() {
               !searchText &&
               `${threads.length}${next ? "+" : ""} ${threads.length === 1 ? "conversation" : "conversations"}`}
           </span>
+          {searchText && !anyChecked && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<MailOpen aria-hidden="true" />}
+              title="Mark every match of this search as read, including ones not loaded yet"
+              onClick={() => void markSearchResultsRead()}
+            >
+              Mark all as read
+            </Button>
+          )}
         </div>
       )}
 

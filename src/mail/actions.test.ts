@@ -8,9 +8,12 @@ import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { usePickerStore } from "../labels/pickerStore";
+import { useAccountStore } from "../store/accountStore";
 import {
   applyLabel,
   archive,
+  findSimilar,
+  markSearchResultsRead,
   moveSelection,
   moveTo,
   moveToCategory,
@@ -1251,5 +1254,55 @@ describe("moveToCategory", () => {
     setList([thread(1, "a1"), thread(2, "a2")]);
     await moveToCategory("a1", [key(1), key(2, "a2")], "CATEGORY_SOCIAL");
     expect(modifyCalls().map((c) => c.threadIds)).toEqual([["t1"]]);
+  });
+});
+
+describe("find similar", () => {
+  const account = (id: string, email: string) => ({
+    id,
+    email,
+    displayName: null,
+    clientId: "c",
+    synced: true,
+  });
+  beforeEach(() =>
+    useAccountStore.setState({
+      accounts: [account("a1", "me@x.com"), account("a2", "two@x.com")],
+    }),
+  );
+
+  test("searches the sender's account for who wrote to you, not your own reply", async () => {
+    useUiStore.getState().setOpenThread(key(1));
+    setList([thread(1, "a1", { fromAddress: "me@x.com" })]);
+    details[key(1)] = {
+      thread: thread(1),
+      messages: [
+        { id: "m1", threadId: "t1", labelIds: ["INBOX"], fromAddress: "them@y.com" },
+        { id: "m2", threadId: "t1", labelIds: ["SENT"], fromAddress: "me@x.com" },
+      ] as MessageDetail[],
+      bodyError: null,
+    };
+    await findSimilar("sender");
+    const ui = useUiStore.getState();
+    expect(ui.searchText).toBe("from:them@y.com");
+    expect(ui.searchAccountId).toBe("a1");
+  });
+
+  test("searches the subject as a phrase, without Re:", async () => {
+    setList([thread(2, "a2", { subject: "Re: Lunch Friday" })]);
+    await findSimilar("subject", key(2, "a2"));
+    expect(useUiStore.getState().searchText).toBe('subject:"Lunch Friday"');
+    expect(useUiStore.getState().searchAccountId).toBe("a2");
+  });
+
+  test("Mark all as read covers every account the search covers", async () => {
+    useUiStore.getState().setSearch("from:them@y.com", null);
+    await markSearchResultsRead();
+    expect(calls.filter((c) => c.cmd === "mark_search_read").map((c) => c.args)).toEqual([
+      { accountIds: ["a1", "a2"], query: "from:them@y.com" },
+    ]);
+    useUiStore.getState().setSearch("from:them@y.com", "a2");
+    await markSearchResultsRead();
+    expect(last(calls).args).toEqual({ accountIds: ["a2"], query: "from:them@y.com" });
   });
 });

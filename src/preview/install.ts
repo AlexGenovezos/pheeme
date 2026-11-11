@@ -139,6 +139,25 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     void emit(SYNC_EVENTS.messagesUpdated, payload).catch(() => {});
   };
 
+  /** The search's matches: every word in the subject, sender or snippet (`from:`/`subject:` read as words). */
+  const searchHits = (args: Args): FixtureThread[] => {
+    const words = String(args?.query ?? "")
+      .toLowerCase()
+      .replace(/\b(from|subject):/g, "")
+      .replace(/"/g, " ")
+      .split(/\s+/)
+      .filter(Boolean);
+    const ids = accountIdsOf(args);
+    return threads.filter((t) => {
+      if (ids.length && !ids.includes(t.accountId)) return false;
+      const row = summary(t);
+      const text = [row.subject, row.fromName, row.fromAddress, row.snippet]
+        .join(" ")
+        .toLowerCase();
+      return words.length > 0 && words.every((w) => text.includes(w));
+    });
+  };
+
   let recent: string[] = [];
   const notificationChoices = new Map<string, boolean>();
   let gmailQuota = 6000;
@@ -302,29 +321,11 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       return allMail.length > 0 ? [...rows, countOf("ALL", allMail)] : rows;
     },
     // Words must all appear in the subject, sender or snippet; Gmail finds nothing more.
-    search_messages: (args) => {
-      const words = String(args?.query ?? "")
-        .toLowerCase()
-        .split(/\s+/)
-        .filter(Boolean);
-      const hit = (t: FixtureThread) => {
-        const row = summary(t);
-        const text = [row.subject, row.fromName, row.fromAddress, row.snippet]
-          .join(" ")
-          .toLowerCase();
-        return words.length > 0 && words.every((w) => text.includes(w));
-      };
-      return {
-        threads: threads
-          .filter(
-            (t) =>
-              (!accountIdsOf(args).length || accountIdsOf(args).includes(t.accountId)) && hit(t),
-          )
-          .map(summary),
-        next: null,
-        local: true,
-      };
-    },
+    search_messages: (args) => ({
+      threads: searchHits(args).map(summary),
+      next: null,
+      local: true,
+    }),
     search_gmail: () => ({ threads: [], next: {}, failed: [] }),
     recent_searches: () => [...recent],
     add_recent_search: (args) => {
@@ -363,6 +364,16 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       changeThreads({ accountId, threadIds: ids }, (t) =>
         t.messages.forEach((m) => (m.unread = false)),
       );
+    },
+    mark_search_read: (args) => {
+      for (const accountId of accountIdsOf(args)) {
+        const ids = searchHits({ accountIds: [accountId], query: args?.query })
+          .filter((t) => hasLabel(t, "UNREAD"))
+          .map((t) => t.id);
+        changeThreads({ accountId, threadIds: ids }, (t) =>
+          t.messages.forEach((m) => (m.unread = false)),
+        );
+      }
     },
     trash_threads: (args) =>
       changeThreads(args, (t) => {

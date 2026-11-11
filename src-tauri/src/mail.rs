@@ -915,6 +915,48 @@ impl MailService {
         Ok(())
     }
 
+    /// Mark every unread match of a search (`query`, the search bar's syntax) read in each of
+    /// `account_ids`: the cached matches change now, and on Gmail the sweep covers every match
+    /// that had arrived by now, downloaded or not.
+    pub async fn mark_search_read(
+        &self,
+        account_ids: &[String],
+        query: &str,
+    ) -> Result<(), MailError> {
+        let query = query.trim();
+        if query.is_empty() || account_ids.is_empty() {
+            return Err(MailError::Invalid("Nothing to mark read.".into()));
+        }
+        let (gmail, _) = search::gmail_query(query);
+        let sweep = format!("({gmail}) is:unread");
+        for account_id in account_ids {
+            let account = std::slice::from_ref(account_id);
+            let mut thread_ids = Vec::new();
+            let mut before = None;
+            loop {
+                let page = self
+                    .search_messages(account, query, before, Some(MAX_PAGE))
+                    .await?;
+                thread_ids.extend(page.threads.into_iter().filter(|t| t.unread).map(|t| t.id));
+                match page.next {
+                    Some(next) => before = Some(next),
+                    None => break,
+                }
+            }
+            let queued = outbox::enqueue_sweep(
+                &self.db,
+                account_id,
+                &thread_ids,
+                &[],
+                &["UNREAD".to_owned()],
+                &sweep,
+            )
+            .await?;
+            self.after_change(account_id, queued);
+        }
+        Ok(())
+    }
+
     pub async fn trash_threads(
         &self,
         account_id: &str,
@@ -2786,6 +2828,51 @@ mod tests {
             !page.local && page.threads.is_empty(),
             "OR is left to Gmail"
         );
+    }
+
+    #[tokio::test]
+    async fn mark_search_read_covers_cached_and_uncached_matches() {
+        let (_dir, mail, f1, _) = search_setup().await;
+        let mut lunch = FakeMsg::new("lunch", "t-lunch", &["INBOX", "UNREAD"]);
+        lunch.subject = "Lunch?".into();
+        f1.seed(lunch);
+        mail.sync.engine("a1").run_initial_sync().await.unwrap();
+        let mut unseen = FakeMsg::new("unseen", "t-unseen", &["UNREAD"]).days_ago(1500);
+        unseen.subject = "Overdue invoice".into();
+        f1.seed(unseen);
+
+        let both: Vec<String> = vec!["a1".into(), "a2".into()];
+        mail.mark_search_read(&both, "invoice").await.unwrap();
+        let unread = mail
+            .search_messages(&both, "is:unread", None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            thread_ids(&unread.threads),
+            ["t-lunch"],
+            "the cached match is read at once, the rest isn't touched"
+        );
+
+        let ops = crate::db::outbox::for_account(&mail.db, "a1")
+            .await
+            .unwrap();
+        assert_eq!(ops.len(), 1);
+        assert!(ops[0].payload.contains(r#""sweep":"(invoice) is:unread""#));
+        outbox::process(&mail.sync.engine("a1"), now_ms())
+            .await
+            .unwrap();
+        let labels = |id: &str| f1.message(id).unwrap().labels;
+        assert!(!labels("m1").contains(&"UNREAD".to_owned()));
+        assert!(
+            !labels("unseen").contains(&"UNREAD".to_owned()),
+            "Gmail's matches that were never downloaded too"
+        );
+        assert!(labels("lunch").contains(&"UNREAD".to_owned()));
+
+        assert!(matches!(
+            mail.mark_search_read(&both, "  ").await,
+            Err(MailError::Invalid(_))
+        ));
     }
 
     #[tokio::test]

@@ -2,6 +2,7 @@ import {
   archive,
   closeConversation,
   composeNew,
+  findSimilar,
   labelMenuAnchor,
   openFocused,
   openLabelMenu,
@@ -174,6 +175,20 @@ export function appCommands(): Command[] {
       shortcut: "v",
       keywords: ["folder", "label"],
       run: () => openMoveMenu(labelMenuAnchor()),
+    },
+    {
+      id: "conversation.find-same-sender",
+      title: "Find emails from this sender",
+      group: "Conversation",
+      keywords: ["similar", "filter", "search"],
+      run: () => void findSimilar("sender"),
+    },
+    {
+      id: "conversation.find-same-subject",
+      title: "Find emails with this subject",
+      group: "Conversation",
+      keywords: ["similar", "filter", "search"],
+      run: () => void findSimilar("subject"),
     },
     {
       id: "labels.create",
