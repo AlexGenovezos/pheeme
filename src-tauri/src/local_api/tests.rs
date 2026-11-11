@@ -448,6 +448,14 @@ async fn organizes_mail_through_the_outbox() {
         .unwrap();
     assert_eq!(mailbox(&h, "trash").await, ["t2"]);
     assert_eq!(mailbox(&h, "inbox").await, ["t1"]);
+    h.call("move_to_inbox", json!({ "thread_ids": ["t2"] }))
+        .await
+        .unwrap();
+    assert!(mailbox(&h, "trash").await.is_empty());
+    assert_eq!(mailbox(&h, "inbox").await, ["t1", "t2"]);
+    h.call("trash", json!({ "thread_ids": ["t2"] }))
+        .await
+        .unwrap();
 
     let label = h
         .call("create_label", json!({ "name": "Clients/Acme" }))

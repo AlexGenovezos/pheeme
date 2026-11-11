@@ -79,6 +79,10 @@ impl Payload {
             _ => (&self.add, &self.remove),
         };
         out.retain(|l| !remove.contains(l));
+        if add.iter().any(|l| l == "INBOX") {
+            // Gmail takes a message out of Trash when it gets INBOX.
+            out.retain(|l| l != "TRASH");
+        }
         for l in add {
             if !out.contains(l) {
                 out.push(l.clone());

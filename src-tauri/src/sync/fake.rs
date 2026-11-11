@@ -602,8 +602,14 @@ impl FakeGmail {
             .filter(|l| !msg.labels.contains(l))
             .cloned()
             .collect();
+        // Like Gmail, INBOX takes a message out of Trash.
+        let untrash = add
+            .iter()
+            .any(|l| l == "INBOX")
+            .then(|| "TRASH".to_string());
         let removed: Vec<String> = remove
             .iter()
+            .chain(&untrash)
             .filter(|l| msg.labels.contains(l))
             .cloned()
             .collect();

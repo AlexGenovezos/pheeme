@@ -483,7 +483,8 @@ pub fn catalog() -> Vec<ToolDef> {
             description: "For each Gmail filter that deletes, archives or marks mail read (or every filter \
                 with all: true), the mail it matched over the last N days (default 30), found with Gmail's \
                 search, and where that mail is now (Trash, Inbox...). Use it to find filters that catch \
-                mail the user wants; fix them with delete_filter and create_filter.",
+                mail the user wants; fix them with delete_filter and create_filter, and rescue what \
+                they trashed or archived with move_to_inbox.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -507,7 +508,8 @@ pub fn catalog() -> Vec<ToolDef> {
         threads_tool(
             "move_to_inbox",
             "Move to inbox",
-            "Put archived conversations back in the inbox.",
+            "Put archived or trashed conversations back in the inbox (this also takes them out \
+             of Trash, which Gmail empties after 30 days).",
             false,
         ),
         threads_tool("mark_read", "Mark as read", "Mark conversations as read.", false),
