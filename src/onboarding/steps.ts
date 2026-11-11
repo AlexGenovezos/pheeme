@@ -171,9 +171,10 @@ export const STEPS: GuideStep[] = [
       "Open the Branding page and check your project is selected.",
       "Under App domain, paste the home page, privacy policy and terms of service links below.",
       "Under Authorized domains, click Add domain and enter pheeme.app.",
+      "Leave App logo empty.",
       "Click Save.",
     ],
-    why: "Google keeps Publish app turned off until the app has a home page, privacy policy and terms of service. These are Pheeme's own pages, so you don't need a website. They give nobody access to your project or your mail.",
+    why: "Google keeps Publish app turned off until the app has a home page, privacy policy and terms of service. These are Pheeme's own pages, so you don't need a website. They give nobody access to your project or your mail. A logo would make Google ask you to prove you own pheeme.app, which you can't, and the app works without one.",
     link: { label: "Open Branding", url: "https://console.cloud.google.com/auth/branding" },
     copy: [
       { label: "Application home page", value: "https://pheeme.app" },
