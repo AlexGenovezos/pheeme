@@ -396,6 +396,7 @@
 }
 .speed-control__slider {
   width: var(--speed-control-slider-width);
+  height: var(--control-height-sm);
   accent-color: var(--color-accent);
 }
 .speed-control__value {

@@ -263,7 +263,8 @@
 }
 
 .file-preview__tab {
-  padding: var(--space-1) var(--space-2-5);
+  height: var(--control-height-md);
+  padding: var(--space-0) var(--space-2-5);
   border: none;
   border-radius: var(--radius-sm);
   background: none;

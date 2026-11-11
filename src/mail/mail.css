@@ -599,10 +599,12 @@
   gap: var(--space-1-5);
 }
 
+/* Each choice (its label is the target) is at least 24 px tall. */
 .category-move__choice {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-2);
+  min-height: var(--control-height-sm);
   cursor: pointer;
 }
 

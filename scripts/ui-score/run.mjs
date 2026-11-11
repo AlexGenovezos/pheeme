@@ -512,6 +512,23 @@ const PARTS = [
     },
     root: ".mail-search__recent",
   },
+  {
+    id: "category-move",
+    name: "Move to a category (this and future mail)",
+    base: true,
+    go: async (p) => {
+      await openThread(p, "Icon sketches for the dock");
+      await key(p, "v");
+      await p
+        .getByRole("option", { name: /Social/ })
+        .first()
+        .click();
+      await wait(p, 500);
+      await p.getByText("This and future mail", { exact: false }).first().click();
+      await wait(p, 300);
+    },
+    root: '[role="dialog"]',
+  },
 ];
 
 // The default sidebar width, and the narrowest the app allows (a stored 1 px is clamped up to it).
