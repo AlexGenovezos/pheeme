@@ -118,16 +118,18 @@
 }
 
 /* Position: a thin bar that fills as you read, and can be dragged to jump. */
+/* The input is a full 24 px target; the thin track is drawn across its middle. */
 .speed-reader__progress {
   width: 100%;
-  height: var(--speed-reader-progress-height);
+  height: var(--control-height-sm);
   margin: var(--space-0);
   border-radius: var(--radius-full);
   background: linear-gradient(
-    to right,
-    var(--color-accent) var(--progress),
-    var(--color-border) var(--progress)
-  );
+      to right,
+      var(--color-accent) var(--progress),
+      var(--color-border) var(--progress)
+    )
+    center / 100% var(--speed-reader-progress-height) no-repeat;
   -webkit-appearance: none;
   appearance: none;
   cursor: default;
@@ -277,14 +279,15 @@
 }
 .speed-panel__range {
   flex: 1;
-  height: var(--speed-reader-progress-height);
+  height: var(--control-height-sm);
   margin: var(--space-0);
   border-radius: var(--radius-full);
   background: linear-gradient(
-    to right,
-    var(--color-accent) var(--fill),
-    var(--color-border) var(--fill)
-  );
+      to right,
+      var(--color-accent) var(--fill),
+      var(--color-border) var(--fill)
+    )
+    center / 100% var(--speed-reader-progress-height) no-repeat;
   -webkit-appearance: none;
   appearance: none;
   cursor: default;
@@ -316,11 +319,14 @@
   justify-content: space-between;
   gap: var(--space-1);
 }
-.speed-panel__preset {
+.speed-panel__option {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
+}
+.speed-panel__preset {
+  display: inline-flex;
   padding: var(--space-0);
   border: none;
   background: none;
@@ -329,8 +335,13 @@
   cursor: default;
 }
 .speed-panel__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   min-width: var(--speed-panel-chip-width);
-  padding: var(--space-0-5) var(--space-2);
+  height: var(--control-height-md);
+  padding: var(--space-0) var(--space-2);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-pane-bg);

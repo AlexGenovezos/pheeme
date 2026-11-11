@@ -187,17 +187,20 @@ function SpeedPanel() {
       </div>
       <div className="speed-panel__presets" role="group" aria-label="Speed presets">
         {SPEED_PRESETS.map((preset) => (
-          <button
-            key={preset.wpm}
-            type="button"
-            className="speed-panel__preset"
-            aria-pressed={wpm === preset.wpm}
-            aria-label={`${preset.wpm} words per minute, ${preset.label}`}
-            onClick={() => update({ wpm: preset.wpm })}
-          >
-            <span className="speed-panel__chip">{preset.wpm}</span>
-            <span className="speed-panel__name">{preset.label}</span>
-          </button>
+          <div key={preset.wpm} className="speed-panel__option">
+            <button
+              type="button"
+              className="speed-panel__preset"
+              aria-pressed={wpm === preset.wpm}
+              aria-label={`${preset.wpm} words per minute, ${preset.label}`}
+              onClick={() => update({ wpm: preset.wpm })}
+            >
+              <span className="speed-panel__chip">{preset.wpm}</span>
+            </button>
+            <span className="speed-panel__name" aria-hidden="true">
+              {preset.label}
+            </span>
+          </div>
         ))}
       </div>
     </section>

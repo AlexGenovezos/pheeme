@@ -424,6 +424,39 @@ const PARTS = [
     go: (p) => openSettings(p, "About"),
     root: ".settings",
   },
+  {
+    id: "speed-reader",
+    name: "Speed reader",
+    base: true,
+    go: async (p) => {
+      await mail(p);
+      await clickCenter(
+        p,
+        p.locator(".thread-row", { hasText: "Notes from the garden club" }).first(),
+      );
+      await wait(p, 1200);
+      await key(p, "Shift+R");
+      await p.locator(".speed-reader").waitFor();
+      await wait(p, 400);
+    },
+    root: ".speed-reader",
+  },
+  {
+    id: "mail-search",
+    name: "Mail search (results)",
+    base: true,
+    go: async (p) => {
+      await mail(p);
+      await p
+        .getByRole("searchbox", { name: "Search mail" })
+        .or(p.getByLabel("Search mail"))
+        .first()
+        .click();
+      await p.keyboard.type("review");
+      await wait(p, 1200);
+    },
+    root: ".shell__list",
+  },
 ];
 
 // The default sidebar width, and the narrowest the app allows (a stored 1 px is clamped up to it).

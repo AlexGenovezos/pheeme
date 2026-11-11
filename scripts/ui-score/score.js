@@ -144,6 +144,29 @@
   const CONTENT =
     ".cal-event,.task-chip,.thread-row,.cal-search__row,.mini-month button,.task-row__main,.ui-picker [role=option],.ui-picker [role=gridcell]";
   /** The box that takes a click: a wrapped field's frame, a checkbox's label. */
+  /**
+   * The box a field looks like: its own, or the nearest frame around it (an ancestor drawn with
+   * a border on every side), even when that frame holds other controls (a search field's Clear).
+   */
+  function frameBox(el, r) {
+    if (!el.matches("input:not([type=range]):not([type=checkbox]):not([type=radio]),select"))
+      return r;
+    let a = el;
+    for (let i = 0; i < 3 && a; i++, a = a.parentElement) {
+      const c = getComputedStyle(a);
+      if (
+        ["Top", "Right", "Bottom", "Left"].every(
+          (sd) =>
+            parseFloat(c["border" + sd + "Width"]) > 0 && c["border" + sd + "Style"] !== "none",
+        )
+      ) {
+        const b = a.getBoundingClientRect();
+        // A frame fits the field: not a whole dialog or panel that happens to have a border.
+        return b.height <= r.height + 12 ? b : r;
+      }
+    }
+    return r;
+  }
   function hitBox(el, r) {
     if (!el.matches("input,select,textarea")) return r;
     const w = el.parentElement && el.parentElement.closest('label, .ui-input, [class*="field"]');
@@ -352,7 +375,7 @@
             !el.closest(CONTENT)
           ) {
             o.ctlN++;
-            const h = Math.round(box.height * 2) / 2;
+            const h = Math.round(frameBox(el, r).height * 2) / 2;
             if (!CONTROL_HEIGHTS.includes(h)) o.ctlOff.push(label(el) + " h=" + h);
           }
         }

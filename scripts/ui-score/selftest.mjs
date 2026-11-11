@@ -114,6 +114,13 @@ const CASES = [
        <div style="overflow:auto; flex:1">${Array.from({ length: 4 }, (_, i) => `<div style="height:22px">Row ${i}</div>`).join("")}</div></div>`,
     (r) => r.n.clipped === 0 && !r.defects.some((d) => d.startsWith("cut")),
   ],
+  [
+    "a field's height is its drawn frame's, even with a Clear button inside the frame",
+    `<div style="display:flex; align-items:center; height:28px; box-sizing:border-box; border:1px solid #999; ${FONT}">
+       <input value="review" style="${FONT} height:26px; box-sizing:border-box; border:0; width:160px">
+       <button aria-label="Clear" style="width:24px; height:24px">×</button></div>`,
+    (r) => r.s.controls === 10,
+  ],
 ];
 
 const browser = await chromium.launch();
