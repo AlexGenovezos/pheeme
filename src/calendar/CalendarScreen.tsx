@@ -55,7 +55,16 @@ const VIEW_OPTIONS = [
   { value: "month", label: "Month" },
 ] as const;
 
-function Toolbar({ title, pinnedFolded }: { title: string; pinnedFolded: boolean }) {
+function Toolbar({
+  title,
+  pinnedFolded,
+  pinnedShown,
+}: {
+  title: string;
+  pinnedFolded: boolean;
+  /** The pinned email is the column left of the days, so the view switch centres past it. */
+  pinnedShown: boolean;
+}) {
   const view = useCalendarStore((s) => s.view);
   const accounts = useCalendarStore((s) => s.accounts);
   const collapsed = useUiStore((s) => sidebarLayout(s) !== "expanded");
@@ -76,6 +85,7 @@ function Toolbar({ title, pinnedFolded }: { title: string; pinnedFolded: boolean
       className="toolbar toolbar--view cal-toolbar"
       data-sidebar-collapsed={collapsed || undefined}
       data-view={view}
+      data-pinned={pinnedShown || undefined}
       {...dragRegion}
     >
       <div className="cal-toolbar__start" {...dragRegion}>
@@ -550,7 +560,11 @@ export function CalendarScreen() {
         />
       )}
       <main className="shell__view cal-main" aria-label="Calendar">
-        <Toolbar title={viewTitle(view, anchor, days)} pinnedFolded={pinnedFolded} />
+        <Toolbar
+          title={viewTitle(view, anchor, days)}
+          pinnedFolded={pinnedFolded}
+          pinnedShown={pinned && !pinnedFolded}
+        />
         {loadError && (
           <p className="cal-main__error" role="alert">
             {loadError}

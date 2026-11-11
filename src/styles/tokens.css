@@ -158,6 +158,8 @@
   --invite-mini-day-height: 168px;
   --invite-mini-gutter-width: 52px;
   --pinned-email-width: 320px;
+  /* The calendar sidebar's agenda (today and the next two days), which scrolls inside. */
+  --calendar-agenda-height: 280px;
   /* Tasks: the panel at the right edge, its rail, and the tick-off circle. */
   --tasks-panel-width: 300px;
   --tasks-rail-width: 44px;

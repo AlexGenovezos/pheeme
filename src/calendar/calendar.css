@@ -92,6 +92,13 @@
 .cal-toolbar:is([data-view="day"], [data-view="week"]) .ui-segmented {
   margin-left: var(--calendar-gutter-width);
 }
+/* With an email pinned beside the calendar, over the calendar rather than the email. */
+.cal-toolbar[data-pinned] .ui-segmented {
+  margin-left: var(--pinned-email-width);
+}
+.cal-toolbar[data-pinned]:is([data-view="day"], [data-view="week"]) .ui-segmented {
+  margin-left: calc(var(--pinned-email-width) + var(--calendar-gutter-width));
+}
 /* A filled track with a raised thumb, no outline (like the Mail | Calendar switch). */
 .cal-toolbar .ui-segmented {
   border: none;
@@ -215,11 +222,15 @@
 
 /* ---- Sidebar: the agenda (today and the next two days) -------------------- */
 
+/* A fixed height that scrolls, so loading events never moves what's below it. */
 .cal-agenda {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: var(--space-3);
+  height: var(--calendar-agenda-height);
   padding: var(--space-3) var(--space-3) var(--space-1);
+  overflow-y: auto;
 }
 .cal-agenda__date {
   display: flex;
@@ -642,12 +653,6 @@
   font-weight: var(--font-weight-medium);
   text-overflow: clip;
 }
-.cal-event--open {
-  z-index: 1;
-  background: var(--cal-event-bg);
-  color: var(--cal-event-fg);
-  box-shadow: var(--shadow-popover);
-}
 
 .cal-event__title {
   font-weight: var(--font-weight-semibold);
@@ -745,6 +750,17 @@
     var(--color-pane-bg) var(--space-1),
     var(--color-pane-bg) var(--space-2)
   );
+}
+
+/* The open event fills solid, whatever its answer (after those rules, so it wins over them). */
+.cal-event.cal-event--open {
+  z-index: 1;
+  background: var(--cal-event-bg);
+  color: var(--cal-event-fg);
+  box-shadow: var(--shadow-popover);
+}
+.cal-event.cal-event--open .cal-event__time {
+  color: inherit;
 }
 
 /* ---- Month --------------------------------------------------------------- */

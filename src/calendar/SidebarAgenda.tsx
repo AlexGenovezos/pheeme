@@ -33,9 +33,9 @@ export function SidebarAgenda() {
       if (!span) continue;
       for (const day of out) {
         if (day.date < span.first || day.date > span.last) continue;
-        if (inAllDayBand(e)) day.allDay.push(e);
-        // Today: only what hasn't ended yet.
-        else if (day.date !== today || (e.end.ms ?? 0) > now) day.timed.push(e);
+        // Today: only what hasn't ended yet (all-day events last the whole day).
+        if (day.date === today && !e.allDay && (e.end.ms ?? 0) <= now) continue;
+        (inAllDayBand(e) ? day.allDay : day.timed).push(e);
       }
     }
     for (const day of out) day.timed.sort((a, b) => (a.start.ms ?? 0) - (b.start.ms ?? 0));
