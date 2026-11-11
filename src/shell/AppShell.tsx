@@ -1,4 +1,4 @@
-import { useRef, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useWidth } from "../lib/useWidth";
 import { ColorPopoverHost } from "../labels/ColorPopover";
@@ -9,6 +9,7 @@ import { DragCardHost } from "../mail/dragMail";
 import { PANE, useUiStore } from "../store/uiStore";
 import { ChordHint } from "./ChordHint";
 import { overlayTitleBar } from "./chrome";
+import { useSidebarFit } from "./sidebarFit";
 import { Divider } from "./Divider";
 import { ListPane } from "./ListPane";
 import { Sidebar } from "./Sidebar";
@@ -25,12 +26,11 @@ import "./shell.css";
 export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   // Only the fields it draws: the whole store changes on every selection and open, which would re-render every pane.
-  const { sidebarWidth, listWidth, sidebarCollapsed, readingPane } = useUiStore(
-    useShallow(({ sidebarWidth, listWidth, sidebarCollapsed, readingPane }) => ({
+  const { sidebarWidth, listWidth, readingPaneOn } = useUiStore(
+    useShallow(({ sidebarWidth, listWidth, readingPane }) => ({
       sidebarWidth,
       listWidth,
-      sidebarCollapsed,
-      readingPane,
+      readingPaneOn: readingPane,
     })),
   );
   const conversationOpen = useUiStore((s) => s.openThread !== null);
@@ -38,7 +38,21 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
     useUiStore.getState();
 
   const width = useWidth(ref);
-  const listSpace = width > 0 ? width - (sidebarCollapsed ? 0 : sidebarWidth) : 0;
+  // No room for the list beside the reading pane even with the sidebar hidden (the Tasks panel
+  // took it): one shows at a time, as with the reading pane off.
+  const squeezed = readingPaneOn && width > 0 && width < PANE.listMin + PANE.viewMin;
+  useEffect(() => {
+    useUiStore.getState().setReadingPaneSqueezed(squeezed);
+  }, [squeezed]);
+  useEffect(() => () => useUiStore.getState().setReadingPaneSqueezed(false), []);
+  const readingPane = readingPaneOn && !squeezed;
+  const aside = useRef<HTMLElement>(null);
+  const layout = useSidebarFit(
+    aside,
+    width,
+    readingPane ? PANE.listMin + PANE.viewMin : PANE.viewMin,
+  );
+  const listSpace = width > 0 ? width - (layout === "expanded" ? sidebarWidth : 0) : 0;
   const listMax =
     listSpace > 0
       ? Math.max(PANE.listMin, listSpace - PANE.viewMin)
@@ -59,18 +73,19 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
       ref={ref}
       className="shell"
       style={style}
-      data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
+      data-sidebar={layout}
       data-reading-pane={readingPane ? undefined : "off"}
       data-overlay-titlebar={overlayTitleBar || undefined}
     >
       <aside
+        ref={aside}
         className="shell__sidebar"
         aria-label="Sidebar"
-        aria-hidden={sidebarCollapsed || undefined}
+        aria-hidden={layout === "collapsed" || undefined}
       >
         <Sidebar onAddAccount={onAddAccount} />
       </aside>
-      {!sidebarCollapsed && (
+      {layout === "expanded" && (
         <Divider
           className="shell__divider--sidebar"
           label="Resize sidebar"

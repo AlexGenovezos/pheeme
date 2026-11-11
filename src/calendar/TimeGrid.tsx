@@ -8,6 +8,7 @@ import { formatDay, formatHour, wallClock } from "./dates";
 import { createInColumn, createOnDays } from "./drag";
 import { BarEvent, eventKey, TimedEventBlock, timeSpan, useCalendarLookup } from "./EventBlock";
 import { layoutBand, layoutDay, MIN_EVENT_MINUTES } from "./layout";
+import { useWidth } from "../lib/useWidth";
 import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
 import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
@@ -16,9 +17,24 @@ import { useNow } from "./useNow";
 /** Height of one hour, in px. */
 export const HOUR_PX = 48;
 /** Height of one row in the all-day band, in px. */
-export const BAND_ROW_PX = 24;
+export const BAND_ROW_PX = 26;
 /** Blocks this short (minutes) show title and time on one line. */
 const COMPACT_MINUTES = 45;
+/** Narrower than this, an event shows only its title, edge to edge. */
+const NARROW_EVENT_PX = 64;
+/** A short event puts its time beside its title; narrower than this, the time gives way. */
+const COMPACT_TIME_MIN_PX = 140;
+/** The narrowest a day can be for two events side by side to still read. */
+export const MIN_DAY_PX = NARROW_EVENT_PX;
+
+/** The hour labels' column (--calendar-gutter-width). */
+export function gutterWidth(): number {
+  return (
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--calendar-gutter-width"),
+    ) || 0
+  );
+}
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
@@ -63,6 +79,10 @@ export function TimeGrid({
   const taskBand = useMemo(() => layoutTasks(tasks ?? [], days, band), [tasks, days, band]);
   const bandRows = [...band, ...taskBand].reduce((n, s) => Math.max(n, s.row + 1), 0);
   const columns = useMemo(() => days.map((d) => layoutDay(list, d, tz)), [list, days, tz]);
+  // Each day's width, for events too narrow for more than a few letters of their title.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const bodyWidth = useWidth(bodyRef);
+  const dayWidth = bodyWidth > 0 ? (bodyWidth - gutterWidth()) / days.length : Infinity;
 
   // Open scrolled to the working day (an hour before now, when today is on screen), or to a pinned invitation.
   useLayoutEffect(() => {
@@ -139,7 +159,7 @@ export function TimeGrid({
         </div>
       </div>
       <div className="cal-grid__scroll" ref={scrollRef}>
-        <div className="cal-grid__body">
+        <div className="cal-grid__body" ref={bodyRef}>
           <div className="cal-grid__gutter cal-grid__hours" aria-hidden="true">
             {HOURS.map((h) => (
               <span key={h} className="cal-grid__hour" style={{ top: h * HOUR_PX }}>
@@ -166,12 +186,19 @@ export function TimeGrid({
                     calendar={lookup(b.event)}
                     tz={tz}
                     compact={shown < COMPACT_MINUTES}
+                    narrow={
+                      (dayWidth * b.span) / b.columns <
+                      (shown < COMPACT_MINUTES ? COMPACT_TIME_MIN_PX : NARROW_EVENT_PX)
+                    }
                     style={{
                       top: (b.start / 60) * HOUR_PX,
                       height: (shown / 60) * HOUR_PX,
                       left: `${(b.column / b.columns) * 100}%`,
-                      // A sliver stays free on the right, for clicking the grid behind.
-                      width: `calc(${(b.span / b.columns) * 100}% - var(--space-2))`,
+                      // A sliver stays free at the column's right edge, for clicking the grid
+                      // behind; events side by side keep only a hairline gap between them.
+                      width: `calc(${(b.span / b.columns) * 100}% - ${
+                        b.column + b.span === b.columns ? "var(--space-2)" : "var(--space-0-5)"
+                      })`,
                     }}
                   />
                 );

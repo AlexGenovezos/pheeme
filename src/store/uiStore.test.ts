@@ -1,5 +1,14 @@
 import { beforeEach, expect, test } from "vitest";
-import { LAYOUT_KEY, __resetUiStoreForTests, readLayout, useUiStore } from "./uiStore";
+import {
+  LAYOUT_KEY,
+  __resetUiStoreForTests,
+  focusedThread,
+  readLayout,
+  readingPaneShown,
+  sidebarLayout,
+  useUiStore,
+} from "./uiStore";
+import { revealLabels } from "../labels/reveal";
 
 const ui = () => useUiStore.getState();
 const stored = () => JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "null");
@@ -228,4 +237,61 @@ test("changing mailbox clears the highlighted row", () => {
   expect(ui().cursor).toBe("a1:t1");
   ui().setMailbox({ accountId: null, labelId: "STARRED" });
   expect(ui().cursor).toBeNull();
+});
+
+test("with no room beside the content the sidebar hides, and Show sidebar opens it over the content", () => {
+  expect(sidebarLayout(ui())).toBe("expanded");
+  ui().setSidebarSqueezed(true);
+  expect(sidebarLayout(ui())).toBe("collapsed");
+
+  ui().toggleSidebar();
+  expect(sidebarLayout(ui())).toBe("overlay");
+  expect(stored()?.sidebarCollapsed ?? false).toBe(false); // peeking isn't remembered
+  ui().toggleSidebar();
+  expect(sidebarLayout(ui())).toBe("collapsed");
+
+  // Room again: back beside the content; peeking ends with the squeeze.
+  ui().toggleSidebar();
+  ui().setSidebarSqueezed(false);
+  expect(sidebarLayout(ui())).toBe("expanded");
+  expect(ui().sidebarPeek).toBe(false);
+
+  // Hidden by the user, then squeezed: Show sidebar still opens it.
+  ui().toggleSidebar();
+  ui().setSidebarSqueezed(true);
+  expect(sidebarLayout(ui())).toBe("collapsed");
+  ui().toggleSidebar();
+  expect(sidebarLayout(ui())).toBe("overlay");
+});
+
+test("with no room for the reading pane, mail works as with it off until there's room again", () => {
+  ui().setCursor("a:1");
+  expect(readingPaneShown(ui())).toBe(true);
+  expect(focusedThread(ui())).toBeNull(); // reading pane on: the open thread (none)
+
+  ui().setReadingPaneSqueezed(true);
+  expect(readingPaneShown(ui())).toBe(false);
+  expect(focusedThread(ui())).toBe("a:1"); // one pane: the highlight
+  expect(stored()?.readingPane ?? true).toBe(true); // the setting itself is untouched
+
+  ui().setReadingPaneSqueezed(false);
+  expect(readingPaneShown(ui())).toBe(true);
+});
+
+test("the Show sidebar preference turns off and on even while there's no room for it", () => {
+  ui().setSidebarSqueezed(true);
+  ui().toggleSidebar(); // opened over the content
+  ui().setSidebarCollapsed(true);
+  expect(ui().sidebarCollapsed).toBe(true);
+  expect(sidebarLayout(ui())).toBe("collapsed");
+  expect(stored()?.sidebarCollapsed).toBe(true);
+  ui().setSidebarCollapsed(false);
+  expect(ui().sidebarCollapsed).toBe(false);
+  expect(sidebarLayout(ui())).toBe("collapsed"); // still no room: hidden until opened
+});
+
+test("Manage labels opens the sidebar even when it hid for lack of room", () => {
+  ui().setSidebarSqueezed(true);
+  revealLabels();
+  expect(sidebarLayout(ui())).toBe("overlay");
 });

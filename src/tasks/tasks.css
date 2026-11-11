@@ -195,18 +195,27 @@
   padding-left: calc(var(--icon-size-sm) + var(--space-0-5));
 }
 
+/* The button is a full 24 px target; the ring inside it is what shows. */
 .task-check {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: var(--task-check-size);
-  height: var(--task-check-size);
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  margin: calc((var(--task-check-size) - var(--control-height-sm)) / 2);
   padding: var(--space-0);
-  border: var(--focus-ring-width) solid var(--color-foreground-subtle);
+  border: none;
   border-radius: var(--radius-full);
   background: transparent;
   color: transparent;
+}
+.task-check__ring {
+  display: inline-flex;
+  width: var(--task-check-size);
+  height: var(--task-check-size);
+  border: var(--focus-ring-width) solid var(--color-foreground-subtle);
+  border-radius: var(--radius-full);
 }
 .task-check svg {
   width: 100%;
@@ -215,19 +224,26 @@
   stroke-width: 3;
 }
 .task-check:hover {
-  border-color: var(--color-accent);
   color: var(--color-accent);
 }
+.task-check:hover .task-check__ring {
+  border-color: var(--color-accent);
+}
 .task-check[aria-checked="true"] {
+  color: var(--color-accent-foreground);
+}
+.task-check[aria-checked="true"] .task-check__ring {
   border-color: var(--color-accent);
   background: var(--color-accent);
-  color: var(--color-accent-foreground);
 }
 .task-check:focus-visible {
   outline: var(--focus-ring-width) solid var(--color-focus-border);
-  outline-offset: var(--focus-ring-offset);
+  outline-offset: var(--focus-ring-inset);
 }
 .task-check--sm {
+  margin: var(--space-0);
+}
+.task-check--sm .task-check__ring {
   width: var(--task-check-size-sm);
   height: var(--task-check-size-sm);
   border-width: var(--border-width);
@@ -248,7 +264,9 @@
   display: flex;
   flex: 1;
   flex-direction: column;
+  justify-content: center;
   align-items: flex-start;
+  min-height: var(--control-height-sm);
   gap: var(--space-0-5);
   min-width: var(--space-0);
   padding: var(--space-0);
@@ -322,7 +340,6 @@
 }
 .task-editor__title,
 .task-editor__notes,
-.task-editor__date,
 .tasks-name-field {
   width: 100%;
   padding: var(--space-1) var(--space-1-5);
@@ -332,6 +349,10 @@
   color: var(--color-input-foreground);
   font: inherit;
   font-size: var(--font-size-md);
+}
+.task-editor__title,
+.tasks-name-field {
+  height: var(--control-height-md);
 }
 .task-editor__notes {
   font-size: var(--font-size-sm);
@@ -344,7 +365,6 @@
 }
 .task-editor__title:focus,
 .task-editor__notes:focus,
-.task-editor__date:focus,
 .tasks-name-field:focus {
   border-color: var(--color-focus-border);
   outline: none;
@@ -356,8 +376,6 @@
 }
 .task-editor__date {
   flex: 1;
-  font-size: var(--font-size-sm);
-  color-scheme: inherit;
 }
 .task-editor__actions {
   display: flex;
@@ -407,12 +425,13 @@
 .task-chip {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-0);
   min-width: var(--space-0);
   height: calc(100% - var(--calendar-event-inset));
   margin: var(--space-0) var(--space-0-5);
-  padding: var(--space-0) var(--space-1);
-  border: var(--border-width) solid var(--color-accent);
+  padding: var(--space-0) var(--space-1) var(--space-0) var(--space-0);
+  /* An inner outline, not a border: the buttons inside get the chip's full height. */
+  box-shadow: inset 0 0 0 var(--border-width) var(--color-accent);
   border-radius: var(--radius-xs);
   background: var(--color-pane-bg);
   color: var(--color-foreground);
@@ -420,10 +439,15 @@
   line-height: var(--line-height-tight);
 }
 .task-chip .task-check {
+  height: 100%;
+  max-height: var(--control-height-sm);
+}
+.task-chip .task-check__ring {
   border-color: var(--color-accent);
 }
 .task-chip__title {
   flex: 1;
+  align-self: stretch;
   min-width: var(--space-0);
   overflow: hidden;
   padding: var(--space-0);
@@ -441,7 +465,7 @@
   outline-offset: var(--focus-ring-offset);
 }
 .task-chip--done {
-  border-color: var(--color-border);
+  box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
 }
 .task-chip--done .task-chip__title {
   color: var(--color-foreground-muted);

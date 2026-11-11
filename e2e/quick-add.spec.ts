@@ -15,9 +15,10 @@ test("quick add highlights the words it read, each under its own text", async ({
   await expect(dialog.getByText("Joe's", { exact: true })).toBeVisible();
   // "Grace" offers the matching contacts; nobody is invited until one is picked.
   const who = dialog.getByRole("combobox", { name: "Who Grace is" });
-  await expect(who.getByRole("option", { name: /Grace Hopper/ })).toBeAttached();
-  await expect(who).toHaveValue("");
-  await who.selectOption({ label: "Grace Hopper <grace@example.net>" });
+  await expect(who).toHaveText("Don't invite");
+  await who.click();
+  await page.getByRole("option", { name: "Grace Hopper <grace@example.net>" }).click();
+  await expect(who).toHaveText("Grace Hopper <grace@example.net>");
   await testInfo.attach("quick-add", { body: await dialog.screenshot(), contentType: "image/png" });
 
   // Each mark starts where its words start in the field: the width of the text before it.

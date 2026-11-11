@@ -18,7 +18,8 @@
   max-width: 100%;
   height: var(--settings-height);
   max-height: 100%;
-  overflow: hidden;
+  /* Nothing clips here: the body and the page list scroll inside their own corners, so a row
+     half scrolled past the bottom is cut by its scroller, not by the dialog's frame. */
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-pane-bg);
@@ -37,14 +38,18 @@
   gap: var(--space-2);
   width: var(--settings-nav-width);
   flex-shrink: 0;
+  min-height: var(--space-0);
   padding: var(--space-3) var(--space-2);
-  border-right: var(--border-width) solid var(--color-pane-border);
+  border-right: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--settings-inner-radius) var(--space-0) var(--space-0)
+    var(--settings-inner-radius);
   background: var(--color-sidebar-bg);
   color: var(--color-sidebar-foreground);
 }
 
 .settings__search {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--space-2);
   height: var(--control-height-md);
@@ -83,9 +88,15 @@
 
 .settings__pages {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: var(--space-px);
+  min-height: var(--space-0);
   overflow-y: auto;
+}
+/* A short window scrolls the list; its rows keep their height. */
+.settings__pages > * {
+  flex-shrink: 0;
 }
 
 .settings__group {
@@ -143,7 +154,7 @@
   height: var(--titlebar-height);
   flex-shrink: 0;
   padding: var(--space-0) var(--space-2) var(--space-0) var(--space-5);
-  border-bottom: var(--border-width) solid var(--color-pane-border);
+  border-bottom: var(--border-width) solid var(--color-border-subtle);
 }
 
 .settings__crumbs {
@@ -167,7 +178,9 @@
 
 .settings__body {
   flex: 1;
+  min-height: var(--space-0);
   overflow-y: auto;
+  border-bottom-right-radius: var(--settings-inner-radius);
   padding: var(--space-6) var(--space-8);
   overscroll-behavior: contain;
 }
@@ -243,6 +256,12 @@
 .settings-quota {
   width: var(--settings-number-width);
 }
+/* The unit sits beside the field, not inside its frame. */
+.settings-quota__unit {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
 
 .settings-empty {
   margin: var(--space-0);
@@ -299,9 +318,9 @@
   background: var(--color-control-hover-bg);
 }
 .settings-recorder[data-recording] {
-  border-style: dashed;
   border-color: var(--color-focus-border);
   background: var(--color-input-bg);
+  box-shadow: 0 0 0 var(--border-width) var(--color-focus-border);
 }
 .settings-recorder[data-recording]:focus-visible {
   outline: none;
@@ -479,27 +498,22 @@
   overflow-wrap: anywhere;
 }
 
+.settings-diagnostics__reply {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+}
 .settings-diagnostics__select {
   max-width: 100%;
-  padding: var(--space-0-5) var(--space-1);
-  border: var(--border-width) solid var(--color-input-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-input-bg);
-  color: var(--color-input-foreground);
 }
 
-/* A dropdown in a settings row (Appearance › Light theme). */
+/* A dropdown in a settings row (Appearance › Light theme, Notifications › From). */
 .settings-select {
-  max-width: var(--settings-select-max-width);
-  padding: var(--space-0-5) var(--space-1);
-  border: var(--border-width) solid var(--color-input-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-input-bg);
-  color: var(--color-input-foreground);
+  width: var(--settings-select-width);
 }
-.settings-select:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 var(--border-width) var(--color-focus-border);
+.settings-select--time {
+  width: var(--time-field-width);
 }
 
 .settings-diagnostics__actions {

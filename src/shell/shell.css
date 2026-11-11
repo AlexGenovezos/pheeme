@@ -13,7 +13,7 @@
   transition: grid-template-columns var(--duration-base) var(--ease-standard);
 }
 
-.shell[data-sidebar="collapsed"] {
+.shell:is([data-sidebar="collapsed"], [data-sidebar="overlay"]) {
   grid-template-columns:
     0
     minmax(var(--shell-list-min), var(--shell-list-w))
@@ -31,7 +31,7 @@
     min(var(--shell-sidebar-w), calc(100% - var(--shell-view-min)))
     minmax(var(--shell-view-min), 1fr);
 }
-.shell[data-reading-pane="off"][data-sidebar="collapsed"] {
+.shell[data-reading-pane="off"]:is([data-sidebar="collapsed"], [data-sidebar="overlay"]) {
   grid-template-columns: 0 minmax(var(--shell-view-min), 1fr);
 }
 .shell[data-reading-pane="off"] :is(.shell__list, .shell__view) {
@@ -58,6 +58,18 @@
 
 html[data-vibrancy] .shell__sidebar {
   background: var(--color-sidebar-vibrant-bg);
+}
+
+/* No room beside the content: the sidebar opens over it, at its own width. */
+.shell[data-sidebar="overlay"] .shell__sidebar {
+  position: absolute;
+  top: var(--space-0);
+  bottom: var(--space-0);
+  left: var(--space-0);
+  z-index: var(--z-popover);
+  width: var(--shell-sidebar-w);
+  background: var(--color-sidebar-bg);
+  box-shadow: var(--shadow-overlay);
 }
 
 /* Stay visible while the track animates closed, then leave the tab order. */
@@ -140,7 +152,18 @@ body[data-resizing] .shell__divider:active::after {
 }
 
 .shell[data-overlay-titlebar] .toolbar--sidebar,
-.shell[data-overlay-titlebar][data-sidebar="collapsed"] .toolbar--list {
+.shell[data-overlay-titlebar]:is([data-sidebar="collapsed"], [data-sidebar="overlay"])
+  .toolbar--list {
+  padding-left: var(--traffic-light-inset);
+}
+/* One pane at a time with nothing to its left: the open conversation's toolbar clears them too. */
+.shell[data-overlay-titlebar]:is(
+    [data-sidebar="collapsed"],
+    [data-sidebar="overlay"]
+  )[data-reading-pane="off"]
+  .shell__view
+  > .view-pane
+  > .toolbar--view {
   padding-left: var(--traffic-light-inset);
 }
 

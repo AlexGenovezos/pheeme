@@ -24,7 +24,9 @@ import {
 } from "react";
 import { AllowButton, openApiPage, TASKS_API_URL } from "../calendar/AccessControls";
 import { dateOf, systemZone } from "../calendar/dates";
+import { useCalendarStore, weekStartOf } from "../calendar/calendarStore";
 import { Button } from "../components/ui/Button";
+import { DateField } from "../components/ui/DateField";
 import { IconButton } from "../components/ui/IconButton";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useKeybinding } from "../keyboard/useCommands";
@@ -636,7 +638,9 @@ function TaskRow({
         className="task-check"
         onClick={() => void store().setCompleted(task, !task.completed)}
       >
-        <Check aria-hidden="true" />
+        <span className="task-check__ring">
+          <Check aria-hidden="true" />
+        </span>
       </button>
       <button
         type="button"
@@ -691,7 +695,8 @@ function TaskEditor({
   const [notes, setNotes] = useState(task?.notes ?? "");
   const [due, setDue] = useState(task?.due ?? "");
   const done = useRef(false);
-  const dateRef = useRef<HTMLInputElement>(null);
+  const dateRef = useRef<HTMLButtonElement>(null);
+  const weekStart = useCalendarStore((s) => weekStartOf(s.accounts));
 
   const save = async (another: boolean) => {
     if (done.current) return;
@@ -745,7 +750,9 @@ function TaskEditor({
         void save(!task);
       }}
     >
-      <span className="task-check task-check--placeholder" aria-hidden="true" />
+      <span className="task-check task-check--placeholder" aria-hidden="true">
+        <span className="task-check__ring" />
+      </span>
       <div className="task-editor__fields">
         <input
           autoFocus
@@ -764,13 +771,14 @@ function TaskEditor({
           onChange={(e) => setNotes(e.currentTarget.value)}
         />
         <span className="task-editor__due">
-          <input
+          <DateField
             ref={dateRef}
-            type="date"
             className="task-editor__date"
             aria-label="Due date"
+            placeholder="Add a due date"
             value={due}
-            onChange={(e) => setDue(e.currentTarget.value)}
+            weekStart={weekStart}
+            onChange={setDue}
           />
           <IconButton
             size="sm"

@@ -1,0 +1,230 @@
+/* Pickers: Select, DateField and TimeField. The popover looks like a Menu; the fields like inputs. */
+
+.ui-picker {
+  position: fixed;
+  z-index: var(--z-picker);
+  max-width: var(--menu-max-width);
+  padding: var(--space-1);
+  overflow-y: auto;
+  border: var(--border-width) solid var(--color-menu-border);
+  border-radius: var(--radius-md);
+  background: var(--color-menu-bg);
+  color: var(--color-menu-foreground);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--font-size-md);
+  animation: ui-picker-in var(--duration-fast) var(--ease-out);
+}
+
+@keyframes ui-picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--space-1) * -1));
+  }
+}
+
+/* ---- Field: the button or input the picker hangs from --------------------- */
+
+.ui-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: var(--space-0);
+  max-width: 100%;
+  height: var(--control-height-md);
+  padding: var(--space-0) var(--space-2);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+  color: var(--color-input-foreground);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: start;
+  cursor: default;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.ui-field:focus-visible,
+.ui-field[aria-expanded="true"] {
+  outline: none;
+  border-color: var(--color-focus-border);
+  box-shadow: 0 0 0 var(--border-width) var(--color-focus-border);
+}
+.ui-field:disabled {
+  color: var(--color-foreground-disabled);
+}
+.ui-field__value {
+  flex: 1;
+  min-width: var(--space-0);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ui-field__value--placeholder {
+  color: var(--color-input-placeholder);
+}
+.ui-field__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--color-foreground-subtle);
+}
+.ui-field__icon svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+/* ---- Listbox (Select, TimeField) ------------------------------------------ */
+
+.ui-picker--list {
+  max-height: var(--picker-list-max-height);
+}
+
+.ui-listbox__group {
+  display: flex;
+  align-items: center;
+  height: var(--control-height-sm);
+  padding: var(--space-0) var(--space-2);
+  overflow: hidden;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ui-listbox__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: var(--control-height-sm);
+  padding: var(--space-0) var(--space-2) var(--space-0) var(--space-1);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  cursor: default;
+}
+.ui-listbox__option[data-active] {
+  background: var(--color-menu-selection-bg);
+  color: var(--color-menu-selection-foreground);
+}
+.ui-listbox__option[aria-disabled="true"] {
+  color: var(--color-foreground-disabled);
+}
+.ui-listbox__check {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: var(--icon-size-sm);
+}
+.ui-listbox__check svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+.ui-listbox__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Time field: a text input with the list ------------------------------- */
+
+.ui-time-field {
+  width: var(--time-field-width);
+  padding-inline-end: var(--space-1-5);
+  cursor: text;
+}
+.ui-time-field__input {
+  flex: 1;
+  min-width: var(--space-0);
+  height: 100%;
+  padding: var(--space-0);
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.ui-time-field__input:focus-visible {
+  outline: none;
+}
+.ui-time-field:focus-within {
+  border-color: var(--color-focus-border);
+  box-shadow: 0 0 0 var(--border-width) var(--color-focus-border);
+}
+
+/* ---- Date field: the month grid ------------------------------------------- */
+
+.ui-date-field {
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1);
+}
+.ui-calendar__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-0-5);
+  padding-inline-start: var(--space-1);
+}
+.ui-calendar__title {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+.ui-calendar__grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ui-calendar__row {
+  display: grid;
+  grid-template-columns: repeat(7, var(--control-height-md));
+  gap: var(--space-0-5);
+}
+.ui-calendar__weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--control-height-sm);
+  color: var(--color-foreground-subtle);
+  font-weight: var(--font-weight-medium);
+}
+.ui-calendar__day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-md);
+  height: var(--control-height-md);
+  border-radius: var(--radius-full);
+  cursor: default;
+}
+.ui-calendar__day:hover {
+  background: var(--color-control-hover-bg);
+}
+.ui-calendar__day--outside {
+  color: var(--color-foreground-subtle);
+}
+.ui-calendar__day--today {
+  color: var(--color-accent);
+  font-weight: var(--font-weight-semibold);
+}
+.ui-calendar__day[data-active] {
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--color-focus-border);
+}
+.ui-calendar__day[aria-selected="true"] {
+  background: var(--color-accent);
+  color: var(--color-accent-foreground);
+  font-weight: var(--font-weight-semibold);
+}
+.ui-calendar__day[aria-selected="true"][data-active] {
+  box-shadow:
+    inset 0 0 0 var(--focus-ring-width) var(--color-accent),
+    inset 0 0 0 calc(var(--focus-ring-width) * 2) var(--color-accent-foreground);
+}
+.ui-calendar__day[aria-disabled="true"] {
+  color: var(--color-foreground-disabled);
+  background: transparent;
+}

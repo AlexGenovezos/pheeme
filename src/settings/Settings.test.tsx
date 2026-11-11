@@ -140,12 +140,19 @@ test("Appearance imports a VS Code theme, picks it, and removes it", async () =>
     expect(useThemeStore.getState()).toMatchObject({ mode: "dark", resolved: "dark" }),
   );
   const darkSelect = within(dialog()).getByRole("combobox", { name: "Dark theme" });
-  expect(darkSelect).toHaveValue("night-harbour");
-  expect(
-    within(darkSelect)
-      .getAllByRole("option")
-      .map((o) => o.textContent),
-  ).toEqual(["Pheeme Dark", "Pheeme Light", "Night Harbour"]);
+  const pickDark = (name: string) => {
+    fireEvent.click(darkSelect);
+    fireEvent.click(screen.getByRole("option", { name }));
+  };
+  expect(darkSelect).toHaveTextContent("Night Harbour");
+  fireEvent.click(darkSelect);
+  expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+    "Pheeme Dark",
+    "Pheeme Light",
+    "Night Harbour",
+  ]);
+  expect(screen.getByRole("group", { name: "Your themes" })).toBeInTheDocument();
+  fireEvent.keyDown(darkSelect, { key: "Escape" });
   const toasts = useToastStore.getState().toasts;
   expect(toasts.map((t) => t.title)).toEqual(
     expect.arrayContaining(["Installed Night Harbour", "Couldn't import the theme"]),
@@ -154,12 +161,12 @@ test("Appearance imports a VS Code theme, picks it, and removes it", async () =>
     /broken\.json isn't valid JSON/,
   );
 
-  fireEvent.change(darkSelect, { target: { value: "pheeme-dark" } });
+  pickDark("Pheeme Dark");
   expect(useThemeStore.getState().choices.dark).toBe("pheeme-dark");
-  fireEvent.change(darkSelect, { target: { value: "night-harbour" } });
+  pickDark("Night Harbour");
   fireEvent.click(within(dialog()).getByRole("button", { name: "Remove Night Harbour" }));
   expect(useThemeStore.getState().customThemes).toEqual([]);
-  expect(darkSelect).toHaveValue("pheeme-dark");
+  expect(darkSelect).toHaveTextContent("Pheeme Dark");
 });
 
 test("Appearance opens the theme editor over the app, and Settings comes back when it closes", () => {

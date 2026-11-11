@@ -334,13 +334,7 @@
   margin-inline-start: auto;
 }
 .label-dialog__select {
-  height: var(--control-height-md);
-  padding: var(--space-0) var(--space-2);
-  border: var(--border-width) solid var(--color-input-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-input-bg);
-  color: var(--color-input-foreground);
-  font: inherit;
+  width: 100%;
 }
 .label-dialog__select:disabled {
   opacity: 0.5;

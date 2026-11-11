@@ -14,7 +14,7 @@ import type { RowAction } from "../mail/ThreadRow";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
-import { useUiStore } from "../store/uiStore";
+import { sidebarLayout, useUiStore } from "../store/uiStore";
 import { SearchBar, SEARCH_INPUT_ID } from "../search/SearchBar";
 import { dragRegion } from "./chrome";
 export { SEARCH_INPUT_ID };
@@ -85,7 +85,7 @@ export function ListPane() {
   const toggleUnreadOnly = useUiStore((s) => s.toggleUnreadOnly);
   const anyChecked = useUiStore((s) => s.checked.length > 0);
   const checkedCount = useUiStore((s) => s.checked.length);
-  const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const collapsed = useUiStore((s) => sidebarLayout(s) !== "expanded");
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
 
   const accountIds = useAccountStore((s) => s.accounts.map((a) => a.id).join("\n"));
@@ -179,6 +179,7 @@ export function ListPane() {
           <>
             <IconButton
               label="Show sidebar"
+              data-sidebar-toggle=""
               shortcut={sidebarKey}
               icon={<PanelLeftOpen />}
               onClick={toggleSidebar}

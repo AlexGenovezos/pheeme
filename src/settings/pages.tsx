@@ -72,11 +72,10 @@ const LightThemeControl = () => <ThemeChoiceControl kind="light" />;
 const DarkThemeControl = () => <ThemeChoiceControl kind="dark" />;
 
 function SidebarControl() {
+  // The preference, not whether it's on screen now: with no room it hides either way.
   const shown = useUiStore((s) => !s.sidebarCollapsed);
-  const toggle = useUiStore((s) => s.toggleSidebar);
-  return (
-    <Switch label="Show sidebar" checked={shown} onChange={(next) => next !== shown && toggle()} />
-  );
+  const setCollapsed = useUiStore((s) => s.setSidebarCollapsed);
+  return <Switch label="Show sidebar" checked={shown} onChange={(next) => setCollapsed(!next)} />;
 }
 
 function ReadingPaneControl() {

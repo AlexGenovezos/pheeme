@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { ToastProvider, useToastStore } from "../components/ui/Toast";
 import { useAccountStore } from "../store/accountStore";
+import { NotificationOffer } from "./NotificationOffer";
 import { resetNotificationPrompt, useNotificationPrompt } from "./prompt";
 
 const settings = (asked: boolean) => ({
@@ -14,7 +15,12 @@ const settings = (asked: boolean) => ({
 
 function Host() {
   useNotificationPrompt();
-  return <ToastProvider />;
+  return (
+    <>
+      <NotificationOffer />
+      <ToastProvider />
+    </>
+  );
 }
 
 beforeEach(() => {
@@ -42,7 +48,7 @@ test("prompts for an account that hasn't been asked and turns notifications on",
   expect(await screen.findByText("Notifications are on")).toBeInTheDocument();
 });
 
-test("dismissing the prompt records the answer so it isn't asked again", async () => {
+test("Not now records the answer so it isn't asked again", async () => {
   const answers: unknown[] = [];
   mockIPC((command, args) => {
     if (command === "desktop_settings") return settings(false);
@@ -53,7 +59,7 @@ test("dismissing the prompt records the answer so it isn't asked again", async (
   });
   render(<Host />);
   await screen.findByText("Turn on notifications?");
-  fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+  fireEvent.click(screen.getByRole("button", { name: "Not now" }));
   await waitFor(() => expect(answers).toEqual([{ enable: false }]));
   expect(screen.queryByText("Turn on notifications?")).not.toBeInTheDocument();
 });

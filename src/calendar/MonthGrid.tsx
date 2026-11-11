@@ -2,7 +2,7 @@
 // shorter one, and "+N more" where a day has more than fits. Clicking a day opens it in Day view.
 import { type CSSProperties, useMemo, useRef } from "react";
 import type { CalendarEvent, Task } from "../lib/tauri";
-import { useHeight } from "../lib/useWidth";
+import { useHeight, useWidth } from "../lib/useWidth";
 import { cx } from "../lib/utils";
 import { useCalendarStore } from "./calendarStore";
 import { dateOf, formatDay } from "./dates";
@@ -15,7 +15,9 @@ import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
 
 /** One event line in a cell, in px. */
-export const MONTH_ROW_PX = 22;
+export const MONTH_ROW_PX = 26;
+/** Days narrower than this show events by title only. */
+const NARROW_DAY_PX = 120;
 /** The day number at the top of a cell, in px. */
 export const MONTH_DATE_PX = 28;
 
@@ -127,6 +129,9 @@ export function MonthGrid({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const height = useHeight(ref);
+  // Narrow days drop the start time before an event's title, so the title still reads.
+  const width = useWidth(ref);
+  const narrow = width > 0 && width / 7 < NARROW_DAY_PX;
   const weeks = Array.from({ length: days.length / 7 }, (_, w) => days.slice(w * 7, w * 7 + 7));
   // Rows that fit under the day number; before measuring, a typical window's worth.
   const weekHeight = height > 0 ? height / weeks.length : 120;
@@ -145,7 +150,12 @@ export function MonthGrid({
   } as CSSProperties;
 
   return (
-    <div className="cal-month" style={style} role="grid" aria-label="Calendar">
+    <div
+      className={cx("cal-month", narrow && "cal-month--narrow")}
+      style={style}
+      role="grid"
+      aria-label="Calendar"
+    >
       <div className="cal-month__head" role="row">
         {days.slice(0, 7).map((d) => (
           <div key={d} role="columnheader" className="cal-month__weekday">

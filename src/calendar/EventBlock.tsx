@@ -77,6 +77,7 @@ export function TimedEventBlock({
   tz,
   style,
   compact,
+  narrow = false,
 }: {
   event: CalendarEvent;
   calendar: CalendarInfo | undefined;
@@ -84,6 +85,8 @@ export function TimedEventBlock({
   style: CSSProperties;
   /** Too short for a second line. */
   compact: boolean;
+  /** Too narrow for more than its title (the time is in its name and popover). */
+  narrow?: boolean;
 }) {
   const { background, text } = eventColors(event, calendar);
   const when = timeSpan(event, tz);
@@ -95,6 +98,7 @@ export function TimedEventBlock({
       className={cx(
         "cal-event cal-event--timed",
         compact && "cal-event--compact",
+        narrow && "cal-event--narrow",
         (open || moving) && "cal-event--open",
         responseClass(event),
       )}
@@ -106,7 +110,7 @@ export function TimedEventBlock({
       onPointerDown={(e) => dragTimed(e, event, tz)}
     >
       <span className="cal-event__title">{eventTitle(event)}</span>
-      {compact ? (
+      {narrow ? null : compact ? (
         <span className="cal-event__time">, {when.split(" – ")[0]}</span>
       ) : (
         <>

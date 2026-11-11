@@ -6,7 +6,7 @@
     min(var(--shell-sidebar-w), calc(100% - var(--shell-view-min)))
     minmax(var(--shell-view-min), 1fr);
 }
-.shell[data-mode="calendar"][data-sidebar="collapsed"] {
+.shell[data-mode="calendar"]:is([data-sidebar="collapsed"], [data-sidebar="overlay"]) {
   grid-template-columns: 0 minmax(var(--shell-view-min), 1fr);
 }
 
@@ -65,7 +65,8 @@
 .cal-toolbar {
   gap: var(--space-1-5);
 }
-.shell[data-overlay-titlebar][data-sidebar="collapsed"] .cal-toolbar {
+.shell[data-overlay-titlebar]:is([data-sidebar="collapsed"], [data-sidebar="overlay"])
+  .cal-toolbar {
   padding-left: var(--traffic-light-inset);
 }
 .cal-toolbar__title {
@@ -86,12 +87,18 @@
 }
 .mini-month__title {
   flex: 1;
+  min-width: var(--space-0);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
 }
 .mini-month__grid {
   width: 100%;
-  border-collapse: collapse;
+  /* Separate, so the band's rounded ends (border-radius on cells) draw. */
+  border-collapse: separate;
+  border-spacing: var(--space-0);
   table-layout: fixed;
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
@@ -105,9 +112,23 @@
   padding: var(--space-0);
   text-align: center;
 }
+/* The days on screen share one band behind their circles, rounded at its ends. */
+.mini-month__cell--shown {
+  background: var(--color-control-active-bg);
+}
+.mini-month__cell--shown-start {
+  border-top-left-radius: var(--radius-full);
+  border-bottom-left-radius: var(--radius-full);
+}
+.mini-month__cell--shown-end {
+  border-top-right-radius: var(--radius-full);
+  border-bottom-right-radius: var(--radius-full);
+}
 .mini-month__day {
-  width: var(--calendar-mini-day-size);
-  height: var(--calendar-mini-day-size);
+  display: block;
+  width: min(var(--calendar-mini-day-size), 100%);
+  aspect-ratio: 1;
+  margin: var(--space-0) auto;
   padding: var(--space-0);
   border: none;
   border-radius: var(--radius-full);
@@ -121,9 +142,6 @@
 }
 .mini-month__day--other {
   color: var(--color-foreground-subtle);
-}
-.mini-month__day--shown {
-  background: var(--color-control-active-bg);
 }
 .mini-month__day--today,
 .mini-month__day--today:hover {
@@ -419,6 +437,13 @@
 .cal-event--timed.cal-event--compact .cal-event__time {
   flex-shrink: 0;
 }
+/* A sliver of a day: the title alone, cut at the edge rather than spending room on "…". */
+.cal-event--timed.cal-event--narrow {
+  padding-inline: var(--space-0-5);
+}
+.cal-event--timed.cal-event--narrow .cal-event__title {
+  text-overflow: clip;
+}
 .cal-event--open {
   z-index: 1;
   box-shadow: var(--shadow-popover);
@@ -497,17 +522,21 @@
   background: transparent;
 }
 
-/* Declined: struck through and dimmed. */
-.cal-event--declined {
-  opacity: var(--calendar-declined-opacity);
-}
+/* Declined: struck through, in muted ink on the pane (not faded: that took the text under 4.5:1). */
 .cal-event--declined .cal-event__title {
   text-decoration: line-through;
+}
+.cal-event--declined,
+.cal-event--declined .cal-event__time {
+  color: var(--color-foreground-muted);
 }
 .cal-event--declined:not(.cal-event--dot) {
   border-color: var(--cal-event-bg);
   background: var(--color-pane-bg);
-  color: var(--color-foreground);
+}
+.cal-event--declined .cal-event__dot {
+  border: var(--border-width) solid var(--cal-event-bg);
+  background: transparent;
 }
 
 /* Maybe: a lighter fill. */
@@ -528,6 +557,10 @@
 }
 
 /* ---- Month --------------------------------------------------------------- */
+
+.cal-month--narrow .cal-event--dot .cal-event__time {
+  display: none;
+}
 
 .cal-month {
   display: flex;

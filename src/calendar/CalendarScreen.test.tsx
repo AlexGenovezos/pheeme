@@ -94,6 +94,26 @@ describe("CalendarScreen", () => {
     expect(screen.queryByRole("button", { name: /^Team planning,/ })).toBeNull();
   });
 
+  test("the mini month marks the week on screen as one band with rounded ends", async () => {
+    backend(null);
+    render(<CalendarScreen />);
+    await flush();
+
+    const mini = within(screen.getByRole("table", { name: "November 2026" }));
+    const cell = (name: string) => mini.getByRole("button", { name }).closest("td");
+    expect(cell("Sunday, November 8")).toHaveClass(
+      "mini-month__cell--shown",
+      "mini-month__cell--shown-start",
+    );
+    expect(cell("Wednesday, November 11")).toHaveClass("mini-month__cell--shown");
+    expect(cell("Wednesday, November 11")).not.toHaveClass(
+      "mini-month__cell--shown-start",
+      "mini-month__cell--shown-end",
+    );
+    expect(cell("Saturday, November 14")).toHaveClass("mini-month__cell--shown-end");
+    expect(cell("Sunday, November 15")).not.toHaveClass("mini-month__cell--shown");
+  });
+
   test("the popover shows guests and answers an invite", async () => {
     backend(null);
     render(<CalendarScreen />);

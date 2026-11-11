@@ -44,10 +44,12 @@
 .cal-select {
   max-width: 100%;
 }
+/* Checkbox and radio rows: the whole label is the target, at least a small control tall. */
 .cal-check {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1-5);
+  min-height: var(--control-height-sm);
   font-size: var(--font-size-sm);
 }
 
@@ -159,6 +161,10 @@
   padding: var(--space-1) var(--space-4);
   overflow-y: auto;
 }
+/* The body scrolls; its rows keep their size instead of squeezing to fit a short window. */
+.cal-editor__body > * {
+  flex-shrink: 0;
+}
 .cal-editor__summary {
   height: var(--control-height-lg);
   font-size: var(--font-size-lg);
@@ -227,12 +233,13 @@
 }
 .cal-editor__actions {
   padding: var(--space-3) var(--space-4) var(--space-0);
-  border-top: var(--border-width) solid var(--color-border-subtle);
+  border-top: var(--border-width) solid var(--color-border);
 }
 
-/* Guests: compose's recipient field, as one bordered box. */
+/* Guests: compose's recipient field, as one bordered box as tall as the other fields. */
 .cal-editor__guests .compose-field {
   min-height: var(--control-height-md);
+  padding-block: var(--space-0);
   padding-inline: var(--space-2);
   border: var(--border-width) solid var(--color-input-border);
   border-radius: var(--radius-sm);
@@ -241,8 +248,12 @@
 .cal-editor__guests .compose-field:focus-within {
   border-color: var(--color-focus-border);
 }
+.cal-editor__guests .compose-field__input {
+  height: calc(var(--control-height-md) - 2 * var(--border-width));
+}
 .cal-editor__guests .compose-field__label {
   width: auto;
+  line-height: calc(var(--control-height-md) - 2 * var(--border-width));
   font-size: var(--font-size-sm);
 }
 .cal-editor__guests .compose-suggestions {
@@ -261,6 +272,10 @@
   padding: var(--space-2) var(--space-3);
   border: var(--border-width) solid var(--color-border-subtle);
   border-radius: var(--radius-md);
+}
+/* Dropdowns in the column size to what they show, as on the website. */
+.cal-repeat__select {
+  align-self: flex-start;
 }
 .cal-repeat__number {
   width: var(--calendar-number-width);
@@ -300,8 +315,8 @@
   gap: var(--space-1);
 }
 .cal-colors__swatch {
-  width: var(--label-swatch-size);
-  height: var(--label-swatch-size);
+  width: var(--calendar-swatch-size);
+  height: var(--calendar-swatch-size);
   padding: var(--space-0);
   border: var(--border-width) solid transparent;
   border-radius: var(--radius-full);

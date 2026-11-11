@@ -1,19 +1,22 @@
 // Calendar mode: the calendar sidebar beside a Day, Week or Month view of every account's
 // calendars, with the event popover over it.
-import { ChevronLeft, ChevronRight, PanelLeftOpen, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Mail, PanelLeftOpen, Search } from "lucide-react";
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
-import { TextInput } from "../components/ui/TextInput";
+import { DateField } from "../components/ui/DateField";
 import { describeShortcut } from "../keyboard/format";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import { createSubscriptionScope } from "../lib/subscriptions";
 import { type CalendarEvent, calendarSyncNow, setCalendarForeground } from "../lib/tauri";
 import { overlayTitleBar, dragRegion } from "../shell/chrome";
 import { Divider } from "../shell/Divider";
+import { useSidebarFit } from "../shell/sidebarFit";
+import { useWidth } from "../lib/useWidth";
 import { useAccountStore } from "../store/accountStore";
-import { PANE, useUiStore } from "../store/uiStore";
+import { PANE, sidebarLayout, useUiStore } from "../store/uiStore";
+import { useTasksStore } from "../tasks/tasksStore";
 import {
   AllowButton,
   CALENDAR_API_URL,
@@ -25,7 +28,7 @@ import {
 import { deleteEvent, editEvent, openEventNow, openQuickAdd } from "./actions";
 import { CalendarSearch } from "./CalendarSearch";
 import { CalendarSidebar } from "./CalendarSidebar";
-import { displayZone, screenDays, useCalendarStore } from "./calendarStore";
+import { displayZone, screenDays, useCalendarStore, weekStartOf } from "./calendarStore";
 import { dateOf, formatDay } from "./dates";
 import { DRAFT_ID, useEditStore } from "./editStore";
 import { EditPrompt } from "./EditPrompt";
@@ -37,7 +40,7 @@ import { QuickAdd } from "./QuickAdd";
 import { QuickCreate } from "./QuickCreate";
 import { MonthGrid } from "./MonthGrid";
 import { PinnedEmail } from "./PinnedEmail";
-import { TimeGrid } from "./TimeGrid";
+import { gutterWidth, MIN_DAY_PX, TimeGrid } from "./TimeGrid";
 import { type CalendarView, viewTitle } from "./views";
 import { useNow } from "./useNow";
 import "./calendar.css";
@@ -50,10 +53,10 @@ const VIEW_OPTIONS = [
   { value: "month", label: "Month" },
 ] as const;
 
-function Toolbar({ title }: { title: string }) {
+function Toolbar({ title, pinnedFolded }: { title: string; pinnedFolded: boolean }) {
   const view = useCalendarStore((s) => s.view);
   const accounts = useCalendarStore((s) => s.accounts);
-  const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const collapsed = useUiStore((s) => sidebarLayout(s) !== "expanded");
   const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
   const todayShortcut = useKeybinding("calendar.today", "t");
   const prevShortcut = useKeybinding("calendar.previous", "k");
@@ -75,9 +78,17 @@ function Toolbar({ title }: { title: string }) {
       {collapsed && (
         <IconButton
           label="Show sidebar"
+          data-sidebar-toggle=""
           shortcut={sidebarShortcut}
           icon={<PanelLeftOpen />}
           onClick={() => useUiStore.getState().toggleSidebar()}
+        />
+      )}
+      {pinnedFolded && (
+        <IconButton
+          label="Show the pinned email (hides Tasks)"
+          icon={<Mail />}
+          onClick={() => useTasksStore.getState().setPanelOpen(false)}
         />
       )}
       <Button
@@ -187,14 +198,17 @@ function GoToDate() {
 }
 
 function GoToDateForm() {
-  const [value, setValue] = useState(() => useCalendarStore.getState().anchor);
-  const input = useRef<HTMLInputElement>(null);
+  const [value] = useState(() => useCalendarStore.getState().anchor);
+  const input = useRef<HTMLButtonElement>(null);
   useEffect(() => input.current?.focus(), []);
   const close = () => useCalendarStore.getState().setGoToOpen(false);
+  const go = (date: string) => {
+    useCalendarStore.getState().goTo(date);
+    close();
+  };
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) useCalendarStore.getState().goTo(value);
-    close();
+    go(value);
   };
   return (
     <div className="cal-goto__scrim" onPointerDown={(e) => e.target === e.currentTarget && close()}>
@@ -212,17 +226,18 @@ function GoToDateForm() {
           }
         }}
       >
-        <label className="cal-goto__label" htmlFor="cal-goto-date">
+        <span className="cal-goto__label" id="cal-goto-date">
           Go to date
-        </label>
-        <TextInput
+        </span>
+        {/* Opens on the month grid: arrows and Enter (or a click) go straight to the day. */}
+        <DateField
           ref={input}
-          id="cal-goto-date"
-          type="date"
+          aria-labelledby="cal-goto-date"
           className="cal-goto__input"
           value={value}
-          required
-          onChange={(e) => setValue(e.currentTarget.value)}
+          weekStart={weekStartOf(useCalendarStore.getState().accounts)}
+          defaultOpen
+          onChange={go}
         />
         <Button type="submit" size="sm" variant="primary">
           Go
@@ -430,12 +445,38 @@ function useCalendarData() {
   }, []);
 }
 
+/** The pinned email column's width (--pinned-email-width). */
+function pinnedEmailWidth(): number {
+  return (
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--pinned-email-width"),
+    ) || 0
+  );
+}
+
 export function CalendarScreen() {
   useCalendarCommands();
   useCalendarData();
   const ref = useRef<HTMLDivElement>(null);
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
-  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
+  const pinned = useCalendarStore((s) => s.pinned !== null);
+  const aside = useRef<HTMLElement>(null);
+  const width = useWidth(ref);
+  const shownDays = useCalendarStore((s) => (s.view === "week" ? 7 : s.view === "day" ? 1 : 0));
+  // What the calendar needs: a week, 7 days wide enough for two events side by side to read.
+  const calendarMin = Math.max(
+    PANE.viewMin,
+    shownDays > 1 ? gutterWidth() + shownDays * MIN_DAY_PX : 0,
+  );
+  // No room for the calendar beside the pinned email (the Tasks panel took it): the email folds
+  // away behind a toolbar button until there's room again.
+  const pinnedFolded = pinned && width > 0 && width - pinnedEmailWidth() < calendarMin;
+  // The calendar needs its own minimum, plus the email pinned beside it.
+  const layout = useSidebarFit(
+    aside,
+    width,
+    calendarMin + (pinned && !pinnedFolded ? pinnedEmailWidth() : 0),
+  );
   const { setSidebarWidth, resetSidebarWidth } = useUiStore.getState();
   const view = useCalendarStore((s) => s.view);
   const anchor = useCalendarStore((s) => s.anchor);
@@ -457,17 +498,18 @@ export function CalendarScreen() {
       className="shell"
       data-mode="calendar"
       style={style}
-      data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
+      data-sidebar={layout}
       data-overlay-titlebar={overlayTitleBar || undefined}
     >
       <aside
+        ref={aside}
         className="shell__sidebar"
         aria-label="Sidebar"
-        aria-hidden={sidebarCollapsed || undefined}
+        aria-hidden={layout === "collapsed" || undefined}
       >
         <CalendarSidebar />
       </aside>
-      {!sidebarCollapsed && (
+      {layout === "expanded" && (
         <Divider
           className="shell__divider--sidebar"
           label="Resize sidebar"
@@ -479,14 +521,14 @@ export function CalendarScreen() {
         />
       )}
       <main className="shell__view cal-main" aria-label="Calendar">
-        <Toolbar title={viewTitle(view, anchor, days)} />
+        <Toolbar title={viewTitle(view, anchor, days)} pinnedFolded={pinnedFolded} />
         {loadError && (
           <p className="cal-main__error" role="alert">
             {loadError}
           </p>
         )}
         <div className="cal-main__body">
-          <PinnedEmail />
+          {!pinnedFolded && <PinnedEmail />}
           <div className="cal-main__grid">
             {!anyOn ? (
               <FirstOpen />
