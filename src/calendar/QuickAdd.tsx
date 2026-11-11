@@ -368,28 +368,30 @@ function PersonPick({
       </label>
     );
   return (
-    <label className="cal-qa__person">
+    <div className="cal-qa__person">
       <span className="cal-qa__name">{person.text}</span>
-      <select
-        className="cal-field cal-select"
+      <Select
+        className="cal-select"
         aria-label={`Who ${person.text} is`}
         value={value}
         disabled={!matches || matches.length === 0}
-        onChange={(e) => onChange(e.currentTarget.value)}
-      >
-        <option value="">
-          {matches === undefined
-            ? "Looking up contacts…"
-            : matches.length === 0
-              ? "No matching contact"
-              : "Don't invite"}
-        </option>
-        {matches?.map((m) => (
-          <option key={m.address} value={m.address}>
-            {m.name ? `${m.name} <${m.address}>` : m.address}
-          </option>
-        ))}
-      </select>
-    </label>
+        onChange={onChange}
+        options={[
+          {
+            value: "",
+            label:
+              matches === undefined
+                ? "Looking up contacts…"
+                : matches.length === 0
+                  ? "No matching contact"
+                  : "Don't invite",
+          },
+          ...(matches ?? []).map((m) => ({
+            value: m.address,
+            label: m.name ? `${m.name} <${m.address}>` : m.address,
+          })),
+        ]}
+      />
+    </div>
   );
 }

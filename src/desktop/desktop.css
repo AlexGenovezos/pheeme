@@ -1,0 +1,39 @@
+/* The first-run notifications offer, a card at the foot of the sidebar. */
+.notify-offer {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-0) var(--space-2) var(--space-2);
+  padding: var(--space-2) var(--space-2-5);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-pane-bg);
+  color: var(--color-foreground);
+}
+.notify-offer__text {
+  display: flex;
+  gap: var(--space-2);
+}
+.notify-offer__text > .lucide {
+  flex-shrink: 0;
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  margin-top: var(--space-0-5);
+  color: var(--color-accent);
+}
+.notify-offer__title {
+  margin: var(--space-0);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+.notify-offer__description {
+  margin: var(--space-0-5) var(--space-0) var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+.notify-offer__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1-5);
+}

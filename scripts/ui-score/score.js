@@ -46,7 +46,16 @@
       img.match(
         /(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb|color)\([^()]*(?:\([^()]*\)[^()]*)*\)|#[0-9a-f]{3,8}\b/gi,
       ) || [];
-    return found.map(parse).filter(Boolean);
+    const stops = found.map(parse).filter(Boolean);
+    // Between two stops the colour passes through every mix of them; sample the way, so a
+    // mid-gradient colour that matches the text can't hide between two good ends.
+    const out = [...stops];
+    for (let i = 1; i < stops.length; i++)
+      for (let k = 1; k < 16; k++) {
+        const t = k / 16;
+        out.push(stops[i - 1].map((v, j) => v * (1 - t) + stops[i][j] * t));
+      }
+    return out;
   }
   /**
    * The text's colour and every background it can sit on, opacity included. A gradient adds each
@@ -191,10 +200,17 @@
     // A text item is a text node, or the value/placeholder a field shows.
     function textItem(el, t, r, cs, colorOf, inField) {
       const fs = Math.round(parseFloat(cs.fontSize) * 10) / 10;
-      // Shown in full? A field shows what fits; elsewhere, check every clipping/scrolling ancestor.
+      // Shown in full? A field shows what fits its content box (a value or a placeholder alike);
+      // a textarea that can't scroll shows what fits its height. Elsewhere, check every
+      // clipping/scrolling ancestor.
       let clipped = false;
       let hidden = false;
-      if (inField) clipped = el.scrollWidth > el.clientWidth + 1;
+      if (inField === "input") {
+        cx.font = cs.font || `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const box = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        clipped = cx.measureText(t).width > box + 1;
+      } else if (inField === "textarea")
+        clipped = el.scrollHeight > el.clientHeight + 1 && !scrolls(cs.overflowY);
       for (
         let a = inField ? el.parentElement : el;
         a && a !== document.documentElement;
@@ -210,8 +226,16 @@
         const allOutX = r.right <= b.left || r.left >= b.right,
           allOutY = r.bottom <= b.top || r.top >= b.bottom;
         if ((c.overflowX !== "visible" && allOutX) || (c.overflowY !== "visible" && allOutY)) {
-          hidden = true; // scrolled away entirely: not on screen
-          break;
+          // Scrolled away, or inside a box that is itself hidden (a 1 px screen-reader-only box,
+          // a closed section): not on screen. Cut off whole by a box that shows: clipped.
+          const scrolledAway =
+            (allOutX && scrolls(c.overflowX)) || (allOutY && scrolls(c.overflowY));
+          if (scrolledAway || b.width <= 1 || b.height <= 1) {
+            hidden = true;
+            break;
+          }
+          clipped = true;
+          continue;
         }
         // Sideways overflow always hides part of a label (nobody scrolls sideways to read it);
         // vertical overflow in a scrolling list is just scrolling.
@@ -222,7 +246,7 @@
       o.text++;
       if (clipped) {
         o.clipped.push(t.slice(0, 40));
-        const box = clipTo(el, inField ? el.getBoundingClientRect() : r, inField);
+        const box = clipTo(el, inField ? el.getBoundingClientRect() : r, !!inField);
         const pad = inField ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) : 0;
         const em = parseFloat(cs.fontSize);
         const chars = Math.floor(
@@ -278,8 +302,21 @@
         const t = (f.value || f.placeholder || "").trim();
         if (!t) continue;
         const cs = getComputedStyle(f);
-        const color = f.value ? cs.color : getComputedStyle(f, "::placeholder").color;
-        textItem(f, t, f.getBoundingClientRect(), cs, color, f.tagName === "INPUT");
+        let color = cs.color;
+        if (!f.value) {
+          // The placeholder's own colour, faded by its own opacity.
+          const ph = getComputedStyle(f, "::placeholder");
+          const c = parse(ph.color) || [0, 0, 0, 1];
+          color = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${c[3] * parseFloat(ph.opacity || "1")})`;
+        }
+        textItem(
+          f,
+          t,
+          f.getBoundingClientRect(),
+          cs,
+          color,
+          f.tagName === "INPUT" ? "input" : "textarea",
+        );
       }
 
       for (const el of [root, ...root.querySelectorAll("*")]) {
@@ -370,28 +407,39 @@
             (g.length > 4 ? " (+" + (g.length - 4) + ")" : ""),
         );
 
-    // Covered: a primary action (a dialog's or popover's buttons, any primary button) must be
-    // reachable: its centre has to hit it, with toasts and other layers present.
-    for (const root of roots)
-      for (const b of root.querySelectorAll(
-        '[role="dialog"] .ui-button, [role="dialog"] button[type=submit], .ui-button--primary',
-      )) {
-        if (!vis(b)) continue;
-        const r = clipTo(b, b.getBoundingClientRect(), false);
-        const x = (r.left + r.right) / 2;
-        const y = (r.top + r.bottom) / 2;
-        if (
-          r.right - r.left < 4 ||
-          r.bottom - r.top < 4 ||
-          x < 0 ||
-          y < 0 ||
-          x > innerWidth ||
-          y > innerHeight
-        )
-          continue;
-        const at = document.elementFromPoint(x, y);
-        if (at && !b.contains(at)) defects.push("covered: " + label(b) + " is under " + label(at));
-      }
+    // Covered: every control in the part must be reachable: the centre of what shows of it has to
+    // hit it (or its own label), with toasts and other layers present. One defect per covering thing.
+    const coveredBy = new Map();
+    for (const c of controls) {
+      const r = c.r;
+      const x = (r.left + r.right) / 2;
+      const y = (r.top + r.bottom) / 2;
+      if (
+        r.right - r.left < 4 ||
+        r.bottom - r.top < 4 ||
+        x < 0 ||
+        y < 0 ||
+        x > innerWidth ||
+        y > innerHeight
+      )
+        continue;
+      const at = document.elementFromPoint(x, y);
+      if (!at || c.el.contains(at) || at.contains(c.el)) continue;
+      if ([...(c.el.labels || [])].some((l) => l.contains(at))) continue;
+      const by =
+        at.closest(".ui-toast, [role=dialog], [role=listbox], aside, header, nav, main, section") ||
+        at;
+      if (!coveredBy.has(by)) coveredBy.set(by, []);
+      coveredBy.get(by).push(c.what);
+    }
+    for (const [by, list] of coveredBy)
+      defects.push(
+        "covered: " +
+          list.slice(0, 3).join(", ") +
+          (list.length > 3 ? " (+" + (list.length - 3) + ")" : "") +
+          " under " +
+          label(by),
+      );
 
     // Window controls: nothing within 12 px of the macOS traffic lights.
     const lights = document.getElementById("__mac-traffic-lights");

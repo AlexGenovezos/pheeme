@@ -70,6 +70,38 @@ const CASES = [
     `<div style="${FONT}">${Array.from({ length: 6 }, (_, i) => `<button style="width:14px; height:14px">${i}</button>`).join("")}</div>`,
     (r) => r.defects.some((d) => d.startsWith("weak criterion: hit")),
   ],
+  [
+    "a placeholder too long for its field is clipped",
+    `<input placeholder="November 2026" style="${FONT} width:24px; height:28px; box-sizing:border-box">`,
+    (r) => r.n.clipped === 1,
+  ],
+  [
+    "a textarea that can't scroll and hides text is clipped",
+    `<textarea style="${FONT} width:24px; height:28px; overflow:hidden">${"November 2026 ".repeat(8)}</textarea>`,
+    (r) => r.n.clipped === 1,
+  ],
+  [
+    "a faded placeholder is checked at its real (faded) colour",
+    `<input placeholder="Add title" class="ph" style="${FONT} width:200px; height:28px"><style>.ph::placeholder { color: #767676; opacity: 0.5 }</style>`,
+    (r) => r.n.contrastFail === 1,
+  ],
+  [
+    "a label cut off whole by a box that shows is clipped, not skipped",
+    `<div style="height:2px; overflow:hidden; ${FONT} line-height:20px; padding-top:4px">Due tomorrow</div>
+     <button style="${FONT} height:28px">Save</button>`,
+    (r) => r.n.clipped >= 1,
+  ],
+  [
+    "text over the middle of a black-to-white gradient fails contrast",
+    `<div style="${FONT} color:#757575; text-align:center; background:linear-gradient(90deg, #000, #fff)">Middle</div>`,
+    (r) => r.n.contrastFail === 1,
+  ],
+  [
+    "a toast over any button (not only a dialog's) is a defect",
+    `<button style="${FONT} height:28px; margin:40px">Open in Calendar</button>
+     <div class="ui-toast" style="position:fixed; left:0; top:0; width:300px; height:140px; ${FONT} background:#333; color:#fff">Turn on notifications?</div>`,
+    (r) => r.defects.some((d) => d.startsWith("covered")),
+  ],
 ];
 
 const browser = await chromium.launch();

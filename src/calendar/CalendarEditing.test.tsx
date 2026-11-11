@@ -215,8 +215,10 @@ describe("quick add", () => {
     expect(within(quick).getByText("Lunch with Grace")).toBeInTheDocument();
 
     const who = within(quick).getByRole("combobox", { name: "Who Grace is" });
-    expect(who).toHaveValue("");
-    fireEvent.change(who, { target: { value: "grace@example.net" } });
+    expect(who).toHaveTextContent("Don't invite");
+    fireEvent.click(who);
+    fireEvent.click(screen.getByRole("option", { name: /grace@example\.net/ }));
+    expect(who).toHaveTextContent(/grace@example\.net/);
     fireEvent.submit(quick.querySelector("form")!);
     await flush();
     fireEvent.click(

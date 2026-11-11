@@ -1,14 +1,19 @@
 import { useEffect } from "react";
-import { dismissToast, toast, useToastStore } from "../components/ui/Toast";
+import { create } from "zustand";
+import { toast } from "../components/ui/Toast";
 import { toCommandError } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { answerNotificationPrompt, getDesktopSettings } from "./api";
 
-let shown: number | null = null;
-// A newer toast can push the prompt out of the stack; then it may be offered again.
-const showing = () => shown !== null && useToastStore.getState().toasts.some((t) => t.id === shown);
+/**
+ * The first-run offer to turn on new-mail notifications. It waits in the sidebar
+ * (`NotificationOffer`) rather than floating over the app, so it never covers anything.
+ */
+export const useNotificationOffer = create<{ offer: string | null }>(() => ({ offer: null }));
 
-async function answer(enable: boolean) {
+/** Answer the offer: turn notifications on, or not now (either way, it isn't asked again). */
+export async function answerNotificationOffer(enable: boolean) {
+  useNotificationOffer.setState({ offer: null });
   try {
     await answerNotificationPrompt(enable);
     if (enable)
@@ -27,25 +32,12 @@ export function useNotificationPrompt() {
     getDesktopSettings()
       .then((settings) => {
         const unasked = settings.accounts.filter((a) => !a.asked);
-        if (stopped || unasked.length === 0 || showing()) return;
-        shown = toast({
-          title: "Turn on notifications?",
-          description:
+        if (stopped || unasked.length === 0) return;
+        useNotificationOffer.setState({
+          offer:
             unasked.length === 1
               ? `Get an alert when new Primary mail arrives for ${unasked[0].email}.`
               : "Get an alert when new Primary mail arrives in your accounts.",
-          duration: 0,
-          action: {
-            label: "Turn on",
-            run: () => {
-              shown = null;
-              void answer(true);
-            },
-          },
-          onDismiss: () => {
-            shown = null;
-            void answer(false);
-          },
         });
       })
       // Includes a malformed reply, so a failure here never surfaces as an unhandled rejection.
@@ -56,8 +48,7 @@ export function useNotificationPrompt() {
   }, [accountIds]);
 }
 
-/** Dismiss the prompt without answering it (Settings answered instead). */
+/** Withdraw the offer without answering it (Settings answered instead). */
 export function resetNotificationPrompt() {
-  if (shown !== null) dismissToast(shown);
-  shown = null;
+  useNotificationOffer.setState({ offer: null });
 }

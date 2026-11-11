@@ -1,6 +1,6 @@
 // Calendar mode: the calendar sidebar beside a Day, Week or Month view of every account's
 // calendars, with the event popover over it.
-import { ChevronLeft, ChevronRight, PanelLeftOpen, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Mail, PanelLeftOpen, Search } from "lucide-react";
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
@@ -16,6 +16,7 @@ import { useSidebarFit } from "../shell/sidebarFit";
 import { useWidth } from "../lib/useWidth";
 import { useAccountStore } from "../store/accountStore";
 import { PANE, sidebarLayout, useUiStore } from "../store/uiStore";
+import { useTasksStore } from "../tasks/tasksStore";
 import {
   AllowButton,
   CALENDAR_API_URL,
@@ -52,7 +53,7 @@ const VIEW_OPTIONS = [
   { value: "month", label: "Month" },
 ] as const;
 
-function Toolbar({ title }: { title: string }) {
+function Toolbar({ title, pinnedFolded }: { title: string; pinnedFolded: boolean }) {
   const view = useCalendarStore((s) => s.view);
   const accounts = useCalendarStore((s) => s.accounts);
   const collapsed = useUiStore((s) => sidebarLayout(s) !== "expanded");
@@ -81,6 +82,13 @@ function Toolbar({ title }: { title: string }) {
           shortcut={sidebarShortcut}
           icon={<PanelLeftOpen />}
           onClick={() => useUiStore.getState().toggleSidebar()}
+        />
+      )}
+      {pinnedFolded && (
+        <IconButton
+          label="Show the pinned email (hides Tasks)"
+          icon={<Mail />}
+          onClick={() => useTasksStore.getState().setPanelOpen(false)}
         />
       )}
       <Button
@@ -453,11 +461,15 @@ export function CalendarScreen() {
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
   const pinned = useCalendarStore((s) => s.pinned !== null);
   const aside = useRef<HTMLElement>(null);
+  const width = useWidth(ref);
+  // No room for the calendar beside the pinned email (the Tasks panel took it): the email folds
+  // away behind a toolbar button until there's room again.
+  const pinnedFolded = pinned && width > 0 && width - pinnedEmailWidth() < PANE.viewMin;
   // The calendar needs its own minimum, plus the email pinned beside it.
   const layout = useSidebarFit(
     aside,
-    useWidth(ref),
-    PANE.viewMin + (pinned ? pinnedEmailWidth() : 0),
+    width,
+    PANE.viewMin + (pinned && !pinnedFolded ? pinnedEmailWidth() : 0),
   );
   const { setSidebarWidth, resetSidebarWidth } = useUiStore.getState();
   const view = useCalendarStore((s) => s.view);
@@ -503,14 +515,14 @@ export function CalendarScreen() {
         />
       )}
       <main className="shell__view cal-main" aria-label="Calendar">
-        <Toolbar title={viewTitle(view, anchor, days)} />
+        <Toolbar title={viewTitle(view, anchor, days)} pinnedFolded={pinnedFolded} />
         {loadError && (
           <p className="cal-main__error" role="alert">
             {loadError}
           </p>
         )}
         <div className="cal-main__body">
-          <PinnedEmail />
+          {!pinnedFolded && <PinnedEmail />}
           <div className="cal-main__grid">
             {!anyOn ? (
               <FirstOpen />

@@ -1,4 +1,5 @@
 import { ModSidebar } from "../mods/ModSurfaces";
+import { NotificationOffer } from "../desktop/NotificationOffer";
 import {
   ChevronRight,
   EllipsisVertical,
@@ -761,6 +762,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
       </nav>
 
       <ModSidebar />
+      <NotificationOffer />
       <div className="sidebar__footer">
         {active && (
           <Avatar name={active.displayName ?? active.email} email={active.email} size="sm" />

@@ -1,5 +1,6 @@
 // Calendar mode's sidebar: the mode switch, a mini month for jumping to any day, and each
 // account's calendars with Google's colours and a tick to show or hide each one.
+import { NotificationOffer } from "../desktop/NotificationOffer";
 import {
   Check,
   ChevronLeft,
@@ -225,6 +226,7 @@ export function CalendarSidebar() {
           accounts.map((a) => <AccountGroup key={a.accountId} account={a} />)
         )}
       </nav>
+      <NotificationOffer />
       <div className="sidebar__footer">
         <span className="sidebar__account" />
         <IconButton

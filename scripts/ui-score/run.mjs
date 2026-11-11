@@ -237,6 +237,18 @@ const PARTS = [
     root: ".cal-editor",
   },
   {
+    id: "week-pinned-tasks",
+    name: "Week + pinned email + Tasks",
+    go: async (p) => {
+      await openInvite(p);
+      await p.locator(".invite-card button", { hasText: "in Calendar" }).click();
+      await wait(p, 800);
+      await tasksPanel(p, true);
+      await wait(p, 300);
+    },
+    root: ".cal-main",
+  },
+  {
     id: "editor-reminders",
     name: "Event editor: notifications",
     go: async (p) => {
