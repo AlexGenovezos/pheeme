@@ -48,9 +48,6 @@ export const QUOTA_SOURCES: { id: QuotaSource; label: string; detail: string; co
   },
 ];
 
-/** Under this share of the limit, a refusal can't be this copy of Pheeme's own doing. */
-export const OWN_SHARE = 0.8;
-
 export const minuteTotal = (m: QuotaMinute) =>
   QUOTA_SOURCES.reduce((sum, s) => sum + m.units[s.id], 0);
 
@@ -60,7 +57,11 @@ export interface QuotaSummary {
   /** The busiest minute's units. */
   peak: number;
   refused: number;
-  /** Gmail refused requests in a minute this Pheeme used under [`OWN_SHARE`] of the limit. */
+  /**
+   * Gmail refused requests although this Pheeme couldn't have reached the limit on its own:
+   * Gmail's minute can straddle two of ours, so the refused minute and the one before it
+   * together stayed under the limit.
+   */
   somethingElse: boolean;
 }
 
@@ -72,12 +73,14 @@ export function summarizeQuota(usage: QuotaUsage): QuotaSummary {
   let peak = 0;
   let refused = 0;
   let somethingElse = false;
+  let before = 0;
   for (const minute of usage.minutes) {
     for (const s of QUOTA_SOURCES) totals[s.id] += minute.units[s.id];
     const total = minuteTotal(minute);
     peak = Math.max(peak, total);
     refused += minute.refused;
-    if (minute.refused > 0 && total < usage.limitPerMinute * OWN_SHARE) somethingElse = true;
+    if (minute.refused > 0 && before + total < usage.limitPerMinute) somethingElse = true;
+    before = total;
   }
   const total = QUOTA_SOURCES.reduce((sum, s) => sum + totals[s.id], 0);
   return { totals, total, peak, refused, somethingElse };

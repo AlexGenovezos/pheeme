@@ -94,7 +94,7 @@ test("says how many requests Gmail refused, or that it refused nothing", () => {
   expect(screen.getByText("Gmail refused 1 request in the last hour")).toBeInTheDocument();
 });
 
-test("the something-else note shows only when Gmail refused this Pheeme under 80% of the limit", () => {
+test("the something-else note shows only when this Pheeme couldn't have reached the limit itself", () => {
   const note = () => screen.queryByRole("note");
   const at = (units: number, refused: number) =>
     withMinute(quiet(), 30, {
@@ -107,17 +107,24 @@ test("the something-else note shows only when Gmail refused this Pheeme under 80
   expect(note()).toHaveTextContent(/something else .* is probably using the quota/);
   expect(screen.getByText("Gmail refused 3 requests in the last hour")).toBeInTheDocument();
 
-  // Refused at 80% or more of the limit: this Pheeme could have done it itself.
-  rerender(<QuotaUsageChart email="me@example.com" usage={at(4_800, 2)} />);
+  // Refused near the limit: this Pheeme could have done it itself.
+  rerender(<QuotaUsageChart email="me@example.com" usage={at(6_000, 2)} />);
+  expect(note()).toBeNull();
+
+  // Refused just after a busy minute: Gmail's minute can straddle two of ours.
+  const afterBusy = withMinute(at(120, 2), 29, {
+    units: { newMail: 0, olderMail: 5_900, yourChanges: 0, youAsked: 0, assistants: 0 },
+  });
+  rerender(<QuotaUsageChart email="me@example.com" usage={afterBusy} />);
   expect(note()).toBeNull();
 
   // Busy but never refused.
   rerender(<QuotaUsageChart email="me@example.com" usage={at(100, 0)} />);
   expect(note()).toBeNull();
 
-  // The share follows the user's limit.
+  // It follows the user's limit.
   rerender(
-    <QuotaUsageChart email="me@example.com" usage={{ ...at(4_800, 2), limitPerMinute: 12_000 }} />,
+    <QuotaUsageChart email="me@example.com" usage={{ ...at(6_000, 2), limitPerMinute: 12_000 }} />,
   );
   expect(note()).not.toBeNull();
 });
