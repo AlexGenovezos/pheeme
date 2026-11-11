@@ -434,7 +434,8 @@ export function CalendarScreen() {
   useCalendarCommands();
   useCalendarData();
   const ref = useRef<HTMLDivElement>(null);
-  const { sidebarWidth, sidebarCollapsed } = useUiStore();
+  const sidebarWidth = useUiStore((s) => s.sidebarWidth);
+  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const { setSidebarWidth, resetSidebarWidth } = useUiStore.getState();
   const view = useCalendarStore((s) => s.view);
   const anchor = useCalendarStore((s) => s.anchor);

@@ -4,6 +4,7 @@ import { useModCommands, useModEvents } from "./mods/lifecycle";
 import { ModPanel } from "./mods/ModSurfaces";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { toast, ToastProvider } from "./components/ui/Toast";
 import { ComposeHost, useComposeEvents } from "./compose/ComposeHost";
 import { Onboarding } from "./onboarding/Onboarding";
@@ -129,7 +130,18 @@ function useSessionSyncEvents() {
 
 function App() {
   useModEvents();
-  const { accounts, loaded, error, load, upsert, reconnecting, reconnect } = useAccountStore();
+  // Not the whole store: sync errors and progress change it, and this re-renders the entire app.
+  const { accounts, loaded, error, load, upsert, reconnecting, reconnect } = useAccountStore(
+    useShallow(({ accounts, loaded, error, load, upsert, reconnecting, reconnect }) => ({
+      accounts,
+      loaded,
+      error,
+      load,
+      upsert,
+      reconnecting,
+      reconnect,
+    })),
+  );
   const reconnectAccount = accounts.find((a) => a.id === reconnecting);
   const [adding, setAdding] = useState<false | "account" | "guide">(false);
   const showMail = useCallback(() => setAdding(false), []);

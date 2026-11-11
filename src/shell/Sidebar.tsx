@@ -16,6 +16,7 @@ import {
   type CSSProperties,
   Fragment,
   type KeyboardEvent,
+  memo,
   type ReactNode,
   type Ref,
   useEffect,
@@ -146,11 +147,31 @@ interface MailboxRowProps {
   target: MailboxRef;
   /** Dragged conversations can be dropped here (a category or Trash of `target`'s account). */
   droppable?: boolean;
-  /** The row's right-click (and Menu key) menu, if it has one. */
-  menu?: () => ContextMenuItem[];
+  /**
+   * The row's right-click (and Menu key) menu, if it has one, built for `target`. Keep it a stable function:
+   * the row is memoized, and a new one each render would re-render every row.
+   */
+  menu?: (target: MailboxRef) => ContextMenuItem[];
 }
 
-function MailboxRow({
+/**
+ * Memoized, with `target` compared by value (callers build it inline): the sidebar re-renders on every unread
+ * count change and mailbox switch, and without this every row did too.
+ */
+const MailboxRow = memo(
+  MailboxRowView,
+  (a, b) =>
+    a.name === b.name &&
+    a.icon === b.icon &&
+    a.colorToken === b.colorToken &&
+    a.count === b.count &&
+    a.unit === b.unit &&
+    sameMailbox(a.target, b.target) &&
+    a.droppable === b.droppable &&
+    a.menu === b.menu,
+);
+
+function MailboxRowView({
   name,
   icon: Icon,
   colorToken,
@@ -166,7 +187,7 @@ function MailboxRow({
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (menu && (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))) {
       e.preventDefault();
-      void showContextMenu(menu(), below(e.currentTarget));
+      void showContextMenu(menu(target), below(e.currentTarget));
     } else activateOnKey(e, go);
   };
   return (
@@ -189,7 +210,7 @@ function MailboxRow({
         ((e) => {
           e.preventDefault();
           e.stopPropagation();
-          void showContextMenu(menu(), { x: e.clientX, y: e.clientY });
+          void showContextMenu(menu(target), { x: e.clientX, y: e.clientY });
         })
       }
       {...(droppable && target.accountId
@@ -198,6 +219,17 @@ function MailboxRow({
     />
   );
 }
+
+/** An Inbox tab's menu. */
+const tabMenu = (target: MailboxRef): ContextMenuItem[] => [
+  {
+    id: "mark-read",
+    label: "Mark all as read",
+    onSelect: () => {
+      if (target.accountId && target.category) void markTabRead(target.accountId, target.category);
+    },
+  },
+];
 
 function CategoryRows({ accountId }: { accountId: string }) {
   const counts = useLabelStore((s) => s.categoryCounts[accountId] ?? NO_COUNTS);
@@ -215,13 +247,7 @@ function CategoryRows({ accountId }: { accountId: string }) {
           unit="unread"
           target={categoryMailbox(accountId, c.labelId)}
           droppable
-          menu={() => [
-            {
-              id: "mark-read",
-              label: "Mark all as read",
-              onSelect: () => void markTabRead(accountId, c.labelId),
-            },
-          ]}
+          menu={tabMenu}
         />
       ))}
     </>

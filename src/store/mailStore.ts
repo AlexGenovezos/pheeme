@@ -129,6 +129,40 @@ function overlay(threads: ThreadSummary[], query: MailQuery): ThreadSummary[] {
   return out;
 }
 
+const sameIds = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((id, i) => id === b[i]);
+
+/** Every field of the two summaries is the same. */
+const sameSummary = (a: ThreadSummary, b: ThreadSummary) =>
+  a.id === b.id &&
+  a.accountId === b.accountId &&
+  a.subject === b.subject &&
+  a.snippet === b.snippet &&
+  a.fromName === b.fromName &&
+  a.fromAddress === b.fromAddress &&
+  a.date === b.date &&
+  a.unread === b.unread &&
+  a.starred === b.starred &&
+  a.hasAttachment === b.hasAttachment &&
+  a.messageCount === b.messageCount &&
+  sameIds(a.labelIds, b.labelIds) &&
+  sameIds(a.systemLabelIds, b.systemLabelIds);
+
+/**
+ * `fresh` with each row that hasn't changed replaced by the object already in the list. Sync events reload the
+ * list, and new objects for unchanged rows re-rendered every (memoized) row each time.
+ */
+export function reuseUnchanged(previous: ThreadSummary[], fresh: ThreadSummary[]): ThreadSummary[] {
+  if (previous.length === 0) return fresh;
+  const byKey = new Map(previous.map((t) => [keyOf(t), t]));
+  const out = fresh.map((t) => {
+    const old = byKey.get(keyOf(t));
+    return old && sameSummary(old, t) ? old : t;
+  });
+  // The same rows in the same order: keep the array too, so nothing downstream sees a change.
+  return out.length === previous.length && out.every((t, i) => t === previous[i]) ? previous : out;
+}
+
 const sameQuery = (a: MailQuery | null, b: MailQuery | null) =>
   a !== null &&
   b !== null &&
@@ -403,13 +437,13 @@ export const useMailStore = create<MailState>((set, get) => {
           ...(limit ? { limit } : {}),
         });
         if (ticket !== latest) return;
-        set({
-          threads: overlay(page?.threads ?? [], query),
+        set((s) => ({
+          threads: reuseUnchanged(s.threads, overlay(page?.threads ?? [], query)),
           next: page?.next ?? null,
           loadedQuery: query,
           loading: false,
           error: null,
-        });
+        }));
       } catch (error) {
         if (ticket !== latest) return;
         // The previous mailbox's rows and cursor mustn't masquerade as this one's; a failed reload of the same query keeps its rows.

@@ -5,6 +5,7 @@ import {
   type MouseEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
 } from "react";
@@ -162,6 +163,12 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const keys = useMemo(() => threads.map((t) => threadKey(t.accountId, t.id)), [threads]);
+  // For the row callbacks: read at click time, so they stay the same functions and the memoized rows don't
+  // all re-render whenever a thread changes (opening one marks it read).
+  const keysRef = useRef(keys);
+  useLayoutEffect(() => {
+    keysRef.current = keys;
+  });
   const checkedSet = useMemo(() => new Set(checked), [checked]);
   const accountEmail = useMemo(() => new Map(accounts.map((a) => [a.id, a.email])), [accounts]);
   const withLocation = showsLocation(mailbox, !!search);
@@ -283,26 +290,20 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
     },
   ]);
 
-  const select = useCallback(
-    (e: MouseEvent, thread: ThreadSummary) => {
-      scrollRef.current?.focus({ preventScroll: true });
-      const key = threadKey(thread.accountId, thread.id);
-      const ui = useUiStore.getState();
-      if (e.metaKey || e.ctrlKey) ui.toggleChecked(key);
-      else if (e.shiftKey) ui.checkRange(keys, key);
-      else openAndMarkRead(key);
-    },
-    [keys],
-  );
-  const check = useCallback(
-    (e: MouseEvent, thread: ThreadSummary) => {
-      const key = threadKey(thread.accountId, thread.id);
-      const ui = useUiStore.getState();
-      if (e.shiftKey) ui.checkRange(keys, key);
-      else ui.toggleChecked(key);
-    },
-    [keys],
-  );
+  const select = useCallback((e: MouseEvent, thread: ThreadSummary) => {
+    scrollRef.current?.focus({ preventScroll: true });
+    const key = threadKey(thread.accountId, thread.id);
+    const ui = useUiStore.getState();
+    if (e.metaKey || e.ctrlKey) ui.toggleChecked(key);
+    else if (e.shiftKey) ui.checkRange(keysRef.current, key);
+    else openAndMarkRead(key);
+  }, []);
+  const check = useCallback((e: MouseEvent, thread: ThreadSummary) => {
+    const key = threadKey(thread.accountId, thread.id);
+    const ui = useUiStore.getState();
+    if (e.shiftKey) ui.checkRange(keysRef.current, key);
+    else ui.toggleChecked(key);
+  }, []);
   const contextMenu = useCallback(
     (e: MouseEvent, thread: ThreadSummary) => {
       // Right-clicking neither opens the row nor touches the selection; the menu knows its own target.

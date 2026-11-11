@@ -147,7 +147,21 @@ export interface ChipColors {
 export function chipColors(label: LabelInfo): ChipColors | null {
   const background = label.colorBackground?.toLowerCase();
   if (!background) return null;
-  let color = label.colorText?.toLowerCase() ?? labelColor(background).text;
+  const text = label.colorText?.toLowerCase() ?? null;
+  // Every chip and sidebar dot asks on every render, and the contrast maths allocates; a few dozen pairs exist.
+  const key = `${background}|${text}`;
+  let colors = chipCache.get(key);
+  if (!colors) {
+    colors = computeChipColors(background, text);
+    chipCache.set(key, colors);
+  }
+  return colors;
+}
+
+const chipCache = new Map<string, ChipColors>();
+
+function computeChipColors(background: string, text: string | null): ChipColors {
+  let color = text ?? labelColor(background).text;
   if (contrastRatio(color, background) < MIN_TEXT_CONTRAST) {
     const best = (options: string[]) =>
       options.reduce((a, c) =>
