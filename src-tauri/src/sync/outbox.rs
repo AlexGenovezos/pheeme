@@ -66,6 +66,11 @@ struct Payload {
 }
 
 impl Payload {
+    /// The conversations the op changes or sends into (none known for a whole-mailbox sweep).
+    fn touched_threads(&self) -> impl Iterator<Item = &String> {
+        self.thread_ids.iter().chain(&self.thread_id)
+    }
+
     fn of(op: &DbOp) -> Result<Self, SyncError> {
         serde_json::from_str(&op.payload)
             .map_err(|e| SyncError::Db(anyhow::anyhow!("outbox op {} is corrupt: {e}", op.id)))
@@ -424,6 +429,10 @@ fn backoff(attempts: i64) -> i64 {
 /// confirmed don't block anything. Returns whether any op finished.
 pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
     let mut progressed = false;
+    // Conversations of earlier changes still waiting for Gmail. A later change to none of them
+    // goes ahead, so a big job waiting out a refusal doesn't hold up the user's next click.
+    let mut waiting: BTreeSet<String> = BTreeSet::new();
+    let mut send_waiting = false;
     for op in store::for_account(&engine.db, &engine.account_id).await? {
         match (op.kind.as_str(), op.status.as_str()) {
             (KIND_SEND, CHECKING) => {
@@ -433,12 +442,24 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
             }
             (KIND_SEND, UNCONFIRMED | FAILED) => {}
             (_, PENDING) => {
-                if op.next_attempt_at > now {
-                    // A send waiting out its undo window holds nothing else up.
-                    if op.kind == KIND_SEND && op.attempts == 0 {
-                        continue;
-                    }
+                let is_send = op.kind == KIND_SEND;
+                // A send waiting out its undo window holds nothing else up.
+                if op.next_attempt_at > now && is_send && op.attempts == 0 {
+                    continue;
+                }
+                let payload = Payload::of(&op)?;
+                let held = op.next_attempt_at > now
+                    || (is_send && send_waiting)
+                    || payload.touched_threads().any(|t| waiting.contains(t));
+                if payload.sweep.is_some() && (held || !waiting.is_empty() || send_waiting) {
+                    // A whole-mailbox change may touch any conversation: nothing overtakes it,
+                    // and it overtakes nothing.
                     break;
+                }
+                if held {
+                    waiting.extend(payload.touched_threads().cloned());
+                    send_waiting |= is_send;
+                    continue;
                 }
                 let step = if op.kind == KIND_SEND {
                     send(engine, &op, now).await?
@@ -484,14 +505,35 @@ async fn defer(
     Ok(())
 }
 
+/// Conversations a label/trash change sends to Gmail at a time. Each is read back first (10
+/// quota units), so a batch is a small part of a minute's quota; when Gmail refuses one, the
+/// batches it already took leave the op and only the rest is tried again.
+pub const OP_BATCH_THREADS: usize = 25;
+
 async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, SyncError> {
+    loop {
+        if let Some(step) = apply_batch(engine, queued, now).await? {
+            return Ok(step);
+        }
+    }
+}
+
+/// Send the op's next batch of conversations to Gmail. `None` when Gmail took it and more
+/// are left.
+async fn apply_batch(
+    engine: &SyncEngine,
+    queued: &DbOp,
+    now: i64,
+) -> Result<Option<Step>, SyncError> {
     // The queue was read before earlier ops waited on Gmail; deleting a label meanwhile
     // scrubs it from pending ops (and drops ops left empty), so work from the op as it is now.
     let Some(op) = store::get(&engine.db, &queued.id).await? else {
-        return Ok(Step::Continue);
+        return Ok(Some(Step::Continue));
     };
     let op = &op;
     let payload = Payload::of(op)?;
+    let batch = &payload.thread_ids[..payload.thread_ids.len().min(OP_BATCH_THREADS)];
+    let more = payload.sweep.is_none() && batch.len() < payload.thread_ids.len();
     let recorded: BTreeSet<String> = store::messages_of(&engine.db, &op.id)
         .await?
         .into_iter()
@@ -508,7 +550,7 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
         // The thread as Gmail has it now: older messages we never cached are included,
         // mail that arrived after the user acted is not.
         let mut ids = Vec::new();
-        for thread_id in &payload.thread_ids {
+        for thread_id in batch {
             match engine
                 .api
                 .get_thread(thread_id, MessageFormat::Minimal)
@@ -535,7 +577,7 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
             changed = ids.len();
             // Re-read once more: a label may have been deleted while the threads were read.
             let Some(current) = store::get(&engine.db, &op.id).await? else {
-                return Ok(Step::Continue);
+                return Ok(Some(Step::Continue));
             };
             let payload = Payload::of(&current)?;
             sent = Some(current.payload);
@@ -552,6 +594,10 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
         Err(e) => Err(e),
     };
     match result {
+        Ok(()) if more => {
+            drop_done_threads(engine, &op.id, batch).await?;
+            Ok(None)
+        }
         Ok(()) => {
             store::delete(&engine.db, &op.id).await?;
             tracing::info!(
@@ -562,7 +608,7 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
                 attempts = op.attempts + 1,
                 "Gmail applied the change"
             );
-            Ok(Step::Done)
+            Ok(Some(Step::Done))
         }
         Err(e) if is_rejection(&e) => {
             // Maybe refused for a label being deleted: a delete scrubs it from this op, holding
@@ -571,24 +617,43 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
             if let Some(sent) = sent {
                 let Ok(held) = engine.label_lock.try_lock() else {
                     defer(engine, op, now, &e).await?;
-                    return Ok(Step::Blocked);
+                    return Ok(Some(Step::Blocked));
                 };
                 let scrubbed = store::get(&engine.db, &op.id)
                     .await?
                     .is_none_or(|now| now.payload != sent);
                 drop(held);
                 if scrubbed {
-                    return Box::pin(apply_op(engine, queued, now)).await;
+                    return Box::pin(apply_batch(engine, queued, now)).await;
                 }
             }
             rollback(engine, op, &e).await?;
-            Ok(Step::Continue)
+            Ok(Some(Step::Continue))
         }
         Err(e) => {
             defer(engine, op, now, &e).await?;
-            Ok(Step::Blocked)
+            Ok(Some(Step::Blocked))
         }
     }
+}
+
+/// Take conversations Gmail now has out of a pending op, so a retry or a rollback covers only
+/// the rest. Reads the op afresh: a label delete may have rewritten it meanwhile.
+async fn drop_done_threads(
+    engine: &SyncEngine,
+    op_id: &str,
+    done: &[String],
+) -> Result<(), SyncError> {
+    let _guard = engine.write_lock.lock().await;
+    let mut tx = db::begin_write(&engine.db).await?;
+    if let Some(op) = store::get(&mut *tx, op_id).await? {
+        let mut payload = Payload::of(&op)?;
+        payload.thread_ids.retain(|t| !done.contains(t));
+        let json = serde_json::to_string(&payload).map_err(anyhow::Error::from)?;
+        store::drop_threads(&mut tx, op_id, &json, done).await?;
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Messages per Gmail search page while sweeping a mailbox (the API's maximum).
