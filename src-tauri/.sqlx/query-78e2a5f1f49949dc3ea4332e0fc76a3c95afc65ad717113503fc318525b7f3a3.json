@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM calendar_reminders_fired WHERE fired_at < ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "78e2a5f1f49949dc3ea4332e0fc76a3c95afc65ad717113503fc318525b7f3a3"
+}

@@ -4,25 +4,34 @@ mod app_menu;
 pub mod attachment_cache;
 pub mod attachment_kind;
 pub mod body_retention;
+mod cadence;
+pub mod calendar;
 pub mod commands;
 pub mod compose;
 pub mod contacts;
 pub mod db;
 pub mod desktop;
 mod diagnostics;
+pub mod filters;
 pub mod gmail;
 pub mod http;
 pub mod identity;
 pub mod labels;
+pub mod local_api;
 pub mod mail;
+pub mod mcp;
 pub mod mods;
 pub mod render;
 pub mod search;
 pub mod secrets;
 pub mod sender_rules;
+pub mod senders;
 pub mod support;
 pub mod sync;
+pub mod tasks;
 pub mod telemetry;
+#[cfg(test)]
+mod test_logs;
 mod text;
 pub mod transfer;
 
@@ -44,8 +53,13 @@ pub struct AppState {
     pub sender_rules: sender_rules::SenderRuleService,
     pub compose: compose::ComposeService,
     pub contacts: Arc<contacts::ContactService>,
+    pub calendar: Arc<calendar::service::CalendarService>,
+    pub tasks: Arc<tasks::service::TasksService>,
     pub sync: Arc<SyncManager>,
     pub transfers: transfer::TransferService,
+    /// The MCP server AI assistants connect to, over [`local_api::LocalApi`]; runs only while
+    /// Settings › MCP allows it.
+    pub assistants: Arc<mcp::McpServer>,
     /// The Gmail per-user limit every account's client paces itself by (Settings › Sync).
     pub gmail_quota: gmail::QuotaSetting,
     /// Where the logs are written (for Send diagnostics); `None` when there is no log dir.
@@ -77,17 +91,38 @@ pub async fn build_state(
         Arc::new(gmail::GmailClient::new(provider).with_quota_setting(&quota))
             as Arc<dyn sync::MailApi>
     });
-    let sync = SyncManager::new(db.clone(), api_for, events);
+    let sync = SyncManager::new(db.clone(), api_for, events.clone());
     let tokens = accounts.clone();
     let people_for: contacts::PeopleFactory = Arc::new(move |account_id: &str| {
         let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
         Arc::new(gmail::GmailClient::people(provider)) as Arc<dyn contacts::PeopleApi>
     });
     let contacts = contacts::ContactService::new(db.clone(), people_for);
+    let tokens = accounts.clone();
+    let calendar_for: calendar::CalendarFactory = Arc::new(move |account_id: &str| {
+        let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
+        Arc::new(gmail::GmailClient::calendar(provider)) as Arc<dyn calendar::CalendarApi>
+    });
+    let calendar =
+        calendar::service::CalendarService::new(db.clone(), calendar_for, events.clone());
+    let tokens = accounts.clone();
+    let tasks_for: tasks::TasksFactory = Arc::new(move |account_id: &str| {
+        let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
+        Arc::new(gmail::GmailClient::tasks(provider)) as Arc<dyn tasks::TasksApi>
+    });
+    let tasks = tasks::service::TasksService::new(db.clone(), tasks_for, events);
     let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
     let compose = compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir);
+    let local_api = local_api::LocalApi::new(
+        db.clone(),
+        accounts.clone(),
+        mail.clone(),
+        compose.clone(),
+        sync.clone(),
+    );
+    let assistants = Arc::new(mcp::McpServer::new(Arc::new(local_api), mcp::DEFAULT_PORT));
     compose.sweep_staging().await;
     tokio::spawn({
         let mail = mail.clone();
@@ -95,6 +130,8 @@ pub async fn build_state(
     });
     tokio::spawn(body_retention::run(db.clone()));
     tokio::spawn(contacts.clone().run());
+    tokio::spawn(calendar.clone().run());
+    tokio::spawn(tasks.clone().run());
     Ok(AppState {
         db,
         accounts,
@@ -103,8 +140,11 @@ pub async fn build_state(
         sender_rules,
         compose,
         contacts,
+        calendar,
+        tasks,
         sync,
         transfers: transfer::TransferService::default(),
+        assistants,
         gmail_quota,
         log_dir: None,
     })
@@ -233,6 +273,15 @@ pub fn run() {
             ))?;
             state.log_dir = log_path;
             let sync = state.sync.clone();
+            let assistants = state.assistants.clone();
+            let activity_events = app.handle().clone();
+            assistants.api().on_activity(Arc::new(move || {
+                use tauri::Emitter;
+                let _ = activity_events.emit("assistant:activity", ());
+            }));
+            tauri::async_runtime::spawn(async move {
+                assistants.apply_setting().await;
+            });
             if telemetry::active_in_this_build() {
                 tauri::async_runtime::spawn(telemetry::run(state.db.clone()));
             }
@@ -311,6 +360,7 @@ pub fn run() {
             commands::settings::telemetry_enabled,
             commands::settings::set_telemetry,
             commands::settings::take_notification_target,
+            commands::settings::set_calendar_reminders,
             commands::settings::gmail_quota,
             commands::settings::set_gmail_quota,
             commands::mods::list_mods,
@@ -346,6 +396,7 @@ pub fn run() {
             commands::threads::list_threads,
             commands::threads::get_thread,
             commands::threads::modify_threads,
+            commands::threads::mark_inbox_tab_read,
             commands::threads::trash_threads,
             commands::threads::inbox_tabs,
             commands::threads::set_inbox_tabs,
@@ -356,6 +407,13 @@ pub fn run() {
             commands::labels::update_label,
             commands::labels::delete_label,
             commands::labels::delete_label_preview,
+            commands::assistant::assistant_status,
+            commands::assistant::set_assistant_enabled,
+            commands::assistant::set_assistant_permission,
+            commands::assistant::connect_assistant,
+            commands::assistant::remove_assistant,
+            commands::assistant::assistant_activity,
+            commands::assistant::clear_assistant_activity,
             commands::sender_rules::list_sender_rules,
             commands::sender_rules::rule_senders,
             commands::sender_rules::save_sender_rules,
@@ -368,10 +426,40 @@ pub fn run() {
             commands::search::add_recent_search,
             commands::search::remove_recent_search,
             commands::sync::sync_now,
+            commands::sync::network_online,
             commands::sync::get_sync_progress,
             commands::contacts::suggest_contacts,
             commands::contacts::google_contacts_status,
             commands::contacts::refresh_google_contacts,
+            commands::calendar::calendar_accounts,
+            commands::calendar::calendar_events,
+            commands::calendar::search_calendar_events,
+            commands::calendar::set_calendar_hidden,
+            commands::calendar::calendar_sync_now,
+            commands::calendar::set_calendar_foreground,
+            commands::calendar::calendar_event_detail,
+            commands::calendar::create_calendar_event,
+            commands::calendar::update_calendar_event,
+            commands::calendar::delete_calendar_event,
+            commands::calendar::move_calendar_event,
+            commands::calendar::copy_calendar_event,
+            commands::calendar::respond_to_calendar_event,
+            commands::calendar::respond_to_calendar_invite,
+            commands::calendar::message_invite,
+            commands::tasks::tasks_accounts,
+            commands::tasks::tasks_in_list,
+            commands::tasks::dated_tasks,
+            commands::tasks::set_task_list_hidden,
+            commands::tasks::tasks_sync_now,
+            commands::tasks::create_task,
+            commands::tasks::update_task,
+            commands::tasks::set_task_completed,
+            commands::tasks::delete_task,
+            commands::tasks::move_task,
+            commands::tasks::move_task_to_list,
+            commands::tasks::create_task_list,
+            commands::tasks::rename_task_list,
+            commands::tasks::delete_task_list,
             commands::compose::compose_template,
             commands::compose::gmail_signature,
             commands::compose::stage_attachment,

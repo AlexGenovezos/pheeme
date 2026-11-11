@@ -1,4 +1,4 @@
-use super::ThreadTarget;
+use super::NotifyTarget;
 use tauri::AppHandle;
 
 #[cfg(target_os = "linux")]
@@ -18,7 +18,7 @@ pub async fn permission(request: bool) -> anyhow::Result<String> {
     native::permission(request).await
 }
 /// Returns whether the OS accepted the notification.
-pub async fn show(app: &AppHandle, target: ThreadTarget, title: String, body: String) -> bool {
+pub async fn show(app: &AppHandle, target: NotifyTarget, title: String, body: String) -> bool {
     let shown = native::show(app, target, title, body).await.is_ok();
     if !shown {
         // OS errors may contain message text. Keep logs and UI to a stable, content-free error.

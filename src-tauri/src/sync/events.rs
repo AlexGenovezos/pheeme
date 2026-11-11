@@ -104,6 +104,29 @@ pub enum SyncEvent {
         /// The account's first sync or backfill is running, competing for Gmail.
         sync_busy: bool,
     },
+    /// The account's cached calendars or events changed.
+    CalendarUpdated {
+        account_id: String,
+    },
+    /// The account's calendar access changed: `on`, `missing_scope`, `api_disabled` or
+    /// `error`.
+    CalendarAccess {
+        account_id: String,
+        status: String,
+    },
+    /// The account's cached task lists or tasks changed.
+    TasksUpdated {
+        account_id: String,
+    },
+    /// The account's tasks access changed: `on`, `missing_scope`, `api_disabled` or `error`.
+    TasksAccess {
+        account_id: String,
+        status: String,
+    },
+    /// Google stopped (`false`) or started again (`true`) answering this device.
+    Network {
+        online: bool,
+    },
 }
 
 impl SyncEvent {
@@ -118,6 +141,11 @@ impl SyncEvent {
             SyncEvent::OpRejected { .. } => "outbox:rejected",
             SyncEvent::SendStatus { .. } => "outbox:send_status",
             SyncEvent::ThreadLoading { .. } => "mail:thread_loading",
+            SyncEvent::Network { .. } => "network:status",
+            SyncEvent::CalendarUpdated { .. } => "calendar:updated",
+            SyncEvent::CalendarAccess { .. } => "calendar:access",
+            SyncEvent::TasksUpdated { .. } => "tasks:updated",
+            SyncEvent::TasksAccess { .. } => "tasks:access",
         }
     }
 

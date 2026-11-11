@@ -1,4 +1,5 @@
 import { createModHandlers } from "./mods";
+import { createAssistantHandlers } from "./assistant";
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import {
@@ -27,6 +28,8 @@ import { createComposeHandlers } from "./compose";
 import { sampleAttachment } from "./attachments";
 import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel } from "./labels";
 import { createSenderRuleHandlers } from "./senderRules";
+import { createCalendarHandlers } from "./calendar";
+import { createTasksHandlers } from "./tasks";
 import { createContactHandlers } from "./contacts";
 import { createTransferHandlers } from "./transfer";
 
@@ -142,6 +145,15 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   let trayIcon = true;
   let notifySchedule = { mode: "always", startHour: 9, endHour: 17, weekdaysOnly: true };
   let telemetry = true;
+  let calendarReminders = true;
+  let notificationTarget: unknown = null;
+  // Preview only: `__pheemeNotificationClick({ kind: "event", ... })` acts as a clicked notification.
+  (
+    globalThis as { __pheemeNotificationClick?: (target: unknown) => void }
+  ).__pheemeNotificationClick = (target) => {
+    notificationTarget = target;
+    void emit("desktop:open-thread").catch(() => {});
+  };
   const inboxTabs = new Map<string, string[]>();
   const hiddenTabs = (accountId: string) => inboxTabs.get(accountId) ?? [];
   const desktopSettings = () => ({
@@ -155,6 +167,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     trayAvailable: false,
     trayEnabled: trayIcon,
     schedule: notifySchedule,
+    calendarReminders,
   });
   return {
     greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
@@ -190,7 +203,15 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       notifySchedule = { ...notifySchedule, ...(args?.schedule as typeof notifySchedule) };
       return desktopSettings();
     },
-    take_notification_target: () => null,
+    take_notification_target: () => {
+      const target = notificationTarget;
+      notificationTarget = null;
+      return target;
+    },
+    set_calendar_reminders: (args) => {
+      calendarReminders = args?.enabled === true;
+      return desktopSettings();
+    },
     gmail_quota: () => gmailQuota,
     set_gmail_quota: (args) => {
       gmailQuota = Math.min(1_200_000, Math.max(600, Number(args?.perMinute) || 6000));
@@ -219,6 +240,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       (id) => accounts.find((a) => a.id === id)?.email,
       params.get("contacts"),
     ),
+    ...createCalendarHandlers(accounts, params.get("calendar")),
+    ...createTasksHandlers(accounts, params.get("tasks")),
     list_threads: (args): ThreadPage => ({
       threads: threadsIn(
         threads,
@@ -312,6 +335,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       recent = args?.query == null ? [] : recent.filter((r) => r !== args.query);
     },
     sync_now: () => undefined,
+    network_online: () => !params.has("offline"),
     modify_threads: (args) => {
       const add = stringsOf(args?.add);
       const remove = stringsOf(args?.remove);
@@ -329,6 +353,16 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
           else if (!t.labelIds.includes(label)) t.labelIds.push(label);
         }
       });
+    },
+    mark_inbox_tab_read: (args) => {
+      const accountId = String(args?.accountId);
+      const category = String(args?.category);
+      const ids = threadsIn(threads, "INBOX", category, [accountId], hiddenTabs)
+        .filter((t) => hasLabel(t, "UNREAD"))
+        .map((t) => t.id);
+      changeThreads({ accountId, threadIds: ids }, (t) =>
+        t.messages.forEach((m) => (m.unread = false)),
+      );
     },
     trash_threads: (args) =>
       changeThreads(args, (t) => {
@@ -400,6 +434,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     "plugin:updater|check": () => null,
     ...createComposeHandlers(threads, () => accounts),
     ...createModHandlers(params),
+    ...createAssistantHandlers(),
   };
 }
 

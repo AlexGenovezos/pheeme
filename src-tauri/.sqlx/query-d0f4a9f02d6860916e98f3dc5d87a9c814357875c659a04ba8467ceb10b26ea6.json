@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO events (account_id, calendar_id, id, ical_uid, recurring_event_id,\n                 original_start_ms, original_start_date, status, start_ms, end_ms, start_date,\n                 end_date, time_zone, recurrence, recur_until_ms, summary, location, description,\n                 organizer_email, self_response, attendees, conference, color_id, transparency,\n                 visibility, reminders, html_link, etag, updated_ms, raw)\n             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,\n                 ?, ?, ?, ?, ?)\n             ON CONFLICT (account_id, calendar_id, id) DO UPDATE SET\n                 ical_uid = excluded.ical_uid,\n                 recurring_event_id = excluded.recurring_event_id,\n                 original_start_ms = excluded.original_start_ms,\n                 original_start_date = excluded.original_start_date,\n                 status = excluded.status,\n                 start_ms = excluded.start_ms,\n                 end_ms = excluded.end_ms,\n                 start_date = excluded.start_date,\n                 end_date = excluded.end_date,\n                 time_zone = excluded.time_zone,\n                 recurrence = excluded.recurrence,\n                 recur_until_ms = excluded.recur_until_ms,\n                 summary = excluded.summary,\n                 location = excluded.location,\n                 description = excluded.description,\n                 organizer_email = excluded.organizer_email,\n                 self_response = excluded.self_response,\n                 attendees = excluded.attendees,\n                 conference = excluded.conference,\n                 color_id = excluded.color_id,\n                 transparency = excluded.transparency,\n                 visibility = excluded.visibility,\n                 reminders = excluded.reminders,\n                 html_link = excluded.html_link,\n                 etag = excluded.etag,\n                 updated_ms = excluded.updated_ms,\n                 raw = excluded.raw",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 30
+    },
+    "nullable": []
+  },
+  "hash": "d0f4a9f02d6860916e98f3dc5d87a9c814357875c659a04ba8467ceb10b26ea6"
+}

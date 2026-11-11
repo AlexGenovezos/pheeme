@@ -58,6 +58,11 @@ struct Payload {
     /// Sends: the saved Gmail draft this message came from, deleted once it is sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     draft_id: Option<String>,
+    /// Modify ops that change a whole mailbox (Mark all as read): a Gmail search for its
+    /// mail. The change goes to every message it finds that arrived before the op was
+    /// queued, cached or not, in place of reading each of `thread_ids` back from Gmail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sweep: Option<String>,
 }
 
 impl Payload {
@@ -86,6 +91,18 @@ impl Payload {
     }
 }
 
+/// Threads named in one log line; the rest are counted.
+const LOGGED_IDS: usize = 10;
+
+/// `ids` for the diagnostic log: the first [`LOGGED_IDS`], comma-separated, then how many more.
+pub(crate) fn id_sample(ids: &[String]) -> String {
+    let shown = ids[..ids.len().min(LOGGED_IDS)].join(",");
+    match ids.len().saturating_sub(LOGGED_IDS) {
+        0 => shown,
+        more => format!("{shown} (+{more} more)"),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnqueueResult {
     pub op_id: String,
@@ -105,6 +122,25 @@ pub async fn enqueue_modify(
         thread_ids: thread_ids.to_vec(),
         add: add.to_vec(),
         remove: remove.to_vec(),
+        ..Default::default()
+    };
+    enqueue(pool, account_id, KIND_MODIFY, payload).await
+}
+
+/// Queue a label change on a whole mailbox: `thread_ids` are its cached threads, changed
+/// now; Gmail gets the change for every message `sweep` finds there (see [`Payload::sweep`]),
+/// so mail not cached yet changes too. Queued even when nothing is cached.
+pub async fn enqueue_sweep(
+    pool: &SqlitePool,
+    account_id: &str,
+    thread_ids: &[String],
+    remove: &[String],
+    sweep: &str,
+) -> Result<Option<EnqueueResult>, SyncError> {
+    let payload = Payload {
+        thread_ids: thread_ids.to_vec(),
+        remove: remove.to_vec(),
+        sweep: Some(sweep.to_owned()),
         ..Default::default()
     };
     enqueue(pool, account_id, KIND_MODIFY, payload).await
@@ -137,7 +173,7 @@ async fn enqueue(
             targets.push((msg.id.clone(), thread_id.clone(), msg.labels()));
         }
     }
-    if targets.is_empty() {
+    if targets.is_empty() && payload.sweep.is_none() {
         return Ok(None);
     }
     let now = now_ms();
@@ -173,6 +209,19 @@ async fn enqueue(
     }
     let result = threads::recompute_threads(&mut tx, account_id, &payload.thread_ids).await?;
     tx.commit().await?;
+    // The record of what the user changed, so "did my move go through?" has an answer: thread
+    // ids (no content), matched to `op` again when Gmail applies it or refuses it.
+    tracing::info!(
+        account = account_id,
+        op = %op_id,
+        kind = %kind,
+        threads = %id_sample(&payload.thread_ids),
+        messages = targets.len(),
+        add = ?payload.add,
+        remove = ?payload.remove,
+        whole_mailbox = payload.sweep.is_some(),
+        "change queued"
+    );
     Ok(Some(EnqueueResult {
         op_id,
         threads: result,
@@ -354,6 +403,7 @@ fn never_sent(e: &GmailError) -> bool {
         GmailError::Offline(_)
             | GmailError::RateLimit { .. }
             | GmailError::Auth(_)
+            | GmailError::KeychainLocked(_)
             | GmailError::SignedOut(_)
     )
 }
@@ -421,6 +471,10 @@ async fn defer(
         last_error: Some(&error.to_string()),
     };
     store::update_progress(&engine.db, &op.id, &progress, now).await?;
+    if op.attempts == 0 {
+        // Once: it retries with backoff, and its outcome is logged when it lands.
+        tracing::info!(account = %engine.account_id, op = %op.id, kind = %op.kind, error = %error, "change waiting for Gmail; retrying");
+    }
     Ok(())
 }
 
@@ -438,6 +492,13 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
         .map(|t| t.message_id)
         .collect();
     let ids = async {
+        if let Some(q) = &payload.sweep {
+            // The cached threads' own messages too: an unread message outside the Inbox in an
+            // inbox thread doesn't match the search.
+            let mut ids = recorded.clone();
+            ids.extend(swept_ids(engine, q, op.created_at).await?);
+            return Ok(ids.into_iter().collect());
+        }
         // The thread as Gmail has it now: older messages we never cached are included,
         // mail that arrived after the user acted is not.
         let mut ids = Vec::new();
@@ -462,8 +523,10 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
     }
     .await;
     let mut sent = None;
+    let mut changed = 0;
     let result = match ids {
         Ok(ids) if !ids.is_empty() => {
+            changed = ids.len();
             // Re-read once more: a label may have been deleted while the threads were read.
             let Some(current) = store::get(&engine.db, &op.id).await? else {
                 return Ok(Step::Continue);
@@ -485,6 +548,14 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
     match result {
         Ok(()) => {
             store::delete(&engine.db, &op.id).await?;
+            tracing::info!(
+                account = %engine.account_id,
+                op = %op.id,
+                kind = %op.kind,
+                messages = changed,
+                attempts = op.attempts + 1,
+                "Gmail applied the change"
+            );
             Ok(Step::Done)
         }
         Err(e) if is_rejection(&e) => {
@@ -514,6 +585,32 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
     }
 }
 
+/// Messages per Gmail search page while sweeping a mailbox (the API's maximum).
+const SWEEP_PAGE: u32 = 500;
+
+/// Every message `q` finds on Gmail that arrived before `before_ms` (to the second), so mail
+/// that came in after the user acted is left alone.
+async fn swept_ids(
+    engine: &SyncEngine,
+    q: &str,
+    before_ms: i64,
+) -> Result<Vec<String>, GmailError> {
+    let q = format!("{q} before:{}", before_ms.div_euclid(1000) + 1);
+    let mut ids = Vec::new();
+    let mut page_token: Option<String> = None;
+    loop {
+        let page = engine
+            .api
+            .search_messages(&q, false, page_token.as_deref(), SWEEP_PAGE)
+            .await?;
+        ids.extend(page.messages.into_iter().map(|m| m.id));
+        match page.next_page_token {
+            Some(next) if !next.is_empty() => page_token = Some(next),
+            _ => return Ok(ids),
+        }
+    }
+}
+
 async fn trash_all(engine: &SyncEngine, ids: &[String]) -> Result<(), GmailError> {
     for id in ids {
         match engine.api.trash_message(id).await {
@@ -528,7 +625,7 @@ async fn trash_all(engine: &SyncEngine, ids: &[String]) -> Result<(), GmailError
 /// Undo a rejected change: messages go back to Gmail's current labels (or, if those
 /// can't be read, to their labels before the change); later queued changes are re-applied.
 async fn rollback(engine: &SyncEngine, op: &DbOp, error: &GmailError) -> Result<(), SyncError> {
-    tracing::warn!(account = %engine.account_id, kind = %op.kind, error = %error, "Gmail rejected a queued change; rolling it back");
+    tracing::warn!(account = %engine.account_id, op = %op.id, kind = %op.kind, error = %error, "Gmail rejected a queued change; rolling it back");
     let targets = store::messages_of(&engine.db, &op.id).await?;
     let ids: Vec<String> = targets.iter().map(|t| t.message_id.clone()).collect();
     let server: HashMap<String, Vec<String>> = engine

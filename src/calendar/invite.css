@@ -1,0 +1,255 @@
+/* Mail's invite card and its mini day view; the email pinned beside the calendar. */
+
+.invite-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-sidebar-bg);
+  font-size: var(--font-size-md);
+}
+.invite-card--compact {
+  margin-bottom: var(--space-0);
+  padding: var(--space-3);
+}
+
+.invite-card__kicker {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+.invite-card__kicker--danger {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
+}
+.invite-card__kicker--info {
+  color: var(--color-info);
+  font-weight: var(--font-weight-medium);
+}
+
+.invite-card__title {
+  margin: var(--space-0);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+.invite-card__title--cancelled {
+  color: var(--color-foreground-muted);
+  text-decoration: line-through;
+}
+
+.invite-card__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height-sm);
+}
+.invite-card__row > svg {
+  flex-shrink: 0;
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  color: var(--color-foreground-muted);
+}
+.invite-card__where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.invite-card__muted {
+  color: var(--color-foreground-muted);
+}
+
+.invite-card__answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: var(--border-width) solid var(--color-border);
+}
+.invite-card__answer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height-md);
+}
+.invite-card__answer-row--wrap {
+  flex-wrap: wrap;
+}
+.invite-card__going {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+.invite-card__more {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.invite-card__only {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--font-size-sm);
+}
+.invite-card__more-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.invite-card__error {
+  margin: var(--space-0);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+.invite-card__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The mini day view: a time gutter and one column, positioned in fractions of its height. */
+.invite-mini {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+.invite-mini__day {
+  display: flex;
+  height: var(--invite-mini-day-height);
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-pane-bg);
+}
+.invite-mini__hours {
+  position: relative;
+  flex-shrink: 0;
+  width: var(--invite-mini-gutter-width);
+}
+.invite-mini__hour {
+  position: absolute;
+  right: var(--space-1-5);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  transform: translateY(-50%);
+}
+.invite-mini__hour:first-child {
+  transform: none;
+}
+.invite-mini__column {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  border-left: var(--border-width) solid var(--color-border);
+}
+.invite-mini__line {
+  position: absolute;
+  right: 0;
+  left: 0;
+  border-top: var(--border-width) solid var(--color-border);
+}
+.invite-mini__event {
+  padding-block: var(--space-0);
+  cursor: default;
+}
+.invite-mini__event--invite {
+  z-index: 1;
+}
+.invite-mini__event--clash {
+  outline: var(--focus-ring-width) solid var(--color-danger);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+.invite-mini__bars {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-0);
+  padding: var(--space-2);
+  list-style: none;
+}
+.invite-mini__bars > .cal-event--bar {
+  height: var(--control-height-sm);
+}
+.invite-mini__caption {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+.invite-mini__caption--clash {
+  color: var(--color-warning);
+  font-weight: var(--font-weight-medium);
+}
+
+/* The email pinned beside the calendar. */
+.pinned-email {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--pinned-email-width);
+  min-height: 0;
+  border-right: var(--border-width) solid var(--color-border);
+  background: var(--color-pane-bg);
+}
+.pinned-email__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+.pinned-email__label {
+  flex: 1;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+.pinned-email__scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-3);
+  overflow-y: auto;
+}
+.pinned-email__subject {
+  margin: var(--space-0);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+.pinned-email__from {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+.pinned-email__text {
+  margin: var(--space-0);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pinned-email__foot {
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+/* Calendar mode with an email pinned: the column beside the grid, under the toolbar. */
+.cal-main__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.cal-main__grid {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}

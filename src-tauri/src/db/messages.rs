@@ -369,6 +369,94 @@ pub async fn latest_sender_other_than(
     Ok(sender)
 }
 
+/// One sender's mail over a time window ([`sender_stats`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DbSenderStats {
+    /// Lowercased.
+    pub address: String,
+    pub name: Option<String>,
+    pub messages: i64,
+    pub unread: i64,
+    pub in_inbox: i64,
+    pub in_trash: i64,
+    pub in_spam: i64,
+    pub promotions: i64,
+    pub social: i64,
+    pub updates: i64,
+    pub forums: i64,
+    /// ms since the epoch.
+    pub last_date: i64,
+    /// Messages the account sent to this address, ever (from `contacts`).
+    pub you_wrote: i64,
+}
+
+/// Who sent the account the most mail since `since_ms`, most first: received mail only
+/// (not the account's own, its drafts or what it sent).
+pub async fn sender_stats(
+    pool: &SqlitePool,
+    account_id: &str,
+    since_ms: i64,
+    own_address: &str,
+    limit: i64,
+) -> Result<Vec<DbSenderStats>> {
+    let rows = sqlx::query_as!(
+        DbSenderStats,
+        r#"SELECT lower(m.from_address) AS "address!: String",
+              MAX(m.from_name) AS "name: String",
+              COUNT(*) AS "messages!: i64",
+              SUM(m.is_read = 0) AS "unread!: i64",
+              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'INBOX')) AS "in_inbox!: i64",
+              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'TRASH')) AS "in_trash!: i64",
+              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'SPAM')) AS "in_spam!: i64",
+              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_PROMOTIONS')) AS "promotions!: i64",
+              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_SOCIAL')) AS "social!: i64",
+              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_UPDATES')) AS "updates!: i64",
+              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_FORUMS')) AS "forums!: i64",
+              MAX(m.date) AS "last_date!: i64",
+              COALESCE((SELECT c.sent_count FROM contacts c
+                        WHERE c.account_id = ?1 AND c.address = lower(m.from_address)), 0) AS "you_wrote!: i64"
+           FROM messages m
+           WHERE m.account_id = ?1 AND m.date >= ?2
+             AND m.from_address IS NOT NULL AND m.from_address != ''
+             AND lower(m.from_address) != lower(?3)
+             AND NOT EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value IN ('DRAFT', 'SENT'))
+           GROUP BY lower(m.from_address)
+           ORDER BY COUNT(*) DESC, MAX(m.date) DESC
+           LIMIT ?4"#,
+        account_id,
+        since_ms,
+        own_address,
+        limit
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// The newest message from `address` (any case) since `since_ms` whose headers are cached,
+/// else the newest one: its id, thread and headers (JSON, `None` when only its metadata is
+/// cached). The window keeps the scan to recent mail: without statistics SQLite would
+/// otherwise pick an `account_id` index and read the account's whole history per sender.
+pub async fn latest_from(
+    pool: &SqlitePool,
+    account_id: &str,
+    address: &str,
+    since_ms: i64,
+) -> Result<Option<(String, String, Option<String>)>> {
+    let row = sqlx::query!(
+        r#"SELECT id AS "id!", thread_id AS "thread_id!", raw_headers
+           FROM messages INDEXED BY idx_messages_date
+           WHERE date >= ?3 AND account_id = ?1 AND lower(from_address) = lower(?2)
+           ORDER BY (raw_headers IS NOT NULL) DESC, date DESC LIMIT 1"#,
+        account_id,
+        address,
+        since_ms
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| (r.id, r.thread_id, r.raw_headers)))
+}
+
 pub async fn get_messages_for_thread<'e>(
     ex: impl SqliteExecutor<'e>,
     account_id: &str,
@@ -430,4 +518,32 @@ pub async fn delete_message<'e>(
     .execute(ex)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn latest_from_reads_only_the_window() {
+        let db = crate::db::test_support::TestDb::with_account("a").await;
+        let plan: Vec<(i64, i64, i64, String)> = sqlx::query_as(
+            "EXPLAIN QUERY PLAN SELECT id FROM messages INDEXED BY idx_messages_date
+             WHERE date >= 0 AND account_id = 'a' AND lower(from_address) = 'x'
+             ORDER BY (raw_headers IS NOT NULL) DESC, date DESC LIMIT 1",
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        assert!(
+            plan.iter().any(
+                |(_, _, _, step)| step.contains("idx_messages_date") && step.contains("date>?")
+            ),
+            "{plan:?}"
+        );
+        assert!(latest_from(&db.pool, "a", "x@y.com", 0)
+            .await
+            .unwrap()
+            .is_none());
+    }
 }

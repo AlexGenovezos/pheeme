@@ -10,6 +10,7 @@ import {
   type ComposeMode,
   getThread,
   type InboxThread,
+  markInboxTabRead,
   modifyThreads,
   type SavedRules,
   type ThreadDetail,
@@ -22,7 +23,7 @@ import { useAccountStore } from "../store/accountStore";
 import { type UnreadCountChange, useLabelStore } from "../store/labelStore";
 import { newOp, useMailStore } from "../store/mailStore";
 import { useThreadStore } from "../store/threadStore";
-import { focusedThread, useUiStore } from "../store/uiStore";
+import { focusedThread, readingPaneShown, useUiStore } from "../store/uiStore";
 import {
   CATEGORIES,
   parseThreadKey,
@@ -796,7 +797,7 @@ export function openAndMarkRead(key: ThreadKey, direction: 1 | -1 = 1): void {
 export function moveSelection(delta: 1 | -1): void {
   const keys = mail().threads.map(keyOf);
   if (keys.length === 0) return;
-  const browsing = !ui().readingPane && ui().openThread === null;
+  const browsing = !readingPaneShown(ui()) && ui().openThread === null;
   const current = focusedThread(ui());
   const at = current === null ? -1 : keys.indexOf(current);
   const to =
@@ -836,4 +837,16 @@ export function closeConversation(): void {
   const open = ui().openThread;
   if (open !== null) ui().setCursor(open);
   ui().setOpenThread(null);
+}
+
+/**
+ * Mark every unread conversation in one inbox tab of an account read (`category`: `CATEGORY_*`), including
+ * mail not downloaded yet. The cache changes at once and its `sync:messages_updated` reloads the list and counts.
+ */
+export async function markTabRead(accountId: string, category: string) {
+  try {
+    await markInboxTabRead(accountId, category);
+  } catch (e) {
+    toast({ title: toCommandError(e).message, tone: "danger" });
+  }
 }

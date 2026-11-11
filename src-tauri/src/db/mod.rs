@@ -1,13 +1,17 @@
 pub mod accounts;
+pub mod assistant;
 pub mod attachments;
+pub mod calendar;
 pub mod contacts;
 pub mod desktop;
 pub mod labels;
 pub mod messages;
 pub mod outbox;
+pub mod reminders;
 pub mod search;
 pub mod settings;
 pub mod sync_state;
+pub mod tasks;
 pub mod threads;
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 //! Small C bridge to UserNotifications: real authorization and asynchronous click delivery.
-use super::super::{activate, ThreadTarget};
+use super::super::{activate, NotifyTarget};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::sync::OnceLock;
 use tauri::AppHandle;
@@ -27,7 +27,7 @@ extern "C" fn clicked(raw: *const c_char) {
     let target = unsafe { CStr::from_ptr(raw) }
         .to_str()
         .ok()
-        .and_then(|s| serde_json::from_str::<ThreadTarget>(s).ok());
+        .and_then(|s| serde_json::from_str::<NotifyTarget>(s).ok());
     if let (Some(app), Some(target)) = (APP.get(), target) {
         activate(app, target);
     }
@@ -65,7 +65,7 @@ pub async fn permission(request: bool) -> anyhow::Result<String> {
 
 pub async fn show(
     _: &AppHandle,
-    target: ThreadTarget,
+    target: NotifyTarget,
     title: String,
     body: String,
 ) -> anyhow::Result<()> {

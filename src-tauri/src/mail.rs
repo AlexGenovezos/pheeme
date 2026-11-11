@@ -49,6 +49,25 @@ pub fn primary_excludes(hidden: &[String]) -> Vec<String> {
         .map(|l| (*l).to_owned())
         .collect()
 }
+/// The Gmail search for the unread mail of an inbox tab: `tab` (`CATEGORY_*`), or Primary
+/// (`None`) as the inbox minus the `excludes` categories.
+fn inbox_tab_search(tab: Option<&str>, excludes: &[String]) -> String {
+    let category = |label: &str| {
+        label
+            .strip_prefix("CATEGORY_")
+            .unwrap_or(label)
+            .to_lowercase()
+    };
+    let mut q = String::from("in:inbox is:unread");
+    if let Some(tab) = tab {
+        q += &format!(" category:{}", category(tab));
+    }
+    for label in excludes {
+        q += &format!(" -category:{}", category(label));
+    }
+    q
+}
+
 pub const MAX_PAGE: i64 = 500;
 
 #[derive(Debug, thiserror::Error)]
@@ -275,6 +294,9 @@ impl From<&SyncError> for BodyErrorDto {
             }
             SyncError::Gmail(GmailError::RateLimit { .. }) => {
                 "Gmail asked Pheeme to slow down. Try again in a minute."
+            }
+            SyncError::Gmail(GmailError::KeychainLocked(_)) => {
+                "Pheeme can't read this account's sign-in from the keychain right now. Unlock your Mac and try again."
             }
             SyncError::Gmail(GmailError::Auth(_) | GmailError::SignedOut(_)) => {
                 "Gmail didn't accept this account's sign-in. Sign in again from Settings."
@@ -841,6 +863,37 @@ impl MailService {
         Ok(())
     }
 
+    /// Mark everything in one inbox tab of `account_id` read (`category` is `CATEGORY_*`;
+    /// Primary takes in the tabs the account hides, like its count). The cached threads change
+    /// now; on Gmail it covers every unread message in the tab, including mail not
+    /// downloaded yet.
+    pub async fn mark_inbox_tab_read(
+        &self,
+        account_id: &str,
+        category: &str,
+    ) -> Result<(), MailError> {
+        let (tab, excludes) = if category == PRIMARY_CATEGORY {
+            let hidden = settings::inbox_tabs(&self.db, account_id).await?;
+            (None, primary_excludes(&hidden))
+        } else if OTHER_CATEGORIES.contains(&category) {
+            (Some(category), Vec::new())
+        } else {
+            return Err(MailError::Invalid("That isn't an inbox tab.".into()));
+        };
+        let thread_ids =
+            threads::unread_inbox_tab_threads(&self.db, account_id, tab, &excludes).await?;
+        let queued = outbox::enqueue_sweep(
+            &self.db,
+            account_id,
+            &thread_ids,
+            &["UNREAD".to_owned()],
+            &inbox_tab_search(tab, &excludes),
+        )
+        .await?;
+        self.after_change(account_id, queued);
+        Ok(())
+    }
+
     pub async fn trash_threads(
         &self,
         account_id: &str,
@@ -852,6 +905,51 @@ impl MailService {
         let queued = outbox::enqueue_trash(&self.db, account_id, thread_ids).await?;
         self.after_change(account_id, queued);
         Ok(())
+    }
+
+    /// A message's headers, downloading its body first if only its metadata is cached.
+    pub async fn message_headers(
+        &self,
+        account_id: &str,
+        message_id: &str,
+    ) -> Result<Vec<crate::gmail::types::Header>, MailError> {
+        let mut msg = messages::get_message(&self.db, account_id, message_id)
+            .await?
+            .ok_or(MailError::NotFound)?;
+        if msg.raw_headers.is_none() {
+            self.sync
+                .engine(account_id)
+                .load_thread_bodies(&msg.thread_id)
+                .await?;
+            msg = messages::get_message(&self.db, account_id, message_id)
+                .await?
+                .ok_or(MailError::NotFound)?;
+        }
+        Ok(msg
+            .raw_headers
+            .as_deref()
+            .and_then(|j| serde_json::from_str(j).ok())
+            .unwrap_or_default())
+    }
+
+    /// Which of `thread_ids` the account has cached, in the order given (the others can't be
+    /// changed: the outbox only changes cached mail).
+    pub async fn cached_threads(
+        &self,
+        account_id: &str,
+        thread_ids: &[String],
+    ) -> Result<Vec<String>, MailError> {
+        let mut out = Vec::new();
+        for id in thread_ids {
+            if threads::get_thread(&self.db, account_id, id)
+                .await?
+                .is_some()
+                && !out.contains(id)
+            {
+                out.push(id.clone());
+            }
+        }
+        Ok(out)
     }
 
     fn after_change(&self, account_id: &str, queued: Option<outbox::EnqueueResult>) {
@@ -873,6 +971,22 @@ impl MailService {
             .await?
             .ok_or(MailError::NotFound)?;
         self.bytes_of(row).await
+    }
+
+    /// The text of the message's calendar invitation (its `text/calendar` part, else an `.ics`
+    /// file), from the disk cache or Gmail; `None` when it has none.
+    pub async fn invite_text(
+        &self,
+        account_id: &str,
+        message_id: &str,
+    ) -> Result<Option<String>, MailError> {
+        let rows =
+            attachments::get_attachments_for_message(&self.db, account_id, message_id).await?;
+        let Some(row) = invite_part(&rows) else {
+            return Ok(None);
+        };
+        let bytes = self.bytes_of(row.clone()).await?.bytes;
+        Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
     }
 
     /// The image behind a `cid:` reference; anything that isn't an `image/*` is `NotFound`.
@@ -1269,6 +1383,43 @@ fn emit_loading(sync: &SyncManager, account_id: &str, thread_id: &str, stage: Op
     });
 }
 
+/// Invitations bigger than this aren't read (a real one is a few kilobytes).
+const INVITE_MAX_BYTES: i64 = 1024 * 1024;
+
+/// Whether an attachment is a calendar file, and how good a source of the invitation it is:
+/// the `text/calendar` part Google and Outlook put beside the body (`2`) beats a named `.ics`
+/// file (`1`), which may be a forwarded copy.
+fn invite_rank(a: &DbAttachment) -> Option<u8> {
+    let mime = a
+        .mime_type
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let ics_name = a
+        .filename
+        .as_deref()
+        .is_some_and(|f| f.to_ascii_lowercase().ends_with(".ics"));
+    if a.size.is_some_and(|s| s > INVITE_MAX_BYTES) {
+        return None;
+    }
+    if mime == "text/calendar" && !ics_name {
+        Some(2)
+    } else if mime == "text/calendar" || mime == "application/ics" || ics_name {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+/// The attachment row to read a message's invitation from.
+pub fn invite_part(rows: &[DbAttachment]) -> Option<&DbAttachment> {
+    rows.iter()
+        .filter_map(|a| Some((invite_rank(a)?, a)))
+        .max_by_key(|(rank, _)| *rank)
+        .map(|(_, a)| a)
+}
+
 /// Bytes of an attachment that has no Gmail attachment id, from the full message.
 async fn embedded_bytes(api: &dyn MailApi, row: &DbAttachment) -> Result<Vec<u8>, MailError> {
     let index: usize = row.id.parse().map_err(|_| MailError::NotFound)?;
@@ -1438,6 +1589,36 @@ mod tests {
             mail.modify_threads("a1", &[], &[], &["INBOX".into()]).await,
             Err(MailError::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn inbox_tab_search_names_the_tab_or_what_primary_leaves_out() {
+        assert_eq!(
+            inbox_tab_search(Some("CATEGORY_PROMOTIONS"), &[]),
+            "in:inbox is:unread category:promotions"
+        );
+        assert_eq!(
+            inbox_tab_search(None, &primary_excludes(&["CATEGORY_SOCIAL".into()])),
+            "in:inbox is:unread -category:promotions -category:updates -category:forums"
+        );
+    }
+
+    #[tokio::test]
+    async fn mark_inbox_tab_read_refuses_other_labels() {
+        let db = TestDb::with_account("a1").await;
+        let fake = Arc::new(FakeGmail::new());
+        let sync = SyncManager::new(
+            db.pool.clone(),
+            Arc::new(move |_| fake.clone() as Arc<dyn MailApi>),
+            Arc::new(RecordingEvents::default()),
+        );
+        let mail = MailService::new(db.pool.clone(), sync, db.dir().join("cache"));
+        for label in ["INBOX", "STARRED", "Label_1"] {
+            assert!(matches!(
+                mail.mark_inbox_tab_read("a1", label).await,
+                Err(MailError::Invalid(_))
+            ));
+        }
     }
 
     #[tokio::test]
@@ -2670,5 +2851,36 @@ mod tests {
         mail.add_recent_search("  from:alice  ").await.unwrap();
         mail.add_recent_search("   ").await.unwrap();
         assert_eq!(mail.recent_searches().await.unwrap(), ["from:alice"]);
+    }
+
+    #[test]
+    fn invite_part_prefers_the_calendar_part() {
+        let att = |id: &str, name: Option<&str>, mime: &str, size: i64| DbAttachment {
+            id: id.into(),
+            message_id: "m".into(),
+            account_id: "a".into(),
+            filename: name.map(Into::into),
+            mime_type: Some(mime.into()),
+            size: Some(size),
+            attachment_id: None,
+            content_id: None,
+            is_inline: 0,
+        };
+        let pdf = att("0", Some("agenda.pdf"), "application/pdf", 900);
+        let file = att("1", Some("invite.ics"), "application/ics", 900);
+        let part = att("2", None, "text/calendar", 900);
+        assert_eq!(
+            invite_part(&[pdf.clone(), file.clone(), part.clone()]).map(|a| a.id.as_str()),
+            Some("2")
+        );
+        assert_eq!(
+            invite_part(&[pdf.clone(), file]).map(|a| a.id.as_str()),
+            Some("1")
+        );
+        let octet = att("3", Some("Meeting.ICS"), "application/octet-stream", 900);
+        assert_eq!(invite_part(&[octet]).map(|a| a.id.as_str()), Some("3"));
+        assert!(invite_part(&[pdf]).is_none());
+        let huge = att("4", None, "text/calendar", 2 * INVITE_MAX_BYTES);
+        assert!(invite_part(&[huge]).is_none());
     }
 }

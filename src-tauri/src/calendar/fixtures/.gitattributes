@@ -1,0 +1,2 @@
+# Calendar clients send CRLF; keep the fixtures byte for byte.
+*.ics -text

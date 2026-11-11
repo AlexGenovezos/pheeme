@@ -1,4 +1,5 @@
 import { ModSidebar } from "../mods/ModSurfaces";
+import { NotificationOffer } from "../desktop/NotificationOffer";
 import {
   ChevronRight,
   EllipsisVertical,
@@ -10,11 +11,13 @@ import {
   SquarePen,
   TriangleAlert,
   UserPlus,
+  WifiOff,
 } from "lucide-react";
 import {
   type CSSProperties,
   Fragment,
   type KeyboardEvent,
+  memo,
   type ReactNode,
   type Ref,
   useEffect,
@@ -51,7 +54,7 @@ import {
   type MailboxRef,
   resolveActiveAccount,
 } from "../mail/mailboxes";
-import { composeNew } from "../mail/actions";
+import { composeNew, markTabRead } from "../mail/actions";
 import { dropTarget } from "../mail/dragMail";
 import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
 import { type SyncFailure, useAccountStore } from "../store/accountStore";
@@ -63,6 +66,7 @@ import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import { useSettingsStore } from "../settings/settingsStore";
 import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
+import { ModeSwitch } from "../calendar/ModeSwitch";
 import { Button } from "../components/ui/Button";
 import { describeShortcut } from "../keyboard/format";
 
@@ -127,6 +131,12 @@ function activateOnKey(e: KeyboardEvent, run: () => void) {
   }
 }
 
+/** Below the row, left-aligned: where a menu or popover for it opens. */
+const below = (el: HTMLElement) => {
+  const r = el.getBoundingClientRect();
+  return { x: r.left, y: r.bottom };
+};
+
 interface MailboxRowProps {
   name: string;
   icon: LucideIcon;
@@ -138,9 +148,31 @@ interface MailboxRowProps {
   target: MailboxRef;
   /** Dragged conversations can be dropped here (a category or Trash of `target`'s account). */
   droppable?: boolean;
+  /**
+   * The row's right-click (and Menu key) menu, if it has one, built for `target`. Keep it a stable function:
+   * the row is memoized, and a new one each render would re-render every row.
+   */
+  menu?: (target: MailboxRef) => ContextMenuItem[];
 }
 
-function MailboxRow({
+/**
+ * Memoized, with `target` compared by value (callers build it inline): the sidebar re-renders on every unread
+ * count change and mailbox switch, and without this every row did too.
+ */
+const MailboxRow = memo(
+  MailboxRowView,
+  (a, b) =>
+    a.name === b.name &&
+    a.icon === b.icon &&
+    a.colorToken === b.colorToken &&
+    a.count === b.count &&
+    a.unit === b.unit &&
+    sameMailbox(a.target, b.target) &&
+    a.droppable === b.droppable &&
+    a.menu === b.menu,
+);
+
+function MailboxRowView({
   name,
   icon: Icon,
   colorToken,
@@ -148,10 +180,17 @@ function MailboxRow({
   unit,
   target,
   droppable,
+  menu,
 }: MailboxRowProps) {
   const selected = useUiStore((s) => sameMailbox(s.mailbox, target));
   const go = () => useUiStore.getState().setMailbox(target);
   const text = formatCount(count);
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (menu && (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))) {
+      e.preventDefault();
+      void showContextMenu(menu(target), below(e.currentTarget));
+    } else activateOnKey(e, go);
+  };
   return (
     <ListRow
       role="link"
@@ -166,13 +205,32 @@ function MailboxRow({
       // The name comes from the visible title; aria-description carries the count, so the number is hidden.
       meta={text ? <span aria-hidden="true">{text}</span> : undefined}
       onClick={go}
-      onKeyDown={(e) => activateOnKey(e, go)}
+      onKeyDown={onKeyDown}
+      onContextMenu={
+        menu &&
+        ((e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void showContextMenu(menu(target), { x: e.clientX, y: e.clientY });
+        })
+      }
       {...(droppable && target.accountId
         ? dropTarget(target.accountId, target.category ?? target.labelId)
         : {})}
     />
   );
 }
+
+/** An Inbox tab's menu. */
+const tabMenu = (target: MailboxRef): ContextMenuItem[] => [
+  {
+    id: "mark-read",
+    label: "Mark all as read",
+    onSelect: () => {
+      if (target.accountId && target.category) void markTabRead(target.accountId, target.category);
+    },
+  },
+];
 
 function CategoryRows({ accountId }: { accountId: string }) {
   const counts = useLabelStore((s) => s.categoryCounts[accountId] ?? NO_COUNTS);
@@ -190,6 +248,7 @@ function CategoryRows({ accountId }: { accountId: string }) {
           unit="unread"
           target={categoryMailbox(accountId, c.labelId)}
           droppable
+          menu={tabMenu}
         />
       ))}
     </>
@@ -240,6 +299,22 @@ function AccountSection({
       <div id={rowsId} className="sidebar__group-rows" hidden={collapsed}>
         {!collapsed && <CategoryRows accountId={account.id} />}
       </div>
+    </div>
+  );
+}
+
+/** One calm note while Google can't be reached, in place of a failure on every account. */
+function OfflineNote() {
+  const offline = useAccountStore((s) => s.offline);
+  if (!offline) return null;
+  return (
+    <div
+      className="sidebar__sync-error sidebar__offline"
+      role="status"
+      title="Pheeme syncs again as soon as the connection is back. Changes you make wait until then."
+    >
+      <WifiOff aria-hidden="true" />
+      <span>Offline. Changes will sync later.</span>
     </div>
   );
 }
@@ -298,12 +373,6 @@ function Favorites({ accountId }: { accountId: string }) {
 }
 
 const NO_FOLDS: string[] = [];
-
-/** Below the row, left-aligned: where a menu or popover for it opens. */
-const below = (el: HTMLElement) => {
-  const r = el.getBoundingClientRect();
-  return { x: r.left, y: r.bottom };
-};
 
 const LIST_VISIBILITY = [
   { value: "labelShow", text: "Show in label list" },
@@ -630,6 +699,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   return (
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
+        <ModeSwitch />
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton
           label="Hide sidebar"
@@ -655,6 +725,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
 
       <nav className="sidebar__scroll" aria-label="Mailboxes" onKeyDown={onMailboxKeyDown}>
         <Section title="Inboxes">
+          <OfflineNote />
           {single ? (
             <>
               {errors[single.id] && (
@@ -691,6 +762,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
       </nav>
 
       <ModSidebar />
+      <NotificationOffer />
       <div className="sidebar__footer">
         {active && (
           <Avatar name={active.displayName ?? active.email} email={active.email} size="sm" />

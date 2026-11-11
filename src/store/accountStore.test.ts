@@ -19,6 +19,7 @@ beforeEach(() =>
     loaded: true,
     error: null,
     syncErrors: {},
+    offline: false,
   }),
 );
 
@@ -65,6 +66,36 @@ test("sync:error records the failure per account until that account completes a 
       b: { code: "auth", message: "Sign in again" },
     }),
   );
+  stop();
+});
+
+test("offline, network failures give way to one offline state; other failures still show", async () => {
+  mockIPC(() => undefined, { shouldMockEvents: true });
+  const stop = await useAccountStore.getState().subscribe();
+  await emit("sync:error", { accountId: "a", code: "network", message: "Gmail didn't answer" });
+  await emit("sync:error", { accountId: "b", code: "auth", message: "Sign in again" });
+  await vi.waitFor(() =>
+    expect(Object.keys(useAccountStore.getState().syncErrors)).toHaveLength(2),
+  );
+
+  await emit("network:status", { online: false });
+  await vi.waitFor(() => expect(useAccountStore.getState().offline).toBe(true));
+  expect(useAccountStore.getState().syncErrors).toEqual({
+    b: { code: "auth", message: "Sign in again" },
+  });
+  await emit("sync:error", { accountId: "a", code: "network", message: "Gmail didn't answer" });
+  await emit("network:status", { online: true });
+  await vi.waitFor(() => expect(useAccountStore.getState().offline).toBe(false));
+  expect(useAccountStore.getState().syncErrors).toEqual({
+    b: { code: "auth", message: "Sign in again" },
+  });
+  stop();
+});
+
+test("subscribing picks up an app that went offline before the window listened", async () => {
+  mockIPC((cmd) => (cmd === "network_online" ? false : undefined), { shouldMockEvents: true });
+  const stop = await useAccountStore.getState().subscribe();
+  expect(useAccountStore.getState().offline).toBe(true);
   stop();
 });
 

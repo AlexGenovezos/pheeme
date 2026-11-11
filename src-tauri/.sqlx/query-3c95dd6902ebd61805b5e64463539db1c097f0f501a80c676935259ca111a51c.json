@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO task_lists (account_id, id, title, sort_order, etag, updated_ms)\n         VALUES (?1, ?2, ?3,\n                 (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM task_lists WHERE account_id = ?1),\n                 ?4, ?5)\n         ON CONFLICT (account_id, id) DO UPDATE SET\n             title = excluded.title,\n             etag = excluded.etag,\n             updated_ms = excluded.updated_ms",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "3c95dd6902ebd61805b5e64463539db1c097f0f501a80c676935259ca111a51c"
+}

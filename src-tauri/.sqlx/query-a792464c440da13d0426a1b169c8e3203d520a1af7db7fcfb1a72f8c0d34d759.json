@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE calendars SET hidden = ? WHERE account_id = ? AND id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "a792464c440da13d0426a1b169c8e3203d520a1af7db7fcfb1a72f8c0d34d759"
+}

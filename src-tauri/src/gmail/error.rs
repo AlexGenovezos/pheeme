@@ -10,6 +10,10 @@ pub enum GmailError {
     /// The token provider failed, or Gmail still answered 401 after a refresh.
     #[error("authentication failed: {0}")]
     Auth(String),
+    /// The keychain holding the sign-in can't be read right now: the Mac is asleep (Power Nap),
+    /// locked, or can't show its prompt. No request went out; it passes by itself.
+    #[error("{0}")]
+    KeychainLocked(String),
     /// Google no longer accepts the account's saved sign-in: only signing in again fixes it.
     #[error("{0}")]
     SignedOut(String),
@@ -61,6 +65,7 @@ impl GmailError {
         match self {
             GmailError::Auth(_) => "auth",
             GmailError::SignedOut(_) => "signed_out",
+            GmailError::KeychainLocked(_) => "keychain_locked",
             GmailError::Network(_) | GmailError::Offline(_) => "network",
             GmailError::RateLimit { .. } => "rate_limit",
             GmailError::Api { status: 404, .. } => "not_found",
@@ -72,6 +77,21 @@ impl GmailError {
     /// The API answered 404 (the message, thread, label or draft does not exist).
     pub fn is_not_found(&self) -> bool {
         matches!(self, GmailError::Api { status: 404, .. })
+    }
+
+    /// The API answered 410 Gone (a Calendar sync token that expired: sync in full).
+    pub fn is_gone(&self) -> bool {
+        matches!(self, GmailError::Api { status: 410, .. })
+    }
+
+    /// The API answered 412 (an `If-Match` etag that no longer matches: the event changed).
+    pub fn is_conflict(&self) -> bool {
+        matches!(self, GmailError::Api { status: 412, .. })
+    }
+
+    /// The API answered 409 (an insert whose client-made id already exists).
+    pub fn is_duplicate(&self) -> bool {
+        matches!(self, GmailError::Api { status: 409, .. })
     }
 
     /// Gmail refused because the account didn't grant the scope this call needs (an account that
@@ -183,6 +203,10 @@ mod tests {
         assert_eq!(api(404, None, "x").code(), "not_found");
         assert_eq!(api(403, None, "x").code(), "api");
         assert_eq!(GmailError::Decode("x".into()).code(), "decode");
+        assert_eq!(
+            GmailError::KeychainLocked("x".into()).code(),
+            "keychain_locked"
+        );
         assert_eq!(
             api(404, None, "Invalid startHistoryId").code(),
             "history_expired"

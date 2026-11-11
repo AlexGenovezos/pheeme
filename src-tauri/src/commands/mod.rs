@@ -1,6 +1,8 @@
 pub mod accounts;
+pub mod assistant;
 pub mod attachments;
 pub mod auth;
+pub mod calendar;
 pub mod compose;
 pub mod contacts;
 pub mod labels;
@@ -10,12 +12,14 @@ pub mod sender_rules;
 pub mod settings;
 pub mod support;
 pub mod sync;
+pub mod tasks;
 pub mod themes;
 pub mod threads;
 pub mod transfer;
 pub mod updater;
 
 use crate::accounts::AccountError;
+use crate::calendar::error::CalendarError;
 use crate::mail::MailError;
 use crate::support::SupportError;
 use reqwest::Url;
@@ -40,6 +44,33 @@ impl From<AccountError> for CommandError {
 
 impl From<MailError> for CommandError {
     fn from(error: MailError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<CalendarError> for CommandError {
+    fn from(error: CalendarError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<crate::tasks::error::TasksError> for CommandError {
+    fn from(error: crate::tasks::error::TasksError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<crate::local_api::ApiError> for CommandError {
+    fn from(error: crate::local_api::ApiError) -> Self {
         Self {
             code: error.code().to_owned(),
             message: error.to_string(),

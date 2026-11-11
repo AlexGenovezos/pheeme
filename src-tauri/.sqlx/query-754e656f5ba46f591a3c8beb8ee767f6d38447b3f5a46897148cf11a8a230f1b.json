@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT u.thread_id AS \"thread_id!\"\n        FROM thread_labels u INDEXED BY idx_thread_labels_listing\n        CROSS JOIN thread_labels i\n          ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'\n        WHERE u.label_id = 'UNREAD' AND u.account_id = ?1\n          AND (?2 IS NULL OR EXISTS (\n                SELECT 1 FROM thread_labels c\n                WHERE c.account_id = u.account_id AND c.thread_id = u.thread_id\n                  AND c.label_id = ?2))\n          AND NOT EXISTS (\n                SELECT 1 FROM json_each(?3) ex CROSS JOIN thread_labels c\n                  ON c.account_id = u.account_id AND c.thread_id = u.thread_id\n                 AND c.label_id = ex.value)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "thread_id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "thread_labels",
+            "name": "thread_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "754e656f5ba46f591a3c8beb8ee767f6d38447b3f5a46897148cf11a8a230f1b"
+}

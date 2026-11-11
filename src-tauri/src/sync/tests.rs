@@ -726,6 +726,84 @@ async fn archive_includes_older_uncached_messages() {
 }
 
 #[tokio::test]
+async fn sweep_marks_the_whole_tab_read_on_gmail_but_not_later_mail() {
+    let h = harness().await;
+    let promo = &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"];
+    let mut msgs: Vec<FakeMsg> = (0..super::engine::INITIAL_THREADS as i64)
+        .map(|n| FakeMsg::new(&format!("n{n}"), &format!("tn{n}"), &["INBOX"]).days_ago(n))
+        .collect();
+    msgs.push(FakeMsg::new("m1", "t1", promo));
+    // Unread but archived on its own, in a conversation that is in the Inbox.
+    msgs.push(FakeMsg::new("m0", "t1", &["UNREAD", "CATEGORY_PROMOTIONS"]).days_ago(1));
+    msgs.push(FakeMsg::new(
+        "social",
+        "t2",
+        &["INBOX", "UNREAD", "CATEGORY_SOCIAL"],
+    ));
+    msgs.push(FakeMsg::new("old", "t3", promo).days_ago(100));
+    synced_inbox(&h, msgs).await;
+    assert!(
+        cached_labels(&h.pool, "old").await.is_none(),
+        "not downloaded yet"
+    );
+
+    let sweep = "in:inbox is:unread category:promotions";
+    outbox::enqueue_sweep(&h.pool, ACCT, &s(&["t1"]), &s(&["UNREAD"]), sweep)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        cached_labels(&h.pool, "m1").await,
+        Some(s(&["CATEGORY_PROMOTIONS", "INBOX"])),
+        "read in the cache at once"
+    );
+    h.fake
+        .add(FakeMsg::new("later", "t4", promo).at(now_ms() + 60_000));
+
+    let reads = h.fake.calls("get_thread");
+    assert!(outbox::process(&h.engine, now_ms()).await.unwrap());
+    assert_eq!(
+        server_labels(&h, "m1"),
+        s(&["CATEGORY_PROMOTIONS", "INBOX"])
+    );
+    assert_eq!(server_labels(&h, "m0"), s(&["CATEGORY_PROMOTIONS"]));
+    assert_eq!(
+        server_labels(&h, "old"),
+        s(&["CATEGORY_PROMOTIONS", "INBOX"])
+    );
+    assert_eq!(
+        server_labels(&h, "social"),
+        s(&["CATEGORY_SOCIAL", "INBOX", "UNREAD"])
+    );
+    assert_eq!(
+        server_labels(&h, "later"),
+        sorted(s(promo)),
+        "arrived after the click"
+    );
+    assert_eq!(h.fake.calls("get_thread"), reads, "no per-thread reads");
+    assert!(ops(&h).await.is_empty());
+}
+
+#[tokio::test]
+async fn sweep_is_queued_with_nothing_cached() {
+    let h = harness().await;
+    let sweep = "in:inbox is:unread category:promotions";
+    assert!(
+        outbox::enqueue_sweep(&h.pool, ACCT, &[], &s(&["UNREAD"]), sweep)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    h.fake
+        .add(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"]).days_ago(1));
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert_eq!(
+        server_labels(&h, "m1"),
+        s(&["CATEGORY_PROMOTIONS", "INBOX"])
+    );
+}
+
+#[tokio::test]
 async fn rejected_op_rolls_back_with_later_ops_reapplied() {
     let h = harness().await;
     synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX"])]).await;
@@ -1429,4 +1507,70 @@ async fn list_with_colors_skips_get() {
         Some("#16a766")
     );
     assert_eq!(cached_color(&h, "Label_2").await, None);
+}
+
+#[tokio::test]
+async fn the_log_records_each_change_from_queued_to_applied() {
+    let (_guard, logs) = crate::test_logs::capture();
+    let h = harness().await;
+    synced_inbox(
+        &h,
+        vec![FakeMsg::new("m1", "t1", &["INBOX", "CATEGORY_UPDATES"])],
+    )
+    .await;
+    let op = outbox::enqueue_modify(
+        &h.pool,
+        ACCT,
+        &s(&["t1"]),
+        &s(&["CATEGORY_PROMOTIONS"]),
+        &s(&["CATEGORY_UPDATES"]),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .op_id;
+
+    let queued = logs.lines("change queued");
+    assert_eq!(queued.len(), 1, "{}", logs.text());
+    for field in [
+        &format!("op={op}"),
+        "kind=modify",
+        "threads=t1",
+        "messages=1",
+        "add=[\"CATEGORY_PROMOTIONS\"]",
+        "remove=[\"CATEGORY_UPDATES\"]",
+    ] {
+        assert!(queued[0].contains(field), "{field} in {}", queued[0]);
+    }
+
+    // A failure Gmail may recover from is said once, not at every retry.
+    let hour = 3_600_000;
+    for n in 1..=2 {
+        h.fake
+            .fail_next("batch_modify", GmailError::Network("timed out".into()));
+        outbox::process(&h.engine, now_ms() + n * hour)
+            .await
+            .unwrap();
+    }
+    let waiting = logs.lines("change waiting for Gmail");
+    assert_eq!(waiting.len(), 1, "{}", logs.text());
+    assert!(waiting[0].contains(&format!("op={op}")), "{}", waiting[0]);
+
+    outbox::process(&h.engine, now_ms() + 3 * hour)
+        .await
+        .unwrap();
+    let applied = logs.lines("Gmail applied the change");
+    assert_eq!(applied.len(), 1, "{}", logs.text());
+    for field in [&format!("op={op}"), "messages=1", "attempts=3"] {
+        assert!(applied[0].contains(field), "{field} in {}", applied[0]);
+    }
+}
+
+#[test]
+fn logged_thread_lists_stay_short() {
+    let ids: Vec<String> = (0..25).map(|n| format!("t{n}")).collect();
+    assert_eq!(outbox::id_sample(&ids[..2]), "t0,t1");
+    let sample = outbox::id_sample(&ids);
+    assert!(sample.starts_with("t0,t1,"), "{sample}");
+    assert!(sample.ends_with("t9 (+15 more)"), "{sample}");
 }

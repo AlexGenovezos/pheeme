@@ -1,0 +1,227 @@
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { CalendarScreen } from "../calendar/CalendarScreen";
+import { useCalendarStore } from "../calendar/calendarStore";
+import { createCalendarHandlers } from "../preview/calendar";
+import { createTasksHandlers } from "../preview/tasks";
+import { useAccountStore } from "../store/accountStore";
+import { TasksPanelHost } from "./TasksPanel";
+import { useTasksStore } from "./tasksStore";
+
+const ACCOUNTS = [
+  { id: "acc-personal", email: "avery@example.com" },
+  { id: "acc-work", email: "avery@example.org" },
+];
+// Wednesday 2026-11-11, noon local time.
+const NOW = new Date(2026, 10, 11, 12).getTime();
+
+const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+const settle = async () => {
+  for (let i = 0; i < 4; i++) await flush();
+};
+
+let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
+/** Commands whose answers wait until their gate is released. */
+let held: Map<string, Promise<void>>;
+
+function hold(cmd: string): () => void {
+  let release!: () => void;
+  held.set(cmd, new Promise((resolve) => (release = resolve)));
+  return () => {
+    held.delete(cmd);
+    release();
+  };
+}
+
+function renderCalendar() {
+  const handlers = {
+    ...createCalendarHandlers(ACCOUNTS, null, NOW),
+    ...createTasksHandlers(ACCOUNTS, null, NOW),
+  } as Record<string, (args?: Record<string, unknown>) => unknown>;
+  mockIPC(
+    (cmd, args) => {
+      const a = (args ?? {}) as Record<string, unknown>;
+      calls.push({ cmd, args: a });
+      const gate = held.get(cmd);
+      return gate ? gate.then(() => handlers[cmd]?.(a)) : handlers[cmd]?.(a);
+    },
+    { shouldMockEvents: true },
+  );
+  render(
+    <>
+      <CalendarScreen />
+      <TasksPanelHost />
+    </>,
+  );
+}
+
+const chip = (title: string) =>
+  screen.getByRole("button", { name: new RegExp(`^Task: ${title}`) }).closest(".task-chip")!;
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+  localStorage.clear();
+  calls = [];
+  held = new Map();
+  useAccountStore.setState({ accounts: ACCOUNTS as never });
+  useCalendarStore.setState({
+    mode: "calendar",
+    view: "week",
+    anchor: "2026-11-11",
+    accounts: null,
+    events: null,
+    eventsFor: null,
+    loadError: null,
+    open: null,
+    goToOpen: false,
+  });
+  useTasksStore.setState({
+    panelOpen: false,
+    accounts: null,
+    lists: {},
+    dated: null,
+    datedFor: null,
+    editing: null,
+  });
+});
+afterEach(() => {
+  clearMocks();
+  vi.useRealTimers();
+});
+
+describe("dated tasks on the calendar", () => {
+  test("the week's all-day band shows its dated tasks; ticking one crosses it out", async () => {
+    renderCalendar();
+    await settle();
+
+    const band = screen.getByRole("row", { name: "All-day events" });
+    // Sunday-start week Nov 8–14: the fixture's tasks are due Mon 9 (done), Tue 10, Wed 11,
+    // Thu 12 and Fri 13.
+    expect(
+      within(band)
+        .getAllByRole("button", { name: /^Task: / })
+        .map((b) => b.textContent),
+    ).toEqual([
+      "Pay the electricity bill",
+      "Pick up dry cleaning",
+      "Send the lease back",
+      "Review the Q4 roadmap",
+      "Plan the Lisbon trip",
+    ]);
+    expect(chip("Pay the electricity bill")).toHaveClass("task-chip--done");
+    expect(chip("Send the lease back")).not.toHaveClass("task-chip--done");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mark done: Send the lease back" }));
+    expect(chip("Send the lease back")).toHaveClass("task-chip--done");
+    await settle();
+    expect(calls.find((c) => c.cmd === "set_task_completed")?.args).toMatchObject({
+      accountId: "acc-personal",
+      listId: "my-tasks",
+      completed: true,
+    });
+    expect(chip("Send the lease back")).toHaveClass("task-chip--done");
+  });
+
+  test("jumping outside the months in memory keeps the grid's tasks until the new days show", async () => {
+    renderCalendar();
+    await settle();
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(5);
+
+    const release = hold("calendar_events");
+    act(() => void useCalendarStore.getState().goTo("2027-06-10"));
+    await settle();
+    // The tasks there have been read; the events haven't, so the week stays as it was.
+    expect(heading).toHaveTextContent("Nov 8 – 14, 2026");
+    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(5);
+
+    release();
+    await settle();
+    expect(heading).toHaveTextContent("Jun 6 – 12, 2027");
+  });
+
+  test("tasks that change while a far day is being read are read again for it", async () => {
+    renderCalendar();
+    await settle();
+
+    const release = hold("calendar_events");
+    act(() => void useCalendarStore.getState().goTo("2027-06-10"));
+    await settle();
+    // A task ticked off meanwhile: the read already done may not have it.
+    act(() => useTasksStore.setState((s) => ({ dated: [...(s.dated ?? [])] })));
+    const reads = calls.filter((c) => c.cmd === "dated_tasks").length;
+    release();
+    await settle();
+    expect(calls.filter((c) => c.cmd === "dated_tasks")).toHaveLength(reads + 1);
+    expect(useTasksStore.getState().datedFor).toBe("2027-04-25:2027-08-01");
+  });
+
+  test("switching view while a far day is being read waits for its tasks too", async () => {
+    renderCalendar();
+    await settle();
+    await act(() => useCalendarStore.getState().goTo("2027-06-10"));
+    await settle();
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent("Jun 6 – 12, 2027");
+
+    const releaseEvents = hold("calendar_events");
+    const releaseTasks = hold("dated_tasks");
+    act(() => void useCalendarStore.getState().goTo("2026-11-11"));
+    act(() => useCalendarStore.getState().setView("month"));
+    releaseEvents();
+    await settle();
+    // Never the month without its tasks: it waits for them.
+    expect(heading).toHaveTextContent("Jun 6 – 12, 2027");
+
+    releaseTasks();
+    await settle();
+    expect(heading).toHaveTextContent("November 2026");
+    expect(screen.getByRole("button", { name: /^Task: Plan the Lisbon trip/ })).toBeInTheDocument();
+  });
+
+  test("the sidebar lists each account's task lists; unticking one takes its tasks off the grid", async () => {
+    renderCalendar();
+    await settle();
+
+    const personal = screen.getByRole("list", { name: "Task lists of avery@example.com" });
+    expect(
+      within(personal)
+        .getAllByRole("checkbox")
+        .map((c) => c.getAttribute("aria-label")),
+    ).toEqual(["Tasks: My Tasks", "Tasks: Errands"]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tasks: Errands" }));
+    await settle();
+    expect(calls.find((c) => c.cmd === "set_task_list_hidden")?.args).toMatchObject({
+      listId: "errands",
+      hidden: true,
+    });
+    expect(screen.queryByRole("button", { name: /^Task: Pick up dry cleaning/ })).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "Tasks: Errands" })).not.toBeChecked();
+  });
+
+  test("month cells show dated tasks too, and a task's title opens it in the Tasks panel", async () => {
+    useCalendarStore.setState({ view: "month" });
+    renderCalendar();
+    await settle();
+
+    expect(screen.getByRole("button", { name: /^Task: Plan the Lisbon trip/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Task: Plan the Lisbon trip/ }));
+    await settle();
+    const panel = screen.getByRole("complementary", { name: "Tasks" });
+    const editor = within(panel).getByRole("form", { name: "Edit task: Plan the Lisbon trip" });
+    expect(within(editor).getByRole("textbox", { name: "Title" })).toHaveFocus();
+
+    // A completed one opens its list's Completed section to show it.
+    fireEvent.click(screen.getByRole("button", { name: /^Task: Pay the electricity bill/ }));
+    await settle();
+    expect(
+      within(panel).getByRole("form", { name: "Edit task: Pay the electricity bill" }),
+    ).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Completed (2)" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+});

@@ -77,20 +77,22 @@ export function GmailQuotaControl() {
   }
 
   return (
-    <TextInput
-      aria-label="Gmail API limit"
-      title={error ?? undefined}
-      inputMode="numeric"
-      value={text}
-      disabled={saved === null && error === null}
-      invalid={(text !== "" && value === null) || error !== null}
-      trailing="/ min"
-      onChange={(e) => edit(e.target.value)}
-      onBlur={() => void save()}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") void save();
-      }}
-      className="settings-quota"
-    />
+    <>
+      <TextInput
+        aria-label="Gmail API limit"
+        title={error ?? undefined}
+        inputMode="numeric"
+        value={text}
+        disabled={saved === null && error === null}
+        invalid={(text !== "" && value === null) || error !== null}
+        onChange={(e) => edit(e.target.value)}
+        onBlur={() => void save()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void save();
+        }}
+        className="settings-quota"
+      />
+      <span className="settings-quota__unit">/ min</span>
+    </>
   );
 }

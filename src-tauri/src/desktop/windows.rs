@@ -1,4 +1,4 @@
-use super::super::{activate, ThreadTarget};
+use super::super::{activate, NotifyTarget};
 use tauri::AppHandle;
 use winrt_notification::Toast;
 
@@ -8,7 +8,7 @@ pub async fn permission(_: bool) -> anyhow::Result<String> {
 }
 pub async fn show(
     app: &AppHandle,
-    target: ThreadTarget,
+    target: NotifyTarget,
     title: String,
     body: String,
 ) -> anyhow::Result<()> {

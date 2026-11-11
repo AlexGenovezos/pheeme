@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
 import { LabelChip } from "../labels/LabelChip";
@@ -9,11 +9,15 @@ import { useMailStore } from "../store/mailStore";
 import { useLabelStore } from "../store/labelStore";
 import { isComplete, useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
+import { InviteCard } from "../calendar/InviteCard";
+import { inviteMessage } from "./invitePart";
 import { CodeCard } from "./CodeCard";
 import { MessageCard } from "./MessageCard";
 import { ThreadLoading } from "./ThreadLoading";
 import { applyLabel, archive } from "./actions";
 import { focusFromKeyboard } from "../keyboard/focus";
+import { registry } from "../keyboard/registry";
+import { FindBar } from "./find/FindBar";
 import { handleScrollKeyDown, handleScrollKeyUp, stopKeyScroll } from "./keyScroll";
 import { parseThreadKey, threadKey } from "./mailboxes";
 import { openTimer } from "./openTiming";
@@ -119,6 +123,9 @@ export function ThreadView() {
   const preloadImages = useReadingSettings((s) => s.preloadImages);
   const scroller = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState<string[]>([]);
+  // Find in conversation: 0 is closed; each mod+f counts up, which refocuses the open bar.
+  const [find, setFind] = useState(0);
+  if (find && !openKey) setFind(0);
   // The open conversation, plus (with Preload images on) two rows either side rendered out of sight, so the next
   // arrow shows a finished email. Images a server won't let us cache only survive in a live document.
   const keys = rows.map((row) => threadKey(row.accountId, row.id));
@@ -161,6 +168,18 @@ export function ThreadView() {
       run: () => {
         if (useUiStore.getState().openThread)
           focusFromKeyboard(scroller.current, { preventScroll: true });
+      },
+    },
+    {
+      id: "conversation.find",
+      title: "Find in conversation",
+      group: "Conversation",
+      shortcut: "mod+f",
+      keywords: ["search", "find in page", "find in email"],
+      run: () => {
+        // With no conversation open there's nothing to find in: search mail instead.
+        if (useUiStore.getState().openThread) setFind((n) => n + 1);
+        else registry.run("search.focus");
       },
     },
   ]);
@@ -226,11 +245,18 @@ export function ThreadView() {
           </div>
         ))}
       </div>
+      {find > 0 && openKey && (
+        <FindBar pane={scroller} openKey={openKey} request={find} onClose={() => setFind(0)} />
+      )}
     </div>
   );
 }
 
-function Conversation({
+/**
+ * Memoized: the view re-renders whenever any cached conversation changes (prefetching neighbours, marking read),
+ * and the conversations kept mounted beside the open one only need to when their own detail does.
+ */
+const Conversation = memo(function Conversation({
   openKey,
   detail,
   active,
@@ -269,6 +295,7 @@ function Conversation({
     : null;
   const subject = detail.thread.subject || "(no subject)";
   const code = useMemo(() => conversationCode(detail.messages), [detail.messages]);
+  const invite = useMemo(() => inviteMessage(detail.messages), [detail.messages]);
   usePrefetchAttachments(detail, active);
   return (
     <div className="thread-view">
@@ -282,6 +309,13 @@ function Conversation({
         }
       />
       {code && <CodeCard code={code.code} />}
+      {/* Only on screen: reading the invitation may download it, and neighbours are speculative. */}
+      {invite && active && (
+        <InviteCard
+          key={invite.id}
+          pinned={{ accountId, threadId: detail.thread.id, messageId: invite.id }}
+        />
+      )}
       <div className="thread-view__messages">
         {detail.messages.map((m) => (
           <MessageCard
@@ -297,7 +331,7 @@ function Conversation({
       </div>
     </div>
   );
-}
+});
 
 /**
  * Opening a conversation starts caching its attachments in the background, so a preview opens at once.

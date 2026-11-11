@@ -1,8 +1,7 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { useToastStore } from "../components/ui/Toast";
-import { useNotificationPrompt } from "../desktop/prompt";
+import { useNotificationOffer, useNotificationPrompt } from "../desktop/prompt";
 import { useAccountStore } from "../store/accountStore";
 import { NotificationsSettings } from "./NotificationsSettings";
 
@@ -12,6 +11,7 @@ const snapshot = {
   trayAvailable: true,
   trayEnabled: true,
   schedule: { mode: "always", startHour: 9, endHour: 17, weekdaysOnly: true },
+  calendarReminders: true,
 };
 
 test("notification choices are per account and reflect the persisted backend value", async () => {
@@ -49,6 +49,27 @@ test("denied permission keeps the choice disabled and explains how to recover", 
   expect(await screen.findByRole("alert")).toHaveTextContent("Allow Pheeme");
   expect(toggle).toHaveAttribute("aria-checked", "false");
   expect(toggle).not.toBeDisabled();
+});
+
+test("event reminders can be turned off, and the row is there before settings load", async () => {
+  const calls: unknown[] = [];
+  let answer: (value: typeof snapshot) => void = () => {};
+  mockIPC((command, args) => {
+    if (command === "desktop_settings") return new Promise((resolve) => (answer = resolve));
+    if (command === "set_calendar_reminders") {
+      calls.push(args);
+      return { ...snapshot, calendarReminders: false };
+    }
+  });
+  render(<NotificationsSettings />);
+  const toggle = screen.getByRole("switch", { name: "Event reminders" });
+  expect(toggle).toBeDisabled();
+  answer(snapshot);
+  await waitFor(() => expect(toggle).not.toBeDisabled());
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
+  expect(calls).toEqual([{ enabled: false }]);
 });
 
 test("the tray icon can be turned off, and then closing the window quits", async () => {
@@ -96,11 +117,9 @@ test("answering in Settings dismisses a visible first-run prompt", async () => {
       <NotificationsSettings />
     </>,
   );
-  await waitFor(() =>
-    expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Turn on notifications?"),
-  );
+  await waitFor(() => expect(useNotificationOffer.getState().offer).not.toBeNull());
   fireEvent.click(await screen.findByRole("switch", { name: "Notifications for a@example.com" }));
-  await waitFor(() => expect(useToastStore.getState().toasts).toEqual([]));
+  await waitFor(() => expect(useNotificationOffer.getState().offer).toBeNull());
 });
 
 test("a blocked permission in Settings also dismisses the first-run prompt", async () => {
@@ -124,12 +143,10 @@ test("a blocked permission in Settings also dismisses the first-run prompt", asy
       <NotificationsSettings />
     </>,
   );
-  await waitFor(() =>
-    expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Turn on notifications?"),
-  );
+  await waitFor(() => expect(useNotificationOffer.getState().offer).not.toBeNull());
   fireEvent.click(await screen.findByRole("switch", { name: "Notifications for a@example.com" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Notifications are blocked.");
-  await waitFor(() => expect(useToastStore.getState().toasts).toEqual([]));
+  await waitFor(() => expect(useNotificationOffer.getState().offer).toBeNull());
 });
 
 test("work hours shows the hour pickers and saves the schedule; any time hides them", async () => {
@@ -154,11 +171,12 @@ test("work hours shows the hour pickers and saves the schedule; any time hides t
   expect(calls).toEqual([
     { schedule: { mode: "workHours", startHour: 9, endHour: 17, weekdaysOnly: true } },
   ]);
-  expect(from).toHaveValue("9");
-  expect(screen.getByRole("combobox", { name: "Until" })).toHaveValue("17");
+  expect(from).toHaveTextContent("09:00");
+  expect(screen.getByRole("combobox", { name: "Until" })).toHaveTextContent("17:00");
   expect(screen.getByRole("switch", { name: "Weekdays only" })).toBeInTheDocument();
+  fireEvent.click(from);
   expect(screen.getByRole("option", { name: "09:00", selected: true })).toBeInTheDocument();
-  fireEvent.change(from, { target: { value: "8" } });
+  fireEvent.click(screen.getByRole("option", { name: "08:00" }));
   await waitFor(() => expect(calls).toHaveLength(2));
   expect(calls[1]).toEqual({
     schedule: { mode: "workHours", startHour: 8, endHour: 17, weekdaysOnly: true },

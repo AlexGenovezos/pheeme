@@ -50,7 +50,7 @@ const ONE = account("a1", "me@home.test");
 const TWO = account("a2", "me@work.test");
 
 function seed(accounts: AccountInfo[]) {
-  useAccountStore.setState({ accounts, loaded: true, error: null, syncErrors: {} });
+  useAccountStore.setState({ accounts, loaded: true, error: null, syncErrors: {}, offline: false });
   useLabelStore.setState({
     labels: {
       a1: [
@@ -342,6 +342,28 @@ describe("stacked layout", () => {
     stop();
   });
 
+  test("offline, one note replaces every account's network failure until Google answers", async () => {
+    seed([ONE, TWO]);
+    const stop = await useAccountStore.getState().subscribe();
+    render(<Sidebar />);
+    expect(screen.queryByText(/^Offline/)).not.toBeInTheDocument();
+    await act(() =>
+      emit("sync:error", { accountId: "a2", code: "network", message: "Gmail didn't answer" }),
+    );
+    await waitFor(() => expect(accountHeader(TWO.email)).toHaveAttribute("aria-description"));
+
+    await act(() => emit("network:status", { online: false }));
+    const note = await within(region("Inboxes")).findByText("Offline. Changes will sync later.");
+    expect(note.closest("[role=status]")).toBeInTheDocument();
+    expect(accountHeader(TWO.email)).not.toHaveAttribute("aria-description");
+
+    await act(() => emit("network:status", { online: true }));
+    await waitFor(() =>
+      expect(screen.queryByText("Offline. Changes will sync later.")).not.toBeInTheDocument(),
+    );
+    stop();
+  });
+
   test("rows open with Enter and Space", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
@@ -440,7 +462,13 @@ describe("Labels section", () => {
   });
 
   function seedLabels() {
-    useAccountStore.setState({ accounts: [ONE], loaded: true, error: null, syncErrors: {} });
+    useAccountStore.setState({
+      accounts: [ONE],
+      loaded: true,
+      error: null,
+      syncErrors: {},
+      offline: false,
+    });
     useLabelStore.setState({
       labels: {
         a1: [
@@ -854,5 +882,34 @@ describe("inbox tabs", () => {
     expect(
       within(accountGroup("me@work.test")).getByRole("link", { name: "Social" }),
     ).toBeInTheDocument();
+  });
+
+  test("right-click or the context-menu key on a tab marks all of it read", async () => {
+    seed([ONE, TWO]);
+    const marked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "mark_inbox_tab_read") marked.push(args);
+    });
+    render(
+      <>
+        <Sidebar />
+        <ContextMenuHost />
+      </>,
+    );
+    const promotions = within(accountGroup("me@work.test")).getByRole("link", {
+      name: "Promotions",
+    });
+    fireEvent.contextMenu(promotions, { clientX: 10, clientY: 20 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Mark all as read" }));
+    await waitFor(() =>
+      expect(marked).toEqual([{ accountId: "a2", category: "CATEGORY_PROMOTIONS" }]),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+    const primary = within(accountGroup("me@home.test")).getByRole("link", { name: "Primary" });
+    fireEvent.keyDown(primary, { key: "ContextMenu" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Mark all as read" }));
+    await waitFor(() => expect(marked).toHaveLength(2));
+    expect(marked[1]).toEqual({ accountId: "a1", category: "CATEGORY_PERSONAL" });
   });
 });

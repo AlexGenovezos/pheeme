@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -242,24 +242,61 @@ impl ShownTiming {
     }
 }
 
-/// Warn when the async runtime falls behind: a tick that should come every 100 ms arriving
+/// How often the stall watch looks. A stall of 1.25 s or more always makes a tick late enough
+/// to report; shorter ones only when a tick falls inside them. Once a second keeps the watch to
+/// one wakeup a second, where every 100 ms cost the laptop's battery ten.
+const STALL_TICK: Duration = Duration::from_secs(1);
+/// Lateness worth a warning.
+const STALL: Duration = Duration::from_millis(250);
+/// The wall clock running ahead of the monotonic clock by more than this means the computer
+/// slept: on macOS and Linux the monotonic clock stops while it sleeps.
+const SLEEP_GAP: Duration = Duration::from_secs(1);
+/// After a sleep, lateness isn't Pheeme's: the system wakes everything at once, and a Mac's
+/// Power Nap runs apps throttled for a few seconds at a time while the screen stays off. Every
+/// stall the Air logged on 2026-11-09/10 came within a minute of a wake.
+const AFTER_WAKE: Duration = Duration::from_secs(60);
+
+/// Decides which late ticks are worth a warning.
+#[derive(Default)]
+struct StallWatch {
+    quiet_until: Option<Instant>,
+}
+
+impl StallWatch {
+    /// One tick at `now`, `waited` since the last by the monotonic clock and `wall` by the wall
+    /// clock (`None` when it went backwards). Returns the lag to report.
+    fn tick(&mut self, now: Instant, waited: Duration, wall: Option<Duration>) -> Option<Duration> {
+        if wall.is_some_and(|wall| wall > waited + SLEEP_GAP) {
+            self.quiet_until = Some(now + AFTER_WAKE);
+            return None;
+        }
+        if self.quiet_until.is_some_and(|until| now < until) {
+            return None;
+        }
+        let lag = waited.saturating_sub(STALL_TICK);
+        (lag >= STALL).then_some(lag)
+    }
+}
+
+/// Warn when the async runtime falls behind: a tick that should come every second arriving
 /// late means its worker threads were busy (blocking work on the runtime), so every command
-/// and query result waited too. A machine that slept shows up as one long stall.
+/// and query result waited too. Quiet for a minute after the computer wakes from sleep.
 pub fn watch_runtime_stalls() {
-    const TICK: Duration = Duration::from_millis(100);
-    const STALL: Duration = Duration::from_millis(250);
     tauri::async_runtime::spawn(async {
-        let mut tick = tokio::time::interval(TICK);
+        let mut tick = tokio::time::interval(STALL_TICK);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         tick.tick().await;
-        let mut last = Instant::now();
+        let mut watch = StallWatch::default();
+        let mut last = (Instant::now(), SystemTime::now());
         loop {
             tick.tick().await;
-            let lag = last.elapsed().saturating_sub(TICK);
-            if lag >= STALL {
+            let now = (Instant::now(), SystemTime::now());
+            let waited = now.0.duration_since(last.0);
+            let wall = now.1.duration_since(last.1).ok();
+            if let Some(lag) = watch.tick(now.0, waited, wall) {
                 tracing::warn!(lag_ms = lag.as_millis() as u64, "async runtime stalled");
             }
-            last = Instant::now();
+            last = now;
         }
     });
 }
@@ -267,6 +304,47 @@ pub fn watch_runtime_stalls() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ms(ms: u64) -> Duration {
+        Duration::from_millis(ms)
+    }
+
+    #[test]
+    fn a_late_tick_is_a_stall() {
+        let mut watch = StallWatch::default();
+        let now = Instant::now();
+        assert_eq!(watch.tick(now, ms(1_100), Some(ms(1_100))), None);
+        assert_eq!(watch.tick(now, ms(1_400), Some(ms(1_400))), Some(ms(400)));
+    }
+
+    #[test]
+    fn stalls_within_a_minute_of_waking_are_not_reported() {
+        let mut watch = StallWatch::default();
+        let woke = Instant::now();
+        // A 4 s Power Nap sleep: the wall clock moved on, the monotonic clock barely did.
+        assert_eq!(watch.tick(woke, ms(1_630), Some(ms(5_630))), None);
+        // Throttled ticks in the seconds after the wake, as the Air logged at 16:53:51-55.
+        assert_eq!(
+            watch.tick(woke + ms(3_000), ms(2_434), Some(ms(2_434))),
+            None
+        );
+        assert_eq!(
+            watch.tick(woke + ms(59_000), ms(2_100), Some(ms(2_100))),
+            None
+        );
+        // A minute on, a stall is Pheeme's again.
+        assert_eq!(
+            watch.tick(woke + ms(61_000), ms(2_100), Some(ms(2_100))),
+            Some(ms(1_100))
+        );
+    }
+
+    #[test]
+    fn a_wall_clock_set_back_is_not_a_sleep() {
+        let mut watch = StallWatch::default();
+        let now = Instant::now();
+        assert_eq!(watch.tick(now, ms(1_500), None), Some(ms(500)));
+    }
 
     #[test]
     fn logs_survive_shutdown_and_append_after_relaunch() {

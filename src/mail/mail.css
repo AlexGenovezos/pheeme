@@ -463,17 +463,19 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2-5);
+  padding: var(--space-0) var(--space-1) var(--space-0) var(--space-2-5);
   border: var(--border-width) solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
 }
 
+/* The whole row's height takes the click, not just the name's line. */
 .attachments__open {
   display: flex;
   flex: 1;
   align-items: center;
   gap: var(--space-2);
   min-width: var(--space-0);
+  min-height: var(--control-height-md);
   padding: var(--space-0);
   border: none;
   background: none;
@@ -597,10 +599,12 @@
   gap: var(--space-1-5);
 }
 
+/* Each choice (its label is the target) is at least 24 px tall. */
 .category-move__choice {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-2);
+  min-height: var(--control-height-sm);
   cursor: pointer;
 }
 

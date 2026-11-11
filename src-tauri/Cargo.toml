@@ -1,6 +1,6 @@
 [package]
 name = "pheeme"
-version = "0.17.0"
+version = "0.20.0"
 description = "Pheeme: an open-source desktop Gmail client"
 authors = []
 edition = "2021"
@@ -62,8 +62,14 @@ if-addrs = "0.15"
 zeroize = "1"
 rquickjs = "0.14"
 regex = "1"
+# The AI assistants' MCP server (`mcp/`): plain HTTP/1.1 on loopback. Already in the tree via reqwest.
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
 # Diagnostics bundles: deflate only (flate2's Rust backend, as file-rotate already uses).
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+rrule = "0.14"
+chrono-tz = "0.10"
 
 # Valgrind only runs on Linux. Optional so that plain builds don't need libclang.
 [target.'cfg(target_os = "linux")'.dependencies]

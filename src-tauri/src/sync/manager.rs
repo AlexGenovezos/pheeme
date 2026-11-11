@@ -3,6 +3,7 @@
 //! focus/manual/after-action triggers, and a background backfill per account.
 
 use super::api::MailApi;
+use super::connectivity::{self, Connectivity, Probe, PROBE_INTERVAL};
 use super::engine::{
     now_ms, BackfillProgress, ColorSync, LabelLock, SyncEngine, SyncError, WriteLock,
 };
@@ -73,6 +74,25 @@ pub struct SyncManager {
     last_focus: Mutex<Option<Instant>>,
     backfill_pause: Duration,
     rate_limit_pause: Duration,
+    connectivity: Connectivity,
+    /// The last sync couldn't read the keychain (the Mac is asleep or locked). Retried on the
+    /// usual ticks, but logged once per spell rather than every 90 s all night.
+    keychain_waiting: AtomicBool,
+}
+
+/// The sync failed because Google couldn't be reached at all, not because of Gmail.
+fn is_offline(e: &SyncError) -> bool {
+    matches!(e, SyncError::Gmail(GmailError::Offline(_)))
+}
+
+/// The sync failed because the keychain can't be read right now: it passes by itself.
+fn is_keychain_locked(e: &SyncError) -> bool {
+    matches!(e, SyncError::Gmail(GmailError::KeychainLocked(_)))
+}
+
+/// Records whether the keychain could be read; true when that changed, so it's worth saying.
+fn note_keychain(waiting: &AtomicBool, locked: bool) -> bool {
+    waiting.swap(locked, Ordering::SeqCst) != locked
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -88,6 +108,8 @@ impl SyncManager {
             events,
             BACKFILL_PAUSE,
             BACKFILL_RATE_LIMIT_PAUSE,
+            connectivity::http_probe(),
+            PROBE_INTERVAL,
         )
     }
 
@@ -97,6 +119,8 @@ impl SyncManager {
         events: Arc<dyn SyncEvents>,
         backfill_pause: Duration,
         rate_limit_pause: Duration,
+        probe: Probe,
+        probe_interval: Duration,
     ) -> Arc<Self> {
         Arc::new(Self {
             db,
@@ -107,7 +131,66 @@ impl SyncManager {
             last_focus: Mutex::new(None),
             backfill_pause,
             rate_limit_pause,
+            connectivity: Connectivity::new(probe, probe_interval),
+            keychain_waiting: AtomicBool::new(false),
         })
+    }
+
+    /// Google answered the last time it was asked. While it doesn't, syncs and queued changes
+    /// wait for the connection instead of failing.
+    pub fn online(&self) -> bool {
+        self.connectivity.online()
+    }
+
+    /// Google couldn't be reached: say so once, then check until it can, and sync everything.
+    fn went_offline(self: &Arc<Self>) {
+        if !self.connectivity.went_offline() {
+            return;
+        }
+        tracing::info!("can't reach Google; syncing again once the connection is back");
+        self.events.emit(SyncEvent::Network { online: false });
+        let this = self.clone();
+        self.runtime.spawn(async move {
+            this.connectivity.wait_until_online().await;
+            tracing::info!("Google is reachable again; syncing");
+            // Changes that failed while the connection was going go now, not after their backoff.
+            if let Err(e) = crate::db::outbox::retry_waiting(&this.db, now_ms()).await {
+                tracing::warn!(error = %e, "couldn't make waiting changes due");
+            }
+            this.events.emit(SyncEvent::Network { online: true });
+            this.trigger(None);
+        });
+    }
+
+    /// The last sync couldn't read the keychain (asleep or locked).
+    pub fn keychain_waiting(&self) -> bool {
+        self.keychain_waiting.load(Ordering::SeqCst)
+    }
+
+    /// Log a failure, except a keychain that can't be read: that's said once when it starts.
+    fn log_failure(&self, account_id: &str, e: &SyncError, what: &str) {
+        if !is_keychain_locked(e) {
+            tracing::warn!(account = account_id, error = %e, "{what}");
+        } else if note_keychain(&self.keychain_waiting, true) {
+            tracing::info!(
+                error = %e,
+                "can't read the keychain (the Mac is asleep or locked); syncing again once it can"
+            );
+        }
+    }
+
+    /// Report a failed sync: going offline is one app-wide `network:status`, not an error for
+    /// every account.
+    fn report_error(self: &Arc<Self>, account_id: &str, e: &SyncError) {
+        if is_offline(e) {
+            self.went_offline();
+            return;
+        }
+        self.events.emit(SyncEvent::Error {
+            account_id: account_id.to_owned(),
+            code: e.code().to_owned(),
+            message: e.to_string(),
+        });
     }
 
     fn account(&self, id: &str) -> Arc<AccountSync> {
@@ -225,6 +308,9 @@ impl SyncManager {
         let result = result.map(|_| ());
         match result {
             Ok(()) => {
+                if note_keychain(&self.keychain_waiting, false) {
+                    tracing::info!("the keychain can be read again; syncing");
+                }
                 self.ensure_backfill(account_id);
                 Ok(())
             }
@@ -233,12 +319,8 @@ impl SyncManager {
                 Ok(())
             }
             Err(e) => {
-                tracing::warn!(account = account_id, error = %e, "sync failed");
-                self.events.emit(SyncEvent::Error {
-                    account_id: account_id.to_owned(),
-                    code: e.code().to_owned(),
-                    message: e.to_string(),
-                });
+                self.log_failure(account_id, &e, "sync failed");
+                self.report_error(account_id, &e);
                 Err(e)
             }
         }
@@ -270,8 +352,13 @@ impl SyncManager {
         }
     }
 
-    /// Sync one account, or every account, in the background.
+    /// Sync one account, or every account, in the background. Offline, check the connection now
+    /// instead: coming back syncs every account.
     pub fn trigger(self: &Arc<Self>, account_id: Option<String>) {
+        if !self.online() {
+            self.connectivity.check_soon();
+            return;
+        }
         let this = self.clone();
         self.runtime.spawn(async move {
             let ids = match account_id {
@@ -293,13 +380,13 @@ impl SyncManager {
                 this.forget(&id);
                 return;
             }
+            // The change stays queued; coming back online sends it.
+            if !this.online() {
+                return;
+            }
             if let Err(e) = this.process_outbox(&id).await {
-                tracing::warn!(account = %id, error = %e, "scheduled outbox dispatch failed");
-                this.events.emit(SyncEvent::Error {
-                    account_id: id.clone(),
-                    code: e.code().to_owned(),
-                    message: e.to_string(),
-                });
+                this.log_failure(&id, &e, "scheduled outbox dispatch failed");
+                this.report_error(&id, &e);
             }
             this.run_coalesced(&id).await;
         });
@@ -307,6 +394,10 @@ impl SyncManager {
 
     /// The window gained focus.
     pub fn trigger_focus(self: &Arc<Self>) {
+        if !self.online() {
+            self.connectivity.check_soon();
+            return;
+        }
         {
             let mut last = lock(&self.last_focus);
             if last.is_some_and(|t| t.elapsed() < FOCUS_MIN_INTERVAL) {
@@ -321,12 +412,14 @@ impl SyncManager {
     pub fn start(self: &Arc<Self>) {
         let this = self.clone();
         self.runtime.spawn(async move {
-            let mut tick = tokio::time::interval(SYNC_INTERVAL);
-            // After the computer sleeps, check once rather than catching up on every missed tick.
-            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // On the shared clock, so the calendar's and tasks' checks share mail's wakeups.
+            // After the computer sleeps, this checks once rather than catching up.
             loop {
-                tick.tick().await;
-                this.trigger(None);
+                // Offline, the connection check takes over until Google answers.
+                if this.online() {
+                    this.trigger(None);
+                }
+                crate::cadence::sleep_until_next(SYNC_INTERVAL).await;
             }
         });
     }
@@ -604,13 +697,201 @@ mod tests {
         let (_dir, _pool, fake, events, manager) = setup().await;
         fake.fail_next(
             "profile_history_id",
-            crate::gmail::GmailError::Offline("down".into()),
+            crate::gmail::GmailError::Network("timed out".into()),
         );
         assert!(manager.sync_account("a1").await.is_err());
         assert!(events.take().iter().any(|e| matches!(
             e,
             SyncEvent::Error { code, .. } if code == "network"
         )));
+        assert!(
+            manager.online(),
+            "a timeout reached Google, so it isn't offline"
+        );
+    }
+
+    #[tokio::test]
+    async fn unreadable_keychain_waits_quietly_until_it_can_be_read() {
+        let (_dir, _pool, fake, events, manager) = setup().await;
+        for _ in 0..2 {
+            fake.fail_next(
+                "profile_history_id",
+                crate::gmail::GmailError::KeychainLocked("in dark wake".into()),
+            );
+            assert!(manager.sync_account("a1").await.is_err());
+            assert!(manager.keychain_waiting());
+        }
+        let codes: Vec<String> = events
+            .take()
+            .into_iter()
+            .filter_map(|e| match e {
+                SyncEvent::Error { code, .. } => Some(code),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(codes, ["keychain_locked", "keychain_locked"]);
+
+        manager.sync_account("a1").await.unwrap();
+        assert!(!manager.keychain_waiting());
+    }
+
+    #[test]
+    fn keychain_wait_is_said_once_per_spell() {
+        let waiting = AtomicBool::new(false);
+        assert!(note_keychain(&waiting, true), "the first failure says so");
+        assert!(!note_keychain(&waiting, true), "later ones don't");
+        assert!(note_keychain(&waiting, false), "reading it again says so");
+        assert!(!note_keychain(&waiting, false), "routine syncs don't");
+    }
+
+    /// A check that answers whatever `reachable` holds.
+    fn probe(reachable: Arc<AtomicBool>) -> Probe {
+        Arc::new(move || {
+            let up = reachable.load(Ordering::SeqCst);
+            Box::pin(async move { up })
+        })
+    }
+
+    /// A manager whose connection check answers `reachable`, every 10 ms.
+    async fn offline_setup() -> (
+        TestDb,
+        SqlitePool,
+        Arc<FakeGmail>,
+        Arc<RecordingEvents>,
+        Arc<SyncManager>,
+        Arc<AtomicBool>,
+    ) {
+        let db = TestDb::with_account("a1").await;
+        let pool = db.pool.clone();
+        let fake = Arc::new(FakeGmail::new());
+        let events = Arc::new(RecordingEvents::default());
+        let reachable = Arc::new(AtomicBool::new(false));
+        let api = fake.clone();
+        let manager = SyncManager::with_pauses(
+            pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            events.clone(),
+            Duration::ZERO,
+            Duration::from_millis(10),
+            probe(reachable.clone()),
+            Duration::from_millis(10),
+        );
+        (db, pool, fake, events, manager, reachable)
+    }
+
+    async fn eventually(what: &str, mut done: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !done() {
+            assert!(Instant::now() < deadline, "{what}");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn unreachable_google_is_one_offline_status_not_an_account_error() {
+        let (_dir, _pool, fake, events, manager, reachable) = offline_setup().await;
+        fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+        fake.fail_next(
+            "profile_history_id",
+            crate::gmail::GmailError::Offline("dns error".into()),
+        );
+        assert!(manager.sync_account("a1").await.is_err());
+        assert!(!manager.online());
+        let seen = events.take();
+        assert!(seen.contains(&SyncEvent::Network { online: false }));
+        assert!(
+            !seen.iter().any(|e| matches!(e, SyncEvent::Error { .. })),
+            "{seen:?}"
+        );
+
+        // While offline, scheduled, focus and after-action syncs don't ask Gmail.
+        let before = fake.calls("profile_history_id");
+        manager.trigger(None);
+        manager.trigger_focus();
+        manager.trigger_after("a1", Duration::ZERO);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(fake.calls("profile_history_id"), before);
+
+        // The connection comes back: online again, and every account syncs.
+        reachable.store(true, Ordering::SeqCst);
+        eventually("never came back online", || manager.online()).await;
+        eventually("didn't sync after reconnecting", || {
+            fake.calls("profile_history_id") > before
+        })
+        .await;
+        eventually("no completed sync", || {
+            events
+                .take()
+                .iter()
+                .any(|e| matches!(e, SyncEvent::Completed { .. }))
+        })
+        .await;
+        assert!(manager.online());
+    }
+
+    #[tokio::test]
+    async fn reconnecting_sends_changes_waiting_out_their_backoff() {
+        let (_dir, pool, _fake, _events, manager, reachable) = offline_setup().await;
+        let now = now_ms();
+        let op = crate::db::outbox::DbOp {
+            seq: 0,
+            id: "op1".into(),
+            account_id: "a1".into(),
+            kind: "modify".into(),
+            payload: "{}".into(),
+            status: "pending".into(),
+            attempts: 3,
+            next_attempt_at: now + 60_000,
+            checks_done: 0,
+            rfc822_message_id: None,
+            last_error: Some("can't reach Gmail".into()),
+            created_at: now,
+            updated_at: now,
+        };
+        // A send still in its undo window keeps its time.
+        let undo = crate::db::outbox::DbOp {
+            id: "send1".into(),
+            kind: "send".into(),
+            attempts: 0,
+            last_error: None,
+            ..op.clone()
+        };
+        let mut conn = pool.acquire().await.unwrap();
+        crate::db::outbox::insert(&mut conn, &op, &[])
+            .await
+            .unwrap();
+        crate::db::outbox::insert(&mut conn, &undo, &[])
+            .await
+            .unwrap();
+        drop(conn);
+
+        manager.went_offline();
+        reachable.store(true, Ordering::SeqCst);
+        eventually("never came back online", || manager.online()).await;
+        let due = |id: &'static str| {
+            let pool = pool.clone();
+            async move {
+                crate::db::outbox::get(&pool, id)
+                    .await
+                    .unwrap()
+                    .map(|op| op.next_attempt_at)
+            }
+        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match due("op1").await {
+                // Dispatched (and dropped) or made due.
+                None => break,
+                Some(at) if at <= now_ms() => break,
+                Some(_) => {}
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the waiting change was never made due"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(due("send1").await, Some(now + 60_000));
     }
 
     #[tokio::test]
@@ -622,6 +903,8 @@ mod tests {
             Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
             events,
             Duration::ZERO,
+            Duration::from_millis(10),
+            probe(Arc::new(AtomicBool::new(true))),
             Duration::from_millis(10),
         );
         fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));

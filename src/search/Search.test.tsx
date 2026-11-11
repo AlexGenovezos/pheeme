@@ -132,9 +132,11 @@ test("search is account-wide; changing scope clears selection, and clear returns
     "search_messages",
     { accountIds: ["a"], query: "subject:invoice", before: null, limit: null },
   ]);
-  expect(screen.getByRole("combobox", { name: "Search accounts" })).toHaveValue("a");
+  const scope = screen.getByRole("combobox", { name: "Search accounts" });
+  expect(scope).toHaveTextContent("a@example.com");
   act(() => useUiStore.getState().checkAll(["a:Cached invoice"]));
-  fireEvent.change(screen.getByRole("combobox"), { target: { value: "" } });
+  fireEvent.click(scope);
+  fireEvent.click(screen.getByRole("option", { name: "All accounts" }));
   expect(useUiStore.getState().checked).toEqual([]);
   await vi.waitFor(() =>
     expect(calls).toContainEqual([

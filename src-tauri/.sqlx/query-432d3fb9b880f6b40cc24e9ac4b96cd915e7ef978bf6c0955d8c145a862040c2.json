@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO task_lists (account_id, id, title, sort_order, etag, updated_ms)\n             VALUES (?, ?, ?, ?, ?, ?)\n             ON CONFLICT (account_id, id) DO UPDATE SET\n                 title = excluded.title,\n                 sort_order = excluded.sort_order,\n                 etag = excluded.etag,\n                 updated_ms = excluded.updated_ms\n             WHERE task_lists.title IS NOT excluded.title\n                OR task_lists.sort_order IS NOT excluded.sort_order\n                OR task_lists.etag IS NOT excluded.etag",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "432d3fb9b880f6b40cc24e9ac4b96cd915e7ef978bf6c0955d8c145a862040c2"
+}

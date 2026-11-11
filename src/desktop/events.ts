@@ -7,17 +7,61 @@ import { useModStore } from "../mods/store";
 import { useSettingsStore } from "../settings/settingsStore";
 import { useAccountStore } from "../store/accountStore";
 import { useUiStore } from "../store/uiStore";
-import { takeNotificationTarget, type ThreadTarget } from "./api";
+import { revealEvent } from "../calendar/actions";
+import { useCalendarStore } from "../calendar/calendarStore";
+import { getCalendarEventDetail } from "../lib/tauri";
+import {
+  takeNotificationTarget,
+  type EventTarget,
+  type NotifyTarget,
+  type ThreadTarget,
+} from "./api";
 
-export function openNotificationTarget(target: ThreadTarget): boolean {
+export function openNotificationTarget(target: NotifyTarget): boolean {
   if (!useAccountStore.getState().accounts.some((a) => a.id === target.accountId)) return false;
   useSettingsStore.getState().close();
   useModStore.getState().openPanel(null);
+  if (target.kind === "event") void openEvent(target);
+  else openThread(target);
+  return true;
+}
+
+/** A reminder: Calendar mode on the event's day, with its popover open. */
+async function openEvent(target: EventTarget) {
+  const calendar = useCalendarStore.getState();
+  calendar.setMode("calendar");
+  try {
+    // The first load moves the view to today, so let it finish before going to the event's day.
+    // Calendar's own mount starts a load too, and only the latest one lands: wait for the store.
+    if (!calendar.accounts) await firstCalendarLoad();
+    const event = await getCalendarEventDetail(target.accountId, target.calendarId, target.eventId);
+    await revealEvent(event);
+  } catch (error) {
+    // Deleted since the reminder: Calendar mode is still the right place to land.
+    console.warn("Could not open the reminder's event", error);
+  }
+}
+
+/** Resolves once calendar accounts are loaded (or the load failed), whichever load did it. */
+function firstCalendarLoad(): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (s: ReturnType<typeof useCalendarStore.getState>) =>
+      s.accounts !== null || s.loadError !== null;
+    const stop = useCalendarStore.subscribe((s) => {
+      if (!done(s)) return;
+      stop();
+      resolve();
+    });
+    void useCalendarStore.getState().loadAccounts();
+  });
+}
+
+function openThread(target: ThreadTarget) {
+  useCalendarStore.getState().setMode("mail");
   const ui = useUiStore.getState();
   // All Mail still contains the conversation if another device archived it after delivery.
   ui.setMailbox({ accountId: target.accountId, labelId: "ALL" });
   ui.setOpenThread(threadKey(target.accountId, target.threadId));
-  return true;
 }
 
 export function useDesktopEvents(ready: boolean, showMail: () => void) {

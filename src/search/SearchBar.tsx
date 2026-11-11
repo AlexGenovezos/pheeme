@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
+import { Select } from "../components/ui/Select";
 import { TextInput } from "../components/ui/TextInput";
 import { useKeybinding } from "../keyboard/useCommands";
 import { addRecentSearch, recentSearches, removeRecentSearch, toCommandError } from "../lib/tauri";
@@ -169,21 +170,19 @@ export function SearchBar() {
       )}
       {active && (
         <>
-          <label className="mail-search__scope">
+          <div className="mail-search__scope">
             <span>Search in</span>
-            <select
+            <Select
+              className="mail-search__account"
               aria-label="Search accounts"
               value={scope ?? ""}
-              onChange={(e) => useUiStore.getState().setSearchAccount(e.target.value || null)}
-            >
-              <option value="">All accounts</option>
-              {accounts.map((a) => (
-                <option value={a.id} key={a.id}>
-                  {a.email}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={[
+                { value: "", label: "All accounts" },
+                ...accounts.map((a) => ({ value: a.id, label: a.email })),
+              ]}
+              onChange={(id) => useUiStore.getState().setSearchAccount(id || null)}
+            />
+          </div>
           <div className="mail-search__status" id="search-status" role="status" aria-live="polite">
             <span title={remoteError?.message}>
               {remoteError

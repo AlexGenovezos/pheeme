@@ -49,6 +49,18 @@ describe("findCode", () => {
     expect(findCode(text)).toBeNull();
   });
 
+  it.each([
+    "Join Zoom Meeting https://us06web.zoom.us/j/81234567890?pwd=AbCdEf.1 Meeting ID: 812 3456 7890 Passcode: 351904 You can also watch live",
+    "Microsoft Teams meeting Join: https://teams.microsoft.com/l/meetup-join/abc Meeting ID: 241 556 309 872 Passcode: K4TRWZ",
+    "Zoom meeting passcode: 552310",
+  ])("doesn't take a meeting passcode for a sign-in code: %j", (text) => {
+    expect(findCode(text)).toBeNull();
+  });
+
+  it("still finds a Zoom sign-in code", () => {
+    expect(findCode("Your Zoom verification code is 123456.")).toBe("123456");
+  });
+
   it("prefers the code nearest the wording", () => {
     expect(
       findCode("Ref 2024-11. Your verification code is 660021. Account 99887766 was used."),

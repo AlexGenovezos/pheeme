@@ -1,6 +1,7 @@
 import { AlertTriangle, FileUp, FolderOpen, Paintbrush, Pencil, Plus, Trash2 } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "../components/ui/Button";
+import { Select } from "../components/ui/Select";
 import { toast } from "../components/ui/Toast";
 import { openThemeFolder } from "../lib/tauri";
 import type { ImportedTheme } from "../styles/themes/t3";
@@ -90,26 +91,24 @@ export function ThemeChoiceControl({ kind }: { kind: ResolvedTheme }) {
         onClick={() => editTheme({ id: selected.id, slot: kind })}
       />
       <ThemePreviewDots kind={kind} />
-      <select
+      <Select
         className="settings-select"
         aria-label={`${KIND_LABEL[kind]} theme`}
         value={selected.id}
-        onChange={(e) => chooseTheme(kind, e.target.value)}
-      >
-        {sources.map((source) => (
-          <optgroup key={source} label={SOURCE_GROUP[source]}>
-            {options
-              .filter((o) => o.source === source)
-              .map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.kind === kind || source === "built-in"
-                    ? o.name
-                    : `${o.name} (${KIND_LABEL[o.kind].toLowerCase()})`}
-                </option>
-              ))}
-          </optgroup>
-        ))}
-      </select>
+        options={sources.flatMap((source) =>
+          options
+            .filter((o) => o.source === source)
+            .map((o) => ({
+              value: o.id,
+              group: SOURCE_GROUP[source],
+              label:
+                o.kind === kind || source === "built-in"
+                  ? o.name
+                  : `${o.name} (${KIND_LABEL[o.kind].toLowerCase()})`,
+            })),
+        )}
+        onChange={(id) => chooseTheme(kind, id)}
+      />
     </>
   );
 }

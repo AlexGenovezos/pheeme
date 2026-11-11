@@ -40,9 +40,9 @@ test("import VS Code themes, use them, keep them across a relaunch, and remove o
     ]);
   await expect(page.getByText("Installed 2 themes")).toBeVisible();
   // The last file wins: Monokai is dark, so Pheeme switches to Dark mode.
-  await expect(settings.getByRole("combobox", { name: "Dark theme" })).toHaveValue("monokai");
-  await expect(settings.getByRole("combobox", { name: "Light theme" })).toHaveValue(
-    "solarized-light",
+  await expect(settings.getByRole("combobox", { name: "Dark theme" })).toHaveText(/Monokai/);
+  await expect(settings.getByRole("combobox", { name: "Light theme" })).toHaveText(
+    "Solarized (light)",
   );
   await expect(settings.getByRole("radio", { name: "Dark" })).toHaveAttribute(
     "aria-checked",
@@ -69,7 +69,7 @@ test("import VS Code themes, use them, keep them across a relaunch, and remove o
 
   await openAppearance();
   await settings.getByRole("button", { name: "Remove Solarized (light)" }).click();
-  await expect(settings.getByRole("combobox", { name: "Light theme" })).toHaveValue("pheeme-light");
+  await expect(settings.getByRole("combobox", { name: "Light theme" })).toHaveText("Pheeme Light");
   await page.getByRole("button", { name: "Close settings" }).click();
   expect(await appBg()).toBe("rgb(255, 255, 255)"); // Pheeme Light
 });

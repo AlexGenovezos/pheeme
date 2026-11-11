@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM assistant_activity",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "0b9e5b1fb02139a8a561c84f8d877b27c01fdb1719947715ea4c7632e549b4ac"
+}

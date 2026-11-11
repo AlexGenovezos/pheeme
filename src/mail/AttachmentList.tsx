@@ -3,6 +3,7 @@ import { useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import type { AttachmentInfo } from "../lib/tauri";
 import { downloadAttachment } from "./attachmentActions";
+import { isCalendarBodyPart } from "./invitePart";
 import { usePreviewStore } from "./preview/previewStore";
 import "./mail.css";
 
@@ -27,7 +28,8 @@ export interface AttachmentListProps {
 /** The message's files, each opening the preview panel. Inline images belong to the body, so they're left out. */
 export function AttachmentList({ accountId, messageId, attachments }: AttachmentListProps) {
   const [saving, setSaving] = useState<ReadonlySet<string>>(new Set());
-  const files = attachments.filter((a) => !a.isInline);
+  // The invite card stands in for an invitation's unnamed calendar part.
+  const files = attachments.filter((a) => !a.isInline && !isCalendarBodyPart(a));
   if (files.length === 0) return null;
 
   const download = async (file: AttachmentInfo) => {

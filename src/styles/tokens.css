@@ -90,6 +90,7 @@
   --category-move-width: 320px;
   --label-dialog-width: 400px;
   --label-picker-list-max-height: 320px;
+  --assistant-activity-height: 320px;
   --hairline: 1px;
   --badge-min-width: 18px;
   --kbd-min-width: 18px;
@@ -98,9 +99,10 @@
   --code-digit-height: 34px;
   --divider-hit-area: 7px;
   --divider-hit-offset: -3px;
-  /* Space the macOS traffic lights occupy (trafficLightPosition x = 16 in tauri.conf.json;
-     its y = 24 centres the lights on --titlebar-height, so change them together). */
-  --traffic-light-inset: 76px;
+  /* Space the macOS traffic lights occupy, plus 12 px clear of them: on macOS 26+ the lights run
+     from x 16 to 76 (trafficLightPosition x = 16 in tauri.conf.json; its y = 24 centres them on
+     --titlebar-height, so change them together). */
+  --traffic-light-inset: 88px;
   --menu-min-width: 200px;
   --menu-max-width: 320px;
   --palette-width: 560px;
@@ -124,6 +126,49 @@
   --speed-panel-width: 400px;
   --speed-panel-thumb-size: 16px;
   --speed-panel-chip-width: 52px;
+  /* Calendar mode */
+  --calendar-gutter-width: 56px;
+  --calendar-band-max-height: 132px;
+  --calendar-mini-day-size: 26px;
+  --calendar-check-size: 14px;
+  --calendar-now-dot-size: 10px;
+  --calendar-now-line: 2px;
+  --calendar-event-inset: 2px;
+  --calendar-popover-width: 380px;
+  --calendar-popover-max-height: 80vh;
+  --calendar-first-width: 560px;
+  --calendar-goto-width: 360px;
+  --calendar-goto-offset-top: 18vh;
+  --calendar-guest-list-max-height: 168px;
+  /* Mail's invite card: its mini day view, and the email pinned beside the calendar. */
+  --invite-mini-day-height: 168px;
+  --invite-mini-gutter-width: 52px;
+  --pinned-email-width: 320px;
+  /* Tasks: the panel at the right edge, its rail, and the tick-off circle. */
+  --tasks-panel-width: 300px;
+  --tasks-rail-width: 44px;
+  --task-check-size: 18px;
+  --task-check-size-sm: 14px;
+  --task-subtask-indent: 26px;
+  --task-notes-lines: 2;
+  /* Calendar editing: quick create, the editor dialog, prompts, search. */
+  --calendar-quick-width: 440px;
+  --calendar-editor-width: 680px;
+  --calendar-editor-max-height: 88vh;
+  --calendar-prompt-width: 380px;
+  --calendar-resize-handle: 6px;
+  --calendar-number-width: 72px;
+  --calendar-description-min-height: 96px;
+  --calendar-search-width: 760px;
+  --calendar-search-day-width: 150px;
+  --calendar-search-time-width: 150px;
+  --calendar-draft-opacity: 0.85;
+  /* Pickers (components/ui: Select, DateField, TimeField) and the editor's hit targets. The picker
+     popover sits above dialogs (--z-overlay) and under toasts. */
+  --z-picker: 250;
+  --picker-list-max-height: 288px;
+  --time-field-width: 96px;
+  --calendar-swatch-size: 24px;
   --speed-control-slider-width: 160px;
   --speed-control-value-width: 72px;
   /* Settings dialog: a floating window over the blurred app. */
@@ -134,13 +179,15 @@
   --settings-content-width: 680px;
   --settings-backdrop-blur: 6px;
   --settings-recorder-min-width: 120px;
+  /* The nav's and body's corners inside the dialog's rounded border. */
+  --settings-inner-radius: calc(var(--radius-lg) - var(--border-width));
   /* Keyboard map on the Keyboard shortcuts page. */
   --kbmap-key-height: 32px;
   --kbmap-tip-max-width: 280px;
-  /* A numeric settings field, e.g. the Gmail API limit ("1,200,000 / min"). */
-  --settings-number-width: 140px;
-  /* A dropdown in a settings row, e.g. Appearance › Light theme. */
-  --settings-select-max-width: 220px;
+  /* A numeric settings field, e.g. the Gmail API limit ("1,200,000"; its unit sits beside it). */
+  --settings-number-width: 112px;
+  /* A dropdown in a settings row, e.g. Appearance › Light theme: one width whatever is chosen. */
+  --settings-select-width: 200px;
   /* Attachment preview: a Quick Look-style panel over the blurred app. */
   --preview-max-width: 1100px;
   --preview-margin: 40px;
@@ -212,6 +259,16 @@
   );
   --theme-picker-thumb-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
   --theme-picker-thumb-border: #fff;
+
+  /*
+   * Find in conversation (src/mail/find/). Match colors are the same in every theme, like a browser's
+   * find: they tint email content, whose colors no theme controls. The bar fits the field and its count.
+   */
+  --find-bar-width: 360px;
+  --find-count-width: 76px;
+  --find-match-bg: #ffe14d;
+  --find-match-current-bg: #ff9632;
+  --find-match-foreground: #000;
 
   /* Stacking. */
   --z-base: 0;

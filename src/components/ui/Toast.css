@@ -90,3 +90,9 @@
     transform: translateY(var(--enter-offset));
   }
 }
+
+/* A dialog or popover is open: an offer that waits for an answer (the notifications prompt)
+   hides until it closes, so it can't sit over its buttons. Errors still show. */
+:root:has([role="dialog"]) .ui-toast--waits {
+  visibility: hidden;
+}

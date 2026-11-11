@@ -3,6 +3,7 @@ mod icon;
 mod platform;
 mod schedule;
 
+use crate::calendar::reminders::{Alert, EventTarget, ReminderAlerts, ReminderService};
 use crate::db::{self, desktop::AccountDesktop};
 use crate::sync::SyncEvent;
 use crate::AppState;
@@ -27,10 +28,19 @@ pub struct ThreadTarget {
     pub thread_id: String,
 }
 
+/// What clicking a notification opens: a conversation, or an event (a reminder).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum NotifyTarget {
+    Thread(ThreadTarget),
+    Event(EventTarget),
+}
+
 pub struct Desktop {
     refresh: Notify,
-    pending: Mutex<Option<ThreadTarget>>,
+    pending: Mutex<Option<NotifyTarget>>,
     pub can_hide: AtomicBool,
+    reminders: Arc<ReminderService>,
 }
 
 #[derive(Serialize)]
@@ -44,6 +54,8 @@ pub struct DesktopSettings {
     pub tray_enabled: bool,
     /// When alerts may appear, for every account.
     pub schedule: NotifySchedule,
+    /// Event reminders pop up as notifications.
+    pub calendar_reminders: bool,
 }
 
 #[cfg(target_os = "linux")]
@@ -59,7 +71,7 @@ pub fn show_window(app: &AppHandle) {
     }
 }
 
-pub fn activate(app: &AppHandle, target: ThreadTarget) {
+pub fn activate(app: &AppHandle, target: NotifyTarget) {
     if let Some(desktop) = app.try_state::<Arc<Desktop>>() {
         *desktop.pending.lock().unwrap_or_else(|p| p.into_inner()) = Some(target);
         // The target stays queued until the mounted frontend claims it, including early startup.
@@ -68,7 +80,7 @@ pub fn activate(app: &AppHandle, target: ThreadTarget) {
     show_window(app);
 }
 
-pub fn take_target(app: &AppHandle) -> Option<ThreadTarget> {
+pub fn take_target(app: &AppHandle) -> Option<NotifyTarget> {
     app.state::<Arc<Desktop>>()
         .pending
         .lock()
@@ -83,6 +95,14 @@ pub fn refresh(app: &AppHandle) {
 }
 
 pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
+    if matches!(
+        event,
+        SyncEvent::CalendarUpdated { .. } | SyncEvent::CalendarAccess { .. }
+    ) {
+        if let Some(desktop) = app.try_state::<Arc<Desktop>>() {
+            desktop.reminders.replan();
+        }
+    }
     if matches!(
         event,
         SyncEvent::MessagesUpdated { .. }
@@ -126,10 +146,10 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
                         .collect();
                     let (mut shown, mut failed) = (0usize, 0usize);
                     for (thread_id, mail) in by_thread {
-                        let target = ThreadTarget {
+                        let target = NotifyTarget::Thread(ThreadTarget {
                             account_id: account_id.clone(),
                             thread_id,
-                        };
+                        });
                         let body = format!(
                             "{}\n{}",
                             clean_text(&mail.subject, 160),
@@ -176,7 +196,47 @@ pub async fn settings(app: &AppHandle) -> anyhow::Result<DesktopSettings> {
         tray_available: app.state::<Arc<Desktop>>().can_hide.load(Ordering::Relaxed),
         tray_enabled: db::settings::tray_icon(&state.db).await?,
         schedule: db::settings::notify_schedule(&state.db).await?,
+        calendar_reminders: db::settings::calendar_reminders(&state.db).await?,
     })
+}
+
+/// Turn event reminders on or off. Turning them on may ask for notification permission.
+pub async fn set_calendar_reminders(
+    app: &AppHandle,
+    enabled: bool,
+) -> anyhow::Result<DesktopSettings> {
+    let pool = &app.state::<AppState>().db;
+    if enabled && platform::permission(true).await? == "denied" {
+        db::settings::set_calendar_reminders(pool, false).await?;
+        anyhow::bail!("Notifications are blocked. Allow Pheeme in your system notification settings, then try again.");
+    }
+    db::settings::set_calendar_reminders(pool, enabled).await?;
+    settings(app).await
+}
+
+/// Reminders shown through the OS notification system; clicking one opens the event.
+struct DesktopAlerts(AppHandle);
+
+#[async_trait::async_trait]
+impl ReminderAlerts for DesktopAlerts {
+    async fn permitted(&self) -> bool {
+        // "notDetermined" too: a reminder never prompts. Turning reminders or mail
+        // notifications on in Settings asks.
+        matches!(
+            platform::permission(false).await.as_deref(),
+            Ok("granted" | "system")
+        )
+    }
+
+    async fn show(&self, alert: Alert) -> bool {
+        platform::show(
+            &self.0,
+            NotifyTarget::Event(alert.target),
+            clean_text(&alert.title, 160),
+            clean_text(&alert.body, 240),
+        )
+        .await
+    }
 }
 
 pub async fn set_notifications(
@@ -314,13 +374,19 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn install(app: &AppHandle) {
+    let reminders = ReminderService::new(
+        app.state::<AppState>().db.clone(),
+        Arc::new(DesktopAlerts(app.clone())),
+    );
     let desktop = Arc::new(Desktop {
         refresh: Notify::new(),
         pending: Mutex::new(None),
         can_hide: AtomicBool::new(false),
+        reminders: reminders.clone(),
     });
     app.manage(desktop.clone());
     platform::init(app);
+    tauri::async_runtime::spawn(reminders.run());
     let shown =
         tauri::async_runtime::block_on(db::settings::tray_icon(&app.state::<AppState>().db))
             .unwrap_or_else(|error| {

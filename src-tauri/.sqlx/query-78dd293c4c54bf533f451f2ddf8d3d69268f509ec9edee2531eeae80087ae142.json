@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO calendars (account_id, id, summary, description, time_zone,\n                 background_color, foreground_color, access_role, is_primary, default_reminders)\n             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n             ON CONFLICT (account_id, id) DO UPDATE SET\n                 summary = excluded.summary,\n                 description = excluded.description,\n                 time_zone = excluded.time_zone,\n                 background_color = excluded.background_color,\n                 foreground_color = excluded.foreground_color,\n                 access_role = excluded.access_role,\n                 is_primary = excluded.is_primary,\n                 default_reminders = excluded.default_reminders",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "78dd293c4c54bf533f451f2ddf8d3d69268f509ec9edee2531eeae80087ae142"
+}

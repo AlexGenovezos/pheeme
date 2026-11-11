@@ -1,0 +1,31 @@
+{
+  "kind": "calendar#calendarList",
+  "etag": "\"p1\"",
+  "nextPageToken": "c2",
+  "items": [
+    {
+      "kind": "calendar#calendarListEntry",
+      "id": "me@example.com",
+      "summary": "me@example.com",
+      "timeZone": "America/New_York",
+      "colorId": "14",
+      "backgroundColor": "#9fe1e7",
+      "foregroundColor": "#000000",
+      "selected": true,
+      "accessRole": "owner",
+      "defaultReminders": [{ "method": "popup", "minutes": 10 }],
+      "primary": true
+    },
+    {
+      "kind": "calendar#calendarListEntry",
+      "id": "en.usa#holiday@group.v.calendar.google.com",
+      "summary": "Holidays in United States",
+      "description": "Holidays and Observances in United States",
+      "timeZone": "America/New_York",
+      "backgroundColor": "#16a765",
+      "foregroundColor": "#000000",
+      "accessRole": "reader",
+      "defaultReminders": []
+    }
+  ]
+}

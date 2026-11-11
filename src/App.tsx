@@ -4,6 +4,7 @@ import { useModCommands, useModEvents } from "./mods/lifecycle";
 import { ModPanel } from "./mods/ModSurfaces";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { toast, ToastProvider } from "./components/ui/Toast";
 import { ComposeHost, useComposeEvents } from "./compose/ComposeHost";
 import { Onboarding } from "./onboarding/Onboarding";
@@ -24,6 +25,8 @@ import { useSettingsStore } from "./settings/settingsStore";
 import { isTauri } from "./preview/runtime";
 import { revealWindow } from "./theme/nativeWindow";
 import { AppShell } from "./shell/AppShell";
+import { CalendarScreen } from "./calendar/CalendarScreen";
+import { useCalendarStore } from "./calendar/calendarStore";
 import { ContextMenuHost } from "./shell/ContextMenuHost";
 import { useInboxTabs } from "./store/inboxTabsStore";
 import { useLabelStore } from "./store/labelStore";
@@ -31,6 +34,7 @@ import { useMailStore } from "./store/mailStore";
 import { useThreadStore } from "./store/threadStore";
 import { startPreloading } from "./mail/preload";
 import { SpeedReaderHost } from "./speedread/SpeedReader";
+import { TasksPanelHost } from "./tasks/TasksPanel";
 
 /** Hide the webview's own menu (Reload, Inspect…) outside text; dev builds keep it for devtools. */
 function useNativeContextMenuOnly() {
@@ -89,9 +93,14 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
   useLabelsAndCounts();
   useNotificationPrompt();
 
+  const mode = useCalendarStore((s) => s.mode);
+
   return (
     <>
-      <AppShell onAddAccount={onAddAccount} />
+      <div className="tasks-frame">
+        {mode === "calendar" ? <CalendarScreen /> : <AppShell onAddAccount={onAddAccount} />}
+        <TasksPanelHost />
+      </div>
       <ComposeHost />
       <CommandPalette />
       <Settings onAddAccount={onAddAccount} />
@@ -121,7 +130,18 @@ function useSessionSyncEvents() {
 
 function App() {
   useModEvents();
-  const { accounts, loaded, error, load, upsert, reconnecting, reconnect } = useAccountStore();
+  // Not the whole store: sync errors and progress change it, and this re-renders the entire app.
+  const { accounts, loaded, error, load, upsert, reconnecting, reconnect } = useAccountStore(
+    useShallow(({ accounts, loaded, error, load, upsert, reconnecting, reconnect }) => ({
+      accounts,
+      loaded,
+      error,
+      load,
+      upsert,
+      reconnecting,
+      reconnect,
+    })),
+  );
   const reconnectAccount = accounts.find((a) => a.id === reconnecting);
   const [adding, setAdding] = useState<false | "account" | "guide">(false);
   const showMail = useCallback(() => setAdding(false), []);

@@ -5,6 +5,7 @@ import {
   type MouseEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
 } from "react";
@@ -19,7 +20,7 @@ import { useCommands } from "../keyboard/useCommands";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
-import { focusedThread, type ListDensity, useUiStore } from "../store/uiStore";
+import { focusedThread, type ListDensity, readingPaneShown, useUiStore } from "../store/uiStore";
 import { moveSelection, openAndMarkRead, openFocused, toggleCheckFocused } from "./actions";
 import {
   accountColorIndex,
@@ -144,8 +145,8 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const mailbox = useUiStore((s) => s.mailbox);
   // The row drawn as selected: the open one, or with the reading pane off and nothing open, the highlight.
   const open = useUiStore(focusedThread);
-  const readingPane = useUiStore((s) => s.readingPane);
-  const listShown = useUiStore((s) => s.readingPane || s.openThread === null);
+  const readingPane = useUiStore(readingPaneShown);
+  const listShown = useUiStore((s) => readingPaneShown(s) || s.openThread === null);
   const checked = useUiStore((s) => s.checked);
   const threads = useMailStore((s) => s.threads);
   const loading = useMailStore((s) => s.loading);
@@ -162,6 +163,12 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const keys = useMemo(() => threads.map((t) => threadKey(t.accountId, t.id)), [threads]);
+  // For the row callbacks: read at click time, so they stay the same functions and the memoized rows don't
+  // all re-render whenever a thread changes (opening one marks it read).
+  const keysRef = useRef(keys);
+  useLayoutEffect(() => {
+    keysRef.current = keys;
+  });
   const checkedSet = useMemo(() => new Set(checked), [checked]);
   const accountEmail = useMemo(() => new Map(accounts.map((a) => [a.id, a.email])), [accounts]);
   const withLocation = showsLocation(mailbox, !!search);
@@ -283,26 +290,20 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
     },
   ]);
 
-  const select = useCallback(
-    (e: MouseEvent, thread: ThreadSummary) => {
-      scrollRef.current?.focus({ preventScroll: true });
-      const key = threadKey(thread.accountId, thread.id);
-      const ui = useUiStore.getState();
-      if (e.metaKey || e.ctrlKey) ui.toggleChecked(key);
-      else if (e.shiftKey) ui.checkRange(keys, key);
-      else openAndMarkRead(key);
-    },
-    [keys],
-  );
-  const check = useCallback(
-    (e: MouseEvent, thread: ThreadSummary) => {
-      const key = threadKey(thread.accountId, thread.id);
-      const ui = useUiStore.getState();
-      if (e.shiftKey) ui.checkRange(keys, key);
-      else ui.toggleChecked(key);
-    },
-    [keys],
-  );
+  const select = useCallback((e: MouseEvent, thread: ThreadSummary) => {
+    scrollRef.current?.focus({ preventScroll: true });
+    const key = threadKey(thread.accountId, thread.id);
+    const ui = useUiStore.getState();
+    if (e.metaKey || e.ctrlKey) ui.toggleChecked(key);
+    else if (e.shiftKey) ui.checkRange(keysRef.current, key);
+    else openAndMarkRead(key);
+  }, []);
+  const check = useCallback((e: MouseEvent, thread: ThreadSummary) => {
+    const key = threadKey(thread.accountId, thread.id);
+    const ui = useUiStore.getState();
+    if (e.shiftKey) ui.checkRange(keysRef.current, key);
+    else ui.toggleChecked(key);
+  }, []);
   const contextMenu = useCallback(
     (e: MouseEvent, thread: ThreadSummary) => {
       // Right-clicking neither opens the row nor touches the selection; the menu knows its own target.

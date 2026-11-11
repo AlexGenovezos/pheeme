@@ -13,6 +13,11 @@ import {
 } from "../mail/actions";
 import { openCreateLabel } from "../labels/create";
 import { COPY_CODE_COMMAND, COPY_CODE_SHORTCUT, copyOpenConversationCode } from "../mail/CodeCard";
+import {
+  CREATE_EVENT_COMMAND,
+  CREATE_EVENT_SHORTCUT,
+  createEventFromEmail,
+} from "../calendar/mailActions";
 import { useSetupGuide } from "../onboarding/guideStore";
 import {
   CATEGORIES,
@@ -28,6 +33,8 @@ import { useAccountStore } from "../store/accountStore";
 import { useInboxTabs } from "../store/inboxTabsStore";
 import { useUiStore } from "../store/uiStore";
 import { useThemeStore } from "../theme/theme";
+import { type AppMode, useCalendarStore } from "../calendar/calendarStore";
+import { TOGGLE_TASKS_COMMAND, TOGGLE_TASKS_SHORTCUT, useTasksStore } from "../tasks/tasksStore";
 import type { Command } from "./registry";
 import { useCommands } from "./useCommands";
 
@@ -227,12 +234,29 @@ export function appCommands(): Command[] {
       run: copyOpenConversationCode,
     },
     {
+      id: CREATE_EVENT_COMMAND,
+      title: "Create event from email",
+      group: "Conversation",
+      shortcut: CREATE_EVENT_SHORTCUT,
+      keywords: ["calendar", "meeting", "schedule", "new event", "add to calendar"],
+      run: () => void createEventFromEmail(),
+    },
+    {
       id: "view.toggleSidebar",
       title: "Toggle sidebar",
       group: "View",
       shortcut: "mod+b",
       keywords: ["hide", "show", "panel"],
       run: () => ui().toggleSidebar(),
+    },
+    {
+      id: TOGGLE_TASKS_COMMAND,
+      title: "Show or hide Tasks",
+      group: "View",
+      shortcut: TOGGLE_TASKS_SHORTCUT,
+      keywords: ["tasks", "to-do", "todo", "panel", "google tasks"],
+      global: true,
+      run: () => useTasksStore.getState().togglePanel(),
     },
     {
       id: "theme.toggle",
@@ -264,6 +288,51 @@ export function appCommands(): Command[] {
   ];
 }
 
+/** The mode switch, in both modes. */
+function modeCommands(): Command[] {
+  const setMode = (mode: AppMode) => useCalendarStore.getState().setMode(mode);
+  return [
+    {
+      id: "mode.mail",
+      title: "Go to Mail",
+      group: "Navigation",
+      shortcut: "mod+1",
+      keywords: ["inbox", "email", "switch"],
+      global: true,
+      run: () => setMode("mail"),
+    },
+    {
+      id: "mode.calendar",
+      title: "Go to Calendar",
+      group: "Navigation",
+      shortcut: "mod+2",
+      keywords: ["events", "schedule", "switch"],
+      global: true,
+      run: () => setMode("calendar"),
+    },
+  ];
+}
+
+/**
+ * The app commands for `mode`. Calendar has its own single keys (d, w, m, t, j, k, g), so there the
+ * conversation and mailbox commands are left out (a saved binding such as `g i` would otherwise
+ * swallow `g`), and New message keeps its palette entry without its key.
+ */
+export function commandsForMode(commands: Command[], mode: AppMode): Command[] {
+  if (mode === "mail") return [...commands, ...modeCommands()];
+  const mailOnly = (c: Command) =>
+    c.id.startsWith("conversation.") || c.id.startsWith("go.") || c.id === COPY_CODE_COMMAND;
+  return [
+    ...commands.flatMap<Command>((c) => {
+      if (mailOnly(c)) return [];
+      if (c.id === "compose.new") return [{ ...c, shortcut: undefined }];
+      return [c];
+    }),
+    ...modeCommands(),
+  ];
+}
+
 export function useAppCommands() {
-  useCommands(appCommands());
+  const mode = useCalendarStore((s) => s.mode);
+  useCommands(commandsForMode(appCommands(), mode));
 }

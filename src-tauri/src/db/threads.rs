@@ -930,6 +930,41 @@ pub async fn unread_counts(
     Ok(rows.into_iter().map(|r| (r.label_id, r.count)).collect())
 }
 
+/// The unread inbox threads of one account in one inbox tab, as [`unread_counts`] counts
+/// them: `INBOX ∩ category`, or for Primary (`category` `None`) the unread inbox minus
+/// `excludes`. Walks the `UNREAD` rows like [`unread_counts`].
+pub async fn unread_inbox_tab_threads(
+    pool: &SqlitePool,
+    account_id: &str,
+    category: Option<&str>,
+    excludes: &[String],
+) -> Result<Vec<String>> {
+    let excluded = serde_json::to_string(excludes)?;
+    let rows = sqlx::query_scalar!(
+        r#"
+        SELECT u.thread_id AS "thread_id!"
+        FROM thread_labels u INDEXED BY idx_thread_labels_listing
+        CROSS JOIN thread_labels i
+          ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'
+        WHERE u.label_id = 'UNREAD' AND u.account_id = ?1
+          AND (?2 IS NULL OR EXISTS (
+                SELECT 1 FROM thread_labels c
+                WHERE c.account_id = u.account_id AND c.thread_id = u.thread_id
+                  AND c.label_id = ?2))
+          AND NOT EXISTS (
+                SELECT 1 FROM json_each(?3) ex CROSS JOIN thread_labels c
+                  ON c.account_id = u.account_id AND c.thread_id = u.thread_id
+                 AND c.label_id = ex.value)
+        "#,
+        account_id,
+        category,
+        excluded
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// Unread and total thread counts for one label of one account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LabelCount {
@@ -1920,6 +1955,58 @@ mod tests {
                 ("INBOX".to_owned(), 4),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn unread_inbox_tab_threads_match_the_tab_counts() {
+        let pool = seeded_pool().await;
+        seed(&pool, "a1", "plain", Some(500), &["INBOX", "UNREAD"]).await;
+        seed(
+            &pool,
+            "a1",
+            "read",
+            Some(450),
+            &["INBOX", "CATEGORY_PROMOTIONS"],
+        )
+        .await;
+        let promo = &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"];
+        seed(&pool, "a1", "promo", Some(400), promo).await;
+        seed(
+            &pool,
+            "a1",
+            "social",
+            Some(300),
+            &["INBOX", "UNREAD", "CATEGORY_SOCIAL"],
+        )
+        .await;
+        seed(
+            &pool,
+            "a1",
+            "archived",
+            Some(200),
+            &["UNREAD", "CATEGORY_PROMOTIONS"],
+        )
+        .await;
+        seed(&pool, "a2", "other", Some(100), promo).await;
+
+        let tab = |category: Option<&'static str>, excludes: Vec<String>| {
+            let pool = pool.clone();
+            async move {
+                let mut ids = unread_inbox_tab_threads(&pool, "a1", category, &excludes)
+                    .await
+                    .unwrap();
+                ids.sort();
+                ids
+            }
+        };
+        assert_eq!(
+            tab(Some("CATEGORY_PROMOTIONS"), vec![]).await,
+            labels(&["promo"])
+        );
+        assert_eq!(tab(None, labels(&OTHERS)).await, labels(&["plain"]));
+        // Social hidden: its mail is under Primary.
+        let shown = labels(&["CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS"]);
+        assert_eq!(tab(None, shown).await, labels(&["plain", "social"]));
     }
 
     #[tokio::test]
