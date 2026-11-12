@@ -1,12 +1,6 @@
 // UI state: pane layout and navigation preferences (persisted), current mailbox, open and checked threads.
 import { create } from "zustand";
-import {
-  mailboxKey,
-  homeMailbox,
-  type MailboxRef,
-  parseThreadKey,
-  type ThreadKey,
-} from "../mail/mailboxes";
+import { homeMailbox, type MailboxRef, parseThreadKey, type ThreadKey } from "../mail/mailboxes";
 
 /** Pane geometry in CSS px. The shell writes these into CSS variables. */
 export const PANE = {
@@ -41,6 +35,8 @@ export interface NavPrefs {
   foldedLabels: Record<string, string[]>;
   /** Accounts whose Labels section has its More row (hidden labels) open. */
   labelsMoreOpen: string[];
+  /** Unread only: one filter for every mailbox, kept across launches. */
+  unreadOnly: boolean;
 }
 
 export const DEFAULT_MAILBOX: MailboxRef = { accountId: null, labelId: "INBOX" };
@@ -107,6 +103,7 @@ export function readNavPrefs(
         ? Object.fromEntries(Object.entries(folded).map(([id, paths]) => [id, strings(paths)]))
         : {},
     labelsMoreOpen: strings(raw?.labelsMoreOpen),
+    unreadOnly: raw?.unreadOnly === true,
   };
 }
 
@@ -146,8 +143,6 @@ interface UiState extends PaneLayout, NavPrefs {
   /** `accountId` scopes the search to one account (`null`: all); left out, a new search takes the mailbox's. */
   setSearch(text: string, accountId?: string | null): void;
   setSearchAccount(accountId: string | null): void;
-  /** Per-mailbox filters for this session only. */
-  unreadMailboxes: Record<string, boolean>;
   toggleUnreadOnly(): void;
   /** The conversation shown in the reading pane. */
   openThread: ThreadKey | null;
@@ -242,6 +237,7 @@ const persistedOf = (s: Persisted): Persisted => ({
   collapsedAccounts: s.collapsedAccounts,
   foldedLabels: s.foldedLabels,
   labelsMoreOpen: s.labelsMoreOpen,
+  unreadOnly: s.unreadOnly,
 });
 
 const navReset = (): Pick<UiState, "mailbox" | "openThread" | "cursor" | "checked" | "anchor"> => ({
@@ -259,18 +255,10 @@ export const useUiStore = create<UiState>((set, get) => {
     writeStored(persistedOf(get()));
   };
   return {
-    unreadMailboxes: {},
-    toggleUnreadOnly: () =>
-      set((s) => ({
-        unreadMailboxes: {
-          ...s.unreadMailboxes,
-          [mailboxKey(s.mailbox)]: !s.unreadMailboxes[mailboxKey(s.mailbox)],
-        },
-        checked: [],
-        anchor: null,
-        openThread: null,
-        cursor: null,
-      })),
+    toggleUnreadOnly: () => {
+      set({ checked: [], anchor: null, openThread: null, cursor: null });
+      persist({ unreadOnly: !get().unreadOnly });
+    },
     ...readLayout(),
     ...readNavPrefs(),
     ...navReset(),
@@ -401,7 +389,6 @@ export function __resetUiStoreForTests() {
     readingPaneSqueezed: false,
     sidebarSqueezed: false,
     sidebarPeek: false,
-    unreadMailboxes: {},
     ...readLayout(),
     ...readNavPrefs(),
     ...navReset(),

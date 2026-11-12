@@ -16,7 +16,7 @@ import {
   setStarred,
   trash,
 } from "../mail/actions";
-import { mailboxKey, mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
+import { mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
 import { ThreadList } from "../mail/ThreadList";
 import { senderOf } from "../mail/ThreadRow";
 import type { RowAction } from "../mail/ThreadRow";
@@ -101,7 +101,7 @@ export function ListPane() {
   const next = useMailStore((s) => s.next);
   const loading = useMailStore((s) => s.loading);
   const error = useMailStore((s) => s.error);
-  const unreadOnly = useUiStore((s) => !!s.unreadMailboxes[mailboxKey(s.mailbox)]);
+  const unreadOnly = useUiStore((s) => s.unreadOnly);
   const toggleUnreadOnly = useUiStore((s) => s.toggleUnreadOnly);
   const anyChecked = useUiStore((s) => s.checked.length > 0);
   const checkedCount = useUiStore((s) => s.checked.length);

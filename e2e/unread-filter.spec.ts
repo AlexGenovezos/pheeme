@@ -94,10 +94,22 @@ test("unread filtering survives reading and mailbox changes, and stays separate 
 
   const navigation = page.getByRole("navigation", { name: "Mailboxes" });
   await navigation.getByRole("link", { name: "Starred", exact: true }).first().click();
-  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  // Two starred conversations, one of them unread.
+  const starred = page.getByRole("listbox", { name: "Starred conversations" }).getByRole("option");
+  await expect(starred).toHaveCount(1);
+  await expect(starred).toHaveAttribute("data-unread", "true");
+  await page.screenshot({ path: "test-results/unread-starred.png" });
   await navigation.getByRole("link", { name: "All Inboxes", exact: true }).click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await expect(icon).toHaveCount(0);
+  await page.screenshot({ path: "test-results/unread-kept.png" });
+
+  // It is kept across launches too.
+  await page.reload();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(rows.first()).toBeVisible();
+  await expect(statement).toHaveCount(0);
 
   await page.getByRole("searchbox", { name: "Search mail" }).fill("statement");
   await expect(toggle).toHaveCount(0);

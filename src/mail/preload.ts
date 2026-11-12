@@ -10,7 +10,6 @@ import { useInboxTabs, visibleCategories } from "../store/inboxTabsStore";
 import { useUiStore } from "../store/uiStore";
 import {
   categoryMailbox,
-  mailboxKey,
   type MailboxRef,
   queryFor,
   resolveActiveAccount,
@@ -64,12 +63,12 @@ export function startPreloading(): () => void {
     images.update(keys);
   };
 
-  /** The first rows of Inbox and each category of the active account, each with its own Unread only. */
+  /** The first rows of Inbox and each category of the active account, with Unread only as the list has it. */
   const loadCategories = async () => {
     const ui = useUiStore.getState();
     const accountId = resolveActiveAccount(ui.activeAccountId, useAccountStore.getState().accounts);
     const hiddenTabs = accountId ? useInboxTabs.getState().hidden[accountId] : null;
-    const scope = JSON.stringify([accountId, ui.unreadMailboxes, hiddenTabs]);
+    const scope = JSON.stringify([accountId, ui.unreadOnly, hiddenTabs]);
     if (scope === categoryScope) return;
     categoryScope = scope;
     const refs: MailboxRef[] = accountId
@@ -82,7 +81,7 @@ export function startPreloading(): () => void {
       refs.map((ref) =>
         listThreads({
           ...queryFor(ref, [accountId!]),
-          unreadOnly: !!ui.unreadMailboxes[mailboxKey(ref)],
+          unreadOnly: ui.unreadOnly,
           limit: FIRST,
         }).catch(() => null),
       ),
