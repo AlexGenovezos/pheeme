@@ -31,7 +31,7 @@ The one-minute tour on the home page (`/video/pheeme-tour.mp4`) is recorded from
 - `video/scenes.mjs` is the storyboard: the words on screen (`WORDS`) and, in order, what happens in the app: keys pressed, clicks, the camera zooming onto a part of the window. Edit this to change the story.
 - `video/director.mjs` holds the verbs the storyboard uses (`headline`, `focus`, `press`, `type`, `click`, `card`, …).
 - `video/stage.html`, `stage.css` and `stage.js` are the 1920×1080 frame: the night sky, the app window in 3D, the big words, the cursor and the keycaps. The app inside is the real `/demo/`.
-- `video/record.mjs` serves `dist/`, plays the storyboard in Chromium at a fixed date and time (Wednesday, 11 November 2026, 9:41 in New York), captures the frames with Playwright's screencast and encodes an H.264 MP4 with ffmpeg. It writes `dist/video/pheeme-tour.mp4`, a poster (`.jpg`) and a description track (`.vtt`).
+- `video/record.mjs` serves `dist/`, plays the storyboard in Chromium at a fixed date and time (Wednesday, 11 November 2026, 9:41 in New York), films it a frame at a time and encodes an H.264 MP4 with ffmpeg. Nothing runs in real time: each frame moves the page's clock (Playwright's fake clock) and every CSS animation and transition (the Web Animations API) on by exactly 1/30 s, then takes a screenshot, so motion is smooth however slow the machine. Waits in the storyboard are lengths of film, and actions happen between two frames. It writes `dist/video/pheeme-tour.mp4`, a poster (`.jpg`) and a description track (`.vtt`).
 
 ```sh
 # From the repository root (needs ffmpeg and Playwright's Chromium):

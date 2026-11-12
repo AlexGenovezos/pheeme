@@ -1,6 +1,10 @@
 // The verbs scenes.mjs is written in. Each one moves the stage (stage.js) or
 // drives the real demo app inside it, and waits for the move to finish so a
 // storyboard reads top to bottom like a shot list.
+//
+// Time is the recording's, not the wall clock's: every wait films frames
+// (record.mjs steps the page's clock and animations a frame at a time), and
+// actions happen between two frames.
 
 const KEY_LABELS = { Meta: "⌘", Control: "Ctrl", Shift: "⇧", Alt: "⌥", Enter: "return", Escape: "esc", Slash: "/" };
 
@@ -8,11 +12,13 @@ export class Director {
   /**
    * @param {import("playwright").Page} page the stage
    * @param {import("playwright").Frame} app the demo app inside it
+   * @param {{ now(): number, advance(ms: number): Promise<void>, frame: number }} film
+   *   films `ms` of video; `now()` is the time into the video
    */
-  constructor(page, app) {
+  constructor(page, app, film) {
     this.page = page;
     this.app = app;
-    this.started = Date.now();
+    this.film = film;
     this.chapters = [];
     this.poster = null;
   }
@@ -22,13 +28,25 @@ export class Director {
     return this.app;
   }
 
+  /** Films `ms` of whatever is on the stage. */
   wait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return this.film.advance(ms);
+  }
+
+  /**
+   * Films until an app element shows, or fails the recording: a step the app
+   * no longer supports must not film nothing happening.
+   */
+  async until(locator, what = "An element the storyboard needs", ms = 5000) {
+    for (const end = this.film.now() + ms; !(await locator.isVisible()); ) {
+      if (this.film.now() >= end) throw new Error(`${what} didn't appear within ${ms} ms.`);
+      await this.film.advance(this.film.frame);
+    }
   }
 
   /** Marks where a part of the video starts, for the description track. */
   chapter(text) {
-    this.chapters.push({ at: Date.now() - this.started, text });
+    this.chapters.push({ at: this.film.now(), text });
   }
 
   stage(method, ...args) {
@@ -49,7 +67,7 @@ export class Director {
         rects.push(t);
         continue;
       }
-      await t.waitFor();
+      await this.until(t);
       rects.push(
         await t.evaluate((el) => {
           const r = el.getBoundingClientRect();
@@ -106,7 +124,10 @@ export class Director {
 
   /** Types into whatever has focus in the app, a key at a time. */
   async type(text, { delay = 65 } = {}) {
-    await this.page.keyboard.type(text, { delay });
+    for (const ch of text) {
+      await this.page.keyboard.type(ch);
+      await this.wait(delay);
+    }
   }
 
   /** Glides the cursor onto an app element and clicks it. */
