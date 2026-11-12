@@ -164,15 +164,17 @@ try {
   if (count < 10) throw new Error(`Only ${count} frames were captured.`);
 
   // Frames arrive when the page changes, so each one lasts until the next.
+  // Each image is read at the output rate: the default (25) would round frame times to 40 ms.
+  const image = (i) => [`file ${String(i).padStart(6, "0")}.jpg`, `option framerate ${FPS}`];
   // The video starts with the last frame from before the storyboard began.
   const first = Math.max(0, times.findLastIndex((t) => t <= start));
   const lines = ["ffconcat version 1.0"];
   for (let i = first; i < count; i++) {
     const from = Math.max(times[i], start);
     const next = i + 1 < count ? times[i + 1] : end;
-    lines.push(`file ${String(i).padStart(6, "0")}.jpg`, `duration ${((next - from) / 1000).toFixed(4)}`);
+    lines.push(...image(i), `duration ${((next - from) / 1000).toFixed(4)}`);
   }
-  lines.push(`file ${String(count - 1).padStart(6, "0")}.jpg`);
+  lines.push(...image(count - 1));
   await writeFile(join(frames, "frames.txt"), lines.join("\n"));
 
   await mkdir(opts.out, { recursive: true });

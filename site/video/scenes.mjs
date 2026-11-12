@@ -57,7 +57,12 @@ export default async function tour(d) {
   await d.headline(WORDS.speed.title, WORDS.speed.text);
   await d.focus({ x: 220, y: 0, width: 1220, height: 560 }, { max: 1.5, ms: 1000 });
   await d.note("<b>J</b> and <b>K</b> move through your mail", 300);
+  const opened = await list.getAttribute("aria-activedescendant");
   for (let i = 0; i < 4; i++) await d.press("j", { hold: 480 });
+  // A storyboard step that stops working must fail the recording, not film nothing happening.
+  if ((await list.getAttribute("aria-activedescendant")) === opened) {
+    throw new Error("J didn't move to another conversation.");
+  }
   await d.takePoster();
   await d.press("k", { hold: 520 });
   await d.note("Done with it? <b>E</b> archives it.", 500);
@@ -76,12 +81,11 @@ export default async function tour(d) {
     ms: 1100,
   });
   // Cursor coordinates are only right once the camera stops.
-  await d.click(tab("Primary"));
-  await d.wait(900);
-  await d.click(tab("Promotions"));
-  await d.wait(900);
-  await d.click(tab("Social"));
-  await d.wait(1000);
+  for (const name of ["Primary", "Promotions", "Social"]) {
+    await d.click(tab(name));
+    await app.getByRole("listbox", { name: `${name} conversations` }).waitFor({ timeout: 5000 });
+    await d.wait(900);
+  }
   await d.hideCursor();
   await d.shot("wide", 1000);
 
@@ -108,7 +112,8 @@ export default async function tour(d) {
   await d.focus({ x: 220, y: 0, width: 760, height: 420 }, { max: 2, ms: 900 });
   await d.press("/", { hold: 500 });
   await d.type("lisbon", { delay: 110 });
-  await d.wait(1800);
+  await app.getByRole("option").filter({ hasText: "Lisbon in March" }).first().waitFor({ timeout: 5000 });
+  await d.wait(1600);
 
   // ---- End card ----
   d.chapter(`${WORDS.end.title} ${WORDS.end.text} ${WORDS.end.cta}`);
