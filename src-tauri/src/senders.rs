@@ -39,7 +39,7 @@ pub struct SenderDto {
     pub thread_id: Option<String>,
 }
 
-fn tab(s: &DbSenderStats) -> &'static str {
+pub(crate) fn tab(s: &DbSenderStats) -> &'static str {
     let tabbed = s.promotions + s.social + s.updates + s.forums;
     [
         ((s.messages - tabbed).max(0), "primary"),

@@ -3,8 +3,9 @@
 //! No Gmail calls. Tauri-free.
 
 use crate::db::{messages, sync_state};
+use crate::gmail::types::Header;
 use crate::mail::MailError;
-use crate::senders::{self, SenderDto};
+use crate::senders;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::collections::{BTreeMap, HashMap};
@@ -61,8 +62,8 @@ pub struct PlaceStats {
     pub counts: Counts,
 }
 
-/// A sender over every account asked about; `account_id` and `thread_id` are the newest of its
-/// mail, for unsubscribing.
+/// A sender over every account asked about; `account_id`, `thread_id` and `message_id` are its
+/// newest mail, the one Unsubscribe uses.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SenderStats {
@@ -71,11 +72,12 @@ pub struct SenderStats {
     pub name: Option<String>,
     #[serde(flatten)]
     pub counts: Counts,
-    /// The inbox tab most of it lands in.
+    /// The inbox tab most of it lands in, or `spam`.
     pub tab: &'static str,
-    /// `one_click`, `link`, `email`, `none` or `unknown` (see [`SenderDto::unsubscribe`]).
+    /// `one_click`, `link`, `email`, `none` or `unknown` (see [`senders::SenderDto`]).
     pub unsubscribe: &'static str,
     pub thread_id: Option<String>,
+    pub message_id: Option<String>,
     pub last_date: i64,
 }
 
@@ -114,7 +116,14 @@ pub async fn mail_stats(
     let mut tabs: HashMap<String, Counts> = HashMap::new();
     // By name, so the same label in two accounts is one row.
     let mut labels: HashMap<String, Counts> = HashMap::new();
-    let mut senders: HashMap<String, (SenderStats, i64)> = HashMap::new();
+    let mut senders: HashMap<String, Merged> = HashMap::new();
+    // One account's top rows are its share of the answer; several accounts are added up in full
+    // first (-1 is SQLite's "no limit"), so a sender or label high in the sum isn't cut early.
+    let (label_limit, sender_limit) = if accounts.len() > 1 {
+        (-1, -1)
+    } else {
+        (LABELS, SENDERS)
+    };
 
     for account in accounts {
         complete &= sync_state::get(db, account.id).await?.backfill_complete;
@@ -123,12 +132,14 @@ pub async fn mail_stats(
             days.entry(row.key.clone()).or_default().add(&row);
             tabs.entry(row.group.clone()).or_default().add(&row);
         }
-        for row in
-            messages::received_by_label(db, account.id, since_ms, account.email, LABELS).await?
+        for row in messages::received_by_label(db, account.id, since_ms, account.email, label_limit)
+            .await?
         {
             labels.entry(row.group.clone()).or_default().add(&row);
         }
-        for s in senders::report(db, account.id, account.email, since_ms, SENDERS).await? {
+        for s in
+            messages::sender_stats(db, account.id, since_ms, account.email, sender_limit).await?
+        {
             merge_sender(&mut senders, account.id, s);
         }
     }
@@ -149,14 +160,38 @@ pub async fn mail_stats(
     });
     labels.truncate(LABELS as usize);
 
-    let mut senders: Vec<SenderStats> = senders.into_values().map(|(s, _)| s).collect();
-    senders.sort_by(|a, b| {
+    let mut merged: Vec<Merged> = senders.into_values().collect();
+    merged.sort_by(|a, b| {
         b.counts
             .received
             .cmp(&a.counts.received)
             .then_with(|| b.last_date.cmp(&a.last_date))
     });
-    senders.truncate(SENDERS as usize);
+    merged.truncate(SENDERS as usize);
+    let mut senders = Vec::with_capacity(merged.len());
+    for m in merged {
+        // Unsubscribe acts on this message, so the button offers what it carries.
+        let latest = messages::latest_from(db, &m.account_id, &m.sender, since_ms).await?;
+        let unsubscribe = match latest.as_ref().map(|(_, _, h)| h.as_deref()) {
+            Some(Some(json)) => {
+                let headers: Vec<Header> = serde_json::from_str(json).unwrap_or_default();
+                senders::options(&headers).kind()
+            }
+            _ => "unknown",
+        };
+        let (message_id, thread_id) = latest.map(|(id, thread, _)| (id, thread)).unzip();
+        senders.push(SenderStats {
+            account_id: m.account_id,
+            sender: m.sender,
+            name: m.name,
+            counts: m.counts,
+            tab: m.tab,
+            unsubscribe,
+            thread_id,
+            message_id,
+            last_date: m.last_date,
+        });
+    }
 
     Ok(MailStats {
         since: since_ms,
@@ -179,9 +214,30 @@ pub async fn mail_stats(
     })
 }
 
-/// Add one account's report of a sender to the others'. The newest mail decides where to
-/// unsubscribe; the account with the most of it decides the tab.
-fn merge_sender(into: &mut HashMap<String, (SenderStats, i64)>, account_id: &str, s: SenderDto) {
+/// A sender's mail, added up over accounts.
+struct Merged {
+    sender: String,
+    name: Option<String>,
+    counts: Counts,
+    tab: &'static str,
+    /// The most mail one account has from it, which decides `tab`.
+    most: i64,
+    /// The account with its newest mail, for unsubscribing.
+    account_id: String,
+    last_date: i64,
+}
+
+/// The tab a sender's mail lands in; Spam when most of it is there.
+fn tab(s: &messages::DbSenderStats) -> &'static str {
+    if s.in_spam * 2 > s.messages {
+        "spam"
+    } else {
+        senders::tab(s)
+    }
+}
+
+/// Add one account's figures for a sender to the others'.
+fn merge_sender(into: &mut HashMap<String, Merged>, account_id: &str, s: messages::DbSenderStats) {
     let counts = Counts {
         received: s.messages,
         opened: s.messages - s.unread,
@@ -189,18 +245,20 @@ fn merge_sender(into: &mut HashMap<String, (SenderStats, i64)>, account_id: &str
         starred: s.starred,
         engaged: s.engaged,
     };
-    let fresh = SenderStats {
-        account_id: account_id.into(),
-        sender: s.sender.clone(),
-        name: s.name,
-        counts,
-        tab: s.tab,
-        unsubscribe: s.unsubscribe,
-        thread_id: s.thread_id,
-        last_date: s.last_date,
-    };
-    let Some((have, most)) = into.get_mut(&s.sender) else {
-        into.insert(s.sender, (fresh, counts.received));
+    let tab = tab(&s);
+    let Some(have) = into.get_mut(&s.address) else {
+        into.insert(
+            s.address.clone(),
+            Merged {
+                sender: s.address,
+                name: s.name,
+                counts,
+                tab,
+                most: counts.received,
+                account_id: account_id.into(),
+                last_date: s.last_date,
+            },
+        );
         return;
     };
     let c = &mut have.counts;
@@ -209,16 +267,14 @@ fn merge_sender(into: &mut HashMap<String, (SenderStats, i64)>, account_id: &str
     c.replied += counts.replied;
     c.starred += counts.starred;
     c.engaged += counts.engaged;
-    if counts.received > *most {
-        *most = counts.received;
-        have.tab = fresh.tab;
+    if counts.received > have.most {
+        have.most = counts.received;
+        have.tab = tab;
     }
-    if fresh.last_date > have.last_date {
-        have.account_id = fresh.account_id;
-        have.unsubscribe = fresh.unsubscribe;
-        have.thread_id = fresh.thread_id;
-        have.last_date = fresh.last_date;
-        have.name = fresh.name.or(have.name.take());
+    if s.last_date > have.last_date {
+        have.account_id = account_id.into();
+        have.last_date = s.last_date;
+        have.name = s.name.or(have.name.take());
     }
 }
 
@@ -366,8 +422,8 @@ mod tests {
 
     #[test]
     fn merges_a_sender_across_accounts() {
-        let dto = |messages, unread, last_date, thread: &str| SenderDto {
-            sender: "news@x.com".into(),
+        let row = |messages, unread, in_spam, last_date| messages::DbSenderStats {
+            address: "news@x.com".into(),
             name: None,
             messages,
             unread,
@@ -376,21 +432,85 @@ mod tests {
             engaged: messages - unread,
             in_inbox: 0,
             in_trash: 0,
-            in_spam: 0,
-            tab: "updates",
+            in_spam,
+            promotions: 0,
+            social: 0,
+            updates: messages,
+            forums: 0,
             last_date,
             you_wrote: 0,
-            unsubscribe: "one_click",
-            thread_id: Some(thread.into()),
         };
         let mut all = HashMap::new();
-        merge_sender(&mut all, "a1", dto(5, 5, 10, "t-old"));
-        merge_sender(&mut all, "a2", dto(2, 1, 20, "t-new"));
-        let (s, _) = &all["news@x.com"];
+        merge_sender(&mut all, "a1", row(5, 5, 0, 10));
+        merge_sender(&mut all, "a2", row(2, 1, 2, 20));
+        let s = &all["news@x.com"];
         assert_eq!((s.counts.received, s.counts.opened), (7, 1));
-        assert_eq!(
-            (s.account_id.as_str(), s.thread_id.as_deref()),
-            ("a2", Some("t-new"))
-        );
+        assert_eq!((s.account_id.as_str(), s.last_date), ("a2", 20));
+        assert_eq!(s.tab, "updates", "the account with the most of it decides");
+        assert_eq!(tab(&row(3, 0, 2, 0)), "spam");
+    }
+
+    #[tokio::test]
+    async fn all_accounts_rank_senders_on_the_sum() {
+        let db = TestDb::with_account("a1").await;
+        crate::db::accounts::insert_account(
+            &db.pool,
+            &crate::db::accounts::DbAccount {
+                id: "a2".into(),
+                email: "me2@example.com".into(),
+                display_name: None,
+                profile_photo_url: None,
+                client_id: "c".into(),
+                history_id: None,
+                created_at: 0,
+                updated_at: 0,
+            },
+        )
+        .await
+        .unwrap();
+        let mut seeded = Vec::new();
+        // In each account alone, 15 senders of its own send 3 and news@x.com sends 2, so it is
+        // 16th and cut; added up it sends 4, more than anyone.
+        for account in ["a1", "a2"] {
+            for n in 0..15 {
+                for k in 0..3 {
+                    let mut m = message(
+                        &format!("{account}-{n}-{k}"),
+                        &format!("t{account}{n}{k}"),
+                        &["INBOX"],
+                        &format!("s{n}@{account}.com"),
+                        3,
+                    );
+                    m.account_id = account.into();
+                    seeded.push(m);
+                }
+            }
+            for k in 0..2 {
+                let id = format!("{account}-news{k}");
+                let mut m = message(&id, &id, &["INBOX"], "news@x.com", 2 - k);
+                m.account_id = account.into();
+                if account == "a2" {
+                    // The newest copy, so Unsubscribe uses a2's.
+                    m.date = m.date.map(|d| d + 1_000);
+                }
+                seeded.push(m);
+            }
+        }
+        seed(&db, &seeded).await;
+        let both = [
+            StatsAccount {
+                id: "a1",
+                email: "me@example.com",
+            },
+            StatsAccount {
+                id: "a2",
+                email: "me2@example.com",
+            },
+        ];
+        let stats = mail_stats(&db.pool, &both, NOW - 7 * DAY_MS).await.unwrap();
+        assert_eq!(stats.senders.len(), SENDERS as usize);
+        assert_eq!(stats.senders[0].sender, "news@x.com");
+        assert_eq!(stats.senders[0].counts.received, 4);
+        assert_eq!(stats.senders[0].message_id.as_deref(), Some("a2-news1"));
     }
 }

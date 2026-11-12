@@ -28,6 +28,7 @@ const counts = (received: number, opened: number, replied = 0, starred = 0) => (
 const sender = (over: Partial<SenderStats>): SenderStats => ({
   accountId: "a",
   threadId: "t1",
+  messageId: "m1",
   sender: "deals@shop.com",
   name: "Shop",
   tab: "promotions",
@@ -132,7 +133,8 @@ test("changing the range or account asks again", async () => {
   await screen.findByText("60 emails in 30 days");
   fireEvent.click(screen.getByRole("radio", { name: "7 days" }));
   await screen.findByText("60 emails in 7 days");
-  expect(calls.filter((c) => c.cmd === "mail_stats").at(-1)!.args).toEqual({
+  const asked = calls.filter((c) => c.cmd === "mail_stats");
+  expect(asked[asked.length - 1].args).toEqual({
     accountId: null,
     sinceMs: windowStart(7).getTime(),
   });
@@ -145,6 +147,7 @@ test("one-click unsubscribes say so and don't offer it again", async () => {
   expect(calls.find((c) => c.cmd === "unsubscribe_sender")!.args).toEqual({
     accountId: "a",
     threadId: "t1",
+    messageId: "m1",
   });
   expect(useToastStore.getState().toasts.map((t) => t.title)).toEqual(["Unsubscribed from Shop"]);
 });
@@ -164,7 +167,8 @@ test("a sender that unsubscribes by email gets a message ready to send", async (
   render(<MailStatsSettings />);
   fireEvent.click(await screen.findByRole("button", { name: "Unsubscribe from List" }));
   await waitFor(() => expect(useSettingsStore.getState().open).toBe(false));
-  const panel = useComposeStore.getState().windows.at(-1)!;
+  const { windows } = useComposeStore.getState();
+  const panel = windows[windows.length - 1];
   expect(panel.draft.to).toEqual([{ name: null, address: "leave@y.com" }]);
   expect(panel.draft.subject).toBe("Remove me");
 });
@@ -180,7 +184,7 @@ test("days without mail are empty bars; a year goes by week", () => {
   const weeks = buckets({ days: [{ day: "2026-10-02", ...counts(5, 2) }] }, start, 365);
   expect(weeks).toHaveLength(53);
   expect(weeks[0]).toMatchObject({ length: 7, received: 5 });
-  expect(weeks.at(-1)!.length).toBe(1);
+  expect(weeks[weeks.length - 1].length).toBe(1);
 });
 
 test("numbers read plainly", () => {

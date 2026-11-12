@@ -32,13 +32,14 @@ pub async fn mail_stats(
     Ok(crate::stats::mail_stats(&state.db, &chosen, since_ms).await?)
 }
 
-/// Unsubscribe from the list a conversation came from: one-click links are followed; any other
-/// way comes back for the page to open. Loading the message's headers may call Gmail.
+/// Unsubscribe from the list `message_id` (in `thread_id`) came from: one-click links are
+/// followed; any other way comes back for the page to open. Loading its headers may call Gmail.
 #[tauri::command]
 pub async fn unsubscribe_sender(
     state: State<'_, AppState>,
     account_id: String,
     thread_id: String,
+    message_id: Option<String>,
 ) -> Result<Unsubscribed, CommandError> {
     let account = accounts::get_account(&state.db, &account_id)
         .await
@@ -49,7 +50,7 @@ pub async fn unsubscribe_sender(
         &account.id,
         &account.email,
         &thread_id,
-        None,
+        message_id.as_deref(),
     ))
     .await?)
 }

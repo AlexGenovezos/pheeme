@@ -294,9 +294,10 @@ export interface PlaceStats extends MailCounts {
   name: string;
 }
 export interface SenderStats extends MailCounts {
-  /** The account and conversation of its newest mail, for unsubscribing. */
+  /** The account, conversation and message of its newest mail, which Unsubscribe uses. */
   accountId: string;
   threadId: string | null;
+  messageId: string | null;
   sender: string;
   name: string | null;
   tab: InboxTab;
@@ -329,9 +330,9 @@ export interface Unsubscribed {
   web: string | null;
   mailto: string | null;
 }
-/** Unsubscribe from the list a conversation came from. */
-export const unsubscribeSender = (accountId: string, threadId: string) =>
-  invoke<Unsubscribed>("unsubscribe_sender", { accountId, threadId });
+/** Unsubscribe from the list a message came from. */
+export const unsubscribeSender = (accountId: string, threadId: string, messageId: string | null) =>
+  invoke<Unsubscribed>("unsubscribe_sender", { accountId, threadId, messageId });
 
 export const listSenderRules = (accountId: string) =>
   invoke<SenderRule[]>("list_sender_rules", { accountId });

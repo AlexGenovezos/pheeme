@@ -533,7 +533,7 @@ function UnsubscribeButton({ sender }: { sender: SenderStats }) {
   async function unsubscribe() {
     mark("busy");
     try {
-      const result = await unsubscribeSender(sender.accountId, sender.threadId!);
+      const result = await unsubscribeSender(sender.accountId, sender.threadId!, sender.messageId);
       if (result.unsubscribed) {
         mark("done");
         toast({

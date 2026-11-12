@@ -160,6 +160,7 @@ export function previewMailStats(
     return {
       accountId: accountId ?? "acc-personal",
       threadId: `stats-thread-${i}`,
+      messageId: `stats-message-${i}`,
       sender: s.sender,
       name: s.name,
       tab: s.tab,
