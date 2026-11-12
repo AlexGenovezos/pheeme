@@ -106,6 +106,16 @@
       </div>
     </section>
 
+    <!-- The product video, recorded from the demo app on every deploy (site/video/). -->
+    <section class="tour wrap" aria-labelledby="tour-title">
+      <h2 id="tour-title" class="scene-title" data-reveal>See it in a minute.</h2>
+      <div class="window tour-window" data-reveal style="--d:.08s">
+        <video class="tour-video" src="/video/pheeme-tour.mp4" poster="/video/pheeme-tour.jpg" width="1920" height="1080" muted loop playsinline controls preload="none" aria-label="A one-minute tour of pheeme: moving through mail with the keyboard, Gmail's inbox tabs, adding a calendar event by typing a sentence, and search.">
+          <track kind="descriptions" src="/video/pheeme-tour.vtt" srclang="en" label="What the video shows">
+        </video>
+      </div>
+    </section>
+
     <!-- 2. The real app, built from the same source as the desktop client. -->
     <section class="scene scene-inbox" data-scene="inbox" aria-labelledby="demo-title">
       <div class="sticky">
