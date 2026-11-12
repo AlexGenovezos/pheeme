@@ -430,12 +430,6 @@
   text-overflow: ellipsis;
 }
 
-/* ---- Sidebar -------------------------------------------------------------- */
-
-.cal-sidebar__create {
-  padding: var(--space-0) var(--space-3) var(--space-3);
-}
-
 /* ---- Quick add ------------------------------------------------------------ */
 
 .cal-qa-scrim {
