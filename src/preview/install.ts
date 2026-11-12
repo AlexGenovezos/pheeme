@@ -33,6 +33,7 @@ import { createTasksHandlers } from "./tasks";
 import { createContactHandlers } from "./contacts";
 import { createTransferHandlers } from "./transfer";
 import { previewQuotaUsage } from "./quota";
+import { previewMailStats, previewUnsubscribe } from "./stats";
 
 type Args = Record<string, unknown> | undefined;
 /** Browser-test hook installed before startup, so speculative reads see the same fixtures as opens. */
@@ -234,6 +235,12 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     },
     gmail_quota: () => gmailQuota,
     gmail_quota_usage: (args) => previewQuotaUsage(String(args?.accountId), gmailQuota),
+    mail_stats: (args) =>
+      previewMailStats(
+        typeof args?.accountId === "string" ? args.accountId : null,
+        Number(args?.sinceMs),
+      ),
+    unsubscribe_sender: (args) => previewUnsubscribe(String(args?.threadId)),
     set_gmail_quota: (args) => {
       gmailQuota = Math.min(1_200_000, Math.max(600, Number(args?.perMinute) || 6000));
       return gmailQuota;

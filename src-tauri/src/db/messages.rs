@@ -377,6 +377,11 @@ pub struct DbSenderStats {
     pub name: Option<String>,
     pub messages: i64,
     pub unread: i64,
+    /// Messages the account answered: it sent mail in the conversation after them.
+    pub replied: i64,
+    pub starred: i64,
+    /// Messages read, replied to or starred.
+    pub engaged: i64,
     pub in_inbox: i64,
     pub in_trash: i64,
     pub in_spam: i64,
@@ -401,10 +406,17 @@ pub async fn sender_stats(
 ) -> Result<Vec<DbSenderStats>> {
     let rows = sqlx::query_as!(
         DbSenderStats,
-        r#"SELECT lower(m.from_address) AS "address!: String",
+        r#"WITH sent AS (SELECT thread_id, MAX(date) AS last_sent FROM messages INDEXED BY idx_messages_date
+                         WHERE account_id = ?1 AND date >= ?2
+                           AND EXISTS (SELECT 1 FROM json_each(label_ids) WHERE value = 'SENT')
+                         GROUP BY thread_id)
+           SELECT lower(m.from_address) AS "address!: String",
               MAX(m.from_name) AS "name: String",
               COUNT(*) AS "messages!: i64",
               SUM(m.is_read = 0) AS "unread!: i64",
+              SUM(COALESCE(s.last_sent > m.date, 0)) AS "replied!: i64",
+              SUM(m.is_starred != 0) AS "starred!: i64",
+              SUM(m.is_read != 0 OR m.is_starred != 0 OR COALESCE(s.last_sent > m.date, 0)) AS "engaged!: i64",
               SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'INBOX')) AS "in_inbox!: i64",
               SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'TRASH')) AS "in_trash!: i64",
               SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'SPAM')) AS "in_spam!: i64",
@@ -416,12 +428,127 @@ pub async fn sender_stats(
               COALESCE((SELECT c.sent_count FROM contacts c
                         WHERE c.account_id = ?1 AND c.address = lower(m.from_address)), 0) AS "you_wrote!: i64"
            FROM messages m
+           LEFT JOIN sent s ON s.thread_id = m.thread_id
            WHERE m.account_id = ?1 AND m.date >= ?2
              AND m.from_address IS NOT NULL AND m.from_address != ''
              AND lower(m.from_address) != lower(?3)
              AND NOT EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value IN ('DRAFT', 'SENT'))
            GROUP BY lower(m.from_address)
            ORDER BY COUNT(*) DESC, MAX(m.date) DESC
+           LIMIT ?4"#,
+        account_id,
+        since_ms,
+        own_address,
+        limit
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Received mail, a day or a place at a time ([`received_by_day`], [`received_by_label`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DbReceivedStats {
+    /// A local `YYYY-MM-DD` day, an inbox tab (`primary`, `promotions`, `social`, `updates`,
+    /// `forums`, or `spam`), or a label id.
+    pub key: String,
+    /// The day's tab for [`received_by_day`]; the label's name for [`received_by_label`].
+    pub group: String,
+    pub received: i64,
+    pub opened: i64,
+    pub replied: i64,
+    pub starred: i64,
+    /// Read, replied to or starred.
+    pub engaged: i64,
+}
+
+/// The account's received mail since `since_ms` (not its own, its drafts or what it sent),
+/// counted per local day and inbox tab. A message counts as replied when the account sent
+/// mail in its conversation after it.
+pub async fn received_by_day(
+    pool: &SqlitePool,
+    account_id: &str,
+    since_ms: i64,
+    own_address: &str,
+) -> Result<Vec<DbReceivedStats>> {
+    let rows = sqlx::query_as!(
+        DbReceivedStats,
+        r#"WITH sent AS (SELECT thread_id, MAX(date) AS last_sent FROM messages INDEXED BY idx_messages_date
+                         WHERE account_id = ?1 AND date >= ?2
+                           AND EXISTS (SELECT 1 FROM json_each(label_ids) WHERE value = 'SENT')
+                         GROUP BY thread_id),
+           recv AS (
+             SELECT m.date, m.is_read != 0 AS opened, m.is_starred != 0 AS starred,
+                    COALESCE(s.last_sent > m.date, 0) AS replied,
+                    CASE
+                      WHEN EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'SPAM') THEN 'spam'
+                      WHEN EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_PROMOTIONS') THEN 'promotions'
+                      WHEN EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_SOCIAL') THEN 'social'
+                      WHEN EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_UPDATES') THEN 'updates'
+                      WHEN EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_FORUMS') THEN 'forums'
+                      ELSE 'primary'
+                    END AS tab
+             FROM messages m INDEXED BY idx_messages_date
+             LEFT JOIN sent s ON s.thread_id = m.thread_id
+             WHERE m.account_id = ?1 AND m.date >= ?2
+               AND m.from_address IS NOT NULL AND m.from_address != ''
+               AND lower(m.from_address) != lower(?3)
+               AND NOT EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value IN ('DRAFT', 'SENT')))
+           SELECT date(date / 1000, 'unixepoch', 'localtime') AS "key!: String",
+                  tab AS "group!: String",
+                  COUNT(*) AS "received!: i64",
+                  SUM(opened) AS "opened!: i64",
+                  SUM(replied) AS "replied!: i64",
+                  SUM(starred) AS "starred!: i64",
+                  SUM(opened OR replied OR starred) AS "engaged!: i64"
+           FROM recv
+           GROUP BY 1, 2
+           ORDER BY 1, 2"#,
+        account_id,
+        since_ms,
+        own_address
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// The same mail as [`received_by_day`], per user label it carries (most mail first, at most
+/// `limit` labels).
+pub async fn received_by_label(
+    pool: &SqlitePool,
+    account_id: &str,
+    since_ms: i64,
+    own_address: &str,
+    limit: i64,
+) -> Result<Vec<DbReceivedStats>> {
+    let rows = sqlx::query_as!(
+        DbReceivedStats,
+        r#"WITH sent AS (SELECT thread_id, MAX(date) AS last_sent FROM messages INDEXED BY idx_messages_date
+                         WHERE account_id = ?1 AND date >= ?2
+                           AND EXISTS (SELECT 1 FROM json_each(label_ids) WHERE value = 'SENT')
+                         GROUP BY thread_id),
+           recv AS (
+             SELECT m.label_ids, m.is_read != 0 AS opened, m.is_starred != 0 AS starred,
+                    COALESCE(s.last_sent > m.date, 0) AS replied
+             FROM messages m INDEXED BY idx_messages_date
+             LEFT JOIN sent s ON s.thread_id = m.thread_id
+             WHERE m.account_id = ?1 AND m.date >= ?2
+               AND m.from_address IS NOT NULL AND m.from_address != ''
+               AND lower(m.from_address) != lower(?3)
+               AND NOT EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value IN ('DRAFT', 'SENT')))
+           SELECT l.id AS "key!: String",
+                  l.name AS "group!: String",
+                  COUNT(*) AS "received!: i64",
+                  SUM(r.opened) AS "opened!: i64",
+                  SUM(r.replied) AS "replied!: i64",
+                  SUM(r.starred) AS "starred!: i64",
+                  SUM(r.opened OR r.replied OR r.starred) AS "engaged!: i64"
+           FROM recv r
+           JOIN json_each(r.label_ids) j
+           JOIN labels l ON l.account_id = ?1 AND l.id = j.value AND l.type = 'user'
+           GROUP BY l.id
+           ORDER BY COUNT(*) DESC, l.name
            LIMIT ?4"#,
         account_id,
         since_ms,

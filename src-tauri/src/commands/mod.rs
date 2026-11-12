@@ -10,6 +10,7 @@ pub mod mods;
 pub mod search;
 pub mod sender_rules;
 pub mod settings;
+pub mod stats;
 pub mod support;
 pub mod sync;
 pub mod tasks;
