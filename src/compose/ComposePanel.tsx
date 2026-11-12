@@ -6,7 +6,7 @@ import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { describeShortcut } from "../keyboard/format";
 import { showContextMenu } from "../lib/contextMenu";
-import { suggestContacts } from "../lib/tauri";
+import { type SendAsAddress, suggestContacts } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { formatSize } from "../mail/AttachmentList";
 import { HtmlBody } from "../mail/EmailBody";
@@ -20,7 +20,8 @@ import {
 } from "./composeStore";
 import { EditorBody, EditorToolbar, replaceSignature, useComposeEditor } from "./Editor";
 import { RecipientField } from "./RecipientField";
-import { useSignatures } from "./signatures";
+import { asFrom, sameAddress, useSendAs } from "./sendAs";
+import { type SignatureUse, useSignatures } from "./signatures";
 
 const SEND_SHORTCUT = "mod+enter";
 
@@ -190,6 +191,27 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     editor?.setEditable(!win.sending, false); // no update event: not an edit
   }, [editor, win.sending]);
 
+  const fromAddress = draft.from?.address ?? null;
+  const use: SignatureUse =
+    win.kind === "new" || (win.kind === "draft" && !draft.inReplyTo) ? "new" : "reply";
+
+  // The account's addresses, fetched once a session (every account's, for a new message's picker).
+  const sendAsLists = useSendAs((s) => s.lists);
+  useEffect(() => {
+    const ids = win.kind === "new" ? accounts.map((a) => a.id) : [win.accountId];
+    for (const id of ids) void useSendAs.getState().refreshOnce(id);
+  }, [accounts, win.accountId, win.kind]);
+
+  // A new message opened before its account's addresses were known starts from Gmail's default once they are.
+  const accountDefault = sendAsLists[win.accountId]
+    ? useSendAs.getState().defaultFrom(win.accountId)
+    : null;
+  useEffect(() => {
+    if (win.kind === "new" && !win.draft.from && accountDefault)
+      store.setFrom(win.id, accountDefault);
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [accountDefault?.address, win.kind, win.id]);
+
   // A new message opened before the account's Gmail signature was first fetched gets it when it arrives.
   const gmailHtml = useSignatures((s) => s.gmail[win.accountId]?.html);
   const awaitingGmail = useRef(
@@ -200,16 +222,24 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   useEffect(() => {
     if (!editor || !awaitingGmail.current || gmailHtml === undefined) return;
     awaitingGmail.current = false;
-    replaceSignature(editor, useSignatures.getState().signatureFor(win.accountId, "new"));
+    replaceSignature(
+      editor,
+      useSignatures.getState().signatureFor(win.accountId, "new", fromAddress),
+    );
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [editor, gmailHtml, win.accountId]);
 
-  // A new message sent from another account takes that account's signature.
-  const signedAs = useRef(win.accountId);
+  // Sending from another account or alias swaps in that address's signature (Gmail's has one per alias).
+  const signedAs = useRef({ accountId: win.accountId, from: fromAddress });
   useEffect(() => {
-    if (!editor || signedAs.current === win.accountId) return;
-    signedAs.current = win.accountId;
-    replaceSignature(editor, useSignatures.getState().signatureFor(win.accountId, "new"));
-  }, [editor, win.accountId]);
+    const was = signedAs.current;
+    if (!editor || (was.accountId === win.accountId && sameAddress(was.from, fromAddress))) return;
+    signedAs.current = { accountId: win.accountId, from: fromAddress };
+    const signatures = useSignatures.getState();
+    const next = signatures.signatureFor(win.accountId, use, fromAddress);
+    if (next !== signatures.signatureFor(was.accountId, use, was.from))
+      replaceSignature(editor, next);
+  }, [editor, win.accountId, fromAddress, use]);
 
   // Focus: replies start in the body, new messages in To.
   useEffect(() => {
@@ -234,14 +264,33 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     void store.attachFiles(win.id, paths);
   };
 
-  const chooseAccount = (e: React.MouseEvent) => {
+  // Who it can be from: the account's addresses (its own and its send-as aliases), and for a new message every
+  // account's. An account whose addresses aren't known yet offers its own.
+  const fromChoices = (win.kind === "new" ? accounts : account ? [account] : []).flatMap((a) => {
+    const list: SendAsAddress[] = sendAsLists[a.id] ?? [
+      {
+        email: a.email,
+        name: a.displayName ?? null,
+        isPrimary: true,
+        isDefault: true,
+        signature: null,
+      },
+    ];
+    return list.map((address) => ({ accountId: a.id, address }));
+  });
+  const fromShown = fromAddress ?? accountDefault?.address ?? account?.email;
+
+  const chooseFrom = (e: React.MouseEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     void showContextMenu(
-      accounts.map((a) => ({
-        id: a.id,
-        label: a.displayName ? `${a.displayName} <${a.email}>` : a.email,
-        checked: a.id === win.accountId,
-        onSelect: () => store.setAccount(win.id, a.id),
+      fromChoices.map(({ accountId, address }) => ({
+        id: `${accountId}:${address.email}`,
+        label: address.name ? `${address.name} <${address.email}>` : address.email,
+        checked: accountId === win.accountId && sameAddress(address.email, fromShown),
+        onSelect: () => {
+          if (accountId !== win.accountId) store.setAccount(win.id, accountId);
+          store.setFrom(win.id, asFrom(address));
+        },
       })),
       { x: rect.left, y: rect.bottom },
     );
@@ -252,19 +301,19 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     [draft.quoteHtml],
   );
 
-  const canSwitchAccount = win.kind === "new" && accounts.length > 1;
+  const canChooseFrom = fromChoices.length > 1;
   return (
     <>
       <div className="compose__fields">
         <div className="compose-field">
           <span className="compose-field__label">From</span>
-          {canSwitchAccount ? (
-            <button type="button" className="compose-from" onClick={chooseAccount}>
-              <span className="compose-from__text">{account?.email ?? "Choose account"}</span>
+          {canChooseFrom ? (
+            <button type="button" className="compose-from" onClick={chooseFrom}>
+              <span className="compose-from__text">{fromShown ?? "Choose account"}</span>
               <ChevronDown aria-hidden="true" />
             </button>
           ) : (
-            <span className="compose-from compose-from--static">{account?.email}</span>
+            <span className="compose-from compose-from--static">{fromShown}</span>
           )}
         </div>
         <RecipientField

@@ -9,6 +9,7 @@ import type {
   OutboxSendStatus,
   QueuedSend,
   SavedDraft,
+  SendAsAddress,
   StagedAttachment,
   SyncMessagesUpdated,
 } from "../lib/tauri";
@@ -51,9 +52,38 @@ export function createComposeHandlers(
       ...change,
     }).catch(() => {});
 
+  /** Each account's own address, and for the second (work) account two aliases, the default with a signature. */
+  const sendAs = (accountId: string): SendAsAddress[] => {
+    const own = me(accountId);
+    const list: SendAsAddress[] = [
+      { email: own.address, name: own.name, isPrimary: true, isDefault: true, signature: null },
+    ];
+    const [domain] = own.address.split("@").slice(1);
+    if (accounts().findIndex((a) => a.id === accountId) === 1) {
+      list[0]!.isDefault = false;
+      list.push(
+        {
+          email: `hello@${domain}`,
+          name: "Studio",
+          isPrimary: false,
+          isDefault: true,
+          signature: `<div><b>The Studio</b><br><span style="color:#5f6368">hello@${escapeHtml(domain ?? "")}</span></div>`,
+        },
+        {
+          email: `billing@${domain}`,
+          name: "Studio Billing",
+          isPrimary: false,
+          isDefault: false,
+          signature: null,
+        },
+      );
+    }
+    return list;
+  };
+
   /** The message as it lands in Sent. */
   const deliver = (accountId: string, d: ComposeDraft) => {
-    const from = me(accountId);
+    const from = d.from ?? me(accountId);
     const message = {
       id: `sent-${++seq}`,
       fromName: from.name ?? from.address,
@@ -88,6 +118,7 @@ export function createComposeHandlers(
       const from = me(String(args?.accountId));
       return `<div><b>${escapeHtml(from.name ?? from.address)}</b><br><span style="color:#5f6368">Sent while previewing Pheeme</span></div>`;
     },
+    send_as_addresses: (args) => sendAs(String(args?.accountId)),
     compose_template: (args) => {
       const accountId = String(args?.accountId);
       const mode = args?.mode as ComposeMode;
@@ -107,7 +138,14 @@ export function createComposeHandlers(
         mode === "forward"
           ? `<div>---------- Forwarded message ---------<br>From: ${escapeHtml(original.fromName)} &lt;${escapeHtml(original.fromAddress)}&gt;<br>Subject: ${escapeHtml(thread.subject)}</div><br>${quotedBody}`
           : `<div>On ${escapeHtml(when)}, ${escapeHtml(original.fromName)} &lt;${escapeHtml(original.fromAddress)}&gt; wrote:</div><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${quotedBody}</blockquote>`;
+      // From the address it came to, else the default one.
+      const addresses = sendAs(accountId);
+      const reached = [...original.to, ...original.cc].map((r) => r.address.toLowerCase());
+      const fromAlias =
+        addresses.find((a) => reached.includes(a.email.toLowerCase())) ??
+        addresses.find((a) => a.isDefault);
       const draft: ComposeDraft = {
+        from: fromAlias ? { name: fromAlias.name, address: fromAlias.email } : null,
         to: mode === "forward" ? [] : [sender],
         cc: mode === "replyAll" ? others : [],
         bcc: [],

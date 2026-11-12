@@ -303,6 +303,15 @@ pub struct SendAs {
     pub signature: Option<String>,
     pub is_primary: bool,
     pub is_default: bool,
+    /// For aliases: `accepted` once Gmail will send from it (`pending` until verified).
+    pub verification_status: Option<String>,
+}
+
+impl SendAs {
+    /// Whether Gmail sends mail from this address: the account's own, or a verified alias.
+    pub fn sendable(&self) -> bool {
+        self.is_primary || self.verification_status.as_deref() == Some("accepted")
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]

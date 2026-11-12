@@ -2,7 +2,8 @@
 
 use super::CommandError;
 use crate::compose::{
-    ComposeDraft, ComposeMode, DraftSummary, QueuedSend, SavedDraft, StagedAttachment,
+    ComposeDraft, ComposeMode, DraftSummary, QueuedSend, SavedDraft, SendAsAddress,
+    StagedAttachment,
 };
 use crate::gmail::user_action;
 use crate::AppState;
@@ -27,6 +28,15 @@ pub async fn gmail_signature(
     account_id: String,
 ) -> Result<Option<String>, CommandError> {
     Ok(user_action(state.compose.gmail_signature(&account_id)).await?)
+}
+
+/// The addresses the account can send from (Gmail's "Send mail as"), its own first.
+#[tauri::command]
+pub async fn send_as_addresses(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> Result<Vec<SendAsAddress>, CommandError> {
+    Ok(user_action(state.compose.send_as_addresses(&account_id)).await?)
 }
 
 /// Attach a file the user picked or dropped.

@@ -12,6 +12,7 @@ import {
   sendProblem,
   useComposeStore,
 } from "./composeStore";
+import { __resetSendAsForTests } from "./sendAs";
 import { __resetSignaturesForTests, useSignatures } from "./signatures";
 
 type Call = { cmd: string; args: Record<string, unknown> };
@@ -30,6 +31,7 @@ beforeEach(async () => {
   __resetComposeSettingsForTests();
   __resetComposeStoreForTests();
   __resetSignaturesForTests();
+  __resetSendAsForTests();
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
   calls = [];
   let n = 0;
@@ -382,4 +384,62 @@ test("no autosave once a send is queued", async () => {
   queue();
   await sending;
   expect(called("save_draft")).toEqual([]);
+});
+
+const ALIASES = [
+  {
+    email: "me@example.com",
+    name: "Me",
+    isPrimary: true,
+    isDefault: false,
+    signature: "<b>Me</b>",
+  },
+  {
+    email: "work@example.com",
+    name: "Work",
+    isPrimary: false,
+    isDefault: true,
+    signature: "<b>Work</b>",
+  },
+  {
+    email: "sales@example.com",
+    name: "Sales",
+    isPrimary: false,
+    isDefault: false,
+    signature: null,
+  },
+];
+
+test("send-as aliases: a new message starts from Gmail's default; a reply from an alias takes its signature", async () => {
+  handlers.gmail_signature = () => "<b>Me</b>";
+  handlers.send_as_addresses = () => ALIASES;
+  handlers.compose_template = () => ({
+    ...emptyDraft(),
+    from: { name: "Work", address: "work@example.com" },
+  });
+  await store().respond("a1", "m9", "reply");
+  expect(called("send_as_addresses")).toEqual([{ accountId: "a1" }]);
+  expect(store().windows[0].draft).toMatchObject({
+    from: { address: "work@example.com" },
+    bodyHtml: SIGNED.replace("<b>Me</b>", "<b>Work</b>"),
+  });
+
+  const id = store().compose("a1");
+  expect(win(id).draft.from).toEqual({ name: "Work", address: "work@example.com" });
+  expect(win(id).draft.bodyHtml).toBe(SIGNED.replace("<b>Me</b>", "<b>Work</b>"));
+
+  // An alias with no Gmail signature has none; the account's own address keeps the account's.
+  expect(useSignatures.getState().signatureFor("a1", "new", "sales@example.com")).toBeNull();
+  expect(useSignatures.getState().signatureFor("a1", "new", "me@example.com")).toBe("<b>Me</b>");
+  useSignatures.getState().update("a1", { newMessages: "custom", custom: "<i>Mine</i>" });
+  expect(useSignatures.getState().signatureFor("a1", "new", "work@example.com")).toBe(
+    "<i>Mine</i>",
+  );
+
+  store().setFrom(id, { name: "Sales", address: "sales@example.com" });
+  store().update(id, { to: [mira] });
+  await store().send(id);
+  expect(called("send_email")[0]?.message).toMatchObject({
+    from: { name: "Sales", address: "sales@example.com" },
+  });
 });
