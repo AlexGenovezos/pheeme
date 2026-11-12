@@ -160,7 +160,7 @@ jobs:
             exit 0
           fi
           app=$(grep -vE '\.test\.tsx?$|^src-tauri/(tests|benches)/' <<<"$files" |
-            grep -E '^(src/|src-tauri/|public/|\.cargo/|scripts/perf/|\.github/actions/setup-build/)|^(index\.html|package(-lock)?\.json|vite\.config\.ts|tsconfig\.json|rust-toolchain\.toml|\.github/workflows/(perf|app-perf)\.yml)$' || true)
+            grep -E '^(src/|src-tauri/|public/|\.cargo/|scripts/perf/|\.github/actions/setup-build/)|^(index\.html|\.nvmrc|package(-lock)?\.json|vite\.config\.ts|tsconfig\.json|rust-toolchain\.toml|\.github/workflows/(perf|app-perf)\.yml)$' || true)
           if [ -n "$app" ]; then
             echo "app=true" >> "$GITHUB_OUTPUT"
             printf 'Runs the real app for:\n%s\n' "$app" | head -20
