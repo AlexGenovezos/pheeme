@@ -1,0 +1,155 @@
+name: Real app performance
+
+# Builds the release app, opens it on a seeded 20,000-conversation mailbox and measures start
+# time and memory over a 10-minute session (#47). Called by Performance, on every PR that
+# changes the app, and by Nightly performance. See docs/performance.md.
+
+on:
+  workflow_call:
+    inputs:
+      nightly:
+        description: >-
+          Fail when memory is more than 20% worse than the previous nightly run, and add this run
+          to that history. Other runs show the comparison without failing on it.
+        type: boolean
+        default: false
+    outputs:
+      perf-failed:
+        description: >-
+          "true" when the app was measured and missed a budget or the comparison; "false" when
+          it passed, or failed before measuring (install, build, seed or launch).
+        value: ${{ jobs.app.outputs.perf-failed }}
+
+permissions:
+  contents: read
+
+env:
+  SQLX_OFFLINE: "true"
+
+jobs:
+  app:
+    name: Real app on Linux (startup and memory)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    outputs:
+      perf-failed: ${{ steps.verdict.outputs.perf-failed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-build
+        with:
+          cache-key: ubuntu-22.04-release
+      - name: Use public DNS for apt
+        # Ubuntu runners' resolver intermittently fails on every Ubuntu mirror (2026-11-11).
+        run: sudo resolvectl dns "$(ip route show default | awk '{print $5; exit}')" 1.1.1.1 8.8.8.8
+      # The image's package lists go stale: installing without an update 404s on packages the
+      # mirror has since replaced (2026-11-12).
+      - name: Install the WebDriver and a virtual display
+        run: |
+          for _ in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y webkit2gtk-driver xvfb dbus && exit 0
+            sleep 15
+          done
+          exit 1
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+        with:
+          tool: tauri-driver@2.1.0
+      - run: npm ci
+      # The updater points nowhere (https: release builds refuse plain http): a found update showed a banner
+      # in some runs and not others. A failed check is retried after 15 minutes, past the end of the run.
+      - name: Build the release app
+        run: >-
+          npx tauri build --no-bundle --config
+          '{"bundle":{"createUpdaterArtifacts":false},"plugins":{"updater":{"endpoints":["https://127.0.0.1:9/latest.json"]}}}'
+          -- --locked
+      # Seeding takes about 4 minutes, so the mailbox is cached. The key changes with the seed
+      # and the database code, and every month, so the mail's dates never drift far from today.
+      - name: Pick the seeded mailbox
+        id: seed-key
+        env:
+          SEED_HASH: ${{ hashFiles('src-tauri/examples/seed_mailbox.rs', 'src-tauri/src/db/**') }}
+        run: |
+          echo "PERF_HOME=$RUNNER_TEMP/perf-home" >> "$GITHUB_ENV"
+          echo "key=seeded-mailbox-$(date -u +%Y-%m)-$SEED_HASH" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: seed-cache
+        with:
+          path: ${{ runner.temp }}/perf-home
+          key: ${{ steps.seed-key.outputs.key }}
+      - name: Seed a 20,000-conversation mailbox
+        if: steps.seed-cache.outputs.cache-hit != 'true'
+        working-directory: src-tauri
+        run: cargo run --locked --release --example seed_mailbox -- "$PERF_HOME/.local/share/app.pheeme.desktop" 20000
+      # Saved before the app opens it (the app writes to it), and only from main, so PRs that
+      # change the database code don't fill the cache budget.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.seed-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        with:
+          path: ${{ runner.temp }}/perf-home
+          key: ${{ steps.seed-key.outputs.key }}
+      - name: Launch, idle, and run a scripted session
+        id: run
+        run: |
+          xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- \
+            node scripts/perf/app-run.mjs --app src-tauri/target/release/pheeme \
+              --home "$PERF_HOME" --out perf.json --idle-seconds 60 --session-minutes 10
+      # History of earlier nightly runs, kept in the Actions cache (only nightly runs save it).
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: perf-history
+          key: app-perf-${{ github.run_id }}
+          restore-keys: app-perf-
+      - name: Compare memory with earlier runs
+        id: compare
+        if: always() && hashFiles('perf.json') != ''
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: Real app on Linux
+          tool: customSmallerIsBetter
+          # Scheduled runs carry no commit in the event payload; the token lets the action look it up.
+          github-token: ${{ github.token }}
+          output-file-path: perf.json
+          external-data-json-path: perf-history/app-perf.json
+          alert-threshold: "120%"
+          # On a PR the budgets gate; this only shows how the PR compares with last night.
+          fail-on-alert: ${{ inputs.nightly }}
+          summary-always: true
+      # Start time is tracked, not gated on: one start varies by 2x on shared runners.
+      - name: Track start time
+        if: always() && hashFiles('startup.json') != ''
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: Real app on Linux, start time
+          tool: customSmallerIsBetter
+          github-token: ${{ github.token }}
+          output-file-path: startup.json
+          external-data-json-path: perf-history/app-startup.json
+          fail-on-alert: false
+          summary-always: true
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && inputs.nightly && hashFiles('perf.json', 'startup.json') != ''
+        with:
+          path: perf-history
+          key: app-perf-${{ github.run_id }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: app-perf
+          path: |
+            perf.json
+            startup.json
+          if-no-files-found: ignore
+      # app-run.mjs writes perf.json once it has measured, before it checks the budgets, so a
+      # failed run with perf.json missed a budget and one without it never got that far.
+      - name: Tell a performance failure from a setup failure
+        id: verdict
+        if: always()
+        env:
+          RUN: ${{ steps.run.outcome }}
+          COMPARE: ${{ steps.compare.outcome }}
+        run: |
+          if { [ "$RUN" = failure ] && [ -f perf.json ]; } || [ "$COMPARE" = failure ]; then
+            echo "perf-failed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "perf-failed=false" >> "$GITHUB_OUTPUT"
+          fi

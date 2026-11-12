@@ -1,18 +1,19 @@
 name: Nightly performance
 
-# The long versions of the performance checks (#47). A failure opens an issue (or comments
-# on the open one). See docs/performance.md.
+# The long versions of the performance checks (#47), and the real-app run compared with the
+# previous night. A run that measured something over budget opens an issue (or comments on the
+# open one); a failure before measuring (install, build, seed) only fails the run. See
+# docs/performance.md.
 
 on:
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
-  # A PR that changes the harness itself runs it before it lands.
+  # A PR that changes this workflow runs it before it lands. The real-app run itself
+  # (app-perf.yml) runs from Performance on every PR that changes the app.
   pull_request:
     paths:
       - .github/workflows/nightly-perf.yml
-      - scripts/perf/**
-      - src-tauri/examples/seed_mailbox.rs
 
 permissions:
   contents: read
@@ -25,6 +26,8 @@ jobs:
     name: Rust heap soak (long)
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    outputs:
+      perf-failed: ${{ steps.soak.outcome == 'failure' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-build
@@ -32,7 +35,12 @@ jobs:
           node: "false"
           cache-key: ubuntu-22.04-soak
           save-if: false
+      # Built in its own step so a build failure isn't reported as a heap failure.
+      - name: Build the heap soak
+        working-directory: src-tauri
+        run: cargo test --locked --profile soak --features test-support --test soak --no-run
       - name: Heap soak (long)
+        id: soak
         working-directory: src-tauri
         env:
           SOAK: long
@@ -46,87 +54,17 @@ jobs:
           retention-days: 14
 
   app:
-    name: Real app on Linux (startup and memory)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-build
-        with:
-          cache-key: ubuntu-22.04-release
-      - name: Install the WebDriver and a virtual display
-        run: sudo apt-get install -y webkit2gtk-driver xvfb dbus
-      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
-        with:
-          tool: tauri-driver@2.1.0
-      - run: npm ci
-      # The updater points nowhere (https: release builds refuse plain http): a found update showed a banner
-      # in some runs and not others. A failed check is retried after 15 minutes, past the end of the run.
-      - name: Build the release app
-        run: >-
-          npx tauri build --no-bundle --config
-          '{"bundle":{"createUpdaterArtifacts":false},"plugins":{"updater":{"endpoints":["https://127.0.0.1:9/latest.json"]}}}'
-          -- --locked
-      - name: Seed a 20,000-conversation mailbox
-        working-directory: src-tauri
-        run: |
-          echo "PERF_HOME=$RUNNER_TEMP/perf-home" >> "$GITHUB_ENV"
-          cargo run --locked --release --example seed_mailbox -- "$RUNNER_TEMP/perf-home/.local/share/app.pheeme.desktop" 20000
-      - name: Launch, idle, and run a scripted session
-        run: |
-          xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- \
-            node scripts/perf/app-run.mjs --app src-tauri/target/release/pheeme \
-              --home "$PERF_HOME" --out perf.json --idle-seconds 60 --session-minutes 10
-      # History of earlier nightly runs, kept in the Actions cache (only nightly runs save it).
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: always()
-        with:
-          path: perf-history
-          key: app-perf-${{ github.run_id }}
-          restore-keys: app-perf-
-      - name: Compare memory with earlier runs
-        if: always() && hashFiles('perf.json') != ''
-        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
-        with:
-          name: Real app on Linux
-          tool: customSmallerIsBetter
-          # Scheduled runs carry no commit in the event payload; the token lets the action look it up.
-          github-token: ${{ github.token }}
-          output-file-path: perf.json
-          external-data-json-path: perf-history/app-perf.json
-          alert-threshold: "120%"
-          fail-on-alert: true
-          summary-always: true
-      # Start time is tracked, not gated on: one start varies by 2x on shared runners.
-      - name: Track start time
-        if: always() && hashFiles('startup.json') != ''
-        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
-        with:
-          name: Real app on Linux, start time
-          tool: customSmallerIsBetter
-          github-token: ${{ github.token }}
-          output-file-path: startup.json
-          external-data-json-path: perf-history/app-startup.json
-          fail-on-alert: false
-          summary-always: true
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: always() && github.event_name == 'schedule' && hashFiles('perf.json', 'startup.json') != ''
-        with:
-          path: perf-history
-          key: app-perf-${{ github.run_id }}
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: app-perf
-          path: |
-            perf.json
-            startup.json
-          if-no-files-found: ignore
+    name: Real app
+    uses: ./.github/workflows/app-perf.yml
+    with:
+      nightly: ${{ github.event_name == 'schedule' }}
 
   report:
     name: Report failure
     needs: [soak, app]
-    if: failure() && github.event_name == 'schedule'
+    if: >-
+      always() && github.event_name == 'schedule' &&
+      (needs.soak.outputs.perf-failed == 'true' || needs.app.outputs.perf-failed == 'true')
     runs-on: ubuntu-24.04
     permissions:
       issues: write

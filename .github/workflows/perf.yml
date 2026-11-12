@@ -1,7 +1,8 @@
 name: Performance
 
 # Catches slowdowns in the PR that causes them. Not a required check yet (#47 rollout:
-# learn the noise for a week first). See docs/performance.md.
+# learn the noise for a week first). The real-app run (app-perf.yml) runs on PRs that change
+# the app; main gets it every night (nightly-perf.yml). See docs/performance.md.
 
 on:
   pull_request:
@@ -134,3 +135,45 @@ jobs:
           name: playwright-results
           path: test-results/
           retention-days: 14
+
+  changes:
+    name: Does this PR change the app?
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      app: ${{ steps.files.outputs.app }}
+    steps:
+      - name: List the changed files
+        id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # Anything that goes into the release build, or the harness that measures it. Tests,
+          # benchmarks, docs and the website don't. If the list can't be read, run it.
+          if ! files=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'); then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          app=$(grep -vE '\.test\.tsx?$|^src-tauri/(tests|benches)/' <<<"$files" |
+            grep -E '^(src/|src-tauri/|public/|\.cargo/|scripts/perf/|\.github/actions/setup-build/)|^(index\.html|package(-lock)?\.json|vite\.config\.ts|tsconfig\.json|rust-toolchain\.toml|\.github/workflows/(perf|app-perf)\.yml)$' || true)
+          if [ -n "$app" ]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            printf 'Runs the real app for:\n%s\n' "$app" | head -20
+          else
+            echo "app=false" >> "$GITHUB_OUTPUT"
+            echo "No change to the app: skipping the real-app run."
+          fi
+
+  app:
+    name: Real app
+    needs: changes
+    # workflow_dispatch skips `changes` and always runs it.
+    if: >-
+      !cancelled() &&
+      (github.event_name == 'workflow_dispatch' || needs.changes.outputs.app == 'true')
+    uses: ./.github/workflows/app-perf.yml

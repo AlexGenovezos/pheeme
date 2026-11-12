@@ -63,7 +63,7 @@ heap. The test fails when:
 | short | `Performance` workflow, every PR | 5,000 messages | 200 | 4 MiB |
 | long | `Nightly performance` workflow | 20,000 messages | 1,000 | 15 MiB |
 
-A nightly failure opens an issue (or comments on the open one). On a failure, the job
+A nightly heap failure opens an issue (or comments on the open one). On a failure, the job
 uploads `dhat-heap.json`: open it in
 [dh_view](https://nnethercote.github.io/dh_view/dh_view.html) to see which allocation sites
 hold the memory. The first version of this check found sync keeping every deleted message's
@@ -108,9 +108,9 @@ npm run test:memory
 
 It builds the preview with `vite build` and serves it on port 4173 for the run.
 
-## Real app on Linux (nightly)
+## Real app on Linux (PRs that change the app; nightly)
 
-The `app` job of the `Nightly performance` workflow builds the release app and fills a
+[`app-perf.yml`](../.github/workflows/app-perf.yml) builds the release app and fills a
 throwaway home directory with a synced-looking 20,000-conversation mailbox
 ([`src-tauri/examples/seed_mailbox.rs`](../src-tauri/examples/seed_mailbox.rs)). It then
 launches the app under `xvfb` through `tauri-driver` (WebDriver) with
@@ -160,7 +160,27 @@ using them, so the total isn't inflated by WebKit's shared libraries the way sum
 A run fails when it exceeds a budget, or when a memory measure (idle, session, Rust process)
 gets more than 20% worse than the previous nightly run. Start time is tracked over runs too, but a 20% swing isn't a
 failure: one start varies by a factor of two on shared runners. github-action-benchmark keeps that history in the Actions cache, and
-the job summary shows the comparison. A PR that changes the harness itself runs it too.
+the job summary shows the comparison.
+
+It runs in two places:
+
+- **Every PR that changes the app** (the `Real app` job of the `Performance` workflow, about
+  20 to 25 minutes beside CI), so a slowdown fails the PR that causes it rather than the next
+  night. A PR changes the app when it touches `src/`, `src-tauri/`, `public/`, the npm or
+  Cargo manifests and lockfiles, the Vite or TypeScript config, the toolchain, or this harness;
+  tests, benchmarks, docs and the website don't count. A PR fails on the budgets only: its
+  summary compares it with the previous night, but doesn't fail on that comparison, because a
+  PR's base may be a day of other changes past it.
+- **Every night on main** (`Nightly performance`), where it also fails on the 20% comparison and
+  adds the run to the history.
+
+Seeding the mailbox takes about 4 minutes, so it is cached: the key changes with the seed, the
+database code (`src-tauri/src/db/`) and the month, and only main saves it. A PR that changes
+the database code seeds its own.
+
+A nightly run opens an issue (or comments on the open one) only when it measured something:
+a budget or the comparison missed, or the heap soak failed. A failure before that (installing
+packages, building, seeding, launching) fails the run without an issue: rerun it.
 
 Run it on a Linux machine without a virtual GPU. On a VM with a QXL display, WebKit's DRM
 probe hangs in the kernel.
