@@ -198,16 +198,16 @@ impl ComposeService {
     }
 
     /// The account's sendable addresses: from this session's fetch, else fetched now.
-    /// Empty when Gmail can't be asked (offline, or the settings scope wasn't granted).
-    async fn known_send_as(&self, account_id: &str) -> Vec<SendAs> {
+    /// `None` when Gmail can't be asked (offline, or the settings scope wasn't granted).
+    async fn known_send_as(&self, account_id: &str) -> Option<Vec<SendAs>> {
         if let Some(list) = self.cached_send_as(account_id) {
-            return list;
+            return Some(list);
         }
         match self.fetch_send_as(account_id).await {
-            Ok(_) => self.cached_send_as(account_id).unwrap_or_default(),
+            Ok(_) => self.cached_send_as(account_id),
             Err(e) => {
                 tracing::info!(error = %e, "send-as addresses unavailable");
-                Vec::new()
+                None
             }
         }
     }
@@ -239,15 +239,15 @@ impl ComposeService {
         Ok(list)
     }
 
-    /// Who `draft` goes out from: its `from` when the account can send from it (or that
-    /// isn't known yet), else the account's default send-as address, else its own.
+    /// Who `draft` goes out from: its `from` when the account can send from it (or Gmail
+    /// can't be asked), else the account's default send-as address, else its own.
     async fn sending_address(
         &self,
         account_id: &str,
         draft: &ComposeDraft,
     ) -> Result<EmailAddress, MailError> {
         let me = self.sender(account_id).await?;
-        let known = self.cached_send_as(account_id);
+        let known = self.known_send_as(account_id).await;
         if let Some(from) = draft.from.as_ref().filter(|f| !f.address.trim().is_empty()) {
             let named = |f: &EmailAddress, fallback: Option<String>| EmailAddress {
                 name: f.name.clone().filter(|n| !n.trim().is_empty()).or(fallback),
@@ -369,7 +369,7 @@ impl ComposeService {
             snippet: msg.snippet.clone(),
         };
         // Sent from the address the original came to (Gmail's rule), else the default one.
-        let send_as = self.known_send_as(account_id).await;
+        let send_as = self.known_send_as(account_id).await.unwrap_or_default();
         let mut mine: Vec<&str> = vec![me.address.as_str()];
         mine.extend(
             send_as

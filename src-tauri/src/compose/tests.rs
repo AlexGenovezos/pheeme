@@ -570,8 +570,7 @@ async fn sent_from(h: &H, n: usize) -> String {
 #[tokio::test]
 async fn the_from_header_names_the_chosen_alias() {
     let h = harness().await;
-    h.fake.set_send_as(my_addresses());
-    h.compose.send_as_addresses(ACCT).await.unwrap();
+    h.fake.set_send_as(my_addresses()); // fetched by the first send
 
     let mut d = draft_to("bo@example.com");
     d.from = Some(addr("sales@example.com"));
