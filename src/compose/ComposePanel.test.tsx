@@ -2,6 +2,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { dismissToast, ToastProvider, useToastStore } from "../components/ui/Toast";
+import { registry } from "../keyboard/registry";
 import { useAccountStore } from "../store/accountStore";
 import { ComposeHost } from "./ComposeHost";
 import { __resetComposeSettingsForTests, useComposeSettings } from "./composeSettings";
@@ -405,4 +406,16 @@ test("with one address and one account, From is plain text", async () => {
   const panel = await openNew();
   expect(within(panel).queryByRole("button", { name: /me@example\.com/ })).toBeNull();
   expect(within(panel).getByText("me@example.com")).toBeInTheDocument();
+});
+
+test("Send later is a palette command while a message is open", async () => {
+  expect(registry.list().some((c) => c.id === "compose.sendLater")).toBe(false);
+  const panel = await openNew();
+  expect(within(panel).getByRole("button", { name: "Send options" })).toBeInTheDocument();
+  const command = registry.list().find((c) => c.id === "compose.sendLater");
+  expect(command?.title).toBe("Send later in Gmail");
+  const sendLater = vi.spyOn(useComposeStore.getState(), "sendLater").mockResolvedValue();
+  act(() => command!.run());
+  expect(sendLater).toHaveBeenCalledWith(1);
+  sendLater.mockRestore();
 });

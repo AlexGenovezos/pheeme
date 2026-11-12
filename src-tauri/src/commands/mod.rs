@@ -93,6 +93,8 @@ impl From<SupportError> for CommandError {
 const EXTERNAL_HOSTS: &[&str] = &[
     "accounts.google.com",
     "console.cloud.google.com",
+    // Send later opens the saved draft in Gmail on the web.
+    "mail.google.com",
     "myaccount.google.com",
     "support.google.com",
     "github.com",
@@ -193,6 +195,7 @@ mod tests {
             "https://accounts.google.com/o/oauth2/v2/auth?client_id=x",
             "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
             "https://github.com/AlexGenovezos/pheeme",
+            "https://mail.google.com/mail/u/me%40example.com/#drafts",
         ] {
             assert!(is_allowed_external_url(ok), "{ok}");
         }

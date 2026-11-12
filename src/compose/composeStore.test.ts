@@ -3,11 +3,13 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { dismissToast, useToastStore } from "../components/ui/Toast";
 import type { ComposeDraft } from "../lib/tauri";
+import { useAccountStore } from "../store/accountStore";
 import { __resetComposeSettingsForTests, useComposeSettings } from "./composeSettings";
 import {
   __resetComposeStoreForTests,
   type ComposeWindow,
   emptyDraft,
+  gmailDraftsUrl,
   MAX_WINDOWS,
   sendProblem,
   useComposeStore,
@@ -442,4 +444,84 @@ test("send-as aliases: a new message starts from Gmail's default; a reply from a
   expect(called("send_email")[0]?.message).toMatchObject({
     from: { name: "Sales", address: "sales@example.com" },
   });
+});
+
+test("Send later saves the draft, closes the panel and opens it in Gmail on the right account", async () => {
+  useAccountStore.setState({
+    accounts: [
+      { id: "a1", email: "me+x@example.com", displayName: null, clientId: "c", synced: true },
+    ],
+  });
+  handlers.open_external = () => undefined;
+  const id = written();
+  await store().save(id);
+  // Nothing new since that save: it saves again, so Gmail opens the latest message.
+  await store().sendLater(id);
+  expect(called("save_draft")).toHaveLength(2);
+  expect(called("save_draft")[1]).toMatchObject({ accountId: "a1", message: { draftId: "d1" } });
+  expect(store().windows).toEqual([]);
+  expect(called("open_external")).toEqual([
+    { url: "https://mail.google.com/mail/u/me%2Bx%40example.com/#drafts" },
+  ]);
+  expect(called("send_email")).toEqual([]);
+  expect(titles()).toContain("Draft saved and Gmail opened");
+  expect(gmailDraftsUrl("a@b.co")).toBe("https://mail.google.com/mail/u/a%40b.co/#drafts");
+});
+
+test("Send later keeps the panel when the message isn't ready or the save fails", async () => {
+  useAccountStore.setState({
+    accounts: [
+      { id: "a1", email: "me@example.com", displayName: null, clientId: "c", synced: true },
+    ],
+  });
+  const blank = store().compose("a1");
+  await store().sendLater(blank);
+  expect(win(blank).error).toBe("Add at least one recipient.");
+  expect(called("save_draft")).toEqual([]);
+
+  handlers.save_draft = () => {
+    throw { code: "network", message: "Can't reach Gmail." };
+  };
+  const id = written();
+  await store().sendLater(id);
+  expect(win(id).error).toBe("Can't reach Gmail.");
+  expect(called("open_external")).toEqual([]);
+});
+
+test("Send later opens the draft in the account it was saved in, and waits for files still attaching", async () => {
+  useAccountStore.setState({
+    accounts: [
+      { id: "a1", email: "one@example.com", displayName: null, clientId: "c", synced: true },
+      { id: "a2", email: "two@example.com", displayName: null, clientId: "c", synced: true },
+    ],
+  });
+  handlers.open_external = () => undefined;
+  let release: () => void = () => {};
+  let saves = 0;
+  handlers.save_draft = () =>
+    ++saves === 1
+      ? new Promise((resolve) => {
+          release = () => resolve({ draftId: "d1", messageId: "m1", threadId: "t1" });
+        })
+      : { draftId: "d2", messageId: "m2", threadId: "t2" };
+  const id = written();
+  const later = store().sendLater(id);
+  await vi.waitFor(() => expect(saves).toBe(1));
+  store().setAccount(id, "a2"); // while the first save is out
+  release();
+  await later;
+  expect(called("save_draft")[called("save_draft").length - 1]).toMatchObject({ accountId: "a2" });
+  expect(called("open_external")[0]?.url).toMatch(
+    /^https:\/\/mail\.google\.com\/mail\/u\/two%40example\.com\//,
+  );
+
+  let staged: (v: unknown) => void = () => {};
+  handlers.save_draft = () => ({ draftId: "d2", messageId: "m9", threadId: "t1" });
+  handlers.stage_attachment = () => new Promise((resolve) => (staged = resolve));
+  const next = written();
+  const attaching = store().attachFiles(next, ["/a"]);
+  await store().sendLater(next);
+  expect(win(next).error).toBe("Wait for the attachments to finish.");
+  staged({ id: "s-a", filename: "a.pdf", mimeType: "x/y", size: 5 });
+  await attaching;
 });
