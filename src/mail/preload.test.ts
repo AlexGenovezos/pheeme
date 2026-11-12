@@ -67,7 +67,7 @@ test("while navigating, sixteen rows ahead and four behind, leaning the way the 
   expect(prefetch).toHaveBeenLastCalledWith([...keys(23, 16, -1), ...keys(25, 4)]);
 });
 
-test("the first rows of Inbox and each category follow the list, each with its own Unread only", async () => {
+test("the first rows of Inbox and each category follow the list, with its Unread only", async () => {
   const asked: Array<Record<string, unknown>> = [];
   mockIPC((cmd, args) => {
     if (cmd !== "list_threads") throw new Error(`unexpected ${cmd}`);
@@ -76,9 +76,7 @@ test("the first rows of Inbox and each category follow the list, each with its o
     return { threads: [row(String(query.alsoLabelId ?? "inbox"))], next: null };
   });
   useAccountStore.setState({ accounts: [{ id: "a" }] as never });
-  useUiStore.setState({
-    unreadMailboxes: { [JSON.stringify(["a", "INBOX", "CATEGORY_UPDATES"])]: true },
-  });
+  useUiStore.setState({ unreadOnly: true });
   stop = startPreloading();
   show(inbox, rows.slice(0, 2));
   await vi.waitFor(() =>
@@ -91,5 +89,5 @@ test("the first rows of Inbox and each category follow the list, each with its o
   );
   expect(asked).toHaveLength(1 + CATEGORIES.length);
   expect(asked.every((q) => q.limit === 20)).toBe(true);
-  expect(asked.filter((q) => q.unreadOnly).map((q) => q.alsoLabelId)).toEqual(["CATEGORY_UPDATES"]);
+  expect(asked.every((q) => q.unreadOnly === true)).toBe(true);
 });

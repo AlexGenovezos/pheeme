@@ -202,10 +202,6 @@ export function resolveActiveAccount(
   return accounts[0]?.id ?? null;
 }
 
-/** Session filter identity, including account and category. */
-export const mailboxKey = (ref: MailboxRef): string =>
-  JSON.stringify([ref.accountId, ref.labelId, ref.category ?? null]);
-
 /** A row's location tag: the name, and the sidebar color of the mailbox it names. */
 export interface Location {
   name: string;

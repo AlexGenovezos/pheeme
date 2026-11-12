@@ -175,15 +175,13 @@ test("search remembers the mailbox underneath it and resets selection on query a
   expect(store().searchText).toBe("");
 });
 
-test("unread filters are independent per account, label and category, and reset on launch", () => {
-  const key = (ref: { accountId: string | null; labelId: string; category?: string }) =>
-    JSON.stringify([ref.accountId, ref.labelId, ref.category ?? null]);
+test("Unread only stays on across every mailbox and is remembered across launches", () => {
   const first = { accountId: "a1", labelId: "INBOX", category: "CATEGORY_SOCIAL" };
   ui().setMailbox(first);
   ui().setOpenThread("a1:t1");
   ui().checkAll(["a1:t1"]);
   ui().toggleUnreadOnly();
-  expect(ui().unreadMailboxes[key(first)]).toBe(true);
+  expect(ui().unreadOnly).toBe(true);
   expect(ui().openThread).toBeNull();
   expect(ui().checked).toEqual([]);
   for (const other of [
@@ -193,15 +191,15 @@ test("unread filters are independent per account, label and category, and reset 
     { accountId: null, labelId: "INBOX" },
   ]) {
     ui().setMailbox(other);
-    expect(ui().unreadMailboxes[key(other)] ?? false).toBe(false);
+    expect(ui().unreadOnly).toBe(true);
   }
-  ui().setMailbox(first);
-  expect(ui().unreadMailboxes[key(first)]).toBe(true);
-  ui().toggleUnreadOnly();
-  expect(ui().unreadMailboxes[key(first)]).toBe(false);
-  ui().toggleUnreadOnly();
+  expect(stored().unreadOnly).toBe(true);
   __resetUiStoreForTests();
-  expect(ui().unreadMailboxes).toEqual({});
+  expect(ui().unreadOnly).toBe(true);
+  ui().toggleUnreadOnly();
+  expect(ui().unreadOnly).toBe(false);
+  __resetUiStoreForTests();
+  expect(ui().unreadOnly).toBe(false);
 });
 
 test("list density defaults to comfortable and persists in the layout", () => {

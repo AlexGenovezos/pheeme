@@ -427,7 +427,7 @@ test("a sync change to the open conversation while adding an account shows on re
   expect(await screen.findByRole("heading", { name: "After" })).toBeInTheDocument();
 });
 
-test("the list header toggles unread mail and remembers its state when switching mailboxes", async () => {
+test("the list header toggles unread mail and keeps it on when switching mailboxes", async () => {
   const handlers = createPreviewHandlers();
   mockIPC((cmd, args) => handlers[cmd]?.(args as Record<string, unknown>), {
     shouldMockEvents: true,
@@ -444,7 +444,11 @@ test("the list header toggles unread mail and remembers its state when switching
   });
   expect(toggle).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(screen.getByRole("link", { name: "Starred" }));
-  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await vi.waitFor(() => {
+    expect(useMailStore.getState().query?.labelId).toBe("STARRED");
+    expect(useMailStore.getState().query?.unreadOnly).toBe(true);
+  });
   fireEvent.click(screen.getByRole("link", { name: "All Inboxes" }));
   expect(toggle).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(toggle);

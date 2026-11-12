@@ -25,7 +25,6 @@ import { moveSelection, openAndMarkRead, openFocused, toggleCheckFocused } from 
 import {
   accountColorIndex,
   locationOf,
-  mailboxKey,
   type MailboxRef,
   showsLocation,
   threadKey,
@@ -68,7 +67,7 @@ export function ThreadList(props: ThreadListProps) {
   const mailbox = useUiStore((s) => s.mailbox);
   const search = useMailStore((s) => s.search);
   const searchText = useUiStore((s) => s.searchText.trim());
-  const unreadOnly = useUiStore((s) => !!s.unreadMailboxes[mailboxKey(s.mailbox)]);
+  const unreadOnly = useUiStore((s) => s.unreadOnly);
   const threads = useMailStore((s) => s.threads);
   const loading = useMailStore((s) => s.loading);
   const error = useMailStore((s) => s.error);
