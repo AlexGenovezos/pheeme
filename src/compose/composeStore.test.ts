@@ -3,11 +3,13 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { dismissToast, useToastStore } from "../components/ui/Toast";
 import type { ComposeDraft } from "../lib/tauri";
+import { useAccountStore } from "../store/accountStore";
 import { __resetComposeSettingsForTests, useComposeSettings } from "./composeSettings";
 import {
   __resetComposeStoreForTests,
   type ComposeWindow,
   emptyDraft,
+  gmailDraftUrl,
   MAX_WINDOWS,
   sendProblem,
   useComposeStore,
@@ -442,4 +444,48 @@ test("send-as aliases: a new message starts from Gmail's default; a reply from a
   expect(called("send_email")[0]?.message).toMatchObject({
     from: { name: "Sales", address: "sales@example.com" },
   });
+});
+
+test("Send later saves the draft, closes the panel and opens it in Gmail on the right account", async () => {
+  useAccountStore.setState({
+    accounts: [
+      { id: "a1", email: "me+x@example.com", displayName: null, clientId: "c", synced: true },
+    ],
+  });
+  handlers.open_external = () => undefined;
+  const id = written();
+  await store().save(id);
+  // Nothing new since that save: it saves again, so Gmail opens the latest message.
+  await store().sendLater(id);
+  expect(called("save_draft")).toHaveLength(2);
+  expect(called("save_draft")[1]).toMatchObject({ accountId: "a1", message: { draftId: "d1" } });
+  expect(store().windows).toEqual([]);
+  expect(called("open_external")).toEqual([
+    { url: "https://mail.google.com/mail/u/me%2Bx%40example.com/#drafts?compose=m2" },
+  ]);
+  expect(called("send_email")).toEqual([]);
+  expect(titles()).toContain("Draft opened in Gmail");
+  expect(gmailDraftUrl("a@b.co", "18c2f4a1b2c3d4e5")).toBe(
+    "https://mail.google.com/mail/u/a%40b.co/#drafts?compose=18c2f4a1b2c3d4e5",
+  );
+});
+
+test("Send later keeps the panel when the message isn't ready or the save fails", async () => {
+  useAccountStore.setState({
+    accounts: [
+      { id: "a1", email: "me@example.com", displayName: null, clientId: "c", synced: true },
+    ],
+  });
+  const blank = store().compose("a1");
+  await store().sendLater(blank);
+  expect(win(blank).error).toBe("Add at least one recipient.");
+  expect(called("save_draft")).toEqual([]);
+
+  handlers.save_draft = () => {
+    throw { code: "network", message: "Can't reach Gmail." };
+  };
+  const id = written();
+  await store().sendLater(id);
+  expect(win(id).error).toBe("Can't reach Gmail.");
+  expect(called("open_external")).toEqual([]);
 });

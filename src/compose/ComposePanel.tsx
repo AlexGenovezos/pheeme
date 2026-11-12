@@ -5,6 +5,7 @@ import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState }
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { describeShortcut } from "../keyboard/format";
+import { useKeybinding } from "../keyboard/useCommands";
 import { showContextMenu } from "../lib/contextMenu";
 import { type SendAsAddress, suggestContacts } from "../lib/tauri";
 import { cx } from "../lib/utils";
@@ -16,6 +17,7 @@ import {
   AUTOSAVE_MS,
   type ComposeWindow,
   MAX_ATTACHMENT_BYTES,
+  SEND_LATER_COMMAND,
   useComposeStore,
 } from "./composeStore";
 import { EditorBody, EditorToolbar, replaceSignature, useComposeEditor } from "./Editor";
@@ -255,6 +257,22 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     if (draft.bcc.length > 0) setShowBcc(true);
   }, [draft.cc.length, draft.bcc.length]);
 
+  const sendLaterKey = useKeybinding(SEND_LATER_COMMAND);
+  const sendOptions = (e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    void showContextMenu(
+      [
+        {
+          id: "send-later",
+          label: "Send later in Gmail…",
+          shortcut: sendLaterKey,
+          onSelect: () => void store.sendLater(win.id),
+        },
+      ],
+      { x: rect.left, y: rect.bottom },
+    );
+  };
+
   const bytes = attachmentBytes(draft);
   const overLimit = bytes > MAX_ATTACHMENT_BYTES;
 
@@ -421,14 +439,24 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
       )}
 
       <footer className="compose__footer">
-        <Button
-          variant="primary"
-          disabled={win.sending}
-          onClick={() => store.requestSend(win.id)}
-          title={`Send (${describeShortcut(SEND_SHORTCUT)})`}
-        >
-          {win.sending ? "Sending…" : "Send"}
-        </Button>
+        <span className="compose__send">
+          <Button
+            variant="primary"
+            disabled={win.sending}
+            onClick={() => store.requestSend(win.id)}
+            title={`Send (${describeShortcut(SEND_SHORTCUT)})`}
+          >
+            {win.sending ? "Sending…" : "Send"}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={win.sending}
+            icon={<ChevronDown aria-hidden="true" />}
+            aria-label="Send options"
+            title="Send later"
+            onClick={sendOptions}
+          />
+        </span>
         <IconButton label="Attach files" icon={<Paperclip />} onClick={() => void pickFiles()} />
         {bytes > 0 && (
           <span

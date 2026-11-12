@@ -539,6 +539,20 @@ button.compose-from:hover {
   border-block-start: var(--border-width) solid var(--color-border-subtle);
 }
 
+.compose__send {
+  display: inline-flex;
+  gap: var(--border-width);
+}
+.compose__send > .ui-button:first-child {
+  border-start-end-radius: var(--space-0);
+  border-end-end-radius: var(--space-0);
+}
+.compose__send > .ui-button:last-child {
+  padding-inline: var(--space-1-5);
+  border-start-start-radius: var(--space-0);
+  border-end-start-radius: var(--space-0);
+}
+
 .compose__size {
   color: var(--color-foreground-subtle);
   font-size: var(--font-size-sm);

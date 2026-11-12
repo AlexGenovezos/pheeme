@@ -11,6 +11,7 @@ import {
   type EmailAddress,
   deleteDraft,
   discardAttachments,
+  openExternal,
   openDraft,
   type OutboxSendStatus,
   saveDraft,
@@ -21,6 +22,7 @@ import {
   SYNC_EVENTS,
   toCommandError,
 } from "../lib/tauri";
+import { useAccountStore } from "../store/accountStore";
 import { useComposeSettings } from "./composeSettings";
 import { isValidAddress } from "./recipients";
 import { useSendAs } from "./sendAs";
@@ -103,6 +105,20 @@ export function sendProblem(d: ComposeDraft): string | null {
   return null;
 }
 
+/**
+ * The saved draft in Gmail on the web, signed in as `email`, where Send later hands it over to Gmail's own
+ * Schedule send. `compose=` takes the draft message's id, which the Gmail API gives in hex (`18c2f4a1…`), the
+ * form Gmail web's own links used.
+ *
+ * Unverified on a real account: if Gmail web stops opening the draft from it, use `#drafts` alone (the Drafts
+ * list, the draft on top).
+ */
+export const gmailDraftUrl = (email: string, messageId: string) =>
+  `https://mail.google.com/mail/u/${encodeURIComponent(email)}/#drafts?compose=${encodeURIComponent(messageId)}`;
+
+/** The palette command (registered by `ComposeHost`) behind the Send menu's Send later. */
+export const SEND_LATER_COMMAND = "compose.sendLater";
+
 /** A send waiting to leave or to be confirmed, with what's needed to reopen it. */
 interface PendingSend {
   window: ComposeWindow;
@@ -127,6 +143,11 @@ interface ComposeState {
   /** Save to Gmail Drafts now (autosave passes `quiet`, which keeps failures off the toasts). */
   save(id: number, opts?: { quiet?: boolean }): Promise<boolean>;
   send(id: number): Promise<void>;
+  /**
+   * Send later: save the message to Gmail Drafts now, close the panel and open the draft in Gmail on the web,
+   * where Gmail's Schedule send picks the time. Pheeme keeps no schedule of its own.
+   */
+  sendLater(id: number): Promise<void>;
   /** Send, or ask first when "Confirm before sending" is on. */
   requestSend(id: number): void;
   cancelSend(id: number): void;
@@ -152,6 +173,8 @@ const pending = new Map<string, PendingSend>();
 const saves = new Map<number, Promise<boolean>>();
 /** The Gmail draft each window's last save made, read by a discard that raced it. */
 const savedDrafts = new Map<number, string>();
+/** The message id of each window's last saved draft (it changes with every save), for Send later. */
+const savedMessages = new Map<number, string>();
 
 export const useComposeStore = create<ComposeState>((set, get) => {
   const find = (id: number) => get().windows.find((w) => w.id === id);
@@ -413,6 +436,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         try {
           const saved = await saveDraft(accountId, win.draft);
           savedDrafts.set(id, saved.draftId);
+          savedMessages.set(id, saved.messageId);
           set((s) => ({
             windows: s.windows.map((w) =>
               w.id === id && w.accountId === accountId
@@ -500,6 +524,46 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       }
     },
 
+    async sendLater(id) {
+      const win = find(id);
+      if (!win || win.loading || win.sending) return;
+      const problem =
+        win.attaching > 0 ? "Wait for the attachments to finish." : sendProblem(win.draft);
+      if (problem) {
+        patch(id, { error: problem, confirmingSend: false });
+        return;
+      }
+      const email = useAccountStore.getState().accounts.find((a) => a.id === win.accountId)?.email;
+      if (!email) {
+        patch(id, { error: "That account isn't connected any more." });
+        return;
+      }
+      // Save now, even with nothing new: Gmail web opens the draft's latest message.
+      patch(id, { confirmingSend: false, confirmingClose: false, version: win.version + 1 });
+      let current = find(id);
+      while (current && current.version !== current.savedVersion) {
+        if (!(await get().save(id))) return; // the reason shows in the panel
+        current = find(id);
+      }
+      const messageId = savedMessages.get(id);
+      if (!current || !messageId) return;
+      remove(id);
+      dropStaged(current.draft.attachments);
+      try {
+        await openExternal(gmailDraftUrl(email, messageId));
+        toast({
+          title: "Draft opened in Gmail",
+          description: "Choose Schedule send there to pick a time.",
+        });
+      } catch (e) {
+        toast({
+          title: "Saved in Drafts",
+          description: `Couldn't open Gmail: ${toCommandError(e).message}`,
+          tone: "danger",
+        });
+      }
+    },
+
     requestClose(id) {
       const win = find(id);
       if (!win || win.sending) return;
@@ -545,6 +609,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       await saves.get(id)?.catch(() => {});
       const draftId = savedDrafts.get(id) ?? win.draft.draftId ?? null;
       savedDrafts.delete(id);
+      savedMessages.delete(id);
       if (draftId) {
         try {
           await deleteDraft(win.accountId, draftId);
@@ -581,6 +646,7 @@ export function __resetComposeStoreForTests() {
   pending.clear();
   saves.clear();
   savedDrafts.clear();
+  savedMessages.clear();
   nextId = 1;
   useComposeStore.setState({ windows: [], focusRequest: null });
 }

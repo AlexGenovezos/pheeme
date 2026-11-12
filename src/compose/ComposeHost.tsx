@@ -1,9 +1,10 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { lazy, Suspense, useEffect, useState } from "react";
+import { useCommands } from "../keyboard/useCommands";
 import { createSubscriptionScope } from "../lib/subscriptions";
 import { isTauri } from "../preview/runtime";
 import { useAccountStore } from "../store/accountStore";
-import { useComposeStore } from "./composeStore";
+import { type ComposeWindow, SEND_LATER_COMMAND, useComposeStore } from "./composeStore";
 import { useSignatures } from "./signatures";
 import "./compose.css";
 
@@ -47,10 +48,39 @@ function useFileDrops(enabled: boolean): number | null {
   return over;
 }
 
+/** The message a compose command acts on: the panel with focus, else the newest one open, else the newest. */
+function activeWindow(windows: ComposeWindow[]): ComposeWindow | undefined {
+  const focused = Number(
+    document.activeElement?.closest<HTMLElement>("[data-compose-id]")?.dataset.composeId,
+  );
+  return (
+    windows.find((w) => w.id === focused) ??
+    [...windows].reverse().find((w) => !w.minimized) ??
+    windows[windows.length - 1]
+  );
+}
+
 /** Docks the open compose panels along the bottom of the window, newest on the right. */
 export function ComposeHost() {
   const windows = useComposeStore((s) => s.windows);
   const dropTarget = useFileDrops(windows.length > 0);
+  // Gmail's API has no scheduled send, so Send later hands the draft to Gmail on the web (see `sendLater`).
+  useCommands(
+    windows.length > 0
+      ? [
+          {
+            id: SEND_LATER_COMMAND,
+            title: "Send later in Gmail",
+            group: "General",
+            keywords: ["schedule send", "scheduled", "later", "compose"],
+            run: () => {
+              const target = activeWindow(useComposeStore.getState().windows);
+              if (target) void useComposeStore.getState().sendLater(target.id);
+            },
+          },
+        ]
+      : [],
+  );
   if (windows.length === 0) return null;
   return (
     <div className="compose-dock" data-open="true">
