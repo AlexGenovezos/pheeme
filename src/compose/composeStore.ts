@@ -533,11 +533,6 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         patch(id, { error: problem, confirmingSend: false });
         return;
       }
-      const email = useAccountStore.getState().accounts.find((a) => a.id === win.accountId)?.email;
-      if (!email) {
-        patch(id, { error: "That account isn't connected any more." });
-        return;
-      }
       // Save now, even with nothing new: Gmail web opens the draft's latest message.
       patch(id, { confirmingSend: false, confirmingClose: false, version: win.version + 1 });
       let current = find(id);
@@ -547,6 +542,18 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       }
       const messageId = savedMessages.get(id);
       if (!current || !messageId) return;
+      // A file attached while saving isn't in the draft yet.
+      if (current.attaching > 0) {
+        patch(id, { error: "Wait for the attachments to finish." });
+        return;
+      }
+      // The account it was saved in, which may have changed while saving.
+      const accountId = current.accountId;
+      const email = useAccountStore.getState().accounts.find((a) => a.id === accountId)?.email;
+      if (!email) {
+        patch(id, { error: "That account isn't connected any more." });
+        return;
+      }
       remove(id);
       dropStaged(current.draft.attachments);
       try {

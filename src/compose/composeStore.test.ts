@@ -489,3 +489,41 @@ test("Send later keeps the panel when the message isn't ready or the save fails"
   expect(win(id).error).toBe("Can't reach Gmail.");
   expect(called("open_external")).toEqual([]);
 });
+
+test("Send later opens the draft in the account it was saved in, and waits for files still attaching", async () => {
+  useAccountStore.setState({
+    accounts: [
+      { id: "a1", email: "one@example.com", displayName: null, clientId: "c", synced: true },
+      { id: "a2", email: "two@example.com", displayName: null, clientId: "c", synced: true },
+    ],
+  });
+  handlers.open_external = () => undefined;
+  let release: () => void = () => {};
+  let saves = 0;
+  handlers.save_draft = () =>
+    ++saves === 1
+      ? new Promise((resolve) => {
+          release = () => resolve({ draftId: "d1", messageId: "m1", threadId: "t1" });
+        })
+      : { draftId: "d2", messageId: "m2", threadId: "t2" };
+  const id = written();
+  const later = store().sendLater(id);
+  await vi.waitFor(() => expect(saves).toBe(1));
+  store().setAccount(id, "a2"); // while the first save is out
+  release();
+  await later;
+  expect(called("save_draft")[called("save_draft").length - 1]).toMatchObject({ accountId: "a2" });
+  expect(called("open_external")[0]?.url).toMatch(
+    /^https:\/\/mail\.google\.com\/mail\/u\/two%40example\.com\//,
+  );
+
+  let staged: (v: unknown) => void = () => {};
+  handlers.save_draft = () => ({ draftId: "d2", messageId: "m9", threadId: "t1" });
+  handlers.stage_attachment = () => new Promise((resolve) => (staged = resolve));
+  const next = written();
+  const attaching = store().attachFiles(next, ["/a"]);
+  await store().sendLater(next);
+  expect(win(next).error).toBe("Wait for the attachments to finish.");
+  staged({ id: "s-a", filename: "a.pdf", mimeType: "x/y", size: 5 });
+  await attaching;
+});
