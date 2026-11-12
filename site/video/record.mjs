@@ -133,7 +133,12 @@ try {
   await page.evaluate(() => window.stage.shot("below", 0));
   await page.waitForTimeout(500);
   await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
-  // From here the stage's CSS animations and transitions only move when a frame says so.
+  // From here the stage's CSS animations and transitions only move when a frame
+  // says so. The frozen timeline keeps one that starts between two frames at
+  // its start, so a short transition can't finish before a frame sees it.
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
   await page.evaluate(() => {
     const born = new WeakMap();
     window.__film = (t) => {
@@ -153,7 +158,6 @@ try {
     window.__film(0);
   });
 
-  const cdp = await context.newCDPSession(page);
   let frame = 0;
   const writes = [];
   const film = {
