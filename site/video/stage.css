@@ -202,7 +202,10 @@ body.stage {
   pointer-events: none;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, .35));
   opacity: 0;
-  transition: transform var(--glide, .7s) cubic-bezier(.45, 0, .2, 1), opacity .3s, scale .08s;
+  /* Position is `translate`, not `transform`: a transform is applied after
+     `scale`, so pressing would scale the position too and jump the pointer. */
+  transform-origin: 7px 4px; /* pressing shrinks it around the tip */
+  transition: translate var(--glide, .7s) cubic-bezier(.45, 0, .2, 1), opacity .3s, scale .08s;
   z-index: 5;
 }
 .pointer.on { opacity: 1; }
