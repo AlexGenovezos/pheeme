@@ -36,7 +36,7 @@ describe("parseQuickAdd", () => {
     expect(r.title).toBe("Meet with Kevin");
     expect(r.start).toBe("2026-11-11 09:00");
     expect(r.end).toBe("2026-11-11 10:00");
-    expect(r.people).toEqual([{ text: "Kevin", address: null }]);
+    expect(r.people).toEqual([{ text: "Kevin", address: null, full: null }]);
     expect(r.kind).toBe("event");
   });
 
@@ -62,8 +62,8 @@ describe("parseQuickAdd", () => {
     const s = timed("Lunch at Joe's with Sam Park and kim@example.com tomorrow at 1pm");
     expect(s.place).toBe("Joe's");
     expect(s.people).toEqual([
-      { text: "Sam Park", address: null },
-      { text: "kim@example.com", address: "kim@example.com" },
+      { text: "Sam Park", address: null, full: null },
+      { text: "kim@example.com", address: "kim@example.com", full: null },
     ]);
     expect(s.title).toBe("Lunch with Sam Park and kim@example.com");
   });
@@ -161,6 +161,34 @@ describe("parseQuickAdd", () => {
     expect(m.kind).toBe("task");
     expect(m.title).toBe("Call Sam with the news");
     expect(m.people).toEqual([]);
+  });
+
+  test("an uncapitalised surname counts when contacts know the full name", () => {
+    const text = "work on church with mike murray every thur at 5 pm 10 times";
+    const plain = parse(text);
+    expect(plain.people).toEqual([{ text: "mike", address: null, full: "mike murray" }]);
+    expect(spanText(text, "guest")).toEqual(["mike"]);
+    const known = parseQuickAdd(text, {
+      now: NOW,
+      tz: NY,
+      targets,
+      fullNames: (full) => full === "mike murray",
+    });
+    expect(known.people).toEqual([{ text: "mike murray", address: null, full: "mike murray" }]);
+    expect(known.title).toBe("Work on church with mike murray");
+    expect(
+      known.spans.filter((s) => s.kind === "guest").map((s) => text.slice(s.start, s.end)),
+    ).toEqual(["mike murray"]);
+    // The people after an unknown surname are still read, so they can be looked up too.
+    expect(parse("lunch with mike murray and grace hopper").people.map((p) => p.full)).toEqual([
+      "mike murray",
+      "grace hopper",
+    ]);
+    // "and" joins two people, never a surname.
+    expect(parse("lunch with sam and kim").people.map((p) => [p.text, p.full])).toEqual([
+      ["sam", null],
+      ["kim", null],
+    ]);
   });
 
   test("words after with that aren't people", () => {
