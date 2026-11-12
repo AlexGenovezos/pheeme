@@ -248,3 +248,19 @@ pub async fn message_invite(
     };
     Ok(state.calendar.invite(&account_id, &text).await?)
 }
+
+/// Joins a video call: opens its link (an event's or an invitation's) in the default browser.
+/// Any web link, as a conference may come from a provider Pheeme doesn't list.
+#[tauri::command]
+pub fn open_meeting_link(url: String) -> Result<(), CommandError> {
+    let Some(url) = crate::calendar::meeting::joinable(&url) else {
+        return Err(CommandError {
+            code: "invalid_input".into(),
+            message: "That isn't a web link to a call.".into(),
+        });
+    };
+    open::that_detached(url.as_str()).map_err(|error| CommandError {
+        code: "open_failed".into(),
+        message: format!("Couldn't open your browser ({error}). Copy the link instead."),
+    })
+}

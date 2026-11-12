@@ -21,6 +21,7 @@ function timed(start: number, end: number, extra: Partial<CalendarEvent> = {}): 
     selfResponse: null,
     location: null,
     hasConference: false,
+    meeting: null,
     colorId: null,
     transparency: null,
     recurring: false,

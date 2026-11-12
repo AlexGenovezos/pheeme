@@ -21,6 +21,9 @@ const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
 
+/** Commands that never answer, to see what shows before they do. */
+let held: string[] = [];
+
 function backend(access: string | null, statuses?: CalendarAccess["status"][]) {
   const handlers = createCalendarHandlers(ACCOUNTS, access, NOW) as Record<
     string,
@@ -30,6 +33,7 @@ function backend(access: string | null, statuses?: CalendarAccess["status"][]) {
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
       calls.push({ cmd, args: a });
+      if (held.includes(cmd)) return new Promise(() => {});
       if (cmd === "calendar_accounts" && statuses) {
         const accounts = handlers.calendar_accounts() as { access: CalendarAccess }[];
         return accounts.map((acc, i) => ({
@@ -48,6 +52,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   localStorage.clear();
   calls = [];
+  held = [];
   useAccountStore.setState({ accounts: ACCOUNTS as never });
   useCalendarStore.setState({
     mode: "calendar",
@@ -138,6 +143,55 @@ describe("CalendarScreen", () => {
 
     fireEvent.keyDown(pop, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Design review" })).toBeNull();
+  });
+
+  test("events with a video call show a camera and Join any provider, from the first frame", async () => {
+    backend(null);
+    render(<CalendarScreen />);
+    await flush();
+    await flush();
+
+    const vendor = screen.getByRole("button", { name: /^Vendor demo, .*video call/ });
+    expect(vendor.querySelector(".cal-event__call")).not.toBeNull();
+    const lunch = screen.getByRole("button", { name: /^Lunch with Dana,/ });
+    expect(lunch).not.toHaveAccessibleName(/video call/);
+    expect(lunch.querySelector(".cal-event__call")).toBeNull();
+    const palette = () => filterCommands(registry.list(), "").map((r) => r.command.id);
+    expect(palette()).not.toContain("calendar.join");
+
+    // Join is there (in the still-hidden popover) before the event's detail has been read.
+    held = ["calendar_event_detail"];
+    fireEvent.click(vendor);
+    await flush();
+    const pop = document.querySelector<HTMLElement>('.cal-pop[aria-label="Vendor demo"]')!;
+    expect(pop).toHaveStyle({ visibility: "hidden" });
+    const join = within(pop).getByText("Join with Zoom");
+    // The location is only the Zoom link: Join says it once.
+    expect(pop).not.toHaveTextContent("acme.zoom.us");
+    fireEvent.click(join);
+    await flush();
+    const zoom = "https://acme.zoom.us/j/81234567890?pwd=demo";
+    expect(calls.filter((c) => c.cmd === "open_meeting_link").map((c) => c.args.url)).toEqual([
+      zoom,
+    ]);
+
+    // Shift+J joins the open event's call too.
+    expect(palette()).toContain("calendar.join");
+    act(
+      () => void registry.handleKeyDown(new KeyboardEvent("keydown", { key: "J", shiftKey: true })),
+    );
+    await flush();
+    expect(calls.filter((c) => c.cmd === "open_meeting_link")).toHaveLength(2);
+
+    fireEvent.keyDown(pop, { key: "Escape" });
+    held = [];
+    fireEvent.click(screen.getByRole("button", { name: /^Team planning,/ }));
+    await flush();
+    expect(
+      within(screen.getByRole("dialog", { name: "Team planning" })).getByRole("button", {
+        name: "Join with Microsoft Teams",
+      }),
+    ).toBeInTheDocument();
   });
 
   test("Edit and Delete event are in the palette only while an event is open", async () => {

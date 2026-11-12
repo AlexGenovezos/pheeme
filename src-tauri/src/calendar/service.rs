@@ -4,6 +4,7 @@
 
 use super::edit::OriginalStart;
 use super::error::CalendarError;
+use super::meeting::{self, MeetingLink};
 use super::recurrence::{self, Occurrence};
 use super::sync::{classify, sync_account, SyncError};
 use super::writes::{can_edit, can_write, Target};
@@ -68,6 +69,8 @@ pub struct CalendarEventDto {
     pub self_response: Option<String>,
     pub location: Option<String>,
     pub has_conference: bool,
+    /// The video call to join (any provider): see [`meeting::for_event`].
+    pub meeting: Option<MeetingLink>,
     pub color_id: Option<String>,
     pub transparency: Option<String>,
     pub recurring: bool,
@@ -369,10 +372,14 @@ impl CalendarService {
                     .map(Vec::as_slice)
                     .unwrap_or_default();
                 let can = editable(e);
+                let mut call = None;
                 for occ in recurrence::expand(e, replaced, from_ms, to_ms, tz) {
+                    // The series' call, read once for all its occurrences.
+                    let call = call.get_or_insert_with(|| meeting::of_event(e));
                     out.push(CalendarEventDto {
                         can_edit: can,
-                        ..dto(e, Some(&occ))
+                        meeting: call.clone(),
+                        ..base_dto(e, Some(&occ))
                     });
                 }
             } else if e.status != "cancelled" && overlaps(e, from_ms, to_ms, tz) {
@@ -776,6 +783,14 @@ pub(super) fn unstored_occurrence(
 }
 
 fn dto(e: &DbEvent, occ: Option<&Occurrence>) -> CalendarEventDto {
+    CalendarEventDto {
+        meeting: meeting::of_event(e),
+        ..base_dto(e, occ)
+    }
+}
+
+/// [`dto`] without the call, which needs the conference and description read.
+fn base_dto(e: &DbEvent, occ: Option<&Occurrence>) -> CalendarEventDto {
     let time = |ms: Option<i64>, date: Option<String>| EventTimeDto {
         ms,
         date,
@@ -815,6 +830,7 @@ fn dto(e: &DbEvent, occ: Option<&Occurrence>) -> CalendarEventDto {
         self_response: e.self_response.clone(),
         location: e.location.clone(),
         has_conference: e.conference.is_some(),
+        meeting: None,
         color_id: e.color_id.clone(),
         transparency: e.transparency.clone(),
         can_edit: false,
@@ -1432,6 +1448,82 @@ pub(super) mod tests {
         assert!(can("standup_"), "an occurrence of your own series");
         assert!(!can("review"), "someone else's invite");
         assert!(!can("holiday"), "a read-only calendar");
+    }
+
+    #[tokio::test]
+    async fn listed_events_carry_their_video_call() {
+        let h = harness(&["a"]).await;
+        let mut series = standup_series();
+        series["location"] = json!("https://acme.zoom.us/j/42?pwd=z");
+        h.fake("a").put("a@example.com", series);
+        let mut teams = timed(
+            "sync",
+            "Sync",
+            "2026-11-10T12:00:00-05:00",
+            "2026-11-10T13:00:00-05:00",
+        );
+        teams["description"] = json!(
+            "<a href=\"https://teams.microsoft.com/l/meetup-join/19%3a1%40thread.v2/0\">Join</a>"
+        );
+        h.fake("a").put("a@example.com", teams);
+        let mut meet = timed(
+            "meet",
+            "Meet",
+            "2026-11-11T12:00:00-05:00",
+            "2026-11-11T13:00:00-05:00",
+        );
+        meet["hangoutLink"] = json!("https://meet.google.com/abc-defg-hij");
+        h.fake("a").put("a@example.com", meet);
+        h.fake("a").put(
+            "a@example.com",
+            timed(
+                "lunch",
+                "Lunch",
+                "2026-11-12T12:00:00-05:00",
+                "2026-11-12T13:00:00-05:00",
+            ),
+        );
+        h.grant("a").await;
+
+        let got = h
+            .service
+            .events(
+                ms("2026-11-08T00:00:00Z"),
+                ms("2026-11-15T00:00:00Z"),
+                "UTC",
+            )
+            .await
+            .unwrap();
+        let call = |id: &str| {
+            got.iter()
+                .find(|e| e.id.starts_with(id))
+                .unwrap()
+                .meeting
+                .clone()
+                .map(|m| (m.provider.unwrap_or_default(), m.url))
+        };
+        assert_eq!(
+            call("standup_"),
+            Some(("Zoom".into(), "https://acme.zoom.us/j/42?pwd=z".into())),
+            "an occurrence has its series' call"
+        );
+        assert_eq!(
+            call("sync"),
+            Some((
+                "Microsoft Teams".into(),
+                "https://teams.microsoft.com/l/meetup-join/19%3a1%40thread.v2/0".into()
+            ))
+        );
+        assert_eq!(
+            call("meet"),
+            Some((
+                "Google Meet".into(),
+                "https://meet.google.com/abc-defg-hij".into()
+            ))
+        );
+        assert_eq!(call("lunch"), None);
+        let json = serde_json::to_value(&got[0]).unwrap();
+        assert_eq!(json["meeting"]["provider"], "Zoom");
     }
 
     #[tokio::test]

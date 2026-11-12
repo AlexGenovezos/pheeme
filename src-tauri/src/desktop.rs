@@ -80,6 +80,17 @@ pub fn activate(app: &AppHandle, target: NotifyTarget) {
     show_window(app);
 }
 
+/// A reminder's Join button: opens the call in the default browser (web links only).
+pub fn join_call(url: &str) {
+    let Some(url) = crate::calendar::meeting::joinable(url) else {
+        tracing::warn!("notification join link is not a web link");
+        return;
+    };
+    if let Err(error) = open::that_detached(url.as_str()) {
+        tracing::warn!(%error, "Could not open a video call from a notification");
+    }
+}
+
 pub fn take_target(app: &AppHandle) -> Option<NotifyTarget> {
     app.state::<Arc<Desktop>>()
         .pending
@@ -155,7 +166,9 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
                             clean_text(&mail.subject, 160),
                             clean_text(&mail.snippet, 240)
                         );
-                        if platform::show(&app, target, clean_text(&mail.sender, 120), body).await {
+                        if platform::show(&app, target, clean_text(&mail.sender, 120), body, None)
+                            .await
+                        {
                             shown += 1;
                         } else {
                             failed += 1;
@@ -234,6 +247,7 @@ impl ReminderAlerts for DesktopAlerts {
             NotifyTarget::Event(alert.target),
             clean_text(&alert.title, 160),
             clean_text(&alert.body, 240),
+            alert.join_url,
         )
         .await
     }

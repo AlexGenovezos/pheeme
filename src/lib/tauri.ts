@@ -461,6 +461,16 @@ export interface EventTime {
   timeZone: string | null;
 }
 
+/** A link that joins a video call. */
+export interface MeetingLink {
+  url: string;
+  /** "Google Meet", "Zoom", "Microsoft Teams", "Webex", …; null for a conference from a provider Pheeme doesn't list. */
+  provider: string | null;
+}
+
+/** Joins a video call: opens its link in the default browser. */
+export const openMeetingLink = (url: string) => invoke<void>("open_meeting_link", { url });
+
 export interface CalendarEvent {
   accountId: string;
   calendarId: string;
@@ -477,6 +487,8 @@ export interface CalendarEvent {
   selfResponse: string | null;
   location: string | null;
   hasConference: boolean;
+  /** The video call to join (any provider), from the conference, location or description. */
+  meeting: MeetingLink | null;
   colorId: string | null;
   /** `transparent` shows as free. */
   transparency: string | null;
@@ -1001,8 +1013,8 @@ export interface Invite {
   summary: string | null;
   description: string | null;
   location: string | null;
-  /** The video meeting link (Meet, Teams, Zoom, FaceTime, …). */
-  meetingUrl: string | null;
+  /** The video call (Meet, Teams, Zoom, Webex, FaceTime, …). */
+  meeting: MeetingLink | null;
   start: EventTime;
   /** Exclusive: the day after the last, for an all-day event. */
   end: EventTime;

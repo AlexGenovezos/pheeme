@@ -8,6 +8,7 @@ pub mod error;
 pub(crate) mod fake;
 pub mod ics;
 pub mod invite;
+pub mod meeting;
 pub mod recurrence;
 pub mod reminders;
 mod repeating;

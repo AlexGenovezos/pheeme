@@ -2,6 +2,7 @@
 // dot-and-time line for a short event in a month cell. Declined events are struck through and
 // dimmed; unanswered invites are dashed, as on the website. Events you can change can be dragged
 // (see `drag.ts`); the new event being placed draws here too, but can't be clicked.
+import { Video } from "lucide-react";
 import { useMemo, type CSSProperties, type MouseEvent } from "react";
 import type { CalendarEvent, CalendarInfo } from "../lib/tauri";
 import { cx } from "../lib/utils";
@@ -58,7 +59,17 @@ function openFrom(event: CalendarEvent) {
 
 const useZone = () => displayZone(useCalendarStore((s) => s.accounts));
 
-/** Words for screen readers: title, when, and the answer if it matters. */
+/** The title, after a camera when the event has a video call to join. */
+function Title({ event }: { event: CalendarEvent }) {
+  return (
+    <span className="cal-event__title">
+      {event.meeting && <Video className="cal-event__call" aria-hidden="true" />}
+      {eventTitle(event)}
+    </span>
+  );
+}
+
+/** Words for screen readers: title, when, the call, and the answer if it matters. */
 function accessibleName(e: CalendarEvent, when: string) {
   const answer =
     e.selfResponse === "declined"
@@ -68,7 +79,8 @@ function accessibleName(e: CalendarEvent, when: string) {
         : e.selfResponse === "tentative"
           ? ", maybe"
           : "";
-  return `${eventTitle(e)}, ${when}${answer}`;
+  const call = e.meeting ? ", video call" : "";
+  return `${eventTitle(e)}, ${when}${call}${answer}`;
 }
 
 export function TimedEventBlock({
@@ -109,7 +121,7 @@ export function TimedEventBlock({
       onClick={openFrom(event)}
       onPointerDown={(e) => dragTimed(e, event, tz)}
     >
-      <span className="cal-event__title">{eventTitle(event)}</span>
+      <Title event={event} />
       {narrow ? null : compact ? (
         <span className="cal-event__time">, {when.split(" – ")[0]}</span>
       ) : (
@@ -159,7 +171,7 @@ export function BarEvent({
       onClick={openFrom(event)}
       onPointerDown={(e) => dragOnDays(e, event, tz)}
     >
-      <span className="cal-event__title">{eventTitle(event)}</span>
+      <Title event={event} />
     </button>
   );
 }
@@ -191,7 +203,7 @@ export function DotEvent({
     >
       <span className="cal-event__dot" aria-hidden="true" />
       <span className="cal-event__time">{start}</span>
-      <span className="cal-event__title">{eventTitle(event)}</span>
+      <Title event={event} />
     </button>
   );
 }
