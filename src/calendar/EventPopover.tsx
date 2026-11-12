@@ -1,4 +1,4 @@
-// The event popover: what, when, where, Join Meet, guests and their answers, and Yes / Maybe / No.
+// The event popover: what, when, where, Join (any video call), guests and their answers, and Yes / Maybe / No.
 // It opens beside the event clicked and reads the full event from the local cache.
 import {
   Check,
@@ -18,6 +18,7 @@ import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { Menu, type MenuItem } from "../components/ui/Menu";
+import { describeShortcut } from "../keyboard/format";
 import { useKeybinding } from "../keyboard/useCommands";
 import {
   type Attendee,
@@ -37,6 +38,7 @@ import { addDays, dateOf, formatDay, formatTime } from "./dates";
 import { plainText } from "./eventForm";
 import { noteDismiss } from "./drag";
 import { eventTitle, useCalendarLookup } from "./EventBlock";
+import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
 
 type Answer = "accepted" | "tentative" | "declined";
 
@@ -265,6 +267,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
   const accounts = useCalendarStore((s) => s.accounts);
   const tz = displayZone(accounts);
   const lookup = useCalendarLookup();
+  const joinShortcut = useKeybinding("calendar.join", "shift+j");
   const ref = useRef<HTMLDivElement>(null);
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -337,6 +340,8 @@ function PopoverBody({ open }: { open: OpenEvent }) {
   const { background } = eventColors(event, calendar);
   const guests = detail?.attendees.filter((a) => !a.resource) ?? [];
   const description = detail?.description ? plainText(detail.description) : "";
+  // From the listed event, so Join is there from the first frame.
+  const meeting = event.meeting;
 
   // Not a `data-owns-keys` region: `e` and Delete act on this event through the command registry.
   return (
@@ -394,19 +399,20 @@ function PopoverBody({ open }: { open: OpenEvent }) {
           {load.message}
         </p>
       )}
-      {detail?.meetUrl && (
+      {meeting && (
         <div className="cal-pop__row">
           <Video aria-hidden="true" />
           <Button
             size="sm"
             variant="primary"
-            onClick={() => void openExternal(detail.meetUrl!).catch(() => {})}
+            title={joinShortcut ? `Join (${describeShortcut(joinShortcut)})` : undefined}
+            onClick={() => joinMeeting(meeting)}
           >
-            Join with Google Meet
+            {joinLabel(meeting)}
           </Button>
         </div>
       )}
-      {event.location && (
+      {event.location && !locationIsCall(event.location, meeting) && (
         <div className="cal-pop__row">
           <MapPin aria-hidden="true" />
           <span className="selectable">{event.location}</span>

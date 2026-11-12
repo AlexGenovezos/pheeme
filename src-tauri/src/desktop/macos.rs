@@ -1,5 +1,5 @@
 //! Small C bridge to UserNotifications: real authorization and asynchronous click delivery.
-use super::super::{activate, NotifyTarget};
+use super::super::{activate, join_call, NotifyTarget};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::sync::OnceLock;
 use tauri::AppHandle;
@@ -7,7 +7,10 @@ use tokio::sync::oneshot;
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
 extern "C" {
-    fn pheeme_notifications_init(click: extern "C" fn(*const c_char));
+    fn pheeme_notifications_init(
+        click: extern "C" fn(*const c_char),
+        join: extern "C" fn(*const c_char),
+    );
     fn pheeme_notifications_permission(
         request: bool,
         context: *mut c_void,
@@ -17,6 +20,7 @@ extern "C" {
         title: *const c_char,
         body: *const c_char,
         target: *const c_char,
+        join: *const c_char,
         context: *mut c_void,
         callback: extern "C" fn(*mut c_void, i32),
     );
@@ -33,6 +37,13 @@ extern "C" fn clicked(raw: *const c_char) {
     }
 }
 
+extern "C" fn joined(raw: *const c_char) {
+    // The bridge passes a valid, NUL-terminated UTF-8 link for the duration of this call.
+    if let Ok(url) = unsafe { CStr::from_ptr(raw) }.to_str() {
+        join_call(url);
+    }
+}
+
 extern "C" fn completed(context: *mut c_void, result: i32) {
     // Exactly one native callback takes ownership of this sender, including error paths.
     let tx = unsafe { Box::from_raw(context.cast::<oneshot::Sender<i32>>()) };
@@ -42,7 +53,7 @@ extern "C" fn completed(context: *mut c_void, result: i32) {
 pub fn init(app: &AppHandle) {
     let _ = APP.set(app.clone());
     unsafe {
-        pheeme_notifications_init(clicked);
+        pheeme_notifications_init(clicked, joined);
     }
 }
 
@@ -68,18 +79,21 @@ pub async fn show(
     target: NotifyTarget,
     title: String,
     body: String,
+    join: Option<String>,
 ) -> anyhow::Result<()> {
     let title = CString::new(title)?;
+    let join = join.map(CString::new).transpose()?;
     let body = CString::new(body)?;
     let target = CString::new(serde_json::to_string(&target)?)?;
     let (tx, rx) = oneshot::channel::<i32>();
     let context = Box::into_raw(Box::new(tx)).cast();
-    // The bridge copies all three strings synchronously before returning.
+    // The bridge copies all the strings synchronously before returning.
     unsafe {
         pheeme_notifications_show(
             title.as_ptr(),
             body.as_ptr(),
             target.as_ptr(),
+            join.as_ref().map_or(std::ptr::null(), |j| j.as_ptr()),
             context,
             completed,
         );

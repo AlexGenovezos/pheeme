@@ -13,9 +13,18 @@ import {
   type EventRef,
   type EventTime,
   type Invite,
+  type MeetingLink,
 } from "../lib/tauri";
 
 type Args = Record<string, unknown> | undefined;
+
+// Video calls the fixtures join (as `calendar/meeting.rs` would find them).
+const MEET: MeetingLink = { url: "https://meet.google.com/abc-defg-hij", provider: "Google Meet" };
+const ZOOM: MeetingLink = { url: "https://acme.zoom.us/j/81234567890?pwd=demo", provider: "Zoom" };
+const TEAMS: MeetingLink = {
+  url: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_demo%40thread.v2/0",
+  provider: "Microsoft Teams",
+};
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -89,6 +98,7 @@ export function createCalendarHandlers(
     selfResponse: null,
     location: null,
     hasConference: false,
+    meeting: null,
     colorId: null,
     transparency: null,
     recurring: false,
@@ -134,6 +144,7 @@ export function createCalendarHandlers(
         masterId: "standup",
         recurring: true,
         hasConference: true,
+        meeting: MEET,
         selfResponse: "accepted",
       };
       if (week === 0)
@@ -161,9 +172,12 @@ export function createCalendarHandlers(
       }),
       timed(first, primary, "vendor", "Vendor demo", at(1, 16), at(1, 17), {
         selfResponse: "declined",
-        hasConference: true,
+        location: ZOOM.url,
+        meeting: ZOOM,
       }),
-      timed(first, "team", "planning", "Team planning", at(2, 11), at(2, 12)),
+      timed(first, "team", "planning", "Team planning", at(2, 11), at(2, 12), {
+        meeting: TEAMS,
+      }),
       allDay(first, "en.usa#holiday@group.v.calendar.google.com", "holiday", "Veterans Day", 3, 1),
     );
   }
@@ -173,6 +187,7 @@ export function createCalendarHandlers(
       timed(second, primary, "design-review", "Design review", at(3, 14), at(3, 15), {
         selfResponse: "needsAction",
         hasConference: true,
+        meeting: MEET,
         location: "Google Meet",
       }),
       timed(second, primary, "one-on-one", "1:1 Alex", at(3, 14, 30), at(3, 15, 30), {
@@ -261,7 +276,11 @@ export function createCalendarHandlers(
     if (edit.description != null) descriptions.set(e.id, edit.description);
     if (edit.colorId != null) e.colorId = edit.colorId || null;
     if (edit.transparency != null) e.transparency = edit.transparency;
-    if (edit.conference != null) e.hasConference = edit.conference;
+    if (edit.conference != null) {
+      e.hasConference = edit.conference;
+      if (edit.conference) e.meeting = MEET;
+      else if (e.meeting === MEET) e.meeting = null;
+    }
     if (edit.recurrence != null) e.recurring = edit.recurrence.length > 0;
     if (edit.start) e.start = timeOf(edit.start, e.start);
     if (edit.end) e.end = timeOf(edit.end, e.end);
@@ -427,7 +446,7 @@ export function createCalendarHandlers(
         description: descriptions.get(e.id) ?? null,
         organizer: { email: organizer, name: null, isSelf: mine },
         attendees: [...self, ...guests],
-        meetUrl: e.hasConference ? "https://meet.google.com/abc-defg-hij" : null,
+        meetUrl: e.hasConference ? MEET.url : null,
         conferencePending: false,
         originalStart: null,
         htmlLink: null,
@@ -523,7 +542,7 @@ export function createCalendarHandlers(
           summary: "Book club",
           description: null,
           location: "Mira's place",
-          meetingUrl: null,
+          meeting: null,
           start: { ms: start, date: null, timeZone: "America/New_York" },
           end: { ms: start + 90 * 60_000, date: null, timeZone: "America/New_York" },
           allDay: false,
@@ -553,7 +572,7 @@ export function createCalendarHandlers(
         summary: e.summary,
         description: "Walk through the new onboarding flow, then decide on the copy.",
         location: "Room 4, Studio",
-        meetingUrl: "https://meet.google.com/abc-defg-hij",
+        meeting: MEET,
         start: e.start,
         end: e.end,
         allDay: e.allDay,

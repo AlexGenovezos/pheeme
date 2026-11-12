@@ -5,6 +5,7 @@
 use super::edit::{self, OriginalStart};
 use super::error::CalendarError;
 use super::ics::{self, IcsTime, Invite};
+use super::meeting::MeetingLink;
 use super::service::{AttendeeDto, CalendarService, EventDetailDto, EventTimeDto, PersonDto};
 use crate::db;
 use crate::db::calendar::DbEvent;
@@ -25,8 +26,8 @@ pub struct InviteDto {
     pub summary: Option<String>,
     pub description: Option<String>,
     pub location: Option<String>,
-    /// The video meeting link (Meet, Teams, Zoom, FaceTime, …).
-    pub meeting_url: Option<String>,
+    /// The video call (Meet, Teams, Zoom, Webex, FaceTime, …).
+    pub meeting: Option<MeetingLink>,
     pub start: EventTimeDto,
     /// Exclusive, as Google's: the day after the last for an all-day event.
     pub end: EventTimeDto,
@@ -129,7 +130,7 @@ pub fn dto(invite: &Invite, email: &str) -> InviteDto {
         summary: invite.summary.clone(),
         description: invite.description.clone(),
         location: invite.location.clone(),
-        meeting_url: invite.meeting_url.clone(),
+        meeting: invite.meeting.clone(),
         start: time_dto(&invite.start),
         end: time_dto(&invite.end),
         all_day: invite.all_day(),

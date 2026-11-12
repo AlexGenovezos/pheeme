@@ -449,6 +449,7 @@ pub fn run() {
             commands::calendar::search_calendar_events,
             commands::calendar::set_calendar_hidden,
             commands::calendar::calendar_sync_now,
+            commands::calendar::open_meeting_link,
             commands::calendar::set_calendar_foreground,
             commands::calendar::calendar_event_detail,
             commands::calendar::create_calendar_event,

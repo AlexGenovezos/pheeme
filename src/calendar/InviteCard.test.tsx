@@ -81,7 +81,11 @@ describe("InviteCard", () => {
 
     expect(screen.getByRole("heading", { name: "Design review" })).toBeInTheDocument();
     expect(screen.getByText("Invitation from Morgan Lee")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Join with Google Meet" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Join with Google Meet" }));
+    await flush();
+    expect(sent("open_meeting_link").map((c) => c.args.url)).toEqual([
+      "https://meet.google.com/abc-defg-hij",
+    ]);
     expect(screen.getByText(/Morgan Lee \(organizer\) · 4 guests/)).toBeInTheDocument();
     expect(screen.getByText(/^Overlaps 1:1 Alex \(2:30\sPM\)$/)).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Yes" })).toHaveAttribute("aria-checked", "false");

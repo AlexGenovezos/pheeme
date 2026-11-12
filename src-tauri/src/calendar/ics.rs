@@ -3,6 +3,7 @@
 //! needs is kept: the method, UID, SEQUENCE, times (with `TZID`, all-day and floating), the
 //! repeat lines, organizer, guests and their answers, place and the meeting link.
 
+use super::meeting::{self, MeetingLink};
 use chrono::{
     DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc, Weekday,
 };
@@ -63,8 +64,8 @@ pub struct Invite {
     pub recurrence_id: Option<IcsTime>,
     pub organizer: Option<IcsPerson>,
     pub attendees: Vec<IcsAttendee>,
-    /// The video meeting link (Google Meet, Teams, Zoom, FaceTime, …).
-    pub meeting_url: Option<String>,
+    /// The video call (Google Meet, Teams, Zoom, Webex, FaceTime, …).
+    pub meeting: Option<MeetingLink>,
 }
 
 impl Invite {
@@ -522,55 +523,6 @@ fn parse_duration(v: &str) -> Option<Duration> {
     Some(total)
 }
 
-// ── Meeting links ────────────────────────────────────────────────────────────
-
-/// Hosts whose links are video meetings.
-const MEETING_HOSTS: &[&str] = &[
-    "meet.google.com",
-    "teams.microsoft.com",
-    "teams.live.com",
-    "zoom.us",
-    "zoom.com",
-    "facetime.apple.com",
-    "webex.com",
-    "whereby.com",
-    "gotomeeting.com",
-];
-
-fn is_meeting_url(url: &str) -> bool {
-    let Some(rest) = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-    else {
-        return false;
-    };
-    let host = rest
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    MEETING_HOSTS
-        .iter()
-        .any(|h| host == *h || host.ends_with(&format!(".{h}")))
-}
-
-/// The first meeting link in free text (a description or location).
-fn meeting_url_in(text: &str) -> Option<String> {
-    let mut rest = text;
-    while let Some(at) = rest.find("http") {
-        let tail = &rest[at..];
-        let end = tail
-            .find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | '"' | ')' | ']'))
-            .unwrap_or(tail.len());
-        let url = tail[..end].trim_end_matches(['.', ',', ';']);
-        if is_meeting_url(url) {
-            return Some(url.to_owned());
-        }
-        rest = &tail[4..];
-    }
-    None
-}
-
 // ── The file ─────────────────────────────────────────────────────────────────
 
 /// Reads the invitation in an iCalendar file. A file with several events for one UID (a
@@ -689,18 +641,18 @@ fn event_of(lines: &[Line], method: String, zones: &Zones) -> Option<Invite> {
     let summary = get("SUMMARY").and_then(|l| text(&l.value));
     let description = get("DESCRIPTION").and_then(|l| text(&l.value));
     let location = get("LOCATION").and_then(|l| text(&l.value));
-    let meeting_url = [
+    // Conference lines are the call whatever the provider; a plain URL only when it joins one.
+    let meeting = [
         "X-GOOGLE-CONFERENCE",
         "CONFERENCE",
         "X-MICROSOFT-SKYPETEAMSMEETINGURL",
-        "URL",
     ]
     .iter()
     .filter_map(|name| get(name))
-    .map(|l| unescape(l.value.trim()))
-    .find(|u| is_meeting_url(u))
-    .or_else(|| location.as_deref().and_then(meeting_url_in))
-    .or_else(|| description.as_deref().and_then(meeting_url_in));
+    .find_map(|l| meeting::conference(&unescape(l.value.trim()), None))
+    .or_else(|| get("URL").and_then(|l| meeting::in_text(&unescape(l.value.trim()))))
+    .or_else(|| location.as_deref().and_then(meeting::in_text))
+    .or_else(|| description.as_deref().and_then(meeting::in_text));
     Some(Invite {
         method,
         uid: unescape(get("UID")?.value.trim()),
@@ -721,7 +673,7 @@ fn event_of(lines: &[Line], method: String, zones: &Zones) -> Option<Invite> {
             .filter(|l| l.name == "ATTENDEE")
             .filter_map(attendee)
             .collect(),
-        meeting_url,
+        meeting,
     })
 }
 
@@ -814,7 +766,7 @@ mod tests {
         assert_eq!(opt.response, "tentative");
         assert!(i.attendees.iter().any(|a| a.resource));
         assert_eq!(
-            i.meeting_url.as_deref(),
+            i.meeting.as_ref().map(|m| m.url.as_str()),
             Some("https://meet.google.com/abc-defg-hij")
         );
         assert_eq!(
@@ -844,7 +796,7 @@ mod tests {
             Some("jordan@contoso.com")
         );
         assert_eq!(
-            i.meeting_url.as_deref(),
+            i.meeting.as_ref().map(|m| m.url.as_str()),
             Some("https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0")
         );
         assert_eq!(i.attendees[0].name.as_deref(), Some("Avery Quinn"));
@@ -869,7 +821,7 @@ mod tests {
             "EMAIL= wins over a urn:uuid value"
         );
         assert_eq!(
-            i.meeting_url.as_deref(),
+            i.meeting.as_ref().map(|m| m.url.as_str()),
             Some("https://facetime.apple.com/join#v=1&p=AbCdEf&k=XyZ")
         );
     }
@@ -1011,15 +963,5 @@ mod tests {
             iana_zone("/mozilla.org/20050126_1/America/New_York").map(|z| z.name()),
             Some("America/New_York")
         );
-    }
-
-    #[test]
-    fn meeting_links_in_text() {
-        assert_eq!(
-            meeting_url_in("Join: <https://us02web.zoom.us/j/123?pwd=x>."),
-            Some("https://us02web.zoom.us/j/123?pwd=x".into())
-        );
-        assert_eq!(meeting_url_in("See https://example.com/agenda"), None);
-        assert!(!is_meeting_url("https://meet.google.com.evil.example/x"));
     }
 }

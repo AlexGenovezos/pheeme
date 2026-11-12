@@ -33,6 +33,7 @@ function detail(over: Partial<EventDetail> = {}): EventDetail {
     selfResponse: null,
     location: "Room 1",
     hasConference: false,
+    meeting: null,
     colorId: null,
     transparency: null,
     recurring: false,

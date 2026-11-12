@@ -1,5 +1,5 @@
 //! One D-Bus connection and signal listener for all notification clicks, without blocked threads.
-use super::super::{activate, NotifyTarget};
+use super::super::{activate, join_call, NotifyTarget};
 use futures::StreamExt;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
@@ -11,6 +11,8 @@ struct Delivery {
     target: NotifyTarget,
     title: String,
     body: String,
+    /// A video call: the notification gets a Join button.
+    join: Option<String>,
     result: oneshot::Sender<anyhow::Result<()>>,
 }
 static SEND: OnceLock<mpsc::Sender<Delivery>> = OnceLock::new();
@@ -24,14 +26,24 @@ pub fn init(app: &AppHandle) {
     tauri::async_runtime::spawn(serve(
         rx,
         None,
-        Arc::new(move |target| activate(&app, target)),
+        Arc::new(move |clicked| match clicked {
+            Clicked::Open(target) => activate(&app, target),
+            Clicked::Join(url) => join_call(&url),
+        }),
     ));
+}
+
+/// What the user clicked: the notification, or its Join button.
+#[derive(Debug, PartialEq)]
+enum Clicked {
+    Open(NotifyTarget),
+    Join(String),
 }
 
 async fn serve(
     mut rx: mpsc::Receiver<Delivery>,
     address: Option<String>,
-    on_click: Arc<dyn Fn(NotifyTarget) + Send + Sync>,
+    on_click: Arc<dyn Fn(Clicked) + Send + Sync>,
 ) {
     // A notification daemon may start late or restart. Reconnect on the next delivery.
     while let Some(first) = rx.recv().await {
@@ -78,13 +90,17 @@ async fn serve(
             }
         };
         // The desktop owns notification history. Bound our in-process routing map too.
-        let mut targets = BTreeMap::<u32, NotifyTarget>::new();
+        let mut targets = BTreeMap::<u32, (NotifyTarget, Option<String>)>::new();
         let mut next = Some(first);
         loop {
             if let Some(delivery) = next.take() {
                 // Notification bodies are Pango markup on some desktops; mail is plain text.
                 let body = escape_markup(&delivery.body);
                 let (icon, action) = presentation(&delivery.target);
+                let mut buttons = vec!["default", action];
+                if delivery.join.is_some() {
+                    buttons.extend(["join", "Join"]);
+                }
                 let mut hints: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::from([(
                     "desktop-entry",
                     zbus::zvariant::Value::from(crate::identity::APP_IDENTIFIER),
@@ -102,7 +118,7 @@ async fn serve(
                             icon,
                             delivery.title.as_str(),
                             body,
-                            vec!["default", action],
+                            buttons,
                             hints,
                             -1i32,
                         ),
@@ -115,7 +131,7 @@ async fn serve(
                                 targets.remove(&id);
                             }
                         }
-                        targets.insert(id, delivery.target);
+                        targets.insert(id, (delivery.target, delivery.join));
                         let _ = delivery.result.send(Ok(()));
                     }
                     Err(error) => {
@@ -128,8 +144,10 @@ async fn serve(
                 biased;
                 signal = actions.next() => match signal {
                     Some(signal) => if let Ok((id, action)) = signal.body().deserialize::<(u32, String)>() {
-                        if action == "default" {
-                            if let Some(target) = targets.remove(&id) { on_click(target); }
+                        match action.as_str() {
+                            "default" => if let Some((target, _)) = targets.remove(&id) { on_click(Clicked::Open(target)); },
+                            "join" => if let Some((_, Some(url))) = targets.remove(&id) { on_click(Clicked::Join(url)); },
+                            _ => {}
                         }
                     },
                     None => break,
@@ -160,6 +178,7 @@ pub async fn show(
     target: NotifyTarget,
     title: String,
     body: String,
+    join: Option<String>,
 ) -> anyhow::Result<()> {
     let (result, rx) = oneshot::channel();
     let sender = SEND
@@ -170,6 +189,7 @@ pub async fn show(
             target,
             title,
             body,
+            join,
             result,
         })
         .await?;
@@ -361,8 +381,8 @@ mod protocol_tests {
         let worker = tokio::spawn(serve(
             rx,
             Some(address),
-            Arc::new(move |target| {
-                let _ = clicked.send(target);
+            Arc::new(move |click| {
+                let _ = clicked.send(click);
             }),
         ));
         let event = NotifyTarget::Event(crate::calendar::reminders::EventTarget {
@@ -374,12 +394,22 @@ mod protocol_tests {
             account_id: "a".into(),
             thread_id: "same-thread-id".into(),
         });
-        for (target, action) in [(&thread, "Open conversation"), (&event, "Open event")] {
+        let call = "https://acme.zoom.us/j/42";
+        for (target, join, actions) in [
+            (&thread, None, vec!["default", "Open conversation"]),
+            (&event, None, vec!["default", "Open event"]),
+            (
+                &event,
+                Some(call.to_owned()),
+                vec!["default", "Open event", "join", "Join"],
+            ),
+        ] {
             let (result, done) = oneshot::channel();
             tx.send(Delivery {
                 target: target.clone(),
                 title: "Sender".into(),
                 body: "<b>Subject</b> & snippet".into(),
+                join,
                 result,
             })
             .await
@@ -389,10 +419,10 @@ mod protocol_tests {
                 .unwrap()
                 .unwrap()
                 .unwrap();
-            let (title, body, actions) = calls.recv().await.unwrap();
+            let (title, body, got_actions) = calls.recv().await.unwrap();
             assert_eq!(title, "Sender");
             assert_eq!(body, "&lt;b&gt;Subject&lt;/b&gt; &amp; snippet");
-            assert_eq!(actions, ["default", action]);
+            assert_eq!(got_actions, actions);
         }
         let fake = server
             .object_server()
@@ -409,7 +439,18 @@ mod protocol_tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(target, event);
+        assert_eq!(target, Clicked::Open(event.clone()));
+        // Join on the reminder for a call opens the call, not the event.
+        FakeDesktop::action_invoked(fake.signal_emitter(), 3, "join")
+            .await
+            .unwrap();
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(5), clicks.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            Clicked::Join(call.to_owned())
+        );
         FakeDesktop::action_invoked(fake.signal_emitter(), 1, "default")
             .await
             .unwrap();
@@ -418,7 +459,7 @@ mod protocol_tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            thread
+            Clicked::Open(thread)
         );
         drop(tx);
         worker.await.unwrap();

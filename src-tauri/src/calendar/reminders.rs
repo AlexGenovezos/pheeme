@@ -8,6 +8,7 @@
 //! in `calendar_reminders_fired`, so a restart never shows one twice. Tauri-free: the OS
 //! notification is behind [`ReminderAlerts`].
 
+use super::meeting;
 use super::recurrence;
 use crate::db;
 use crate::db::calendar::{DbCalendar, DbEvent};
@@ -43,6 +44,8 @@ pub struct Reminder {
     pub fire_at_ms: i64,
     pub summary: Option<String>,
     pub location: Option<String>,
+    /// The event's video call, for the notification's Join button.
+    pub meeting: Option<meeting::MeetingLink>,
     /// All-day events: the first day (`YYYY-MM-DD`).
     pub start_date: Option<String>,
     /// The account's Calendar time zone, for "Today" and "Tomorrow".
@@ -67,6 +70,8 @@ pub struct Alert {
     pub title: String,
     pub body: String,
     pub target: EventTarget,
+    /// The event's video call: the notification offers Join.
+    pub join_url: Option<String>,
 }
 
 /// The OS side of a reminder: whether notifications may show, and showing one.
@@ -257,6 +262,7 @@ impl ReminderService {
                         fire_at_ms,
                         summary: e.summary.clone(),
                         location: e.location.clone(),
+                        meeting: meeting::of_event(e),
                         start_date: start_date.clone(),
                         zone,
                         also: Vec::new(),
@@ -503,10 +509,22 @@ fn alert(reminder: &Reminder, now: i64) -> Alert {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "(No title)".into());
     let mut body = when(reminder, now);
+    let call = reminder.meeting.as_ref();
     if let Some(place) = reminder
         .location
         .as_deref()
-        .map(|l| clean(l.lines().next().unwrap_or_default(), 160))
+        .map(|l| l.lines().next().unwrap_or_default().trim())
+        .map(|l| match call {
+            // A location that is only the call's link reads as the provider.
+            Some(m)
+                if l.starts_with("http")
+                    && !l.contains(' ')
+                    && meeting::in_text(l).as_ref() == Some(m) =>
+            {
+                m.provider.as_deref().unwrap_or("Video call").to_owned()
+            }
+            _ => clean(l, 160),
+        })
         .filter(|l| !l.is_empty())
     {
         body.push_str(" · ");
@@ -520,6 +538,7 @@ fn alert(reminder: &Reminder, now: i64) -> Alert {
             calendar_id: reminder.key.calendar_id.clone(),
             event_id: reminder.key.event_id.clone(),
         },
+        join_url: reminder.meeting.as_ref().map(|m| m.url.clone()),
     }
 }
 
@@ -645,6 +664,7 @@ mod tests {
                     calendar_id: "a@example.com".into(),
                     event_id: "review".into(),
                 },
+                join_url: None,
             }]
         );
 
@@ -654,6 +674,38 @@ mod tests {
         let restarted = ReminderService::build(s.pool().clone(), s.alerts.clone(), Some(NY));
         restarted.tick(ms("2026-11-11T13:52:00-05:00")).await;
         assert!(s.alerts.take().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_reminder_for_a_call_offers_join() {
+        let s = setup(&["a"]).await;
+        let mut e = review();
+        e["location"] = json!("https://acme.zoom.us/j/42?pwd=z");
+        s.put("a", e).await;
+        s.tick("2026-11-11T13:50:02-05:00").await;
+        let shown = std::mem::take(&mut *s.alerts.shown.lock().unwrap());
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].body, "In 10 minutes · Zoom");
+        assert_eq!(
+            shown[0].join_url.as_deref(),
+            Some("https://acme.zoom.us/j/42?pwd=z")
+        );
+
+        let mut e = review();
+        e["id"] = json!("standup");
+        e["iCalUID"] = json!("standup@google.com");
+        e["description"] =
+            json!("Join: https://teams.microsoft.com/l/meetup-join/19%3a1%40thread.v2/0");
+        s.put("a", e).await;
+        s.reminders.replan();
+        s.tick("2026-11-11T13:50:03-05:00").await;
+        let shown = std::mem::take(&mut *s.alerts.shown.lock().unwrap());
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].body, "In 10 minutes · Room 4", "{shown:?}");
+        assert!(shown[0]
+            .join_url
+            .as_deref()
+            .is_some_and(|u| u.starts_with("https://teams.microsoft.com/l/meetup-join/")));
     }
 
     #[tokio::test]
@@ -1017,6 +1069,7 @@ mod tests {
             fire_at_ms: 0,
             summary: Some("  ".into()),
             location: None,
+            meeting: None,
             start_date: None,
             zone: NY,
             also: vec![],

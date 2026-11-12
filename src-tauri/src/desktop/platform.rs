@@ -17,9 +17,16 @@ pub fn init(app: &AppHandle) {
 pub async fn permission(request: bool) -> anyhow::Result<String> {
     native::permission(request).await
 }
-/// Returns whether the OS accepted the notification.
-pub async fn show(app: &AppHandle, target: NotifyTarget, title: String, body: String) -> bool {
-    let shown = native::show(app, target, title, body).await.is_ok();
+/// Returns whether the OS accepted the notification. `join`: a video call link, offered as a
+/// Join button (a click on the notification itself still opens `target`).
+pub async fn show(
+    app: &AppHandle,
+    target: NotifyTarget,
+    title: String,
+    body: String,
+    join: Option<String>,
+) -> bool {
+    let shown = native::show(app, target, title, body, join).await.is_ok();
     if !shown {
         // OS errors may contain message text. Keep logs and UI to a stable, content-free error.
         super::report_error(

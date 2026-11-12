@@ -415,6 +415,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     },
     open_external: () => undefined,
     open_mail_link: () => undefined,
+    open_meeting_link: () => undefined,
     save_attachment: () => "/Users/you/Downloads/attachment.pdf",
     // Every attachment of a kind reads as the matching sample file.
     read_attachment: (args) => {

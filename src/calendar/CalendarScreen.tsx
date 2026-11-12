@@ -34,6 +34,7 @@ import { DRAFT_ID, useEditStore } from "./editStore";
 import { EditPrompt } from "./EditPrompt";
 import { eventKey } from "./EventBlock";
 import { EventEditor } from "./EventEditor";
+import { joinMeeting } from "./meeting";
 import { type EventForm, formTimes } from "./eventForm";
 import { EventPopover } from "./EventPopover";
 import { QuickAdd } from "./QuickAdd";
@@ -290,6 +291,7 @@ function draftEvent(form: EventForm): CalendarEvent {
     selfResponse: null,
     location: null,
     hasConference: false,
+    meeting: null,
     colorId: form.colorId || null,
     transparency: form.transparency,
     recurring: false,
@@ -318,6 +320,7 @@ function useCalendarCommands() {
   const store = useCalendarStore.getState;
   // Edit and Delete act on the open event: listed in the palette only while one is open.
   const noEventOpen = useCalendarStore((s) => s.open === null);
+  const openCall = useCalendarStore((s) => s.open?.event.meeting ?? null);
   const syncAll = () => {
     for (const a of store().accounts ?? [])
       if (a.access.status === "on") void calendarSyncNow(a.accountId).catch(() => {});
@@ -438,6 +441,18 @@ function useCalendarCommands() {
       shortcut: "backspace",
       hidden: true,
       run: removeOpen,
+    },
+    {
+      id: "calendar.join",
+      title: "Join video call",
+      group: "Calendar",
+      shortcut: "shift+j",
+      keywords: ["meet", "zoom", "teams", "webex", "call", "conference"],
+      hidden: openCall === null,
+      run: () => {
+        const meeting = store().open?.event.meeting;
+        if (meeting) joinMeeting(meeting);
+      },
     },
     {
       id: "calendar.search",

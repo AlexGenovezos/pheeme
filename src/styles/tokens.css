@@ -146,6 +146,8 @@
   --calendar-event-tint: 24%;
   --calendar-event-ink: 40%;
   --calendar-event-stripe: 3px;
+  /* The video-call badge before an event's title: the size of its small text. */
+  --calendar-call-icon-size: 11px;
   --calendar-event-tint-strong: 34%;
   --mini-month-dot-size: 3px;
   --calendar-popover-width: 380px;

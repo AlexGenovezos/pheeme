@@ -42,6 +42,7 @@ import {
 } from "./invite";
 import { layoutDay, MIN_EVENT_MINUTES } from "./layout";
 import { openInCalendar } from "./mailActions";
+import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
 import "./calendar.css";
 import "./invite.css";
 
@@ -121,22 +122,6 @@ function whoLine(organizer: Invite["organizer"], guests: Attendee[]): string {
     ? `${people.length} ${people.length === 1 ? "guest" : "guests"}${answers ? `: ${answers}` : ""}`
     : null;
   return [by, guestsPart].filter(Boolean).join(" · ") || "No guest list";
-}
-
-/** "Join with Google Meet", "Join with Zoom", … from the link's host. */
-function joinLabel(url: string): string {
-  const host = (() => {
-    try {
-      return new URL(url).hostname;
-    } catch {
-      return "";
-    }
-  })();
-  if (host.endsWith("meet.google.com")) return "Join with Google Meet";
-  if (host.includes("teams.")) return "Join with Teams";
-  if (host.includes("zoom.")) return "Join with Zoom";
-  if (host.includes("facetime.")) return "Join with FaceTime";
-  return "Join meeting";
 }
 
 /** `YYYYMMDDTHHMMSSZ`, as instance ids spell a start. */
@@ -497,7 +482,7 @@ export function InviteCard({
   if (load.kind === "ready" && !invite) return null;
 
   const notice = invite ? inviteNotice(invite, tz) : null;
-  const meeting = invite?.live?.meetUrl ?? invite?.meetingUrl ?? null;
+  const meeting = invite?.live?.meeting ?? invite?.meeting ?? null;
   const location = event?.location ?? null;
   const guests = invite?.live?.attendees.length ? invite.live.attendees : (invite?.attendees ?? []);
   // The calendar's organizer, named as the email names them when the calendar doesn't.
@@ -557,12 +542,14 @@ export function InviteCard({
             <Skeleton width="10em" />
           ) : (
             <>
-              {location && <span className="selectable">{location}</span>}
+              {location && !locationIsCall(location, meeting) && (
+                <span className="selectable">{location}</span>
+              )}
               {meeting && (
                 <Button
                   size="sm"
-                  variant={location ? "secondary" : "primary"}
-                  onClick={() => void openExternal(meeting).catch(() => {})}
+                  variant={location && !locationIsCall(location, meeting) ? "secondary" : "primary"}
+                  onClick={() => joinMeeting(meeting)}
                 >
                   {joinLabel(meeting)}
                 </Button>
