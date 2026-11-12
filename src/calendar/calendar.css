@@ -671,6 +671,8 @@
 }
 /* An event with a video call: a small camera before its title. */
 .cal-event__call {
+  /* Inline with the title text (the base styles make every svg a block). */
+  display: inline-block;
   width: var(--calendar-call-icon-size);
   height: var(--calendar-call-icon-size);
   margin-right: var(--space-0-5);
