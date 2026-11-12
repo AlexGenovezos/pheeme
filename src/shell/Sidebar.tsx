@@ -699,8 +699,8 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   return (
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
-        <ModeSwitch />
         <span className="toolbar__spacer" {...dragRegion} />
+        <ModeSwitch />
         <IconButton
           label="Hide sidebar"
           shortcut={sidebarShortcut}

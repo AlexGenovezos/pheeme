@@ -225,8 +225,8 @@ export function CalendarSidebar() {
   return (
     <div className="sidebar cal-sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
-        <ModeSwitch />
         <span className="toolbar__spacer" {...dragRegion} />
+        <ModeSwitch />
         <IconButton
           label="Hide sidebar"
           shortcut={sidebarShortcut}
@@ -234,19 +234,18 @@ export function CalendarSidebar() {
           onClick={toggleSidebar}
         />
       </div>
+      <div className="sidebar__compose">
+        <Button
+          variant="primary"
+          size="lg"
+          icon={<Plus aria-hidden="true" />}
+          title={createShortcut ? `Create event (${describeShortcut(createShortcut)})` : undefined}
+          onClick={openQuickAdd}
+        >
+          Create
+        </Button>
+      </div>
       <nav className="sidebar__scroll" aria-label="Calendars">
-        <div className="cal-sidebar__create">
-          <Button
-            variant="primary"
-            icon={<Plus aria-hidden="true" />}
-            title={
-              createShortcut ? `Create event (${describeShortcut(createShortcut)})` : undefined
-            }
-            onClick={openQuickAdd}
-          >
-            Create
-          </Button>
-        </div>
         <MiniMonth />
         <SidebarAgenda />
         {accounts === null ? (
