@@ -11,6 +11,7 @@ pub mod template;
 
 use crate::db::{accounts, attachments, messages};
 use crate::gmail::mime::{self, EmailAddress};
+use crate::gmail::types::SendAs;
 use crate::gmail::GmailError;
 use crate::mail::{MailError, MailService};
 use crate::sync::engine::{now_ms, SyncError};
@@ -20,8 +21,9 @@ use crate::sync::MailApi;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use staging::Staging;
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use template::Original;
 
@@ -36,6 +38,9 @@ const STAGING_MAX_AGE: Duration = Duration::from_secs(3 * 24 * 60 * 60);
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ComposeDraft {
+    /// The address it goes out from: the account's own or one of its send-as aliases.
+    /// `None` is the account's default send-as address.
+    pub from: Option<EmailAddress>,
     pub to: Vec<EmailAddress>,
     pub cc: Vec<EmailAddress>,
     pub bcc: Vec<EmailAddress>,
@@ -75,6 +80,19 @@ pub enum ComposeMode {
     Forward,
 }
 
+/// An address the account can send from (Gmail's "Send mail as"), for the From picker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendAsAddress {
+    pub email: String,
+    pub name: Option<String>,
+    pub is_primary: bool,
+    /// Gmail's default for new messages.
+    pub is_default: bool,
+    /// This address's Gmail signature (sanitized HTML), `None` when it has none.
+    pub signature: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SavedDraft {
@@ -111,6 +129,8 @@ pub struct ComposeService {
     sync: Arc<SyncManager>,
     mail: MailService,
     staging: Staging,
+    /// Each account's sendable addresses, from the last `sendAs` fetch this session.
+    send_as: Arc<Mutex<HashMap<String, Vec<SendAs>>>>,
 }
 
 fn gmail(e: GmailError) -> MailError {
@@ -130,6 +150,7 @@ impl ComposeService {
             sync,
             mail,
             staging: Staging::new(cache_dir.join("compose")),
+            send_as: Arc::default(),
         }
     }
 
@@ -152,14 +173,117 @@ impl ComposeService {
         })
     }
 
-    /// The RFC 2822 message for `draft`, sent from the account.
+    /// Gmail's whole `sendAs` list for the account; the sendable part is kept for later.
+    async fn fetch_send_as(&self, account_id: &str) -> Result<Vec<SendAs>, MailError> {
+        let me = self.sender(account_id).await?;
+        let list = self.api(account_id).list_send_as().await.map_err(gmail)?;
+        let sendable = list
+            .iter()
+            .filter(|s| s.sendable() || same_address(&s.send_as_email, &me.address))
+            .cloned()
+            .collect();
+        self.send_as
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(account_id.to_owned(), sendable);
+        Ok(list)
+    }
+
+    fn cached_send_as(&self, account_id: &str) -> Option<Vec<SendAs>> {
+        self.send_as
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(account_id)
+            .cloned()
+    }
+
+    /// The account's sendable addresses: from this session's fetch, else fetched now.
+    /// Empty when Gmail can't be asked (offline, or the settings scope wasn't granted).
+    async fn known_send_as(&self, account_id: &str) -> Vec<SendAs> {
+        if let Some(list) = self.cached_send_as(account_id) {
+            return list;
+        }
+        match self.fetch_send_as(account_id).await {
+            Ok(_) => self.cached_send_as(account_id).unwrap_or_default(),
+            Err(e) => {
+                tracing::info!(error = %e, "send-as addresses unavailable");
+                Vec::new()
+            }
+        }
+    }
+
+    /// The addresses the account can send from (its own first), fetched from Gmail now.
+    pub async fn send_as_addresses(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<SendAsAddress>, MailError> {
+        let me = self.sender(account_id).await?;
+        self.fetch_send_as(account_id).await?;
+        let mut list: Vec<SendAsAddress> = self
+            .cached_send_as(account_id)
+            .unwrap_or_default()
+            .iter()
+            .map(|s| SendAsAddress {
+                email: s.send_as_email.trim().to_owned(),
+                name: alias_address(s, &me).name,
+                is_primary: s.is_primary,
+                is_default: s.is_default,
+                signature: s
+                    .signature
+                    .as_deref()
+                    .map(template::clean_html)
+                    .filter(|html| !html.trim().is_empty()),
+            })
+            .collect();
+        list.sort_by_key(|a| !a.is_primary);
+        Ok(list)
+    }
+
+    /// Who `draft` goes out from: its `from` when the account can send from it (or that
+    /// isn't known yet), else the account's default send-as address, else its own.
+    async fn sending_address(
+        &self,
+        account_id: &str,
+        draft: &ComposeDraft,
+    ) -> Result<EmailAddress, MailError> {
+        let me = self.sender(account_id).await?;
+        let known = self.cached_send_as(account_id);
+        if let Some(from) = draft.from.as_ref().filter(|f| !f.address.trim().is_empty()) {
+            let named = |f: &EmailAddress, fallback: Option<String>| EmailAddress {
+                name: f.name.clone().filter(|n| !n.trim().is_empty()).or(fallback),
+                address: f.address.trim().to_owned(),
+            };
+            if same_address(&from.address, &me.address) {
+                return Ok(named(from, me.name.clone()));
+            }
+            match known.as_deref() {
+                None => return Ok(named(from, None)),
+                Some(list) => {
+                    if let Some(alias) = list
+                        .iter()
+                        .find(|s| same_address(&s.send_as_email, &from.address))
+                    {
+                        return Ok(named(from, alias_address(alias, &me).name));
+                    }
+                    tracing::warn!("From isn't one of the account's addresses; using the default");
+                }
+            }
+        }
+        Ok(known
+            .as_deref()
+            .and_then(|list| list.iter().find(|s| s.is_default))
+            .map(|s| alias_address(s, &me))
+            .unwrap_or(me))
+    }
+
+    /// The RFC 2822 message for `draft`, sent from the account (or the alias it names).
     async fn render(
         &self,
         account_id: &str,
         draft: &ComposeDraft,
         message_id: &str,
     ) -> Result<Vec<u8>, MailError> {
-        let from = self.sender(account_id).await?;
+        let from = self.sending_address(account_id, draft).await?;
         let mut files = Vec::with_capacity(draft.attachments.len());
         for att in &draft.attachments {
             files.push((att.clone(), self.staging.read(att).await?));
@@ -224,6 +348,11 @@ impl ComposeService {
                 .unwrap_or_default(),
             to: addrs(msg.to_addresses.as_deref()),
             cc: addrs(msg.cc_addresses.as_deref()),
+            delivered_to: headers
+                .iter()
+                .filter(|h| h.name.eq_ignore_ascii_case("Delivered-To"))
+                .map(|h| h.value.trim().to_owned())
+                .collect(),
             subject: msg.subject.clone(),
             date: msg.date,
             message_id: msg.rfc822_message_id.clone(),
@@ -239,7 +368,30 @@ impl ComposeService {
             body_text: msg.body_text.clone(),
             snippet: msg.snippet.clone(),
         };
-        let mut draft = template::template(mode, &original, &me.address, &chrono::Local);
+        // Sent from the address the original came to (Gmail's rule), else the default one.
+        let send_as = self.known_send_as(account_id).await;
+        let mut mine: Vec<&str> = vec![me.address.as_str()];
+        mine.extend(
+            send_as
+                .iter()
+                .map(|s| s.send_as_email.as_str())
+                .filter(|a| !same_address(a, &me.address)),
+        );
+        let mut draft = template::template(mode, &original, &mine, &chrono::Local);
+        draft.from = template::reply_from(&original, &mine)
+            .and_then(|address| {
+                send_as
+                    .iter()
+                    .find(|s| same_address(&s.send_as_email, address))
+                    .map(|s| alias_address(s, &me))
+                    .or_else(|| same_address(address, &me.address).then(|| me.clone()))
+            })
+            .or_else(|| {
+                send_as
+                    .iter()
+                    .find(|s| s.is_default)
+                    .map(|s| alias_address(s, &me))
+            });
 
         // The images the quote shows (`cid:`) go along; a forward also carries the files.
         {
@@ -273,14 +425,10 @@ impl ComposeService {
     /// when it has none.
     pub async fn gmail_signature(&self, account_id: &str) -> Result<Option<String>, MailError> {
         let me = self.sender(account_id).await?;
-        let list = self.api(account_id).list_send_as().await.map_err(gmail)?;
+        let list = self.fetch_send_as(account_id).await?;
         let mine = list
             .iter()
-            .find(|s| {
-                s.send_as_email
-                    .trim()
-                    .eq_ignore_ascii_case(me.address.trim())
-            })
+            .find(|s| same_address(&s.send_as_email, &me.address))
             .or_else(|| list.iter().find(|s| s.is_primary));
         Ok(mine
             .and_then(|s| s.signature.as_deref())
@@ -408,6 +556,8 @@ impl ComposeService {
         }
         let is_reply = parsed.in_reply_to.is_some();
         Ok(ComposeDraft {
+            // Reopens from the address it was saved with.
+            from: header("From").and_then(|v| mime::parse_addresses("From", v).into_iter().next()),
             to: parsed.to,
             cc: parsed.cc,
             bcc: header("Bcc")
@@ -483,6 +633,24 @@ impl ComposeService {
     /// Undo send. False when it already left (or may have).
     pub async fn cancel_send(&self, op_id: &str) -> Result<bool, MailError> {
         Ok(outbox::cancel_send(&self.db, op_id).await?)
+    }
+}
+
+fn same_address(a: &str, b: &str) -> bool {
+    a.trim().eq_ignore_ascii_case(b.trim())
+}
+
+/// A send-as entry as a From address: its display name, else (for the account's own
+/// address, whose Gmail entry often has none) the account's name.
+fn alias_address(s: &SendAs, me: &EmailAddress) -> EmailAddress {
+    let own = same_address(&s.send_as_email, &me.address);
+    EmailAddress {
+        name: s
+            .display_name
+            .clone()
+            .filter(|n| !n.trim().is_empty())
+            .or_else(|| own.then(|| me.name.clone()).flatten()),
+        address: s.send_as_email.trim().to_owned(),
     }
 }
 

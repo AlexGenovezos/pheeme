@@ -412,3 +412,198 @@ async fn gmail_signature_without_the_settings_scope_says_so() {
         "missing_scope"
     );
 }
+
+fn alias(email: &str, name: &str, signature: Option<&str>) -> crate::gmail::types::SendAs {
+    crate::gmail::types::SendAs {
+        send_as_email: email.into(),
+        display_name: Some(name.into()),
+        signature: signature.map(Into::into),
+        verification_status: Some("accepted".into()),
+        ..Default::default()
+    }
+}
+
+fn my_addresses() -> Vec<crate::gmail::types::SendAs> {
+    vec![
+        crate::gmail::types::SendAs {
+            send_as_email: "me@example.com".into(),
+            display_name: Some(String::new()),
+            is_primary: true,
+            ..Default::default()
+        },
+        crate::gmail::types::SendAs {
+            is_default: true,
+            ..alias("work@example.com", "Me at Work", Some("<b>Work</b>"))
+        },
+        alias("sales@example.com", "Sales", None),
+        crate::gmail::types::SendAs {
+            verification_status: Some("pending".into()),
+            ..alias("pending@example.com", "Not yet", None)
+        },
+    ]
+}
+
+#[tokio::test]
+async fn send_as_addresses_are_the_ones_gmail_sends_from() {
+    let h = harness().await;
+    h.fake.set_send_as(my_addresses());
+    let list = h.compose.send_as_addresses(ACCT).await.unwrap();
+    let emails: Vec<&str> = list.iter().map(|a| a.email.as_str()).collect();
+    assert_eq!(
+        emails,
+        ["me@example.com", "work@example.com", "sales@example.com"]
+    );
+    assert_eq!(list[0].name.as_deref(), Some("Me Myself"), "account's name");
+    assert!(list[0].is_primary && !list[0].is_default);
+    assert!(list[1].is_default);
+    assert_eq!(list[1].signature.as_deref(), Some("<b>Work</b>"));
+}
+
+const TO_AN_ALIAS: &[u8] = b"From: Bo <bo@example.com>\r\n\
+To: team@example.com\r\n\
+Cc: Sales <SALES@example.com>, me@example.com\r\n\
+Subject: Quote\r\n\
+Message-ID: <q1@example.com>\r\n\
+Content-Type: text/plain; charset=utf-8\r\n\
+\r\n\
+How much?";
+
+const DELIVERED_TO_AN_ALIAS: &[u8] = b"Delivered-To: work@example.com\r\n\
+From: Bo <bo@example.com>\r\n\
+To: list@example.com\r\n\
+Subject: Notes\r\n\
+Message-ID: <q2@example.com>\r\n\
+Content-Type: text/plain; charset=utf-8\r\n\
+\r\n\
+Notes.";
+
+const TO_NONE_OF_MINE: &[u8] = b"From: Bo <bo@example.com>\r\n\
+To: list@example.com\r\n\
+Subject: Hi all\r\n\
+Message-ID: <q3@example.com>\r\n\
+Content-Type: text/plain; charset=utf-8\r\n\
+\r\n\
+Hi.";
+
+#[tokio::test]
+async fn a_reply_comes_from_the_alias_the_original_was_sent_to() {
+    let h = harness().await;
+    h.fake.set_send_as(my_addresses());
+    h.fake
+        .seed(FakeMsg::from_raw("q1", "t1", &["INBOX"], TO_AN_ALIAS));
+    h.fake.seed(FakeMsg::from_raw(
+        "q2",
+        "t2",
+        &["INBOX"],
+        DELIVERED_TO_AN_ALIAS,
+    ));
+    h.fake
+        .seed(FakeMsg::from_raw("q3", "t3", &["INBOX"], TO_NONE_OF_MINE));
+    h.sync.sync_account(ACCT).await.unwrap();
+
+    // Cc'd to an alias (before the account's own address).
+    let d = h
+        .compose
+        .template(ACCT, "q1", ComposeMode::ReplyAll)
+        .await
+        .unwrap();
+    assert_eq!(
+        d.from,
+        Some(EmailAddress {
+            name: Some("Sales".into()),
+            address: "sales@example.com".into()
+        })
+    );
+    // Reply All leaves every one of your addresses off.
+    assert_eq!(addresses(&d.to), ["bo@example.com", "team@example.com"]);
+    assert!(d.cc.is_empty(), "{:?}", d.cc);
+
+    // Only the Delivered-To header names it (a list, or Bcc).
+    let d = h
+        .compose
+        .template(ACCT, "q2", ComposeMode::Forward)
+        .await
+        .unwrap();
+    assert_eq!(
+        d.from.map(|f| f.address).as_deref(),
+        Some("work@example.com")
+    );
+
+    // None of yours on it: the default send-as address.
+    let d = h
+        .compose
+        .template(ACCT, "q3", ComposeMode::Reply)
+        .await
+        .unwrap();
+    assert_eq!(
+        d.from,
+        Some(EmailAddress {
+            name: Some("Me at Work".into()),
+            address: "work@example.com".into()
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_reply_without_the_alias_list_comes_from_the_account() {
+    let h = harness().await;
+    h.fake
+        .seed(FakeMsg::from_raw("q1", "t1", &["INBOX"], TO_AN_ALIAS));
+    h.sync.sync_account(ACCT).await.unwrap();
+    h.fake
+        .fail_next("list_send_as", GmailError::Offline("down".into()));
+    let d = h
+        .compose
+        .template(ACCT, "q1", ComposeMode::Reply)
+        .await
+        .unwrap();
+    assert_eq!(d.from.map(|f| f.address).as_deref(), Some("me@example.com"));
+}
+
+async fn sent_from(h: &H, n: usize) -> String {
+    wait_for_sends(&h.fake, n).await;
+    let raw = decode_base64url(&h.fake.sent()[n - 1]).unwrap();
+    let mail = mailparse::parse_mail(&raw).unwrap();
+    mail.headers.get_first_value("From").unwrap()
+}
+
+#[tokio::test]
+async fn the_from_header_names_the_chosen_alias() {
+    let h = harness().await;
+    h.fake.set_send_as(my_addresses());
+    h.compose.send_as_addresses(ACCT).await.unwrap();
+
+    let mut d = draft_to("bo@example.com");
+    d.from = Some(addr("sales@example.com"));
+    h.compose.send(ACCT, &d, 0).await.unwrap();
+    assert_eq!(sent_from(&h, 1).await, "Sales <sales@example.com>");
+
+    // No From chosen: Gmail's default send-as address.
+    h.compose
+        .send(ACCT, &draft_to("bo@example.com"), 0)
+        .await
+        .unwrap();
+    assert_eq!(sent_from(&h, 2).await, "\"Me at Work\" <work@example.com>");
+
+    // An address the account can't send from falls back to the default too.
+    let mut d = draft_to("bo@example.com");
+    d.from = Some(addr("pending@example.com"));
+    h.compose.send(ACCT, &d, 0).await.unwrap();
+    assert_eq!(sent_from(&h, 3).await, "\"Me at Work\" <work@example.com>");
+}
+
+#[tokio::test]
+async fn a_draft_keeps_its_from_when_reopened() {
+    let h = harness().await;
+    h.fake.set_send_as(my_addresses());
+    h.compose.send_as_addresses(ACCT).await.unwrap();
+    let mut d = draft_to("bo@example.com");
+    d.from = Some(EmailAddress {
+        name: Some("Sales Team".into()),
+        address: "sales@example.com".into(),
+    });
+    let saved = h.compose.save_draft(ACCT, &d).await.unwrap();
+    h.sync.sync_account(ACCT).await.unwrap();
+    let opened = h.compose.open_draft(ACCT, &saved.message_id).await.unwrap();
+    assert_eq!(opened.from, d.from);
+}

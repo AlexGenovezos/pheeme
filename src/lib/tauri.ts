@@ -628,6 +628,8 @@ export interface StagedAttachment {
 
 /** A message being written: new, reply, forward or an opened draft. */
 export interface ComposeDraft {
+  /** The address it goes out from (the account's own or a send-as alias); `null` for the account's default. */
+  from?: EmailAddress | null;
   to: EmailAddress[];
   cc: EmailAddress[];
   bcc: EmailAddress[];
@@ -674,6 +676,19 @@ export const composeTemplate = (accountId: string, messageId: string, mode: Comp
 /** The account's signature as set in Gmail (HTML), or `null` when it has none. */
 export const gmailSignature = (accountId: string) =>
   invoke<string | null>("gmail_signature", { accountId });
+/** An address an account can send from (Gmail's "Send mail as"): its own, or a verified alias. */
+export interface SendAsAddress {
+  email: string;
+  name: string | null;
+  isPrimary: boolean;
+  /** Gmail's default for new messages. */
+  isDefault: boolean;
+  /** This address's Gmail signature (HTML), `null` when it has none. */
+  signature: string | null;
+}
+/** The addresses the account can send from, its own first. */
+export const sendAsAddresses = (accountId: string) =>
+  invoke<SendAsAddress[]>("send_as_addresses", { accountId });
 export const stageAttachment = (path: string) =>
   invoke<StagedAttachment>("stage_attachment", { path });
 /** Call when a compose panel closes (sent, saved or discarded). */

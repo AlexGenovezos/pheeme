@@ -6,6 +6,7 @@ import { useAccountStore } from "../store/accountStore";
 import { ComposeHost } from "./ComposeHost";
 import { __resetComposeSettingsForTests, useComposeSettings } from "./composeSettings";
 import { __resetComposeStoreForTests, useComposeStore } from "./composeStore";
+import { __resetSendAsForTests, useSendAs } from "./sendAs";
 import { __resetSignaturesForTests, useSignatures } from "./signatures";
 
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
@@ -15,6 +16,7 @@ beforeEach(() => {
   __resetComposeSettingsForTests();
   __resetComposeStoreForTests();
   __resetSignaturesForTests();
+  __resetSendAsForTests();
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
   useAccountStore.setState({
     accounts: [
@@ -359,4 +361,48 @@ test("a new message opened before the first Gmail signature fetch gets it when i
   });
   await waitFor(() => expect(editor.querySelector(".gmail_signature b")?.textContent).toBe("Late"));
   expect(editor.querySelectorAll(".gmail_signature")).toHaveLength(1);
+});
+
+test("the From picker offers each sendable address and swaps in its signature", async () => {
+  useSignatures.setState({ gmail: { a1: { html: "<b>Me</b>", loading: false } } });
+  useSendAs.setState({
+    lists: {
+      a1: [
+        { email: "me@example.com", name: null, isPrimary: true, isDefault: true, signature: null },
+        {
+          email: "team@example.com",
+          name: "Team",
+          isPrimary: false,
+          isDefault: false,
+          signature: "<i>Team</i>",
+        },
+      ],
+    },
+  });
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+    if (cmd === "send_as_addresses")
+      return useSendAs.getState().lists[(args as { accountId: string }).accountId];
+    return undefined;
+  });
+  const panel = await openNew();
+  const editor = within(panel).getByRole("textbox", { name: "Message" });
+  expect(editor.querySelector(".gmail_signature")?.textContent).toBe("Me");
+  const from = within(panel).getByRole("button", { name: /me@example\.com/ });
+  expect(from).toBeInTheDocument();
+
+  act(() => useComposeStore.getState().setFrom(1, { name: "Team", address: "team@example.com" }));
+  await waitFor(() => expect(editor.querySelector(".gmail_signature")?.textContent).toBe("Team"));
+  expect(within(panel).getByRole("button", { name: /team@example\.com/ })).toBeInTheDocument();
+});
+
+test("with one address and one account, From is plain text", async () => {
+  useAccountStore.setState({
+    accounts: [
+      { id: "a1", email: "me@example.com", displayName: null, clientId: "c", synced: true },
+    ],
+  });
+  const panel = await openNew();
+  expect(within(panel).queryByRole("button", { name: /me@example\.com/ })).toBeNull();
+  expect(within(panel).getByText("me@example.com")).toBeInTheDocument();
 });

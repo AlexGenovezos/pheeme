@@ -8,6 +8,7 @@ import {
   type ComposeDraft,
   type ComposeMode,
   composeTemplate,
+  type EmailAddress,
   deleteDraft,
   discardAttachments,
   openDraft,
@@ -22,6 +23,7 @@ import {
 } from "../lib/tauri";
 import { useComposeSettings } from "./composeSettings";
 import { isValidAddress } from "./recipients";
+import { useSendAs } from "./sendAs";
 import { bodyWithSignature, useSignatures, withoutSignature } from "./signatures";
 
 export type ComposeKind = "new" | ComposeMode | "draft";
@@ -58,6 +60,7 @@ export const MAX_WINDOWS = 3;
 export const AUTOSAVE_MS = 30_000;
 
 export const emptyDraft = (): ComposeDraft => ({
+  from: null,
   to: [],
   cc: [],
   bcc: [],
@@ -117,6 +120,8 @@ interface ComposeState {
   update(id: number, change: Partial<ComposeDraft>): void;
   /** Change who a new message is from. A draft already saved in the old account is removed from it. */
   setAccount(id: number, accountId: string): void;
+  /** Send from another of the account's addresses (a send-as alias). */
+  setFrom(id: number, from: EmailAddress): void;
   attachFiles(id: number, paths: string[]): Promise<void>;
   removeAttachment(id: number, attachmentId: string): void;
   /** Save to Gmail Drafts now (autosave passes `quiet`, which keeps failures off the toasts). */
@@ -269,8 +274,13 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     focusRequest: null,
 
     compose(accountId, initial) {
-      const bodyHtml = bodyWithSignature(useSignatures.getState().signatureFor(accountId, "new"));
-      return open(blank(accountId, "new", { ...emptyDraft(), bodyHtml, ...initial }, false)) ?? -1;
+      const from = initial?.from ?? useSendAs.getState().defaultFrom(accountId);
+      const bodyHtml = bodyWithSignature(
+        useSignatures.getState().signatureFor(accountId, "new", from?.address),
+      );
+      return (
+        open(blank(accountId, "new", { ...emptyDraft(), from, bodyHtml, ...initial }, false)) ?? -1
+      );
     },
 
     async respond(accountId, messageId, mode) {
@@ -278,16 +288,21 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       if (id === null) return;
       try {
         const signatures = useSignatures.getState();
-        // Wait for a first fetch of the Gmail signature, never a refresh of one already known.
+        const sendAs = useSendAs.getState();
+        // Wait for a first fetch of the Gmail signature and the account's addresses (an alias has its own
+        // signature), never a refresh of ones already known.
         const fetching = signatures.refreshGmailOnce(accountId);
         const known = signatures.gmail[accountId]?.html !== undefined;
+        const fetchingAddresses = sendAs.refreshOnce(accountId);
+        const knownAddresses = sendAs.lists[accountId] !== undefined;
         const [draft] = await Promise.all([
           composeTemplate(accountId, messageId, mode),
           known ? null : fetching,
+          knownAddresses ? null : fetchingAddresses,
         ]);
         if (!find(id)) return dropStaged(draft.attachments); // closed while loading
         draft.bodyHtml = bodyWithSignature(
-          useSignatures.getState().signatureFor(accountId, "reply"),
+          useSignatures.getState().signatureFor(accountId, "reply", draft.from?.address),
         );
         patch(id, { draft, loading: false });
         get().focus(id);
@@ -331,7 +346,15 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       if (!win || win.accountId === accountId || win.kind !== "new") return;
       const old = win.draft.draftId;
       if (old) void deleteDraft(win.accountId, old).catch(() => {});
-      edit(id, (w) => ({ accountId, draft: { ...w.draft, draftId: null }, savedAt: null }));
+      edit(id, (w) => ({
+        accountId,
+        draft: { ...w.draft, from: useSendAs.getState().defaultFrom(accountId), draftId: null },
+        savedAt: null,
+      }));
+    },
+
+    setFrom(id, from) {
+      edit(id, (w) => ({ draft: { ...w.draft, from } }));
     },
 
     async attachFiles(id, paths) {

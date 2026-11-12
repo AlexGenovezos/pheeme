@@ -4,6 +4,7 @@
 import DOMPurify from "dompurify";
 import { create } from "zustand";
 import { type CommandError, gmailSignature, toCommandError } from "../lib/tauri";
+import { sameAddress, useSendAs } from "./sendAs";
 
 export type SignatureChoice = "gmail" | "custom" | "none";
 
@@ -123,8 +124,11 @@ interface SignatureState {
   refreshGmail(accountId: string): Promise<void>;
   /** Fetch it once per session, when the account uses it. */
   refreshGmailOnce(accountId: string): Promise<void>;
-  /** The signature to start a message with, or `null` for none. */
-  signatureFor(accountId: string, use: SignatureUse): string | null;
+  /**
+   * The signature to start a message with, or `null` for none. With Gmail's chosen, a message `from` one of
+   * the account's aliases takes that alias's Gmail signature.
+   */
+  signatureFor(accountId: string, use: SignatureUse, from?: string | null): string | null;
 }
 
 const inflight = new Map<string, Promise<void>>();
@@ -180,11 +184,20 @@ export const useSignatures = create<SignatureState>((set, get) => ({
     return get().refreshGmail(accountId);
   },
 
-  signatureFor(accountId, use) {
+  signatureFor(accountId, use, from) {
     const prefs = get().forAccount(accountId);
     const picked = use === "new" ? prefs.newMessages : prefs.replies;
+    const alias = useSendAs
+      .getState()
+      .lists[accountId]?.find((a) => !a.isPrimary && sameAddress(a.email, from));
     const html =
-      picked === "gmail" ? get().gmail[accountId]?.html : picked === "custom" ? prefs.custom : null;
+      picked === "gmail"
+        ? alias
+          ? alias.signature
+          : get().gmail[accountId]?.html
+        : picked === "custom"
+          ? prefs.custom
+          : null;
     return hasContent(html) ? html : null;
   },
 }));

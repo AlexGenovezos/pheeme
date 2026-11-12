@@ -15,6 +15,8 @@ pub struct Original {
     pub reply_to: Vec<EmailAddress>,
     pub to: Vec<EmailAddress>,
     pub cc: Vec<EmailAddress>,
+    /// `Delivered-To` headers: the address Gmail delivered it to, also for Bcc and lists.
+    pub delivered_to: Vec<String>,
     pub subject: Option<String>,
     /// Milliseconds since the epoch.
     pub date: Option<i64>,
@@ -55,16 +57,41 @@ fn prefixed(subject: Option<&str>, prefix: &str, already: &[&str]) -> String {
     }
 }
 
-pub fn template<Tz>(mode: ComposeMode, original: &Original, me: &str, tz: &Tz) -> ComposeDraft
+/// Which of your addresses (`mine`) a reply or forward goes out from, the way Gmail picks
+/// it: the one you sent the original from, else the first of yours it was addressed to
+/// (To, then Cc, then `Delivered-To`). `None` means the account's default address.
+pub fn reply_from<'a>(original: &Original, mine: &[&'a str]) -> Option<&'a str> {
+    let delivered = original.delivered_to.iter().map(|address| EmailAddress {
+        name: None,
+        address: address.clone(),
+    });
+    original
+        .from
+        .iter()
+        .cloned()
+        .chain(original.to.iter().cloned())
+        .chain(original.cc.iter().cloned())
+        .chain(delivered)
+        .find_map(|a| mine.iter().copied().find(|m| is(&a, m)))
+}
+
+/// `mine` is every address of yours (the account's first): they're left off Reply All.
+pub fn template<Tz>(mode: ComposeMode, original: &Original, mine: &[&str], tz: &Tz) -> ComposeDraft
 where
     Tz: TimeZone,
     Tz::Offset: std::fmt::Display,
 {
-    let me_addr = EmailAddress {
-        name: None,
-        address: me.to_owned(),
-    };
-    let sent_by_me = original.from.as_ref().is_some_and(|f| is(f, me));
+    let mine_addrs: Vec<EmailAddress> = mine
+        .iter()
+        .map(|m| EmailAddress {
+            name: None,
+            address: (*m).to_owned(),
+        })
+        .collect();
+    let sent_by_me = original
+        .from
+        .as_ref()
+        .is_some_and(|f| mine.iter().any(|m| is(f, m)));
     let sender: Vec<EmailAddress> = if !original.reply_to.is_empty() {
         original.reply_to.clone()
     } else {
@@ -82,14 +109,14 @@ where
             } else {
                 sender.into_iter().chain(original.to.clone()).collect()
             };
-            let to = distinct(to, &[&me_addr]);
+            let to = distinct(to, &mine_addrs.iter().collect::<Vec<_>>());
             let cc = distinct(
                 original.cc.clone(),
-                &to.iter().chain([&me_addr]).collect::<Vec<_>>(),
+                &to.iter().chain(&mine_addrs).collect::<Vec<_>>(),
             );
             if to.is_empty() && cc.is_empty() {
                 // Only you were on it.
-                (vec![me_addr.clone()], Vec::new())
+                (mine_addrs.iter().take(1).cloned().collect(), Vec::new())
             } else {
                 (to, cc)
             }
@@ -284,7 +311,7 @@ mod tests {
     }
 
     fn t(mode: ComposeMode, o: &Original) -> ComposeDraft {
-        template(mode, o, ME, &Utc)
+        template(mode, o, &[ME], &Utc)
     }
 
     fn addresses(list: &[EmailAddress]) -> Vec<&str> {
@@ -324,6 +351,39 @@ mod tests {
         let d = t(ComposeMode::ReplyAll, &original());
         assert_eq!(addresses(&d.to), ["bo@example.com", "ann@example.com"]);
         assert_eq!(addresses(&d.cc), ["cy@example.com"]);
+    }
+
+    #[test]
+    fn reply_from_is_the_alias_it_was_sent_from_or_to() {
+        let mine = [ME, "alias@example.com", "other@example.com"];
+        let mut o = original();
+        o.to = vec![a("ann@example.com")];
+        o.cc = vec![a("Other@Example.com"), a("alias@example.com")];
+        assert_eq!(reply_from(&o, &mine), Some("other@example.com"), "Cc order");
+
+        o.to = vec![a("alias@example.com")];
+        assert_eq!(reply_from(&o, &mine), Some("alias@example.com"), "To first");
+
+        // Your own message: the address you sent it from.
+        o.from = Some(a("OTHER@example.com"));
+        assert_eq!(reply_from(&o, &mine), Some("other@example.com"));
+
+        // Only Delivered-To names one of yours (Bcc, a list).
+        let mut o = original();
+        o.to = vec![a("list@example.com")];
+        o.cc = Vec::new();
+        o.delivered_to = vec!["alias@example.com".into()];
+        assert_eq!(reply_from(&o, &mine), Some("alias@example.com"));
+        o.delivered_to.clear();
+        assert_eq!(reply_from(&o, &mine), None);
+
+        // Reply All leaves every one of your addresses off.
+        let mut o = original();
+        o.to = vec![a("alias@example.com"), a("ann@example.com")];
+        o.cc = vec![a("other@example.com"), a("cy@example.com")];
+        let all = template(ComposeMode::ReplyAll, &o, &mine, &Utc);
+        assert_eq!(addresses(&all.to), ["bo@example.com", "ann@example.com"]);
+        assert_eq!(addresses(&all.cc), ["cy@example.com"]);
     }
 
     #[test]
