@@ -195,7 +195,7 @@ mod tests {
             "https://accounts.google.com/o/oauth2/v2/auth?client_id=x",
             "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
             "https://github.com/AlexGenovezos/pheeme",
-            "https://mail.google.com/mail/u/me%40example.com/#drafts?compose=18c2f4a1b2c3d4e5",
+            "https://mail.google.com/mail/u/me%40example.com/#drafts",
         ] {
             assert!(is_allowed_external_url(ok), "{ok}");
         }

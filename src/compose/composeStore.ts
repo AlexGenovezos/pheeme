@@ -106,15 +106,12 @@ export function sendProblem(d: ComposeDraft): string | null {
 }
 
 /**
- * The saved draft in Gmail on the web, signed in as `email`, where Send later hands it over to Gmail's own
- * Schedule send. `compose=` takes the draft message's id, which the Gmail API gives in hex (`18c2f4a1…`), the
- * form Gmail web's own links used.
- *
- * Unverified on a real account: if Gmail web stops opening the draft from it, use `#drafts` alone (the Drafts
- * list, the draft on top).
+ * Gmail's Drafts on the web, signed in as `email`, where Send later hands the saved draft (on top, the newest)
+ * over to Gmail's own Schedule send. Not a link to the draft itself: Gmail web names drafts in `#drafts?compose=`
+ * by its own token, and the API's message id there opens a blank message instead.
  */
-export const gmailDraftUrl = (email: string, messageId: string) =>
-  `https://mail.google.com/mail/u/${encodeURIComponent(email)}/#drafts?compose=${encodeURIComponent(messageId)}`;
+export const gmailDraftsUrl = (email: string) =>
+  `https://mail.google.com/mail/u/${encodeURIComponent(email)}/#drafts`;
 
 /** The palette command (registered by `ComposeHost`) behind the Send menu's Send later. */
 export const SEND_LATER_COMMAND = "compose.sendLater";
@@ -540,8 +537,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         if (!(await get().save(id))) return; // the reason shows in the panel
         current = find(id);
       }
-      const messageId = savedMessages.get(id);
-      if (!current || !messageId) return;
+      if (!current || !savedMessages.get(id)) return;
       // A file attached while saving isn't in the draft yet.
       if (current.attaching > 0) {
         patch(id, { error: "Wait for the attachments to finish." });
@@ -557,10 +553,10 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       remove(id);
       dropStaged(current.draft.attachments);
       try {
-        await openExternal(gmailDraftUrl(email, messageId));
+        await openExternal(gmailDraftsUrl(email));
         toast({
-          title: "Draft opened in Gmail",
-          description: "Choose Schedule send there to pick a time.",
+          title: "Draft saved and Gmail opened",
+          description: "Open it at the top of Drafts and choose Schedule send to pick a time.",
         });
       } catch (e) {
         toast({

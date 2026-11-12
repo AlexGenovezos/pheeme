@@ -9,7 +9,7 @@ import {
   __resetComposeStoreForTests,
   type ComposeWindow,
   emptyDraft,
-  gmailDraftUrl,
+  gmailDraftsUrl,
   MAX_WINDOWS,
   sendProblem,
   useComposeStore,
@@ -461,13 +461,11 @@ test("Send later saves the draft, closes the panel and opens it in Gmail on the 
   expect(called("save_draft")[1]).toMatchObject({ accountId: "a1", message: { draftId: "d1" } });
   expect(store().windows).toEqual([]);
   expect(called("open_external")).toEqual([
-    { url: "https://mail.google.com/mail/u/me%2Bx%40example.com/#drafts?compose=m2" },
+    { url: "https://mail.google.com/mail/u/me%2Bx%40example.com/#drafts" },
   ]);
   expect(called("send_email")).toEqual([]);
-  expect(titles()).toContain("Draft opened in Gmail");
-  expect(gmailDraftUrl("a@b.co", "18c2f4a1b2c3d4e5")).toBe(
-    "https://mail.google.com/mail/u/a%40b.co/#drafts?compose=18c2f4a1b2c3d4e5",
-  );
+  expect(titles()).toContain("Draft saved and Gmail opened");
+  expect(gmailDraftsUrl("a@b.co")).toBe("https://mail.google.com/mail/u/a%40b.co/#drafts");
 });
 
 test("Send later keeps the panel when the message isn't ready or the save fails", async () => {
