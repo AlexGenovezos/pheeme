@@ -16,7 +16,7 @@ export const WORDS = {
   },
   calendar: {
     title: "Your calendar, built in.",
-    text: "All of Google Calendar, wired into your mail. Not another tab.",
+    text: "Google Calendar, wired into your mail. Not another tab.",
   },
   invite: "Invites show your day, clashes and all. Answer in the email.",
   switch: "<b>⌘2</b> and your calendar is there",
@@ -127,8 +127,11 @@ export default async function tour(d) {
   await say(WORDS.switch);
   await d.press("Meta+2", { hold: 1300 });
   await say(WORDS.views);
+  const view = (name) => app.locator(`.cal-toolbar[data-view="${name}"]`);
   await d.press("m", { hold: 1300 });
+  await d.until(view("month"), "Month view");
   await d.press("w", { hold: 900 });
+  await d.until(view("week"), "Week view");
 
   // Quick add: a sentence becomes the event.
   await say(WORDS.quickAdd);
