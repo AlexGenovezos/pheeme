@@ -1,0 +1,54 @@
+<!doctype html>
+<!--
+  The product video's stage: a 1920x1080 frame around the real demo app.
+  record.mjs serves this next to site/dist, so /demo/ below is the same
+  build the home page embeds. scenes.mjs drives it through window.stage.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>pheeme product video stage</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/__video/stage.css">
+</head>
+<body class="stage">
+  <div class="sky" aria-hidden="true">
+    <div class="glow glow--a"></div>
+    <div class="glow glow--b"></div>
+    <div class="horizon"></div>
+    <svg class="spark spark--a" viewBox="0 0 40 40"><path d="M20 0 C21 14 26 19 40 20 C26 21 21 26 20 40 C19 26 14 21 0 20 C14 19 19 14 20 0Z"/></svg>
+    <svg class="spark spark--b" viewBox="0 0 40 40"><path d="M20 0 C21 14 26 19 40 20 C26 21 21 26 20 40 C19 26 14 21 0 20 C14 19 19 14 20 0Z"/></svg>
+    <svg class="spark spark--c" viewBox="0 0 40 40"><path d="M20 0 C21 14 26 19 40 20 C26 21 21 26 20 40 C19 26 14 21 0 20 C14 19 19 14 20 0Z"/></svg>
+  </div>
+
+  <div class="space">
+    <div class="camera">
+      <div class="app-window">
+        <iframe class="app" src="/demo/" title="pheeme"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <div class="headline" aria-live="polite">
+    <h1 class="headline__title"></h1>
+    <p class="headline__body"></p>
+  </div>
+
+  <p class="note" aria-live="polite"></p>
+  <div class="keys" aria-hidden="true"></div>
+
+  <svg class="pointer" viewBox="0 0 28 28" aria-hidden="true">
+    <path d="M5 3 L5 22 L10 17.5 L13.6 25.4 L17 23.9 L13.5 16.2 L20 16.2 Z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+  </svg>
+  <div class="ripple" aria-hidden="true"></div>
+
+  <section class="card" aria-hidden="true">
+    <img class="card__logo" src="/brand/pheeme-logo-horizontal-color-dark.svg" alt="">
+    <h2 class="card__title"></h2>
+    <p class="card__body"></p>
+    <p class="card__cta"></p>
+  </section>
+
+  <script src="/__video/stage.js"></script>
+</body>
+</html>

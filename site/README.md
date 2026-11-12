@@ -24,6 +24,23 @@ Manual deploy: run `npm run build:site` from the repository root, then `wrangler
 
 `node scripts/shoot.mjs <url> <prefix> <w> <h> <y1,y2,…>` screenshots a page at several scroll positions, which is handy for checking scenes.
 
+## Product video
+
+The one-minute tour on the home page (`/video/pheeme-tour.mp4`) is recorded from the demo app on every site build, so it always shows the current UI. Nobody edits video by hand: change the code and the next deploy re-records it.
+
+- `video/scenes.mjs` is the storyboard: the words on screen (`WORDS`) and, in order, what happens in the app: keys pressed, clicks, the camera zooming onto a part of the window. Edit this to change the story.
+- `video/director.mjs` holds the verbs the storyboard uses (`headline`, `focus`, `press`, `type`, `click`, `card`, …).
+- `video/stage.html`, `stage.css` and `stage.js` are the 1920×1080 frame: the night sky, the app window in 3D, the big words, the cursor and the keycaps. The app inside is the real `/demo/`.
+- `video/record.mjs` serves `dist/`, plays the storyboard in Chromium at a fixed date and time (Wednesday, 11 November 2026, 9:41 in New York), captures the frames with Playwright's screencast and encodes an H.264 MP4 with ffmpeg. It writes `dist/video/pheeme-tour.mp4`, a poster (`.jpg`) and a description track (`.vtt`).
+
+```sh
+# From the repository root (needs ffmpeg and Playwright's Chromium):
+npm run build:site
+npm run video:site                       # or: node site/video/record.mjs --out <dir> [--headed] [--keep-frames]
+```
+
+When the app changes in a way the storyboard can't follow (a button renamed, a shortcut moved), recording fails and saves `failure.png` beside the video, showing where it got stuck. In CI the Site workflow records after the browser checks, before deploying, and uploads the video (or `failure.png`) as the `pheeme-tour` artifact, so a pull request shows the new cut.
+
 ## Local preview
 
 ```sh
@@ -43,6 +60,8 @@ Run `npm run test:site` from the repository root to build the site and check the
 | `public/motion.js` | Scroll scenes and reveal-on-enter animations |
 | `scripts/build.mjs` | Builds the marketing pages and real app preview into `dist/` |
 | `dist/demo/` | Generated app preview embedded by the home page (not committed) |
+| `video/` | The product video's storyboard, stage and recorder (see Product video) |
+| `dist/video/` | The recorded product video, poster and description track (not committed) |
 | `public/download.js` | Points the hero download button at the latest release installer for the visitor's OS |
 | `public/changelog.html`, `changelog.js` | pheeme.app/changelog: every GitHub release with its notes, fetched live (notes come from `docs/releases/` in the app repo) |
 | `public/logos.html` | Logo download page (pheeme.app/logos) |

@@ -4,8 +4,12 @@ test("the website embeds the real app, including actions and lazy-loaded compose
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("response", (response) => {
-    if (response.url().startsWith("http://127.0.0.1:4174/") && response.status() >= 400) {
-      errors.push(`${response.status()} ${response.url()}`);
+    const url = response.url();
+    // The product video is recorded after these checks (npm run video:site), which fails
+    // if it can't write every file the page links to.
+    if (url.startsWith("http://127.0.0.1:4174/video/")) return;
+    if (url.startsWith("http://127.0.0.1:4174/") && response.status() >= 400) {
+      errors.push(`${response.status()} ${url}`);
     }
   });
 

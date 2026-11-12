@@ -22,6 +22,7 @@ npm run typecheck    # tsrs, the Rust port of TypeScript 7.1 (beta); typecheck:t
 npm run test         # Vitest test runner
 npm run lint         # oxlint, warnings fail (config: .oxlintrc.json) + design-token check
 npm run format       # oxfmt formats TS/JS/CSS/JSON/YAML/HTML (.oxfmtrc.json); CI runs format:check
+npm run video:site   # records the website's product video from the demo (after build:site; storyboard in site/video/scenes.mjs)
 npm run release:prepare -- X.Y   # bump the version, draft docs/releases/vX.Y.md
 npm run release:check -- X.Y     # gate before tagging (the release workflow runs it too)
 ```

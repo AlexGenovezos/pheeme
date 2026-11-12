@@ -200,6 +200,11 @@ kbd {
   .demo-mobile-hint { display: inline; }
 }
 
+/* ---------- product video ---------- */
+.tour { padding-block: clamp(2rem, 6vw, 5rem); }
+.tour-window { aspect-ratio: 16 / 9; }
+.tour-video { display: block; width: 100%; height: 100%; object-fit: cover; background: var(--midnight); }
+
 /* ---------- keyboard + source pair ---------- */
 .pair {
   display: grid;

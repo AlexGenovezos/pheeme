@@ -33,6 +33,21 @@ jobs:
       # The browser checks build site/dist, including /demo from the app source.
       # A broken demo must not replace the live site.
       - run: npm run test:site
+      # The product video is recorded from the demo just built, so it shows the
+      # current UI. A storyboard step the app no longer supports fails here.
+      - name: Install ffmpeg
+        run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg)
+      - name: Record the product video
+        run: npm run video:site
+      # The video to watch, or failure.png showing where the storyboard got stuck.
+      - name: Keep the video for review
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pheeme-tour
+          path: site/dist/video/
+          retention-days: 14
+          if-no-files-found: ignore
 
       # main -> production at pheeme.app
       - name: Deploy to pheeme.app

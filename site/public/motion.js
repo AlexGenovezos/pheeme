@@ -22,6 +22,23 @@
   );
   document.querySelectorAll("[data-reveal]").forEach((el) => io.observe(el));
 
+  // ---- the product video plays, muted, while it's on screen, unless the visitor paused it ----
+  const tour = document.querySelector(".tour-video");
+  if (tour) {
+    let offscreen = false;
+    let stopped = false;
+    tour.addEventListener("pause", () => (stopped = !offscreen));
+    tour.addEventListener("play", () => (stopped = false));
+    new IntersectionObserver(
+      ([e]) => {
+        offscreen = !e.isIntersecting;
+        if (offscreen) tour.pause();
+        else if (!stopped) tour.play().catch(() => {});
+      },
+      { threshold: 0.5 },
+    ).observe(tour);
+  }
+
   // ---- split the statement into words ----
   document.querySelectorAll("[data-words]").forEach((el) => {
     const words = el.textContent.trim().split(/\s+/);
