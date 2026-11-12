@@ -108,7 +108,7 @@
       cursorAt = p;
       cursor.style.setProperty("--glide", `${ms}ms`);
       cursor.classList.add("on");
-      cursor.style.transform = `translate(${p.x}px, ${p.y}px)`;
+      cursor.style.translate = `${p.x}px ${p.y}px`;
     },
     hideCursor() {
       cursor.classList.remove("on");
@@ -135,4 +135,6 @@
 
   // Start off-screen under the horizon, under the title card.
   setCamera(SHOTS.below, 0);
+  // The pointer first glides in from below the frame, not from its corner.
+  cursor.style.translate = `${cursorAt.x}px ${cursorAt.y}px`;
 })();
