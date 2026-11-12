@@ -4,11 +4,11 @@
   const $ = (s) => document.querySelector(s);
   const body = document.body;
   const camera = $(".camera");
-  const win = $(".window");
+  const win = $(".app-window");
   const headline = $(".headline");
   const note = $(".note");
   const keys = $(".keys");
-  const cursor = $(".cursor");
+  const cursor = $(".pointer");
   const ripple = $(".ripple");
   const card = $(".card");
 

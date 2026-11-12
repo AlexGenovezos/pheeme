@@ -13,7 +13,7 @@ body.stage {
 }
 
 /* Only the app takes clicks; every layer of the stage lets them through. */
-.sky, .headline, .note, .keys, .card, .cursor, .ripple { pointer-events: none; }
+.sky, .headline, .note, .keys, .card, .pointer, .ripple { pointer-events: none; }
 
 /* ---------- the sky behind the app ---------- */
 .sky { position: absolute; inset: 0; overflow: hidden; }
@@ -59,7 +59,7 @@ body.stage {
   transform-origin: 720px 405px;
   transition: transform var(--move, 1.2s) cubic-bezier(.65, 0, .35, 1);
 }
-.window {
+.app-window {
   position: relative;
   width: 100%;
   height: 100%;
@@ -74,7 +74,7 @@ body.stage {
   transition: filter .7s var(--ease);
 }
 /* The tilted wide shot fades the bottom of the window into the night. */
-.window::after {
+.app-window::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -83,8 +83,8 @@ body.stage {
   transition: opacity 1s var(--ease);
   pointer-events: none;
 }
-.stage.fade .window::after { opacity: 1; }
-.stage.blur .window { filter: blur(14px) brightness(.45) saturate(.9); }
+.stage.fade .app-window::after { opacity: 1; }
+.stage.blur .app-window { filter: blur(14px) brightness(.45) saturate(.9); }
 .app { display: block; width: 100%; height: 100%; border: 0; }
 
 /* ---------- big words between shots ---------- */
@@ -191,8 +191,8 @@ body.stage {
 .keys kbd.down { transform: translateY(4px); border-bottom-width: 2px; background: linear-gradient(180deg, #2a55b5, var(--panel) 75%); }
 @keyframes key-in { from { opacity: 0; transform: translateY(16px) scale(.9); } }
 
-/* ---------- cursor ---------- */
-.cursor {
+/* ---------- mouse pointer (not .cursor: styles.css uses that for the terminal) ---------- */
+.pointer {
   position: absolute;
   left: 0;
   top: 0;
@@ -205,8 +205,8 @@ body.stage {
   transition: transform var(--glide, .7s) cubic-bezier(.45, 0, .2, 1), opacity .3s, scale .08s;
   z-index: 5;
 }
-.cursor.on { opacity: 1; }
-.cursor.press { scale: .85; }
+.pointer.on { opacity: 1; }
+.pointer.press { scale: .85; }
 .ripple {
   position: absolute;
   left: 0;
