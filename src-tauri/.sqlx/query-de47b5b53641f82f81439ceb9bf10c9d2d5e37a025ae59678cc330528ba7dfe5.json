@@ -1,0 +1,63 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH sent AS (SELECT thread_id, MAX(date) AS last_sent FROM messages INDEXED BY idx_messages_date\n                         WHERE account_id = ?1 AND date >= ?2\n                           AND EXISTS (SELECT 1 FROM json_each(label_ids) WHERE value = 'SENT')\n                         GROUP BY thread_id),\n           recv AS (\n             SELECT m.date, m.is_read != 0 AS opened, m.is_starred != 0 AS starred,\n                    COALESCE(s.last_sent > m.date, 0) AS replied,\n                    CASE\n                      WHEN EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'SPAM') THEN 'spam'\n                      WHEN EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_PROMOTIONS') THEN 'promotions'\n                      WHEN EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_SOCIAL') THEN 'social'\n                      WHEN EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_UPDATES') THEN 'updates'\n                      WHEN EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_FORUMS') THEN 'forums'\n                      ELSE 'primary'\n                    END AS tab\n             FROM messages m INDEXED BY idx_messages_date\n             LEFT JOIN sent s ON s.thread_id = m.thread_id\n             WHERE m.account_id = ?1 AND m.date >= ?2\n               AND m.from_address IS NOT NULL AND m.from_address != ''\n               AND lower(m.from_address) != lower(?3)\n               AND NOT EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value IN ('DRAFT', 'SENT')))\n           SELECT date(date / 1000, 'unixepoch', 'localtime') AS \"key!: String\",\n                  tab AS \"group!: String\",\n                  COUNT(*) AS \"received!: i64\",\n                  SUM(opened) AS \"opened!: i64\",\n                  SUM(replied) AS \"replied!: i64\",\n                  SUM(starred) AS \"starred!: i64\",\n                  SUM(opened OR replied OR starred) AS \"engaged!: i64\"\n           FROM recv\n           GROUP BY 1, 2\n           ORDER BY 1, 2",
+  "describe": {
+    "columns": [
+      {
+        "name": "key!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "name": "group!: String",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "name": "received!: i64",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "opened!: i64",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "replied!: i64",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "starred!: i64",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "engaged!: i64",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "de47b5b53641f82f81439ceb9bf10c9d2d5e37a025ae59678cc330528ba7dfe5"
+}

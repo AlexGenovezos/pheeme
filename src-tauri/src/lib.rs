@@ -26,6 +26,7 @@ pub mod search;
 pub mod secrets;
 pub mod sender_rules;
 pub mod senders;
+pub mod stats;
 pub mod support;
 pub mod sync;
 pub mod tasks;
@@ -430,6 +431,8 @@ pub fn run() {
             commands::sender_rules::undo_sender_rules,
             commands::sender_rules::delete_sender_rule,
             commands::sender_rules::inbox_threads_from,
+            commands::stats::mail_stats,
+            commands::stats::unsubscribe_sender,
             commands::search::search_messages,
             commands::search::search_gmail,
             commands::search::recent_searches,

@@ -1,6 +1,7 @@
 import { NotificationsSettings } from "./NotificationsSettings";
 import { ModsSettings } from "../mods/ModsSettings";
 import {
+  BarChart3,
   Bell,
   Bot,
   Contact,
@@ -34,6 +35,7 @@ import { ClearDownloadedMail } from "./ClearDownloadedMail";
 import { ContactsSettings } from "./ContactsSettings";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { InboxTabsSettings } from "./InboxTabsSettings";
+import { MailStatsSettings } from "./MailStats";
 import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
 import { SenderRulesSettings } from "./SenderRulesSettings";
@@ -405,6 +407,30 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       "sender",
     ],
     Component: SenderRulesSettings,
+  },
+  {
+    id: "mailStats",
+    title: "Mail stats",
+    icon: BarChart3,
+    group: "Mail",
+    keywords: [
+      "statistics",
+      "insights",
+      "how much mail",
+      "per day",
+      "received",
+      "opened",
+      "read",
+      "replied",
+      "starred",
+      "engagement",
+      "senders",
+      "unsubscribe",
+      "newsletters",
+      "categories",
+      "labels",
+    ],
+    Component: MailStatsSettings,
   },
   {
     id: "compose",

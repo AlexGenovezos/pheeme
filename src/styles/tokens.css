@@ -305,6 +305,18 @@
   --quota-refused-mark: 6px;
   --quota-tooltip-width: 200px;
 
+  /*
+   * Settings › Mail stats (src/settings/MailStats.tsx): mail engaged with in the quota chart's
+   * blue, the rest in a neutral grey, so the bars read as "how much of it you look at".
+   */
+  --stats-engaged: #2a78d6;
+  --stats-rest: color-mix(in oklch, var(--color-foreground-muted) 38%, transparent);
+  --stats-chart-height: 120px;
+  --stats-bar-max-width: 18px;
+  --stats-meter-height: 10px;
+  --stats-place-name-width: 144px;
+  --stats-number-width: 56px;
+
   /* Stacking. */
   --z-base: 0;
   --z-divider: 10;
@@ -319,6 +331,7 @@
   --quota-your-changes: #199e70;
   --quota-you-asked: #c98500;
   --quota-assistants: #d55181;
+  --stats-engaged: #3987e5;
 }
 
 :root[data-reading-size="large"] {

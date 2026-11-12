@@ -1,0 +1,73 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH sent AS (SELECT thread_id, MAX(date) AS last_sent FROM messages INDEXED BY idx_messages_date\n                         WHERE account_id = ?1 AND date >= ?2\n                           AND EXISTS (SELECT 1 FROM json_each(label_ids) WHERE value = 'SENT')\n                         GROUP BY thread_id),\n           recv AS (\n             SELECT m.label_ids, m.is_read != 0 AS opened, m.is_starred != 0 AS starred,\n                    COALESCE(s.last_sent > m.date, 0) AS replied\n             FROM messages m INDEXED BY idx_messages_date\n             LEFT JOIN sent s ON s.thread_id = m.thread_id\n             WHERE m.account_id = ?1 AND m.date >= ?2\n               AND m.from_address IS NOT NULL AND m.from_address != ''\n               AND lower(m.from_address) != lower(?3)\n               AND NOT EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value IN ('DRAFT', 'SENT')))\n           SELECT l.id AS \"key!: String\",\n                  l.name AS \"group!: String\",\n                  COUNT(*) AS \"received!: i64\",\n                  SUM(r.opened) AS \"opened!: i64\",\n                  SUM(r.replied) AS \"replied!: i64\",\n                  SUM(r.starred) AS \"starred!: i64\",\n                  SUM(r.opened OR r.replied OR r.starred) AS \"engaged!: i64\"\n           FROM recv r\n           JOIN json_each(r.label_ids) j\n           JOIN labels l ON l.account_id = ?1 AND l.id = j.value AND l.type = 'user'\n           GROUP BY l.id\n           ORDER BY COUNT(*) DESC, l.name\n           LIMIT ?4",
+  "describe": {
+    "columns": [
+      {
+        "name": "key!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "labels",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "group!: String",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "labels",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "received!: i64",
+        "ordinal": 2,
+        "type_info": "Null",
+        "origin": "Expression"
+      },
+      {
+        "name": "opened!: i64",
+        "ordinal": 3,
+        "type_info": "Null",
+        "origin": "Expression"
+      },
+      {
+        "name": "replied!: i64",
+        "ordinal": 4,
+        "type_info": "Null",
+        "origin": "Expression"
+      },
+      {
+        "name": "starred!: i64",
+        "ordinal": 5,
+        "type_info": "Null",
+        "origin": "Expression"
+      },
+      {
+        "name": "engaged!: i64",
+        "ordinal": 6,
+        "type_info": "Null",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "b97ce7cade3370b3277e8773c72eee7e6bec8a5371673e11b666e51579f117ee"
+}

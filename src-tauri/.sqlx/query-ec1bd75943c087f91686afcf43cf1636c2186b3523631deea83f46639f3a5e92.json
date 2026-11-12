@@ -1,0 +1,126 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH sent AS (SELECT thread_id, MAX(date) AS last_sent FROM messages INDEXED BY idx_messages_date\n                         WHERE account_id = ?1 AND date >= ?2\n                           AND EXISTS (SELECT 1 FROM json_each(label_ids) WHERE value = 'SENT')\n                         GROUP BY thread_id)\n           SELECT lower(m.from_address) AS \"address!: String\",\n              MAX(m.from_name) AS \"name: String\",\n              COUNT(*) AS \"messages!: i64\",\n              SUM(m.is_read = 0) AS \"unread!: i64\",\n              SUM(COALESCE(s.last_sent > m.date, 0)) AS \"replied!: i64\",\n              SUM(m.is_starred != 0) AS \"starred!: i64\",\n              SUM(m.is_read != 0 OR m.is_starred != 0 OR COALESCE(s.last_sent > m.date, 0)) AS \"engaged!: i64\",\n              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'INBOX')) AS \"in_inbox!: i64\",\n              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'TRASH')) AS \"in_trash!: i64\",\n              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'SPAM')) AS \"in_spam!: i64\",\n              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_PROMOTIONS')) AS \"promotions!: i64\",\n              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_SOCIAL')) AS \"social!: i64\",\n              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_UPDATES')) AS \"updates!: i64\",\n              SUM(EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = 'CATEGORY_FORUMS')) AS \"forums!: i64\",\n              MAX(m.date) AS \"last_date!: i64\",\n              COALESCE((SELECT c.sent_count FROM contacts c\n                        WHERE c.account_id = ?1 AND c.address = lower(m.from_address)), 0) AS \"you_wrote!: i64\"\n           FROM messages m\n           LEFT JOIN sent s ON s.thread_id = m.thread_id\n           WHERE m.account_id = ?1 AND m.date >= ?2\n             AND m.from_address IS NOT NULL AND m.from_address != ''\n             AND lower(m.from_address) != lower(?3)\n             AND NOT EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value IN ('DRAFT', 'SENT'))\n           GROUP BY lower(m.from_address)\n           ORDER BY COUNT(*) DESC, MAX(m.date) DESC\n           LIMIT ?4",
+  "describe": {
+    "columns": [
+      {
+        "name": "address!: String",
+        "ordinal": 0,
+        "type_info": "Null",
+        "origin": "Expression"
+      },
+      {
+        "name": "name: String",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "name": "messages!: i64",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "unread!: i64",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "replied!: i64",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "starred!: i64",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "engaged!: i64",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "in_inbox!: i64",
+        "ordinal": 7,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "in_trash!: i64",
+        "ordinal": 8,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "in_spam!: i64",
+        "ordinal": 9,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "promotions!: i64",
+        "ordinal": 10,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "social!: i64",
+        "ordinal": 11,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "updates!: i64",
+        "ordinal": 12,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "forums!: i64",
+        "ordinal": 13,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "last_date!: i64",
+        "ordinal": 14,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "you_wrote!: i64",
+        "ordinal": 15,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      null,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "ec1bd75943c087f91686afcf43cf1636c2186b3523631deea83f46639f3a5e92"
+}

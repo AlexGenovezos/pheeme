@@ -4,7 +4,7 @@
 
 use crate::db::messages::{self, DbSenderStats};
 use crate::gmail::types::Header;
-use crate::mail::MailError;
+use crate::mail::{MailError, MailService};
 use reqwest::Url;
 use serde::Serialize;
 use sqlx::SqlitePool;
@@ -18,6 +18,11 @@ pub struct SenderDto {
     pub name: Option<String>,
     pub messages: i64,
     pub unread: i64,
+    /// Messages answered: the account wrote in the conversation after them.
+    pub replied: i64,
+    pub starred: i64,
+    /// Messages read, replied to or starred.
+    pub engaged: i64,
     pub in_inbox: i64,
     pub in_trash: i64,
     pub in_spam: i64,
@@ -76,6 +81,9 @@ pub async fn report(
             name: s.name,
             messages: s.messages,
             unread: s.unread,
+            replied: s.replied,
+            starred: s.starred,
+            engaged: s.engaged,
             in_inbox: s.in_inbox,
             in_trash: s.in_trash,
             in_spam: s.in_spam,
@@ -246,10 +254,73 @@ pub async fn one_click(url: &str) -> Result<(), MailError> {
     let status = response.status();
     if !status.is_success() {
         return Err(MailError::Invalid(format!(
-            "The sender's unsubscribe link answered {status}, so it may not have worked. Give the user the link."
+            "The sender's unsubscribe link answered {status}, so it may not have worked."
         )));
     }
     Ok(())
+}
+
+/// What [`unsubscribe`] did: it unsubscribed (one click), or it hands back the page or address
+/// the sender asks people to use.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Unsubscribed {
+    pub sender: Option<String>,
+    /// `one_click`, `link`, `email` or `none`.
+    pub method: &'static str,
+    pub unsubscribed: bool,
+    pub web: Option<String>,
+    pub mailto: Option<String>,
+}
+
+/// Unsubscribe from the list a conversation came from, by its newest message not from
+/// `own_address` (or `message_id`). One-click links are followed here; any other way is
+/// returned for the user to take.
+pub async fn unsubscribe(
+    mail: &MailService,
+    account_id: &str,
+    own_address: &str,
+    thread_id: &str,
+    message_id: Option<&str>,
+) -> Result<Unsubscribed, MailError> {
+    let thread = mail.get_thread(account_id, thread_id, false).await?;
+    let message = match message_id.map(str::trim) {
+        Some(id) if !id.is_empty() => thread
+            .messages
+            .iter()
+            .find(|m| m.id == id)
+            .ok_or(MailError::NotFound)?,
+        _ => thread
+            .messages
+            .iter()
+            .rev()
+            .find(|m| {
+                m.from_address
+                    .as_deref()
+                    .is_some_and(|a| !a.eq_ignore_ascii_case(own_address))
+            })
+            .ok_or_else(|| {
+                MailError::Invalid("Everything in that conversation is from the user.".into())
+            })?,
+    };
+    let sender = message.from_address.clone();
+    let headers = mail.message_headers(account_id, &message.id).await?;
+    let options = options(&headers);
+    let method = options.kind();
+    let unsubscribed = match &options.one_click {
+        Some(url) => {
+            one_click(url).await?;
+            true
+        }
+        None => false,
+    };
+    Ok(Unsubscribed {
+        sender,
+        method,
+        unsubscribed,
+        web: options.web,
+        mailto: options.mailto,
+    })
 }
 
 #[cfg(test)]
@@ -347,6 +418,9 @@ mod tests {
             name: None,
             messages,
             unread: 0,
+            replied: 0,
+            starred: 0,
+            engaged: 0,
             in_inbox: 0,
             in_trash: 0,
             in_spam: 0,
