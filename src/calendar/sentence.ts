@@ -21,6 +21,11 @@ export interface Person {
   text: string;
   /** Set when an email address was typed. */
   address: string | null;
+  /**
+   * The name with the uncapitalised word after it ("mike murray"), when that word may be a
+   * surname. The caller looks it up and passes `fullNames` to take it when contacts know it.
+   */
+  full: string | null;
 }
 
 /** Somewhere the sentence can go with `/name`: a calendar, or a task list for tasks. */
@@ -221,7 +226,14 @@ function instant(c: chrono.ParsedComponents, date: string, minutes: number, tz: 
  */
 export function parseQuickAdd(
   text: string,
-  opts: { now: number; tz: string; targets: Target[]; taskTargets?: Target[] },
+  opts: {
+    now: number;
+    tz: string;
+    targets: Target[];
+    taskTargets?: Target[];
+    /** Whether a person's `full` name is someone; when it is, that's the person. */
+    fullNames?: (full: string) => boolean;
+  },
 ): QuickAdd {
   const { now, tz } = opts;
   const spans: Span[] = [];
@@ -351,9 +363,9 @@ export function parseQuickAdd(
           spans.push({ kind: "place", start: seg.start + found.start, end: seg.start + found.end });
         }
       }
-      for (const p of findPeople(seg.text)) {
+      for (const p of findPeople(seg.text, opts.fullNames)) {
         if (people.some((x) => x.text.toLowerCase() === p.text.toLowerCase())) continue;
-        people.push({ text: p.text, address: p.address });
+        people.push({ text: p.text, address: p.address, full: p.full });
         spans.push({ kind: "guest", start: seg.start + p.start, end: seg.start + p.end });
       }
     }
@@ -402,10 +414,17 @@ function findPlace(seg: string): { place: string; start: number; end: number } |
 const EMAIL_RE = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>.]+/;
 const NAME_RE = /^[\p{L}][\p{L}\p{M}'’-]*/u;
 const SURNAME_RE = /^\s+(\p{Lu}[\p{L}\p{M}'’-]*)/u;
+const NEXT_WORD_RE = /^\s+([\p{L}][\p{L}\p{M}'’-]*)/u;
 const JOIN_RE = /^\s*(?:,|&|\+|\band\b)\s*/i;
 
-/** The people after "with": names (a first name and a capitalised surname) or addresses. */
-function findPeople(seg: string): (Person & { start: number; end: number })[] {
+/**
+ * The people after "with": names or addresses. A capitalised word after a first name is its
+ * surname; an uncapitalised one ("mike murray") only when `fullNames` knows the two together.
+ */
+function findPeople(
+  seg: string,
+  fullNames?: (full: string) => boolean,
+): (Person & { start: number; end: number })[] {
   const out: (Person & { start: number; end: number })[] = [];
   const re = /\bwith\s+/gi;
   for (let m = re.exec(seg); m; m = re.exec(seg)) {
@@ -415,6 +434,7 @@ function findPeople(seg: string): (Person & { start: number; end: number })[] {
       const email = EMAIL_RE.exec(rest);
       let len = 0;
       let address: string | null = null;
+      let full: string | null = null;
       if (email) {
         len = email[0].length;
         address = email[0];
@@ -423,11 +443,21 @@ function findPeople(seg: string): (Person & { start: number; end: number })[] {
         if (!name || NOT_PEOPLE.has(name[0].toLowerCase())) break;
         len = name[0].length;
         const surname = SURNAME_RE.exec(rest.slice(len));
+        const next = NEXT_WORD_RE.exec(rest.slice(len));
         if (surname && !NOT_PEOPLE.has(surname[1].toLowerCase())) len += surname[0].length;
+        else if (next && !NOT_PEOPLE.has(next[1].toLowerCase()) && !/^and$/i.test(next[1])) {
+          full = rest.slice(0, len + next[0].length);
+          if (fullNames?.(full)) len = full.length;
+        }
       }
-      out.push({ text: rest.slice(0, len), address, start: at, end: at + len });
+      out.push({ text: rest.slice(0, len), address, full, start: at, end: at + len });
       at += len;
-      const join = JOIN_RE.exec(seg.slice(at));
+      let join = JOIN_RE.exec(seg.slice(at));
+      // "mike murray and grace" when "mike murray" isn't known: grace is still someone.
+      if (!join && full && len < full.length) {
+        join = JOIN_RE.exec(seg.slice(at + full.length - len));
+        if (join) at += full.length - len;
+      }
       if (!join) break;
       at += join[0].length;
     }

@@ -52,10 +52,16 @@ function Highlights({ text, spans }: { text: string; spans: Span[] }) {
   return <>{parts}</>;
 }
 
-/** Contacts matching each name after "with", per account: `undefined` while being looked up. */
+/**
+ * Contacts matching each name after "with" (and each name with the word after it, "mike murray"),
+ * per account: `undefined` while being looked up.
+ */
 function useMatches(accountId: string, people: Person[]) {
   const [matches, setMatches] = useState<Record<string, ContactSuggestion[]>>({});
-  const names = people.filter((p) => !p.address).map((p) => lower(p.text));
+  const names = people
+    .filter((p) => !p.address)
+    .flatMap((p) => (p.full ? [p.text, p.full] : [p.text]))
+    .map(lower);
   const wanted = names.filter((n) => !(key(accountId, n) in matches)).join("\n");
   useEffect(() => {
     if (!wanted) return;
@@ -109,19 +115,36 @@ function QuickAddDialog() {
     () => lists.map((l) => ({ key: key(l.account.accountId, l.list.id), name: l.list.title })),
     [lists],
   );
-  const parsed = useMemo(
+  /** Read without knowing contacts: which calendar, and the names to look up. */
+  const first = useMemo(
     () => parseQuickAdd(text, { now, tz, targets, taskTargets }),
     [text, now, tz, targets, taskTargets],
   );
-  const isTask = parsed.kind === "task";
+  const isTask = first.kind === "task";
 
   const fallback = defaultCalendar();
   const calendarKey =
-    (!isTask && parsed.target) ||
+    (!isTask && first.target) ||
     picked ||
     (fallback ? key(fallback.account.accountId, fallback.calendar.id) : "");
   const [accountId, calendarId] = calendarKey.split("\n");
-  const matchesFor = useMatches(accountId ?? "", isTask ? [] : parsed.people);
+  const matchesFor = useMatches(accountId ?? "", isTask ? [] : first.people);
+  // "with mike murray": "murray" is part of the name once contacts know a Mike Murray.
+  const knownFull = first.people
+    .filter((p) => p.full && (matchesFor(p.full)?.length ?? 0) > 0)
+    .map((p) => lower(p.full!))
+    .join("\n");
+  const parsed = useMemo(() => {
+    if (!knownFull) return first;
+    const known = new Set(knownFull.split("\n"));
+    return parseQuickAdd(text, {
+      now,
+      tz,
+      targets,
+      taskTargets,
+      fullNames: (full) => known.has(lower(full)),
+    });
+  }, [first, knownFull, text, now, tz, targets, taskTargets]);
 
   const guests: Guest[] = [];
   for (const p of parsed.people) {
