@@ -30,7 +30,7 @@ function project(files) {
   fs.mkdirSync(path.join(root, "src"));
   fs.writeFileSync(
     path.join(root, ".jscpd.json"),
-    JSON.stringify({ path: ["src"], minTokens: 30, baseline: ".jscpd-baseline.json" }),
+    JSON.stringify({ path: ["src"], minTokens: 30 }),
   );
   write(root, files);
   return root;
@@ -56,6 +56,13 @@ describe("check-duplication", () => {
     );
     expect(second).toMatch(/^::error file=src\/[abc]\.ts,/);
     expect(new Set([first, second].map((a) => a.match(/file=([^,]+)/)[1])).size).toBe(2);
+  });
+
+  it("doesn't fail when text beside a known copy changes", () => {
+    const root = project({ "a.ts": block("pack"), "b.ts": `const x = 1;\n${block("pack")}` });
+    updateBaseline(root);
+    write(root, { "b.ts": `const renamed = 1; // edited\n\n${block("fill")}` });
+    expect(findNewClones(root).exact).toEqual([]);
   });
 
   it("finds nothing new in code without copies", () => {

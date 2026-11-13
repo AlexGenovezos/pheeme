@@ -13,7 +13,7 @@
     "lint": "oxlint --deny-warnings && node scripts/check-tokens.mjs",
     "deadcode": "knip",
     "dupes": "node scripts/check-duplication.mjs",
-    "dupes:update": "jscpd --update-baseline --silent --no-tips",
+    "dupes:update": "node scripts/check-duplication.mjs --update",
     "test": "vitest",
     "test:ci": "vitest run",
     "test:site": "playwright test --config site/playwright.config.ts",

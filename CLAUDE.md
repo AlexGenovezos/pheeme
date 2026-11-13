@@ -24,7 +24,7 @@ npm run lint         # oxlint, warnings fail (config: .oxlintrc.json) + design-t
 npm run format       # oxfmt formats TS/JS/CSS/JSON/YAML/HTML (.oxfmtrc.json); CI runs format:check
 npm run deadcode     # knip: unused files, exports and npm packages fail CI (entry points: knip.json)
 npm run dupes        # jscpd: new copy-pasted code in src, src-tauri/src, workers, scripts fails CI; a new function shaped like an existing one is a warning (.jscpd.json)
-npm run dupes:update # accept the current copies into .jscpd-baseline.json (only when a copy is deliberate)
+npm run dupes:update # accept the current copies into .duplication-baseline.json (counts per file pair) (only when a copy is deliberate)
 npm run video:site   # records the website's product video from the demo (after build:site; storyboard in site/video/scenes.mjs)
 npm run video:site -- --scene settings   # films only that scene (names: SCENES in scenes.mjs), for a quick look
 npm run release:prepare -- X.Y   # bump the version, draft docs/releases/vX.Y.md

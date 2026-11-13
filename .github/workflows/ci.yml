@@ -38,7 +38,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       # Platform-independent, so Linux only. knip.json says which files are entry points;
-      # .jscpd-baseline.json holds the copies that were already there.
+      # .duplication-baseline.json counts the copies that were already there.
       - name: Dead code
         if: matrix.os == 'ubuntu-22.04'
         run: npm run deadcode
