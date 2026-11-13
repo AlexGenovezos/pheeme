@@ -9,8 +9,10 @@
 // is only a warning, since some patterns (one sqlx query per function) look alike on purpose.
 // In GitHub Actions both are written as annotations on the PR's lines.
 //
-// The baseline counts clones per pair of files rather than keeping jscpd's fingerprints, which
-// hash whole lines: editing text beside a known copy would change them and fail an unrelated PR.
+// The baseline holds how many tokens each pair of files shares, rather than jscpd's fingerprints,
+// which hash whole lines: editing text beside a known copy would change them and fail an unrelated
+// PR. Copying more code into a pair raises its total even when jscpd merges it into a known clone;
+// editing a copy only splits or shrinks it.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,20 +39,20 @@ const kindOf = (clone) => (clone.kind === "exact" ? "exact" : "similar");
 const pairOf = (root, clone) =>
   [path(root, clone.firstFile), path(root, clone.secondFile)].sort().join(" <> ");
 
-/** How many clones of each kind every pair of files shares. */
+/** How many duplicated tokens of each kind every pair of files shares. */
 function count(root, clones) {
   const counts = { exact: {}, similar: {} };
   for (const c of clones) {
     const byPair = counts[kindOf(c)];
     const pair = pairOf(root, c);
-    byPair[pair] = (byPair[pair] ?? 0) + 1;
+    byPair[pair] = (byPair[pair] ?? 0) + c.tokens;
   }
   for (const kind of Object.keys(counts))
     counts[kind] = Object.fromEntries(Object.entries(counts[kind]).sort());
   return counts;
 }
 
-/** Scans `root` with its .jscpd.json; returns the clones of pairs that have more than the baseline. */
+/** Scans `root` with its .jscpd.json; returns the clones of pairs that share more than the baseline. */
 export function findNewClones(root = repoRoot) {
   const clones = scan(root);
   const file = join(root, BASELINE);
@@ -110,7 +112,7 @@ function main() {
   for (const c of exact) console.error(`duplicated: ${describe(c)}`);
   if (exact.length > 0) {
     console.error(
-      `\n${exact.length} new block(s) of copied code (every copy shared by a file pair that gained one is listed). Reuse or extract the shared code; if the copy is ` +
+      `\n${exact.length} new copied block(s) in file pairs that now share more code than before. Reuse or extract the shared code; if the copy is ` +
         "deliberate, run `npm run dupes:update` and commit .duplication-baseline.json.",
     );
     return 1;

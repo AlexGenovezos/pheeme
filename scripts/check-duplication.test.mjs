@@ -65,6 +65,23 @@ describe("check-duplication", () => {
     expect(findNewClones(root).exact).toEqual([]);
   });
 
+  it("fails on a copy placed right after a known one", () => {
+    const other = `export function sizes(rows: { name: string; bytes: number }[], unit: number) {
+  const out: string[] = [];
+  for (const row of rows) {
+    const scaled = Math.round(row.bytes / unit);
+    if (scaled === 0) continue;
+    out.push(\`\${row.name}: \${scaled}\`);
+  }
+  return out.join(", ");
+}
+`;
+    const root = project({ "a.ts": block("pack") + other, "b.ts": block("pack") });
+    updateBaseline(root);
+    write(root, { "b.ts": block("pack") + other });
+    expect(findNewClones(root).exact.length).toBeGreaterThan(0);
+  });
+
   it("finds nothing new in code without copies", () => {
     const root = project({ "a.ts": block("pack") });
     updateBaseline(root);
