@@ -6,7 +6,9 @@
 // (record.mjs steps the page's clock and animations a frame at a time), and
 // actions happen between two frames.
 
-const KEY_LABELS = { Meta: "⌘", Control: "Ctrl", Shift: "⇧", Alt: "⌥", Enter: "return", Escape: "esc", Slash: "/" };
+import { SCENES } from "./scenes.mjs";
+
+const KEY_LABELS = { Meta: "⌘", Control: "Ctrl", Shift: "⇧", Alt: "⌥", Enter: "return", Escape: "esc", Slash: "/", Comma: ",", Space: "space", ArrowUp: "↑", ArrowDown: "↓" };
 
 export class Director {
   /**
@@ -42,6 +44,12 @@ export class Director {
       if (this.film.now() >= end) throw new Error(`${what} didn't appear within ${ms} ms.`);
       await this.film.advance(this.film.frame);
     }
+  }
+
+  /** Starts one of the parts named in SCENES; `--scene` films only the ones asked for. */
+  scene(id) {
+    if (!SCENES.includes(id)) throw new Error(`"${id}" isn't in SCENES (scenes.mjs).`);
+    this.film.scene?.(id);
   }
 
   /** Marks where a part of the video starts, for the description track. */

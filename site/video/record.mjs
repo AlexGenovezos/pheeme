@@ -10,6 +10,12 @@
 //   npm run build:site && npm run video:site
 //
 // Writes site/dist/video/pheeme-tour.{mp4,jpg,vtt}, or to --out <dir>.
+//
+//   npm run video:site -- --scene settings[,end]
+//
+// films only those scenes (SCENES in scenes.mjs) to pheeme-tour-<scenes>.mp4,
+// for a quick look at a change. The others still play, unfilmed and much
+// faster, so the app is in the state the filmed ones expect.
 
 import { spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
@@ -21,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { chromium } from "playwright";
 import { Director } from "./director.mjs";
-import tour from "./scenes.mjs";
+import tour, { SCENES } from "./scenes.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const dist = fileURLToPath(new URL("../dist/", import.meta.url));
@@ -33,8 +39,15 @@ const { values: opts } = parseArgs({
     headed: { type: "boolean", default: false },
     // Keep the captured frames (and print where) to debug a recording.
     "keep-frames": { type: "boolean", default: false },
+    // Film only these scenes (comma-separated names from SCENES).
+    scene: { type: "string" },
   },
 });
+
+const only = opts.scene ? new Set(opts.scene.split(",").map((s) => s.trim())) : null;
+for (const id of only ?? []) {
+  if (!SCENES.includes(id)) throw new Error(`No scene "${id}". The scenes: ${SCENES.join(", ")}.`);
+}
 
 const W = 1920;
 const H = 1080;
@@ -159,13 +172,28 @@ try {
   });
 
   let frame = 0;
+  // Frames written to disk: all of them, or only the --scene ones.
+  let shots = 0;
+  let filming = !only;
   const writes = [];
   const film = {
     frame: FRAME_MS,
     now: () => frame * FRAME_MS,
+    scene(id) {
+      filming = !only || only.has(id);
+      if (only) console.log(`  ${id}: ${filming ? "filming" : "playing unfilmed"}`);
+    },
     /** Films frames until `ms` more of the video has passed. */
     async advance(ms) {
       const last = Math.round((frame * FRAME_MS + ms) / FRAME_MS);
+      if (!filming && last > frame) {
+        // Unfilmed: the whole wait in one step. The clock still fires every timer and animation frame in it.
+        const ran = Math.round(frame * FRAME_MS);
+        frame = last;
+        await page.clock.runFor(Math.round(frame * FRAME_MS) - ran);
+        await page.evaluate((at) => window.__film(at), frame * FRAME_MS);
+        return;
+      }
       while (frame < last) {
         const ran = Math.round(frame * FRAME_MS);
         frame++;
@@ -173,8 +201,9 @@ try {
         await page.clock.runFor(Math.round(t) - ran);
         await page.evaluate((at) => window.__film(at), t);
         const { data } = await cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 92 });
-        writes.push(writeFile(join(frames, `${String(frame).padStart(6, "0")}.jpg`), data, "base64"));
-        if (frame % (FPS * 5) === 0) {
+        shots++;
+        writes.push(writeFile(join(frames, `${String(shots).padStart(6, "0")}.jpg`), data, "base64"));
+        if (shots % (FPS * 5) === 0) {
           await Promise.all(writes.splice(0));
           console.log(`  ${(t / 1000).toFixed(0)} s filmed`);
         }
@@ -194,11 +223,12 @@ try {
   }
   await Promise.all(writes);
   if (errors.length) throw new Error(`The page threw while recording:\n${errors.join("\n")}`);
-  if (frame < 10) throw new Error(`Only ${frame} frames were filmed.`);
-  console.log(`Filmed ${frame} frames in ${((performance.now() - started) / 1000).toFixed(0)} s.`);
+  if (shots < 10) throw new Error(`Only ${shots} frames were filmed.`);
+  console.log(`Filmed ${shots} frames in ${((performance.now() - started) / 1000).toFixed(0)} s.`);
 
   await mkdir(opts.out, { recursive: true });
-  const mp4 = join(opts.out, "pheeme-tour.mp4");
+  const name = only ? `pheeme-tour-${[...only].join("-")}` : "pheeme-tour";
+  const mp4 = join(opts.out, `${name}.mp4`);
   await run("ffmpeg", [
     "-y", "-loglevel", "error",
     "-framerate", String(FPS), "-start_number", "1", "-i", join(frames, "%06d.jpg"),
@@ -207,20 +237,25 @@ try {
     "-movflags", "+faststart", "-an",
     mp4,
   ]);
-  // index.html links the video, its poster and its description track.
-  if (!director.poster) throw new Error("The storyboard never called takePoster().");
-  await writeFile(join(opts.out, "pheeme-tour.jpg"), director.poster);
-
-  // What each part of the video says, for screen readers (a descriptions track).
-  const recorded = film.now();
-  const cues = director.chapters.map((c, i) => {
-    const next = director.chapters[i + 1]?.at ?? recorded;
-    return `${i + 1}\n${vttTime(c.at)} --> ${vttTime(next)}\n${c.text}`;
-  });
-  await writeFile(join(opts.out, "pheeme-tour.vtt"), `WEBVTT\n\n${cues.join("\n\n")}\n`);
-
   const size = (await stat(mp4)).size;
-  console.log(`${mp4}: ${(recorded / 1000).toFixed(1)} s, ${frame} frames, ${(size / 1e6).toFixed(1)} MB`);
+  const length = ((shots * FRAME_MS) / 1000).toFixed(1);
+  if (only) {
+    // A look at some scenes: the site's poster and description track are for the whole video.
+    console.log(`${mp4}: ${length} s, ${shots} frames, ${(size / 1e6).toFixed(1)} MB`);
+  } else {
+    // index.html links the video, its poster and its description track.
+    if (!director.poster) throw new Error("The storyboard never called takePoster().");
+    await writeFile(join(opts.out, "pheeme-tour.jpg"), director.poster);
+
+    // What each part of the video says, for screen readers (a descriptions track).
+    const recorded = film.now();
+    const cues = director.chapters.map((c, i) => {
+      const next = director.chapters[i + 1]?.at ?? recorded;
+      return `${i + 1}\n${vttTime(c.at)} --> ${vttTime(next)}\n${c.text}`;
+    });
+    await writeFile(join(opts.out, "pheeme-tour.vtt"), `WEBVTT\n\n${cues.join("\n\n")}\n`);
+    console.log(`${mp4}: ${length} s, ${shots} frames, ${(size / 1e6).toFixed(1)} MB`);
+  }
 } finally {
   await browser.close();
   server.close();
