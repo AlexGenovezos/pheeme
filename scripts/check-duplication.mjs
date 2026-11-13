@@ -16,7 +16,14 @@
 // extending it, or one more copy of known code (jscpd matches it to the first) isn't. (jscpd's own
 // fingerprints hash whole lines, so an edit beside a known copy would fail an unrelated PR.)
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,8 +43,10 @@ function scan(root) {
   }
 }
 
-// On Windows jscpd reports verbatim paths (\\?\C:\...), which `relative` can't relate to `root`.
-const path = (root, f) => relative(root, f.name.replace(/^\\\\\?\\/, "")).replaceAll("\\", "/");
+// On Windows jscpd reports verbatim long-name paths (\\?\C:\Users\runneradmin\...): drop the
+// prefix, and resolve `root` the same way in case it has short names (C:\Users\RUNNER~1).
+const path = (root, f) =>
+  relative(realpathSync.native(root), f.name.replace(/^\\\\\?\\/, "")).replaceAll("\\", "/");
 const kindOf = (clone) => (clone.kind === "exact" ? "exact" : "similar");
 const pairOf = (root, clone) =>
   [path(root, clone.firstFile), path(root, clone.secondFile)].sort().join(" <> ");
