@@ -9,10 +9,11 @@
 // is only a warning, since some patterns (one sqlx query per function) look alike on purpose.
 // In GitHub Actions both are written as annotations on the PR's lines.
 //
-// The baseline holds how many tokens each pair of files shares, rather than jscpd's fingerprints,
-// which hash whole lines: editing text beside a known copy would change them and fail an unrelated
-// PR. Copying more code into a pair raises its total even when jscpd merges it into a known clone;
-// editing a copy only splits or shrinks it.
+// The baseline keeps, per pair of files, the text each accepted copy matched (whitespace removed).
+// A clone is known when both of its sides are part of an accepted text: editing a copy only splits
+// or shrinks it, and text beside it doesn't count. A new copy, or one jscpd merges into a known
+// clone by extending it, isn't. (jscpd's own fingerprints hash whole lines, so an edit beside a
+// known copy would fail an unrelated PR.)
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,28 +40,47 @@ const kindOf = (clone) => (clone.kind === "exact" ? "exact" : "similar");
 const pairOf = (root, clone) =>
   [path(root, clone.firstFile), path(root, clone.secondFile)].sort().join(" <> ");
 
-/** How many duplicated tokens of each kind every pair of files shares. */
-function count(root, clones) {
-  const counts = { exact: {}, similar: {} };
-  for (const c of clones) {
-    const byPair = counts[kindOf(c)];
-    const pair = pairOf(root, c);
-    byPair[pair] = (byPair[pair] ?? 0) + c.tokens;
-  }
-  for (const kind of Object.keys(counts))
-    counts[kind] = Object.fromEntries(Object.entries(counts[kind]).sort());
-  return counts;
+/** The matched text of each side of a clone, whitespace removed. */
+function sidesOf(clone, read) {
+  return [clone.firstFile, clone.secondFile].map((f) =>
+    read(f.name).subarray(f.startLoc.position, f.endLoc.position).toString().replace(/\s+/g, ""),
+  );
 }
 
-/** Scans `root` with its .jscpd.json; returns the clones of pairs that share more than the baseline. */
+function reader() {
+  const files = new Map();
+  return (name) => {
+    if (!files.has(name)) files.set(name, readFileSync(name));
+    return files.get(name);
+  };
+}
+
+/** Every pair of files' accepted copies, by kind. */
+function accepted(root, clones) {
+  const read = reader();
+  const byKind = { exact: {}, similar: {} };
+  for (const c of clones) {
+    const texts = (byKind[kindOf(c)][pairOf(root, c)] ??= new Set());
+    for (const text of sidesOf(c, read)) texts.add(text);
+  }
+  for (const kind of Object.keys(byKind))
+    byKind[kind] = Object.fromEntries(
+      Object.entries(byKind[kind])
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([pair, texts]) => [pair, [...texts].sort()]),
+    );
+  return byKind;
+}
+
+/** Scans `root` with its .jscpd.json; returns the clones its baseline doesn't cover. */
 export function findNewClones(root = repoRoot) {
   const clones = scan(root);
   const file = join(root, BASELINE);
   const baseline = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-  const counts = count(root, clones);
+  const read = reader();
   const isNew = (c) => {
-    const pair = pairOf(root, c);
-    return counts[kindOf(c)][pair] > (baseline[kindOf(c)]?.[pair] ?? 0);
+    const known = baseline[kindOf(c)]?.[pairOf(root, c)] ?? [];
+    return !sidesOf(c, read).every((side) => known.some((text) => text.includes(side)));
   };
   const found = clones.filter(isNew);
   return {
@@ -71,7 +91,7 @@ export function findNewClones(root = repoRoot) {
 }
 
 export function updateBaseline(root = repoRoot) {
-  writeFileSync(join(root, BASELINE), JSON.stringify(count(root, scan(root)), null, 2) + "\n");
+  writeFileSync(join(root, BASELINE), JSON.stringify(accepted(root, scan(root)), null, 2) + "\n");
 }
 
 const where = (root, f) => `${path(root, f)}:${f.startLoc.line}`;
@@ -112,7 +132,7 @@ function main() {
   for (const c of exact) console.error(`duplicated: ${describe(c)}`);
   if (exact.length > 0) {
     console.error(
-      `\n${exact.length} new copied block(s) in file pairs that now share more code than before. Reuse or extract the shared code; if the copy is ` +
+      `\n${exact.length} new new block(s) of copied code. Reuse or extract the shared code; if the copy is ` +
         "deliberate, run `npm run dupes:update` and commit .duplication-baseline.json.",
     );
     return 1;
