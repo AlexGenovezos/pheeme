@@ -4,6 +4,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
+import { Modal } from "../components/ui/Modal";
 import { Skeleton } from "../components/ui/Skeleton";
 import { Switch } from "../components/ui/Switch";
 import { TextInput } from "../components/ui/TextInput";
@@ -99,11 +100,19 @@ function ActivityCall({ call }: { call: AssistantActivity }) {
   );
 }
 
+/** The one-time command for a client just connected, in a dialog over Settings so the page keeps its size. */
 function Connected({ added, url, onDone }: { added: NewAssistant; url: string; onDone(): void }) {
   const [copied, setCopied] = useState(false);
   const command = claudeCommand(url, added.token);
   return (
-    <div className="settings-assistant__connect">
+    <Modal
+      title={`Connect ${added.client.name}`}
+      titleId="settings-assistant-connect-title"
+      onClose={onDone}
+      scrimClassName="settings-assistant__scrim"
+      className="settings-assistant__connect"
+      titleClassName="settings-assistant__connect-title"
+    >
       <p className="settings-assistant__hint">
         Run this in a terminal to add Pheeme to Claude Code. The token is shown only now; if you
         lose it, connect the client again.
@@ -115,10 +124,14 @@ function Connected({ added, url, onDone }: { added: NewAssistant; url: string; o
         Other MCP clients: server URL <code>{url}</code>, header{" "}
         <code>Authorization: Bearer {added.token}</code>.
       </p>
-      <div className="settings-assistant__actions">
+      <div className="settings-assistant__actions settings-assistant__actions--end">
+        <Button size="sm" onClick={onDone}>
+          Done
+        </Button>
         <Button
           size="sm"
           variant="primary"
+          data-autofocus=""
           onClick={() =>
             void navigator.clipboard.writeText(command).then(
               () => setCopied(true),
@@ -128,11 +141,8 @@ function Connected({ added, url, onDone }: { added: NewAssistant; url: string; o
         >
           {copied ? "Copied" : "Copy command"}
         </Button>
-        <Button size="sm" onClick={onDone}>
-          Done
-        </Button>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -308,33 +318,29 @@ export function AssistantSettings() {
         </div>
       </SettingsSection>
       <SettingsSection title="Connected clients">
-        {added && status ? (
-          <Connected added={added} url={status.server.url} onDone={() => setAdded(null)} />
-        ) : (
-          <SettingsRow
-            title="Connect a client"
-            description="Name it, then copy the command Pheeme gives you."
-            control={
-              <form
-                className="settings-assistant__actions"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void connect();
-                }}
-              >
-                <TextInput
-                  aria-label="Client name"
-                  value={name}
-                  maxLength={60}
-                  onChange={(e) => setName(e.target.value)}
-                />
-                <Button size="sm" type="submit" disabled={status === null || busy || !name.trim()}>
-                  Connect
-                </Button>
-              </form>
-            }
-          />
-        )}
+        <SettingsRow
+          title="Connect a client"
+          description="Name it, then copy the command Pheeme gives you."
+          control={
+            <form
+              className="settings-assistant__actions"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void connect();
+              }}
+            >
+              <TextInput
+                aria-label="Client name"
+                value={name}
+                maxLength={60}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <Button size="sm" type="submit" disabled={status === null || busy || !name.trim()}>
+                Connect
+              </Button>
+            </form>
+          }
+        />
         {/* Last on the page, so the list growing once it loads moves nothing. */}
         {status?.clients.map((c) => (
           <SettingsRow
@@ -351,6 +357,9 @@ export function AssistantSettings() {
           />
         ))}
       </SettingsSection>
+      {added && status && (
+        <Connected added={added} url={status.server.url} onDone={() => setAdded(null)} />
+      )}
     </>
   );
 }

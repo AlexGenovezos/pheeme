@@ -872,11 +872,41 @@
 }
 
 /* AI assistants (src/settings/AssistantSettings.tsx). */
+/* The one-time command opens over Settings, so connecting never resizes the page. */
+.settings-assistant__scrim {
+  position: fixed;
+  inset: var(--space-0);
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  padding: var(--settings-margin);
+  background: var(--color-scrim);
+}
+
 .settings-assistant__connect {
   display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4) var(--space-4);
+  gap: var(--space-3);
+  width: var(--settings-connect-width);
+  max-width: 100%;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-pane-bg);
+  box-shadow: var(--shadow-overlay);
   font-size: var(--font-size-md);
+}
+.settings-assistant__connect:focus-visible {
+  outline: none;
+}
+
+.settings-assistant__connect-title {
+  margin: var(--space-0);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.settings-assistant__actions--end {
+  justify-content: flex-end;
 }
 
 .settings-assistant__hint {

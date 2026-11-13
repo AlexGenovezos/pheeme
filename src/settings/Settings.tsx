@@ -59,7 +59,12 @@ function SettingsDialog({ pages }: { pages: SettingsPageDef[] }) {
       if (e.key === "Escape") {
         e.preventDefault();
         close();
-      } else if (e.key === "/" && !isEditableTarget(e.target)) {
+      } else if (
+        e.key === "/" &&
+        !isEditableTarget(e.target) &&
+        // Not from a dialog opened over Settings: focus would leave it for the search behind.
+        !(e.target instanceof Element && e.target.closest("[data-owns-keys]"))
+      ) {
         e.preventDefault();
         searchRef.current?.focus();
       }
@@ -70,7 +75,8 @@ function SettingsDialog({ pages }: { pages: SettingsPageDef[] }) {
 
   // Keep Tab inside the dialog.
   const trapTab = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== "Tab") return;
+    // A dialog opened over Settings keeps Tab in itself.
+    if (e.key !== "Tab" || e.defaultPrevented) return;
     const items = [...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
     if (!items.length) return;
     const first = items[0];
