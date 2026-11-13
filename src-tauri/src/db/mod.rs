@@ -36,6 +36,11 @@ pub async fn init_db(data_dir: &Path) -> Result<SqlitePool> {
         .create_if_missing(true)
         .foreign_keys(true)
         .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
+    // Tests open hundreds of throwaway databases, and flushing every commit to disk made each
+    // take ~0.4 s on Linux and much longer on Windows (Rust tests ran 163 s there, 19 s on
+    // Linux). Only a power cut can lose an unflushed commit, which no test survives anyway.
+    #[cfg(test)]
+    let options = options.synchronous(sqlx::sqlite::SqliteSynchronous::Off);
 
     let pool = SqlitePool::connect_with(options).await?;
 

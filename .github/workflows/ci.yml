@@ -19,8 +19,10 @@ env:
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
-  checks:
-    name: Checks (${{ matrix.os }})
+  # The frontend and Rust halves run as separate jobs so neither waits for the other: in one
+  # job, vitest (~1.5 min) and the Rust tests (~3-4.5 min) ran back to back.
+  web:
+    name: Web checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -30,9 +32,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-build
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          cache-key: ${{ matrix.os || 'ubuntu-22.04' }}-debug
+          node-version-file: .nvmrc
+          cache: npm
       - run: npm ci
       - run: npm run version:check
       - run: npm run typecheck
@@ -69,6 +72,27 @@ jobs:
           retention-days: 7
       - run: node --test .github/scripts/labels.test.cjs
       - run: npx vite build
+
+  rust:
+    name: Rust checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+        # The Linux cache was renamed from ubuntu-22.04-debug, which held only the SQLx job's
+        # type-check output: rust-cache never re-saves a key it restored exactly.
+        include:
+          - os: ubuntu-22.04
+            cache-key: ubuntu-22.04-dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-build
+        with:
+          node: "false"
+          cache-key: ${{ matrix.cache-key || format('{0}-debug', matrix.os) }}
       - name: Rust formatting
         working-directory: src-tauri
         run: cargo fmt --check
@@ -85,6 +109,26 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked -- --ignored keyring_store_round_trip_on_this_os
 
+  # The ruleset on main requires "Checks (<os>)", the job before it was split in two. Each one
+  # passes only when every web and Rust job did: it always runs, because a skipped required
+  # check counts as passed.
+  checks:
+    name: Checks (${{ matrix.os }})
+    needs: [web, rust]
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+    steps:
+      - name: Web and Rust checks passed
+        env:
+          WEB: ${{ needs.web.result }}
+          RUST: ${{ needs.rust.result }}
+        run: |
+          echo "Web checks: $WEB, Rust checks: $RUST"
+          [ "$WEB" = success ] && [ "$RUST" = success ]
+
   sqlx-cache:
     name: SQLx offline cache
     runs-on: ubuntu-22.04
@@ -95,7 +139,10 @@ jobs:
       - uses: ./.github/actions/setup-build
         with:
           node: "false"
-          cache-key: ubuntu-22.04-debug
+          cache-key: ubuntu-22.04-dev
+          # Never saved: this job only type-checks, and finishing first, it won the race to
+          # save the shared cache, so every Linux build after it recompiled all ~470 crates.
+          save-if: "false"
       # sqlx-cli has no prebuilt binary, so it's built once and cached (the build took ~105s).
       - id: sqlx-cli
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -118,20 +165,23 @@ jobs:
 
   bundle:
     name: Bundle (${{ matrix.os }})
-    # Runs alongside `checks` rather than after it: waiting cost ~4 min per PR.
+    # Runs alongside the checks rather than after them: waiting cost ~4 min per PR.
     if: github.event_name == 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-22.04]
+        include:
+          - os: ubuntu-22.04
+            cache-key: ubuntu-22.04-dev
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-build
         with:
-          cache-key: ${{ matrix.os || 'ubuntu-22.04' }}-debug
+          cache-key: ${{ matrix.cache-key || format('{0}-debug', matrix.os) }}
       - run: npm ci
       - name: Bundle (deb)
         if: matrix.os == 'ubuntu-22.04'
