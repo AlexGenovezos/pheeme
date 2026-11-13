@@ -75,10 +75,15 @@ chrono-tz = "0.10"
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 gungraun = { version = "0.20.0", features = ["act"], optional = true }
+# Turns on spell checking in the webview (already in the tree via wry).
+webkit2gtk = "2.0"
 
 # Same major as keyring's apple-native backend, to recognise its macOS error codes.
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"
+# Registers the default that turns on WKWebView spell checking (already in the tree via tao and wry).
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDictionary", "NSObject", "NSString", "NSUserDefaults", "NSValue"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winrt-notification = { package = "tauri-winrt-notification", version = "0.7" }
