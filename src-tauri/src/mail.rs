@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 pub const DEFAULT_PAGE: i64 = 50;
@@ -484,6 +484,8 @@ pub struct MailService {
     attachments: AttachmentCache,
     opens: Arc<OpenTimings>,
     shown: Arc<ShownTimings>,
+    /// Each account's last label counts and the version of its threads they were counted at.
+    label_counts: Arc<Mutex<HashMap<String, threads::LabelCounts>>>,
 }
 
 impl MailService {
@@ -495,6 +497,7 @@ impl MailService {
             attachments,
             opens: Arc::default(),
             shown: Arc::default(),
+            label_counts: Arc::default(),
         }
     }
 
@@ -826,9 +829,27 @@ impl MailService {
     }
 
     /// Unread and total conversations per label of one account, counted from the cache.
+    /// Counted again only when the account's threads changed since the last count.
     pub async fn label_counts(&self, account_id: &str) -> Result<Vec<LabelCountDto>, MailError> {
-        Ok(threads::label_counts(&self.db, account_id)
-            .await?
+        let cached = self.cached_label_counts().get(account_id).cloned();
+        let known = cached.as_ref().map(|c| c.version);
+        let counts = match threads::label_counts(&self.db, account_id, known).await? {
+            Some(fresh) => {
+                let mut cache = self.cached_label_counts();
+                // A slower count of an older version mustn't replace a newer one.
+                if cache
+                    .get(account_id)
+                    .is_none_or(|c| c.version < fresh.version)
+                {
+                    cache.insert(account_id.to_owned(), fresh.clone());
+                }
+                fresh
+            }
+            // Unchanged since `cached` was counted (`None` comes only for a known version).
+            None => cached.unwrap_or_default(),
+        };
+        Ok(counts
+            .counts
             .into_iter()
             .map(|c| LabelCountDto {
                 label_id: c.label_id,
@@ -836,6 +857,14 @@ impl MailService {
                 total: c.total,
             })
             .collect())
+    }
+
+    fn cached_label_counts(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<String, threads::LabelCounts>> {
+        self.label_counts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Add/remove labels on whole threads (archive = remove `INBOX`, read = remove
@@ -1804,6 +1833,33 @@ mod tests {
         assert_eq!(count("INBOX"), Some((3, 4)));
         assert_eq!(count("Label_1"), Some((1, 1)));
         assert_eq!(count("CATEGORY_SOCIAL"), Some((0, 1)));
+    }
+
+    #[tokio::test]
+    async fn label_counts_count_again_only_after_a_change() {
+        let (db, _, _, mail) = events_fixture(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"])).await;
+        let inbox = |counts: Vec<LabelCountDto>| {
+            counts
+                .into_iter()
+                .find(|c| c.label_id == "INBOX")
+                .map(|c| (c.unread, c.total))
+        };
+        assert_eq!(inbox(mail.label_counts("a1").await.unwrap()), Some((1, 1)));
+
+        // A row gone behind the service's back (no version bump) isn't seen, so neither a
+        // repeat nor a sync that brings nothing new counts again.
+        sqlx::query("DELETE FROM thread_labels WHERE thread_id = 't1' AND label_id = 'INBOX'")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        mail.sync.engine("a1").run_incremental_sync().await.unwrap();
+        assert_eq!(inbox(mail.label_counts("a1").await.unwrap()), Some((1, 1)));
+
+        // A real change counts again.
+        mail.modify_threads("a1", &["t1".into()], &[], &["UNREAD".into()])
+            .await
+            .unwrap();
+        assert_eq!(inbox(mail.label_counts("a1").await.unwrap()), Some((0, 1)));
     }
 
     #[tokio::test]
