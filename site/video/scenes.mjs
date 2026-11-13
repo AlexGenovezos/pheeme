@@ -83,7 +83,7 @@ export default async function tour(d) {
   // Cursor coordinates are only right once the camera stops.
   for (const name of ["Primary", "Promotions", "Social"]) {
     await d.click(tab(name));
-    await app.getByRole("listbox", { name: `${name} conversations` }).waitFor({ timeout: 5000 });
+    await d.until(app.getByRole("listbox", { name: `${name} conversations` }), `The ${name} tab`);
     await d.wait(900);
   }
   await d.hideCursor();
@@ -112,7 +112,7 @@ export default async function tour(d) {
   await d.focus({ x: 220, y: 0, width: 760, height: 420 }, { max: 2, ms: 900 });
   await d.press("/", { hold: 500 });
   await d.type("lisbon", { delay: 110 });
-  await app.getByRole("option").filter({ hasText: "Lisbon in March" }).first().waitFor({ timeout: 5000 });
+  await d.until(app.getByRole("option").filter({ hasText: "Lisbon in March" }).first(), "The search result");
   await d.wait(1600);
 
   // ---- End card ----

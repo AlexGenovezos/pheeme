@@ -1,6 +1,11 @@
 // Records the product video from the built site: serves site/dist (with the
-// demo app) plus this folder, plays scenes.mjs on the stage in Chromium,
-// captures the frames, and encodes them with ffmpeg.
+// demo app) plus this folder, plays scenes.mjs on the stage in Chromium a
+// frame at a time, and encodes the frames with ffmpeg.
+//
+// Nothing runs in real time while filming. Each frame moves the page's clock
+// (timers, requestAnimationFrame, Date) and every CSS animation and transition
+// on by exactly 1/30 s, then takes a screenshot, so motion is smooth however
+// slow the machine is.
 //
 //   npm run build:site && npm run video:site
 //
@@ -37,6 +42,7 @@ const FPS = 30;
 // The video's "now": a Wednesday morning, so "Friday" lands in the week shown
 // and every recording shows the same dates.
 const NOW = "2026-11-11T09:41:00-05:00";
+const FRAME_MS = 1000 / FPS;
 const TIMEZONE = "America/New_York";
 
 const TYPES = {
@@ -109,6 +115,8 @@ try {
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  // The demo's sample mail is dated from when it loads. Setup runs on a flowing
+  // clock; filming pauses it a moment later.
   await page.clock.install({ time: new Date(NOW) });
   await page.goto(`${origin}/__video/stage.html`);
   await page.evaluate(() => document.fonts.ready);
@@ -124,30 +132,57 @@ try {
   await list.evaluate((el) => el.focus({ preventScroll: true }));
   await page.evaluate(() => window.stage.shot("below", 0));
   await page.waitForTimeout(500);
-
-  let count = 0;
-  const times = [];
-  const writes = [];
-  await page.screencast.start({
-    size: { width: W, height: H },
-    quality: 92,
-    fps: FPS,
-    onFrame: ({ data }) => {
-      const name = join(frames, `${String(count++).padStart(6, "0")}.jpg`);
-      times.push(performance.now());
-      writes.push(writeFile(name, data));
-    },
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+  // From here the stage's CSS animations and transitions only move when a frame
+  // says so. The frozen timeline keeps one that starts between two frames at
+  // its start, so a short transition can't finish before a frame sees it.
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+  await page.evaluate(() => {
+    const born = new WeakMap();
+    window.__film = (t) => {
+      const docs = [document, ...[...document.querySelectorAll("iframe")].map((f) => f.contentDocument)];
+      for (const doc of docs) {
+        if (!doc) continue;
+        for (const a of doc.getAnimations()) {
+          // An animation first seen at this frame starts at this frame.
+          if (!born.has(a)) {
+            born.set(a, t);
+            a.pause();
+          }
+          a.currentTime = t - born.get(a);
+        }
+      }
+    };
+    window.__film(0);
   });
-  // Chrome takes a moment to send the first frames; the video starts after that.
-  const asked = performance.now();
-  while (count === 0) {
-    if (performance.now() - asked > 15_000) throw new Error("No frames came from the screencast.");
-    await page.waitForTimeout(50);
-  }
-  await page.waitForTimeout(300);
-  const start = performance.now();
-  console.log(`First frame after ${Math.round(times[0] - asked)} ms.`);
-  const director = new Director(page, app);
+
+  let frame = 0;
+  const writes = [];
+  const film = {
+    frame: FRAME_MS,
+    now: () => frame * FRAME_MS,
+    /** Films frames until `ms` more of the video has passed. */
+    async advance(ms) {
+      const last = Math.round((frame * FRAME_MS + ms) / FRAME_MS);
+      while (frame < last) {
+        const ran = Math.round(frame * FRAME_MS);
+        frame++;
+        const t = frame * FRAME_MS;
+        await page.clock.runFor(Math.round(t) - ran);
+        await page.evaluate((at) => window.__film(at), t);
+        const { data } = await cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 92 });
+        writes.push(writeFile(join(frames, `${String(frame).padStart(6, "0")}.jpg`), data, "base64"));
+        if (frame % (FPS * 5) === 0) {
+          await Promise.all(writes.splice(0));
+          console.log(`  ${(t / 1000).toFixed(0)} s filmed`);
+        }
+      }
+    },
+  };
+  const started = performance.now();
+  const director = new Director(page, app, film);
   try {
     await tour(director);
   } catch (error) {
@@ -157,32 +192,17 @@ try {
     console.error(`The storyboard stopped; the stage at that moment: ${join(opts.out, "failure.png")}`);
     throw error;
   }
-  const end = performance.now();
-  await page.screencast.stop();
   await Promise.all(writes);
   if (errors.length) throw new Error(`The page threw while recording:\n${errors.join("\n")}`);
-  if (count < 10) throw new Error(`Only ${count} frames were captured.`);
-
-  // Frames arrive when the page changes, so each one lasts until the next.
-  // Each image is read at the output rate: the default (25) would round frame times to 40 ms.
-  const image = (i) => [`file ${String(i).padStart(6, "0")}.jpg`, `option framerate ${FPS}`];
-  // The video starts with the last frame from before the storyboard began.
-  const first = Math.max(0, times.findLastIndex((t) => t <= start));
-  const lines = ["ffconcat version 1.0"];
-  for (let i = first; i < count; i++) {
-    const from = Math.max(times[i], start);
-    const next = i + 1 < count ? times[i + 1] : end;
-    lines.push(...image(i), `duration ${((next - from) / 1000).toFixed(4)}`);
-  }
-  lines.push(...image(count - 1));
-  await writeFile(join(frames, "frames.txt"), lines.join("\n"));
+  if (frame < 10) throw new Error(`Only ${frame} frames were filmed.`);
+  console.log(`Filmed ${frame} frames in ${((performance.now() - started) / 1000).toFixed(0)} s.`);
 
   await mkdir(opts.out, { recursive: true });
   const mp4 = join(opts.out, "pheeme-tour.mp4");
   await run("ffmpeg", [
     "-y", "-loglevel", "error",
-    "-f", "concat", "-safe", "0", "-i", join(frames, "frames.txt"),
-    "-vf", `scale=${W}:${H}:flags=lanczos,fps=${FPS},format=yuv420p`,
+    "-framerate", String(FPS), "-start_number", "1", "-i", join(frames, "%06d.jpg"),
+    "-vf", `scale=${W}:${H}:flags=lanczos,format=yuv420p`,
     "-c:v", "libx264", "-preset", "slow", "-crf", "21", "-tune", "animation",
     "-movflags", "+faststart", "-an",
     mp4,
@@ -192,7 +212,7 @@ try {
   await writeFile(join(opts.out, "pheeme-tour.jpg"), director.poster);
 
   // What each part of the video says, for screen readers (a descriptions track).
-  const recorded = end - start;
+  const recorded = film.now();
   const cues = director.chapters.map((c, i) => {
     const next = director.chapters[i + 1]?.at ?? recorded;
     return `${i + 1}\n${vttTime(c.at)} --> ${vttTime(next)}\n${c.text}`;
@@ -200,7 +220,7 @@ try {
   await writeFile(join(opts.out, "pheeme-tour.vtt"), `WEBVTT\n\n${cues.join("\n\n")}\n`);
 
   const size = (await stat(mp4)).size;
-  console.log(`${mp4}: ${(recorded / 1000).toFixed(1)} s, ${count} frames, ${(size / 1e6).toFixed(1)} MB`);
+  console.log(`${mp4}: ${(recorded / 1000).toFixed(1)} s, ${frame} frames, ${(size / 1e6).toFixed(1)} MB`);
 } finally {
   await browser.close();
   server.close();
