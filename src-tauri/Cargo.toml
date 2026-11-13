@@ -1,6 +1,6 @@
 [package]
 name = "pheeme"
-version = "0.23.0"
+version = "0.24.0"
 description = "Pheeme: an open-source desktop Gmail client"
 license = "MIT"
 authors = []
