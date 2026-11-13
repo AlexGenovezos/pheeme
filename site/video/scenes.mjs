@@ -259,16 +259,17 @@ export default async function tour(d) {
   const tiles = stats.locator(".stats__tiles");
   await d.until(tiles.getByText(/\d/).first(), "Mail stats");
   await d.hideCursor();
-  // With the view tabs at the top right in the shot.
-  const views = stats.getByRole("radiogroup", { name: "View" });
-  await d.focus([tiles, stats.getByRole("region", { name: "Received over time" }), views], { max: 1.8, ms: 1000 });
+  // With the time range at the top right in the shot.
+  const range = stats.getByRole("radiogroup", { name: "Time range" });
+  await d.focus([tiles, stats.getByRole("region", { name: "Received over time" }), range], { max: 1.8, ms: 1000 });
   await say(WORDS.stats, 2400);
   await d.shot("wide", 700);
-  await d.click(stats.getByRole("radio", { name: "Senders" }));
+  // Further down the same page: who sends the most.
   const senders = stats.getByRole("region", { name: "Top senders" });
   await d.until(senders, "Top senders");
-  await d.hideCursor();
-  await d.focus([senders, views], { max: 1.8, ms: 1000 });
+  await senders.evaluate((el) => el.scrollIntoView({ behavior: "smooth", block: "start" }));
+  await d.wait(900);
+  await d.focus([senders, range], { max: 1.8, ms: 1000 });
   await say(WORDS.senders, 2400);
   await d.note();
   await d.shot("wide", 900);
