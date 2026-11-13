@@ -252,8 +252,6 @@ interface ApplyOptions {
    * under the title.
    */
   announce?: { title: string; undo?: Change; note?: string };
-  /** Opening a thread marks it read without disturbing the selection. */
-  keepChecked?: boolean;
   /** Hold the command (not the list change) until this resolves; `false` drops it and reloads the list. */
   after?: Promise<boolean>;
   /** An explicit read, unread, archive or delete: a pending automatic read of these conversations is dropped. */
@@ -277,7 +275,7 @@ function apply(
 function applyChange(
   keys: ThreadKey[] | undefined,
   change: Change,
-  { announce, keepChecked, after, cancelsAutoRead, evenIfGone }: ApplyOptions = {},
+  { announce, after, cancelsAutoRead, evenIfGone }: ApplyOptions = {},
 ): Promise<boolean> {
   const rows = present(keys);
   const rowKeys = evenIfGone && keys ? [...new Set(keys)] : rows.map((r) => r.key);
@@ -299,6 +297,9 @@ function applyChange(
     const next = nextAfter(ui().openThread, removed);
     const nextCursor = nextAfter(ui().cursor, removed);
     mail().remove(rowKeys, op);
+    // Rows that leave are unchecked; a change that keeps them in the list keeps the selection, so the same
+    // conversations can be acted on again (mark read, then archive).
+    ui().uncheck(rowKeys);
     if (next === null) ui().setOpenThread(null);
     else if (next !== undefined) openAndMarkRead(next);
     if (nextCursor !== undefined) ui().setCursor(nextCursor);
@@ -306,7 +307,6 @@ function applyChange(
   const patchDetail = change.detail;
   if (patchDetail)
     for (const key of rowKeys) useThreadStore.getState().patchDetail(key, patchDetail, op);
-  if (!keepChecked) ui().clearChecked();
 
   const go = () => send(groups, change, op);
   const drop = () => {
@@ -799,7 +799,7 @@ export function openAndMarkRead(
       const detail = useThreadStore.getState().details.get(key);
       return !!detail?.messages.some((m) => m.labelIds.includes("UNREAD"));
     });
-  void apply([key], readChange(true), { keepChecked: true, after: wanted, evenIfGone: !row });
+  void apply([key], readChange(true), { after: wanted, evenIfGone: !row });
 }
 
 /**

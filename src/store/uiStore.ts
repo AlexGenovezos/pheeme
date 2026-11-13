@@ -185,6 +185,8 @@ interface UiState extends PaneLayout, NavPrefs {
   /** Check every row in `keys` (select all loaded rows). */
   checkAll(keys: ThreadKey[]): void;
   clearChecked(): void;
+  /** Uncheck `keys` (conversations that left the list), keeping the rest of the selection. */
+  uncheck(keys: ThreadKey[]): void;
   toggleAccountCollapsed(accountId: string): void;
   /** Fold or unfold a label's sublabels in the sidebar (`path` is the label's full name). */
   toggleLabelFold(accountId: string, path: string): void;
@@ -333,6 +335,14 @@ export const useUiStore = create<UiState>((set, get) => {
       }),
     checkAll: (keys) => set({ checked: [...keys], anchor: keys[keys.length - 1] ?? null }),
     clearChecked: () => set({ checked: [], anchor: null }),
+    uncheck: (keys) =>
+      set((s) => {
+        const gone = new Set(keys);
+        return {
+          checked: s.checked.filter((k) => !gone.has(k)),
+          anchor: s.anchor !== null && gone.has(s.anchor) ? null : s.anchor,
+        };
+      }),
     forgetAccount: (id, remaining) => {
       const s = get();
       if (s.searchAccountId === id) set({ searchText: "", searchAccountId: null });
