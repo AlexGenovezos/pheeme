@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "workers/diagnostics/src/index.ts",
+    "scripts/**/*.{mjs,js}",
+    "site/scripts/*.mjs",
+    "site/video/*.{mjs,js}",
+    "site/public/*.js",
+    "src-tauri/src/mods/bootstrap.js",
+    "examples/mods/*/main.js"
+  ],
+  "ignore": ["sdk/pheeme.d.ts", "scripts/release-notes.d.mts"],
+  "ignoreExportsUsedInFile": true,
+  "ignoreDependencies": ["@fontsource-variable/ibm-plex-sans", "playwright"],
+  "ignoreBinaries": ["wrangler", "tauri-driver", "magick"]
+}

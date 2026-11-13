@@ -18,7 +18,6 @@ import {
 } from "../mail/actions";
 import { mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
 import { ThreadList } from "../mail/ThreadList";
-import { senderOf } from "../mail/ThreadRow";
 import type { RowAction } from "../mail/ThreadRow";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
@@ -31,8 +30,6 @@ export { SEARCH_INPUT_ID };
 /** Placeholder until the mail UI (Phase 6) wires real actions. */
 export const notYet = (action: string) =>
   toast({ title: `${action} isn't wired up yet`, description: "It arrives with the mail UI." });
-
-export { senderOf };
 
 const onRowAction = (action: RowAction, t: ThreadSummary) => {
   const keys = [threadKey(t.accountId, t.id)];

@@ -45,7 +45,6 @@ export const beginOauth = (client: ClientChoice) => invoke<SignInStart>("begin_o
 /** Resolves when the browser sign-in finishes; rejects on failure, timeout or cancel. */
 export const completeOauth = (flowId: string) => invoke<AccountInfo>("complete_oauth", { flowId });
 export const cancelOauth = (flowId: string) => invoke<void>("cancel_oauth", { flowId });
-export const refreshToken = (accountId: string) => invoke<void>("refresh_token", { accountId });
 export const listAccounts = () => invoke<AccountInfo[]>("list_accounts");
 export const removeAccount = (accountId: string) => invoke<void>("remove_account", { accountId });
 /** Opens an allow-listed https URL (Google, Pheeme) in the default browser. */
@@ -695,7 +694,6 @@ export const stageAttachment = (path: string) =>
 export const discardAttachments = (ids: string[]) => invoke<void>("discard_attachments", { ids });
 export const saveDraft = (accountId: string, message: ComposeDraft) =>
   invoke<SavedDraft>("save_draft", { accountId, message });
-export const getDrafts = (accountId: string) => invoke<DraftSummary[]>("get_drafts", { accountId });
 /** Open the draft behind a message in Drafts. */
 export const openDraft = (accountId: string, messageId: string) =>
   invoke<ComposeDraft>("open_draft", { accountId, messageId });
@@ -706,9 +704,6 @@ export const sendEmail = (accountId: string, message: ComposeDraft, undoMs?: num
   invoke<QueuedSend>("send_email", { accountId, message, undoMs: undoMs ?? null });
 /** Undo send: true if stopped before it left. */
 export const cancelSend = (opId: string) => invoke<boolean>("cancel_send", { opId });
-
-export const syncNow = (accountId?: string | null) =>
-  invoke<void>("sync_now", { accountId: accountId ?? null });
 
 export interface SyncProgress {
   accountId: string;
