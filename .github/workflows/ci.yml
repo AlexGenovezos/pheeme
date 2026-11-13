@@ -109,6 +109,26 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked -- --ignored keyring_store_round_trip_on_this_os
 
+  # The ruleset on main requires "Checks (<os>)", the job before it was split in two. Each one
+  # passes only when every web and Rust job did: it always runs, because a skipped required
+  # check counts as passed.
+  checks:
+    name: Checks (${{ matrix.os }})
+    needs: [web, rust]
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+    steps:
+      - name: Web and Rust checks passed
+        env:
+          WEB: ${{ needs.web.result }}
+          RUST: ${{ needs.rust.result }}
+        run: |
+          echo "Web checks: $WEB, Rust checks: $RUST"
+          [ "$WEB" = success ] && [ "$RUST" = success ]
+
   sqlx-cache:
     name: SQLx offline cache
     runs-on: ubuntu-22.04
