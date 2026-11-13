@@ -1,6 +1,7 @@
 import { Lock, RefreshCw, Wallet } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
+import { Modal } from "../components/ui/Modal";
 import { TextInput } from "../components/ui/TextInput";
 import { type AccountInfo, type ClientChoice, type CommandError, openExternal } from "../lib/tauri";
 import { parseClientJson } from "./clientJson";
@@ -75,6 +76,13 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect, tutorial
     if (firstRun && state.phase === "connected") clearProgress();
   }, [firstRun, state.phase]);
 
+  // In the dialog, a new step replaces the focused button: keep focus (and Escape, Tab) inside it.
+  const pageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const dialog = pageRef.current?.closest<HTMLElement>('[role="dialog"]');
+    if (dialog && !dialog.contains(document.activeElement)) dialog.focus();
+  }, [view]);
+
   const reconnectId = reconnect?.id;
   useEffect(() => {
     if (reconnectId) void startSignIn({ kind: "reconnect", accountId: reconnectId });
@@ -119,8 +127,8 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect, tutorial
 
   const showRail = guide && view !== "choose" && view !== "receive" && view !== "receiving";
 
-  return (
-    <div className={`onboarding${showRail ? "" : " onboarding--single"}`}>
+  const page = (
+    <div ref={pageRef} className={`onboarding${showRail ? "" : " onboarding--single"}`}>
       {showRail && <Rail current={view} onSelect={goTo} />}
       <main className="onboarding-main">
         <div className="onboarding-content" key={view}>
@@ -243,6 +251,22 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect, tutorial
         )}
       </main>
     </div>
+  );
+  if (!onClose) return page;
+
+  // With an account already connected, setup is a dialog the size of Settings over the app, not
+  // the whole window. Dismissing it once the account is in counts as continuing.
+  return (
+    <Modal
+      title={reconnect ? "Sign in again" : tutorial ? "Setup guide" : "Add account"}
+      titleId="onboarding-dialog-title"
+      onClose={connected ? () => onConnected(connected) : onClose}
+      className="onboarding-dialog"
+      scrimClassName="settings-scrim"
+      titleClassName="onboarding-dialog__title"
+    >
+      {page}
+    </Modal>
   );
 }
 

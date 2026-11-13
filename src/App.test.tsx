@@ -6,6 +6,7 @@ import App from "./App";
 import type { ThreadDetail } from "./lib/tauri";
 import * as updater from "./lib/updater";
 import { parseThreadKey } from "./mail/mailboxes";
+import { useSetupGuide } from "./onboarding/guideStore";
 import { createPreviewHandlers } from "./preview/install";
 import { usePaletteStore } from "./palette/paletteStore";
 import { useSettingsStore } from "./settings/settingsStore";
@@ -94,8 +95,12 @@ test("with accounts it shows them and can add or remove one", async () => {
 
   fireEvent.click(within(dialog).getByRole("button", { name: "Add account" }));
   expect(screen.getByText("Add an account")).toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  // A dialog the size of Settings over the app, which stays behind it; Settings itself closes.
+  expect(screen.queryByRole("dialog", { name: /Settings/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: "Add account" })).toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: "Mailboxes" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
@@ -105,6 +110,34 @@ test("with accounts it shows them and can add or remove one", async () => {
   expect(calls).toContain("remove_account");
 });
 
+test("Escape closes the add-account dialog and leaves mail as it was", async () => {
+  mockIPC((cmd) => (cmd === "list_accounts" ? [account] : undefined));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  const settings = screen.getByRole("dialog", { name: /Settings/ });
+  fireEvent.click(within(settings).getByRole("button", { name: "Accounts" }));
+  fireEvent.click(within(settings).getByRole("button", { name: "Add account" }));
+  const dialog = screen.getByRole("dialog", { name: "Add account" });
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: "Mailboxes" })).toBeInTheDocument();
+});
+
+test("Escape still closes the setup dialog after moving to another step", async () => {
+  mockIPC((cmd) => (cmd === "list_accounts" ? [account] : undefined));
+  render(<App />);
+  await screen.findByRole("button", { name: "Settings" });
+  act(() => useSetupGuide.getState().open());
+  const next = screen.getByRole("button", { name: "Next" });
+  next.focus();
+  fireEvent.click(next);
+  expect(screen.queryByRole("heading", { name: "Create a Google Cloud project" })).toBeNull();
+  const dialog = screen.getByRole("dialog", { name: "Setup guide" });
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
 test("Settings › About › Open guide opens the setup tutorial, not the account chooser", async () => {
   mockIPC((cmd) => (cmd === "list_accounts" ? [account] : undefined));
   render(<App />);
@@ -112,7 +145,8 @@ test("Settings › About › Open guide opens the setup tutorial, not the accoun
   const dialog = screen.getByRole("dialog", { name: /Settings/ });
   fireEvent.click(within(dialog).getByRole("button", { name: "About" }));
   fireEvent.click(within(dialog).getByRole("button", { name: "Open guide" }));
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: /Settings/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: "Setup guide" })).toBeInTheDocument();
   expect(
     screen.getByRole("heading", { name: "Create a Google Cloud project" }),
   ).toBeInTheDocument();
