@@ -11,8 +11,6 @@ import {
 
 export type CalendarView = "day" | "week" | "month";
 
-export const CALENDAR_VIEWS: readonly CalendarView[] = ["day", "week", "month"];
-
 /** The days the view shows around `anchor`: one, a week, or the whole weeks covering its month. */
 export function visibleDays(view: CalendarView, anchor: string, weekStart: number): string[] {
   let first: string;
