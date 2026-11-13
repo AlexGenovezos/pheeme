@@ -64,6 +64,10 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow-x: clip;
 }
+/* Clip sideways overflow (the hero's postmark waves) here too: phones ignore the
+   body's clip when sizing the page and zoom out to fit whatever pokes past the edge.
+   clip, unlike hidden, keeps the scroll scenes' sticky panels working. */
+main { overflow-x: clip; }
 img { display: block; max-width: 100%; height: auto; }
 a { color: inherit; }
 h1, h2, h3 { margin: 0; font-weight: 650; text-wrap: balance; }
@@ -374,7 +378,7 @@ kbd {
   color: var(--muted); font-size: .92rem;
 }
 .foot img { height: 26px; width: auto; opacity: .85; }
-.foot nav { margin-left: auto; display: flex; gap: 1.5rem; }
+.foot nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; }
 .foot nav a { text-decoration: none; }
 .foot nav a:hover { color: var(--paper); }
 .foot .credit { flex-basis: 100%; font-size: .8rem; max-width: 80ch; }
@@ -401,7 +405,7 @@ kbd {
 .changelog .release h2 { margin-top: 0; font-size: var(--t-2); font-stretch: 80%; letter-spacing: -0.01em; }
 .changelog .release h2 a { color: var(--paper); text-decoration: none; }
 .changelog .release-notes p:first-child { color: var(--paper); font-size: 1.08rem; }
-.changelog .release-notes code { font-family: var(--mono); font-size: .82em; padding: .1em .35em; border-radius: 4px; background: var(--deep); }
+.changelog .release-notes code { overflow-wrap: anywhere; font-family: var(--mono); font-size: .82em; padding: .1em .35em; border-radius: 4px; background: var(--deep); }
 .changelog-status { color: var(--muted); }
 
 @keyframes blink { 50% { opacity: 0; } }
