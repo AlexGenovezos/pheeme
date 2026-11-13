@@ -6,7 +6,7 @@ name: Cache budget
 # Superseded caches don't count: they age out on their own.
 
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers] reads cache sizes through the API with actions: read; no checkout, no artifacts.
     workflows: [CI, Release, Performance]
     types: [completed]
     branches: [main]

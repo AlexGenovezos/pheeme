@@ -84,9 +84,13 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
+          # No npm install here, and a release job should never restore a cache it doesn't need.
+          package-manager-cache: false
       # Versions match the tag, and docs/releases/<tag>.md is written (no TODO or DRAFT left).
       - run: node scripts/release.mjs check "$GITHUB_REF_NAME"
 
@@ -139,6 +143,8 @@ jobs:
             args: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-build
         with:
           rust-targets: ${{ matrix.target || '' }}
@@ -181,6 +187,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
+          # No npm install here, and a release job should never restore a cache it doesn't need.
+          package-manager-cache: false
       - name: Write latest.json
         env:
           RELEASE_ID: ${{ needs.create-release.outputs.id }}

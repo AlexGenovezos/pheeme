@@ -1,9 +1,9 @@
 name: PR Vouch
 
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] checks out only the base branch's .github/scripts and never runs PR code.
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers] reads the comment body only to match /recheck-vouch.
     types: [created]
   push:
     branches:
@@ -14,8 +14,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   collect-targets:
@@ -71,6 +69,10 @@ jobs:
     needs: collect-targets
     if: ${{ needs.collect-targets.outputs.targets != '[]' }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     concurrency:
       group: pr-vouch-${{ matrix.target.number }}
       cancel-in-progress: true

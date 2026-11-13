@@ -1,0 +1,55 @@
+name: Security
+
+# Static checks that GitHub's own scanning (Dependabot, secret scanning, CodeQL) doesn't cover:
+# mistakes in these workflows (zizmor), and RustSec advisories, licences and crate sources
+# (cargo-deny). The weekly run surfaces advisories published while nothing was merged.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  zizmor:
+    name: Workflow audit (zizmor)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Settings and reviewed exceptions: .github/zizmor.yml and `# zizmor: ignore[...]` comments.
+      - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          # Fail the check instead of uploading to code scanning, so fork PRs work too.
+          advanced-security: false
+          annotations: true
+          min-severity: medium
+
+  cargo-deny:
+    name: Rust dependencies (cargo-deny)
+    runs-on: ubuntu-24.04
+    env:
+      # cargo-deny only reads `cargo metadata`; the runner's stable cargo saves installing the
+      # pinned toolchain.
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+        with:
+          tool: cargo-deny@0.20.2
+      # Config and reviewed advisory exceptions: src-tauri/deny.toml.
+      - name: cargo deny check
+        working-directory: src-tauri
+        run: cargo deny --locked check
