@@ -40,10 +40,6 @@ export const WORDS = {
   mcp: "A built-in MCP server, on your computer only",
   permissions: "You choose what assistants may change",
   connect: "Connect Claude Code with one command",
-  search: {
-    title: "Search answers as you type.",
-    text: "Mail on your computer answers first, then Gmail fills in the rest.",
-  },
   end: {
     title: "Free, open source, and yours.",
     text: "Your mail and calendar go from Google straight to your computer. No subscription, no servers in between.",
@@ -55,7 +51,7 @@ export const WORDS = {
  * The parts of the video, in order. `npm run video:site -- --scene settings` films only those
  * named (the rest still play, unfilmed, so the app is in the right state) for a quick look.
  */
-export const SCENES = ["title", "keyboard", "search", "tabs", "speed-reader", "calendar", "invite", "email-to-event", "settings", "end"];
+export const SCENES = ["title", "keyboard", "tabs", "speed-reader", "calendar", "invite", "email-to-event", "settings", "end"];
 
 /** @param {import("./director.mjs").Director} d */
 export default async function tour(d) {
@@ -109,20 +105,6 @@ export default async function tour(d) {
   await d.note();
   await d.shot("wide", 1000);
 
-  // ---- Search ----
-  d.scene("search");
-  d.chapter(`${WORDS.search.title} ${WORDS.search.text}`);
-  await d.headline(WORDS.search.title, WORDS.search.text);
-  // The search box and the first results, beside the start of the reading pane.
-  await d.focus({ x: 220, y: 0, width: 760, height: 420 }, { max: 2, ms: 900 });
-  await d.press("/", { hold: 500 });
-  await d.type("lisbon", { delay: 110 });
-  await d.until(app.getByRole("option").filter({ hasText: "Lisbon in March" }).first(), "The search result");
-  await d.wait(1600);
-  // Esc leaves search, back to the inbox.
-  await d.press("Escape", { hold: 600 });
-  await d.shot("wide", 1000);
-
   // ---- Gmail's own Inbox tabs ----
   d.scene("tabs");
   d.chapter(`${WORDS.tabs.title} ${WORDS.tabs.text}`);
@@ -133,12 +115,15 @@ export default async function tour(d) {
     max: 1.6,
     ms: 1100,
   });
-  // Cursor coordinates are only right once the camera stops.
-  for (const name of ["Primary", "Promotions", "Social"]) {
+  // Cursor coordinates are only right once the camera stops. Ends back in Primary on the long
+  // letter the speed reader reads next, so that scene doesn't have to go back and find it.
+  for (const name of ["Promotions", "Social", "Primary"]) {
     await d.click(tab(name));
     await d.until(app.getByRole("listbox", { name: `${name} conversations` }), `The ${name} tab`);
     await d.wait(900);
   }
+  await d.click(thread("Notes from the garden club"));
+  await d.wait(700);
   await d.hideCursor();
   await d.shot("wide", 1000);
 
@@ -146,9 +131,8 @@ export default async function tour(d) {
   d.scene("speed-reader");
   d.chapter(`${WORDS.speedRead.title} ${WORDS.speedRead.text}`);
   await d.headline(WORDS.speedRead.title, WORDS.speedRead.text);
-  await d.click(tab("Primary"));
-  await d.click(thread("Notes from the garden club"));
-  // The toolbar offers it on emails that are mostly prose.
+  // The tabs scene left the garden club's letter open. The toolbar offers it on emails that are
+  // mostly prose.
   await d.click(app.getByRole("button", { name: "Speed read", exact: true }));
   await d.hideCursor();
   const reader = app.getByRole("dialog", { name: /^Speed read:/ });
