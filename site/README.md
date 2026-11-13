@@ -26,7 +26,7 @@ Manual deploy: run `npm run build:site` from the repository root, then `wrangler
 
 ## Product video
 
-The one-minute tour on the home page (`/video/pheeme-tour.mp4`) is recorded from the demo app on every site build, so it always shows the current UI. Nobody edits video by hand: change the code and the next deploy re-records it.
+The 90-second tour on the home page (`/video/pheeme-tour.mp4`) is recorded from the demo app on every site build, so it always shows the current UI. Nobody edits video by hand: change the code and the next deploy re-records it.
 
 - `video/scenes.mjs` is the storyboard: the words on screen (`WORDS`) and, in order, what happens in the app: keys pressed, clicks, the camera zooming onto a part of the window. Edit this to change the story.
 - `video/director.mjs` holds the verbs the storyboard uses (`headline`, `focus`, `press`, `type`, `click`, `card`, …).
