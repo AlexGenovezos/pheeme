@@ -59,7 +59,12 @@ function SettingsDialog({ pages }: { pages: SettingsPageDef[] }) {
       if (e.key === "Escape") {
         e.preventDefault();
         close();
-      } else if (e.key === "/" && !isEditableTarget(e.target)) {
+      } else if (
+        e.key === "/" &&
+        !isEditableTarget(e.target) &&
+        // Not from a dialog opened over Settings: focus would leave it for the search behind.
+        !(e.target instanceof Element && e.target.closest("[data-owns-keys]"))
+      ) {
         e.preventDefault();
         searchRef.current?.focus();
       }
