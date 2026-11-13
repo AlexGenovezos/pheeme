@@ -30,6 +30,7 @@ import {
 import { usePaletteStore } from "../palette/paletteStore";
 import { useSettingsStore } from "../settings/settingsStore";
 import { speedReadOpenConversation } from "../speedread/open";
+import { useStatsStore } from "../stats/statsStore";
 import { useAccountStore } from "../store/accountStore";
 import { useInboxTabs } from "../store/inboxTabsStore";
 import { useUiStore } from "../store/uiStore";
@@ -64,6 +65,13 @@ export function appCommands(): Command[] {
       keywords: ["preferences", "options"],
       global: true,
       run: () => useSettingsStore.getState().openSettings(),
+    },
+    {
+      id: "stats.open",
+      title: "Mail stats",
+      group: "View",
+      keywords: ["statistics", "insights", "senders", "unsubscribe", "how much mail"],
+      run: () => useStatsStore.getState().openStats(),
     },
     {
       id: "settings.keyboard",

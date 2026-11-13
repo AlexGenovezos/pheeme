@@ -7,10 +7,8 @@ import {
   Mails,
   PanelLeftClose,
   Plus,
-  Settings,
   SquarePen,
   TriangleAlert,
-  UserPlus,
   WifiOff,
 } from "lucide-react";
 import {
@@ -25,7 +23,6 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { Avatar } from "../components/ui/Avatar";
 import { IconButton } from "../components/ui/IconButton";
 import { ListRow } from "../components/ui/ListRow";
 import { openColorPopover } from "../labels/ColorPopover";
@@ -63,10 +60,9 @@ import { useLabelStore } from "../store/labelStore";
 import { focusFromKeyboard } from "../keyboard/focus";
 import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
-import { useSettingsStore } from "../settings/settingsStore";
 import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
-import { ModeSwitch } from "../calendar/ModeSwitch";
+import { SidebarFooter } from "./SidebarFooter";
 import { Button } from "../components/ui/Button";
 import { describeShortcut } from "../keyboard/format";
 
@@ -663,8 +659,6 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const allInboxUnread = useLabelStore((s) => s.allInboxUnread);
   const errors = useAccountStore((s) => s.syncErrors);
-  const openSettings = useSettingsStore((s) => s.openSettings);
-  const settingsShortcut = useKeybinding("settings.open");
   const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
   const composeShortcut = useKeybinding("compose.new", "c");
 
@@ -700,7 +694,6 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
         <span className="toolbar__spacer" {...dragRegion} />
-        <ModeSwitch />
         <IconButton
           label="Hide sidebar"
           shortcut={sidebarShortcut}
@@ -763,23 +756,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
 
       <ModSidebar />
       <NotificationOffer />
-      <div className="sidebar__footer">
-        {active && (
-          <Avatar name={active.displayName ?? active.email} email={active.email} size="sm" />
-        )}
-        <span className="sidebar__account" title={active?.email}>
-          {active?.email}
-        </span>
-        {onAddAccount && (
-          <IconButton label="Add account" icon={<UserPlus />} onClick={onAddAccount} />
-        )}
-        <IconButton
-          label="Settings"
-          shortcut={settingsShortcut}
-          icon={<Settings />}
-          onClick={() => openSettings()}
-        />
-      </div>
+      <SidebarFooter onAddAccount={onAddAccount} />
     </div>
   );
 }

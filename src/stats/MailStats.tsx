@@ -1,11 +1,10 @@
-// Settings › Mail stats: how much mail arrives each day, where it lands, how much of it you engage
-// with (open, reply to or star), and who sends the most, with Unsubscribe beside each sender.
+// Mail stats, shown in the Stats window (StatsDialog.tsx): how much mail arrives each day, where
+// it lands, how much of it you engage with (open, reply to or star), and who sends the most, with
+// Unsubscribe beside each sender.
 // Counted from the mail on this computer (`mail_stats`); nothing goes to Gmail but an unsubscribe.
 import { Info } from "lucide-react";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
-import { SegmentedControl } from "../components/ui/SegmentedControl";
-import { Select } from "../components/ui/Select";
 import { Skeleton } from "../components/ui/Skeleton";
 import { toast } from "../components/ui/Toast";
 import { useComposeStore } from "../compose/composeStore";
@@ -21,17 +20,17 @@ import {
 } from "../lib/tauri";
 import { openLink } from "../mail/linkify";
 import { useAccountStore } from "../store/accountStore";
-import { useSettingsStore } from "./settingsStore";
+import { useStatsStore } from "./statsStore";
 
 export const RANGES = ["7", "30", "90", "365"] as const;
 export type Range = (typeof RANGES)[number];
-const RANGE_LABELS: Record<Range, string> = {
-  "7": "7 days",
-  "30": "30 days",
-  "90": "90 days",
-  "365": "1 year",
+export const RANGE_NAMES: Record<Range, string> = {
+  "7": "Last 7 days",
+  "30": "Last 30 days",
+  "90": "Last 90 days",
+  "365": "Last year",
 };
-const ALL = "all";
+export const ALL = "all";
 /** Rows drawn while loading, so the first frame has the shape of the answer. */
 const PENDING_LABELS = 3;
 const PENDING_SENDERS = 8;
@@ -131,7 +130,8 @@ type SenderState = "busy" | "done" | "opened";
 const handled = new Map<string, SenderState>();
 const senderKey = (s: Pick<SenderStats, "accountId" | "sender">) => `${s.accountId}\n${s.sender}`;
 
-export function MailStatsSettings() {
+/** Mail stats for a time range and an account (or all), asked again whenever either changes. */
+export function useMailStats() {
   const accounts = useAccountStore((s) => s.accounts);
   const [range, setRange] = useState<Range>("30");
   const [account, setAccount] = useState<string>(ALL);
@@ -140,7 +140,7 @@ export function MailStatsSettings() {
   const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const days = Number(range);
-  // Recomputed on each change of range or account, so a page left open over midnight catches up.
+  // Recomputed on each change of range or account, so a window left open over midnight catches up.
   const [start, setStart] = useState(() => windowStart(days));
   // An account removed while chosen falls back to all of them.
   const chosen = accounts.some((a) => a.id === account) ? account : ALL;
@@ -169,59 +169,49 @@ export function MailStatsSettings() {
     if (next.account !== undefined) setAccount(next.account);
     setStart(windowStart(Number(r)));
   };
+  /** Count again, e.g. after new mail arrived or a failure. */
+  const refresh = () => {
+    setStart(windowStart(days));
+    setAttempt((n) => n + 1);
+  };
 
-  if (accounts.length === 0) return <p className="settings-empty">No accounts connected.</p>;
+  return { accounts, range, account: chosen, days, start, stats, error, choose, refresh };
+}
 
-  return (
-    <div className="settings-stats">
-      <div className="settings-stats__filters">
-        <SegmentedControl
-          label="Time range"
-          value={range}
-          options={RANGES.map((r) => ({ value: r, label: RANGE_LABELS[r] }))}
-          onChange={(r) => choose({ range: r })}
-        />
-        {accounts.length > 1 && (
-          <Select
-            aria-label="Account"
-            value={chosen}
-            options={[
-              { value: ALL, label: "All accounts" },
-              ...accounts.map((a) => ({ value: a.id, label: a.email })),
-            ]}
-            onChange={(a) => choose({ account: a })}
-          />
-        )}
+/** What the numbers are counted from, or why they couldn't be. */
+export function StatsNote({
+  stats,
+  error,
+  onRetry,
+}: {
+  stats: MailStats | null;
+  error: string | null;
+  onRetry(): void;
+}) {
+  if (error) {
+    return (
+      <div className="stats__note" role="alert">
+        <Info aria-hidden />
+        <span>Couldn't count your mail: {error}</span>
+        <Button size="sm" onClick={onRetry}>
+          Try again
+        </Button>
       </div>
-
-      {error ? (
-        <div className="settings-stats__note" role="alert">
-          <Info aria-hidden />
-          <span>Couldn't count your mail: {error}</span>
-          <Button size="sm" onClick={() => setAttempt((n) => n + 1)}>
-            Try again
-          </Button>
-        </div>
-      ) : (
-        <p className="settings-stats__note">
-          <Info aria-hidden />
-          <span>
-            {stats && !stats.complete
-              ? "Older mail is still downloading, so earlier days may count low."
-              : "Counted from the mail on this computer. Opened means read anywhere, on any device."}
-          </span>
-        </p>
-      )}
-
-      <Tiles totals={stats?.totals ?? null} days={days} />
-      <DailyChart stats={stats} start={start} days={days} />
-      <Places stats={stats} days={days} />
-      <Senders stats={stats} days={days} />
-    </div>
+    );
+  }
+  return (
+    <p className="stats__note">
+      <Info aria-hidden />
+      <span>
+        {stats && !stats.complete
+          ? "Older mail is still downloading, so earlier days may count low."
+          : "Counted from the mail on this computer. Opened means read anywhere, on any device."}
+      </span>
+    </p>
   );
 }
 
-function Tiles({ totals, days }: { totals: MailCounts | null; days: number }) {
+export function Tiles({ totals, days }: { totals: MailCounts | null; days: number }) {
   const tiles: { label: string; value: (t: MailCounts) => string }[] = [
     { label: "received a day", value: (t) => rate(t.received, days) },
     { label: "opened", value: (t) => percent(t.opened, t.received) },
@@ -229,13 +219,13 @@ function Tiles({ totals, days }: { totals: MailCounts | null; days: number }) {
     { label: "starred", value: (t) => percent(t.starred, t.received) },
   ];
   return (
-    <div className="settings-stats__tiles">
+    <div className="stats__tiles">
       {tiles.map((tile) => (
-        <div key={tile.label} className="settings-stats__tile">
-          <span className="settings-stats__tile-value">
+        <div key={tile.label} className="stats__tile">
+          <span className="stats__tile-value">
             {totals ? tile.value(totals) : <Skeleton width="3ch" />}
           </span>
-          <span className="settings-stats__tile-label">{tile.label}</span>
+          <span className="stats__tile-label">{tile.label}</span>
         </div>
       ))}
     </div>
@@ -254,7 +244,7 @@ function Part({
 }) {
   return (
     <Tag
-      className="settings-stats__part"
+      className="stats__part"
       data-part={kind}
       data-empty={size <= 0 || undefined}
       style={{ flexGrow: Math.max(0, size) }}
@@ -262,7 +252,7 @@ function Part({
   );
 }
 
-function DailyChart({
+export function DailyChart({
   stats,
   start,
   days,
@@ -287,10 +277,10 @@ function DailyChart({
   }
 
   return (
-    <section className="settings-stats__section" aria-label="Received over time">
-      <div className="settings-stats__heading">
+    <section className="stats__section" aria-label="Received over time">
+      <div className="stats__heading">
         <h3>{weekly ? "Received each week" : "Received each day"}</h3>
-        <span className="settings-stats__detail">
+        <span className="stats__detail">
           {!stats ? (
             <Skeleton width="22ch" />
           ) : shown ? (
@@ -300,18 +290,18 @@ function DailyChart({
           )}
         </span>
       </div>
-      <div className="settings-stats__legend">
+      <div className="stats__legend">
         <span>
-          <i className="settings-stats__swatch" data-part="engaged" />
+          <i className="stats__swatch" data-part="engaged" />
           Engaged (opened, replied or starred)
         </span>
         <span>
-          <i className="settings-stats__swatch" data-part="rest" />
+          <i className="stats__swatch" data-part="rest" />
           Never opened
         </span>
       </div>
       <div
-        className="settings-stats__plot"
+        className="stats__plot"
         role="img"
         tabIndex={0}
         aria-label={
@@ -327,21 +317,18 @@ function DailyChart({
         {bars.map((b, i) => (
           <div
             key={b.start.getTime()}
-            className="settings-stats__column"
+            className="stats__column"
             data-active={active === i || undefined}
             onMouseEnter={() => setActive(i)}
           >
-            <div
-              className="settings-stats__stack"
-              style={{ height: `${(b.received / top) * 100}%` }}
-            >
+            <div className="stats__stack" style={{ height: `${(b.received / top) * 100}%` }}>
               <Part tag="div" kind="engaged" size={b.engaged} />
               <Part tag="div" kind="rest" size={b.received - b.engaged} />
             </div>
           </div>
         ))}
       </div>
-      <div className="settings-stats__axis" aria-hidden>
+      <div className="stats__axis" aria-hidden>
         <span>{shortDate(bars[0].start)}</span>
         <span>{shortDate(bars[Math.floor(bars.length / 2)].start)}</span>
         <span>Today</span>
@@ -363,24 +350,24 @@ function PlaceRow({
   top: number;
 }) {
   return (
-    <div className="settings-stats__place">
-      <span className="settings-stats__place-name">{name ?? <Skeleton width="9ch" />}</span>
+    <div className="stats__place">
+      <span className="stats__place-name">{name ?? <Skeleton width="9ch" />}</span>
       <span
-        className="settings-stats__meter"
+        className="stats__meter"
         title={place ? `${count(place.received)} received, ${count(place.engaged)} engaged` : ""}
       >
         <span
-          className="settings-stats__meter-fill"
+          className="stats__meter-fill"
           style={{ width: `${place ? (place.received / top) * 100 : 0}%` }}
         >
           <Part tag="span" kind="engaged" size={place?.engaged ?? 0} />
           <Part tag="span" kind="rest" size={place ? place.received - place.engaged : 0} />
         </span>
       </span>
-      <span className="settings-stats__num">
+      <span className="stats__num">
         {place ? rate(place.received, days) : <Skeleton width="3ch" />}
       </span>
-      <span className="settings-stats__num">
+      <span className="stats__num">
         {place ? percent(place.opened, place.received) : <Skeleton width="3ch" />}
       </span>
     </div>
@@ -389,16 +376,16 @@ function PlaceRow({
 
 function PlaceHeader({ title }: { title: string }) {
   return (
-    <div className="settings-stats__place settings-stats__place--head" aria-hidden>
+    <div className="stats__place stats__place--head" aria-hidden>
       <span>{title}</span>
       <span />
-      <span className="settings-stats__num">a day</span>
-      <span className="settings-stats__num">opened</span>
+      <span className="stats__num">a day</span>
+      <span className="stats__num">opened</span>
     </div>
   );
 }
 
-function Places({ stats, days }: { stats: MailStats | null; days: number }) {
+export function Places({ stats, days }: { stats: MailStats | null; days: number }) {
   const tabs = (Object.keys(TAB_NAMES) as InboxTab[]).map((id) => ({
     id,
     name: TAB_NAMES[id],
@@ -411,11 +398,11 @@ function Places({ stats, days }: { stats: MailStats | null; days: number }) {
     ...(stats ? [...stats.tabs, ...stats.labels] : []).map((p) => p.received),
   );
   return (
-    <section className="settings-stats__section" aria-label="Where it lands">
-      <div className="settings-stats__heading">
+    <section className="stats__section" aria-label="Where it lands">
+      <div className="stats__heading">
         <h3>Where it lands</h3>
       </div>
-      <div className="settings-stats__places">
+      <div className="stats__places">
         <PlaceHeader title="Inbox tab" />
         {tabs.map((t) => (
           <PlaceRow key={t.id} name={t.name} place={t.place} days={days} top={top} />
@@ -429,33 +416,33 @@ function Places({ stats, days }: { stats: MailStats | null; days: number }) {
   );
 }
 
-function Senders({ stats, days }: { stats: MailStats | null; days: number }) {
+export function Senders({ stats, days }: { stats: MailStats | null; days: number }) {
   const rows: (SenderStats | null)[] =
     stats?.senders ?? Array.from({ length: PENDING_SENDERS }, () => null);
   return (
-    <section className="settings-stats__section" aria-label="Top senders">
-      <div className="settings-stats__heading">
+    <section className="stats__section" aria-label="Top senders">
+      <div className="stats__heading">
         <h3>Top senders</h3>
       </div>
       {stats && rows.length === 0 ? (
-        <p className="settings-stats__empty">No mail received in these {days} days.</p>
+        <p className="stats__empty">No mail received in these {days} days.</p>
       ) : (
-        <table className="settings-stats__senders">
+        <table className="stats__senders">
           <thead>
             <tr>
               <th scope="col">Sender</th>
               <th scope="col">Lands in</th>
-              <th scope="col" className="settings-stats__num">
+              <th scope="col" className="stats__num">
                 a week
               </th>
-              <th scope="col" className="settings-stats__num">
+              <th scope="col" className="stats__num">
                 opened
               </th>
-              <th scope="col" className="settings-stats__num">
+              <th scope="col" className="stats__num">
                 replied
               </th>
               <th scope="col">
-                <span className="settings-stats__sr">Unsubscribe</span>
+                <span className="stats__sr">Unsubscribe</span>
               </th>
             </tr>
           </thead>
@@ -473,29 +460,25 @@ function Senders({ stats, days }: { stats: MailStats | null; days: number }) {
 function SenderRow({ sender: s, days }: { sender: SenderStats | null; days: number }) {
   return (
     <tr>
-      <td className="settings-stats__who">
-        <span className="settings-stats__who-name">
+      <td className="stats__who">
+        <span className="stats__who-name">
           {s ? s.name || s.sender : <Skeleton width="14ch" />}
         </span>
-        <span className="settings-stats__who-address">
+        <span className="stats__who-address">
           {s ? s.name ? s.sender : "" : <Skeleton width="20ch" />}
         </span>
       </td>
       <td>
         {s ? (
-          <span className="settings-stats__tab">{TAB_NAMES[s.tab] ?? s.tab}</span>
+          <span className="stats__tab">{TAB_NAMES[s.tab] ?? s.tab}</span>
         ) : (
           <Skeleton width="8ch" />
         )}
       </td>
-      <td className="settings-stats__num">
-        {s ? rate(s.received, days, 7) : <Skeleton width="3ch" />}
-      </td>
-      <td className="settings-stats__num">
-        {s ? percent(s.opened, s.received) : <Skeleton width="3ch" />}
-      </td>
-      <td className="settings-stats__num">{s ? count(s.replied) : <Skeleton width="2ch" />}</td>
-      <td className="settings-stats__action">
+      <td className="stats__num">{s ? rate(s.received, days, 7) : <Skeleton width="3ch" />}</td>
+      <td className="stats__num">{s ? percent(s.opened, s.received) : <Skeleton width="3ch" />}</td>
+      <td className="stats__num">{s ? count(s.replied) : <Skeleton width="2ch" />}</td>
+      <td className="stats__action">
         {s ? <UnsubscribeButton sender={s} /> : <Skeleton width="10ch" />}
       </td>
     </tr>
@@ -515,7 +498,7 @@ function UnsubscribeButton({ sender }: { sender: SenderStats }) {
   if (sender.unsubscribe === "none" || !sender.threadId) {
     return (
       <span
-        className="settings-stats__no-unsubscribe"
+        className="stats__no-unsubscribe"
         title="This sender's mail has no unsubscribe link. A sender rule or filter can file it instead."
       >
         No unsubscribe
@@ -524,9 +507,7 @@ function UnsubscribeButton({ sender }: { sender: SenderStats }) {
   }
   if (state === "done" || state === "opened") {
     return (
-      <span className="settings-stats__no-unsubscribe">
-        {state === "done" ? "Unsubscribed" : "Opened"}
-      </span>
+      <span className="stats__no-unsubscribe">{state === "done" ? "Unsubscribed" : "Opened"}</span>
     );
   }
 
@@ -555,7 +536,7 @@ function UnsubscribeButton({ sender }: { sender: SenderStats }) {
           subject: mail.subject,
           bodyHtml: mail.body ? `<p>${escapeHtml(mail.body)}</p>` : "",
         });
-        useSettingsStore.getState().close();
+        useStatsStore.getState().close();
         toast({
           title: `${who} unsubscribes by email`,
           description: "Send the message that just opened to stop their mail.",

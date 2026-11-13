@@ -87,10 +87,10 @@ test("with accounts it shows them and can add or remove one", async () => {
     return cmd === "list_accounts" ? [account] : undefined;
   });
   render(<App />);
-  expect(await screen.findByText(account.email)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   const dialog = screen.getByRole("dialog", { name: /Settings/ });
   fireEvent.click(within(dialog).getByRole("button", { name: "Accounts" }));
+  expect(within(dialog).getByText(account.email)).toBeInTheDocument();
 
   fireEvent.click(within(dialog).getByRole("button", { name: "Add account" }));
   expect(screen.getByText("Add an account")).toBeInTheDocument();
