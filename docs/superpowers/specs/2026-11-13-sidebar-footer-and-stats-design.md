@@ -40,7 +40,7 @@ One component that both `Sidebar.tsx` and `CalendarSidebar.tsx` render in place 
 ### Stats window (`src/stats/`)
 
 - `StatsDialog.tsx`, opened by `useStatsStore` (`open`, `tab`), the same pattern as `settingsStore`.
-- **Header:** `Stats / <Account ▾> / <Range ▾>` breadcrumb. The account picker shows only with more than one account. Range is 7/30/90 days, as today. On the right: segmented tabs **Overview | Where it lands | Senders**, a refresh button (re-asks `getMailStats`), and close. Esc closes.
+- **Header:** `Stats / <Account ▾> / <Range ▾>` breadcrumb. The account picker shows only with more than one account. Range is 7/30/90/365 days, as today. On the right: segmented tabs **Overview | Where it lands | Senders**, a refresh button (re-asks `getMailStats`), and close. Esc closes.
 - **Body,** centred and at most about 1000px wide:
   - Overview: the note line, tiles and daily chart.
   - Where it lands: inbox tabs and labels.
