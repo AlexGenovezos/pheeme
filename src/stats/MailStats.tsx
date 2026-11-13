@@ -24,11 +24,11 @@ import { useStatsStore } from "./statsStore";
 
 export const RANGES = ["7", "30", "90", "365"] as const;
 export type Range = (typeof RANGES)[number];
-export const RANGE_NAMES: Record<Range, string> = {
-  "7": "Last 7 days",
-  "30": "Last 30 days",
-  "90": "Last 90 days",
-  "365": "Last year",
+export const RANGE_LABELS: Record<Range, string> = {
+  "7": "7 days",
+  "30": "30 days",
+  "90": "90 days",
+  "365": "1 year",
 };
 export const ALL = "all";
 /** Rows drawn while loading, so the first frame has the shape of the answer. */

@@ -28,7 +28,7 @@
   outline: none;
 }
 
-/* Header: Stats / account / range, then the view tabs, Refresh and Close. */
+/* Header: Stats / account, then the time range, Refresh and Close. */
 .stats__title-row {
   display: flex;
   flex-shrink: 0;
@@ -74,9 +74,10 @@
   min-height: var(--space-0);
   overflow-y: auto;
   padding: var(--space-6) var(--space-5);
+  outline: none;
 }
 
-/* Mail stats (MailStats.tsx): one view at a time, centred. */
+/* Mail stats (MailStats.tsx): every part on one page, centred. */
 .stats__content {
   display: grid;
   align-content: start;

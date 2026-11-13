@@ -547,15 +547,27 @@ body[data-resizing] .shell__divider:active::after {
 /* Mail | Calendar switch, Settings, Stats, Add account, then Check for updates at the right.
    Spaced to fit the narrowest sidebar. */
 .sidebar__footer {
-  display: flex;
-  align-items: center;
+  display: grid;
   flex-shrink: 0;
-  gap: var(--space-0-5);
-  padding: var(--space-2) var(--space-1-5);
+  gap: var(--space-1-5);
+  padding: var(--space-2);
   border-top: var(--border-width) solid var(--color-pane-border);
 }
+/* Top row: the Mail | Calendar switch, its two halves sharing the width. */
 .sidebar__footer .mode-switch {
-  margin-right: var(--space-1);
+  display: flex;
+}
+.sidebar__footer .mode-switch__option {
+  flex: 1;
+  gap: var(--space-1-5);
+  width: auto;
+  font-size: var(--font-size-sm);
+}
+/* Bottom row: Settings first, Check for updates at the far right. */
+.sidebar__footer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-0-5);
 }
 .sidebar__update {
   margin-left: auto;

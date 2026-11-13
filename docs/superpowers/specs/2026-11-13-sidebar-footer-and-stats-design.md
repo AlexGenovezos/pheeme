@@ -58,3 +58,10 @@ One component that both `Sidebar.tsx` and `CalendarSidebar.tsx` render in place 
 - Exact icons. Proposed: `BarChart3` for Stats, `UserPlus` for Add account, `CircleArrowUp` for updates.
 - Dialog sizing and CSS details, following T3's proportions and the existing design tokens.
 - Test updates for the moved footer and the moved switch (Sidebar, CalendarSidebar, palette, sidebarFit).
+
+## Revision (after the first build)
+
+Alex found the one-row footer cluttered and missed the detail of the Settings page, so:
+
+- The footer is two rows: the Mail | Calendar switch across the top, labelled and full width; below it Settings (far left), Stats and Add account, with Check for updates at the far right.
+- The Stats window has no view tabs. Like the old Settings page, it shows everything on one scrolling page: the note, tiles, the daily chart, where mail lands, and top senders. The time range is a visible segmented control (7 days, 30 days, 90 days, 1 year) in the header; the account picker stays in the `Stats / …` breadcrumb.
