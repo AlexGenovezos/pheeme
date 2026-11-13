@@ -3,7 +3,7 @@
 CI checks that Pheeme stays fast as features land (issue #47). Each check catches a
 regression in the PR that causes it.
 
-## Rust benchmarks (every PR)
+## Rust benchmarks (PRs that change Rust; main)
 
 [`src-tauri/benches/hot_paths.rs`](../src-tauri/benches/hot_paths.rs) measures the paths that
 grow with the mailbox, against a seeded 50,000-thread SQLite cache and the in-memory Gmail
@@ -23,8 +23,9 @@ grow with the mailbox, against a seeded 50,000-thread SQLite cache and the in-me
 
 They count CPU instructions under Valgrind ([gungraun](https://github.com/gungraun/gungraun))
 instead of timing them: shared CI runners are too noisy for timings, while instruction
-counts repeat to well under 1%. The `Performance` workflow benchmarks the PR's base commit,
-then the PR, and fails when a benchmark gets more than 10% worse. The comparison is in the
+counts repeat to well under 1%. On a PR that changes `src-tauri/` (or the Rust toolchain or
+build settings), the `Performance` workflow benchmarks the PR's base commit, then the PR, and
+fails when a benchmark gets more than 10% worse. The comparison is in the
 job summary.
 
 Run them locally (Linux only):
@@ -43,7 +44,7 @@ measured call is counted, on every thread (SQLite runs on sqlx's worker thread).
 Callgrind profiles land in `src-tauri/target/gungraun/`; open them with
 `callgrind_annotate` or KCachegrind to see where the instructions went.
 
-## Rust heap soak (every PR, short; nightly, long)
+## Rust heap soak (PRs that change Rust, short; nightly, long)
 
 [`src-tauri/tests/soak.rs`](../src-tauri/tests/soak.rs) runs a long session against the
 in-memory Gmail with [dhat](https://docs.rs/dhat) counting every allocation. It backfills a
@@ -60,7 +61,7 @@ heap. The test fails when:
 
 | Size | Where | Mailbox | Cycles | Peak budget |
 |------|-------|---------|--------|-------------|
-| short | `Performance` workflow, every PR | 5,000 messages | 200 | 4 MiB |
+| short | `Performance` workflow, PRs that change Rust | 5,000 messages | 200 | 4 MiB |
 | long | `Nightly performance` workflow | 20,000 messages | 1,000 | 15 MiB |
 
 A nightly heap failure opens an issue (or comments on the open one). On a failure, the job

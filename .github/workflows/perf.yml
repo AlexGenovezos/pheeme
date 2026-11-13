@@ -1,8 +1,9 @@
 name: Performance
 
 # Catches slowdowns in the PR that causes them. Not a required check yet (#47 rollout:
-# learn the noise for a week first). The real-app run (app-perf.yml) runs on PRs that change
-# the app; main gets it every night (nightly-perf.yml). See docs/performance.md.
+# learn the noise for a week first). The Rust benchmarks and heap soak run on PRs that change
+# Rust, the real-app run (app-perf.yml) on PRs that change the app; main gets the real-app run
+# every night (nightly-perf.yml). See docs/performance.md.
 
 on:
   pull_request:
@@ -24,6 +25,12 @@ env:
 jobs:
   benches:
     name: Rust benchmarks
+    needs: changes
+    # On PRs, only when Rust changed (~8 min: the base and the PR each build in release).
+    # main always runs it, which keeps the cache warm; `changes` is skipped there.
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -93,6 +100,10 @@ jobs:
 
   soak:
     name: Rust heap soak
+    needs: changes
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true')
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -151,6 +162,7 @@ jobs:
       pull-requests: read
     outputs:
       app: ${{ steps.files.outputs.app }}
+      rust: ${{ steps.files.outputs.rust }}
     steps:
       - name: List the changed files
         id: files
@@ -163,7 +175,15 @@ jobs:
           # benchmarks, docs and the website don't. If the list can't be read, run it.
           if ! files=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'); then
             echo "app=true" >> "$GITHUB_OUTPUT"
+            echo "rust=true" >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          # The Rust benchmarks and heap soak: the crate, its build settings, or this workflow.
+          if grep -qE '^(src-tauri/|\.cargo/|\.github/actions/setup-build/)|^(rust-toolchain\.toml|\.github/workflows/perf\.yml)$' <<<"$files"; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust=false" >> "$GITHUB_OUTPUT"
+            echo "No Rust change: skipping the Rust benchmarks and heap soak."
           fi
           app=$(grep -vE '\.test\.tsx?$|^src-tauri/(tests|benches)/' <<<"$files" |
             grep -E '^(src/|src-tauri/|public/|\.cargo/|scripts/perf/|\.github/actions/setup-build/)|^(index\.html|\.nvmrc|package(-lock)?\.json|vite\.config\.ts|tsconfig\.json|rust-toolchain\.toml|\.github/workflows/(perf|app-perf)\.yml)$' || true)
