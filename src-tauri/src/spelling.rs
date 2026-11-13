@@ -38,6 +38,9 @@ pub fn enable_in(window: &tauri::WebviewWindow) {
         let languages: Vec<&str> = languages.iter().map(String::as_str).collect();
         context.set_spell_checking_languages(&languages);
         context.set_spell_checking_enabled(true);
+        // The languages WebKit found a dictionary for; empty means nothing gets checked.
+        let loaded = context.spell_checking_languages();
+        tracing::info!(requested = ?languages, ?loaded, "spell checking on");
     });
     if let Err(err) = result {
         tracing::warn!("couldn't turn on spell checking: {err}");
