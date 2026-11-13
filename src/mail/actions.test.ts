@@ -610,6 +610,43 @@ describe("opening", () => {
     expect(modifyCalls()).toEqual([]);
   });
 
+  const unreadDetail = (labelIds: string[]): ThreadDetail => ({
+    thread: thread(1),
+    messages: [{ id: "m1", threadId: "t1", labelIds } as MessageDetail],
+    bodyError: null,
+  });
+
+  test("a conversation known to be unread is marked read before its row has loaded", async () => {
+    useRealReload();
+    setList([]);
+    details[key(1)] = unreadDetail(["INBOX", "UNREAD"]);
+    const release = hold();
+    openAndMarkRead(key(1), 1, { unread: true });
+    expect(useUiStore.getState().openThread).toBe(key(1));
+    await vi.waitFor(() => expect(modifyCalls()).toHaveLength(1));
+    expect(modifyCalls()[0]).toEqual({
+      accountId: "a1",
+      threadIds: ["t1"],
+      add: [],
+      remove: ["UNREAD"],
+    });
+    // The list arriving while the command is out shows the row read already.
+    await reloadWith([thread(1, "a1", { unread: true })]);
+    expect(useMailStore.getState().threads[0].unread).toBe(false);
+    release();
+    await flush();
+    expect(toasts()).toEqual([]);
+  });
+
+  test("a conversation known to be unread but read elsewhere since sends nothing", async () => {
+    setList([]);
+    details[key(1)] = unreadDetail(["INBOX"]);
+    openAndMarkRead(key(1), 1, { unread: true });
+    await flush();
+    await flush();
+    expect(modifyCalls()).toEqual([]);
+  });
+
   test("j and k stop at the ends, and start from the ends when nothing is open", () => {
     setList([thread(1), thread(2)]);
     moveSelection(-1);

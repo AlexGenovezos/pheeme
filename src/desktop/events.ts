@@ -2,7 +2,8 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { toast } from "../components/ui/Toast";
 import { stopQuietly } from "../lib/tauri";
-import { threadKey } from "../mail/mailboxes";
+import { openAndMarkRead } from "../mail/actions";
+import { CATEGORIES, categoryMailbox, threadKey } from "../mail/mailboxes";
 import { useModStore } from "../mods/store";
 import { useSettingsStore } from "../settings/settingsStore";
 import { useAccountStore } from "../store/accountStore";
@@ -56,12 +57,14 @@ function firstCalendarLoad(): Promise<void> {
   });
 }
 
+/**
+ * New mail: the account's Primary inbox (only Primary mail notifies) with the conversation open and marked read, as
+ * opening it from the list would. It still opens if another device archived it after delivery.
+ */
 function openThread(target: ThreadTarget) {
   useCalendarStore.getState().setMode("mail");
-  const ui = useUiStore.getState();
-  // All Mail still contains the conversation if another device archived it after delivery.
-  ui.setMailbox({ accountId: target.accountId, labelId: "ALL" });
-  ui.setOpenThread(threadKey(target.accountId, target.threadId));
+  useUiStore.getState().setMailbox(categoryMailbox(target.accountId, CATEGORIES[0].labelId));
+  openAndMarkRead(threadKey(target.accountId, target.threadId), 1, { unread: true });
 }
 
 export function useDesktopEvents(ready: boolean, showMail: () => void) {
