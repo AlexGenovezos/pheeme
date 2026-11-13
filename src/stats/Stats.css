@@ -1,0 +1,341 @@
+/* The Stats window (StatsDialog.tsx): a large dialog over the blurred app. */
+.stats-scrim {
+  position: fixed;
+  inset: var(--space-0);
+  z-index: var(--z-overlay);
+  display: flex;
+  padding: var(--settings-margin);
+  background: var(--color-scrim);
+  -webkit-backdrop-filter: blur(var(--settings-backdrop-blur));
+  backdrop-filter: blur(var(--settings-backdrop-blur));
+  animation: settings-fade var(--duration-base) var(--ease-standard);
+}
+
+.stats {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: var(--space-0);
+  min-height: var(--space-0);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-pane-bg);
+  color: var(--color-foreground);
+  box-shadow: var(--shadow-overlay);
+  animation: settings-in var(--duration-slow) var(--ease-out);
+}
+.stats:focus-visible {
+  outline: none;
+}
+
+/* Header: Stats / account / range, then the view tabs, Refresh and Close. */
+.stats__title-row {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
+  border-bottom: var(--border-width) solid var(--color-border-subtle);
+}
+.stats__title {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+}
+.stats__crumb-sep {
+  padding: var(--space-0) var(--space-1);
+  color: var(--color-foreground-subtle);
+}
+.stats__crumb-text {
+  color: var(--color-foreground);
+  font-size: var(--font-size-md);
+}
+/* The breadcrumb's pickers read as text with a chevron until hovered. */
+.ui-field.stats__crumb {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-foreground);
+  font-size: var(--font-size-md);
+}
+.ui-field.stats__crumb:hover {
+  background: var(--color-control-hover-bg);
+}
+.stats__header-spacer {
+  flex: 1;
+}
+.stats__title-row .ui-segmented {
+  margin-right: var(--space-2);
+}
+
+.stats__body {
+  flex: 1;
+  min-height: var(--space-0);
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-5);
+}
+
+/* Mail stats (MailStats.tsx): one view at a time, centred. */
+.stats__content {
+  display: grid;
+  align-content: start;
+  width: 100%;
+  max-width: var(--stats-content-width);
+  margin: var(--space-0) auto;
+  outline: none;
+  gap: var(--space-5);
+  font-size: var(--font-size-sm);
+}
+
+.stats__note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  line-height: var(--line-height-normal);
+}
+.stats__note > svg {
+  flex-shrink: 0;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.stats__tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.stats__tile {
+  display: grid;
+  gap: var(--space-0-5);
+  padding: var(--space-2-5) var(--space-3);
+  border: var(--hairline) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.stats__tile-value {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--line-height-tight);
+}
+
+.stats__tile-label {
+  color: var(--color-foreground-muted);
+}
+
+.stats__section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.stats__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.stats__heading > h3 {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-caps);
+  text-transform: uppercase;
+}
+
+.stats__detail {
+  color: var(--color-foreground-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  color: var(--color-foreground-muted);
+}
+.stats__legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.stats__swatch {
+  width: var(--quota-swatch-size);
+  height: var(--quota-swatch-size);
+  border-radius: var(--radius-xs);
+}
+
+[data-part="engaged"] {
+  background: var(--stats-engaged);
+}
+[data-part="rest"] {
+  background: var(--stats-rest);
+}
+
+.stats__plot {
+  display: flex;
+  gap: var(--quota-gap);
+  height: var(--stats-chart-height);
+  border-bottom: var(--hairline) solid var(--color-border);
+  border-radius: var(--radius-xs);
+  outline: none;
+}
+.stats__plot:focus-visible {
+  box-shadow: 0 0 0 var(--focus-ring-width) var(--color-focus-border);
+}
+
+/* The whole column is the hover target, however low its bar. */
+.stats__column {
+  display: flex;
+  flex: 1 1 var(--space-0);
+  justify-content: center;
+  align-items: flex-end;
+  min-width: var(--space-0);
+}
+.stats__column[data-active] {
+  background: var(--color-control-hover-bg);
+}
+
+.stats__stack {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--quota-gap);
+  width: 100%;
+  max-width: var(--stats-bar-max-width);
+  overflow: hidden;
+  border-radius: var(--quota-bar-radius) var(--quota-bar-radius) var(--space-0) var(--space-0);
+}
+
+.stats__part {
+  flex-basis: var(--space-0);
+}
+/* An empty part takes no room, so the gap between parts only shows when both do. */
+.stats__part[data-empty] {
+  display: none;
+}
+
+.stats__axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}
+
+.stats__places {
+  display: grid;
+  gap: var(--space-1-5);
+}
+
+.stats__place {
+  display: grid;
+  grid-template-columns:
+    minmax(var(--space-0), var(--stats-place-name-width)) minmax(var(--space-0), 1fr)
+    var(--stats-number-width) var(--stats-number-width);
+  align-items: center;
+  gap: var(--space-3);
+}
+.stats__place--head {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}
+.stats__place--head:not(:first-child) {
+  margin-top: var(--space-2);
+}
+
+.stats__place-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats__meter {
+  display: flex;
+  height: var(--stats-meter-height);
+}
+
+.stats__meter-fill {
+  display: flex;
+  gap: var(--quota-gap);
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+}
+
+.stats__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats__senders {
+  width: 100%;
+  border-collapse: collapse;
+}
+.stats__senders th {
+  padding: var(--space-1) var(--space-1-5);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-align: left;
+}
+.stats__senders th.stats__num {
+  text-align: right;
+}
+.stats__senders td {
+  padding: var(--space-1-5);
+  border-top: var(--hairline) solid var(--color-border-subtle);
+  vertical-align: middle;
+}
+
+.stats__who {
+  max-width: var(--space-0);
+  width: 45%;
+}
+.stats__who-name,
+.stats__who-address {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats__who-address {
+  min-height: var(--font-size-sm);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}
+
+.stats__tab {
+  padding: var(--space-px) var(--space-1-5);
+  border-radius: var(--radius-full);
+  background: var(--color-control-hover-bg);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.stats__action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stats__no-unsubscribe {
+  color: var(--color-foreground-subtle);
+  font-size: var(--font-size-xs);
+}
+
+.stats__empty {
+  margin: var(--space-0);
+  color: var(--color-foreground-subtle);
+}
+
+.stats__sr {
+  position: absolute;
+  width: var(--space-px);
+  height: var(--space-px);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

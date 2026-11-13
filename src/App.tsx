@@ -19,6 +19,7 @@ import { type OutboxRejected, SYNC_EVENTS } from "./lib/tauri";
 import { listenForManualChecks, startUpdateChecks } from "./lib/updater";
 import { CommandPalette } from "./palette/CommandPalette";
 import { Settings } from "./settings/Settings";
+import { Stats } from "./stats/StatsDialog";
 import { ThemeEditorHost } from "./theme/editor/ThemeEditor";
 import { AttachmentPreview } from "./mail/preview/AttachmentPreview";
 import { useSettingsStore } from "./settings/settingsStore";
@@ -98,12 +99,17 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
   return (
     <>
       <div className="tasks-frame">
-        {mode === "calendar" ? <CalendarScreen /> : <AppShell onAddAccount={onAddAccount} />}
+        {mode === "calendar" ? (
+          <CalendarScreen onAddAccount={onAddAccount} />
+        ) : (
+          <AppShell onAddAccount={onAddAccount} />
+        )}
         <TasksPanelHost />
       </div>
       <ComposeHost />
       <CommandPalette />
       <Settings onAddAccount={onAddAccount} />
+      <Stats />
       <ThemeEditorHost />
       <AttachmentPreview />
       <ContextMenuHost />

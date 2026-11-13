@@ -7,7 +7,6 @@ import {
   ChevronRight,
   PanelLeftClose,
   Plus,
-  Settings,
   TriangleAlert,
 } from "lucide-react";
 import { useId, useMemo, useState } from "react";
@@ -18,7 +17,6 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { useKeybinding } from "../keyboard/useCommands";
 import type { CalendarAccount, CalendarEvent, CalendarInfo } from "../lib/tauri";
 import { cx } from "../lib/utils";
-import { useSettingsStore } from "../settings/settingsStore";
 import { dragRegion } from "../shell/chrome";
 import { useUiStore } from "../store/uiStore";
 import { AccountAccess, syncLine } from "./AccessControls";
@@ -30,7 +28,7 @@ import { useCalendarLookup } from "./EventBlock";
 import { eventDays } from "./layout";
 import { useRangeEvents } from "./rangeEvents";
 import { SidebarAgenda } from "./SidebarAgenda";
-import { ModeSwitch } from "./ModeSwitch";
+import { SidebarFooter } from "../shell/SidebarFooter";
 import { SidebarTaskLists } from "../tasks/SidebarTaskLists";
 import { useNow } from "./useNow";
 import { visibleDays } from "./views";
@@ -216,17 +214,15 @@ function AccountGroup({ account }: { account: CalendarAccount }) {
   );
 }
 
-export function CalendarSidebar() {
+export function CalendarSidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   const accounts = useCalendarStore((s) => s.accounts);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
-  const settingsShortcut = useKeybinding("settings.open");
   const createShortcut = useKeybinding("calendar.create", "c");
   return (
     <div className="sidebar cal-sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
         <span className="toolbar__spacer" {...dragRegion} />
-        <ModeSwitch />
         <IconButton
           label="Hide sidebar"
           shortcut={sidebarShortcut}
@@ -264,15 +260,7 @@ export function CalendarSidebar() {
         )}
       </nav>
       <NotificationOffer />
-      <div className="sidebar__footer">
-        <span className="sidebar__account" />
-        <IconButton
-          label="Settings"
-          shortcut={settingsShortcut}
-          icon={<Settings />}
-          onClick={() => useSettingsStore.getState().openSettings()}
-        />
-      </div>
+      <SidebarFooter onAddAccount={onAddAccount} />
     </div>
   );
 }

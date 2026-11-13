@@ -505,7 +505,7 @@ function pinnedEmailWidth(): number {
   );
 }
 
-export function CalendarScreen() {
+export function CalendarScreen({ onAddAccount }: { onAddAccount?: () => void } = {}) {
   useCalendarCommands();
   useCalendarData();
   const ref = useRef<HTMLDivElement>(null);
@@ -561,7 +561,7 @@ export function CalendarScreen() {
         aria-label="Sidebar"
         aria-hidden={layout === "collapsed" || undefined}
       >
-        <CalendarSidebar />
+        <CalendarSidebar onAddAccount={onAddAccount} />
       </aside>
       {layout === "expanded" && (
         <Divider

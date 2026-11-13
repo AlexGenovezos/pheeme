@@ -1,5 +1,5 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
 import { useToastStore } from "../components/ui/Toast";
 import { useComposeStore } from "../compose/composeStore";
@@ -9,13 +9,19 @@ import {
   __resetUnsubscribedForTests,
   buckets,
   dayKey,
-  MailStatsSettings,
   parseMailto,
   percent,
   rate,
   windowStart,
 } from "./MailStats";
-import { useSettingsStore } from "./settingsStore";
+import { Stats } from "./StatsDialog";
+import { type StatsTab, useStatsStore } from "./statsStore";
+
+/** The Stats window, open on `tab`. */
+function renderStats(tab: StatsTab = "overview") {
+  useStatsStore.setState({ open: true, tab });
+  return render(<Stats />);
+}
 
 const counts = (received: number, opened: number, replied = 0, starred = 0) => ({
   received,
@@ -91,6 +97,7 @@ let calls: { cmd: string; args: Record<string, unknown> }[];
 
 beforeEach(() => {
   calls = [];
+  useStatsStore.setState({ open: false, tab: "overview" });
   __resetUnsubscribedForTests();
   useToastStore.setState({ toasts: [] });
   useAccountStore.setState({
@@ -108,15 +115,18 @@ beforeEach(() => {
   });
 });
 
-test("shows the totals, where mail lands and who sends the most", async () => {
-  const { container } = render(<MailStatsSettings />);
+test("shows the totals, then where mail lands and who sends the most on their tabs", async () => {
+  const { container } = renderStats();
   await screen.findByText("60 emails in 30 days");
-  const tiles = [...container.querySelectorAll(".settings-stats__tile")].map((t) => t.textContent);
+  const tiles = [...container.querySelectorAll(".stats__tile")].map((t) => t.textContent);
   // 60 emails over 30 days is 2 a day.
   expect(tiles).toEqual(["2received a day", "50%opened", "5%replied to", "10%starred"]);
-  expect(screen.getByText("60 emails in 30 days")).toBeInTheDocument();
+  expect(screen.queryByRole("table")).toBeNull();
+
+  fireEvent.click(screen.getByRole("radio", { name: "Where it lands" }));
   expect(screen.getByText("Receipts")).toBeInTheDocument();
 
+  fireEvent.click(screen.getByRole("radio", { name: "Senders" }));
   const table = screen.getByRole("table");
   const shop = within(table).getByText("Shop").closest("tr")!;
   expect(shop).toHaveTextContent("Promotions");
@@ -129,19 +139,38 @@ test("shows the totals, where mail lands and who sends the most", async () => {
 });
 
 test("changing the range or account asks again", async () => {
-  render(<MailStatsSettings />);
+  renderStats();
   await screen.findByText("60 emails in 30 days");
-  fireEvent.click(screen.getByRole("radio", { name: "7 days" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "Time range" }));
+  fireEvent.click(screen.getByRole("option", { name: "Last 7 days" }));
   await screen.findByText("60 emails in 7 days");
-  const asked = calls.filter((c) => c.cmd === "mail_stats");
-  expect(asked[asked.length - 1].args).toEqual({
-    accountId: null,
-    sinceMs: windowStart(7).getTime(),
-  });
+  fireEvent.click(screen.getByRole("combobox", { name: "Account" }));
+  fireEvent.click(screen.getByRole("option", { name: "b@example.com" }));
+  await waitFor(() =>
+    expect(calls.filter((c) => c.cmd === "mail_stats").slice(-1)[0].args).toEqual({
+      accountId: "b",
+      sinceMs: windowStart(7).getTime(),
+    }),
+  );
+});
+
+test("Refresh counts again; Close and Escape close the window", async () => {
+  renderStats();
+  await screen.findByText("60 emails in 30 days");
+  const asked = () => calls.filter((c) => c.cmd === "mail_stats").length;
+  const before = asked();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(asked()).toBe(before + 1));
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(useStatsStore.getState().open).toBe(false);
+
+  act(() => useStatsStore.getState().openStats());
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Stats" }), { key: "Escape" });
+  expect(useStatsStore.getState().open).toBe(false);
 });
 
 test("one-click unsubscribes say so and don't offer it again", async () => {
-  render(<MailStatsSettings />);
+  renderStats("senders");
   fireEvent.click(await screen.findByRole("button", { name: "Unsubscribe from Shop" }));
   await screen.findByText("Unsubscribed");
   expect(calls.find((c) => c.cmd === "unsubscribe_sender")!.args).toEqual({
@@ -153,7 +182,7 @@ test("one-click unsubscribes say so and don't offer it again", async () => {
 });
 
 test("a sender that unsubscribes by link opens it", async () => {
-  render(<MailStatsSettings />);
+  renderStats("senders");
   fireEvent.click(await screen.findByRole("button", { name: "Unsubscribe from news@x.com" }));
   await waitFor(() =>
     expect(calls.find((c) => c.cmd === "open_mail_link")?.args).toEqual({
@@ -163,10 +192,9 @@ test("a sender that unsubscribes by link opens it", async () => {
 });
 
 test("a sender that unsubscribes by email gets a message ready to send", async () => {
-  useSettingsStore.setState({ open: true });
-  render(<MailStatsSettings />);
+  renderStats("senders");
   fireEvent.click(await screen.findByRole("button", { name: "Unsubscribe from List" }));
-  await waitFor(() => expect(useSettingsStore.getState().open).toBe(false));
+  await waitFor(() => expect(useStatsStore.getState().open).toBe(false));
   const { windows } = useComposeStore.getState();
   const panel = windows[windows.length - 1];
   expect(panel.draft.to).toEqual([{ name: null, address: "leave@y.com" }]);

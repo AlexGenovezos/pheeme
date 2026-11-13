@@ -35,7 +35,7 @@ import { ClearDownloadedMail } from "./ClearDownloadedMail";
 import { ContactsSettings } from "./ContactsSettings";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { InboxTabsSettings } from "./InboxTabsSettings";
-import { MailStatsSettings } from "./MailStats";
+import { MailStatsLink } from "./MailStatsLink";
 import { GmailQuotaControl } from "./GmailQuotaControl";
 import { commandMatches, KeyboardSettings, ResetAllShortcuts } from "./KeyboardSettings";
 import { SenderRulesSettings } from "./SenderRulesSettings";
@@ -430,7 +430,7 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       "categories",
       "labels",
     ],
-    Component: MailStatsSettings,
+    Component: MailStatsLink,
   },
   {
     id: "compose",

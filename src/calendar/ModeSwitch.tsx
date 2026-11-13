@@ -40,7 +40,7 @@ function ModeButton({ entry, active }: { entry: (typeof MODES)[number]; active: 
   );
 }
 
-/** The Mail | Calendar switch at the top of the sidebar. */
+/** The Mail | Calendar switch in the sidebar's footer. */
 export function ModeSwitch() {
   const mode = useCalendarStore((s) => s.mode);
   const onKeyDown = (e: KeyboardEvent) => {

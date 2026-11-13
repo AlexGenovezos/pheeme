@@ -10,6 +10,8 @@ import { LabelPickerHost } from "../labels/LabelPicker";
 import { usePickerStore } from "../labels/pickerStore";
 import { revealLabels } from "../labels/reveal";
 import { useSettingsStore } from "../settings/settingsStore";
+import { useStatsStore } from "../stats/statsStore";
+import { useUpdateStore } from "../lib/updater";
 import type { AccountInfo, LabelInfo } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useInboxTabs } from "../store/inboxTabsStore";
@@ -379,15 +381,33 @@ describe("stacked layout", () => {
     expect(useUiStore.getState().mailbox).toEqual({ accountId: "a2", labelId: "DRAFT" });
   });
 
-  test("footer offers Add account and Settings", () => {
+  test("footer holds the Mail | Calendar switch, Settings, Stats, Add account and updates", () => {
     seed([ONE, TWO]);
     let added = 0;
-    render(<Sidebar onAddAccount={() => added++} />);
-    fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+    const { container } = render(<Sidebar onAddAccount={() => added++} />);
+    const footer = container.querySelector<HTMLElement>(".sidebar__footer")!;
+    expect(
+      within(footer).getByRole("radiogroup", { name: "Mail or Calendar" }),
+    ).toBeInTheDocument();
+    // The account's address no longer sits in the footer.
+    expect(footer).not.toHaveTextContent(ONE.email);
+    fireEvent.click(within(footer).getByRole("button", { name: "Add account" }));
     expect(added).toBe(1);
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(within(footer).getByRole("button", { name: "Settings" }));
     expect(useSettingsStore.getState().open).toBe(true);
     act(() => useSettingsStore.getState().close());
+    fireEvent.click(within(footer).getByRole("button", { name: "Mail stats" }));
+    expect(useStatsStore.getState().open).toBe(true);
+    act(() => useStatsStore.getState().close());
+    expect(within(footer).getByRole("button", { name: "Check for updates" })).toBeInTheDocument();
+  });
+
+  test("a downloaded update turns the footer's update button into Restart", () => {
+    seed([ONE]);
+    act(() => useUpdateStore.setState({ available: "0.23.0" }));
+    render(<Sidebar />);
+    expect(screen.getByRole("button", { name: "Restart to update to Pheeme 0.23" })).toBeEnabled();
+    act(() => useUpdateStore.setState({ available: null }));
   });
 });
 
