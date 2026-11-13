@@ -1,4 +1,4 @@
-// The Stats window: a large dialog over the blurred app, opened from the sidebar's footer or the
+// The Stats window: a dialog the size of Settings over the blurred app, opened from the sidebar's footer or the
 // palette. `Stats / account` on the left, the time range, Refresh and Close on the right, and every
 // part of Mail stats below on one scrolling page.
 import { RefreshCw, X } from "lucide-react";
