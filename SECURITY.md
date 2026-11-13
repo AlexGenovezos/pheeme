@@ -12,8 +12,8 @@ unless you'd rather stay anonymous.
 
 ## Supported versions
 
-Only the latest release gets fixes. Pheeme updates itself, so a fix reaches everyone on the next
-release.
+Only the latest release gets fixes. Pheeme offers each new release in the app, and installing it
+takes one click.
 
 ## What counts
 
