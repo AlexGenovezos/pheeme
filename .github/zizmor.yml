@@ -1,0 +1,6 @@
+# zizmor (https://docs.zizmor.sh) audits the workflows in the Security workflow.
+rules:
+  dependabot-cooldown:
+    config:
+      # dependabot.yml waits 3 days (7 for a major) on purpose; security updates skip it.
+      days: 3

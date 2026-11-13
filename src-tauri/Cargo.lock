@@ -84,9 +84,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "ammonia"
-version = "4.2.4"
+version = "4.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f45dfa685e1ec33b1bf1a3b93b8047cbdbef41b6040deebbe6bea7720a45574"
+checksum = "b34ca49e407c06daac53f0c4debe8ff5df9cc2a4e9369d164a5d86ef8c219319"
 dependencies = [
  "cssparser 0.38.0",
  "html5ever 0.40.1",
@@ -2058,9 +2058,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.13"
+version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f44da3a8150a6703ed5d34e164b875fd14c2cdab9af1252a9a1020bde2bdc54"
+checksum = "7d29020232d6aa3fb1daca64c1127cf662cf97f254ae16c18c05b8ab635fc118"
 dependencies = [
  "atomic-waker",
  "bytes",

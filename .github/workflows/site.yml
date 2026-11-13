@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
+          cache: npm # zizmor: ignore[cache-poisoning] only main pushes save this cache, and they run trusted code.
       - run: npm ci
       - name: Use public DNS for apt
         # Ubuntu runners' resolver intermittently fails on every Ubuntu mirror
@@ -79,7 +79,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
+          cache: npm # zizmor: ignore[cache-poisoning] only main pushes save this cache, and they run trusted code.
       - run: npm ci
       - name: Use public DNS for apt
         # See the deploy job.

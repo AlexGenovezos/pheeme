@@ -1,0 +1,45 @@
+# cargo-deny (https://embarkstudios.github.io/cargo-deny/), run by the Security workflow:
+# known vulnerabilities (RustSec), licences, and where crates come from.
+
+[advisories]
+version = 2
+# Only crates we depend on directly; unmaintained crates deep in Tauri's tree are upstream's call.
+unmaintained = "workspace"
+ignore = [
+  # Bundled SQLite before 3.54 can read stale memory when opening a database with a crafted -wal
+  # file. Our database lives in the app's data directory, so writing that file already means
+  # owning the account. The fix (libsqlite3-sys 0.39) needs an sqlx release that uses it.
+  { id = "RUSTSEC-2026-0459", reason = "local-only; waits on sqlx moving to libsqlite3-sys 0.39" },
+  # quick-xml < 0.41 comes in through plist (tauri-utils) and only reads the app's own config
+  # and Info.plist, never mail or other outside input.
+  { id = "RUSTSEC-2026-0194", reason = "plist via Tauri reads only our own files" },
+  { id = "RUSTSEC-2026-0195", reason = "plist via Tauri reads only our own files" },
+]
+
+[licenses]
+version = 2
+# Permissive licences, plus MPL-2.0 (file-level copyleft, fine to ship in an MIT app).
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+
+[bans]
+# Tauri's tree carries several versions of windows-sys, bitflags and the like; not ours to fix.
+multiple-versions = "allow"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
