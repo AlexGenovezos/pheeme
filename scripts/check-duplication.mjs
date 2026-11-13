@@ -37,8 +37,7 @@ function scan(root) {
 }
 
 // On Windows jscpd reports verbatim paths (\\?\C:\...), which `relative` can't relate to `root`.
-const path = (root, f) =>
-  relative(root, f.name.replace(/^\\\\\?\\/, "")).replaceAll("\\", "/");
+const path = (root, f) => relative(root, f.name.replace(/^\\\\\?\\/, "")).replaceAll("\\", "/");
 const kindOf = (clone) => (clone.kind === "exact" ? "exact" : "similar");
 const pairOf = (root, clone) =>
   [path(root, clone.firstFile), path(root, clone.secondFile)].sort().join(" <> ");
