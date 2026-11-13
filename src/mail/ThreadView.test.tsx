@@ -597,6 +597,45 @@ test("Reply all answers the latest message that isn't a draft", async () => {
   );
 });
 
+test("each message forwards itself, so the original of a bounce can be forwarded", async () => {
+  const calls: Array<{ cmd: string; args: unknown }> = [];
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args });
+    return cmd === "compose_template"
+      ? {
+          to: [],
+          cc: [],
+          bcc: [],
+          subject: "Fwd: Quarterly plan",
+          bodyHtml: "",
+          attachments: [],
+          references: [],
+        }
+      : undefined;
+  });
+  // The original, then Mail Delivery Subsystem's bounce, which the toolbar's Forward would take.
+  open(detail([message(1, { unread: true }), message(2)]));
+  renderView();
+
+  fireEvent.click(within(card(1)).getByRole("button", { name: "Forward this message" }));
+  await waitFor(() =>
+    expect(calls.filter((c) => c.cmd === "compose_template").map((c) => c.args)).toEqual([
+      { accountId: "a1", messageId: "m1", mode: "forward" },
+    ]),
+  );
+  // Clicking a button in the header doesn't fold the card.
+  expect(screen.getByText("Body 1")).toBeInTheDocument();
+  expect(
+    within(card(2)).getByRole("button", { name: "Reply to this message" }),
+  ).toBeInTheDocument();
+});
+
+test("a conversation of one message leaves Reply and Forward to the toolbar", () => {
+  open(detail([message(1), message(2, { labelIds: ["DRAFT"] })]));
+  renderView();
+  expect(screen.queryByRole("button", { name: "Forward this message" })).not.toBeInTheDocument();
+});
+
 test("a draft in the conversation says so and opens in compose", async () => {
   const calls: string[] = [];
   mockIPC((cmd) => {

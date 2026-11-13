@@ -283,6 +283,13 @@
   height: var(--icon-size-sm);
 }
 
+.message-card__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-0-5);
+  margin-block: calc(-1 * var(--space-0-5));
+}
+
 .message-card__toggle {
   display: inline-flex;
   align-items: center;
