@@ -33,21 +33,15 @@ jobs:
       # The browser checks build site/dist, including /demo from the app source.
       # A broken demo must not replace the live site.
       - run: npm run test:site
-      # The product video is recorded from the demo just built, so it shows the
-      # current UI. A storyboard step the app no longer supports fails here.
-      - name: Install ffmpeg
-        run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg)
-      - name: Record the product video
-        run: npm run video:site
-      # The video to watch, or failure.png showing where the storyboard got stuck.
-      - name: Keep the video for review
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: pheeme-tour
-          path: site/dist/video/
-          retention-days: 14
-          if-no-files-found: ignore
+      # The product video is recorded by the video job below, so the site doesn't
+      # wait for it. Until that job deploys, the site keeps the video it has now.
+      - name: Keep the current video
+        run: |
+          mkdir -p site/dist/video
+          for f in pheeme-tour.mp4 pheeme-tour.jpg pheeme-tour.vtt; do
+            curl -fsSL --retry 3 -o "site/dist/video/$f" "https://pheeme.app/video/$f" \
+              || echo "::warning::Couldn't fetch $f from pheeme.app; the site has no video until the video job deploys."
+          done
 
       # main -> production at pheeme.app
       - name: Deploy to pheeme.app
@@ -72,3 +66,46 @@ jobs:
           wranglerVersion: "4.149.0"
           workingDirectory: site
           command: versions upload --message "PR #${{ github.event.number }}"
+
+  # Records the product video from the same commit and deploys the site again
+  # with it. A newer push cancels this run (concurrency above), so an older
+  # recording never replaces a newer site.
+  video:
+    name: Record product video
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Use public DNS for apt
+        # See the deploy job.
+        run: sudo resolvectl dns "$(ip route show default | awk '{print $5; exit}')" 1.1.1.1 8.8.8.8
+      - run: npx playwright install --with-deps chromium
+      - name: Install ffmpeg
+        run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg)
+      - run: npm run build:site
+      # Recorded from the demo just built, so it shows the current UI. A
+      # storyboard step the app no longer supports fails here.
+      - name: Record the product video
+        run: npm run video:site
+      # The video to watch, or failure.png showing where the storyboard got stuck.
+      - name: Keep the video for review
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pheeme-tour
+          path: site/dist/video/
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Deploy to pheeme.app with the new video
+        if: github.event_name != 'pull_request'
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: "4.149.0"
+          workingDirectory: site
+          command: deploy

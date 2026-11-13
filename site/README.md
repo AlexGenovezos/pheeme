@@ -26,9 +26,9 @@ Manual deploy: run `npm run build:site` from the repository root, then `wrangler
 
 ## Product video
 
-The 90-second tour on the home page (`/video/pheeme-tour.mp4`) is recorded from the demo app on every site build, so it always shows the current UI. Nobody edits video by hand: change the code and the next deploy re-records it.
+The two-minute tour on the home page (`/video/pheeme-tour.mp4`) is recorded from the demo app on every site build, so it always shows the current UI. Nobody edits video by hand: change the code and the next deploy re-records it.
 
-- `video/scenes.mjs` is the storyboard: the words on screen (`WORDS`) and, in order, what happens in the app: keys pressed, clicks, the camera zooming onto a part of the window. Edit this to change the story.
+- `video/scenes.mjs` is the storyboard: the words on screen (`WORDS`) and, in order, what happens in the app: keys pressed, clicks, the camera zooming onto a part of the window. Edit this to change the story. It is split into named scenes (`SCENES`, each started with `d.scene("…")`).
 - `video/director.mjs` holds the verbs the storyboard uses (`headline`, `focus`, `press`, `type`, `click`, `card`, …).
 - `video/stage.html`, `stage.css` and `stage.js` are the 1920×1080 frame: the night sky, the app window in 3D, the big words, the cursor and the keycaps. The app inside is the real `/demo/`.
 - `video/record.mjs` serves `dist/`, plays the storyboard in Chromium at a fixed date and time (Wednesday, 11 November 2026, 9:41 in New York), films it a frame at a time and encodes an H.264 MP4 with ffmpeg. Nothing runs in real time: each frame moves the page's clock (Playwright's fake clock) and every CSS animation and transition (the Web Animations API) on by exactly 1/30 s, then takes a screenshot, so motion is smooth however slow the machine. Waits in the storyboard are lengths of film, and actions happen between two frames. It writes `dist/video/pheeme-tour.mp4`, a poster (`.jpg`) and a description track (`.vtt`).
@@ -37,9 +37,12 @@ The 90-second tour on the home page (`/video/pheeme-tour.mp4`) is recorded from 
 # From the repository root (needs ffmpeg and Playwright's Chromium):
 npm run build:site
 npm run video:site                       # or: node site/video/record.mjs --out <dir> [--headed] [--keep-frames]
+npm run video:site -- --scene settings   # only that scene (comma-separate several), to dist/video/pheeme-tour-settings.mp4
 ```
 
-When the app changes in a way the storyboard can't follow (a button renamed, a shortcut moved), recording fails and saves `failure.png` beside the video, showing where it got stuck. In CI the Site workflow records after the browser checks, before deploying, and uploads the video (or `failure.png`) as the `pheeme-tour` artifact, so a pull request shows the new cut.
+Filming costs about 0.15 s a frame, so the whole video takes several minutes. To look at a change, film just the scenes you touched with `--scene`: the others still play, unfilmed, in about 15 s, so the app reaches the state the filmed ones expect. A scene's look also depends on the scenes before it (what's archived, which mode is open), so the full recording in CI is the one that counts.
+
+When the app changes in a way the storyboard can't follow (a button renamed, a shortcut moved), recording fails and saves `failure.png` beside the video, showing where it got stuck. In CI the Site workflow deploys the site first, carrying over the video pheeme.app has now, so the site never waits for a recording. Its second job then records the video from the same commit, uploads it (or `failure.png`) as the `pheeme-tour` artifact, so a pull request shows the new cut, and on `main` deploys the site again with it. A newer push cancels the run, so an older recording never replaces a newer site.
 
 ## Local preview
 
