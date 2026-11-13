@@ -769,27 +769,37 @@ const autoReads = new Map<ThreadKey, object>();
  * arrive read and the view couldn't tell which ones to expand. If the detail can't be cached (the request failed,
  * or kept being superseded), or the user marks it unread (or archives or deletes it) in the meantime, the automatic
  * read is dropped rather than sent.
+ *
+ * `unread`: the caller knows the conversation was unread though its row may not be listed yet (a notification click
+ * switches mailbox and opens it at once). The detail then decides: it is marked read only if a message is still
+ * unread, and the row shows read whenever the list loads it.
  */
-export function openAndMarkRead(key: ThreadKey, direction: 1 | -1 = 1): void {
+export function openAndMarkRead(
+  key: ThreadKey,
+  direction: 1 | -1 = 1,
+  { unread = false }: { unread?: boolean } = {},
+): void {
   // Ask for it before the preload window moves, so preloads queue behind it.
   void useThreadStore.getState().load(key);
   setTravelDirection(direction);
   ui().setOpenThread(key);
   const row = present([key])[0];
-  if (row?.thread.unread) {
-    const ticket = {};
-    autoReads.set(key, ticket);
-    const wanted = useThreadStore
-      .getState()
-      .waitForDetail(key)
-      .then((cached) => {
-        const current = autoReads.get(key) === ticket;
-        if (current) autoReads.delete(key);
-        // Without the detail on screen there is nothing to protect the expansion with, so no automatic read.
-        return cached && current;
-      });
-    void apply([key], readChange(true), { keepChecked: true, after: wanted });
-  }
+  if (!row?.thread.unread && !unread) return;
+  const ticket = {};
+  autoReads.set(key, ticket);
+  const wanted = useThreadStore
+    .getState()
+    .waitForDetail(key)
+    .then((cached) => {
+      const current = autoReads.get(key) === ticket;
+      if (current) autoReads.delete(key);
+      // Without the detail on screen there is nothing to protect the expansion with, so no automatic read.
+      if (!cached || !current) return false;
+      if (row?.thread.unread) return true;
+      const detail = useThreadStore.getState().details.get(key);
+      return !!detail?.messages.some((m) => m.labelIds.includes("UNREAD"));
+    });
+  void apply([key], readChange(true), { keepChecked: true, after: wanted, evenIfGone: !row });
 }
 
 /**

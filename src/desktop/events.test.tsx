@@ -27,7 +27,7 @@ test("opens the owning account and exact conversation, closing overlays and sear
   expect(openNotificationTarget({ kind: "thread", accountId: "a", threadId: "reply" })).toBe(true);
   expect(useCalendarStore.getState().mode).toBe("mail");
   expect(useUiStore.getState()).toMatchObject({
-    mailbox: { accountId: "a", labelId: "ALL" },
+    mailbox: { accountId: "a", labelId: "INBOX", category: "CATEGORY_PERSONAL" },
     openThread: "a:reply",
     searchText: "",
   });
@@ -37,6 +37,24 @@ test("opens the owning account and exact conversation, closing overlays and sear
     false,
   );
   expect(useUiStore.getState().openThread).toBe("a:reply");
+});
+
+test("marks the opened conversation read, as opening it from the list would", async () => {
+  const modified: unknown[] = [];
+  mockIPC((command, args) => {
+    if (command === "get_thread")
+      return {
+        thread: {},
+        messages: [{ id: "m", threadId: "new", labelIds: ["INBOX", "UNREAD"] }],
+        bodyError: null,
+      };
+    if (command === "modify_threads") modified.push(args);
+    return command === "list_threads" ? { threads: [], next: null } : undefined;
+  });
+  expect(openNotificationTarget({ kind: "thread", accountId: "a", threadId: "new" })).toBe(true);
+  await waitFor(() =>
+    expect(modified).toEqual([{ accountId: "a", threadIds: ["new"], add: [], remove: ["UNREAD"] }]),
+  );
 });
 
 test("queues an early startup click until accounts are ready; handles later clicks and cleans up", async () => {
