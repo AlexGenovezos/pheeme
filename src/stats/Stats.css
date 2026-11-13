@@ -1,9 +1,11 @@
-/* The Stats window (StatsDialog.tsx): a large dialog over the blurred app. */
+/* The Stats window (StatsDialog.tsx): a dialog over the blurred app, the size of Settings. */
 .stats-scrim {
   position: fixed;
   inset: var(--space-0);
   z-index: var(--z-overlay);
   display: flex;
+  align-items: center;
+  justify-content: center;
   padding: var(--settings-margin);
   background: var(--color-scrim);
   -webkit-backdrop-filter: blur(var(--settings-backdrop-blur));
@@ -11,12 +13,14 @@
   animation: settings-fade var(--duration-base) var(--ease-standard);
 }
 
+/* The same size as Settings. */
 .stats {
   display: flex;
-  flex: 1;
   flex-direction: column;
-  min-width: var(--space-0);
-  min-height: var(--space-0);
+  width: var(--settings-width);
+  max-width: 100%;
+  height: var(--settings-height);
+  max-height: 100%;
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-pane-bg);
@@ -28,7 +32,7 @@
   outline: none;
 }
 
-/* Header: Stats / account / range, then the view tabs, Refresh and Close. */
+/* Header: Stats / account, then the time range, Refresh and Close. */
 .stats__title-row {
   display: flex;
   flex-shrink: 0;
@@ -74,15 +78,13 @@
   min-height: var(--space-0);
   overflow-y: auto;
   padding: var(--space-6) var(--space-5);
+  outline: none;
 }
 
-/* Mail stats (MailStats.tsx): one view at a time, centred. */
+/* Mail stats (MailStats.tsx): every part on one page. */
 .stats__content {
   display: grid;
   align-content: start;
-  width: 100%;
-  max-width: var(--stats-content-width);
-  margin: var(--space-0) auto;
   outline: none;
   gap: var(--space-5);
   font-size: var(--font-size-sm);

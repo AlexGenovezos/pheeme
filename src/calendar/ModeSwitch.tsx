@@ -36,11 +36,12 @@ function ModeButton({ entry, active }: { entry: (typeof MODES)[number]; active: 
       onClick={() => useCalendarStore.getState().setMode(entry.mode)}
     >
       <Icon aria-hidden="true" />
+      <span aria-hidden="true">{entry.label}</span>
     </button>
   );
 }
 
-/** The Mail | Calendar switch in the sidebar's footer. */
+/** The Mail | Calendar switch, the top row of the sidebar's footer. */
 export function ModeSwitch() {
   const mode = useCalendarStore((s) => s.mode);
   const onKeyDown = (e: KeyboardEvent) => {

@@ -1,5 +1,5 @@
-// The sidebar's bottom row, the same in Mail and Calendar: the Mail | Calendar switch, Settings,
-// Stats and Add account on the left, Check for updates on the right.
+// The sidebar's footer, the same in Mail and Calendar: the Mail | Calendar switch across the top
+// row; below it Settings, Stats and Add account on the left, Check for updates on the right.
 import { BarChart3, CircleArrowUp, Settings, UserPlus } from "lucide-react";
 import { ModeSwitch } from "../calendar/ModeSwitch";
 import { IconButton } from "../components/ui/IconButton";
@@ -16,22 +16,24 @@ export function SidebarFooter({ onAddAccount }: { onAddAccount?: () => void }) {
   return (
     <div className="sidebar__footer">
       <ModeSwitch />
-      <IconButton
-        label="Settings"
-        shortcut={settingsShortcut}
-        icon={<Settings />}
-        onClick={() => useSettingsStore.getState().openSettings()}
-      />
-      <IconButton
-        label="Mail stats"
-        shortcut={statsShortcut}
-        icon={<BarChart3 />}
-        onClick={() => useStatsStore.getState().openStats()}
-      />
-      {onAddAccount && (
-        <IconButton label="Add account" icon={<UserPlus />} onClick={onAddAccount} />
-      )}
-      <UpdateButton />
+      <div className="sidebar__footer-row">
+        <IconButton
+          label="Settings"
+          shortcut={settingsShortcut}
+          icon={<Settings />}
+          onClick={() => useSettingsStore.getState().openSettings()}
+        />
+        <IconButton
+          label="Mail stats"
+          shortcut={statsShortcut}
+          icon={<BarChart3 />}
+          onClick={() => useStatsStore.getState().openStats()}
+        />
+        {onAddAccount && (
+          <IconButton label="Add account" icon={<UserPlus />} onClick={onAddAccount} />
+        )}
+        <UpdateButton />
+      </div>
     </div>
   );
 }

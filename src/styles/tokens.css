@@ -200,7 +200,6 @@
   /* The nav's and body's corners inside the dialog's rounded border. */
   --settings-inner-radius: calc(var(--radius-lg) - var(--border-width));
   /* Stats window: nearly the whole app, its views centred at a readable width. */
-  --stats-content-width: 1000px;
   /* Keyboard map on the Keyboard shortcuts page. */
   --kbmap-key-height: 32px;
   --kbmap-tip-max-width: 280px;

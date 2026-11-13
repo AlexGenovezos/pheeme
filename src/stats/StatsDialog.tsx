@@ -1,6 +1,6 @@
-// The Stats window: a large dialog over the blurred app, opened from the sidebar's footer or the
-// palette. Breadcrumb filters (account, time range) on the left, the view tabs, Refresh and Close
-// on the right, and one view of Mail stats below.
+// The Stats window: a dialog the size of Settings over the blurred app, opened from the sidebar's footer or the
+// palette. `Stats / account` on the left, the time range, Refresh and Close on the right, and every
+// part of Mail stats below on one scrolling page.
 import { RefreshCw, X } from "lucide-react";
 import { IconButton } from "../components/ui/IconButton";
 import { Modal } from "../components/ui/Modal";
@@ -10,21 +10,15 @@ import {
   ALL,
   DailyChart,
   Places,
-  RANGE_NAMES,
+  RANGE_LABELS,
   RANGES,
   Senders,
   StatsNote,
   Tiles,
   useMailStats,
 } from "./MailStats";
-import { STATS_TABS, type StatsTab, useStatsStore } from "./statsStore";
+import { useStatsStore } from "./statsStore";
 import "./Stats.css";
-
-const TAB_LABELS: Record<StatsTab, string> = {
-  overview: "Overview",
-  places: "Where it lands",
-  senders: "Senders",
-};
 
 /** Mount once, inside the mail screen; it renders only while open. */
 export function Stats() {
@@ -33,8 +27,6 @@ export function Stats() {
 }
 
 function StatsDialog() {
-  const tab = useStatsStore((s) => s.tab);
-  const setTab = useStatsStore((s) => s.setTab);
   const close = useStatsStore((s) => s.close);
   const { accounts, range, account, days, start, stats, error, choose, refresh } = useMailStats();
 
@@ -57,22 +49,12 @@ function StatsDialog() {
       ) : (
         <span className="stats__crumb-text">{accounts[0]?.email ?? "No accounts"}</span>
       )}
-      <span className="stats__crumb-sep" aria-hidden>
-        /
-      </span>
-      <Select
-        className="stats__crumb"
-        aria-label="Time range"
-        value={range}
-        options={RANGES.map((r) => ({ value: r, label: RANGE_NAMES[r] }))}
-        onChange={(r) => choose({ range: r })}
-      />
       <span className="stats__header-spacer" />
       <SegmentedControl
-        label="View"
-        value={tab}
-        options={STATS_TABS.map((t) => ({ value: t, label: TAB_LABELS[t] }))}
-        onChange={setTab}
+        label="Time range"
+        value={range}
+        options={RANGES.map((r) => ({ value: r, label: RANGE_LABELS[r] }))}
+        onChange={(r) => choose({ range: r })}
       />
       <IconButton label="Refresh" icon={<RefreshCw />} onClick={refresh} />
       <IconButton label="Close" icon={<X />} onClick={close} />
@@ -89,20 +71,16 @@ function StatsDialog() {
       titleClassName="stats__title"
       titleActions={actions}
     >
-      <div className="stats__body">
+      <div className="stats__body" data-autofocus tabIndex={-1}>
         {accounts.length === 0 ? (
           <p className="stats__empty">No accounts connected.</p>
         ) : (
-          <div className="stats__content" data-autofocus tabIndex={-1}>
+          <div className="stats__content">
             <StatsNote stats={stats} error={error} onRetry={refresh} />
-            {tab === "overview" && (
-              <>
-                <Tiles totals={stats?.totals ?? null} days={days} />
-                <DailyChart stats={stats} start={start} days={days} />
-              </>
-            )}
-            {tab === "places" && <Places stats={stats} days={days} />}
-            {tab === "senders" && <Senders stats={stats} days={days} />}
+            <Tiles totals={stats?.totals ?? null} days={days} />
+            <DailyChart stats={stats} start={start} days={days} />
+            <Places stats={stats} days={days} />
+            <Senders stats={stats} days={days} />
           </div>
         )}
       </div>
