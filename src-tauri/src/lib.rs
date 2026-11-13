@@ -26,6 +26,7 @@ pub mod search;
 pub mod secrets;
 pub mod sender_rules;
 pub mod senders;
+mod spelling;
 pub mod stats;
 pub mod support;
 pub mod sync;
@@ -215,6 +216,8 @@ fn reveal_window_fallback(app: tauri::AppHandle) {
 }
 
 pub fn run() {
+    #[cfg(target_os = "macos")]
+    spelling::enable_before_webviews();
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -260,6 +263,10 @@ pub fn run() {
                 directory = ?log_path.as_deref().map(support::scrub::display_path),
                 "Pheeme starting"
             );
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                spelling::enable_in(&window);
+            }
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
