@@ -44,6 +44,9 @@ jobs:
             curl -fsSL --retry 3 -o "site/dist/video/$f" "https://pheeme.app/video/$f" \
               || echo "::warning::Couldn't fetch $f from pheeme.app; the site has no video until the video job deploys."
           done
+      # Cloudflare refuses the whole deploy over one file bigger than 25 MiB.
+      - name: Check asset sizes
+        run: node site/scripts/check-assets.mjs
 
       # main -> production at pheeme.app
       - name: Deploy to pheeme.app
@@ -96,6 +99,9 @@ jobs:
       # storyboard step the app no longer supports fails here.
       - name: Record the product video
         run: npm run video:site
+      # The recorder keeps the video under the limit; this catches anything else.
+      - name: Check asset sizes
+        run: node site/scripts/check-assets.mjs
       # The video to watch, or failure.png showing where the storyboard got stuck.
       - name: Keep the video for review
         if: ${{ !cancelled() }}

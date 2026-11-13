@@ -26,6 +26,7 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { chromium } from "playwright";
+import { MAX_ASSET_BYTES, mib } from "../scripts/check-assets.mjs";
 import { Director } from "./director.mjs";
 import tour, { SCENES } from "./scenes.mjs";
 
@@ -56,6 +57,9 @@ const FPS = 30;
 // and every recording shows the same dates.
 const NOW = "2026-11-11T09:41:00-05:00";
 const FRAME_MS = 1000 / FPS;
+// x264 quality settings to try, best first; the first that fits Cloudflare's
+// asset limit is kept. At 2:18, CRF 21 came to 26.3 MiB and 23 to about 21 MiB.
+const CRFS = [23, 25, 27, 29];
 const TIMEZONE = "America/New_York";
 
 const TYPES = {
@@ -231,19 +235,32 @@ try {
   await mkdir(opts.out, { recursive: true });
   const name = only ? `pheeme-tour-${[...only].join("-")}` : "pheeme-tour";
   const mp4 = join(opts.out, `${name}.mp4`);
-  await run("ffmpeg", [
-    "-y", "-loglevel", "error",
-    "-framerate", String(FPS), "-start_number", "1", "-i", join(frames, "%06d.jpg"),
-    "-vf", `scale=${W}:${H}:flags=lanczos,format=yuv420p`,
-    "-c:v", "libx264", "-preset", "slow", "-crf", "21", "-tune", "animation",
-    "-movflags", "+faststart", "-an",
-    mp4,
-  ]);
-  const size = (await stat(mp4)).size;
+  // Cloudflare won't deploy a file over 25 MiB, so a longer video steps down
+  // in quality until it fits rather than taking the whole site deploy with it.
+  let size = Infinity;
+  let crf;
+  for (crf of CRFS) {
+    await run("ffmpeg", [
+      "-y", "-loglevel", "error",
+      "-framerate", String(FPS), "-start_number", "1", "-i", join(frames, "%06d.jpg"),
+      "-vf", `scale=${W}:${H}:flags=lanczos,format=yuv420p`,
+      "-c:v", "libx264", "-preset", "slow", "-crf", String(crf), "-tune", "animation",
+      "-movflags", "+faststart", "-an",
+      mp4,
+    ]);
+    size = (await stat(mp4)).size;
+    if (size <= MAX_ASSET_BYTES) break;
+    console.log(`At CRF ${crf} the video is ${mib(size)}, over ${mib(MAX_ASSET_BYTES)}.`);
+  }
+  if (size > MAX_ASSET_BYTES) {
+    throw new Error(
+      `${mp4} is ${mib(size)} even at CRF ${CRFS.at(-1)}, over Cloudflare's ${mib(MAX_ASSET_BYTES)} limit. Shorten the storyboard (scenes.mjs).`,
+    );
+  }
   const length = ((shots * FRAME_MS) / 1000).toFixed(1);
   if (only) {
     // A look at some scenes: the site's poster and description track are for the whole video.
-    console.log(`${mp4}: ${length} s, ${shots} frames, ${(size / 1e6).toFixed(1)} MB`);
+    console.log(`${mp4}: ${length} s, ${shots} frames, ${mib(size)} at CRF ${crf}`);
   } else {
     // index.html links the video, its poster and its description track.
     if (!director.poster) throw new Error("The storyboard never called takePoster().");
@@ -256,7 +273,7 @@ try {
       return `${i + 1}\n${vttTime(c.at)} --> ${vttTime(next)}\n${c.text}`;
     });
     await writeFile(join(opts.out, "pheeme-tour.vtt"), `WEBVTT\n\n${cues.join("\n\n")}\n`);
-    console.log(`${mp4}: ${length} s, ${shots} frames, ${(size / 1e6).toFixed(1)} MB`);
+    console.log(`${mp4}: ${length} s, ${shots} frames, ${mib(size)} at CRF ${crf}`);
   }
 } finally {
   await browser.close();
