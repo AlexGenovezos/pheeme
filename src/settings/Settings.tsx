@@ -70,7 +70,8 @@ function SettingsDialog({ pages }: { pages: SettingsPageDef[] }) {
 
   // Keep Tab inside the dialog.
   const trapTab = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== "Tab") return;
+    // A dialog opened over Settings keeps Tab in itself.
+    if (e.key !== "Tab" || e.defaultPrevented) return;
     const items = [...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
     if (!items.length) return;
     const first = items[0];

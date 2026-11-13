@@ -59,8 +59,11 @@ test("turns assistants on, connects one with a one-time command, and removes it"
   expect(screen.getByRole("switch", { name: "Organize mail" })).toBeChecked();
   expect(screen.getByRole("switch", { name: "Write drafts" })).not.toBeChecked();
 
+  // Connecting opens the command in a dialog; the Connect row stays as it was.
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));
   await flush();
+  expect(screen.getByRole("dialog", { name: "Connect Claude Code" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
   const command = screen.getByLabelText("Claude Code command");
   expect(command).toHaveTextContent("Authorization: Bearer pheeme_preview1");
   fireEvent.click(screen.getByRole("button", { name: "Copy command" }));
@@ -73,6 +76,7 @@ test("turns assistants on, connects one with a one-time command, and removes it"
   expect(connected).toHaveTextContent("not used yet");
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
   expect(screen.queryByLabelText("Claude Code command")).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
 
   // Activity shows each call, and opens to exactly what was sent and what came back.
   await act(() => emit(ASSISTANT_ACTIVITY_EVENT));

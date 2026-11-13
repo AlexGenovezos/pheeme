@@ -195,6 +195,7 @@
   --settings-margin: 48px;
   --settings-nav-width: 220px;
   --settings-content-width: 680px;
+  --settings-connect-width: 560px;
   --settings-backdrop-blur: 6px;
   --settings-recorder-min-width: 120px;
   /* The nav's and body's corners inside the dialog's rounded border. */
