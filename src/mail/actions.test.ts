@@ -319,7 +319,7 @@ describe("pending changes and reloads", () => {
     expect(starredOf()).toEqual([false, true]); // A is released and shows it; B's star is still held
 
     // Unstar A while B is still pending: a reload must not bring A's older star back.
-    useUiStore.setState({ openThread: key(1) });
+    useUiStore.setState({ openThread: key(1), checked: [] });
     await setStarred(false);
     await reloadWith([thread(1, "a1", { starred: false }), thread(2, "a2")]);
     expect(
@@ -436,6 +436,39 @@ describe("star and read", () => {
     expect(last(toasts())?.title).toBe("Marked as read");
     last(toasts())!.action!.run();
     expect(useMailStore.getState().threads[0].unread).toBe(true);
+  });
+});
+
+describe("the selection", () => {
+  test("stays checked through a change that keeps the rows, so mark read then archive acts on the same ones", async () => {
+    setList([thread(1, "a1", { unread: true }), thread(2), thread(3, "a1", { unread: true })]);
+    useUiStore.setState({ checked: [key(1), key(3)] });
+
+    await setRead(true);
+    expect(useUiStore.getState().checked).toEqual([key(1), key(3)]);
+    await toggleStar();
+    expect(useUiStore.getState().checked).toEqual([key(1), key(3)]);
+
+    const done = archive();
+    expect(listKeys()).toEqual([key(2)]);
+    expect(useUiStore.getState().checked).toEqual([]);
+    await done;
+    expect(last(modifyCalls())).toEqual({
+      accountId: "a1",
+      threadIds: ["t1", "t3"],
+      add: [],
+      remove: ["INBOX"],
+    });
+  });
+
+  test("a row that leaves is unchecked, the rest of the selection stays", async () => {
+    setList([thread(1), thread(2), thread(3)]);
+    useUiStore.setState({ checked: [key(1), key(2)], anchor: key(2) });
+    await archive([key(2)]);
+    expect(useUiStore.getState().checked).toEqual([key(1)]);
+    expect(useUiStore.getState().anchor).toBeNull();
+    await archive([key(3)]);
+    expect(useUiStore.getState().checked).toEqual([key(1)]);
   });
 });
 

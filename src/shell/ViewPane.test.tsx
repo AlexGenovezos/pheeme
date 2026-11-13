@@ -83,6 +83,9 @@ test("the toggles follow the checked rows, not an unrelated open conversation", 
   expect(button("Star")).toBeEnabled();
   expect(button("Reply")).toBeEnabled();
 
+  // The open envelope means "mark as read", as in Gmail and on the row's own button.
+  expect(button("Mark as read").querySelector("svg")).toHaveClass("lucide-mail-open");
+
   fireEvent.click(button("Mark as read"));
   expect(modified).toEqual([
     { accountId: "a1", threadIds: ["t1", "t2"], add: [], remove: ["UNREAD"] },
@@ -96,6 +99,7 @@ test("with every checked row starred and read, the toggles offer the opposite", 
   render(<ViewPane />);
   expect(button("Mark as unread")).toBeEnabled();
   expect(button("Remove star")).toBeEnabled();
+  expect(button("Mark as unread").querySelector("svg")).toHaveClass("lucide-mail");
 });
 
 test("Star follows the first checked row, like the s shortcut", () => {

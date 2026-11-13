@@ -187,7 +187,7 @@ export function ViewPane() {
         <IconButton
           label={anyUnread ? "Mark as read" : "Mark as unread"}
           shortcut={anyUnread ? keys.read : keys.unread}
-          icon={anyUnread ? <Mail /> : <MailOpen />}
+          icon={anyUnread ? <MailOpen /> : <Mail />}
           disabled={stale}
           onClick={() => void setRead(anyUnread)}
         />
