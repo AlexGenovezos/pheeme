@@ -152,7 +152,7 @@ function App() {
   const [adding, setAdding] = useState<false | "account" | "guide">(false);
   const showMail = useCallback(() => setAdding(false), []);
   useDesktopEvents(loaded && accounts.length > 0, showMail);
-  // Onboarding replaces the mail screen; the settings dialog closes so it doesn't reopen on return.
+  // Onboarding opens over the mail screen; the settings dialog closes so the two don't stack.
   const addAccount = () => {
     useSettingsStore.getState().close();
     setAdding("account");
@@ -197,8 +197,8 @@ function App() {
         </main>
       </div>
     );
-  } else if (loaded && (accounts.length === 0 || adding || reconnectAccount)) {
-    screen = (
+  } else if (loaded) {
+    const onboarding = (
       <Onboarding
         key={reconnectAccount?.id ?? (adding === "guide" ? "guide" : "add")}
         accounts={accounts}
@@ -219,8 +219,16 @@ function App() {
         }
       />
     );
-  } else if (loaded) {
-    screen = <MailScreen onAddAccount={addAccount} />;
+    // First run, setup is the whole window; after that it's a dialog over the mail screen.
+    screen =
+      accounts.length === 0 ? (
+        onboarding
+      ) : (
+        <>
+          <MailScreen onAddAccount={addAccount} />
+          {(adding || reconnectAccount) && onboarding}
+        </>
+      );
   }
   return <ToastProvider pinned={<UpdateBanner />}>{screen}</ToastProvider>;
 }
