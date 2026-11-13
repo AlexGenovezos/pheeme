@@ -32,8 +32,8 @@ export const WORDS = {
   filled: "The time and the people come from the email",
   pinned: "The email stays pinned beside your calendar",
   settings: {
-    title: "Settings that go further.",
-    text: "See what fills your inbox, and let AI assistants help, on your terms.",
+    title: "Know your inbox. Bring your AI.",
+    text: "Mail stats show what fills your inbox, and a built-in MCP server lets assistants help, on your terms.",
   },
   stats: "Mail stats: how much arrives, and how much you open",
   senders: "Who sends the most, with one-click unsubscribe",
@@ -170,8 +170,9 @@ export default async function tour(d) {
   d.chapter(`${WORDS.calendar.title} ${WORDS.calendar.text}`);
   await d.headline(WORDS.calendar.title, WORDS.calendar.text, { hold: 2600 });
 
-  // The pointer takes you to the calendar: close on the Mail | Calendar switch, then pull back to see it.
-  await d.focus({ x: 0, y: 0, width: 640, height: 360 }, { max: 2.2, ms: 1000 });
+  // The pointer takes you to the calendar: close on the Mail | Calendar switch in the sidebar's
+  // footer, then pull back to see it.
+  await d.focus({ x: 0, y: 450, width: 640, height: 360 }, { max: 2.2, ms: 1000 });
   await say(WORDS.switch, 300);
   const toCalendar = app.locator(".mode-switch").getByRole("radio", { name: "Calendar", exact: true });
   await d.click(toCalendar, { glide: 1000, settle: 300 });
@@ -251,29 +252,37 @@ export default async function tour(d) {
   d.scene("settings");
   d.chapter(`${WORDS.settings.title} ${WORDS.settings.text}`);
   await d.headline(WORDS.settings.title, WORDS.settings.text);
-  await d.press("Meta+Comma", { hold: 700 });
+  // Mail stats: its own window, from the sidebar's footer.
+  const footer = app.locator(".sidebar__footer:visible");
+  await d.click(footer.getByRole("button", { name: "Mail stats" }));
+  const stats = app.getByRole("dialog", { name: "Stats" });
+  const tiles = stats.locator(".stats__tiles");
+  await d.until(tiles.getByText(/\d/).first(), "Mail stats");
+  await d.hideCursor();
+  // With the view tabs at the top right in the shot.
+  const views = stats.getByRole("radiogroup", { name: "View" });
+  await d.focus([tiles, stats.getByRole("region", { name: "Received over time" }), views], { max: 1.8, ms: 1000 });
+  await say(WORDS.stats, 2400);
+  await d.shot("wide", 700);
+  await d.click(stats.getByRole("radio", { name: "Senders" }));
+  const senders = stats.getByRole("region", { name: "Top senders" });
+  await d.until(senders, "Top senders");
+  await d.hideCursor();
+  await d.focus([senders, views], { max: 1.8, ms: 1000 });
+  await say(WORDS.senders, 2400);
+  await d.note();
+  await d.shot("wide", 900);
+  await d.press("Escape", { hold: 600 });
+
+  // MCP, in Settings.
+  await d.click(footer.getByRole("button", { name: "Settings" }));
   const settings = app.getByRole("dialog", { name: /^Settings/ });
   const page = (name) =>
     settings.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name, exact: true });
   /** Settings pages scroll: bring a part of one to the middle before the camera goes there. */
   const reveal = (locator) => locator.evaluate((el) => el.scrollIntoView({ block: "center" }));
-  await d.click(page("Mail stats"));
-  const tiles = settings.locator(".settings-stats__tiles");
-  await d.until(tiles.locator(".settings-stats__tile-value").filter({ hasText: /\d/ }).first(), "Mail stats");
-  await d.hideCursor();
-  await d.focus([tiles, settings.getByRole("region", { name: "Received over time" })], { max: 1.8, ms: 1000 });
-  await say(WORDS.stats, 2400);
-  const senders = settings.getByRole("region", { name: "Top senders" });
-  await d.shot("wide", 700);
-  await reveal(senders);
-  await d.focus(senders, { max: 1.8, ms: 1000 });
-  await say(WORDS.senders, 2400);
-  await d.note();
-  await d.shot("wide", 900);
-
   await d.click(page("MCP"));
   const allow = settings.getByRole("switch", { name: "Allow MCP connections" });
-  // The page keeps Mail stats' scroll position: back to its top first.
   const server = settings.getByRole("region", { name: "MCP server" });
   await reveal(server);
   await d.focus(server, { max: 1.8, margin: 40, ms: 900 });
