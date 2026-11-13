@@ -405,7 +405,7 @@ fn warm_counts() -> Ctx {
         threads::unread_counts(&ctx.pool, &[ACCT.to_string()], &every_tab())
             .await
             .unwrap();
-        threads::label_counts(&ctx.pool, ACCT).await.unwrap();
+        threads::label_counts(&ctx.pool, ACCT, None).await.unwrap();
     });
     ctx
 }
@@ -425,7 +425,11 @@ fn unread_counts(ctx: Ctx) -> Vec<(String, i64)> {
 #[library_benchmark]
 #[bench::every_label(setup = warm_counts)]
 fn label_counts(ctx: Ctx) -> Vec<threads::LabelCount> {
-    let counts = measured(&ctx.rt, threads::label_counts(&ctx.pool, ACCT)).unwrap();
+    // A full count (no known version), as after a change: the cost the cache saves otherwise.
+    let counts = measured(&ctx.rt, threads::label_counts(&ctx.pool, ACCT, None))
+        .unwrap()
+        .unwrap()
+        .counts;
     assert!(counts.iter().any(|c| c.label_id == "INBOX" && c.unread > 0));
     counts
 }

@@ -34,6 +34,7 @@ pub async fn upsert_thread(
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
     upsert_thread_tx(&mut tx, thread, label_ids).await?;
+    bump_version(&mut tx, &thread.account_id).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -87,6 +88,19 @@ async fn upsert_thread_tx(
         label_ids,
     )
     .await
+}
+
+/// Marks the account's threads changed, inside the transaction that changes them, so
+/// [`label_counts`] counts again. Every write to `threads` or `thread_labels` comes here.
+async fn bump_version(conn: &mut SqliteConnection, account_id: &str) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO thread_versions (account_id, version) VALUES (?, 1)
+         ON CONFLICT (account_id) DO UPDATE SET version = version + 1",
+        account_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
 }
 
 /// Deletes and re-inserts the thread's label rows inside the caller's
@@ -175,6 +189,7 @@ pub async fn update_thread_labels(
             label_ids,
         )
         .await?;
+        bump_version(&mut tx, account_id).await?;
     }
 
     tx.commit().await?;
@@ -865,6 +880,9 @@ pub async fn recompute_threads(
             None => {}
         }
     }
+    if !(result.created.is_empty() && result.updated.is_empty() && result.removed.is_empty()) {
+        bump_version(&mut *conn, account_id).await?;
+    }
     Ok(result)
 }
 
@@ -973,6 +991,13 @@ pub struct LabelCount {
     pub total: i64,
 }
 
+/// An account's [`LabelCount`]s and the version of its threads they were counted at.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LabelCounts {
+    pub version: i64,
+    pub counts: Vec<LabelCount>,
+}
+
 /// The count row for All Mail (every thread outside Spam and Trash), beside the labels.
 pub const ALL_MAIL: &str = "ALL";
 
@@ -982,12 +1007,31 @@ pub const ALL_MAIL: &str = "ALL";
 /// threads although a wholly spammed or trashed thread has no `UNREAD` label. Labels with
 /// no threads (and All Mail when empty) are omitted; no unread threads is `unread: 0`.
 ///
-/// These rerun on every sync event, so the unread side only visits candidate threads:
-/// `is_read` mirrors each message's `UNREAD` label, so an unread thread carries `UNREAD`
-/// unless all its messages are spammed or trashed, and then it carries `SPAM` or `TRASH`.
-pub async fn label_counts(pool: &SqlitePool, account_id: &str) -> Result<Vec<LabelCount>> {
-    // One snapshot for all three queries, so a sync landing between them can't skew them.
+/// The sidebar asks after every sync, and counting takes seconds in a large mailbox, so the
+/// counts come with the version of the account's threads they were counted at
+/// ([`bump_version`]): given the `known` version, and nothing has changed since, this
+/// answers `None` without counting. When it does count, the unread side only visits
+/// candidate threads: `is_read` mirrors each message's `UNREAD` label, so an unread thread
+/// carries `UNREAD` unless all its messages are spammed or trashed, and then it carries
+/// `SPAM` or `TRASH`.
+pub async fn label_counts(
+    pool: &SqlitePool,
+    account_id: &str,
+    known: Option<i64>,
+) -> Result<Option<LabelCounts>> {
+    // One snapshot for the version and all three queries, so a sync landing between them
+    // can't skew them or slip past the version.
     let mut tx = pool.begin().await?;
+    let version = sqlx::query_scalar!(
+        r#"SELECT COALESCE((SELECT version FROM thread_versions WHERE account_id = ?), 0) AS "v!: i64""#,
+        account_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if known == Some(version) {
+        tx.commit().await?;
+        return Ok(None);
+    }
     let totals = sqlx::query!(
         r#"
         SELECT label_id AS "label_id!", COUNT(*) AS "total!: i64"
@@ -1058,7 +1102,7 @@ pub async fn label_counts(pool: &SqlitePool, account_id: &str) -> Result<Vec<Lab
             total: all.total,
         });
     }
-    Ok(counts)
+    Ok(Some(LabelCounts { version, counts }))
 }
 
 #[cfg(test)]
@@ -1067,6 +1111,15 @@ mod tests {
     use crate::db::accounts::{insert_account, DbAccount};
     use sqlx::sqlite::SqlitePoolOptions;
     use sqlx::Row;
+
+    /// Counted now, whatever was counted before.
+    async fn fresh_counts(pool: &SqlitePool, account_id: &str) -> Vec<LabelCount> {
+        label_counts(pool, account_id, None)
+            .await
+            .unwrap()
+            .unwrap()
+            .counts
+    }
 
     fn labels(ids: &[&str]) -> Vec<String> {
         ids.iter().map(|s| s.to_string()).collect()
@@ -2109,7 +2162,7 @@ mod tests {
         )
         .await;
 
-        let counts = label_counts(&pool, "a1").await.unwrap();
+        let counts = fresh_counts(&pool, "a1").await;
         let count = |id: &str| {
             counts
                 .iter()
@@ -2244,9 +2297,8 @@ mod tests {
             .await
             .unwrap();
             expected.push((ALL_MAIL.to_owned(), unread, total));
-            let actual: Vec<(String, i64, i64)> = label_counts(&pool, account)
+            let actual: Vec<(String, i64, i64)> = fresh_counts(&pool, account)
                 .await
-                .unwrap()
                 .into_iter()
                 .map(|c| (c.label_id, c.unread, c.total))
                 .collect();
@@ -2338,7 +2390,7 @@ mod tests {
         recompute_threads(&mut tx, "a1", &ids).await.unwrap();
         tx.commit().await.unwrap();
 
-        let counts = label_counts(&pool, "a1").await.unwrap();
+        let counts = fresh_counts(&pool, "a1").await;
         let count = |id: &str| {
             counts
                 .iter()
@@ -2359,7 +2411,7 @@ mod tests {
         assert_eq!(count("TRASH"), Some((1, 3)));
         assert_eq!(count("INBOX"), Some((1, 1)));
         assert_eq!(
-            label_counts(&pool, "a2").await.unwrap(),
+            fresh_counts(&pool, "a2").await,
             [],
             "an empty account has no rows, All Mail included"
         );

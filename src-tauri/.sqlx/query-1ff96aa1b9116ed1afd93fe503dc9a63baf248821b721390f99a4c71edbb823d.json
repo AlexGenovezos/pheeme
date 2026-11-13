@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO thread_versions (account_id, version) VALUES (?, 1)\n         ON CONFLICT (account_id) DO UPDATE SET version = version + 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "1ff96aa1b9116ed1afd93fe503dc9a63baf248821b721390f99a4c71edbb823d"
+}
