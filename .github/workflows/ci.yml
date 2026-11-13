@@ -80,6 +80,11 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-22.04]
+        # The Linux cache was renamed from ubuntu-22.04-debug, which held only the SQLx job's
+        # type-check output: rust-cache never re-saves a key it restored exactly.
+        include:
+          - os: ubuntu-22.04
+            cache-key: ubuntu-22.04-dev
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,7 +92,7 @@ jobs:
       - uses: ./.github/actions/setup-build
         with:
           node: "false"
-          cache-key: ${{ matrix.os }}-debug
+          cache-key: ${{ matrix.cache-key || format('{0}-debug', matrix.os) }}
       - name: Rust formatting
         working-directory: src-tauri
         run: cargo fmt --check
@@ -114,7 +119,7 @@ jobs:
       - uses: ./.github/actions/setup-build
         with:
           node: "false"
-          cache-key: ubuntu-22.04-debug
+          cache-key: ubuntu-22.04-dev
           # Never saved: this job only type-checks, and finishing first, it won the race to
           # save the shared cache, so every Linux build after it recompiled all ~470 crates.
           save-if: "false"
@@ -147,13 +152,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-22.04]
+        include:
+          - os: ubuntu-22.04
+            cache-key: ubuntu-22.04-dev
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-build
         with:
-          cache-key: ${{ matrix.os || 'ubuntu-22.04' }}-debug
+          cache-key: ${{ matrix.cache-key || format('{0}-debug', matrix.os) }}
       - run: npm ci
       - name: Bundle (deb)
         if: matrix.os == 'ubuntu-22.04'
