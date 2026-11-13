@@ -189,6 +189,8 @@ try {
       if (!filming && last > frame) {
         // Unfilmed: the whole wait in one step. The clock still fires every timer and animation frame in it.
         const ran = Math.round(frame * FRAME_MS);
+        // Animations started since the last frame start now, as in a filmed frame, not at the wait's end.
+        await page.evaluate((at) => window.__film(at), frame * FRAME_MS);
         frame = last;
         await page.clock.runFor(Math.round(frame * FRAME_MS) - ran);
         await page.evaluate((at) => window.__film(at), frame * FRAME_MS);
