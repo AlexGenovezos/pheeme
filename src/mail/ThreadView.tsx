@@ -297,6 +297,7 @@ const Conversation = memo(function Conversation({
   const code = useMemo(() => conversationCode(detail.messages), [detail.messages]);
   const invite = useMemo(() => inviteMessage(detail.messages), [detail.messages]);
   usePrefetchAttachments(detail, active);
+  const sent = detail.messages.filter((m) => !m.labelIds.includes("DRAFT")).length;
   return (
     <div className="thread-view">
       <h2 className="thread-view__subject selectable">{subject}</h2>
@@ -326,6 +327,7 @@ const Conversation = memo(function Conversation({
             bodyError={detail.bodyError}
             loading={loading}
             onToggle={() => toggle(m.id)}
+            respondHere={sent > 1}
           />
         ))}
       </div>
