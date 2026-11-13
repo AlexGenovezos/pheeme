@@ -122,11 +122,15 @@
       void ripple.offsetWidth;
       ripple.classList.add("go");
     },
-    card({ title = "", text = "", cta = "" } = {}) {
+    card({ title = "", text = "", cta = "" } = {}, { now = false } = {}) {
       card.querySelector(".card__title").textContent = title;
       card.querySelector(".card__body").textContent = text;
       card.querySelector(".card__cta").textContent = cta;
+      // `now` shows it whole at once, so the video's first frame isn't empty sky.
+      card.classList.toggle("now", now);
       card.classList.add("on");
+      void card.offsetWidth;
+      card.classList.remove("now");
     },
     cardOut() {
       card.classList.remove("on");

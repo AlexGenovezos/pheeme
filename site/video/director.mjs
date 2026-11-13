@@ -144,8 +144,9 @@ export class Director {
     return this.stage("hideCursor");
   }
 
-  async card(content, { hold = 3000 } = {}) {
-    await this.stage("card", content);
+  /** Shows a title card; `now` skips its fade-in (the video's first frame). */
+  async card(content, { hold = 3000, now = false } = {}) {
+    await this.stage("card", content, { now });
     await this.wait(hold);
   }
 

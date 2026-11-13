@@ -245,6 +245,7 @@ body.stage {
   z-index: 10;
 }
 .card.on { opacity: 1; }
+.card.now, .card.now > * { transition: none; }
 .card > * { transition: opacity .7s var(--ease), transform .7s var(--ease), filter .7s var(--ease); }
 .card:not(.on) > * { opacity: 0; transform: translateY(24px); filter: blur(10px); }
 .card.on > :nth-child(2) { transition-delay: .15s; }

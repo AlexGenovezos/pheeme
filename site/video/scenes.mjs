@@ -53,7 +53,8 @@ export default async function tour(d) {
 
   // ---- Title, then the app rises over the horizon ----
   d.chapter(WORDS.open.title);
-  await d.card(WORDS.open, { hold: 2600 });
+  // Already on screen in the first frame: the video opens on the title, not empty sky.
+  await d.card(WORDS.open, { hold: 2600, now: true });
   await d.stage("fade", true);
   // The window starts rising while the card fades, so the sky is never empty.
   await d.stage("shot", "tilt", 2000);
