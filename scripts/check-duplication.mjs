@@ -9,11 +9,12 @@
 // is only a warning, since some patterns (one sqlx query per function) look alike on purpose.
 // In GitHub Actions both are written as annotations on the PR's lines.
 //
-// The baseline keeps, per pair of files, the text each accepted copy matched (whitespace removed).
-// A clone is known when both of its sides are part of an accepted text: editing a copy only splits
-// or shrinks it, and text beside it doesn't count. A new copy, or one jscpd merges into a known
-// clone by extending it, isn't. (jscpd's own fingerprints hash whole lines, so an edit beside a
-// known copy would fail an unrelated PR.)
+// The baseline keeps, per pair of files, the text each accepted copy matched (whitespace removed)
+// and how many tokens the pair shares. A clone is known when both of its sides are part of an
+// accepted text and its pair shares no more tokens than before: editing a copy only splits or
+// shrinks it, and text beside it doesn't count. A new copy, one jscpd merges into a known clone by
+// extending it, or one more copy of known code (jscpd matches it to the first) isn't. (jscpd's own
+// fingerprints hash whole lines, so an edit beside a known copy would fail an unrelated PR.)
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -55,19 +56,20 @@ function reader() {
   };
 }
 
-/** Every pair of files' accepted copies, by kind. */
+/** Every pair of files' copies by kind: the tokens they share and their texts. */
 function accepted(root, clones) {
   const read = reader();
   const byKind = { exact: {}, similar: {} };
   for (const c of clones) {
-    const texts = (byKind[kindOf(c)][pairOf(root, c)] ??= new Set());
-    for (const text of sidesOf(c, read)) texts.add(text);
+    const pair = (byKind[kindOf(c)][pairOf(root, c)] ??= { tokens: 0, texts: new Set() });
+    pair.tokens += c.tokens;
+    for (const text of sidesOf(c, read)) pair.texts.add(text);
   }
   for (const kind of Object.keys(byKind))
     byKind[kind] = Object.fromEntries(
       Object.entries(byKind[kind])
         .sort(([a], [b]) => (a < b ? -1 : 1))
-        .map(([pair, texts]) => [pair, [...texts].sort()]),
+        .map(([pair, { tokens, texts }]) => [pair, { tokens, texts: [...texts].sort() }]),
     );
   return byKind;
 }
@@ -77,10 +79,13 @@ export function findNewClones(root = repoRoot) {
   const clones = scan(root);
   const file = join(root, BASELINE);
   const baseline = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  const now = accepted(root, clones);
   const read = reader();
   const isNew = (c) => {
-    const known = baseline[kindOf(c)]?.[pairOf(root, c)] ?? [];
-    return !sidesOf(c, read).every((side) => known.some((text) => text.includes(side)));
+    const pair = pairOf(root, c);
+    const known = baseline[kindOf(c)]?.[pair] ?? { tokens: 0, texts: [] };
+    if (now[kindOf(c)][pair].tokens > known.tokens) return true;
+    return !sidesOf(c, read).every((side) => known.texts.some((text) => text.includes(side)));
   };
   const found = clones.filter(isNew);
   return {

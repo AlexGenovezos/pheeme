@@ -1,376 +1,652 @@
 {
   "exact": {
-    "src-tauri/src/calendar/error.rs <> src-tauri/src/tasks/error.rs": [
-      ",google_message(.0))]Google(GmailError),#[error(\"Pheemecouldn'tsavethat:{0}\")]Db(anyhow::Error),}fngoogle_message(e:&GmailError)->String{matche{GmailError::Api{message,..}=>message.clone(),other=>other.to_string(),}}impl"
-    ],
-    "src-tauri/src/calendar/fake.rs <> src-tauri/src/tasks/fake.rs": [
-      "fnreply<T>(lost:Option<fn()->GmailError>,result:Result<T,GmailError>,)->Result<T,GmailError>{match(lost,result){(Some(make),Ok(_))=>Err(make()),(_,r)=>r,}}fn"
-    ],
-    "src-tauri/src/calendar/recurrence.rs <> src-tauri/src/calendar/series.rs": [
-      "()}fnseries(start:&str,end:&str,recurrence:&[&str])->DbEvent{DbEvent{account_id:\"a\".into(),calendar_id:\"c\".into(),id:\"abc\".into(),ical_uid:None,recurring_event_id:None,original_start_ms:None,original_start_date:None,status:\"confirmed\".into(),start_ms:Some(ms(start)),end_ms:Some(ms(end)),start_date:None,end_date:None,time_zone:Some(NY.into()),recurrence:Some(serde_json::to_string(recurrence).unwrap()),recur_until_ms:None,summary:None,location:None,description:None,organizer_email:None,self_response:None,attendees:\"[]\".into(),conference:None,color_id:None,transparency:None,visibility:None,reminders:None,html_link:None,etag:String::new(),updated_ms:0,raw:\"{}\".into(),}}fn"
-    ],
-    "src-tauri/src/calendar/repeating.rs <> src-tauri/src/calendar/repeating.rs": [
-      ");assert_eq!(h.fake(\"a\").event(CAL,new_id).unwrap()[\"status\"],\"cancelled\");assert_eq!(h.fake(\"a\").event(CAL,\"weekly\").unwrap()[\"recurrence\"],json!([RULE]));assert_eq!(rows(&h).await,before",
-      ");h.fake(\"a\").fail_reads(Some(offline));leterr=update(&h,&occ(4),EditScope::Following,summary(\"Renamed\")).await.unwrap_err();assert!(matches!(err,CalendarError::Unconfirmed),\"{err:?}\");letwrites=h.fake(\"a\").writes();letmethods:Vec<&str>=writes.iter().map(|w|w.method).collect();assert_eq!(methods,vec![\"insert\","
-    ],
-    "src-tauri/src/calendar/series.rs <> src-tauri/src/calendar/series.rs": [
-      ">{letkind=param(head,\"VALUE\").map(str::to_ascii_uppercase);ifkind.as_deref().is_some_and(|k|k!=\"DATE\"&&k!=\"DATE-TIME\"){returnErr(invalid(UNREADABLE));}letzone=matchparam(head,\"TZID\"){Some(name)=>Some(name.trim_matches('\"').parse::<chrono_tz::Tz>().map_err(|_|invalid(UNREADABLE))?,),None=>None,};"
-    ],
-    "src-tauri/src/calendar/service.rs <> src-tauri/src/tasks/service.rs": [
-      ")asyncfnharness(accounts:&[&str])->Harness{letdb=TestDb::new().await;letmutfakes=HashMap::new();foridinaccounts{insert_account(&db.pool,&DbAccount{id:(*id).into(),email:format!(\"{id}@example.com\"),display_name:None,profile_photo_url:None,client_id:\"c\".into(),history_id:None,created_at:0,updated_at:0,},).await.unwrap();letfake=Arc::new(",
-      ",events:Arc<dynSyncEvents>)->Arc<Self>{Arc::new(Self{db,api_for,events,foreground:AtomicBool::new(false),wake:Notify::new(),forced:Mutex::new(HashSet::new()),running:Mutex::new(HashMap::new()),})}",
-      "///front)onthesharedclock,sothischeckwakesthecomputertogetherwiththeothers,///orsoonerwhentriggered.pubasyncfnrun(self:Arc<Self>){tokio::time::sleep(FIRST_DELAY).await;loop{self.tick(now_ms()).await;letwait=ifself.foreground.load(Ordering::Relaxed){FOREGROUND_INTERVAL}else{INTERVAL};tokio::select!{()=crate::cadence::sleep_until_next(wait)=>{}()=self.wake.notified()=>{}}}}}",
-      "::access(&self.db,account_id).await?;Ok(access_dto(access.as_ref()))}///Calendarmodeis(orstoppedbeing)infront:checkevery15sinsteadof60s.pubfnset_foreground(&self,on:bool){letwas=self.foreground.swap(on,Ordering::Relaxed);ifon&&!was{self.wake.notify_one();}}///Check`account_id`(oreveryaccount)soon;anaccountnamedhereischeckedevenif",
-      "};useserde::Serialize;usesqlx::SqlitePool;usestd::collections::{HashMap,HashSet};usestd::sync::atomic::{AtomicBool,Ordering};usestd::sync::{Arc,Mutex};usestd::time::Duration;usetokio::sync::Notify;usetracing::warn;",
-      "}fnsync_error(e:SyncError)->MailError{MailError::Sync(matche{SyncError::Api(e)=>crate::sync::engine::SyncError::Gmail(e),SyncError::Db(e)=>crate::sync::engine::SyncError::Db(e),})}///Afailurethatmaypassbyitself,whichdoesn'tchangetheaccount'sstatus.fnis_transient(e:&GmailError)->bool{matche{GmailError::Network(_)|GmailError::Offline(_)|GmailError::RateLimit{..}=>true,GmailError::Api{status,..}=>*status>=500,_=>false,}}"
-    ],
-    "src-tauri/src/calendar/sync.rs <> src-tauri/src/tasks/sync.rs": [
-      ")]Db(#[from]anyhow::Error),}implFrom<GmailError>forSyncError{fnfrom(e:GmailError)->Self{SyncError::Api(e)}}///Theaccessstatusanerrormeans:`missing_scope`(allowcalendaraccessagain),///`api_disabled`(withtheGoogleCloudprojectnumberwhenGooglegaveit)or`error`.pubfnclassify(e:&GmailError)->(&'staticstr,Option<String>){ife.is_missing_scope(){(\"missing_scope\",None)}elseife.is_api_disabled(){(\"api_disabled\",e.disabled_api_project())}else{(\"error\",Some(e.to_string()))}}"
-    ],
-    "src-tauri/src/db/calendar.rs <> src-tauri/src/db/calendar.rs": [
-      "<DbEvent>>{Ok(sqlx::query_as!(DbEvent,r#\"SELECTe.account_id,e.calendar_id,e.id,e.ical_uid,e.recurring_event_id,e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.rawFROMeventseWHEREe.account_id=?ANDe.",
-      "=sqlx::query_as!(DbEvent,r#\"SELECTe.account_id,e.calendar_id,e.id,e.ical_uid,e.recurring_event_id,e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.rawFROMeventseJOINcalendarscONc.account_id=e.account_idANDc.id=e.calendar_idWHEREc.hidden=0ANDe.recurrenceIS",
-      "e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.raw",
-      "letdb=TestDb::with_account(\"a\").await;letpool=&db.pool;replace_calendars(pool,\"a\",&[cal(\"C\")]).await.unwrap();letmutseries=event(\"C\",\"s\",0,H);series.recurrence=Some(r#\"[\"RRULE:FREQ=DAILY\"]\"#.into());let",
-      "sqlx::query_as!(DbEvent,r#\"SELECTe.account_id,e.calendar_id,e.id,e.ical_uid,e.recurring_event_id,e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.rawFROMeventse"
-    ],
-    "src-tauri/src/db/messages.rs <> src-tauri/src/db/messages.rs": [
-      "FROMmessagesmINDEXEDBYidx_messages_dateLEFTJOINsentsONs.thread_id=m.thread_idWHEREm.account_id=?1ANDm.date>=?2ANDm.from_addressISNOTNULLANDm.from_address!=''ANDlower(m.from_address)!=lower(?3)ANDNOTEXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalueIN('DRAFT','SENT')))SELECT"
-    ],
-    "src-tauri/src/db/search.rs <> src-tauri/src/db/threads.rs": [
-      ");letnext=ifhas_more{rows.last().map(|r|ThreadCursor{last_message_date:r.cursor_date,account_id:r.account_id.clone(),thread_id:r.id.clone(),})}else{None};letthreads=rows.into_iter().map(|r|DbThread{id:r.id,account_id:r.account_id,subject:r.subject,snippet:r.snippet,history_id:r.history_id,last_message_date:r.last_message_date,message_count:r.message_count,unread_count:r.unread_count,has_attachment:r.has_attachment,from_name:r.from_name,from_address:r.from_address,is_starred:r.is_starred,}).collect();",
-      ",r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBY",
-      "t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBYidx_threads_all_dateWHEREt.account_idIN(SELECTvalueFROMjson_each(?1))AND",
-      "{id:String,account_id:String,subject:Option<String>,snippet:Option<String>,history_id:Option<String>,last_message_date:Option<i64>,message_count:i64,unread_count:i64,has_attachment:i64,from_name:Option<String>,from_address:Option<String>,is_starred:i64,cursor_date:i64,}"
-    ],
-    "src-tauri/src/db/threads.rs <> src-tauri/src/db/threads.rs": [
-      ")kCROSSJOINthread_labelstlONtl.account_id=k.value->>0ANDtl.thread_id=k.value->>1ANDtl.label_id=?1CROSSJOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(",
-      ",None,&[\"INBOX\"]).await;seed(&pool,\"a1\",\"dated\",Some(100),&[\"INBOX\"]).await;letaccounts=labels(&[\"a1\"]);letpage=list_threads(&pool,&query(&accounts,None,2)).await.unwrap();",
-      ",fetch_limit,read_filter,).fetch_all(pool).await?}Some(c)=>{sqlx::query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",",
-      ":&str=r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",tl.last_message_dateAS\"cursor_date!\"FROMthread_labelstlJOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.label_id=?1ANDtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(",
-      "=>{sqlx::query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",tl.last_message_dateAS\"cursor_date!\"FROMthread_labelstlJOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.label_id=?1ANDtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(",
-      "=>{sqlx::query_as!(ThreadRow,r#\"SELECTu.thread_idAS\"id!\",u.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",u.last_message_dateAS\"cursor_date!\"FROMthread_labelsuINDEXEDBYidx_thread_labels_listingCROSSJOINthread_labelstlONtl.account_id=u.account_idANDtl.thread_id=u.thread_idANDtl.label_id=?1CROSSJOINthreadstONt.account_id=u.account_idANDt.id=u.thread_idWHEREu.label_id='UNREAD'ANDu.account_idIN(SELECTvalueFROMjson_each(?2))AND",
-      "ANDCOALESCE(t.last_message_date,0)<=?2AND(COALESCE(t.last_message_date,0),t.account_id,t.id)<(?2,?3,?4)ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=t.account_idANDe.thread_id=t.idANDe.label_idIN('SPAM','TRASH'))AND(?6ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?6)))ORDERBYCOALESCE(t.last_message_date,0)DESC,t.account_idDESC,t.idDESCLIMIT?5\"#,",
-      "ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=t.account_idANDe.thread_id=t.idANDe.label_idIN('SPAM','TRASH'))AND(?3ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?3)))ORDERBYCOALESCE(t.last_message_date,0)DESC,t.account_idDESC,t.idDESCLIMIT?2\"#,",
-      "JOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.label_id=?1ANDtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(?3ISNULLOREXISTS(SELECT1FROMthread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?3))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?4)))AND(",
-      "]);letmutgot=vec![];letmutcursor:Option<ThreadCursor>=None;loop{letpage=list_all_mail(&pool,&accounts,cursor.as_ref(),2,None).await.unwrap();got.extend(page.threads.into_iter().map(|t|",
-      "before{None=>{sqlx::query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",",
-      "has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",tl.last_message_dateAS\"cursor_date!\"FROMthread_labelstlJOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.label_id=?1ANDtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(tl.last_message_date,tl.account_id,tl.thread_id)<(?3,?4,?5)AND(?6ISNULLOREXISTS(SELECT1FROMthread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?6))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?7)))AND(?9ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?9)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?8",
-      "matchbefore{None=>{sqlx::query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBY",
-      "query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBY",
-      "query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBYidx_threads_account_dateWHEREt.account_id=?1AND",
-      "r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",tl.last_message_dateAS\"cursor_date!\"FROMthread_labelstlJOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.label_id=?1ANDtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(?3ISNULLOREXISTS(SELECT1FROMthread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?3))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?4)))AND(?6ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?6)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?5",
-      "thread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?3))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?4)))AND(?6ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?6)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?5\"#,",
-      "thread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?3))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?4)))AND(?6ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?6)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?5\"#;",
-      "thread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?6))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?7)))AND(?9ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?9)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?8\"#,",
-      "thread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?6))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?7)))AND(?9ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?9)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?8\"#;",
-      "tl.account_idIN(SELECTvalueFROMjson_each(?2))AND(?3ISNULLOREXISTS(SELECT1FROMthread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?3))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?4)))AND",
-      "tl.account_idIN(SELECTvalueFROMjson_each(?2))AND(tl.last_message_date,tl.account_id,tl.thread_id)<(?3,?4,?5)AND(?6ISNULLOREXISTS(SELECT1FROMthread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?6))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?7)))AND"
-    ],
-    "src-tauri/src/gmail/calendar.rs <> src-tauri/src/gmail/calendar.rs": [
-      "(){letserver=MockServer::start().await;Mock::given(method(\"POST\")).and(path(\"/calendars/primary/events\")).respond_with(ResponseTemplate::new(409).set_body_json(json!({\"error\":{\"code\":409,\"message\":\"Therequestedidentifieralreadyexists.\",\"errors\":[{\"reason\":\"duplicate\",\"message\":\"exists\"}]}})))."
-    ],
-    "src-tauri/src/gmail/client.rs <> src-tauri/src/gmail/client.rs": [
-      ")).respond_with(ResponseTemplate::new(200).set_body_json(profile_json())).expect(1).mount(&server).await;let(client,_)=client_for(&server);letprofile:UserProfile=client.send_json(ApiRequest::get(&[\"profile\"])).await.unwrap();assert_eq!(profile."
-    ],
-    "src-tauri/src/gmail/client.rs <> src-tauri/src/gmail/messages.rs": [
-      ";usetokio::sync::Semaphore;letserver=MockServer::start().await;letstarted=Arc::new(Semaphore::new(0));letarrivals=started.clone();Mock::given(method(\"GET\")).and(wiremock::matchers::path_regex(r"
-    ],
-    "src-tauri/src/gmail/error.rs <> src-tauri/src/tasks/error.rs": [
-      "}}#[cfg(test)]modtests{usesuper::*;fnapi(status:u16,reason:Option<&str>,message:&str)->GmailError{GmailError::Api{status,reason:reason.map(str::to_owned),message:message.to_owned(),}}#[test]fn"
-    ],
-    "src-tauri/src/gmail/messages.rs <> src-tauri/src/gmail/messages.rs": [
-      "(){usestd::sync::Arc;usestd::time::Duration;usetokio::sync::Semaphore;letserver=MockServer::start().await;letstarted=Arc::new(Semaphore::new(0));letarrivals=started.clone();Mock::given(method(\"GET\")).and(wiremock::matchers::path_regex(r"
-    ],
-    "src-tauri/src/gmail/palette.rs <> src-tauri/src/gmail/palette.rs": [
-      "[\"#000000\",\"#434343\",\"#666666\",\"#999999\",\"#cccccc\",\"#efefef\",\"#f3f3f3\",\"#ffffff\",\"#fb4c2f\",\"#ffad47\",\"#fad165\",\"#16a766\",\"#43d692\",\"#4a86e8\",\"#a479e2\",\"#f691b3\",\"#f6c5be\",\"#ffe6c7\",\"#fef1d1\",\"#b9e4d0\",\"#c6f3de\",\"#c9daf8\",\"#e4d7f5\",\"#fcdee8\",\"#efa093\",\"#ffd6a2\",\"#fce8b3\",\"#89d3b2\",\"#a0eac9\",\"#a4c2f4\",\"#d0bcf1\",\"#fbc8d9\",\"#e66550\",\"#ffbc6b\",\"#fcda83\",\"#44b984\",\"#68dfa9\",\"#6d9eeb\",\"#b694e8\",\"#f7a7c0\",\"#cc3a21\",\"#eaa041\",\"#f2c960\",\"#149e60\",\"#3dc789\",\"#3c78d8\",\"#8e63ce\",\"#e07798\",\"#ac2b16\",\"#cf8933\",\"#d5ae49\",\"#0b804b\",\"#2a9c68\",\"#285bac\",\"#653e9b\",\"#b65775\",\"#822111\",\"#a46a21\",\"#aa8831\",\"#076239\",\"#1a764d\",\"#1c4587\",\"#41236d\",\"#83334c\","
-    ],
-    "src-tauri/src/labels.rs <> src-tauri/src/labels.rs": [
-      "(){letfake=with_labels(&[(\"L1\",\"Old\"),(\"L2\",\"New\")]);fake.seed(FakeMsg::new(\"m1\",\"t1\",&[\"INBOX\",\"L1\"]));leth=setup(fake).await;crate::sync::outbox::enqueue_modify(&h.pool,\"a1\",&[\"t1\".into()],&[\"L2\".into()],&[\"L1\".into()],).await.unwrap();",
-      ".unwrap();letmutlabels=h.fake.message(\"m1\").unwrap().labels;labels.sort();assert_eq!(labels,[\"INBOX\",\"L2\"]);letleft:i64=sqlx::query_scalar(\"SELECTCOUNT(*)FROMoutbox\").fetch_one(&h.pool).await.unwrap();assert_eq!(left,0);letnames=h.events.names();assert!(!names.contains(&\"outbox:rejected\"),\"{names:?}\");}#[tokio::test]asyncfn"
-    ],
-    "src-tauri/src/labels.rs <> src-tauri/src/mail.rs": [
-      ");letevents=Arc::new(RecordingEvents::default());letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),events.clone(),);",
-      ");letevents=Arc::new(RecordingEvents::default());letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),events.clone(),);sync.sync_account(\"a1\").await.unwrap();"
-    ],
-    "src-tauri/src/mail.rs <> src-tauri/src/mail.rs": [
-      "(){letdb=TestDb::with_account(\"a1\").await;letpool=db.pool.clone();letfake=Arc::new(FakeGmail::new());fake.seed(FakeMsg::new(\"m1\",\"t1\",&[\"INBOX\",\"UNREAD\"]));fake.seed(FakeMsg::new(\"m2\",\"t2\",&[\"INBOX\",",
-      "));letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),Arc::new(RecordingEvents::default()),);sync.sync_account(\"a1\").await.unwrap();",
-      "));letevents=Arc::new(RecordingEvents::default());letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),events.clone(),);sync.sync_account(\"a1\").await.unwrap();letmail=MailService::new(pool",
-      "letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),Arc::new(RecordingEvents::default()),);sync.sync_account(\"a1\").await.unwrap();letmail=MailService::new(pool"
-    ],
-    "src-tauri/src/mail.rs <> src-tauri/src/sender_rules.rs": [
-      ");letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),Arc::new(RecordingEvents::default()),);sync.sync_account(\"a1\").await.unwrap();"
-    ],
-    "src-tauri/src/mail.rs <> src-tauri/src/support/mod.rs": [
-      "]));fake.seed(FakeMsg::new(\"m2\",\"t2\",&[\"INBOX\"]));letapi=fake.clone();letsync=SyncManager::new(db.pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),Arc::new("
-    ],
-    "src-tauri/src/sync/engine.rs <> src-tauri/src/sync/engine.rs": [
-      ").await?;letids:Vec<String>=page.messages.iter().map(|m|m.id.clone()).collect();letmutconn=self.db.acquire().await?;letcached=messages::existing_ids(&mutconn,&self.account_id,&ids).await?;drop(conn);let",
-      ";ifmessages::insert_message_if_absent(&muttx,&row).await?{attachments::replace_for_message(&muttx,&self.account_id,&row.id,&atts).await?;touched.push(row.thread_id);}}let(result,confirmed)=self.finish_write(&muttx,&touched).await?;",
-      ";let(result,confirmed)=self.finish_write(&muttx,&touched).await?;accounts::update_history_id(&mut*tx,&self.account_id,&history_id,now_ms()/1000).await?;sync_state::reset_backfill(&muttx,&self.account_id).await?;sync_state::set_mailbox_total(&muttx,&self.account_id,profile.messages_total).await?;sync_state::touch(&muttx,&self.account_id,now_ms()).await?;tx.commit().await?;drop(guard);self.emit_write(result,confirmed);self.emit(SyncEvent::LabelsUpdated{account_id:self.account(),});self.emit(SyncEvent::Completed{account_id:self.account(),});Ok(())}"
-    ],
-    "src-tauri/src/tasks/sync.rs <> src-tauri/src/tasks/sync.rs": [
-      "assert_eq!(fake.reads(),vec![(\"L\".into(),None,false),(\"W\".into(),None,false)]);letlists=cache::task_lists(&db.pool,Some(\"a\")).await.unwrap();assert_eq!(lists[0]."
-    ],
-    "src-tauri/src/tasks/writes.rs <> src-tauri/src/tasks/writes.rs": [
-      "(){leth=harness(&[\"a\"]).await;h.fake(\"a\").put(\"L\",task(\"p\",\"Trip\"));h.fake(\"a\").put(\"L\",serde_json::json!({\"id\":\"s\",\"title\":\"Pack\",\"parent\":\"p\"}),);h.",
-      "title).await;letlist=self.settle(account_id,result,TasksError::ListNotFound)?;db::tasks::save_task_list(&self.db,account_id,&convert::task_list(&list)).await?;self.changed(account_id);Ok(TaskListRef{account_id:account_id.to_owned(),list_id:list.id,})}"
-    ],
-    "src/calendar/EventPopover.tsx <> src/calendar/InviteCard.tsx": [
-      "=[[count(\"accepted\"),\"yes\"],[count(\"tentative\"),\"maybe\"],[count(\"declined\"),\"no\"],[count(\"needsAction\"),\"awaiting\"],].filter(([n])=>(nasnumber)>0).map(([n,w])=>`${n}${w}`)",
-      ">Going?</span><divrole=\"radiogroup\"aria-label=\"Youranswer\"className=\"cal-pop__answers\">{ANSWERS.map((a)=>(<buttonkey={a.value}type=\"button\"role=\"radio\"aria-checked={(pending??current)===a.value}className=\"cal-pop__answer\"disabled={pending!==null}onClick={()=>"
-    ],
-    "src/calendar/EventPopover.tsx <> src/calendar/QuickCreate.tsx": [
-      ";constgap=8;letleft=window.innerWidth/2-box.width/2;lettop=window.innerHeight/3-box.height/3;if(at){left=at.right+gap;if(left+box.width>window.innerWidth-gap)left=at.left-gap-box.width;top=at.top;}left=Math.max(gap,Math.min(left,window.innerWidth-box.width-gap));top=Math.max(gap,Math.min(top,window.innerHeight-box.height-gap));setPos("
-    ],
-    "src/calendar/editing.css <> src/components/ui/Picker.css": [
-      ");border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;font-size:var(--font-size-sm);"
-    ],
-    "src/calendar/editing.css <> src/compose/compose.css": [
-      "var(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;font-size:var(--font-size-sm);}."
-    ],
-    "src/calendar/editing.css <> src/labels/labels.css": [
-      ");max-width:100%;padding:var(--space-4);border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:label-picker-invar(--duration-slow)var(--ease-out);}.",
-      "-dialog-scrim{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;align-items:center;justify-content:center;padding:var(--space-4);background:var(--color-scrim);-webkit-backdrop-filter:blur(var(--settings-backdrop-blur));backdrop-filter:blur(var(--settings-backdrop-blur));}."
-    ],
-    "src/calendar/editing.css <> src/mail/preview/preview.css": [
-      ";border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:"
-    ],
-    "src/calendar/editing.css <> src/palette/CommandPalette.css": [
-      ";border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-palette-bg);color:var(--color-palette-foreground);box-shadow:var(--shadow-overlay);",
-      "{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;justify-content:center;align-items:flex-start;padding-top:var(--palette-offset-top);background:var(--color-scrim);"
-    ],
-    "src/calendar/editing.css <> src/settings/Settings.css": [
-      "border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:"
-    ],
-    "src/calendar/editing.css <> src/speedread/speedread.css": [
-      ");border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:",
-      "-scrim{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;align-items:center;justify-content:center;padding:var(--space-4);background:var(--color-scrim);-webkit-backdrop-filter:blur(var(--settings-backdrop-blur));backdrop-filter:blur(var(--settings-backdrop-blur));}."
-    ],
-    "src/calendar/editing.css <> src/stats/Stats.css": [
-      ";border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:"
-    ],
-    "src/calendar/editing.css <> src/tasks/tasks.css": [
-      ")var(--space-1-5);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;font-size:var(--font-size-"
-    ],
-    "src/calendar/editing.css <> src/theme/editor/ThemeEditor.css": [
-      ");padding:var(--space-0)var(--space-1-5);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font"
-    ],
-    "src/components/ui/Kbd.css <> src/settings/Settings.css": [
-      "padding:var(--space-0)var(--space-1);border:var(--border-width)solidvar(--color-kbd-border);border-radius:var(--radius-xs);background:var(--color-kbd-bg);color:var(--color-kbd-foreground);font-family:"
-    ],
-    "src/components/ui/Menu.css <> src/components/ui/Picker.css": [
-      ";border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);",
-      "{display:flex;align-items:center;gap:var(--space-1-5);height:var(--control-height-sm);padding:var(--space-0)var(--space-2)var(--space-0)var(--space-1);border-radius:var(--radius-sm);"
-    ],
-    "src/components/ui/Menu.css <> src/compose/compose.css": [
-      ");padding:var(--space-1);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
-    ],
-    "src/components/ui/Menu.css <> src/labels/labels.css": [
-      ");border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);animation:",
-      ";border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);animation:",
-      "{display:flex;align-items:center;gap:var(--space-1-5);height:var(--control-height-sm);padding:var(--space-0)var(--space-2)var(--space-0)var(--space-1);border-radius:var(--radius-sm);cursor:default;}."
-    ],
-    "src/components/ui/Menu.css <> src/mail/mail.css": [
-      ");border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
-    ],
-    "src/components/ui/Menu.css <> src/search/search.css": [
-      ";padding:var(--space-1);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
-    ],
-    "src/components/ui/Menu.css <> src/settings/KeyboardMap.css": [
-      ");border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
-    ],
-    "src/components/ui/Menu.tsx <> src/labels/ColorPopover.tsx": [
-      ");constonPointerDown=(e:PointerEvent)=>{if(!ref.current?.contains(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);"
-    ],
-    "src/components/ui/Menu.tsx <> src/labels/LabelPicker.tsx": [
-      "(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);previous?.focus?.();};},[onClose]);//Gmailcanrefuseatickafteritscommandresolved:thebackendundoesitandsaysso.Re-readtheticksthen.useEffect",
-      "(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);previous?.focus?.();};},[onClose]);const",
-      ".current?.focus();constonPointerDown=(e:PointerEvent)=>{if(!ref.current?.contains(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);previous?.focus?.();};},[onClose]);"
-    ],
-    "src/components/ui/Picker.css <> src/components/ui/TextInput.css": [
-      ";height:var(--control-height-md);padding:var(--space-0)var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);"
-    ],
-    "src/components/ui/Picker.css <> src/compose/compose.css": [
-      ");padding:var(--space-0)var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;font-size:var(--font-size-sm);"
-    ],
-    "src/components/ui/Picker.css <> src/mail/mail.css": [
-      "-border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-md);"
-    ],
-    "src/components/ui/Picker.css <> src/settings/KeyboardMap.css": [
-      "-border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-"
-    ],
-    "src/components/ui/Picker.css <> src/settings/Settings.css": [
-      ")var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;",
-      "var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font"
-    ],
-    "src/components/ui/TextInput.css <> src/settings/Settings.css": [
-      ");height:var(--control-height-md);padding:var(--space-0)var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-"
-    ],
-    "src/labels/ColorPopover.tsx <> src/labels/LabelPicker.tsx": [
-      ");//Keepthepopoverinsidetheviewportonceitssizeisknown.useLayoutEffect(()=>{constel=ref.current;if(!el)return;const{width,height}=el.getBoundingClientRect();constx=Math.max(0,Math.min(at.x,window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{"
-    ],
-    "src/labels/LabelPicker.tsx <> src/mail/CategoryMoveDialog.tsx": [
-      "]);//Keepthepopoverinsidetheviewportonceitssizeisknown.useLayoutEffect(()=>{constel=ref.current;if(!el)return;const{width,height}=el.getBoundingClientRect();constx=Math.max(0,Math.min(at.x,window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{constprevious=document.activeElementasHTMLElement|null;",
-      "window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{constprevious=document.activeElementasHTMLElement|null;firstRef",
-      "window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{constprevious=document.activeElementasHTMLElement|null;openerRef"
-    ],
-    "src/labels/labels.css <> src/labels/labels.css": [
-      "-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);animation:label-picker-invar(--duration-fast)var(--ease-out);transform-origin:topleft;}.label-"
-    ],
-    "src/mail/actions.ts <> src/mail/actions.ts": [
-      "(t,undo.add,undo.remove);},detail:(d)=>{constundo=undoOf(keyOf(d.thread));returnwithLabels(undo.add,undo.remove)(d);},send:async(account,ids)=>{constgroups=newMap<string,{add:string[];remove:string[];ids:string[]}>();for(constidofids){constundo=undoOf(threadKey(account,id));if(undo.add.length+undo.remove.length===0)continue;constsignature=JSON.stringify(undo);constgroup=groups.get(signature)??{...undo,ids:[]};group.ids.push(id);groups.set(signature,group);}awaitPromise.all([...groups.values()].map((g)=>modifyThreads(account,g.ids,g.add,g.remove)),);"
-    ],
-    "src/mail/mail.css <> src/shell/shell.css": [
-      "var(--space-3);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-"
-    ],
-    "src/mail/mail.css <> src/speedread/speedread.css": [
-      ");padding:var(--space-3);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-"
-    ],
-    "src/mail/preview/AttachmentPreview.tsx <> src/settings/Settings.tsx": [
-      "]);//KeepTabinsidethedialog.consttrapTab=(e:KeyboardEvent<HTMLDivElement>)=>{if(e.key!==\"Tab\")return;constitems=[...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE)??[])];if(!items.length)return;constfirst=items[0];constlast=items[items.length-1];constactive=document.activeElement;if(e.shiftKey&&",
-      "]);//KeepTabinsidethepanel.consttrapTab=(e:KeyboardEvent<HTMLDivElement>)=>{if(e.key!==\"Tab\")return;constitems=[...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE)??[])];if(!items.length)return;constfirst=items[0];constlast=items[items.length-1];constactive=document.activeElement;if(e.shiftKey&&"
-    ],
-    "src/settings/KeyboardMap.css <> src/shell/shell.css": [
-      "menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-sm);"
-    ],
-    "src/settings/KeyboardMap.css <> src/speedread/speedread.css": [
-      "menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-sm);"
-    ],
-    "src/settings/Settings.css <> src/settings/Settings.css": [
-      ");border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font-family:var(--font-family-mono);font-size:var(--font-size-sm);"
-    ],
-    "src/settings/Settings.css <> src/stats/Stats.css": [
-      "(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:settings-invar(--duration-slow)var(--ease-out);}.",
-      "-scrim{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;align-items:center;justify-content:center;padding:var(--settings-margin);background:var(--color-scrim);-webkit-backdrop-filter:blur(var(--settings-backdrop-blur));backdrop-filter:blur(var(--settings-backdrop-blur));animation:settings-fadevar(--duration-base)var(--ease-standard);}"
-    ],
-    "src/settings/Settings.css <> src/theme/editor/ThemeEditor.css": [
-      ");border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font-family:var(--font-family-mono);font-size:var(--font-size-"
-    ],
-    "src/shell/shell.css <> src/shell/shell.css": [
-      "{display:flex;align-items:center;gap:var(--space-1-5);width:100%;height:var(--row-height-compact);padding:var(--space-0)var(--space-2);border:none;border-radius:var(--radius-sm);background:transparent;color:var(--color-foreground-muted);font-size:var(--font-size-sm);"
-    ],
-    "src/shell/shell.css <> src/speedread/speedread.css": [
-      ");border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-sm);animation:"
-    ],
-    "src/speedread/speedread.css <> src/speedread/speedread.css": [
-      "-thumb{width:var(--speed-panel-thumb-size);height:var(--speed-panel-thumb-size);border:var(--border-width)solidvar(--color-accent);border-radius:var(--radius-full);background:var(--color-pane-bg);box-shadow:var(--shadow-popover);"
-    ],
-    "src/stats/Stats.css <> src/theme/editor/ThemeEditor.css": [
-      "{margin:var(--space-0);color:var(--color-foreground-muted);font-size:var(--font-size-xs);font-weight:var(--font-weight-semibold);letter-spacing:var(--letter-spacing-caps);text-transform:uppercase;}."
-    ],
-    "src/styles/fonts.css <> src/styles/fonts.css": [
-      "-ext-wght-normal*/@font-face{font-family:\"IBMPlexSansVariable\";font-style:normal;font-display:block;font-weight:100700;src:url(@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-"
-    ],
-    "src/theme/editor/ThemeEditor.css <> src/theme/editor/ThemeEditor.css": [
-      ");height:var(--control-height-sm);padding:var(--space-0)var(--space-1-5);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font-family:var(--font-family-mono);font-size:var(--font-size-xs);}.theme-"
-    ]
+    "src-tauri/src/calendar/error.rs <> src-tauri/src/tasks/error.rs": {
+      "tokens": 74,
+      "texts": [
+        ",google_message(.0))]Google(GmailError),#[error(\"Pheemecouldn'tsavethat:{0}\")]Db(anyhow::Error),}fngoogle_message(e:&GmailError)->String{matche{GmailError::Api{message,..}=>message.clone(),other=>other.to_string(),}}impl"
+      ]
+    },
+    "src-tauri/src/calendar/fake.rs <> src-tauri/src/tasks/fake.rs": {
+      "tokens": 76,
+      "texts": [
+        "fnreply<T>(lost:Option<fn()->GmailError>,result:Result<T,GmailError>,)->Result<T,GmailError>{match(lost,result){(Some(make),Ok(_))=>Err(make()),(_,r)=>r,}}fn"
+      ]
+    },
+    "src-tauri/src/calendar/recurrence.rs <> src-tauri/src/calendar/series.rs": {
+      "tokens": 214,
+      "texts": [
+        "()}fnseries(start:&str,end:&str,recurrence:&[&str])->DbEvent{DbEvent{account_id:\"a\".into(),calendar_id:\"c\".into(),id:\"abc\".into(),ical_uid:None,recurring_event_id:None,original_start_ms:None,original_start_date:None,status:\"confirmed\".into(),start_ms:Some(ms(start)),end_ms:Some(ms(end)),start_date:None,end_date:None,time_zone:Some(NY.into()),recurrence:Some(serde_json::to_string(recurrence).unwrap()),recur_until_ms:None,summary:None,location:None,description:None,organizer_email:None,self_response:None,attendees:\"[]\".into(),conference:None,color_id:None,transparency:None,visibility:None,reminders:None,html_link:None,etag:String::new(),updated_ms:0,raw:\"{}\".into(),}}fn"
+      ]
+    },
+    "src-tauri/src/calendar/repeating.rs <> src-tauri/src/calendar/repeating.rs": {
+      "tokens": 192,
+      "texts": [
+        ");assert_eq!(h.fake(\"a\").event(CAL,new_id).unwrap()[\"status\"],\"cancelled\");assert_eq!(h.fake(\"a\").event(CAL,\"weekly\").unwrap()[\"recurrence\"],json!([RULE]));assert_eq!(rows(&h).await,before",
+        ");h.fake(\"a\").fail_reads(Some(offline));leterr=update(&h,&occ(4),EditScope::Following,summary(\"Renamed\")).await.unwrap_err();assert!(matches!(err,CalendarError::Unconfirmed),\"{err:?}\");letwrites=h.fake(\"a\").writes();letmethods:Vec<&str>=writes.iter().map(|w|w.method).collect();assert_eq!(methods,vec![\"insert\","
+      ]
+    },
+    "src-tauri/src/calendar/series.rs <> src-tauri/src/calendar/series.rs": {
+      "tokens": 113,
+      "texts": [
+        ">{letkind=param(head,\"VALUE\").map(str::to_ascii_uppercase);ifkind.as_deref().is_some_and(|k|k!=\"DATE\"&&k!=\"DATE-TIME\"){returnErr(invalid(UNREADABLE));}letzone=matchparam(head,\"TZID\"){Some(name)=>Some(name.trim_matches('\"').parse::<chrono_tz::Tz>().map_err(|_|invalid(UNREADABLE))?,),None=>None,};"
+      ]
+    },
+    "src-tauri/src/calendar/service.rs <> src-tauri/src/tasks/service.rs": {
+      "tokens": 605,
+      "texts": [
+        ")asyncfnharness(accounts:&[&str])->Harness{letdb=TestDb::new().await;letmutfakes=HashMap::new();foridinaccounts{insert_account(&db.pool,&DbAccount{id:(*id).into(),email:format!(\"{id}@example.com\"),display_name:None,profile_photo_url:None,client_id:\"c\".into(),history_id:None,created_at:0,updated_at:0,},).await.unwrap();letfake=Arc::new(",
+        ",events:Arc<dynSyncEvents>)->Arc<Self>{Arc::new(Self{db,api_for,events,foreground:AtomicBool::new(false),wake:Notify::new(),forced:Mutex::new(HashSet::new()),running:Mutex::new(HashMap::new()),})}",
+        "///front)onthesharedclock,sothischeckwakesthecomputertogetherwiththeothers,///orsoonerwhentriggered.pubasyncfnrun(self:Arc<Self>){tokio::time::sleep(FIRST_DELAY).await;loop{self.tick(now_ms()).await;letwait=ifself.foreground.load(Ordering::Relaxed){FOREGROUND_INTERVAL}else{INTERVAL};tokio::select!{()=crate::cadence::sleep_until_next(wait)=>{}()=self.wake.notified()=>{}}}}}",
+        "::access(&self.db,account_id).await?;Ok(access_dto(access.as_ref()))}///Calendarmodeis(orstoppedbeing)infront:checkevery15sinsteadof60s.pubfnset_foreground(&self,on:bool){letwas=self.foreground.swap(on,Ordering::Relaxed);ifon&&!was{self.wake.notify_one();}}///Check`account_id`(oreveryaccount)soon;anaccountnamedhereischeckedevenif",
+        "};useserde::Serialize;usesqlx::SqlitePool;usestd::collections::{HashMap,HashSet};usestd::sync::atomic::{AtomicBool,Ordering};usestd::sync::{Arc,Mutex};usestd::time::Duration;usetokio::sync::Notify;usetracing::warn;",
+        "}fnsync_error(e:SyncError)->MailError{MailError::Sync(matche{SyncError::Api(e)=>crate::sync::engine::SyncError::Gmail(e),SyncError::Db(e)=>crate::sync::engine::SyncError::Db(e),})}///Afailurethatmaypassbyitself,whichdoesn'tchangetheaccount'sstatus.fnis_transient(e:&GmailError)->bool{matche{GmailError::Network(_)|GmailError::Offline(_)|GmailError::RateLimit{..}=>true,GmailError::Api{status,..}=>*status>=500,_=>false,}}"
+      ]
+    },
+    "src-tauri/src/calendar/sync.rs <> src-tauri/src/tasks/sync.rs": {
+      "tokens": 106,
+      "texts": [
+        ")]Db(#[from]anyhow::Error),}implFrom<GmailError>forSyncError{fnfrom(e:GmailError)->Self{SyncError::Api(e)}}///Theaccessstatusanerrormeans:`missing_scope`(allowcalendaraccessagain),///`api_disabled`(withtheGoogleCloudprojectnumberwhenGooglegaveit)or`error`.pubfnclassify(e:&GmailError)->(&'staticstr,Option<String>){ife.is_missing_scope(){(\"missing_scope\",None)}elseife.is_api_disabled(){(\"api_disabled\",e.disabled_api_project())}else{(\"error\",Some(e.to_string()))}}"
+      ]
+    },
+    "src-tauri/src/db/calendar.rs <> src-tauri/src/db/calendar.rs": {
+      "tokens": 565,
+      "texts": [
+        "<DbEvent>>{Ok(sqlx::query_as!(DbEvent,r#\"SELECTe.account_id,e.calendar_id,e.id,e.ical_uid,e.recurring_event_id,e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.rawFROMeventseWHEREe.account_id=?ANDe.",
+        "=sqlx::query_as!(DbEvent,r#\"SELECTe.account_id,e.calendar_id,e.id,e.ical_uid,e.recurring_event_id,e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.rawFROMeventseJOINcalendarscONc.account_id=e.account_idANDc.id=e.calendar_idWHEREc.hidden=0ANDe.recurrenceIS",
+        "e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.raw",
+        "letdb=TestDb::with_account(\"a\").await;letpool=&db.pool;replace_calendars(pool,\"a\",&[cal(\"C\")]).await.unwrap();letmutseries=event(\"C\",\"s\",0,H);series.recurrence=Some(r#\"[\"RRULE:FREQ=DAILY\"]\"#.into());let",
+        "sqlx::query_as!(DbEvent,r#\"SELECTe.account_id,e.calendar_id,e.id,e.ical_uid,e.recurring_event_id,e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.rawFROMeventse"
+      ]
+    },
+    "src-tauri/src/db/messages.rs <> src-tauri/src/db/messages.rs": {
+      "tokens": 85,
+      "texts": [
+        "FROMmessagesmINDEXEDBYidx_messages_dateLEFTJOINsentsONs.thread_id=m.thread_idWHEREm.account_id=?1ANDm.date>=?2ANDm.from_addressISNOTNULLANDm.from_address!=''ANDlower(m.from_address)!=lower(?3)ANDNOTEXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalueIN('DRAFT','SENT')))SELECT"
+      ]
+    },
+    "src-tauri/src/db/search.rs <> src-tauri/src/db/threads.rs": {
+      "tokens": 474,
+      "texts": [
+        ");letnext=ifhas_more{rows.last().map(|r|ThreadCursor{last_message_date:r.cursor_date,account_id:r.account_id.clone(),thread_id:r.id.clone(),})}else{None};letthreads=rows.into_iter().map(|r|DbThread{id:r.id,account_id:r.account_id,subject:r.subject,snippet:r.snippet,history_id:r.history_id,last_message_date:r.last_message_date,message_count:r.message_count,unread_count:r.unread_count,has_attachment:r.has_attachment,from_name:r.from_name,from_address:r.from_address,is_starred:r.is_starred,}).collect();",
+        ",r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBY",
+        "t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBYidx_threads_all_dateWHEREt.account_idIN(SELECTvalueFROMjson_each(?1))AND",
+        "{id:String,account_id:String,subject:Option<String>,snippet:Option<String>,history_id:Option<String>,last_message_date:Option<i64>,message_count:i64,unread_count:i64,has_attachment:i64,from_name:Option<String>,from_address:Option<String>,is_starred:i64,cursor_date:i64,}"
+      ]
+    },
+    "src-tauri/src/db/threads.rs <> src-tauri/src/db/threads.rs": {
+      "tokens": 2441,
+      "texts": [
+        ")kCROSSJOINthread_labelstlONtl.account_id=k.value->>0ANDtl.thread_id=k.value->>1ANDtl.label_id=?1CROSSJOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(",
+        ",None,&[\"INBOX\"]).await;seed(&pool,\"a1\",\"dated\",Some(100),&[\"INBOX\"]).await;letaccounts=labels(&[\"a1\"]);letpage=list_threads(&pool,&query(&accounts,None,2)).await.unwrap();",
+        ",fetch_limit,read_filter,).fetch_all(pool).await?}Some(c)=>{sqlx::query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",",
+        ":&str=r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",tl.last_message_dateAS\"cursor_date!\"FROMthread_labelstlJOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.label_id=?1ANDtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(",
+        "=>{sqlx::query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",tl.last_message_dateAS\"cursor_date!\"FROMthread_labelstlJOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.label_id=?1ANDtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(",
+        "=>{sqlx::query_as!(ThreadRow,r#\"SELECTu.thread_idAS\"id!\",u.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",u.last_message_dateAS\"cursor_date!\"FROMthread_labelsuINDEXEDBYidx_thread_labels_listingCROSSJOINthread_labelstlONtl.account_id=u.account_idANDtl.thread_id=u.thread_idANDtl.label_id=?1CROSSJOINthreadstONt.account_id=u.account_idANDt.id=u.thread_idWHEREu.label_id='UNREAD'ANDu.account_idIN(SELECTvalueFROMjson_each(?2))AND",
+        "ANDCOALESCE(t.last_message_date,0)<=?2AND(COALESCE(t.last_message_date,0),t.account_id,t.id)<(?2,?3,?4)ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=t.account_idANDe.thread_id=t.idANDe.label_idIN('SPAM','TRASH'))AND(?6ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?6)))ORDERBYCOALESCE(t.last_message_date,0)DESC,t.account_idDESC,t.idDESCLIMIT?5\"#,",
+        "ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=t.account_idANDe.thread_id=t.idANDe.label_idIN('SPAM','TRASH'))AND(?3ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?3)))ORDERBYCOALESCE(t.last_message_date,0)DESC,t.account_idDESC,t.idDESCLIMIT?2\"#,",
+        "JOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.label_id=?1ANDtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(?3ISNULLOREXISTS(SELECT1FROMthread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?3))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?4)))AND(",
+        "]);letmutgot=vec![];letmutcursor:Option<ThreadCursor>=None;loop{letpage=list_all_mail(&pool,&accounts,cursor.as_ref(),2,None).await.unwrap();got.extend(page.threads.into_iter().map(|t|",
+        "before{None=>{sqlx::query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",",
+        "has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",tl.last_message_dateAS\"cursor_date!\"FROMthread_labelstlJOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.label_id=?1ANDtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(tl.last_message_date,tl.account_id,tl.thread_id)<(?3,?4,?5)AND(?6ISNULLOREXISTS(SELECT1FROMthread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?6))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?7)))AND(?9ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?9)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?8",
+        "matchbefore{None=>{sqlx::query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBY",
+        "query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBY",
+        "query_as!(ThreadRow,r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBYidx_threads_account_dateWHEREt.account_id=?1AND",
+        "r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",tl.last_message_dateAS\"cursor_date!\"FROMthread_labelstlJOINthreadstONt.account_id=tl.account_idANDt.id=tl.thread_idWHEREtl.label_id=?1ANDtl.account_idIN(SELECTvalueFROMjson_each(?2))AND(?3ISNULLOREXISTS(SELECT1FROMthread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?3))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?4)))AND(?6ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?6)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?5",
+        "thread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?3))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?4)))AND(?6ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?6)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?5\"#,",
+        "thread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?3))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?4)))AND(?6ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?6)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?5\"#;",
+        "thread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?6))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?7)))AND(?9ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?9)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?8\"#,",
+        "thread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?6))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?7)))AND(?9ISNULLORt.unread_count>0ORjson_array(t.account_id,t.id)IN(SELECTvalueFROMjson_each(?9)))ORDERBYtl.last_message_dateDESC,tl.account_idDESC,tl.thread_idDESCLIMIT?8\"#;",
+        "tl.account_idIN(SELECTvalueFROMjson_each(?2))AND(?3ISNULLOREXISTS(SELECT1FROMthread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?3))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?4)))AND",
+        "tl.account_idIN(SELECTvalueFROMjson_each(?2))AND(tl.last_message_date,tl.account_id,tl.thread_id)<(?3,?4,?5)AND(?6ISNULLOREXISTS(SELECT1FROMthread_labelsxWHEREx.account_id=tl.account_idANDx.thread_id=tl.thread_idANDx.label_id=?6))ANDNOTEXISTS(SELECT1FROMthread_labelseWHEREe.account_id=tl.account_idANDe.thread_id=tl.thread_idANDe.label_idIN(SELECTvalueFROMjson_each(?7)))AND"
+      ]
+    },
+    "src-tauri/src/gmail/calendar.rs <> src-tauri/src/gmail/calendar.rs": {
+      "tokens": 80,
+      "texts": [
+        "(){letserver=MockServer::start().await;Mock::given(method(\"POST\")).and(path(\"/calendars/primary/events\")).respond_with(ResponseTemplate::new(409).set_body_json(json!({\"error\":{\"code\":409,\"message\":\"Therequestedidentifieralreadyexists.\",\"errors\":[{\"reason\":\"duplicate\",\"message\":\"exists\"}]}})))."
+      ]
+    },
+    "src-tauri/src/gmail/client.rs <> src-tauri/src/gmail/client.rs": {
+      "tokens": 79,
+      "texts": [
+        ")).respond_with(ResponseTemplate::new(200).set_body_json(profile_json())).expect(1).mount(&server).await;let(client,_)=client_for(&server);letprofile:UserProfile=client.send_json(ApiRequest::get(&[\"profile\"])).await.unwrap();assert_eq!(profile."
+      ]
+    },
+    "src-tauri/src/gmail/client.rs <> src-tauri/src/gmail/messages.rs": {
+      "tokens": 70,
+      "texts": [
+        ";usetokio::sync::Semaphore;letserver=MockServer::start().await;letstarted=Arc::new(Semaphore::new(0));letarrivals=started.clone();Mock::given(method(\"GET\")).and(wiremock::matchers::path_regex(r"
+      ]
+    },
+    "src-tauri/src/gmail/error.rs <> src-tauri/src/tasks/error.rs": {
+      "tokens": 76,
+      "texts": [
+        "}}#[cfg(test)]modtests{usesuper::*;fnapi(status:u16,reason:Option<&str>,message:&str)->GmailError{GmailError::Api{status,reason:reason.map(str::to_owned),message:message.to_owned(),}}#[test]fn"
+      ]
+    },
+    "src-tauri/src/gmail/messages.rs <> src-tauri/src/gmail/messages.rs": {
+      "tokens": 90,
+      "texts": [
+        "(){usestd::sync::Arc;usestd::time::Duration;usetokio::sync::Semaphore;letserver=MockServer::start().await;letstarted=Arc::new(Semaphore::new(0));letarrivals=started.clone();Mock::given(method(\"GET\")).and(wiremock::matchers::path_regex(r"
+      ]
+    },
+    "src-tauri/src/gmail/palette.rs <> src-tauri/src/gmail/palette.rs": {
+      "tokens": 129,
+      "texts": [
+        "[\"#000000\",\"#434343\",\"#666666\",\"#999999\",\"#cccccc\",\"#efefef\",\"#f3f3f3\",\"#ffffff\",\"#fb4c2f\",\"#ffad47\",\"#fad165\",\"#16a766\",\"#43d692\",\"#4a86e8\",\"#a479e2\",\"#f691b3\",\"#f6c5be\",\"#ffe6c7\",\"#fef1d1\",\"#b9e4d0\",\"#c6f3de\",\"#c9daf8\",\"#e4d7f5\",\"#fcdee8\",\"#efa093\",\"#ffd6a2\",\"#fce8b3\",\"#89d3b2\",\"#a0eac9\",\"#a4c2f4\",\"#d0bcf1\",\"#fbc8d9\",\"#e66550\",\"#ffbc6b\",\"#fcda83\",\"#44b984\",\"#68dfa9\",\"#6d9eeb\",\"#b694e8\",\"#f7a7c0\",\"#cc3a21\",\"#eaa041\",\"#f2c960\",\"#149e60\",\"#3dc789\",\"#3c78d8\",\"#8e63ce\",\"#e07798\",\"#ac2b16\",\"#cf8933\",\"#d5ae49\",\"#0b804b\",\"#2a9c68\",\"#285bac\",\"#653e9b\",\"#b65775\",\"#822111\",\"#a46a21\",\"#aa8831\",\"#076239\",\"#1a764d\",\"#1c4587\",\"#41236d\",\"#83334c\","
+      ]
+    },
+    "src-tauri/src/labels.rs <> src-tauri/src/labels.rs": {
+      "tokens": 222,
+      "texts": [
+        "(){letfake=with_labels(&[(\"L1\",\"Old\"),(\"L2\",\"New\")]);fake.seed(FakeMsg::new(\"m1\",\"t1\",&[\"INBOX\",\"L1\"]));leth=setup(fake).await;crate::sync::outbox::enqueue_modify(&h.pool,\"a1\",&[\"t1\".into()],&[\"L2\".into()],&[\"L1\".into()],).await.unwrap();",
+        ".unwrap();letmutlabels=h.fake.message(\"m1\").unwrap().labels;labels.sort();assert_eq!(labels,[\"INBOX\",\"L2\"]);letleft:i64=sqlx::query_scalar(\"SELECTCOUNT(*)FROMoutbox\").fetch_one(&h.pool).await.unwrap();assert_eq!(left,0);letnames=h.events.names();assert!(!names.contains(&\"outbox:rejected\"),\"{names:?}\");}#[tokio::test]asyncfn"
+      ]
+    },
+    "src-tauri/src/labels.rs <> src-tauri/src/mail.rs": {
+      "tokens": 155,
+      "texts": [
+        ");letevents=Arc::new(RecordingEvents::default());letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),events.clone(),);",
+        ");letevents=Arc::new(RecordingEvents::default());letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),events.clone(),);sync.sync_account(\"a1\").await.unwrap();"
+      ]
+    },
+    "src-tauri/src/mail.rs <> src-tauri/src/mail.rs": {
+      "tokens": 334,
+      "texts": [
+        "(){letdb=TestDb::with_account(\"a1\").await;letpool=db.pool.clone();letfake=Arc::new(FakeGmail::new());fake.seed(FakeMsg::new(\"m1\",\"t1\",&[\"INBOX\",\"UNREAD\"]));fake.seed(FakeMsg::new(\"m2\",\"t2\",&[\"INBOX\",",
+        "));letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),Arc::new(RecordingEvents::default()),);sync.sync_account(\"a1\").await.unwrap();",
+        "));letevents=Arc::new(RecordingEvents::default());letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),events.clone(),);sync.sync_account(\"a1\").await.unwrap();letmail=MailService::new(pool",
+        "letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),Arc::new(RecordingEvents::default()),);sync.sync_account(\"a1\").await.unwrap();letmail=MailService::new(pool"
+      ]
+    },
+    "src-tauri/src/mail.rs <> src-tauri/src/sender_rules.rs": {
+      "tokens": 75,
+      "texts": [
+        ");letapi=fake.clone();letsync=SyncManager::new(pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),Arc::new(RecordingEvents::default()),);sync.sync_account(\"a1\").await.unwrap();"
+      ]
+    },
+    "src-tauri/src/mail.rs <> src-tauri/src/support/mod.rs": {
+      "tokens": 76,
+      "texts": [
+        "]));fake.seed(FakeMsg::new(\"m2\",\"t2\",&[\"INBOX\"]));letapi=fake.clone();letsync=SyncManager::new(db.pool.clone(),Arc::new(move|_|api.clone()asArc<dynMailApi>),Arc::new("
+      ]
+    },
+    "src-tauri/src/sync/engine.rs <> src-tauri/src/sync/engine.rs": {
+      "tokens": 343,
+      "texts": [
+        ").await?;letids:Vec<String>=page.messages.iter().map(|m|m.id.clone()).collect();letmutconn=self.db.acquire().await?;letcached=messages::existing_ids(&mutconn,&self.account_id,&ids).await?;drop(conn);let",
+        ";ifmessages::insert_message_if_absent(&muttx,&row).await?{attachments::replace_for_message(&muttx,&self.account_id,&row.id,&atts).await?;touched.push(row.thread_id);}}let(result,confirmed)=self.finish_write(&muttx,&touched).await?;",
+        ";let(result,confirmed)=self.finish_write(&muttx,&touched).await?;accounts::update_history_id(&mut*tx,&self.account_id,&history_id,now_ms()/1000).await?;sync_state::reset_backfill(&muttx,&self.account_id).await?;sync_state::set_mailbox_total(&muttx,&self.account_id,profile.messages_total).await?;sync_state::touch(&muttx,&self.account_id,now_ms()).await?;tx.commit().await?;drop(guard);self.emit_write(result,confirmed);self.emit(SyncEvent::LabelsUpdated{account_id:self.account(),});self.emit(SyncEvent::Completed{account_id:self.account(),});Ok(())}"
+      ]
+    },
+    "src-tauri/src/tasks/sync.rs <> src-tauri/src/tasks/sync.rs": {
+      "tokens": 71,
+      "texts": [
+        "assert_eq!(fake.reads(),vec![(\"L\".into(),None,false),(\"W\".into(),None,false)]);letlists=cache::task_lists(&db.pool,Some(\"a\")).await.unwrap();assert_eq!(lists[0]."
+      ]
+    },
+    "src-tauri/src/tasks/writes.rs <> src-tauri/src/tasks/writes.rs": {
+      "tokens": 151,
+      "texts": [
+        "(){leth=harness(&[\"a\"]).await;h.fake(\"a\").put(\"L\",task(\"p\",\"Trip\"));h.fake(\"a\").put(\"L\",serde_json::json!({\"id\":\"s\",\"title\":\"Pack\",\"parent\":\"p\"}),);h.",
+        "title).await;letlist=self.settle(account_id,result,TasksError::ListNotFound)?;db::tasks::save_task_list(&self.db,account_id,&convert::task_list(&list)).await?;self.changed(account_id);Ok(TaskListRef{account_id:account_id.to_owned(),list_id:list.id,})}"
+      ]
+    },
+    "src/calendar/EventPopover.tsx <> src/calendar/InviteCard.tsx": {
+      "tokens": 147,
+      "texts": [
+        "=[[count(\"accepted\"),\"yes\"],[count(\"tentative\"),\"maybe\"],[count(\"declined\"),\"no\"],[count(\"needsAction\"),\"awaiting\"],].filter(([n])=>(nasnumber)>0).map(([n,w])=>`${n}${w}`)",
+        ">Going?</span><divrole=\"radiogroup\"aria-label=\"Youranswer\"className=\"cal-pop__answers\">{ANSWERS.map((a)=>(<buttonkey={a.value}type=\"button\"role=\"radio\"aria-checked={(pending??current)===a.value}className=\"cal-pop__answer\"disabled={pending!==null}onClick={()=>"
+      ]
+    },
+    "src/calendar/EventPopover.tsx <> src/calendar/QuickCreate.tsx": {
+      "tokens": 136,
+      "texts": [
+        ";constgap=8;letleft=window.innerWidth/2-box.width/2;lettop=window.innerHeight/3-box.height/3;if(at){left=at.right+gap;if(left+box.width>window.innerWidth-gap)left=at.left-gap-box.width;top=at.top;}left=Math.max(gap,Math.min(left,window.innerWidth-box.width-gap));top=Math.max(gap,Math.min(top,window.innerHeight-box.height-gap));setPos("
+      ]
+    },
+    "src/calendar/editing.css <> src/components/ui/Picker.css": {
+      "tokens": 82,
+      "texts": [
+        ");border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;font-size:var(--font-size-sm);"
+      ]
+    },
+    "src/calendar/editing.css <> src/compose/compose.css": {
+      "tokens": 71,
+      "texts": [
+        "var(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;font-size:var(--font-size-sm);}."
+      ]
+    },
+    "src/calendar/editing.css <> src/labels/labels.css": {
+      "tokens": 228,
+      "texts": [
+        ");max-width:100%;padding:var(--space-4);border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:label-picker-invar(--duration-slow)var(--ease-out);}.",
+        "-dialog-scrim{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;align-items:center;justify-content:center;padding:var(--space-4);background:var(--color-scrim);-webkit-backdrop-filter:blur(var(--settings-backdrop-blur));backdrop-filter:blur(var(--settings-backdrop-blur));}."
+      ]
+    },
+    "src/calendar/editing.css <> src/mail/preview/preview.css": {
+      "tokens": 73,
+      "texts": [
+        ";border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:"
+      ]
+    },
+    "src/calendar/editing.css <> src/palette/CommandPalette.css": {
+      "tokens": 146,
+      "texts": [
+        ";border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-palette-bg);color:var(--color-palette-foreground);box-shadow:var(--shadow-overlay);",
+        "{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;justify-content:center;align-items:flex-start;padding-top:var(--palette-offset-top);background:var(--color-scrim);"
+      ]
+    },
+    "src/calendar/editing.css <> src/settings/Settings.css": {
+      "tokens": 72,
+      "texts": [
+        "border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:"
+      ]
+    },
+    "src/calendar/editing.css <> src/speedread/speedread.css": {
+      "tokens": 184,
+      "texts": [
+        ");border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:",
+        "-scrim{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;align-items:center;justify-content:center;padding:var(--space-4);background:var(--color-scrim);-webkit-backdrop-filter:blur(var(--settings-backdrop-blur));backdrop-filter:blur(var(--settings-backdrop-blur));}."
+      ]
+    },
+    "src/calendar/editing.css <> src/stats/Stats.css": {
+      "tokens": 73,
+      "texts": [
+        ";border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:"
+      ]
+    },
+    "src/calendar/editing.css <> src/tasks/tasks.css": {
+      "tokens": 89,
+      "texts": [
+        ")var(--space-1-5);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;font-size:var(--font-size-"
+      ]
+    },
+    "src/calendar/editing.css <> src/theme/editor/ThemeEditor.css": {
+      "tokens": 85,
+      "texts": [
+        ");padding:var(--space-0)var(--space-1-5);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font"
+      ]
+    },
+    "src/components/ui/Kbd.css <> src/settings/Settings.css": {
+      "tokens": 84,
+      "texts": [
+        "padding:var(--space-0)var(--space-1);border:var(--border-width)solidvar(--color-kbd-border);border-radius:var(--radius-xs);background:var(--color-kbd-bg);color:var(--color-kbd-foreground);font-family:"
+      ]
+    },
+    "src/components/ui/Menu.css <> src/components/ui/Picker.css": {
+      "tokens": 160,
+      "texts": [
+        ";border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);",
+        "{display:flex;align-items:center;gap:var(--space-1-5);height:var(--control-height-sm);padding:var(--space-0)var(--space-2)var(--space-0)var(--space-1);border-radius:var(--radius-sm);"
+      ]
+    },
+    "src/components/ui/Menu.css <> src/compose/compose.css": {
+      "tokens": 87,
+      "texts": [
+        ");padding:var(--space-1);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
+      ]
+    },
+    "src/components/ui/Menu.css <> src/labels/labels.css": {
+      "tokens": 246,
+      "texts": [
+        ");border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);animation:",
+        ";border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);animation:",
+        "{display:flex;align-items:center;gap:var(--space-1-5);height:var(--control-height-sm);padding:var(--space-0)var(--space-2)var(--space-0)var(--space-1);border-radius:var(--radius-sm);cursor:default;}."
+      ]
+    },
+    "src/components/ui/Menu.css <> src/mail/mail.css": {
+      "tokens": 76,
+      "texts": [
+        ");border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
+      ]
+    },
+    "src/components/ui/Menu.css <> src/search/search.css": {
+      "tokens": 86,
+      "texts": [
+        ";padding:var(--space-1);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
+      ]
+    },
+    "src/components/ui/Menu.css <> src/settings/KeyboardMap.css": {
+      "tokens": 76,
+      "texts": [
+        ");border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
+      ]
+    },
+    "src/components/ui/Menu.tsx <> src/labels/ColorPopover.tsx": {
+      "tokens": 89,
+      "texts": [
+        ");constonPointerDown=(e:PointerEvent)=>{if(!ref.current?.contains(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);"
+      ]
+    },
+    "src/components/ui/Menu.tsx <> src/labels/LabelPicker.tsx": {
+      "tokens": 195,
+      "texts": [
+        "(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);previous?.focus?.();};},[onClose]);//Gmailcanrefuseatickafteritscommandresolved:thebackendundoesitandsaysso.Re-readtheticksthen.useEffect",
+        "(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);previous?.focus?.();};},[onClose]);const",
+        ".current?.focus();constonPointerDown=(e:PointerEvent)=>{if(!ref.current?.contains(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);previous?.focus?.();};},[onClose]);"
+      ]
+    },
+    "src/components/ui/Picker.css <> src/components/ui/TextInput.css": {
+      "tokens": 94,
+      "texts": [
+        ";height:var(--control-height-md);padding:var(--space-0)var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);"
+      ]
+    },
+    "src/components/ui/Picker.css <> src/compose/compose.css": {
+      "tokens": 101,
+      "texts": [
+        ");padding:var(--space-0)var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;font-size:var(--font-size-sm);"
+      ]
+    },
+    "src/components/ui/Picker.css <> src/mail/mail.css": {
+      "tokens": 84,
+      "texts": [
+        "-border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-md);"
+      ]
+    },
+    "src/components/ui/Picker.css <> src/settings/KeyboardMap.css": {
+      "tokens": 81,
+      "texts": [
+        "-border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-"
+      ]
+    },
+    "src/components/ui/Picker.css <> src/settings/Settings.css": {
+      "tokens": 146,
+      "texts": [
+        ")var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;",
+        "var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font"
+      ]
+    },
+    "src/components/ui/TextInput.css <> src/settings/Settings.css": {
+      "tokens": 90,
+      "texts": [
+        ");height:var(--control-height-md);padding:var(--space-0)var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-"
+      ]
+    },
+    "src/labels/ColorPopover.tsx <> src/labels/LabelPicker.tsx": {
+      "tokens": 121,
+      "texts": [
+        ");//Keepthepopoverinsidetheviewportonceitssizeisknown.useLayoutEffect(()=>{constel=ref.current;if(!el)return;const{width,height}=el.getBoundingClientRect();constx=Math.max(0,Math.min(at.x,window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{"
+      ]
+    },
+    "src/labels/LabelPicker.tsx <> src/mail/CategoryMoveDialog.tsx": {
+      "tokens": 213,
+      "texts": [
+        "]);//Keepthepopoverinsidetheviewportonceitssizeisknown.useLayoutEffect(()=>{constel=ref.current;if(!el)return;const{width,height}=el.getBoundingClientRect();constx=Math.max(0,Math.min(at.x,window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{constprevious=document.activeElementasHTMLElement|null;",
+        "window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{constprevious=document.activeElementasHTMLElement|null;firstRef",
+        "window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{constprevious=document.activeElementasHTMLElement|null;openerRef"
+      ]
+    },
+    "src/labels/labels.css <> src/labels/labels.css": {
+      "tokens": 102,
+      "texts": [
+        "-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);animation:label-picker-invar(--duration-fast)var(--ease-out);transform-origin:topleft;}.label-"
+      ]
+    },
+    "src/mail/actions.ts <> src/mail/actions.ts": {
+      "tokens": 220,
+      "texts": [
+        "(t,undo.add,undo.remove);},detail:(d)=>{constundo=undoOf(keyOf(d.thread));returnwithLabels(undo.add,undo.remove)(d);},send:async(account,ids)=>{constgroups=newMap<string,{add:string[];remove:string[];ids:string[]}>();for(constidofids){constundo=undoOf(threadKey(account,id));if(undo.add.length+undo.remove.length===0)continue;constsignature=JSON.stringify(undo);constgroup=groups.get(signature)??{...undo,ids:[]};group.ids.push(id);groups.set(signature,group);}awaitPromise.all([...groups.values()].map((g)=>modifyThreads(account,g.ids,g.add,g.remove)),);"
+      ]
+    },
+    "src/mail/mail.css <> src/shell/shell.css": {
+      "tokens": 95,
+      "texts": [
+        "var(--space-3);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-"
+      ]
+    },
+    "src/mail/mail.css <> src/speedread/speedread.css": {
+      "tokens": 99,
+      "texts": [
+        ");padding:var(--space-3);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-"
+      ]
+    },
+    "src/mail/preview/AttachmentPreview.tsx <> src/settings/Settings.tsx": {
+      "tokens": 91,
+      "texts": [
+        "]);//KeepTabinsidethedialog.consttrapTab=(e:KeyboardEvent<HTMLDivElement>)=>{if(e.key!==\"Tab\")return;constitems=[...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE)??[])];if(!items.length)return;constfirst=items[0];constlast=items[items.length-1];constactive=document.activeElement;if(e.shiftKey&&",
+        "]);//KeepTabinsidethepanel.consttrapTab=(e:KeyboardEvent<HTMLDivElement>)=>{if(e.key!==\"Tab\")return;constitems=[...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE)??[])];if(!items.length)return;constfirst=items[0];constlast=items[items.length-1];constactive=document.activeElement;if(e.shiftKey&&"
+      ]
+    },
+    "src/settings/KeyboardMap.css <> src/shell/shell.css": {
+      "tokens": 72,
+      "texts": [
+        "menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-sm);"
+      ]
+    },
+    "src/settings/KeyboardMap.css <> src/speedread/speedread.css": {
+      "tokens": 72,
+      "texts": [
+        "menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-sm);"
+      ]
+    },
+    "src/settings/Settings.css <> src/settings/Settings.css": {
+      "tokens": 71,
+      "texts": [
+        ");border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font-family:var(--font-family-mono);font-size:var(--font-size-sm);"
+      ]
+    },
+    "src/settings/Settings.css <> src/stats/Stats.css": {
+      "tokens": 222,
+      "texts": [
+        "(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:settings-invar(--duration-slow)var(--ease-out);}.",
+        "-scrim{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;align-items:center;justify-content:center;padding:var(--settings-margin);background:var(--color-scrim);-webkit-backdrop-filter:blur(var(--settings-backdrop-blur));backdrop-filter:blur(var(--settings-backdrop-blur));animation:settings-fadevar(--duration-base)var(--ease-standard);}"
+      ]
+    },
+    "src/settings/Settings.css <> src/theme/editor/ThemeEditor.css": {
+      "tokens": 90,
+      "texts": [
+        ");border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font-family:var(--font-family-mono);font-size:var(--font-size-"
+      ]
+    },
+    "src/shell/shell.css <> src/shell/shell.css": {
+      "tokens": 110,
+      "texts": [
+        "{display:flex;align-items:center;gap:var(--space-1-5);width:100%;height:var(--row-height-compact);padding:var(--space-0)var(--space-2);border:none;border-radius:var(--radius-sm);background:transparent;color:var(--color-foreground-muted);font-size:var(--font-size-sm);"
+      ]
+    },
+    "src/shell/shell.css <> src/speedread/speedread.css": {
+      "tokens": 71,
+      "texts": [
+        ");border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-sm);animation:"
+      ]
+    },
+    "src/speedread/speedread.css <> src/speedread/speedread.css": {
+      "tokens": 92,
+      "texts": [
+        "-thumb{width:var(--speed-panel-thumb-size);height:var(--speed-panel-thumb-size);border:var(--border-width)solidvar(--color-accent);border-radius:var(--radius-full);background:var(--color-pane-bg);box-shadow:var(--shadow-popover);"
+      ]
+    },
+    "src/stats/Stats.css <> src/theme/editor/ThemeEditor.css": {
+      "tokens": 78,
+      "texts": [
+        "{margin:var(--space-0);color:var(--color-foreground-muted);font-size:var(--font-size-xs);font-weight:var(--font-weight-semibold);letter-spacing:var(--letter-spacing-caps);text-transform:uppercase;}."
+      ]
+    },
+    "src/styles/fonts.css <> src/styles/fonts.css": {
+      "tokens": 71,
+      "texts": [
+        "-ext-wght-normal*/@font-face{font-family:\"IBMPlexSansVariable\";font-style:normal;font-display:block;font-weight:100700;src:url(@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-"
+      ]
+    },
+    "src/theme/editor/ThemeEditor.css <> src/theme/editor/ThemeEditor.css": {
+      "tokens": 131,
+      "texts": [
+        ");height:var(--control-height-sm);padding:var(--space-0)var(--space-1-5);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font-family:var(--font-family-mono);font-size:var(--font-size-xs);}.theme-"
+      ]
+    }
   },
   "similar": {
-    "src-tauri/src/calendar/service.rs <> src-tauri/src/tasks/service.rs": [
-      "fnaccess_dto(access:Option<&DbCalendarAccess>)->CalendarAccessDto{letSome(a)=accesselse{returnCalendarAccessDto{status:\"unknown\".into(),message:None,enable_url:None,synced_at:None,};};CalendarAccessDto{status:a.status.clone(),message:(a.status==\"error\").then(||a.detail.clone()).flatten(),enable_url:(a.status==\"api_disabled\").then(||match&a.detail{Some(project)=>format!(\"{CALENDAR_API_URL}?project={project}\"),None=>CALENDAR_API_URL.to_owned(),}),synced_at:a.synced_at,}}",
-      "pub(super)fnaccess_dto(access:Option<&DbTasksAccess>)->TasksAccessDto{letSome(a)=accesselse{returnTasksAccessDto{status:\"unknown\".into(),message:None,enable_url:None,synced_at:None,};};TasksAccessDto{status:a.status.clone(),message:(a.status==\"error\").then(||a.detail.clone()).flatten(),enable_url:(a.status==\"api_disabled\").then(||match&a.detail{Some(project)=>format!(\"{TASKS_API_URL}?project={project}\"),None=>TASKS_API_URL.to_owned(),}),synced_at:a.synced_at,}}",
-      "pubfntrigger(&self,account_id:Option<String>){ifletSome(id)=account_id{lock(&self.forced).insert(id);}self.wake.notify_one();}"
-    ],
-    "src-tauri/src/commands/calendar.rs <> src-tauri/src/commands/tasks.rs": [
-      "pubasyncfncalendar_sync_now(state:State<'_,AppState>,account_id:String,)->Result<CalendarAccessDto,CommandError>{Ok(user_action(state.calendar.sync_now(&account_id)).await?)}",
-      "pubasyncfntasks_sync_now(state:State<'_,AppState>,account_id:String,)->Result<TasksAccessDto,CommandError>{Ok(user_action(state.tasks.sync_now(&account_id)).await?)}"
-    ],
-    "src-tauri/src/db/accounts.rs <> src-tauri/src/db/accounts.rs": [
-      "pubasyncfnget_account(pool:&SqlitePool,account_id:&str)->Result<Option<DbAccount>>{letaccount=sqlx::query_as!(DbAccount,r#\"SELECTid,email,display_name,profile_photo_url,client_id,history_id,created_at,updated_atFROMaccountsWHEREid=?\"#,account_id).fetch_optional(pool).await?;Ok(account)}",
-      "pubasyncfnget_account_by_email(pool:&SqlitePool,email:&str)->Result<Option<DbAccount>>{letaccount=sqlx::query_as!(DbAccount,r#\"SELECTid,email,display_name,profile_photo_url,client_id,history_id,created_at,updated_atFROMaccountsWHEREemail=?\"#,email).fetch_optional(pool).await?;Ok(account)}"
-    ],
-    "src-tauri/src/db/accounts.rs <> src-tauri/src/db/assistant.rs": [
-      "pubasyncfninsert_client(pool:&SqlitePool,id:&str,name:&str,token_hash:&str,created_at:i64,)->Result<()>{sqlx::query!(\"INSERTINTOassistant_clients(id,name,token_hash,created_at)VALUES(?,?,?,?)\",id,name,token_hash,created_at).execute(pool).await?;Ok(())}",
-      "pubasyncfnupdate_profile(pool:&SqlitePool,account_id:&str,display_name:Option<&str>,profile_photo_url:Option<&str>,updated_at:i64,)->Result<()>{sqlx::query!(r#\"UPDATEaccountsSETdisplay_name=?,profile_photo_url=?,updated_at=?WHEREid=?\"#,display_name,profile_photo_url,updated_at,account_id).execute(pool).await?;Ok(())}"
-    ],
-    "src-tauri/src/db/accounts.rs <> src-tauri/src/db/settings.rs": [
-      "asyncfndelete(pool:&SqlitePool,key:&str)->Result<()>{sqlx::query!(\"DELETEFROMapp_settingsWHEREkey=?\",key).execute(pool).await?;Ok(())}",
-      "pubasyncfndelete_account(pool:&SqlitePool,account_id:&str)->Result<()>{sqlx::query!(\"DELETEFROMaccountsWHEREid=?\",account_id).execute(pool).await?;Ok(())}"
-    ],
-    "src-tauri/src/db/assistant.rs <> src-tauri/src/db/desktop.rs": [
-      "pubasyncfnaccounts(pool:&SqlitePool)->Result<Vec<AccountDesktop>>{Ok(sqlx::query_as!(AccountDesktop,r#\"SELECTa.idasaccount_id,a.email,COALESCE(n.enabled,0)as\"enabled!:bool\",n.account_idISNOTNULLas\"asked!:bool\"FROMaccountsaLEFTJOINnotification_settingsnONn.account_id=a.idORDERBYa.email\"#).fetch_all(pool).await?)}",
-      "pubasyncfnlist_clients(pool:&SqlitePool)->Result<Vec<DbClient>>{Ok(sqlx::query_as!(DbClient,\"SELECTid,name,created_at,last_used_atFROMassistant_clientsORDERBYcreated_at,id\").fetch_all(pool).await?)}"
-    ],
-    "src-tauri/src/db/assistant.rs <> src-tauri/src/db/reminders.rs": [
-      "pubasyncfnfired(pool:&SqlitePool)->Result<Vec<ReminderKey>>{Ok(sqlx::query_as!(ReminderKey,\"SELECTaccount_id,calendar_id,event_id,start_ms,minutesFROMcalendar_reminders_firedORDERBYaccount_id,calendar_id,event_id,start_ms,minutes\").fetch_all(pool).await?)}",
-      "pubasyncfnlist_clients(pool:&SqlitePool)->Result<Vec<DbClient>>{Ok(sqlx::query_as!(DbClient,\"SELECTid,name,created_at,last_used_atFROMassistant_clientsORDERBYcreated_at,id\").fetch_all(pool).await?)}"
-    ],
-    "src-tauri/src/db/attachments.rs <> src-tauri/src/db/attachments.rs": [
-      "pubasyncfnget_by_content_id(pool:&SqlitePool,account_id:&str,message_id:&str,content_id:&str,)->Result<Option<DbAttachment>>{letrow=sqlx::query_as!(DbAttachment,r#\"SELECTid,message_id,account_id,filename,mime_type,size,attachment_id,content_id,is_inlineFROMattachmentsWHEREaccount_id=?ANDmessage_id=?ANDcontent_id=?ORDERBYCAST(idASINTEGER),idLIMIT1\"#,account_id,message_id,content_id).fetch_optional(pool).await?;Ok(row)}",
-      "pubasyncfnget_one(pool:&SqlitePool,account_id:&str,message_id:&str,id:&str,)->Result<Option<DbAttachment>>{letrow=sqlx::query_as!(DbAttachment,r#\"SELECTid,message_id,account_id,filename,mime_type,size,attachment_id,content_id,is_inlineFROMattachmentsWHEREaccount_id=?ANDmessage_id=?ANDid=?\"#,account_id,message_id,id).fetch_optional(pool).await?;Ok(row)}"
-    ],
-    "src-tauri/src/db/calendar.rs <> src-tauri/src/db/calendar.rs": [
-      "pubasyncfnset_access<'e>(ex:implSqliteExecutor<'e>,account_id:&str,status:&str,detail:Option<&str>,now_ms:i64,)->Result<()>{sqlx::query!(\"INSERTINTOcalendar_access(account_id,status,detail,checked_at,synced_at)VALUES(?1,?2,?3,?4,CASEWHEN?2='on'THEN?4END)ONCONFLICT(account_id)DOUPDATESETstatus=excluded.status,detail=excluded.detail,checked_at=excluded.checked_at,synced_at=CASEWHEN?2='on'THEN?4ELSEcalendar_access.synced_atEND\",account_id,status,detail,now_ms).execute(ex).await?;Ok(())}",
-      "pubasyncfnset_settings<'e>(ex:implSqliteExecutor<'e>,account_id:&str,time_zone:Option<&str>,week_start:Option<i64>,now_ms:i64,)->Result<()>{sqlx::query!(\"INSERTINTOcalendar_access(account_id,status,checked_at,settings_checked_at,time_zone,week_start)VALUES(?1,'unknown',?4,?4,?2,?3)ONCONFLICT(account_id)DOUPDATESETsettings_checked_at=excluded.settings_checked_at,time_zone=excluded.time_zone,week_start=excluded.week_start\",account_id,time_zone,week_start,now_ms).execute(ex).await?;Ok(())}"
-    ],
-    "src-tauri/src/db/calendar.rs <> src-tauri/src/db/contacts.rs": [
-      "pubasyncfnaccess<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Option<DbCalendarAccess>>{Ok(sqlx::query_as!(DbCalendarAccess,r#\"SELECTstatus,detail,checked_at,synced_at,settings_checked_at,time_zone,week_startFROMcalendar_accessWHEREaccount_id=?\"#,account_id).fetch_optional(ex).await?)}",
-      "pubasyncfngoogle_sync<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Option<GoogleSyncRow>>{Ok(sqlx::query_as!(GoogleSyncRow,r#\"SELECTstatus,detail,checked_at,synced_atFROMgoogle_contacts_syncWHEREaccount_id=?\"#,account_id).fetch_optional(ex).await?)}"
-    ],
-    "src-tauri/src/db/calendar.rs <> src-tauri/src/db/outbox.rs": [
-      "pubasyncfnaccess<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Option<DbCalendarAccess>>{Ok(sqlx::query_as!(DbCalendarAccess,r#\"SELECTstatus,detail,checked_at,synced_at,settings_checked_at,time_zone,week_startFROMcalendar_accessWHEREaccount_id=?\"#,account_id).fetch_optional(ex).await?)}",
-      "pubasyncfnget<'e>(ex:implSqliteExecutor<'e>,op_id:&str)->Result<Option<DbOp>>{Ok(sqlx::query_as!(DbOp,r#\"SELECTseqAS\"seq!\",id,account_id,kind,payload,status,attempts,next_attempt_at,checks_done,rfc822_message_id,last_error,created_at,updated_atFROMoutboxWHEREid=?\"#,op_id).fetch_optional(ex).await?)}"
-    ],
-    "src-tauri/src/db/calendar.rs <> src-tauri/src/db/tasks.rs": [
-      "pubasyncfnaccess<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Option<DbCalendarAccess>>{Ok(sqlx::query_as!(DbCalendarAccess,r#\"SELECTstatus,detail,checked_at,synced_at,settings_checked_at,time_zone,week_startFROMcalendar_accessWHEREaccount_id=?\"#,account_id).fetch_optional(ex).await?)}",
-      "pubasyncfnaccess<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Option<DbTasksAccess>>{Ok(sqlx::query_as!(DbTasksAccess,\"SELECTstatus,detail,checked_at,synced_atFROMtasks_accessWHEREaccount_id=?\",account_id).fetch_optional(ex).await?)}",
-      "pubasyncfncalendars<'e>(ex:implSqliteExecutor<'e>,account_id:Option<&str>,)->Result<Vec<DbCalendar>>{Ok(sqlx::query_as!(DbCalendar,r#\"SELECTaccount_id,id,summary,description,time_zone,background_color,foreground_color,access_role,is_primaryAS\"primary:bool\",hiddenAS\"hidden:bool\",default_reminders,sync_tokenFROMcalendarsWHERE?1ISNULLORaccount_id=?1ORDERBYaccount_id,is_primaryDESC,summaryCOLLATENOCASE\"#,account_id).fetch_all(ex).await?)}",
-      "pubasyncfndated_tasks<'e>(ex:implSqliteExecutor<'e>,from_date:&str,to_date:&str,)->Result<Vec<DbTask>>{Ok(sqlx::query_as!(DbTask,r#\"SELECTt.account_id,t.list_id,t.id,t.parent,t.position,t.title,t.notes,t.due_date,t.status,t.completed_ms,t.updated_ms,t.hiddenAS\"hidden:bool\",t.etag,t.rawFROMtaskstJOINtask_listslONl.account_id=t.account_idANDl.id=t.list_idWHEREt.due_date>=?ANDt.due_date<?ANDl.hidden=0ORDERBYt.due_date,t.account_id,l.sort_order,t.position,t.id\"#,from_date,to_date).fetch_all(ex).await?)}",
-      "pubasyncfnevent<'e>(ex:implSqliteExecutor<'e>,account_id:&str,calendar_id:&str,id:&str,)->Result<Option<DbEvent>>{Ok(sqlx::query_as!(DbEvent,r#\"SELECTe.account_id,e.calendar_id,e.id,e.ical_uid,e.recurring_event_id,e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.rawFROMeventseWHEREe.account_id=?ANDe.calendar_id=?ANDe.id=?\"#,account_id,calendar_id,id).fetch_optional(ex).await?)}",
-      "pubasyncfnevents_by_ical_uid<'e>(ex:implSqliteExecutor<'e>,account_id:&str,ical_uid:&str,)->Result<Vec<DbEvent>>{Ok(sqlx::query_as!(DbEvent,r#\"SELECTe.account_id,e.calendar_id,e.id,e.ical_uid,e.recurring_event_id,e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.rawFROMeventseWHEREe.account_id=?ANDe.ical_uid=?ORDERBYe.calendar_id,e.id\"#,account_id,ical_uid).fetch_all(ex).await?)}",
-      "pubasyncfnremove_task_with_subtasks<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,task_id:&str,)->Result<()>{sqlx::query!(\"DELETEFROMtasksWHEREaccount_id=?1ANDlist_id=?2AND(id=?3ORparent=?3)\",account_id,list_id,task_id).execute(ex).await?;Ok(())}",
-      "pubasyncfnset_access<'e>(ex:implSqliteExecutor<'e>,account_id:&str,status:&str,detail:Option<&str>,now_ms:i64,)->Result<()>{sqlx::query!(\"INSERTINTOcalendar_access(account_id,status,detail,checked_at,synced_at)VALUES(?1,?2,?3,?4,CASEWHEN?2='on'THEN?4END)ONCONFLICT(account_id)DOUPDATESETstatus=excluded.status,detail=excluded.detail,checked_at=excluded.checked_at,synced_at=CASEWHEN?2='on'THEN?4ELSEcalendar_access.synced_atEND\",account_id,status,detail,now_ms).execute(ex).await?;Ok(())}",
-      "pubasyncfnset_access<'e>(ex:implSqliteExecutor<'e>,account_id:&str,status:&str,detail:Option<&str>,now_ms:i64,)->Result<()>{sqlx::query!(\"INSERTINTOtasks_access(account_id,status,detail,checked_at,synced_at)VALUES(?1,?2,?3,?4,CASEWHEN?2='on'THEN?4END)ONCONFLICT(account_id)DOUPDATESETstatus=excluded.status,detail=excluded.detail,checked_at=excluded.checked_at,synced_at=CASEWHEN?2='on'THEN?4ELSEtasks_access.synced_atEND\",account_id,status,detail,now_ms).execute(ex).await?;Ok(())}",
-      "pubasyncfnset_hidden<'e>(ex:implSqliteExecutor<'e>,account_id:&str,calendar_id:&str,hidden:bool,)->Result<()>{sqlx::query!(\"UPDATEcalendarsSEThidden=?WHEREaccount_id=?ANDid=?\",hidden,account_id,calendar_id).execute(ex).await?;Ok(())}",
-      "pubasyncfnset_list_hidden<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,hidden:bool,)->Result<()>{sqlx::query!(\"UPDATEtask_listsSEThidden=?WHEREaccount_id=?ANDid=?\",hidden,account_id,list_id).execute(ex).await?;Ok(())}",
-      "pubasyncfntask<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,task_id:&str,)->Result<Option<DbTask>>{Ok(sqlx::query_as!(DbTask,r#\"SELECTaccount_id,list_id,id,parent,position,title,notes,due_date,status,completed_ms,updated_ms,hiddenAS\"hidden:bool\",etag,rawFROMtasksWHEREaccount_id=?ANDlist_id=?ANDid=?\"#,account_id,list_id,task_id).fetch_optional(ex).await?)}",
-      "pubasyncfntask_lists<'e>(ex:implSqliteExecutor<'e>,account_id:Option<&str>,)->Result<Vec<DbTaskList>>{Ok(sqlx::query_as!(DbTaskList,r#\"SELECTaccount_id,id,title,sort_order,etag,updated_ms,hiddenAS\"hidden:bool\",synced_through_ms,full_synced_atFROMtask_listsWHERE?1ISNULLORaccount_id=?1ORDERBYaccount_id,sort_order\"#,account_id).fetch_all(ex).await?)}",
-      "pubasyncfntasks<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,)->Result<Vec<DbTask>>{Ok(sqlx::query_as!(DbTask,r#\"SELECTaccount_id,list_id,id,parent,position,title,notes,due_date,status,completed_ms,updated_ms,hiddenAS\"hidden:bool\",etag,rawFROMtasksWHEREaccount_id=?ANDlist_id=?ORDERBYposition,id\"#,account_id,list_id).fetch_all(ex).await?)}"
-    ],
-    "src-tauri/src/db/labels.rs <> src-tauri/src/db/messages.rs": [
-      "pubasyncfnget_label<'e>(ex:implSqliteExecutor<'e>,account_id:&str,label_id:&str,)->Result<Option<DbLabel>>{letlabel=sqlx::query_as!(DbLabel,r#\"SELECTid,account_id,name,typeaslabel_type,message_list_visibility,label_list_visibility,color_background,color_text,messages_total,messages_unread,threads_total,threads_unreadFROMlabelsWHEREaccount_id=?ANDid=?\"#,account_id,label_id).fetch_optional(ex).await?;Ok(label)}",
-      "pubasyncfnget_message<'e>(ex:implSqliteExecutor<'e>,account_id:&str,message_id:&str,)->Result<Option<DbMessage>>{letmsg=sqlx::query_as!(DbMessage,r#\"SELECTid,account_id,thread_id,label_ids,from_address,from_name,to_addresses,cc_addresses,subject,snippet,body_html,body_text,date,size_estimate,has_attachment,is_read,is_starred,raw_headers,fully_fetched,rfc822_message_idFROMmessagesWHEREaccount_id=?ANDid=?\"#,account_id,message_id).fetch_optional(ex).await?;Ok(msg)}"
-    ],
-    "src-tauri/src/db/messages.rs <> src-tauri/src/db/messages.rs": [
-      "pubasyncfnreceived_by_label(pool:&SqlitePool,account_id:&str,since_ms:i64,own_address:&str,limit:i64,)->Result<Vec<DbReceivedStats>>{letrows=sqlx::query_as!(DbReceivedStats,r#\"WITHsentAS(SELECTthread_id,MAX(date)ASlast_sentFROMmessagesINDEXEDBYidx_messages_dateWHEREaccount_id=?1ANDdate>=?2ANDEXISTS(SELECT1FROMjson_each(label_ids)WHEREvalue='SENT')GROUPBYthread_id),recvAS(SELECTm.label_ids,m.is_read!=0ASopened,m.is_starred!=0ASstarred,COALESCE(s.last_sent>m.date,0)ASrepliedFROMmessagesmINDEXEDBYidx_messages_dateLEFTJOINsentsONs.thread_id=m.thread_idWHEREm.account_id=?1ANDm.date>=?2ANDm.from_addressISNOTNULLANDm.from_address!=''ANDlower(m.from_address)!=lower(?3)ANDNOTEXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalueIN('DRAFT','SENT')))SELECTl.idAS\"key!:String\",l.nameAS\"group!:String\",COUNT(*)AS\"received!:i64\",SUM(r.opened)AS\"opened!:i64\",SUM(r.replied)AS\"replied!:i64\",SUM(r.starred)AS\"starred!:i64\",SUM(r.openedORr.repliedORr.starred)AS\"engaged!:i64\"FROMrecvrJOINjson_each(r.label_ids)jJOINlabelslONl.account_id=?1ANDl.id=j.valueANDl.type='user'GROUPBYl.idORDERBYCOUNT(*)DESC,l.nameLIMIT?4\"#,account_id,since_ms,own_address,limit).fetch_all(pool).await?;Ok(rows)}",
-      "pubasyncfnsender_stats(pool:&SqlitePool,account_id:&str,since_ms:i64,own_address:&str,limit:i64,)->Result<Vec<DbSenderStats>>{letrows=sqlx::query_as!(DbSenderStats,r#\"WITHsentAS(SELECTthread_id,MAX(date)ASlast_sentFROMmessagesINDEXEDBYidx_messages_dateWHEREaccount_id=?1ANDdate>=?2ANDEXISTS(SELECT1FROMjson_each(label_ids)WHEREvalue='SENT')GROUPBYthread_id)SELECTlower(m.from_address)AS\"address!:String\",MAX(m.from_name)AS\"name:String\",COUNT(*)AS\"messages!:i64\",SUM(m.is_read=0)AS\"unread!:i64\",SUM(COALESCE(s.last_sent>m.date,0))AS\"replied!:i64\",SUM(m.is_starred!=0)AS\"starred!:i64\",SUM(m.is_read!=0ORm.is_starred!=0ORCOALESCE(s.last_sent>m.date,0))AS\"engaged!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='INBOX'))AS\"in_inbox!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='TRASH'))AS\"in_trash!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='SPAM'))AS\"in_spam!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='CATEGORY_PROMOTIONS'))AS\"promotions!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='CATEGORY_SOCIAL'))AS\"social!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='CATEGORY_UPDATES'))AS\"updates!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='CATEGORY_FORUMS'))AS\"forums!:i64\",MAX(m.date)AS\"last_date!:i64\",COALESCE((SELECTc.sent_countFROMcontactscWHEREc.account_id=?1ANDc.address=lower(m.from_address)),0)AS\"you_wrote!:i64\"FROMmessagesmLEFTJOINsentsONs.thread_id=m.thread_idWHEREm.account_id=?1ANDm.date>=?2ANDm.from_addressISNOTNULLANDm.from_address!=''ANDlower(m.from_address)!=lower(?3)ANDNOTEXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalueIN('DRAFT','SENT'))GROUPBYlower(m.from_address)ORDERBYCOUNT(*)DESC,MAX(m.date)DESCLIMIT?4\"#,account_id,since_ms,own_address,limit).fetch_all(pool).await?;Ok(rows)}"
-    ],
-    "src-tauri/src/db/messages.rs <> src-tauri/src/db/tasks.rs": [
-      "pubasyncfndelete_message<'e>(ex:implSqliteExecutor<'e>,account_id:&str,message_id:&str,)->Result<()>{sqlx::query!(\"DELETEFROMmessagesWHEREaccount_id=?ANDid=?\",account_id,message_id).execute(ex).await?;Ok(())}",
-      "pubasyncfndelete_task_list<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,)->Result<()>{sqlx::query!(\"DELETEFROMtask_listsWHEREaccount_id=?ANDid=?\",account_id,list_id).execute(ex).await?;Ok(())}",
-      "pubasyncfnneeds_full_sync<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,)->Result<()>{sqlx::query!(\"UPDATEtask_listsSETfull_synced_at=NULLWHEREaccount_id=?ANDid=?\",account_id,list_id).execute(ex).await?;Ok(())}"
-    ],
-    "src-tauri/src/db/outbox.rs <> src-tauri/src/db/outbox.rs": [
-      "pubasyncfnfor_account<'e>(ex:implSqliteExecutor<'e>,account_id:&str)->Result<Vec<DbOp>>{Ok(sqlx::query_as!(DbOp,r#\"SELECTseqAS\"seq!\",id,account_id,kind,payload,status,attempts,next_attempt_at,checks_done,rfc822_message_id,last_error,created_at,updated_atFROMoutboxWHEREaccount_id=?ORDERBYseq\"#,account_id).fetch_all(ex).await?)}",
-      "pubasyncfnmessages_of<'e>(ex:implSqliteExecutor<'e>,op_id:&str)->Result<Vec<DbOpMessage>>{Ok(sqlx::query_as!(DbOpMessage,r#\"SELECTop_id,account_id,message_id,thread_id,prior_label_idsFROMoutbox_messagesWHEREop_id=?ORDERBYmessage_id\"#,op_id).fetch_all(ex).await?)}",
-      "pubasyncfnsends_awaiting_confirmation<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Vec<DbOp>>{Ok(sqlx::query_as!(DbOp,r#\"SELECTseqAS\"seq!\",id,account_id,kind,payload,status,attempts,next_attempt_at,checks_done,rfc822_message_id,last_error,created_at,updated_atFROMoutboxWHEREaccount_id=?ANDkind='send'ANDstatusIN('checking','unconfirmed')ORDERBYseq\"#,account_id).fetch_all(ex).await?)}"
-    ],
-    "src-tauri/src/gmail/drafts.rs <> src-tauri/src/gmail/threads.rs": [
-      "pubasyncfnget_draft(&self,id:&str,format:MessageFormat)->Result<Draft,GmailError>{letmutdraft:Draft=self.send_json(ApiRequest::get(&[\"drafts\",id]).query(\"format\",format.as_str())).await?;ifletSome(msg)=draft.message.as_mut(){ifletSome(payload)=msg.payload.as_mut(){self.fill_external_bodies(&msg.id,payload,Priority::Sync).await?;}}Ok(draft)}",
-      "pubasyncfnget_thread(&self,id:&str,format:MessageFormat)->Result<Thread,GmailError>{letmutthread:Thread=self.send_json(ApiRequest::get(&[\"threads\",id]).query(\"format\",format.as_str())).await?;formsgin&mutthread.messages{ifletSome(payload)=msg.payload.as_mut(){self.fill_external_bodies(&msg.id,payload,Priority::Sync).await?;}}Ok(thread)}"
-    ],
-    "src-tauri/src/gmail/filters.rs <> src-tauri/src/gmail/send_as.rs": [
-      "pubasyncfnlist_filters(&self)->Result<Vec<Filter>,GmailError>{letres:FilterListResponse=self.send_json(ApiRequest::get(&[\"settings\",\"filters\"])).await?;Ok(res.filter)}",
-      "pubasyncfnlist_send_as(&self)->Result<Vec<SendAs>,GmailError>{letres:SendAsListResponse=self.send_json(ApiRequest::get(&[\"settings\",\"sendAs\"])).await?;Ok(res.send_as)}"
-    ],
-    "src-tauri/src/gmail/messages.rs <> src-tauri/src/gmail/threads.rs": [
-      "pubasyncfnlist_messages(&self,label_ids:&[&str],page_token:Option<&str>,max_results:u32,)->Result<MessageListResponse,GmailError>{letmutreq=ApiRequest::get(&[\"messages\"]).query(\"maxResults\",max_results.to_string());forlabelinlabel_ids{req=req.query(\"labelIds\",*label);}self.send_json(req.query_opt(\"pageToken\",page_token)).await}",
-      "pubasyncfnlist_threads(&self,label_ids:&[&str],page_token:Option<&str>,max_results:u32,)->Result<ThreadListResponse,GmailError>{letmutreq=ApiRequest::get(&[\"threads\"]).query(\"maxResults\",max_results.to_string());forlabelinlabel_ids{req=req.query(\"labelIds\",*label);}self.send_json(req.query_opt(\"pageToken\",page_token)).await}",
-      "pubasyncfnmodify_message(&self,id:&str,add_labels:&[&str],remove_labels:&[&str],)->Result<Message,GmailError>{letbody=json!({\"addLabelIds\":add_labels,\"removeLabelIds\":remove_labels});self.send_json(ApiRequest::post(&[\"messages\",id,\"modify\"]).json(body)).await}",
-      "pubasyncfnmodify_thread(&self,id:&str,add_labels:&[&str],remove_labels:&[&str],)->Result<Thread,GmailError>{letbody=json!({\"addLabelIds\":add_labels,\"removeLabelIds\":remove_labels});self.send_json(ApiRequest::post(&[\"threads\",id,\"modify\"]).json(body)).await}"
-    ],
-    "src/settings/SenderRulesSettings.tsx <> src/settings/SignatureSettings.tsx": [
-      "functionSenderRulesSettings(){constaccounts=useAccountStore((s)=>s.accounts);if(accounts.length===0)return<pclassName=\"settings-empty\">Noaccountsconnected.</p>;return(<>{accounts.map((a)=>(<AccountRuleskey={a.id}accountId={a.id}email={a.email}/>))}</>);}",
-      "functionSignatureSettings(){constaccounts=useAccountStore((s)=>s.accounts);if(accounts.length===0)return<pclassName=\"settings-empty\">Noaccountsconnected.</p>;return(<>{accounts.map((a)=>(<AccountSignatureskey={a.id}accountId={a.id}email={a.email}/>))}</>);}"
-    ],
-    "src/speedread/SpeedReader.tsx <> src/speedread/SpeedReader.tsx": [
-      "functionOfferControl(){constoffer=useSpeedReaderSettings((s)=>s.offer);constupdate=useSpeedReaderSettings((s)=>s.update);return(<Switchlabel=\"Offerspeedreading\"checked={offer}onChange={(next)=>update({offer:next})}/>);}",
-      "functionPausesControl(){constpauses=useSpeedReaderSettings((s)=>s.pauses);constupdate=useSpeedReaderSettings((s)=>s.update);return(<Switchlabel=\"Pauseatpunctuation\"checked={pauses}onChange={(next)=>update({pauses:next})}/>);}"
-    ],
-    "workers/diagnostics/src/handler.ts <> workers/diagnostics/src/ping.ts": [
-      "functionisShortField(value:unknown):valueisstring{return(typeofvalue===\"string\"&&value.length>0&&value.length<=MAX_FIELD_CHARS&&!CONTROL_RE.test(value));}"
-    ]
+    "src-tauri/src/calendar/service.rs <> src-tauri/src/tasks/service.rs": {
+      "tokens": 191,
+      "texts": [
+        "fnaccess_dto(access:Option<&DbCalendarAccess>)->CalendarAccessDto{letSome(a)=accesselse{returnCalendarAccessDto{status:\"unknown\".into(),message:None,enable_url:None,synced_at:None,};};CalendarAccessDto{status:a.status.clone(),message:(a.status==\"error\").then(||a.detail.clone()).flatten(),enable_url:(a.status==\"api_disabled\").then(||match&a.detail{Some(project)=>format!(\"{CALENDAR_API_URL}?project={project}\"),None=>CALENDAR_API_URL.to_owned(),}),synced_at:a.synced_at,}}",
+        "pub(super)fnaccess_dto(access:Option<&DbTasksAccess>)->TasksAccessDto{letSome(a)=accesselse{returnTasksAccessDto{status:\"unknown\".into(),message:None,enable_url:None,synced_at:None,};};TasksAccessDto{status:a.status.clone(),message:(a.status==\"error\").then(||a.detail.clone()).flatten(),enable_url:(a.status==\"api_disabled\").then(||match&a.detail{Some(project)=>format!(\"{TASKS_API_URL}?project={project}\"),None=>TASKS_API_URL.to_owned(),}),synced_at:a.synced_at,}}",
+        "pubfntrigger(&self,account_id:Option<String>){ifletSome(id)=account_id{lock(&self.forced).insert(id);}self.wake.notify_one();}"
+      ]
+    },
+    "src-tauri/src/commands/calendar.rs <> src-tauri/src/commands/tasks.rs": {
+      "tokens": 43,
+      "texts": [
+        "pubasyncfncalendar_sync_now(state:State<'_,AppState>,account_id:String,)->Result<CalendarAccessDto,CommandError>{Ok(user_action(state.calendar.sync_now(&account_id)).await?)}",
+        "pubasyncfntasks_sync_now(state:State<'_,AppState>,account_id:String,)->Result<TasksAccessDto,CommandError>{Ok(user_action(state.tasks.sync_now(&account_id)).await?)}"
+      ]
+    },
+    "src-tauri/src/db/accounts.rs <> src-tauri/src/db/accounts.rs": {
+      "tokens": 78,
+      "texts": [
+        "pubasyncfnget_account(pool:&SqlitePool,account_id:&str)->Result<Option<DbAccount>>{letaccount=sqlx::query_as!(DbAccount,r#\"SELECTid,email,display_name,profile_photo_url,client_id,history_id,created_at,updated_atFROMaccountsWHEREid=?\"#,account_id).fetch_optional(pool).await?;Ok(account)}",
+        "pubasyncfnget_account_by_email(pool:&SqlitePool,email:&str)->Result<Option<DbAccount>>{letaccount=sqlx::query_as!(DbAccount,r#\"SELECTid,email,display_name,profile_photo_url,client_id,history_id,created_at,updated_atFROMaccountsWHEREemail=?\"#,email).fetch_optional(pool).await?;Ok(account)}"
+      ]
+    },
+    "src-tauri/src/db/accounts.rs <> src-tauri/src/db/assistant.rs": {
+      "tokens": 69,
+      "texts": [
+        "pubasyncfninsert_client(pool:&SqlitePool,id:&str,name:&str,token_hash:&str,created_at:i64,)->Result<()>{sqlx::query!(\"INSERTINTOassistant_clients(id,name,token_hash,created_at)VALUES(?,?,?,?)\",id,name,token_hash,created_at).execute(pool).await?;Ok(())}",
+        "pubasyncfnupdate_profile(pool:&SqlitePool,account_id:&str,display_name:Option<&str>,profile_photo_url:Option<&str>,updated_at:i64,)->Result<()>{sqlx::query!(r#\"UPDATEaccountsSETdisplay_name=?,profile_photo_url=?,updated_at=?WHEREid=?\"#,display_name,profile_photo_url,updated_at,account_id).execute(pool).await?;Ok(())}"
+      ]
+    },
+    "src-tauri/src/db/accounts.rs <> src-tauri/src/db/settings.rs": {
+      "tokens": 47,
+      "texts": [
+        "asyncfndelete(pool:&SqlitePool,key:&str)->Result<()>{sqlx::query!(\"DELETEFROMapp_settingsWHEREkey=?\",key).execute(pool).await?;Ok(())}",
+        "pubasyncfndelete_account(pool:&SqlitePool,account_id:&str)->Result<()>{sqlx::query!(\"DELETEFROMaccountsWHEREid=?\",account_id).execute(pool).await?;Ok(())}"
+      ]
+    },
+    "src-tauri/src/db/assistant.rs <> src-tauri/src/db/desktop.rs": {
+      "tokens": 48,
+      "texts": [
+        "pubasyncfnaccounts(pool:&SqlitePool)->Result<Vec<AccountDesktop>>{Ok(sqlx::query_as!(AccountDesktop,r#\"SELECTa.idasaccount_id,a.email,COALESCE(n.enabled,0)as\"enabled!:bool\",n.account_idISNOTNULLas\"asked!:bool\"FROMaccountsaLEFTJOINnotification_settingsnONn.account_id=a.idORDERBYa.email\"#).fetch_all(pool).await?)}",
+        "pubasyncfnlist_clients(pool:&SqlitePool)->Result<Vec<DbClient>>{Ok(sqlx::query_as!(DbClient,\"SELECTid,name,created_at,last_used_atFROMassistant_clientsORDERBYcreated_at,id\").fetch_all(pool).await?)}"
+      ]
+    },
+    "src-tauri/src/db/assistant.rs <> src-tauri/src/db/reminders.rs": {
+      "tokens": 48,
+      "texts": [
+        "pubasyncfnfired(pool:&SqlitePool)->Result<Vec<ReminderKey>>{Ok(sqlx::query_as!(ReminderKey,\"SELECTaccount_id,calendar_id,event_id,start_ms,minutesFROMcalendar_reminders_firedORDERBYaccount_id,calendar_id,event_id,start_ms,minutes\").fetch_all(pool).await?)}",
+        "pubasyncfnlist_clients(pool:&SqlitePool)->Result<Vec<DbClient>>{Ok(sqlx::query_as!(DbClient,\"SELECTid,name,created_at,last_used_atFROMassistant_clientsORDERBYcreated_at,id\").fetch_all(pool).await?)}"
+      ]
+    },
+    "src-tauri/src/db/attachments.rs <> src-tauri/src/db/attachments.rs": {
+      "tokens": 103,
+      "texts": [
+        "pubasyncfnget_by_content_id(pool:&SqlitePool,account_id:&str,message_id:&str,content_id:&str,)->Result<Option<DbAttachment>>{letrow=sqlx::query_as!(DbAttachment,r#\"SELECTid,message_id,account_id,filename,mime_type,size,attachment_id,content_id,is_inlineFROMattachmentsWHEREaccount_id=?ANDmessage_id=?ANDcontent_id=?ORDERBYCAST(idASINTEGER),idLIMIT1\"#,account_id,message_id,content_id).fetch_optional(pool).await?;Ok(row)}",
+        "pubasyncfnget_one(pool:&SqlitePool,account_id:&str,message_id:&str,id:&str,)->Result<Option<DbAttachment>>{letrow=sqlx::query_as!(DbAttachment,r#\"SELECTid,message_id,account_id,filename,mime_type,size,attachment_id,content_id,is_inlineFROMattachmentsWHEREaccount_id=?ANDmessage_id=?ANDid=?\"#,account_id,message_id,id).fetch_optional(pool).await?;Ok(row)}"
+      ]
+    },
+    "src-tauri/src/db/calendar.rs <> src-tauri/src/db/calendar.rs": {
+      "tokens": 124,
+      "texts": [
+        "pubasyncfnset_access<'e>(ex:implSqliteExecutor<'e>,account_id:&str,status:&str,detail:Option<&str>,now_ms:i64,)->Result<()>{sqlx::query!(\"INSERTINTOcalendar_access(account_id,status,detail,checked_at,synced_at)VALUES(?1,?2,?3,?4,CASEWHEN?2='on'THEN?4END)ONCONFLICT(account_id)DOUPDATESETstatus=excluded.status,detail=excluded.detail,checked_at=excluded.checked_at,synced_at=CASEWHEN?2='on'THEN?4ELSEcalendar_access.synced_atEND\",account_id,status,detail,now_ms).execute(ex).await?;Ok(())}",
+        "pubasyncfnset_settings<'e>(ex:implSqliteExecutor<'e>,account_id:&str,time_zone:Option<&str>,week_start:Option<i64>,now_ms:i64,)->Result<()>{sqlx::query!(\"INSERTINTOcalendar_access(account_id,status,checked_at,settings_checked_at,time_zone,week_start)VALUES(?1,'unknown',?4,?4,?2,?3)ONCONFLICT(account_id)DOUPDATESETsettings_checked_at=excluded.settings_checked_at,time_zone=excluded.time_zone,week_start=excluded.week_start\",account_id,time_zone,week_start,now_ms).execute(ex).await?;Ok(())}"
+      ]
+    },
+    "src-tauri/src/db/calendar.rs <> src-tauri/src/db/contacts.rs": {
+      "tokens": 60,
+      "texts": [
+        "pubasyncfnaccess<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Option<DbCalendarAccess>>{Ok(sqlx::query_as!(DbCalendarAccess,r#\"SELECTstatus,detail,checked_at,synced_at,settings_checked_at,time_zone,week_startFROMcalendar_accessWHEREaccount_id=?\"#,account_id).fetch_optional(ex).await?)}",
+        "pubasyncfngoogle_sync<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Option<GoogleSyncRow>>{Ok(sqlx::query_as!(GoogleSyncRow,r#\"SELECTstatus,detail,checked_at,synced_atFROMgoogle_contacts_syncWHEREaccount_id=?\"#,account_id).fetch_optional(ex).await?)}"
+      ]
+    },
+    "src-tauri/src/db/calendar.rs <> src-tauri/src/db/outbox.rs": {
+      "tokens": 61,
+      "texts": [
+        "pubasyncfnaccess<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Option<DbCalendarAccess>>{Ok(sqlx::query_as!(DbCalendarAccess,r#\"SELECTstatus,detail,checked_at,synced_at,settings_checked_at,time_zone,week_startFROMcalendar_accessWHEREaccount_id=?\"#,account_id).fetch_optional(ex).await?)}",
+        "pubasyncfnget<'e>(ex:implSqliteExecutor<'e>,op_id:&str)->Result<Option<DbOp>>{Ok(sqlx::query_as!(DbOp,r#\"SELECTseqAS\"seq!\",id,account_id,kind,payload,status,attempts,next_attempt_at,checks_done,rfc822_message_id,last_error,created_at,updated_atFROMoutboxWHEREid=?\"#,op_id).fetch_optional(ex).await?)}"
+      ]
+    },
+    "src-tauri/src/db/calendar.rs <> src-tauri/src/db/tasks.rs": {
+      "tokens": 734,
+      "texts": [
+        "pubasyncfnaccess<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Option<DbCalendarAccess>>{Ok(sqlx::query_as!(DbCalendarAccess,r#\"SELECTstatus,detail,checked_at,synced_at,settings_checked_at,time_zone,week_startFROMcalendar_accessWHEREaccount_id=?\"#,account_id).fetch_optional(ex).await?)}",
+        "pubasyncfnaccess<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Option<DbTasksAccess>>{Ok(sqlx::query_as!(DbTasksAccess,\"SELECTstatus,detail,checked_at,synced_atFROMtasks_accessWHEREaccount_id=?\",account_id).fetch_optional(ex).await?)}",
+        "pubasyncfncalendars<'e>(ex:implSqliteExecutor<'e>,account_id:Option<&str>,)->Result<Vec<DbCalendar>>{Ok(sqlx::query_as!(DbCalendar,r#\"SELECTaccount_id,id,summary,description,time_zone,background_color,foreground_color,access_role,is_primaryAS\"primary:bool\",hiddenAS\"hidden:bool\",default_reminders,sync_tokenFROMcalendarsWHERE?1ISNULLORaccount_id=?1ORDERBYaccount_id,is_primaryDESC,summaryCOLLATENOCASE\"#,account_id).fetch_all(ex).await?)}",
+        "pubasyncfndated_tasks<'e>(ex:implSqliteExecutor<'e>,from_date:&str,to_date:&str,)->Result<Vec<DbTask>>{Ok(sqlx::query_as!(DbTask,r#\"SELECTt.account_id,t.list_id,t.id,t.parent,t.position,t.title,t.notes,t.due_date,t.status,t.completed_ms,t.updated_ms,t.hiddenAS\"hidden:bool\",t.etag,t.rawFROMtaskstJOINtask_listslONl.account_id=t.account_idANDl.id=t.list_idWHEREt.due_date>=?ANDt.due_date<?ANDl.hidden=0ORDERBYt.due_date,t.account_id,l.sort_order,t.position,t.id\"#,from_date,to_date).fetch_all(ex).await?)}",
+        "pubasyncfnevent<'e>(ex:implSqliteExecutor<'e>,account_id:&str,calendar_id:&str,id:&str,)->Result<Option<DbEvent>>{Ok(sqlx::query_as!(DbEvent,r#\"SELECTe.account_id,e.calendar_id,e.id,e.ical_uid,e.recurring_event_id,e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.rawFROMeventseWHEREe.account_id=?ANDe.calendar_id=?ANDe.id=?\"#,account_id,calendar_id,id).fetch_optional(ex).await?)}",
+        "pubasyncfnevents_by_ical_uid<'e>(ex:implSqliteExecutor<'e>,account_id:&str,ical_uid:&str,)->Result<Vec<DbEvent>>{Ok(sqlx::query_as!(DbEvent,r#\"SELECTe.account_id,e.calendar_id,e.id,e.ical_uid,e.recurring_event_id,e.original_start_ms,e.original_start_date,e.status,e.start_ms,e.end_ms,e.start_date,e.end_date,e.time_zone,e.recurrence,e.recur_until_ms,e.summary,e.location,e.description,e.organizer_email,e.self_response,e.attendees,e.conference,e.color_id,e.transparency,e.visibility,e.reminders,e.html_link,e.etag,e.updated_ms,e.rawFROMeventseWHEREe.account_id=?ANDe.ical_uid=?ORDERBYe.calendar_id,e.id\"#,account_id,ical_uid).fetch_all(ex).await?)}",
+        "pubasyncfnremove_task_with_subtasks<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,task_id:&str,)->Result<()>{sqlx::query!(\"DELETEFROMtasksWHEREaccount_id=?1ANDlist_id=?2AND(id=?3ORparent=?3)\",account_id,list_id,task_id).execute(ex).await?;Ok(())}",
+        "pubasyncfnset_access<'e>(ex:implSqliteExecutor<'e>,account_id:&str,status:&str,detail:Option<&str>,now_ms:i64,)->Result<()>{sqlx::query!(\"INSERTINTOcalendar_access(account_id,status,detail,checked_at,synced_at)VALUES(?1,?2,?3,?4,CASEWHEN?2='on'THEN?4END)ONCONFLICT(account_id)DOUPDATESETstatus=excluded.status,detail=excluded.detail,checked_at=excluded.checked_at,synced_at=CASEWHEN?2='on'THEN?4ELSEcalendar_access.synced_atEND\",account_id,status,detail,now_ms).execute(ex).await?;Ok(())}",
+        "pubasyncfnset_access<'e>(ex:implSqliteExecutor<'e>,account_id:&str,status:&str,detail:Option<&str>,now_ms:i64,)->Result<()>{sqlx::query!(\"INSERTINTOtasks_access(account_id,status,detail,checked_at,synced_at)VALUES(?1,?2,?3,?4,CASEWHEN?2='on'THEN?4END)ONCONFLICT(account_id)DOUPDATESETstatus=excluded.status,detail=excluded.detail,checked_at=excluded.checked_at,synced_at=CASEWHEN?2='on'THEN?4ELSEtasks_access.synced_atEND\",account_id,status,detail,now_ms).execute(ex).await?;Ok(())}",
+        "pubasyncfnset_hidden<'e>(ex:implSqliteExecutor<'e>,account_id:&str,calendar_id:&str,hidden:bool,)->Result<()>{sqlx::query!(\"UPDATEcalendarsSEThidden=?WHEREaccount_id=?ANDid=?\",hidden,account_id,calendar_id).execute(ex).await?;Ok(())}",
+        "pubasyncfnset_list_hidden<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,hidden:bool,)->Result<()>{sqlx::query!(\"UPDATEtask_listsSEThidden=?WHEREaccount_id=?ANDid=?\",hidden,account_id,list_id).execute(ex).await?;Ok(())}",
+        "pubasyncfntask<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,task_id:&str,)->Result<Option<DbTask>>{Ok(sqlx::query_as!(DbTask,r#\"SELECTaccount_id,list_id,id,parent,position,title,notes,due_date,status,completed_ms,updated_ms,hiddenAS\"hidden:bool\",etag,rawFROMtasksWHEREaccount_id=?ANDlist_id=?ANDid=?\"#,account_id,list_id,task_id).fetch_optional(ex).await?)}",
+        "pubasyncfntask_lists<'e>(ex:implSqliteExecutor<'e>,account_id:Option<&str>,)->Result<Vec<DbTaskList>>{Ok(sqlx::query_as!(DbTaskList,r#\"SELECTaccount_id,id,title,sort_order,etag,updated_ms,hiddenAS\"hidden:bool\",synced_through_ms,full_synced_atFROMtask_listsWHERE?1ISNULLORaccount_id=?1ORDERBYaccount_id,sort_order\"#,account_id).fetch_all(ex).await?)}",
+        "pubasyncfntasks<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,)->Result<Vec<DbTask>>{Ok(sqlx::query_as!(DbTask,r#\"SELECTaccount_id,list_id,id,parent,position,title,notes,due_date,status,completed_ms,updated_ms,hiddenAS\"hidden:bool\",etag,rawFROMtasksWHEREaccount_id=?ANDlist_id=?ORDERBYposition,id\"#,account_id,list_id).fetch_all(ex).await?)}"
+      ]
+    },
+    "src-tauri/src/db/labels.rs <> src-tauri/src/db/messages.rs": {
+      "tokens": 91,
+      "texts": [
+        "pubasyncfnget_label<'e>(ex:implSqliteExecutor<'e>,account_id:&str,label_id:&str,)->Result<Option<DbLabel>>{letlabel=sqlx::query_as!(DbLabel,r#\"SELECTid,account_id,name,typeaslabel_type,message_list_visibility,label_list_visibility,color_background,color_text,messages_total,messages_unread,threads_total,threads_unreadFROMlabelsWHEREaccount_id=?ANDid=?\"#,account_id,label_id).fetch_optional(ex).await?;Ok(label)}",
+        "pubasyncfnget_message<'e>(ex:implSqliteExecutor<'e>,account_id:&str,message_id:&str,)->Result<Option<DbMessage>>{letmsg=sqlx::query_as!(DbMessage,r#\"SELECTid,account_id,thread_id,label_ids,from_address,from_name,to_addresses,cc_addresses,subject,snippet,body_html,body_text,date,size_estimate,has_attachment,is_read,is_starred,raw_headers,fully_fetched,rfc822_message_idFROMmessagesWHEREaccount_id=?ANDid=?\"#,account_id,message_id).fetch_optional(ex).await?;Ok(msg)}"
+      ]
+    },
+    "src-tauri/src/db/messages.rs <> src-tauri/src/db/messages.rs": {
+      "tokens": 348,
+      "texts": [
+        "pubasyncfnreceived_by_label(pool:&SqlitePool,account_id:&str,since_ms:i64,own_address:&str,limit:i64,)->Result<Vec<DbReceivedStats>>{letrows=sqlx::query_as!(DbReceivedStats,r#\"WITHsentAS(SELECTthread_id,MAX(date)ASlast_sentFROMmessagesINDEXEDBYidx_messages_dateWHEREaccount_id=?1ANDdate>=?2ANDEXISTS(SELECT1FROMjson_each(label_ids)WHEREvalue='SENT')GROUPBYthread_id),recvAS(SELECTm.label_ids,m.is_read!=0ASopened,m.is_starred!=0ASstarred,COALESCE(s.last_sent>m.date,0)ASrepliedFROMmessagesmINDEXEDBYidx_messages_dateLEFTJOINsentsONs.thread_id=m.thread_idWHEREm.account_id=?1ANDm.date>=?2ANDm.from_addressISNOTNULLANDm.from_address!=''ANDlower(m.from_address)!=lower(?3)ANDNOTEXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalueIN('DRAFT','SENT')))SELECTl.idAS\"key!:String\",l.nameAS\"group!:String\",COUNT(*)AS\"received!:i64\",SUM(r.opened)AS\"opened!:i64\",SUM(r.replied)AS\"replied!:i64\",SUM(r.starred)AS\"starred!:i64\",SUM(r.openedORr.repliedORr.starred)AS\"engaged!:i64\"FROMrecvrJOINjson_each(r.label_ids)jJOINlabelslONl.account_id=?1ANDl.id=j.valueANDl.type='user'GROUPBYl.idORDERBYCOUNT(*)DESC,l.nameLIMIT?4\"#,account_id,since_ms,own_address,limit).fetch_all(pool).await?;Ok(rows)}",
+        "pubasyncfnsender_stats(pool:&SqlitePool,account_id:&str,since_ms:i64,own_address:&str,limit:i64,)->Result<Vec<DbSenderStats>>{letrows=sqlx::query_as!(DbSenderStats,r#\"WITHsentAS(SELECTthread_id,MAX(date)ASlast_sentFROMmessagesINDEXEDBYidx_messages_dateWHEREaccount_id=?1ANDdate>=?2ANDEXISTS(SELECT1FROMjson_each(label_ids)WHEREvalue='SENT')GROUPBYthread_id)SELECTlower(m.from_address)AS\"address!:String\",MAX(m.from_name)AS\"name:String\",COUNT(*)AS\"messages!:i64\",SUM(m.is_read=0)AS\"unread!:i64\",SUM(COALESCE(s.last_sent>m.date,0))AS\"replied!:i64\",SUM(m.is_starred!=0)AS\"starred!:i64\",SUM(m.is_read!=0ORm.is_starred!=0ORCOALESCE(s.last_sent>m.date,0))AS\"engaged!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='INBOX'))AS\"in_inbox!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='TRASH'))AS\"in_trash!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='SPAM'))AS\"in_spam!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='CATEGORY_PROMOTIONS'))AS\"promotions!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='CATEGORY_SOCIAL'))AS\"social!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='CATEGORY_UPDATES'))AS\"updates!:i64\",SUM(EXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalue='CATEGORY_FORUMS'))AS\"forums!:i64\",MAX(m.date)AS\"last_date!:i64\",COALESCE((SELECTc.sent_countFROMcontactscWHEREc.account_id=?1ANDc.address=lower(m.from_address)),0)AS\"you_wrote!:i64\"FROMmessagesmLEFTJOINsentsONs.thread_id=m.thread_idWHEREm.account_id=?1ANDm.date>=?2ANDm.from_addressISNOTNULLANDm.from_address!=''ANDlower(m.from_address)!=lower(?3)ANDNOTEXISTS(SELECT1FROMjson_each(m.label_ids)WHEREvalueIN('DRAFT','SENT'))GROUPBYlower(m.from_address)ORDERBYCOUNT(*)DESC,MAX(m.date)DESCLIMIT?4\"#,account_id,since_ms,own_address,limit).fetch_all(pool).await?;Ok(rows)}"
+      ]
+    },
+    "src-tauri/src/db/messages.rs <> src-tauri/src/db/tasks.rs": {
+      "tokens": 116,
+      "texts": [
+        "pubasyncfndelete_message<'e>(ex:implSqliteExecutor<'e>,account_id:&str,message_id:&str,)->Result<()>{sqlx::query!(\"DELETEFROMmessagesWHEREaccount_id=?ANDid=?\",account_id,message_id).execute(ex).await?;Ok(())}",
+        "pubasyncfndelete_task_list<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,)->Result<()>{sqlx::query!(\"DELETEFROMtask_listsWHEREaccount_id=?ANDid=?\",account_id,list_id).execute(ex).await?;Ok(())}",
+        "pubasyncfnneeds_full_sync<'e>(ex:implSqliteExecutor<'e>,account_id:&str,list_id:&str,)->Result<()>{sqlx::query!(\"UPDATEtask_listsSETfull_synced_at=NULLWHEREaccount_id=?ANDid=?\",account_id,list_id).execute(ex).await?;Ok(())}"
+      ]
+    },
+    "src-tauri/src/db/outbox.rs <> src-tauri/src/db/outbox.rs": {
+      "tokens": 130,
+      "texts": [
+        "pubasyncfnfor_account<'e>(ex:implSqliteExecutor<'e>,account_id:&str)->Result<Vec<DbOp>>{Ok(sqlx::query_as!(DbOp,r#\"SELECTseqAS\"seq!\",id,account_id,kind,payload,status,attempts,next_attempt_at,checks_done,rfc822_message_id,last_error,created_at,updated_atFROMoutboxWHEREaccount_id=?ORDERBYseq\"#,account_id).fetch_all(ex).await?)}",
+        "pubasyncfnmessages_of<'e>(ex:implSqliteExecutor<'e>,op_id:&str)->Result<Vec<DbOpMessage>>{Ok(sqlx::query_as!(DbOpMessage,r#\"SELECTop_id,account_id,message_id,thread_id,prior_label_idsFROMoutbox_messagesWHEREop_id=?ORDERBYmessage_id\"#,op_id).fetch_all(ex).await?)}",
+        "pubasyncfnsends_awaiting_confirmation<'e>(ex:implSqliteExecutor<'e>,account_id:&str,)->Result<Vec<DbOp>>{Ok(sqlx::query_as!(DbOp,r#\"SELECTseqAS\"seq!\",id,account_id,kind,payload,status,attempts,next_attempt_at,checks_done,rfc822_message_id,last_error,created_at,updated_atFROMoutboxWHEREaccount_id=?ANDkind='send'ANDstatusIN('checking','unconfirmed')ORDERBYseq\"#,account_id).fetch_all(ex).await?)}"
+      ]
+    },
+    "src-tauri/src/gmail/drafts.rs <> src-tauri/src/gmail/threads.rs": {
+      "tokens": 115,
+      "texts": [
+        "pubasyncfnget_draft(&self,id:&str,format:MessageFormat)->Result<Draft,GmailError>{letmutdraft:Draft=self.send_json(ApiRequest::get(&[\"drafts\",id]).query(\"format\",format.as_str())).await?;ifletSome(msg)=draft.message.as_mut(){ifletSome(payload)=msg.payload.as_mut(){self.fill_external_bodies(&msg.id,payload,Priority::Sync).await?;}}Ok(draft)}",
+        "pubasyncfnget_thread(&self,id:&str,format:MessageFormat)->Result<Thread,GmailError>{letmutthread:Thread=self.send_json(ApiRequest::get(&[\"threads\",id]).query(\"format\",format.as_str())).await?;formsgin&mutthread.messages{ifletSome(payload)=msg.payload.as_mut(){self.fill_external_bodies(&msg.id,payload,Priority::Sync).await?;}}Ok(thread)}"
+      ]
+    },
+    "src-tauri/src/gmail/filters.rs <> src-tauri/src/gmail/send_as.rs": {
+      "tokens": 53,
+      "texts": [
+        "pubasyncfnlist_filters(&self)->Result<Vec<Filter>,GmailError>{letres:FilterListResponse=self.send_json(ApiRequest::get(&[\"settings\",\"filters\"])).await?;Ok(res.filter)}",
+        "pubasyncfnlist_send_as(&self)->Result<Vec<SendAs>,GmailError>{letres:SendAsListResponse=self.send_json(ApiRequest::get(&[\"settings\",\"sendAs\"])).await?;Ok(res.send_as)}"
+      ]
+    },
+    "src-tauri/src/gmail/messages.rs <> src-tauri/src/gmail/threads.rs": {
+      "tokens": 181,
+      "texts": [
+        "pubasyncfnlist_messages(&self,label_ids:&[&str],page_token:Option<&str>,max_results:u32,)->Result<MessageListResponse,GmailError>{letmutreq=ApiRequest::get(&[\"messages\"]).query(\"maxResults\",max_results.to_string());forlabelinlabel_ids{req=req.query(\"labelIds\",*label);}self.send_json(req.query_opt(\"pageToken\",page_token)).await}",
+        "pubasyncfnlist_threads(&self,label_ids:&[&str],page_token:Option<&str>,max_results:u32,)->Result<ThreadListResponse,GmailError>{letmutreq=ApiRequest::get(&[\"threads\"]).query(\"maxResults\",max_results.to_string());forlabelinlabel_ids{req=req.query(\"labelIds\",*label);}self.send_json(req.query_opt(\"pageToken\",page_token)).await}",
+        "pubasyncfnmodify_message(&self,id:&str,add_labels:&[&str],remove_labels:&[&str],)->Result<Message,GmailError>{letbody=json!({\"addLabelIds\":add_labels,\"removeLabelIds\":remove_labels});self.send_json(ApiRequest::post(&[\"messages\",id,\"modify\"]).json(body)).await}",
+        "pubasyncfnmodify_thread(&self,id:&str,add_labels:&[&str],remove_labels:&[&str],)->Result<Thread,GmailError>{letbody=json!({\"addLabelIds\":add_labels,\"removeLabelIds\":remove_labels});self.send_json(ApiRequest::post(&[\"threads\",id,\"modify\"]).json(body)).await}"
+      ]
+    },
+    "src/settings/SenderRulesSettings.tsx <> src/settings/SignatureSettings.tsx": {
+      "tokens": 90,
+      "texts": [
+        "functionSenderRulesSettings(){constaccounts=useAccountStore((s)=>s.accounts);if(accounts.length===0)return<pclassName=\"settings-empty\">Noaccountsconnected.</p>;return(<>{accounts.map((a)=>(<AccountRuleskey={a.id}accountId={a.id}email={a.email}/>))}</>);}",
+        "functionSignatureSettings(){constaccounts=useAccountStore((s)=>s.accounts);if(accounts.length===0)return<pclassName=\"settings-empty\">Noaccountsconnected.</p>;return(<>{accounts.map((a)=>(<AccountSignatureskey={a.id}accountId={a.id}email={a.email}/>))}</>);}"
+      ]
+    },
+    "src/speedread/SpeedReader.tsx <> src/speedread/SpeedReader.tsx": {
+      "tokens": 66,
+      "texts": [
+        "functionOfferControl(){constoffer=useSpeedReaderSettings((s)=>s.offer);constupdate=useSpeedReaderSettings((s)=>s.update);return(<Switchlabel=\"Offerspeedreading\"checked={offer}onChange={(next)=>update({offer:next})}/>);}",
+        "functionPausesControl(){constpauses=useSpeedReaderSettings((s)=>s.pauses);constupdate=useSpeedReaderSettings((s)=>s.update);return(<Switchlabel=\"Pauseatpunctuation\"checked={pauses}onChange={(next)=>update({pauses:next})}/>);}"
+      ]
+    },
+    "workers/diagnostics/src/handler.ts <> workers/diagnostics/src/ping.ts": {
+      "tokens": 41,
+      "texts": [
+        "functionisShortField(value:unknown):valueisstring{return(typeofvalue===\"string\"&&value.length>0&&value.length<=MAX_FIELD_CHARS&&!CONTROL_RE.test(value));}"
+      ]
+    }
   }
 }

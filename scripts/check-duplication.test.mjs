@@ -92,6 +92,13 @@ describe("check-duplication", () => {
     expect(findNewClones(root).exact.length).toBeGreaterThan(0);
   });
 
+  it("fails on one more copy of known code", () => {
+    const root = project({ "a.ts": block("pack"), "b.ts": block("pack") });
+    updateBaseline(root);
+    write(root, { "b.ts": `${block("pack")}\nconst gap = 0;\n\n${block("pack2")}` });
+    expect(findNewClones(root).exact.length).toBeGreaterThan(0);
+  });
+
   it("finds nothing new in code without copies", () => {
     const root = project({ "a.ts": block("pack") });
     updateBaseline(root);
