@@ -6,6 +6,7 @@ import {
   readLayout,
   readingPaneShown,
   sidebarLayout,
+  unreadOnlyFor,
   useUiStore,
 } from "./uiStore";
 import { revealLabels } from "../labels/reveal";
@@ -200,6 +201,40 @@ test("Unread only stays on across every mailbox and is remembered across launche
   expect(ui().unreadOnly).toBe(false);
   __resetUiStoreForTests();
   expect(ui().unreadOnly).toBe(false);
+});
+
+test("with the each-mailbox scope, every mailbox keeps its own Unread only across launches", () => {
+  const primary = { accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" };
+  const promotions = { ...primary, category: "CATEGORY_PROMOTIONS" };
+  ui().setUnreadOnlyScope("each");
+  ui().setMailbox(promotions);
+  ui().toggleUnreadOnly();
+  expect(unreadOnlyFor(ui(), promotions)).toBe(true);
+  for (const other of [
+    primary,
+    { ...promotions, accountId: "a2" },
+    { accountId: null, labelId: "INBOX" },
+  ])
+    expect(unreadOnlyFor(ui(), other)).toBe(false);
+  expect(stored().unreadOnlyScope).toBe("each");
+  __resetUiStoreForTests();
+  expect(unreadOnlyFor(ui(), promotions)).toBe(true);
+  expect(unreadOnlyFor(ui(), primary)).toBe(false);
+  ui().forgetAccount("a1", [{ id: "a2" }]);
+  expect(ui().unreadOnlyMailboxes).toEqual([]);
+});
+
+test("changing the Unread only scope keeps the mailbox showing as it was", () => {
+  const social = { accountId: "a1", labelId: "INBOX", category: "CATEGORY_SOCIAL" };
+  ui().setMailbox(social);
+  ui().toggleUnreadOnly();
+  ui().setUnreadOnlyScope("each");
+  expect(unreadOnlyFor(ui(), social)).toBe(true);
+  expect(unreadOnlyFor(ui(), { ...social, category: "CATEGORY_UPDATES" })).toBe(false);
+  ui().toggleUnreadOnly();
+  ui().setUnreadOnlyScope("every");
+  expect(ui().unreadOnly).toBe(false);
+  expect(unreadOnlyFor(ui(), { ...social, category: "CATEGORY_UPDATES" })).toBe(false);
 });
 
 test("list density defaults to comfortable and persists in the layout", () => {

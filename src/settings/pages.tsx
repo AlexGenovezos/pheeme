@@ -26,7 +26,7 @@ import {
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Switch } from "../components/ui/Switch";
 import { registry } from "../keyboard/registry";
-import { type ListDensity, useUiStore } from "../store/uiStore";
+import { type ListDensity, type UnreadOnlyScope, useUiStore } from "../store/uiStore";
 import {
   SIDEBAR_STYLES,
   type SidebarStyle,
@@ -146,6 +146,22 @@ function ListDensityControl() {
         { value: "compact", label: "Compact" },
       ]}
       onChange={(value) => setDensity(value as ListDensity)}
+    />
+  );
+}
+
+function UnreadOnlyScopeControl() {
+  const scope = useUiStore((s) => s.unreadOnlyScope);
+  const setScope = useUiStore((s) => s.setUnreadOnlyScope);
+  return (
+    <SegmentedControl
+      label="Unread only applies to"
+      value={scope}
+      options={[
+        { value: "every", label: "Every mailbox" },
+        { value: "each", label: "Each mailbox" },
+      ]}
+      onChange={(value) => setScope(value as UnreadOnlyScope)}
     />
   );
 }
@@ -357,6 +373,24 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             description: "Compact rows leave out the preview line, so more conversations fit.",
             keywords: ["compact", "comfortable", "rows", "snippet", "preview", "spacing"],
             Control: ListDensityControl,
+          },
+          {
+            id: "layout.unreadOnlyScope",
+            title: "Unread only applies to",
+            description:
+              "Each mailbox: every mailbox and Inbox tab remembers its own Unread only, so Primary can show everything while Promotions shows only unread.",
+            keywords: [
+              "unread",
+              "filter",
+              "per tab",
+              "per mailbox",
+              "global",
+              "primary",
+              "promotions",
+              "updates",
+              "categories",
+            ],
+            Control: UnreadOnlyScopeControl,
           },
         ],
       },

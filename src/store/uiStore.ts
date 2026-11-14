@@ -35,9 +35,27 @@ export interface NavPrefs {
   foldedLabels: Record<string, string[]>;
   /** Accounts whose Labels section has its More row (hidden labels) open. */
   labelsMoreOpen: string[];
-  /** Unread only: one filter for every mailbox, kept across launches. */
+  /** Unread only with the `every` scope: one filter for every mailbox, kept across launches. */
   unreadOnly: boolean;
+  /** Settings: whether Unread only is one switch for every mailbox or remembered by each mailbox on its own. */
+  unreadOnlyScope: UnreadOnlyScope;
+  /** With the `each` scope, the mailboxes (`mailboxKey`) that show only unread mail. */
+  unreadOnlyMailboxes: string[];
 }
+
+/** `every`: Unread only is one switch for all mailboxes. `each`: every mailbox and Inbox tab keeps its own. */
+export type UnreadOnlyScope = "every" | "each";
+
+/** One string per mailbox, so each can keep its own Unread only: `account/label/category` (`*` for All Inboxes). */
+export const mailboxKey = (ref: MailboxRef): string =>
+  `${ref.accountId ?? "*"}/${ref.labelId}/${ref.category ?? ""}`;
+
+/** Whether `ref` shows only unread mail, under the chosen scope. */
+export const unreadOnlyFor = (
+  s: Pick<NavPrefs, "unreadOnly" | "unreadOnlyScope" | "unreadOnlyMailboxes">,
+  ref: MailboxRef,
+): boolean =>
+  s.unreadOnlyScope === "each" ? s.unreadOnlyMailboxes.includes(mailboxKey(ref)) : s.unreadOnly;
 
 export const DEFAULT_MAILBOX: MailboxRef = { accountId: null, labelId: "INBOX" };
 
@@ -104,6 +122,8 @@ export function readNavPrefs(
         : {},
     labelsMoreOpen: strings(raw?.labelsMoreOpen),
     unreadOnly: raw?.unreadOnly === true,
+    unreadOnlyScope: raw?.unreadOnlyScope === "each" ? "each" : "every",
+    unreadOnlyMailboxes: strings(raw?.unreadOnlyMailboxes),
   };
 }
 
@@ -143,7 +163,10 @@ interface UiState extends PaneLayout, NavPrefs {
   /** `accountId` scopes the search to one account (`null`: all); left out, a new search takes the mailbox's. */
   setSearch(text: string, accountId?: string | null): void;
   setSearchAccount(accountId: string | null): void;
+  /** Unread only for the mailbox showing: every mailbox's switch, or this one's alone with the `each` scope. */
   toggleUnreadOnly(): void;
+  /** Change the scope, keeping what the mailbox showing now looks like. */
+  setUnreadOnlyScope(scope: UnreadOnlyScope): void;
   /** The conversation shown in the reading pane. */
   openThread: ThreadKey | null;
   /**
@@ -240,6 +263,8 @@ const persistedOf = (s: Persisted): Persisted => ({
   foldedLabels: s.foldedLabels,
   labelsMoreOpen: s.labelsMoreOpen,
   unreadOnly: s.unreadOnly,
+  unreadOnlyScope: s.unreadOnlyScope,
+  unreadOnlyMailboxes: s.unreadOnlyMailboxes,
 });
 
 const navReset = (): Pick<UiState, "mailbox" | "openThread" | "cursor" | "checked" | "anchor"> => ({
@@ -258,8 +283,31 @@ export const useUiStore = create<UiState>((set, get) => {
   };
   return {
     toggleUnreadOnly: () => {
+      const s = get();
       set({ checked: [], anchor: null, openThread: null, cursor: null });
-      persist({ unreadOnly: !get().unreadOnly });
+      if (s.unreadOnlyScope === "every") return persist({ unreadOnly: !s.unreadOnly });
+      const key = mailboxKey(s.mailbox);
+      persist({
+        unreadOnlyMailboxes: s.unreadOnlyMailboxes.includes(key)
+          ? s.unreadOnlyMailboxes.filter((k) => k !== key)
+          : [...s.unreadOnlyMailboxes, key],
+      });
+    },
+    setUnreadOnlyScope: (scope) => {
+      const s = get();
+      if (scope === s.unreadOnlyScope) return;
+      const on = unreadOnlyFor(s, s.mailbox);
+      const key = mailboxKey(s.mailbox);
+      persist(
+        scope === "every"
+          ? { unreadOnlyScope: scope, unreadOnly: on }
+          : {
+              unreadOnlyScope: scope,
+              unreadOnlyMailboxes: on
+                ? [...s.unreadOnlyMailboxes.filter((k) => k !== key), key]
+                : s.unreadOnlyMailboxes.filter((k) => k !== key),
+            },
+      );
     },
     ...readLayout(),
     ...readNavPrefs(),
@@ -363,6 +411,7 @@ export const useUiStore = create<UiState>((set, get) => {
           Object.entries(s.foldedLabels).filter(([account]) => account !== id),
         ),
         labelsMoreOpen: s.labelsMoreOpen.filter((a) => a !== id),
+        unreadOnlyMailboxes: s.unreadOnlyMailboxes.filter((k) => !k.startsWith(`${id}/`)),
       });
     },
     toggleAccountCollapsed: (id) => {

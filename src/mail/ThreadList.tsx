@@ -25,7 +25,13 @@ import { useCommands } from "../keyboard/useCommands";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
-import { focusedThread, type ListDensity, readingPaneShown, useUiStore } from "../store/uiStore";
+import {
+  focusedThread,
+  type ListDensity,
+  readingPaneShown,
+  unreadOnlyFor,
+  useUiStore,
+} from "../store/uiStore";
 import { moveSelection, openAndMarkRead, openFocused, toggleCheckFocused } from "./actions";
 import {
   accountColorIndex,
@@ -72,7 +78,7 @@ export function ThreadList(props: ThreadListProps) {
   const mailbox = useUiStore((s) => s.mailbox);
   const search = useMailStore((s) => s.search);
   const searchText = useUiStore((s) => s.searchText.trim());
-  const unreadOnly = useUiStore((s) => s.unreadOnly);
+  const unreadOnly = useUiStore((s) => unreadOnlyFor(s, s.mailbox));
   const threads = useMailStore((s) => s.threads);
   const loading = useMailStore((s) => s.loading);
   const error = useMailStore((s) => s.error);
