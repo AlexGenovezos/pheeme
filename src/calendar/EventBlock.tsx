@@ -3,7 +3,7 @@
 // dimmed; unanswered invites are dashed, as on the website. Events you can change can be dragged
 // (see `drag.ts`); the new event being placed draws here too, but can't be clicked.
 import { Clock, MapPin, Video } from "lucide-react";
-import { useMemo, type CSSProperties, type MouseEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, type CSSProperties, type MouseEvent } from "react";
 import type { CalendarEvent, CalendarInfo } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { displayZone, useCalendarStore } from "./calendarStore";
@@ -91,6 +91,7 @@ export function TimedEventBlock({
   compact,
   narrow = false,
   stacked = false,
+  clearHeight = Infinity,
 }: {
   event: CalendarEvent;
   calendar: CalendarInfo | undefined;
@@ -102,13 +103,40 @@ export function TimedEventBlock({
   narrow?: boolean;
   /** A tall, slim block has room for a title and distinct detail groups. */
   stacked?: boolean;
+  /** Uncovered space above the first foreground card, in pixels. */
+  clearHeight?: number;
 }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const contentRef = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const button = ref.current!;
+    const content = contentRef.current!;
+    const measure = () => {
+      // Measure the full-width text first, regardless of hover/focus or the previous width.
+      content.style.maxWidth = "100%";
+      const bottom = content.getBoundingClientRect().bottom - button.getBoundingClientRect().top;
+      button.style.setProperty(
+        "--cal-event-text-width",
+        bottom > clearHeight ? "var(--cal-event-content-width)" : "100%",
+      );
+      content.style.removeProperty("max-width");
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(button);
+    document.fonts?.addEventListener("loadingdone", measure);
+    return () => {
+      observer?.disconnect();
+      document.fonts?.removeEventListener("loadingdone", measure);
+    };
+  }, [clearHeight, event, compact, narrow, stacked]);
   const { background, text } = eventColors(event, calendar);
   const when = timeSpan(event, tz);
   const open = useCalendarStore((s) => s.open && eventKey(s.open.event) === eventKey(event));
   const moving = useMoving(event);
   return (
     <button
+      ref={ref}
       type="button"
       className={cx(
         "cal-event cal-event--timed",
@@ -126,7 +154,7 @@ export function TimedEventBlock({
       onClick={openFrom(event)}
       onPointerDown={(e) => dragTimed(e, event, tz)}
     >
-      <span className="cal-event__content">
+      <span ref={contentRef} className="cal-event__content">
         <Title event={event} />
         {compact ? (
           !narrow && <span className="cal-event__time">, {when.split(" – ")[0]}</span>

@@ -652,7 +652,7 @@
   flex-direction: column;
   flex-shrink: 0;
   width: 100%;
-  max-width: var(--cal-event-content-width);
+  max-width: var(--cal-event-text-width, var(--cal-event-content-width));
   overflow: hidden;
 }
 .cal-event__content > *,

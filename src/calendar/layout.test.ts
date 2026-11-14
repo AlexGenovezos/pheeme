@@ -135,8 +135,18 @@ describe("layoutDay", () => {
     const vespers = timed(at(d, 17), at(d, 18));
     const blocks = layoutDay([morning, chant, legos, wedding, vespers], d, NY);
     const of = (e: CalendarEvent) => blocks.find((x) => x.event === e)!;
-    expect(of(morning)).toMatchObject({ left: 0, width: 0.5, contentWidth: 0.5 });
-    expect(of(chant)).toMatchObject({ left: 0.25, width: 0.5, contentWidth: 0.5 });
+    expect(of(morning)).toMatchObject({
+      left: 0,
+      width: 0.5,
+      contentWidth: 0.25,
+      clearMinutes: 240,
+    });
+    expect(of(chant)).toMatchObject({
+      left: 0.25,
+      width: 0.5,
+      contentWidth: 0.25,
+      clearMinutes: 300,
+    });
     // Chant is already in front when LEGOS starts: wrap that heading in the exposed left part.
     expect(of(legos)).toMatchObject({ left: 0, width: 0.5, contentWidth: 0.25 });
     expect(of(wedding)).toMatchObject({ left: 0.5, width: 0.5, contentWidth: 0.5 });

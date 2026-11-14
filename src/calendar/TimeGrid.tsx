@@ -194,6 +194,7 @@ export function TimeGrid({
                     calendar={lookup(b.event)}
                     tz={tz}
                     compact={shown < COMPACT_MINUTES}
+                    clearHeight={(b.clearMinutes / 60) * HOUR_PX}
                     stacked={shown >= STACKED_MINUTES && eventWidth < COMPACT_TIME_MIN_PX}
                     narrow={
                       eventWidth < (shown < COMPACT_MINUTES ? COMPACT_TIME_MIN_PX : NARROW_EVENT_PX)
@@ -210,7 +211,7 @@ export function TimeGrid({
                         "--cal-event-layer": b.column + 1,
                         "--cal-event-content-width":
                           b.contentWidth < b.width
-                            ? `calc(${(b.contentWidth / b.width) * 100}% - var(--space-2))`
+                            ? `calc(${(b.contentWidth / b.width) * 100}% - var(--space-0-5))`
                             : "100%",
                       } as CSSProperties
                     }

@@ -6,7 +6,7 @@ test.use({ timezoneId: "America/New_York" });
 
 test("overlapping events stay wider, readable and reachable as the week resizes", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.clock.setFixedTime(new Date("2026-11-11T16:00:00Z"));
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.addInitScript(() => {
@@ -75,6 +75,7 @@ test("overlapping events stay wider, readable and reachable as the week resizes"
     expect((await content.boundingBox())!.x + (await content.boundingBox())!.width).toBeLessThan(
       chantLeft,
     );
+    await page.screenshot({ path: testInfo.outputPath(`overlap-${width}.png`) });
 
     // Hover raises the background event and exposes the rest of its title, without a reflow.
     const before = await legos.boundingBox();
@@ -86,6 +87,7 @@ test("overlapping events stay wider, readable and reachable as the week resizes"
     expect((await content.boundingBox())!.x + (await content.boundingBox())!.width).toBeGreaterThan(
       chantLeft,
     );
+    await page.screenshot({ path: testInfo.outputPath(`overlap-hover-${width}.png`) });
 
     // Keyboard focus reveals the same area, and the event remains a normal accessible button.
     await page.mouse.move(0, 0);
@@ -100,4 +102,50 @@ test("overlapping events stay wider, readable and reachable as the week resizes"
 
   await wedding.click({ position: { x: 8, y: 8 } });
   await expect(page.getByRole("dialog", { name: "Wedding Tyler Bethke" })).toBeVisible();
+});
+
+test("a later event cannot cover the bottom lines of a wrapped tall-card title", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date("2026-11-11T16:00:00Z"));
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  await page.addInitScript(() => {
+    localStorage.setItem("pheeme.calendar", JSON.stringify({ mode: "calendar", view: "week" }));
+    const win = window as unknown as { __PHEEME_PREVIEW_INVOKE__: PreviewInvoke };
+    win.__PHEEME_PREVIEW_INVOKE__ = (cmd, args, next) => {
+      const result = next(cmd, args);
+      if (cmd !== "calendar_events") return result;
+      const template = (result as CalendarEvent[]).find((e) => !e.allDay)!;
+      return ["Byzantine Chant Workshop", "Later event"].map((summary, i) => ({
+        ...template,
+        id: `staggered-${i}`,
+        summary,
+        start: { ms: new Date(2026, 10, 11, 9 + i).getTime(), date: null, timeZone: null },
+        end: {
+          ms: new Date(2026, 10, 11, i === 0 ? 16 : 11).getTime(),
+          date: null,
+          timeZone: null,
+        },
+        meeting: null,
+        selfResponse: null,
+      }));
+    };
+  });
+  await page.goto("/");
+  await page.addStyleTag({
+    content:
+      ".cal-grid__head, .cal-grid__band, .cal-grid__body { grid-template-columns: var(--calendar-gutter-width) repeat(7, 110px); }",
+  });
+  const event = page.getByRole("button", { name: /^Byzantine Chant Workshop,/ });
+  await expect(event).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await page.locator(".cal-grid__scroll").evaluate((el) => (el.scrollTop = 384));
+  await page.mouse.move(0, 0);
+  const foreground = (await page.getByRole("button", { name: /^Later event,/ }).boundingBox())!;
+  const titleClear = await event.locator(".cal-event__title").evaluate((el, front) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return [...range.getClientRects()].every((r) => r.bottom <= front.y || r.right <= front.x);
+  }, foreground);
+  expect(titleClear).toBe(true);
 });

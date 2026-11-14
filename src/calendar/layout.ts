@@ -7,8 +7,6 @@ const DAY_MINUTES = 24 * 60;
 const DAY_MS = DAY_MINUTES * 60_000;
 /** Events shorter than this still take this much room, so their titles fit and overlaps show. */
 export const MIN_EVENT_MINUTES = 30;
-/** Keep the first hour's title and time clear of cards drawn in front. */
-const EVENT_HEADER_MINUTES = 60;
 
 /** Days an event covers: `[first, last]` inclusive. */
 export function eventDays(e: CalendarEvent, tz: string): { first: string; last: string } | null {
@@ -45,6 +43,8 @@ export interface TimedBlock {
   left: number;
   width: number;
   contentWidth: number;
+  /** Minutes from this card's top to the first card overlapping it from the right. */
+  clearMinutes: number;
   /** Starts before or ends after this day. */
   clippedStart: boolean;
   clippedEnd: boolean;
@@ -74,6 +74,7 @@ export function layoutDay(events: CalendarEvent[], date: string, tz: string): Ti
       left: 0,
       width: 1,
       contentWidth: 1,
+      clearMinutes: Infinity,
       clippedStart: s < dayStart,
       clippedEnd: e > dayEnd,
     });
@@ -111,13 +112,19 @@ export function layoutDay(events: CalendarEvent[], date: string, tz: string): Ti
       b.width = (span + 1) / (b.columns + 1);
     }
     for (const b of group) {
-      // A later lane paints above this one. Keep text inside the exposed part when that lane
-      // crosses the header, but use the whole card when the overlap starts further down.
-      const headerEnd = Math.min(shownEnd(b), b.start + EVENT_HEADER_MINUTES);
+      // Record the exposed width and height; the renderer measures whether the text fits
+      // above these foreground cards before narrowing its text area.
       let right = b.left + b.width;
       for (const other of group) {
-        if (other.column > b.column && other.start < headerEnd && shownEnd(other) > b.start)
+        if (
+          other.column > b.column &&
+          other.left < b.left + b.width &&
+          other.start < shownEnd(b) &&
+          shownEnd(other) > b.start
+        ) {
           right = Math.min(right, other.left);
+          b.clearMinutes = Math.min(b.clearMinutes, Math.max(0, other.start - b.start));
+        }
       }
       b.contentWidth = right - b.left;
     }
