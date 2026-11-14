@@ -814,6 +814,8 @@ function Done({ account, onContinue }: { account: AccountInfo; onContinue: () =>
       setBlocked(toCommandError(raw).message);
       setAlerts("off");
       setBusy(false);
+      const next = await getDesktopSettings().catch(() => null);
+      if (next?.accounts.every((a) => a.asked)) resetNotificationPrompt();
     }
   }
 

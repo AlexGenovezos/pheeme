@@ -1,6 +1,7 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
+import { useNotificationOffer } from "../desktop/prompt";
 import type { AccountInfo } from "../lib/tauri";
 import { Onboarding } from "./Onboarding";
 import { loadProgress, saveProgress } from "./progress";
@@ -249,10 +250,14 @@ test("an account already answered for skips the alerts question", async () => {
 
 test("blocked notifications explain how to allow them, then continue", async () => {
   const onConnected = vi.fn();
+  useNotificationOffer.setState({ offer: "Get an alert when new Primary mail arrives." });
+  let answered = false;
   await signInFirstRun(
     {
-      desktop_settings: () => desktopSettings(false),
+      desktop_settings: () => desktopSettings(answered),
       set_account_notifications: () => {
+        // The backend saves a blocked answer as off before refusing.
+        answered = true;
         throw {
           code: "internal",
           message:
@@ -266,6 +271,7 @@ test("blocked notifications explain how to allow them, then continue", async () 
   click("Turn on alerts");
   expect(await screen.findByRole("alert")).toHaveTextContent("Notifications are blocked");
   expect(onConnected).not.toHaveBeenCalled();
+  await waitFor(() => expect(useNotificationOffer.getState().offer).toBeNull());
   click("Continue");
   expect(onConnected).toHaveBeenCalledWith(account);
 });
