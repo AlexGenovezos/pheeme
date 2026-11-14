@@ -12,7 +12,12 @@ import {
 import { Button } from "../components/ui/Button";
 import { ListRow } from "../components/ui/ListRow";
 import { Skeleton } from "../components/ui/Skeleton";
-import { type ContextMenuItem, openContextMenuFromEvent } from "../lib/contextMenu";
+import {
+  type ContextMenuItem,
+  isContextMenuKey,
+  openContextMenuAt,
+  openContextMenuFromEvent,
+} from "../lib/contextMenu";
 import type { ThreadSummary } from "../lib/tauri";
 import { focusFromKeyboard } from "../keyboard/focus";
 import { registry } from "../keyboard/registry";
@@ -244,7 +249,13 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   // Focus stays on the listbox and points at the open row, so rows can unmount while it scrolls.
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.target !== e.currentTarget) return;
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if (isContextMenuKey(e)) {
+      // The menu of the active row, like a right-click on it.
+      if (openIndex < 0) return;
+      e.preventDefault();
+      const rowEl = document.getElementById(rowId(keys[openIndex])) ?? e.currentTarget;
+      openContextMenuAt(rowEl, rowMenu(threads[openIndex]));
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       moveSelection(e.key === "ArrowDown" ? 1 : -1);
     } else if (e.key === "ArrowLeft" && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {

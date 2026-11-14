@@ -38,7 +38,7 @@ import {
   type LabelNode,
   visibleInSidebar,
 } from "../labels/tree";
-import { type ContextMenuItem, showContextMenu } from "../lib/contextMenu";
+import { type ContextMenuItem, isContextMenuKey, showContextMenu } from "../lib/contextMenu";
 import type { AccountInfo, LabelInfo } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import {
@@ -183,7 +183,7 @@ function MailboxRowView({
   const go = () => useUiStore.getState().setMailbox(target);
   const text = formatCount(count);
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (menu && (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))) {
+    if (menu && isContextMenuKey(e)) {
       e.preventDefault();
       void showContextMenu(menu(target), below(e.currentTarget));
     } else activateOnKey(e, go);
@@ -487,7 +487,7 @@ function LabelRow({ accountId, node, folded, unread }: LabelRowProps) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+    if (isContextMenuKey(e)) {
       e.preventDefault();
       menu(e.currentTarget);
     } else activateOnKey(e, go);

@@ -1,6 +1,7 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { registry } from "../keyboard/registry";
 import { useToastStore } from "../components/ui/Toast";
 import { createTasksHandlers } from "../preview/tasks";
 import { useAccountStore } from "../store/accountStore";
@@ -214,6 +215,30 @@ describe("Tasks panel", () => {
     expect(
       screen.getByRole("button", { name: "Edit task: Send the lease back" }).closest("li"),
     ).toHaveClass("task-row--sub");
+  });
+
+  test("Shift+F10 on a task row opens its menu", async () => {
+    await openPanel();
+    const row = screen
+      .getByRole("button", { name: "Edit task: Renew passport" })
+      .closest(".task-row")!;
+    fireEvent.keyDown(row, { key: "F10", shiftKey: true });
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  test("tasks.focus opens a closed panel and moves focus into it", async () => {
+    backend();
+    render(<TasksPanelHost />);
+    await settle();
+    expect(screen.queryByRole("complementary", { name: "Tasks" })).toBeNull();
+    act(() => void registry.run("tasks.focus"));
+    await settle();
+    const panel = screen.getByRole("complementary", { name: "Tasks" });
+    expect(panel.contains(document.activeElement)).toBe(true);
+    act(() => (document.activeElement as HTMLElement).blur());
+    act(() => void registry.run("tasks.focus"));
+    expect(panel.contains(document.activeElement)).toBe(true);
   });
 
   test("closing the panel from the keyboard keeps what was being typed", async () => {

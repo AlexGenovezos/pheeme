@@ -29,9 +29,12 @@ import { Button } from "../components/ui/Button";
 import { DateField } from "../components/ui/DateField";
 import { IconButton } from "../components/ui/IconButton";
 import { Skeleton } from "../components/ui/Skeleton";
-import { useKeybinding } from "../keyboard/useCommands";
+import { focusFromKeyboard } from "../keyboard/focus";
+import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import {
   type ContextMenuItem,
+  isContextMenuKey,
+  openContextMenuAt,
   openContextMenuFromEvent,
   showContextMenu,
 } from "../lib/contextMenu";
@@ -93,6 +96,41 @@ export function TasksPanelHost() {
   useTasksData();
   const open = useTasksStore((s) => s.panelOpen);
   const shortcut = useKeybinding(TOGGLE_TASKS_COMMAND, TOGGLE_TASKS_SHORTCUT);
+  // `tasks.focus` may have to open the panel first; the focus moves in once it is drawn.
+  const wantFocus = useRef(false);
+  const focusPanel = () => {
+    const panel = document.getElementById("tasks-panel");
+    if (!panel) return false;
+    focusFromKeyboard(
+      panel.querySelector<HTMLElement>('[aria-label^="Edit task: "]') ??
+        panel.querySelector<HTMLElement>(".tasks-add") ??
+        panel,
+    );
+    return true;
+  };
+  useCommands([
+    {
+      id: "tasks.focus",
+      title: "Focus Tasks",
+      group: "Navigation",
+      keywords: ["tasks", "to-do", "todo", "panel", "google tasks"],
+      global: true,
+      run: () => {
+        if (!store().panelOpen) {
+          wantFocus.current = true;
+          store().setPanelOpen(true);
+        } else focusPanel();
+      },
+    },
+  ]);
+  useEffect(() => {
+    if (open && wantFocus.current) {
+      wantFocus.current = false;
+      focusPanel();
+    }
+    // `focusPanel` only reads the DOM.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   return (
     <>
       {open && <TasksPanel />}
@@ -114,7 +152,13 @@ function TasksPanel() {
   const accounts = useTasksStore((s) => s.accounts);
   const accountsError = useTasksStore((s) => s.accountsError);
   return (
-    <aside id="tasks-panel" className="tasks-panel" aria-label="Tasks" data-owns-keys="">
+    <aside
+      id="tasks-panel"
+      className="tasks-panel"
+      aria-label="Tasks"
+      tabIndex={-1}
+      data-owns-keys=""
+    >
       <div className="toolbar tasks-panel__head" {...dragRegion}>
         <h2 className="tasks-panel__title">Tasks</h2>
         <span className="toolbar__spacer" {...dragRegion} />
@@ -635,6 +679,11 @@ function TaskRow({
   const onKeyDown = (e: KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
     let placement: Placement | null = null;
+    if (isContextMenuKey(e)) {
+      e.preventDefault();
+      openContextMenuAt(e.currentTarget, items);
+      return;
+    }
     if (mod && e.key === "]") placement = indent;
     else if (mod && e.key === "[") placement = outdent;
     else if (mod && e.key === "ArrowUp") placement = up;

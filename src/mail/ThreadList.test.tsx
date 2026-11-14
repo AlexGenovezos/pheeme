@@ -339,6 +339,25 @@ describe("focus and selection semantics", () => {
     expect(list).toHaveFocus();
   });
 
+  test("Shift+F10 and the ContextMenu key open the active row's menu; nothing is active, nothing opens", () => {
+    const rowMenu = vi.fn((t: ThreadSummary) => [
+      { id: "x", label: `Menu for ${t.id}`, onSelect: () => {} },
+    ]);
+    useMailStore.setState({ threads: many(5) });
+    render(<ThreadList {...props({ rowMenu })} />);
+    const list = screen.getByRole("listbox");
+    list.focus();
+    fireEvent.keyDown(list, { key: "F10", shiftKey: true });
+    expect(rowMenu).not.toHaveBeenCalled();
+    act(() => useUiStore.getState().setOpenThread(key(2)));
+    fireEvent.keyDown(list, { key: "F10", shiftKey: true });
+    expect(rowMenu).toHaveBeenLastCalledWith(expect.objectContaining({ id: "t2" }));
+    fireEvent.keyDown(list, { key: "ContextMenu" });
+    expect(rowMenu).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(list, { key: "F10" });
+    expect(rowMenu).toHaveBeenCalledTimes(2);
+  });
+
   test("the active option stays mounted when the user scrolls it out of the window", () => {
     useMailStore.setState({ threads: many(200) });
     render(<ThreadList {...props()} />);
