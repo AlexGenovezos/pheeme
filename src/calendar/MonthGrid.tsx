@@ -1,11 +1,19 @@
 // Month: whole weeks of day cells. Bars for all-day and multi-day events, a dot line for each
 // shorter one, and "+N more" where a day has more than fits. Clicking a day opens it in Day view.
-import { type CSSProperties, useMemo, useRef } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { CalendarEvent, Task } from "../lib/tauri";
 import { useHeight, useWidth } from "../lib/useWidth";
 import { cx } from "../lib/utils";
 import { useCalendarStore } from "./calendarStore";
-import { dateOf, formatDay } from "./dates";
+import { focusFromKeyboard } from "../keyboard/focus";
+import { addDays, addMonths, daysBetween, dateOf, formatDay } from "./dates";
 import { createOnDays } from "./drag";
 import { BarEvent, DotEvent, eventKey, timeSpan, useCalendarLookup } from "./EventBlock";
 import { fitRows, inAllDayBand, layoutBand } from "./layout";
@@ -25,6 +33,8 @@ function Week({
   days,
   month,
   today,
+  tabStop,
+  onFocusDay,
   tz,
   events,
   tasks,
@@ -33,6 +43,8 @@ function Week({
   days: string[];
   month: string;
   today: string;
+  tabStop: string;
+  onFocusDay: (d: string) => void;
   tz: string;
   events: CalendarEvent[];
   tasks: Task[];
@@ -65,6 +77,8 @@ function Week({
             className="cal-month__date"
             aria-label={formatDay(d, { weekday: "long", month: "long", day: "numeric" })}
             aria-current={d === today ? "date" : undefined}
+            tabIndex={d === tabStop ? 0 : -1}
+            onFocus={() => onFocusDay(d)}
             onClick={() => openDay(d)}
           >
             {d.endsWith("-01")
@@ -116,6 +130,13 @@ function Week({
   );
 }
 
+/** The same day of the month `n` months away, or that month's last day when it is shorter. */
+function sameDayInMonth(day: string, n: number): string {
+  const first = addMonths(day, n);
+  const length = daysBetween(first, addMonths(first, 1));
+  return addDays(first, Math.min(Number(day.slice(8)), length) - 1);
+}
+
 export function MonthGrid({
   days,
   anchor,
@@ -142,6 +163,75 @@ export function MonthGrid({
   const dated = useDatedTasks(days);
   const tasks = useMemo(() => dated ?? [], [dated]);
 
+  // Roving focus: one date button is in the tab order, the last one focused, else today, else the 1st.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [focused, setFocused] = useState<string | null>(null);
+  const pendingFocus = useRef<string | null>(null);
+  const tabStop =
+    focused && days.includes(focused) ? focused : days.includes(today) ? today : `${month}-01`;
+
+  const focusDay = (day: string) => {
+    const button = gridRef.current?.querySelector<HTMLElement>(
+      `[data-date="${day}"] .cal-month__date`,
+    );
+    if (button) {
+      pendingFocus.current = null;
+      focusFromKeyboard(button);
+      return true;
+    }
+    return false;
+  };
+  // A move past the edge changes the month first; focus the day once its grid is drawn.
+  useEffect(() => {
+    if (pendingFocus.current) focusDay(pendingFocus.current);
+  }, [days]);
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (!target.classList.contains("cal-month__date") || e.altKey || e.ctrlKey || e.metaKey) return;
+    const day = target.closest<HTMLElement>("[data-date]")?.dataset.date;
+    if (!day) return;
+    const col = days.indexOf(day) % 7;
+    let next: string;
+    let byMonth = false;
+    switch (e.key) {
+      case "ArrowLeft":
+        next = addDays(day, -1);
+        break;
+      case "ArrowRight":
+        next = addDays(day, 1);
+        break;
+      case "ArrowUp":
+        next = addDays(day, -7);
+        break;
+      case "ArrowDown":
+        next = addDays(day, 7);
+        break;
+      case "Home":
+        next = addDays(day, -col);
+        break;
+      case "End":
+        next = addDays(day, 6 - col);
+        break;
+      case "PageUp":
+        next = sameDayInMonth(day, -1);
+        byMonth = true;
+        break;
+      case "PageDown":
+        next = sameDayInMonth(day, 1);
+        byMonth = true;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    setFocused(next);
+    if (byMonth || !focusDay(next)) {
+      pendingFocus.current = next;
+      void useCalendarStore.getState().goTo(next, "month");
+    }
+  };
+
   const style = {
     "--cal-month-row-h": `${MONTH_ROW_PX}px`,
     "--cal-month-date-h": `${MONTH_DATE_PX}px`,
@@ -155,6 +245,8 @@ export function MonthGrid({
       style={style}
       role="grid"
       aria-label="Calendar"
+      ref={gridRef}
+      onKeyDown={onKeyDown}
     >
       <div className="cal-month__head" role="row">
         {days.slice(0, 7).map((d) => (
@@ -170,6 +262,8 @@ export function MonthGrid({
             days={w}
             month={month}
             today={today}
+            tabStop={tabStop}
+            onFocusDay={setFocused}
             tz={tz}
             events={list}
             tasks={tasks}
