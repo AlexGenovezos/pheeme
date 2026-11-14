@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
+import { summarizeQuota } from "../settings/QuotaUsage";
 import { subscribeAll } from "../lib/subscriptions";
 import {
   type AccountInfo,
@@ -12,6 +13,8 @@ import {
   SYNC_EVENTS,
   type SyncAccountEvent,
   type SyncErrorEvent,
+  type SyncRateLimitedEvent,
+  getGmailQuotaUsage,
   toCommandError,
 } from "../lib/tauri";
 import { useUiStore } from "./uiStore";
@@ -21,10 +24,23 @@ export interface SyncFailure {
   message: string;
 }
 
+/** How long after Gmail's last refusal the slow-sync note stays. */
+export const SLOW_SYNC_HOLD_MS = 3 * 60_000;
+/** The quota usage is asked at most this often per account. */
+export const SLOW_SYNC_USAGE_MS = 60_000;
+
+export interface SlowSync {
+  /** The numbers show this Pheeme couldn't have hit the limit alone. */
+  contended: boolean;
+  since: number;
+}
+
 interface AccountState {
   accounts: AccountInfo[];
   /** Per account: the last sync failure, until that account next completes a sync. Session only. */
   syncErrors: Record<string, SyncFailure>;
+  /** Per account: Gmail is rate-limiting sync, until 3 minutes after its last refusal. Session only. */
+  slowSync: Record<string, SlowSync>;
   /** Google can't be reached from this device: one note stands in for every account's network failure. */
   offline: boolean;
   /** The account being signed in again (onboarding shows its sign-in), if any. */
@@ -47,6 +63,7 @@ interface AccountState {
 export const useAccountStore = create<AccountState>((set, get) => ({
   accounts: [],
   syncErrors: {},
+  slowSync: {},
   offline: false,
   reconnecting: null,
   loaded: false,
@@ -103,6 +120,10 @@ export const useAccountStore = create<AccountState>((set, get) => ({
               },
             }));
           }),
+        () =>
+          listen<SyncRateLimitedEvent>(SYNC_EVENTS.rateLimited, ({ payload }) =>
+            noteRateLimited(payload.accountId),
+          ),
         () => listen<NetworkStatusEvent>(NETWORK_EVENT, ({ payload }) => setOnline(payload.online)),
       ],
       signal,
@@ -113,9 +134,66 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     } catch {
       // An older backend without the command: assume online.
     }
-    return stop;
+    return () => {
+      stop();
+      clearSlowSyncTimers();
+    };
   },
 }));
+
+const slowSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const usageAskedAt = new Map<string, number>();
+
+function clearSlowSyncTimers() {
+  for (const timer of slowSyncTimers.values()) clearTimeout(timer);
+  slowSyncTimers.clear();
+  usageAskedAt.clear();
+}
+
+function forgetSlowSync(accountId: string) {
+  slowSyncTimers.delete(accountId);
+  useAccountStore.setState((s) => {
+    const slowSync = { ...s.slowSync };
+    delete slowSync[accountId];
+    return { slowSync };
+  });
+}
+
+/** Gmail refused a sync request: show the note and keep it 3 minutes past the last refusal. */
+function noteRateLimited(accountId: string) {
+  clearTimeout(slowSyncTimers.get(accountId));
+  slowSyncTimers.set(
+    accountId,
+    setTimeout(() => forgetSlowSync(accountId), SLOW_SYNC_HOLD_MS),
+  );
+  const now = Date.now();
+  const existing = useAccountStore.getState().slowSync[accountId];
+  if (!existing) {
+    useAccountStore.setState((s) => ({
+      slowSync: { ...s.slowSync, [accountId]: { contended: false, since: now } },
+    }));
+  }
+  const asked = usageAskedAt.get(accountId);
+  if (asked !== undefined && now - asked < SLOW_SYNC_USAGE_MS) return;
+  usageAskedAt.set(accountId, now);
+  getGmailQuotaUsage(accountId)
+    .then((usage) => {
+      if (!summarizeQuota(usage).somethingElse) return;
+      useAccountStore.setState((s) =>
+        accountId in s.slowSync
+          ? {
+              slowSync: {
+                ...s.slowSync,
+                [accountId]: { ...s.slowSync[accountId]!, contended: true },
+              },
+            }
+          : {},
+      );
+    })
+    .catch(() => {
+      // Keep the plain note; the next refusal asks again after a minute.
+    });
+}
 
 function setOnline(online: boolean) {
   useAccountStore.setState((s) => ({

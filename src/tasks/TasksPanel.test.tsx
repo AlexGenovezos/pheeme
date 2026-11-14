@@ -1,6 +1,7 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { registry } from "../keyboard/registry";
 import { useToastStore } from "../components/ui/Toast";
 import { createTasksHandlers } from "../preview/tasks";
 import { useAccountStore } from "../store/accountStore";
@@ -75,6 +76,9 @@ beforeEach(() => {
     lists: {},
     dated: null,
     datedFor: null,
+    accountsError: null,
+    listErrors: {},
+    datedError: null,
     editing: null,
   });
 });
@@ -213,6 +217,31 @@ describe("Tasks panel", () => {
     ).toHaveClass("task-row--sub");
   });
 
+  test("Shift+F10 on a task row opens its menu", async () => {
+    await openPanel();
+    const row = screen
+      .getByRole("button", { name: "Edit task: Renew passport" })
+      .closest(".task-row")!;
+    fireEvent.keyDown(row, { key: "F10", shiftKey: true });
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  test("tasks.focus opens a closed panel and moves focus into it", async () => {
+    backend();
+    render(<TasksPanelHost />);
+    await settle();
+    expect(screen.queryByRole("complementary", { name: "Tasks" })).toBeNull();
+    act(() => void registry.run("tasks.focus"));
+    await settle();
+    const panel = screen.getByRole("complementary", { name: "Tasks" });
+    // The first task, once its list has been read, not the Add button that was there before it.
+    expect(document.activeElement).toHaveAccessibleName(/^Edit task: /);
+    act(() => (document.activeElement as HTMLElement).blur());
+    act(() => void registry.run("tasks.focus"));
+    expect(panel.contains(document.activeElement)).toBe(true);
+  });
+
   test("closing the panel from the keyboard keeps what was being typed", async () => {
     await openPanel();
     fireEvent.click(screen.getByRole("button", { name: "Edit task: Renew passport" }));
@@ -309,5 +338,76 @@ describe("Tasks panel", () => {
     });
     await settle();
     expect(rows("Work")[0]).toBe("Synced from my phone");
+  });
+
+  test("a failed read of the task lists shows the error with Try again, not an empty panel", async () => {
+    fail.add("tasks_accounts");
+    await openPanel();
+    const panel = screen.getByRole("complementary", { name: "Tasks" });
+    expect(within(panel).getByRole("alert")).toHaveTextContent("Google said no.");
+    expect(useTasksStore.getState().accounts).toBeNull();
+    expect(useTasksStore.getState().accountsError).toBe("Google said no.");
+
+    fail.delete("tasks_accounts");
+    fireEvent.click(within(panel).getByRole("button", { name: "Try again" }));
+    await settle();
+    expect(useTasksStore.getState().accountsError).toBeNull();
+    expect(within(panel).queryByRole("alert")).toBeNull();
+    expect(rows("Work").length).toBeGreaterThan(0);
+  });
+
+  test("a failed reload keeps the accounts it had", async () => {
+    await openPanel();
+    const before = useTasksStore.getState().accounts;
+    expect(before).not.toBeNull();
+    fail.add("tasks_accounts");
+    await act(() => useTasksStore.getState().loadAccounts());
+    expect(useTasksStore.getState().accounts).toBe(before);
+    expect(useTasksStore.getState().accountsError).toBe("Google said no.");
+    // The error shows above the lists it kept.
+    expect(screen.getByRole("alert")).toHaveTextContent("Google said no.");
+    expect(rows("My Tasks")).toContain("Renew passport");
+  });
+
+  test("a failed reload of a list keeps its tasks and shows the error with Try again", async () => {
+    await openPanel();
+    fail.add("tasks_in_list");
+    const { accountId } = useTasksStore.getState().accounts![0]!;
+    const listId = useTasksStore.getState().accounts![0]!.lists[0]!.id;
+    await act(() => useTasksStore.getState().loadList(accountId, listId));
+    const section = list("My Tasks");
+    expect(within(section).getByRole("alert")).toHaveTextContent("Google said no.");
+    expect(rows("My Tasks")).toContain("Renew passport");
+    fail.delete("tasks_in_list");
+    fireEvent.click(within(section).getByRole("button", { name: "Try again" }));
+    await settle();
+    expect(within(list("My Tasks")).queryByRole("alert")).toBeNull();
+  });
+
+  test("a list that failed to load shows the error instead of No tasks yet, and Try again reads it", async () => {
+    fail.add("tasks_in_list");
+    await openPanel();
+    const section = list("Work");
+    expect(within(section).getByRole("alert")).toHaveTextContent("Google said no.");
+    expect(within(section).queryByText("No tasks yet")).toBeNull();
+
+    fail.delete("tasks_in_list");
+    fireEvent.click(within(section).getByRole("button", { name: "Try again" }));
+    await settle();
+    expect(within(list("Work")).queryByRole("alert")).toBeNull();
+    expect(rows("Work").length).toBeGreaterThan(0);
+    expect(Object.keys(useTasksStore.getState().listErrors).some((k) => k.includes("work"))).toBe(
+      false,
+    );
+  });
+
+  test("a failed dated read sets datedError and the next good one clears it", async () => {
+    backend();
+    fail.add("dated_tasks");
+    await act(() => useTasksStore.getState().loadDated("2026-11-08", "2026-11-15"));
+    expect(useTasksStore.getState().datedError).toBe("Google said no.");
+    fail.delete("dated_tasks");
+    await act(() => useTasksStore.getState().loadDated("2026-11-08", "2026-11-15"));
+    expect(useTasksStore.getState().datedError).toBeNull();
   });
 });

@@ -42,6 +42,8 @@ interface MailState {
   loadedQuery: MailQuery | null;
   loading: boolean;
   error: CommandError | null;
+  /** Which call `error` came from, so Try again repeats that one: a failed page retries the page, anything else reloads. */
+  errorSource: "load" | "more";
   /** Load the first page for `query`, replacing the list. `limit` asks for more than one page. */
   load(query: MailQuery, limit?: number, preserveRead?: boolean): Promise<void>;
   /** Append the next page. Does nothing while a load is in flight or at the end of the list. */
@@ -180,6 +182,7 @@ const EMPTY = {
   loadedQuery: null,
   loading: false,
   error: null,
+  errorSource: "load" as const,
 };
 
 /** The unfiltered list as it was when Unread only went on, shown again at once when it goes off. */
@@ -290,6 +293,7 @@ export const useMailStore = create<MailState>((set, get) => {
             : {}),
           loading: false,
           error: toCommandError(error),
+          errorSource: more ? "more" : "load",
         });
     }
   };
@@ -448,7 +452,12 @@ export const useMailStore = create<MailState>((set, get) => {
         if (ticket !== latest) return;
         // The previous mailbox's rows and cursor mustn't masquerade as this one's; a failed reload of the same query keeps its rows.
         const stale = hadRows ? {} : { threads: [], next: null, loadedQuery: null };
-        set({ ...stale, loading: false, error: toCommandError(error) });
+        set({
+          ...stale,
+          loading: false,
+          error: toCommandError(error),
+          errorSource: "load",
+        });
       }
     },
     loadMore: async () => {
@@ -487,7 +496,7 @@ export const useMailStore = create<MailState>((set, get) => {
         });
       } catch (error) {
         if (ticket !== latest) return;
-        set({ loading: false, error: toCommandError(error) });
+        set({ loading: false, error: toCommandError(error), errorSource: "more" });
       }
     },
     reload: async (preserveRead = false) => {

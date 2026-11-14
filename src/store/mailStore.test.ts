@@ -220,6 +220,22 @@ test("a failed reload of the same mailbox keeps its rows and cursor", async () =
   expect(useMailStore.getState().error?.code).toBe("internal");
   expect(ids()).toEqual(["t0", "t1"]);
   expect(useMailStore.getState().next).toEqual(cursorAfter("t1"));
+  expect(useMailStore.getState().errorSource).toBe("load");
+});
+
+test("a failed page records errorSource more, and keeps the rows", async () => {
+  let fail = false;
+  mockIPC((cmd) => {
+    if (cmd !== "list_threads") return undefined;
+    if (fail) throw { code: "internal", message: "Offline" };
+    return { threads: rows(0, 2), next: cursorAfter("t1") };
+  });
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
+  fail = true;
+  await useMailStore.getState().loadMore();
+  expect(useMailStore.getState().error?.message).toBe("Offline");
+  expect(useMailStore.getState().errorSource).toBe("more");
+  expect(ids()).toEqual(["t0", "t1"]);
 });
 
 test("patch rewrites only the rows named by key", async () => {

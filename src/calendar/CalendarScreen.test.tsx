@@ -294,4 +294,35 @@ describe("commandsForMode", () => {
     expect(mail.find((c) => c.id === "go.inbox")?.shortcut).toBe("g i");
     expect(mail.find((c) => c.id === "mode.calendar")?.shortcut).toBe("mod+2");
   });
+
+  test("a failed load shows its error with Try again, which reads the accounts again", async () => {
+    let failing = true;
+    const handlers = createCalendarHandlers(ACCOUNTS, null, NOW) as Record<
+      string,
+      (args?: Record<string, unknown>) => unknown
+    >;
+    mockIPC(
+      (cmd, args) => {
+        const a = (args ?? {}) as Record<string, unknown>;
+        calls.push({ cmd, args: a });
+        if (failing && cmd === "calendar_accounts")
+          throw { code: "database", message: "Couldn't read the calendar." };
+        return handlers[cmd]?.(a);
+      },
+      { shouldMockEvents: true },
+    );
+    render(<CalendarScreen />);
+    await flush();
+    await flush();
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't read the calendar.");
+
+    failing = false;
+    const before = calls.filter((c) => c.cmd === "calendar_accounts").length;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await flush();
+    await flush();
+    expect(calls.filter((c) => c.cmd === "calendar_accounts").length).toBe(before + 1);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
 });

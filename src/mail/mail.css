@@ -1,6 +1,7 @@
 /* ---- Conversation list --------------------------------------------------- */
 
 .thread-body {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -111,8 +112,14 @@
   font-weight: var(--font-weight-medium);
 }
 
+/* Over the bottom of the list, so an error never changes the list's height. */
 .thread-list__error {
+  position: absolute;
+  inset-block-end: var(--space-0);
+  inset-inline: var(--space-0);
   display: flex;
+  border-block-start: var(--border-width) solid var(--color-border);
+  background: var(--color-pane-bg);
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);

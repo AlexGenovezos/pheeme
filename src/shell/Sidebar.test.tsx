@@ -52,7 +52,14 @@ const ONE = account("a1", "me@home.test");
 const TWO = account("a2", "me@work.test");
 
 function seed(accounts: AccountInfo[]) {
-  useAccountStore.setState({ accounts, loaded: true, error: null, syncErrors: {}, offline: false });
+  useAccountStore.setState({
+    accounts,
+    loaded: true,
+    error: null,
+    syncErrors: {},
+    slowSync: {},
+    offline: false,
+  });
   useLabelStore.setState({
     labels: {
       a1: [
@@ -364,6 +371,77 @@ describe("stacked layout", () => {
       expect(screen.queryByText("Offline. Changes will sync later.")).not.toBeInTheDocument(),
     );
     stop();
+  });
+
+  describe("slow sync note", () => {
+    const plain = "Gmail is slowing sync.";
+    const contended = "Gmail is slowing sync. Another device may be syncing this account.";
+    const usage = (refused: number, units: number) => ({
+      limitPerMinute: 250,
+      minutes: [0, 1].map((i) => ({
+        startMs: i,
+        units: { newMail: units, olderMail: 0, yourChanges: 0, youAsked: 0, assistants: 0 },
+        refused: i === 1 ? refused : 0,
+      })),
+    });
+    const withUsage = (value: unknown) =>
+      mockIPC((cmd) => (cmd === "gmail_quota_usage" ? value : undefined), {
+        shouldMockEvents: true,
+      });
+
+    test("one note for several slow accounts, plain when this Pheeme could have hit the limit", async () => {
+      withUsage(usage(2, 200));
+      seed([ONE, TWO]);
+      const stop = await useAccountStore.getState().subscribe();
+      render(<Sidebar />);
+      expect(screen.queryByText(/^Gmail is slowing sync/)).not.toBeInTheDocument();
+      await act(() => emit("sync:rate_limited", { accountId: "a1", retryInMs: 500 }));
+      await act(() => emit("sync:rate_limited", { accountId: "a2", retryInMs: null }));
+      const note = await within(region("Inboxes")).findByText(plain);
+      expect(note.closest("[role=status]")).toBeInTheDocument();
+      expect(screen.getAllByText(/^Gmail is slowing sync/)).toHaveLength(1);
+      stop();
+    });
+
+    test("says another device when the numbers show this Pheeme was far under the limit", async () => {
+      withUsage(usage(2, 10));
+      seed([ONE]);
+      const stop = await useAccountStore.getState().subscribe();
+      render(<Sidebar />);
+      await act(() => emit("sync:rate_limited", { accountId: "a1", retryInMs: null }));
+      expect(await screen.findByText(contended)).toBeInTheDocument();
+      stop();
+    });
+
+    test("goes away 3 minutes after the last refusal", async () => {
+      withUsage(usage(2, 200));
+      seed([ONE]);
+      const stop = await useAccountStore.getState().subscribe();
+      render(<Sidebar />);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      try {
+        await act(() => emit("sync:rate_limited", { accountId: "a1", retryInMs: null }));
+        expect(screen.getByText(plain)).toBeInTheDocument();
+        await act(() => vi.advanceTimersByTimeAsync(3 * 60_000 + 1));
+        expect(screen.queryByText(plain)).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+        stop();
+      }
+    });
+
+    test("stays hidden while offline", async () => {
+      withUsage(usage(2, 200));
+      seed([ONE]);
+      const stop = await useAccountStore.getState().subscribe();
+      render(<Sidebar />);
+      await act(() => emit("network:status", { online: false }));
+      await screen.findByText("Offline. Changes will sync later.");
+      await act(() => emit("sync:rate_limited", { accountId: "a1", retryInMs: null }));
+      await waitFor(() => expect(useAccountStore.getState().slowSync).toHaveProperty("a1"));
+      expect(screen.queryByText(plain)).not.toBeInTheDocument();
+      stop();
+    });
   });
 
   test("rows open with Enter and Space", () => {

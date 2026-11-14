@@ -1,6 +1,6 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AccountInfo } from "../lib/tauri";
 import { useAccountStore } from "./accountStore";
 import { __resetUiStoreForTests, useUiStore } from "./uiStore";
@@ -19,6 +19,7 @@ beforeEach(() =>
     loaded: true,
     error: null,
     syncErrors: {},
+    slowSync: {},
     offline: false,
   }),
 );
@@ -97,6 +98,78 @@ test("subscribing picks up an app that went offline before the window listened",
   const stop = await useAccountStore.getState().subscribe();
   expect(useAccountStore.getState().offline).toBe(true);
   stop();
+});
+
+const MINUTE = 60_000;
+const quotaMinute = (refused: number, units: number) => ({
+  startMs: 0,
+  units: { newMail: units, olderMail: 0, yourChanges: 0, youAsked: 0, assistants: 0 },
+  refused,
+});
+// Refused at 10 units after a minute of 10: this Pheeme was far under 250, so something else spent it.
+const contendedUsage = {
+  limitPerMinute: 250,
+  minutes: [quotaMinute(0, 10), quotaMinute(3, 10)],
+};
+const aloneUsage = { limitPerMinute: 250, minutes: [quotaMinute(0, 200), quotaMinute(3, 100)] };
+
+describe("sync:rate_limited", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const setup = async (usage: unknown) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const asked = vi.fn();
+    mockIPC(
+      (cmd, args) => {
+        if (cmd !== "gmail_quota_usage") return undefined;
+        asked(args);
+        return usage;
+      },
+      { shouldMockEvents: true },
+    );
+    const stop = await useAccountStore.getState().subscribe();
+    return { stop, asked };
+  };
+
+  test("marks the account slow, contended only when the numbers show another device", async () => {
+    const { stop } = await setup(contendedUsage);
+    await emit("sync:rate_limited", { accountId: "a", retryInMs: 1000 });
+    await vi.waitFor(() => expect(useAccountStore.getState().slowSync.a?.contended).toBe(true));
+    stop();
+  });
+
+  test("stays plain when this Pheeme could have hit the limit alone", async () => {
+    const { stop, asked } = await setup(aloneUsage);
+    await emit("sync:rate_limited", { accountId: "a", retryInMs: null });
+    await vi.waitFor(() => expect(asked).toHaveBeenCalledTimes(1));
+    expect(useAccountStore.getState().slowSync.a?.contended).toBe(false);
+    stop();
+  });
+
+  test("clears 3 minutes after the last event, each event restarting the wait", async () => {
+    const { stop } = await setup(aloneUsage);
+    await emit("sync:rate_limited", { accountId: "a", retryInMs: null });
+    await vi.waitFor(() => expect(useAccountStore.getState().slowSync).toHaveProperty("a"));
+    await vi.advanceTimersByTimeAsync(2 * MINUTE);
+    await emit("sync:rate_limited", { accountId: "a", retryInMs: null });
+    await vi.advanceTimersByTimeAsync(2 * MINUTE);
+    expect(useAccountStore.getState().slowSync).toHaveProperty("a");
+    await vi.advanceTimersByTimeAsync(MINUTE + 1);
+    expect(useAccountStore.getState().slowSync).toEqual({});
+    stop();
+  });
+
+  test("asks for the usage at most once a minute per account", async () => {
+    const { stop, asked } = await setup(aloneUsage);
+    for (let i = 0; i < 5; i++)
+      await emit("sync:rate_limited", { accountId: "a", retryInMs: null });
+    await emit("sync:rate_limited", { accountId: "b", retryInMs: null });
+    await vi.waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
+    await vi.advanceTimersByTimeAsync(MINUTE + 1);
+    await emit("sync:rate_limited", { accountId: "a", retryInMs: null });
+    await vi.waitFor(() => expect(asked).toHaveBeenCalledTimes(3));
+    stop();
+  });
 });
 
 describe("removing an account reconciles navigation", () => {

@@ -186,6 +186,14 @@ impl SyncManager {
             self.went_offline();
             return;
         }
+        // A rate limit is Gmail slowing us down, not a failure to flag on the account.
+        if let SyncError::Gmail(GmailError::RateLimit { retry_after }) = e {
+            self.events.emit(SyncEvent::RateLimited {
+                account_id: account_id.to_owned(),
+                retry_in_ms: retry_after.map(|d| d.as_millis() as u64),
+            });
+            return;
+        }
         self.events.emit(SyncEvent::Error {
             account_id: account_id.to_owned(),
             code: e.code().to_owned(),
@@ -446,6 +454,10 @@ impl SyncManager {
                     Err(SyncError::Gmail(GmailError::RateLimit { retry_after })) => {
                         let wait = retry_after.unwrap_or(this.rate_limit_pause);
                         tracing::info!(account = %id, ?wait, "backfill rate limited, pausing");
+                        this.events.emit(SyncEvent::RateLimited {
+                            account_id: id.clone(),
+                            retry_in_ms: Some(wait.as_millis() as u64),
+                        });
                         tokio::time::sleep(wait).await;
                     }
                     Err(e) => {
@@ -714,6 +726,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sync_rate_limit_is_a_slowdown_not_an_error() {
+        let (_dir, _pool, fake, events, manager) = setup().await;
+        fake.fail_next(
+            "profile_history_id",
+            crate::gmail::GmailError::RateLimit {
+                retry_after: Some(Duration::from_secs(7)),
+            },
+        );
+        assert!(manager.sync_account("a1").await.is_err());
+        let seen = events.take();
+        assert!(seen.contains(&SyncEvent::RateLimited {
+            account_id: "a1".into(),
+            retry_in_ms: Some(7000),
+        }));
+        assert!(!seen.iter().any(|e| matches!(e, SyncEvent::Error { .. })));
+    }
+
+    #[tokio::test]
     async fn unreadable_keychain_waits_quietly_until_it_can_be_read() {
         let (_dir, _pool, fake, events, manager) = setup().await;
         for _ in 0..2 {
@@ -904,7 +934,7 @@ mod tests {
         let manager = SyncManager::with_pauses(
             pool.clone(),
             Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
-            events,
+            events.clone(),
             Duration::ZERO,
             Duration::from_millis(10),
             probe(Arc::new(AtomicBool::new(true))),
@@ -928,6 +958,13 @@ mod tests {
             assert!(Instant::now() < deadline, "backfill never resumed");
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
+        // The pause was announced with its length, and it isn't an error.
+        let seen = events.take();
+        assert!(seen.contains(&SyncEvent::RateLimited {
+            account_id: "a1".into(),
+            retry_in_ms: Some(10),
+        }));
+        assert!(!seen.iter().any(|e| matches!(e, SyncEvent::Error { .. })));
     }
 
     #[tokio::test]

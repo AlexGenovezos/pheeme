@@ -339,6 +339,25 @@ describe("focus and selection semantics", () => {
     expect(list).toHaveFocus();
   });
 
+  test("Shift+F10 and the ContextMenu key open the active row's menu; nothing is active, nothing opens", () => {
+    const rowMenu = vi.fn((t: ThreadSummary) => [
+      { id: "x", label: `Menu for ${t.id}`, onSelect: () => {} },
+    ]);
+    useMailStore.setState({ threads: many(5) });
+    render(<ThreadList {...props({ rowMenu })} />);
+    const list = screen.getByRole("listbox");
+    list.focus();
+    fireEvent.keyDown(list, { key: "F10", shiftKey: true });
+    expect(rowMenu).not.toHaveBeenCalled();
+    act(() => useUiStore.getState().setOpenThread(key(2)));
+    fireEvent.keyDown(list, { key: "F10", shiftKey: true });
+    expect(rowMenu).toHaveBeenLastCalledWith(expect.objectContaining({ id: "t2" }));
+    fireEvent.keyDown(list, { key: "ContextMenu" });
+    expect(rowMenu).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(list, { key: "F10" });
+    expect(rowMenu).toHaveBeenCalledTimes(2);
+  });
+
   test("the active option stays mounted when the user scrolls it out of the window", () => {
     useMailStore.setState({ threads: many(200) });
     render(<ThreadList {...props()} />);
@@ -541,6 +560,39 @@ describe("states", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Couldn't load more");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  test("a failed page retries the page, not a reload", () => {
+    const reload = vi.fn(async () => {});
+    const loadMore = vi.fn(async () => {});
+    useMailStore.setState({
+      threads: many(5),
+      error: { code: "internal", message: "Couldn't load more" },
+      errorSource: "more",
+      reload,
+      loadMore,
+    });
+    render(<ThreadList {...props()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(loadMore).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  test("a failed refresh with rows shown reloads", () => {
+    const reload = vi.fn(async () => {});
+    const loadMore = vi.fn(async () => {});
+    useMailStore.setState({
+      threads: many(5),
+      error: { code: "internal", message: "Couldn't refresh" },
+      errorSource: "load",
+      reload,
+      loadMore,
+    });
+    render(<ThreadList {...props()} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't refresh");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(loadMore).not.toHaveBeenCalled();
   });
 
   test("never shows a spinner or the empty copy while the first page loads", () => {

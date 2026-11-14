@@ -29,9 +29,12 @@ import { Button } from "../components/ui/Button";
 import { DateField } from "../components/ui/DateField";
 import { IconButton } from "../components/ui/IconButton";
 import { Skeleton } from "../components/ui/Skeleton";
-import { useKeybinding } from "../keyboard/useCommands";
+import { focusFromKeyboard } from "../keyboard/focus";
+import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import {
   type ContextMenuItem,
+  isContextMenuKey,
+  openContextMenuAt,
   openContextMenuFromEvent,
   showContextMenu,
 } from "../lib/contextMenu";
@@ -93,6 +96,49 @@ export function TasksPanelHost() {
   useTasksData();
   const open = useTasksStore((s) => s.panelOpen);
   const shortcut = useKeybinding(TOGGLE_TASKS_COMMAND, TOGGLE_TASKS_SHORTCUT);
+  // `tasks.focus` may have to open the panel first; the focus moves in once its tasks are drawn.
+  const wantFocus = useRef(false);
+  const accounts = useTasksStore((s) => s.accounts);
+  const lists = useTasksStore((s) => s.lists);
+  const listErrors = useTasksStore((s) => s.listErrors);
+  const accountsError = useTasksStore((s) => s.accountsError);
+  const focusPanel = () => {
+    const panel = document.getElementById("tasks-panel");
+    if (!panel) return false;
+    focusFromKeyboard(
+      panel.querySelector<HTMLElement>('[aria-label^="Edit task: "]') ??
+        panel.querySelector<HTMLElement>(".tasks-add") ??
+        panel,
+    );
+    return true;
+  };
+  useCommands([
+    {
+      id: "tasks.focus",
+      title: "Focus Tasks",
+      group: "Navigation",
+      keywords: ["tasks", "to-do", "todo", "panel", "google tasks"],
+      global: true,
+      run: () => {
+        if (!store().panelOpen) {
+          wantFocus.current = true;
+          store().setPanelOpen(true);
+        } else focusPanel();
+      },
+    },
+  ]);
+  useEffect(() => {
+    if (!open || !wantFocus.current) return;
+    // Still reading (skeleton rows): this runs again when the tasks, or the failure, arrive.
+    const reading = document
+      .getElementById("tasks-panel")
+      ?.querySelector('.tasks-list[aria-hidden="true"], .task-row[aria-hidden="true"]');
+    if (reading) return;
+    wantFocus.current = false;
+    focusPanel();
+    // `focusPanel` only reads the DOM.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, accounts, lists, listErrors, accountsError]);
   return (
     <>
       {open && <TasksPanel />}
@@ -112,8 +158,15 @@ export function TasksPanelHost() {
 
 function TasksPanel() {
   const accounts = useTasksStore((s) => s.accounts);
+  const accountsError = useTasksStore((s) => s.accountsError);
   return (
-    <aside id="tasks-panel" className="tasks-panel" aria-label="Tasks" data-owns-keys="">
+    <aside
+      id="tasks-panel"
+      className="tasks-panel"
+      aria-label="Tasks"
+      tabIndex={-1}
+      data-owns-keys=""
+    >
       <div className="toolbar tasks-panel__head" {...dragRegion}>
         <h2 className="tasks-panel__title">Tasks</h2>
         <span className="toolbar__spacer" {...dragRegion} />
@@ -121,14 +174,35 @@ function TasksPanel() {
       </div>
       <div className="tasks-panel__scroll">
         {accounts === null ? (
-          <SkeletonList />
+          accountsError ? (
+            <LoadError message={accountsError} onRetry={() => void store().loadAccounts()} />
+          ) : (
+            <SkeletonList />
+          )
         ) : (
-          accounts.map((a) => (
-            <AccountTasks key={a.accountId} account={a} showEmail={accounts.length > 1} />
-          ))
+          <>
+            {accountsError && (
+              <LoadError message={accountsError} onRetry={() => void store().loadAccounts()} />
+            )}
+            {accounts.map((a) => (
+              <AccountTasks key={a.accountId} account={a} showEmail={accounts.length > 1} />
+            ))}
+          </>
         )}
       </div>
     </aside>
+  );
+}
+
+/** A read that failed: why, and a way to run it again, above whatever the last good read left. */
+function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="tasks-access">
+      <p role="alert">Couldn't read tasks: {message}</p>
+      <Button size="sm" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
   );
 }
 
@@ -309,6 +383,7 @@ const lastSubtask = (open: Task[], parent: string) =>
 function ListSection({ account, list }: { account: TasksAccount; list: TaskListInfo }) {
   const { accountId } = account;
   const tasks = useTasksStore((s) => s.lists[listKey(accountId, list.id)]);
+  const listError = useTasksStore((s) => s.listErrors[listKey(accountId, list.id)]);
   const editing = useTasksStore((s) => s.editing);
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -467,7 +542,11 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
         <Plus aria-hidden="true" />
         Add a task
       </button>
+      {listError && (
+        <LoadError message={listError} onRetry={() => void store().loadList(accountId, list.id)} />
+      )}
       {tasks === undefined ? (
+        !listError &&
         [0, 1].map((i) => (
           <div key={i} className="task-row" aria-hidden="true">
             <Skeleton shape="circle" className="task-row__skeleton-check" />
@@ -513,7 +592,7 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
               </li>
             ),
           )}
-          {open.length === 0 && !adding && (
+          {open.length === 0 && !adding && !listError && (
             <li className="tasks-list__empty">
               {completed.length > 0 ? "All tasks complete" : "No tasks yet"}
             </li>
@@ -606,6 +685,11 @@ function TaskRow({
   const onKeyDown = (e: KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
     let placement: Placement | null = null;
+    if (isContextMenuKey(e)) {
+      e.preventDefault();
+      openContextMenuAt(e.currentTarget, items);
+      return;
+    }
     if (mod && e.key === "]") placement = indent;
     else if (mod && e.key === "[") placement = outdent;
     else if (mod && e.key === "ArrowUp") placement = up;

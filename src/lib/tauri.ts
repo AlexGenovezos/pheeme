@@ -741,6 +741,7 @@ export const SYNC_EVENTS = {
   labelsUpdated: "sync:labels_updated",
   completed: "sync:completed",
   error: "sync:error",
+  rateLimited: "sync:rate_limited",
   outboxRejected: "outbox:rejected",
   outboxSendStatus: "outbox:send_status",
 } as const;
@@ -775,6 +776,11 @@ export interface SyncMessagesUpdated extends SyncAccountEvent {
 export interface SyncErrorEvent extends SyncAccountEvent {
   code: string;
   message: string;
+}
+
+/** Gmail refused a sync or backfill request for quota; fires on every refusal. */
+export interface SyncRateLimitedEvent extends SyncAccountEvent {
+  retryInMs: number | null;
 }
 
 export interface OutboxRejected extends SyncAccountEvent {

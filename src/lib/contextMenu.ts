@@ -100,3 +100,14 @@ export function openContextMenuFromEvent(
   e.stopPropagation();
   void showContextMenu(items, { x: e.clientX, y: e.clientY });
 }
+
+/** The keys that open a context menu from the keyboard: the ContextMenu key and Shift+F10. */
+export function isContextMenuKey(e: { key: string; shiftKey: boolean }): boolean {
+  return e.key === "ContextMenu" || (e.shiftKey && e.key === "F10");
+}
+
+/** Show a menu beside `el` (its left edge, vertically centred), for the keyboard keys. */
+export function openContextMenuAt(el: Element, items: ContextMenuItem[]) {
+  const r = el.getBoundingClientRect();
+  void showContextMenu(items, { x: r.left + 16, y: r.top + r.height / 2 });
+}
