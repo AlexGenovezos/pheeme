@@ -31,7 +31,7 @@ pub const SEARCH_PAGE: u32 = 50;
 /// as read on another device) is applied in steps of about this many, each committed with the
 /// cursor moved to its last record: memory and the write stay bounded, and a failure keeps
 /// the steps before it.
-pub const HISTORY_CHUNK: usize = 200;
+pub const HISTORY_CHUNK: usize = 1000;
 /// Cached messages a full resync re-reads per sync. Between two of them the queued changes
 /// are sent and new mail is checked, so neither waits for the whole mailbox.
 pub const RESYNC_CHUNK: usize = 200;
