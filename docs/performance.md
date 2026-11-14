@@ -194,7 +194,10 @@ export PERF_HOME=$(mktemp -d)
 xvfb-run -a dbus-run-session -- bash -euc '
   mkdir -p "$PERF_HOME/.local/share"
   export XDG_DATA_HOME="$PERF_HOME/.local/share"
-  printf "" | gnome-keyring-daemon --unlock --components=secrets
+  export GNOME_KEYRING_CONTROL="$PERF_HOME/keyring"
+  install -d -m700 "$GNOME_KEYRING_CONTROL"
+  printf "pheeme-perf" | gnome-keyring-daemon --unlock --components=secrets --control-directory "$GNOME_KEYRING_CONTROL"
+  gnome-keyring-daemon --start --components=secrets --control-directory "$GNOME_KEYRING_CONTROL"
   cargo run --manifest-path src-tauri/Cargo.toml --release --example seed_mailbox -- \
     "$PERF_HOME/.local/share/app.pheeme.desktop"
   node scripts/perf/app-run.mjs --app src-tauri/target/release/pheeme \
