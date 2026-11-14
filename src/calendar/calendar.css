@@ -650,6 +650,24 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* Stack and wrap each detail into the block's height, with the title first. */
+.cal-event--timed:not(.cal-event--compact)
+  :is(.cal-event__title, .cal-event__time, .cal-event__location) {
+  flex-shrink: 0;
+  max-height: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.cal-event__details {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: var(--space-0);
+}
+.cal-event__detail-icon {
+  display: none;
+}
 .cal-event--timed.cal-event--compact {
   flex-direction: row;
   padding-block: var(--space-0);
@@ -660,13 +678,56 @@
 .cal-event--timed.cal-event--compact .cal-event__time {
   flex-shrink: 0;
 }
-/* A sliver of a day: the title alone, cut at the edge rather than spending room on "…". */
+/* A sliver of a day: use the width and separate the wrapped details into small paragraphs. */
 .cal-event--timed.cal-event--narrow {
   padding-inline: var(--space-0-5) var(--space-0);
 }
 .cal-event--timed.cal-event--narrow .cal-event__title {
   font-weight: var(--font-weight-medium);
   text-overflow: clip;
+}
+.cal-event--timed.cal-event--narrow:not(.cal-event--compact):not(.cal-event--stacked)
+  :is(.cal-event__time, .cal-event__location) {
+  margin-top: var(--space-1);
+}
+
+/* Long, slim events read like a little programme: headline, then quiet when/where groups. */
+.cal-event--timed.cal-event--stacked {
+  padding: var(--space-2) var(--space-0-5);
+}
+.cal-event--timed.cal-event--stacked .cal-event__title {
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-normal);
+  letter-spacing: var(--letter-spacing-tight);
+}
+.cal-event--stacked .cal-event__details {
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: var(--hairline) solid color-mix(in srgb, currentColor 20%, transparent);
+  font-size: var(--calendar-event-detail-size);
+  line-height: var(--line-height-normal);
+}
+.cal-event--timed.cal-event--stacked .cal-event__detail {
+  display: flow-root;
+  margin-top: var(--space-0);
+}
+.cal-event--stacked .cal-event__detail-icon {
+  display: block;
+  float: left;
+  width: var(--calendar-event-detail-size);
+  height: var(--calendar-event-detail-size);
+  margin-top: var(--space-0-5);
+  margin-right: var(--space-0-5);
+  stroke-width: var(--icon-stroke);
+}
+.cal-event--stacked .cal-event__range > span {
+  display: block;
+}
+.cal-event--stacked .cal-event__detail > span {
+  display: block;
+  min-width: var(--space-0);
+  max-width: 100%;
 }
 
 .cal-event__title {
