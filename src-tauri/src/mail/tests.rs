@@ -69,7 +69,12 @@ async fn modify_threads_applies_now_emits_and_reaches_gmail() {
         events.clone(),
     );
     sync.sync_account("a1").await.unwrap();
-    let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
+    let mail = MailService::new(
+        pool.clone(),
+        sync.clone(),
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
     events.take();
 
     mail.modify_threads("a1", &["t1".into()], &[], &["UNREAD".into()])
@@ -128,7 +133,12 @@ async fn mark_inbox_tab_read_refuses_other_labels() {
         Arc::new(move |_| fake.clone() as Arc<dyn MailApi>),
         Arc::new(RecordingEvents::default()),
     );
-    let mail = MailService::new(db.pool.clone(), sync, db.dir().join("cache"));
+    let mail = MailService::new(
+        db.pool.clone(),
+        sync,
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
     for label in ["INBOX", "STARRED", "Label_1"] {
         assert!(matches!(
             mail.mark_inbox_tab_read("a1", label).await,
@@ -152,7 +162,12 @@ async fn list_threads_rows_carry_user_label_ids() {
         Arc::new(RecordingEvents::default()),
     );
     sync.sync_account("a1").await.unwrap();
-    let mail = MailService::new(db.pool.clone(), sync, db.dir().join("cache"));
+    let mail = MailService::new(
+        db.pool.clone(),
+        sync,
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
     let page = mail
         .list_threads(&["a1".to_owned()], "INBOX", None, None, None, None)
         .await
@@ -209,7 +224,12 @@ async fn list_threads_dispatches_all_mail_and_primary_and_counts_labels() {
         events,
     );
     sync.sync_account("a1").await.unwrap();
-    let mail = MailService::new(pool, sync, db.dir().join("cache"));
+    let mail = MailService::new(
+        pool,
+        sync,
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
     let accounts = ["a1".to_owned()];
     let ids = |page: ThreadPageDto| {
         let mut ids: Vec<String> = page.threads.into_iter().map(|t| t.id).collect();
@@ -310,7 +330,12 @@ async fn list_primary_includes_hidden_tab_mail() {
         events.clone(),
     );
     sync.sync_account("a1").await.unwrap();
-    let mail = MailService::new(pool, sync, db.dir().join("cache"));
+    let mail = MailService::new(
+        pool,
+        sync,
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
     let accounts = ["a1".to_owned()];
     let list = |tab: &'static str| {
         let mail = &mail;
@@ -364,7 +389,12 @@ async fn get_thread_includes_attachments() {
         Arc::new(RecordingEvents::default()),
     );
     sync.sync_account("a1").await.unwrap();
-    let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
+    let mail = MailService::new(
+        pool.clone(),
+        sync.clone(),
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
 
     let detail = mail.get_thread("a1", "t1", true).await.unwrap();
 
@@ -398,7 +428,12 @@ async fn events_fixture(
     );
     // Sync without the manager's background backfill, which would race tests that clear bodies.
     sync.engine("a1").run_incremental_sync().await.unwrap();
-    let mail = MailService::new(pool, sync, db.dir().join("cache"));
+    let mail = MailService::new(
+        pool,
+        sync,
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
     (db, fake, events, mail)
 }
 
@@ -459,7 +494,10 @@ async fn clearing_downloaded_mail_drops_bodies_and_attachments_and_tells_the_ui(
     mail.attachments.write(&cached, b"12345").await.unwrap();
     events.take();
 
-    assert_eq!(mail.clear_downloaded().await.unwrap(), (1, 5));
+    assert_eq!(
+        mail.clear_downloaded().await.unwrap(),
+        (1, (5 + crate::storage::FILE_OVERHEAD) as u64)
+    );
     assert_eq!(fully_fetched(&mail, "m1").await, 0);
     assert!(!cached.exists());
     assert_eq!(
@@ -732,7 +770,12 @@ async fn get_thread_sanitizes_html_bodies() {
         .execute(&pool)
         .await
         .unwrap();
-    let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
+    let mail = MailService::new(
+        pool.clone(),
+        sync.clone(),
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
 
     let detail = mail.get_thread("a1", "t1", true).await.unwrap();
 
@@ -766,7 +809,12 @@ async fn attachment_fixture(
         Arc::new(RecordingEvents::default()),
     );
     sync.sync_account("a1").await.unwrap();
-    let mail = MailService::new(pool, sync, db.dir().join("cache"));
+    let mail = MailService::new(
+        pool,
+        sync,
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
     (db, fake, mail)
 }
 
@@ -786,7 +834,7 @@ async fn attachment_bytes_are_fetched_once_then_cached() {
     assert_eq!(first.mime_type, "application/pdf");
     assert_eq!(first.filename.as_deref(), Some("a.pdf"));
     assert_eq!(fake.attachment_fetches(), 1);
-    assert!(dir.dir().join("cache/attachments/a1/m1/0").is_file());
+    assert!(dir.dir().join("cache/attachments-v1/a1/m1/0").is_file());
     assert!(matches!(
         mail.attachment("a1", "m1", "9").await,
         Err(MailError::NotFound)
@@ -827,7 +875,7 @@ async fn prefetch_caches_previewable_files_once_and_skips_the_rest() {
     assert_eq!(fake.attachment_fetches(), 1, "only plan.pdf");
     let cached = |row: &str| {
         dir.dir()
-            .join("cache/attachments/a1/m1")
+            .join("cache/attachments-v1/a1/m1")
             .join(row)
             .is_file()
     };
@@ -1119,7 +1167,7 @@ async fn embedded_parts_without_an_attachment_id_are_served_and_saved() {
     let reads = fake.calls("get_message");
     mail.inline_image("a1", "m1", "logo").await.unwrap();
     assert_eq!(fake.calls("get_message"), reads);
-    assert!(dir.dir().join("cache/attachments/a1/m1").is_dir());
+    assert!(dir.dir().join("cache/attachments-v1/a1/m1").is_dir());
 }
 
 #[tokio::test]
@@ -1186,7 +1234,9 @@ async fn search_setup() -> (
     Arc<FakeGmail>,
 ) {
     let dir = tempfile::tempdir().unwrap();
-    let pool = crate::db::init_db(dir.path()).await.unwrap();
+    let pool = crate::db::init_db(dir.path(), &crate::storage::test_key())
+        .await
+        .unwrap();
     for id in ["a1", "a2"] {
         accounts::insert_account(
             &pool,
@@ -1256,7 +1306,12 @@ async fn search_setup() -> (
     .unwrap();
     drop(conn);
     let cache_dir = dir.path().join("cache");
-    (dir, MailService::new(pool, sync, cache_dir), f1, f2)
+    (
+        dir,
+        MailService::new(pool, sync, cache_dir, crate::storage::test_key()),
+        f1,
+        f2,
+    )
 }
 
 fn thread_ids(threads: &[ThreadSummaryDto]) -> Vec<&str> {

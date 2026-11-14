@@ -489,8 +489,13 @@ pub struct MailService {
 }
 
 impl MailService {
-    pub fn new(db: SqlitePool, sync: Arc<SyncManager>, cache_dir: PathBuf) -> Self {
-        let attachments = AttachmentCache::new(db.clone(), &cache_dir);
+    pub fn new(
+        db: SqlitePool,
+        sync: Arc<SyncManager>,
+        cache_dir: PathBuf,
+        key: crate::storage::StorageKey,
+    ) -> Self {
+        let attachments = AttachmentCache::new(db.clone(), &cache_dir, key);
         Self {
             db,
             sync,
@@ -1272,7 +1277,8 @@ impl MailService {
         clear_old_copies(dir).await;
         let att = self.bytes_of(row).await?;
         let folder = dir.join(uuid::Uuid::new_v4().to_string());
-        tokio::fs::create_dir_all(&folder).await.map_err(io_error)?;
+        crate::storage::private_dir(dir).map_err(io_error)?;
+        crate::storage::private_dir(&folder).map_err(io_error)?;
         let path = folder.join(openable_file_name(att.filename.as_deref()));
         tokio::fs::write(&path, &att.bytes)
             .await

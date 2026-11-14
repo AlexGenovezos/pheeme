@@ -12,6 +12,7 @@ xcode-select -p >/dev/null 2>&1 || fail "Install Xcode Command Line Tools with: 
 
 command -v rustup >/dev/null 2>&1 || fail "Install Rust with: https://rustup.rs"
 command -v cargo >/dev/null 2>&1 || fail "Install Rust with: https://rustup.rs"
+command -v perl >/dev/null 2>&1 || fail "Install Perl to build SQLCipher's bundled OpenSSL provider."
 
 command -v node >/dev/null 2>&1 || fail "Install Node.js 22.12 or newer from: https://nodejs.org"
 node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 12)) process.exit(1)' \

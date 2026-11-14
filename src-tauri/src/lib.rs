@@ -29,6 +29,7 @@ pub mod sender_rules;
 pub mod senders;
 mod spelling;
 pub mod stats;
+pub mod storage;
 pub mod support;
 pub mod sync;
 pub mod tasks;
@@ -70,6 +71,8 @@ pub struct AppState {
     pub gmail_usage: gmail::QuotaUsage,
     /// Where the logs are written (for Send diagnostics); `None` when there is no log dir.
     pub log_dir: Option<PathBuf>,
+    storage_guard: Option<storage::UnlockedStorage>,
+    cache_dir: PathBuf,
 }
 
 /// Build application state: open the database in `data_dir` (attachment bytes are cached
@@ -81,10 +84,12 @@ pub async fn build_state(
     cache_dir: &Path,
     secrets: Arc<dyn SecretStore>,
     events: Arc<dyn SyncEvents>,
+    key: storage::StorageKey,
 ) -> anyhow::Result<AppState> {
-    let db = db::init_db(data_dir)
+    let db = db::init_db(data_dir, &key)
         .await
         .with_context(|| format!("failed to initialize database in {}", data_dir.display()))?;
+    storage::migrate_files(cache_dir, &key).await?;
     let accounts = Arc::new(accounts::AccountService::new(db.clone(), secrets));
     let gmail_quota = match db::settings::gmail_quota(&db).await? {
         Some(per_minute) => gmail::QuotaSetting::new(per_minute),
@@ -122,10 +127,16 @@ pub async fn build_state(
         Arc::new(gmail::GmailClient::tasks(provider)) as Arc<dyn tasks::TasksApi>
     });
     let tasks = tasks::service::TasksService::new(db.clone(), tasks_for, events);
-    let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
+    let mail = mail::MailService::new(
+        db.clone(),
+        sync.clone(),
+        cache_dir.to_path_buf(),
+        key.clone(),
+    );
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
-    let compose = compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir);
+    let compose =
+        compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir, key);
     let drive = drive::DriveService::new(accounts.clone(), mail.clone());
     let local_api = local_api::LocalApi::new(
         db.clone(),
@@ -161,6 +172,8 @@ pub async fn build_state(
         gmail_quota,
         gmail_usage,
         log_dir: None,
+        storage_guard: None,
+        cache_dir: cache_dir.to_path_buf(),
     })
 }
 
@@ -285,12 +298,21 @@ pub fn run() {
 
             // Block until the database is ready so commands never run without state.
             let events = Arc::new(TauriEvents(app.handle().clone()));
+            let storage_dir = data_dir.clone();
+            let storage_guard = tauri::async_runtime::block_on(async move {
+                tokio::task::spawn_blocking(move || {
+                    storage::unlock(&storage_dir, &secrets::OsKeychain)
+                })
+                .await?
+            })?;
             let mut state = tauri::async_runtime::block_on(build_state(
                 &data_dir,
                 &cache_dir,
                 Arc::new(secrets::KeyringStore::new()),
                 events,
+                storage_guard.key.clone(),
             ))?;
+            state.storage_guard = Some(storage_guard);
             state.log_dir = log_path;
             let sync = state.sync.clone();
             let assistants = state.assistants.clone();
@@ -514,6 +536,11 @@ pub fn run() {
             }
             if let tauri::RunEvent::Exit = event {
                 info!("Pheeme exiting");
+                if let Some(state) = app.try_state::<AppState>() {
+                    if let Err(error) = storage::clear_opened(&state.cache_dir) {
+                        tracing::warn!(%error, "couldn't remove opened attachment copies");
+                    }
+                }
                 if let Some(logs) = app.try_state::<diagnostics::LogGuard>() {
                     logs.shutdown();
                 }
@@ -559,6 +586,7 @@ mod tests {
             &dir.path().join("cache"),
             Arc::new(secrets::MemoryStore::new()),
             Arc::new(sync::NoopEvents),
+            storage::test_key(),
         )
         .await
         .unwrap();

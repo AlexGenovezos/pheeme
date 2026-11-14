@@ -28,9 +28,9 @@ Download the latest build from [Releases](https://github.com/AlexGenovezos/pheem
   SmartScreen may warn about it: choose More info, then Run anyway.
 - **Linux (x86_64):** install the deb with `sudo apt install ./Pheeme_*.deb`,
   or `chmod +x Pheeme_*.AppImage` and run it. Pheeme keeps sign-in tokens in
-  the system keychain, so it needs a running, unlocked Secret Service provider
-  such as GNOME Keyring or KWallet; without one, sign-in stops with a message
-  saying so.
+  the system keychain, along with the keys for its encrypted local mail, so it
+  needs a running, unlocked Secret Service provider such as GNOME Keyring or
+  KWallet; without one, startup stops with a message saying so.
 
 Pheeme checks for updates on launch and every 6 hours, and asks before
 restarting to apply one.
@@ -55,6 +55,7 @@ Using Pheeme:
 - [Themes](docs/themes.md): custom theme files and importing a VS Code theme
 - [Mods](docs/mods.md): install personal features and write integrations without maintaining a fork
 - [Local diagnostics](docs/diagnostics.md): always-on logs and where to find them
+- [Local encryption](docs/local-encryption.md): encrypted mail storage, migration and recovery
 
 Building Pheeme:
 

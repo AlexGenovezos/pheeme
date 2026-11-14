@@ -115,8 +115,8 @@ It builds the preview with `vite build` and serves it on port 4173 for the run.
 throwaway home directory with a synced-looking 20,000-conversation mailbox
 ([`src-tauri/examples/seed_mailbox.rs`](../src-tauri/examples/seed_mailbox.rs)). It then
 launches the app under `xvfb` through `tauri-driver` (WebDriver) with
-[`scripts/perf/app-run.mjs`](../scripts/perf/app-run.mjs), inside its own D-Bus session so
-it never touches a real keychain, and records:
+[`scripts/perf/app-run.mjs`](../scripts/perf/app-run.mjs), inside its own D-Bus session
+with a disposable GNOME Keyring for the local encryption keys, and records:
 
 | Measure | First CI runs | Budget |
 |---------|---------------|--------|
@@ -175,9 +175,9 @@ It runs in two places:
 - **Every night on main** (`Nightly performance`), where it also fails on the 20% comparison and
   adds the run to the history.
 
-Seeding the mailbox takes about 4 minutes, so it is cached: the key changes with the seed, the
-database code (`src-tauri/src/db/`) and the month, and only main saves it. A PR that changes
-the database code seeds its own.
+Seeding the mailbox takes about 4 minutes. It is rebuilt on each runner: restoring a
+cached encrypted mailbox without its original keychain would leave it unreadable.
+The seed and app use the same disposable Secret Service session.
 
 A nightly run opens an issue (or comments on the open one) only when it measured something:
 a budget or the comparison missed, or the heap soak failed. A failure before that (installing
@@ -187,13 +187,20 @@ Run it on a Linux machine without a virtual GPU. On a VM with a QXL display, Web
 probe hangs in the kernel.
 
 ```bash
-sudo apt-get install webkit2gtk-driver xvfb
+sudo apt-get install webkit2gtk-driver xvfb gnome-keyring
 cargo install tauri-driver --locked
 npx tauri build --no-bundle
-home=$(mktemp -d)
-(cd src-tauri && cargo run --release --example seed_mailbox -- "$home/.local/share/app.pheeme.desktop")
-xvfb-run -a dbus-run-session -- node scripts/perf/app-run.mjs \
-  --app src-tauri/target/release/pheeme --home "$home" --session-minutes 2
+export PERF_HOME=$(mktemp -d)
+xvfb-run -a dbus-run-session -- bash -euc '
+  mkdir -p "$PERF_HOME/.local/share"
+  export XDG_DATA_HOME="$PERF_HOME/.local/share"
+  printf "" | gnome-keyring-daemon --unlock --components=secrets
+  cargo run --manifest-path src-tauri/Cargo.toml --release --example seed_mailbox -- \
+    "$PERF_HOME/.local/share/app.pheeme.desktop"
+  node scripts/perf/app-run.mjs --app src-tauri/target/release/pheeme \
+    --home "$PERF_HOME" --session-minutes 2
+'
+rm -rf "$PERF_HOME"
 ```
 
 ## Release profile

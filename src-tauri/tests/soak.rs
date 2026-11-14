@@ -14,7 +14,7 @@ use pheeme_lib::sync::engine::{BackfillProgress, SyncEngine};
 use pheeme_lib::sync::fake::{FakeGmail, FakeMsg};
 use pheeme_lib::sync::manager::SyncManager;
 use pheeme_lib::sync::{outbox, MailApi, NoopEvents};
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteJournalMode, SqlitePoolOptions};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
@@ -104,12 +104,16 @@ fn heap_levels_off_over_a_long_session() {
         // One connection: the app's pool opens more at unpredictable moments, each with its own
         // statement and page caches, which reads as a step in the live heap.
         let db_dir = out.join("db");
-        db::init_db(&db_dir).await.unwrap().close().await;
+        db::init_db(&db_dir, &pheeme_lib::storage::test_key())
+            .await
+            .unwrap()
+            .close()
+            .await;
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect_with(
-                SqliteConnectOptions::new()
-                    .filename(db_dir.join("db.sqlite"))
+                pheeme_lib::storage::test_key()
+                    .database_options(&db_dir.join("db.sqlite"))
                     .foreign_keys(true)
                     .journal_mode(SqliteJournalMode::Wal),
             )
@@ -165,7 +169,12 @@ fn heap_levels_off_over_a_long_session() {
             Arc::new(move |_| api.clone()),
             Arc::new(NoopEvents),
         );
-        let mail = MailService::new(pool.clone(), sync.clone(), out.join("cache"));
+        let mail = MailService::new(
+            pool.clone(),
+            sync.clone(),
+            out.join("cache"),
+            pheeme_lib::storage::test_key(),
+        );
         let me = [ACCT.to_string()];
 
         let mut arrived: VecDeque<String> = VecDeque::new();

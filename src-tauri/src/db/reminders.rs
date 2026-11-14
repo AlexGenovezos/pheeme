@@ -75,7 +75,9 @@ mod tests {
         mark_fired(&db.pool, &key("e1"), 100).await.unwrap();
         mark_fired(&db.pool, &key("e1"), 200).await.unwrap();
         mark_fired(&db.pool, &key("e2"), 300).await.unwrap();
-        let reopened = crate::db::init_db(db.dir()).await.unwrap();
+        let reopened = crate::db::init_db(db.dir(), &crate::storage::test_key())
+            .await
+            .unwrap();
         assert_eq!(fired(&reopened).await.unwrap(), vec![key("e1"), key("e2")]);
         assert_eq!(prune(&reopened, 250).await.unwrap(), 1);
         assert_eq!(fired(&reopened).await.unwrap(), vec![key("e2")]);

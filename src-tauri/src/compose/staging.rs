@@ -4,12 +4,14 @@
 
 use super::{StagedAttachment, MAX_ATTACHMENT_BYTES};
 use crate::mail::{safe_file_name, MailError};
+use crate::storage::{EncryptedFiles, StorageKey};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 #[derive(Clone)]
 pub struct Staging {
     dir: PathBuf,
+    files: EncryptedFiles,
 }
 
 fn io(e: std::io::Error) -> MailError {
@@ -17,8 +19,12 @@ fn io(e: std::io::Error) -> MailError {
 }
 
 impl Staging {
-    pub fn new(dir: PathBuf) -> Self {
-        Self { dir }
+    pub fn new(cache_dir: &Path, key: StorageKey) -> Self {
+        let files = EncryptedFiles::compose(cache_dir, key);
+        Self {
+            dir: files.root().to_path_buf(),
+            files,
+        }
     }
 
     /// Only ids this module issued (UUIDs) map to a file; anything else is not found.
@@ -60,7 +66,14 @@ impl Staging {
             .essence_str()
             .to_owned();
         let (id, path) = self.slot().await?;
-        let size = tokio::fs::copy(source, &path).await.map_err(io)?;
+        let bytes = tokio::fs::read(source).await.map_err(io)?;
+        if bytes.len() as u64 > MAX_ATTACHMENT_BYTES {
+            return Err(MailError::Invalid(
+                "Attachments can add up to 25 MB at most.".into(),
+            ));
+        }
+        self.files.write(&path, &bytes).await.map_err(io)?;
+        let size = bytes.len() as u64;
         Ok(StagedAttachment {
             id,
             filename: safe_file_name(Some(&name)),
@@ -78,7 +91,7 @@ impl Staging {
         bytes: &[u8],
     ) -> Result<StagedAttachment, MailError> {
         let (id, path) = self.slot().await?;
-        tokio::fs::write(&path, bytes).await.map_err(io)?;
+        self.files.write(&path, bytes).await.map_err(io)?;
         Ok(StagedAttachment {
             id,
             filename: safe_file_name(Some(filename)),
@@ -89,7 +102,7 @@ impl Staging {
     }
 
     pub async fn read(&self, att: &StagedAttachment) -> Result<Vec<u8>, MailError> {
-        match tokio::fs::read(self.path_of(&att.id)?).await {
+        match self.files.read(&self.path_of(&att.id)?).await {
             Ok(bytes) => Ok(bytes),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(MailError::Invalid(format!(
                 "{} is no longer available; attach it again.",
@@ -133,7 +146,7 @@ mod tests {
     #[tokio::test]
     async fn stage_read_discard_and_reject_foreign_ids() {
         let dir = tempfile::tempdir().unwrap();
-        let staging = Staging::new(dir.path().join("compose"));
+        let staging = Staging::new(&dir.path().join("compose"), crate::storage::test_key());
         let src = dir.path().join("Report Q3.pdf");
         std::fs::write(&src, b"%PDF").unwrap();
 
@@ -162,7 +175,7 @@ mod tests {
     #[tokio::test]
     async fn sweep_removes_only_old_files() {
         let dir = tempfile::tempdir().unwrap();
-        let staging = Staging::new(dir.path().to_path_buf());
+        let staging = Staging::new(dir.path(), crate::storage::test_key());
         let att = staging
             .stage_bytes("a.txt", "text/plain", None, b"x")
             .await
