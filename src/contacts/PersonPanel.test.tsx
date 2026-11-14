@@ -3,6 +3,11 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, expect, test, vi } from "vitest";
 import { useComposeStore, __resetComposeStoreForTests } from "../compose/composeStore";
 import { useAccountStore } from "../store/accountStore";
+import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
+import { __resetThreadStoreForTests } from "../store/threadStore";
+import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
+import { createPreviewHandlers } from "../preview/install";
+import { threadKey } from "../mail/mailboxes";
 import { PersonPanel } from "./PersonPanel";
 import type { PersonProfile } from "./api";
 
@@ -17,11 +22,45 @@ const profile: PersonProfile = {
 
 beforeEach(() => {
   __resetComposeStoreForTests();
+  __resetMailStoreForTests();
+  __resetThreadStoreForTests();
+  __resetUiStoreForTests();
   useAccountStore.setState({
     accounts: [
       { id: "a", email: "me@example.com", displayName: null, clientId: "c", synced: true },
     ],
   });
+});
+
+test("opening an unread conversation outside the current list marks it read", async () => {
+  const handlers = createPreviewHandlers();
+  const mutations = vi.fn();
+  useMailStore.setState({ threads: [], query: null });
+  mockIPC((cmd, args) => {
+    if (cmd === "person_profile")
+      return { ...profile, conversations: [{ ...profile.conversations[0], id: "p-01" }] };
+    if (cmd === "modify_threads") mutations(args);
+    return handlers[cmd]?.(args as Record<string, unknown>);
+  });
+  const close = vi.fn();
+  render(
+    <PersonPanel
+      accountId="acc-personal"
+      person={{ address: "mira@example.net", name: "Mira" }}
+      onClose={close}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: /Shared plans/ }));
+  expect(useUiStore.getState().openThread).toBe(threadKey("acc-personal", "p-01"));
+  await waitFor(() =>
+    expect(mutations).toHaveBeenCalledWith({
+      accountId: "acc-personal",
+      threadIds: ["p-01"],
+      add: [],
+      remove: ["UNREAD"],
+    }),
+  );
+  expect(close).toHaveBeenCalledOnce();
 });
 
 test("opens cached context for the chosen account and composes to that person", async () => {

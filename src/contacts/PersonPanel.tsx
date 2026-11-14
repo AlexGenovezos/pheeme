@@ -149,7 +149,7 @@ export function PersonPanel({
                   className="detail-dialog__row"
                   onClick={() => {
                     useCalendarStore.getState().setMode("mail");
-                    openAndMarkRead(threadKey(accountId, t.id), 1);
+                    openAndMarkRead(threadKey(accountId, t.id), 1, { unread: true });
                     onClose();
                   }}
                 >
