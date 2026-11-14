@@ -1348,48 +1348,6 @@ async fn a_waiting_sweep_holds_later_label_changes_but_not_sends() {
 }
 
 #[tokio::test]
-async fn a_sweep_gmail_keeps_failing_is_rolled_back_but_one_that_never_left_waits() {
-    let h = harness().await;
-    let sweep = queued_sweep(&h).await;
-    let mut now = now_ms();
-    for attempt in 1..outbox::SWEEP_MAX_ATTEMPTS {
-        h.fake.fail_next("search_messages", network());
-        outbox::process(&h.engine, now).await.unwrap();
-        let op = store::get(&h.pool, &sweep).await.unwrap().unwrap();
-        assert_eq!(op.attempts, attempt);
-        now = op.next_attempt_at;
-    }
-    // Offline on the last allowed try: it never left, so it keeps waiting.
-    h.fake
-        .fail_next("search_messages", GmailError::Offline("no route".into()));
-    outbox::process(&h.engine, now).await.unwrap();
-    let op = store::get(&h.pool, &sweep).await.unwrap().unwrap();
-    assert_eq!(op.attempts, outbox::SWEEP_MAX_ATTEMPTS);
-    assert_eq!(
-        cached_labels(&h.pool, "m1").await,
-        Some(s(&["CATEGORY_PROMOTIONS", "INBOX"])),
-        "still read in the cache"
-    );
-    h.events.take();
-
-    h.fake.fail_next("search_messages", network());
-    outbox::process(&h.engine, op.next_attempt_at)
-        .await
-        .unwrap();
-    assert!(ops(&h).await.is_empty(), "given up on");
-    assert_eq!(
-        cached_labels(&h.pool, "m1").await,
-        Some(s(&["CATEGORY_PROMOTIONS", "INBOX", "UNREAD"])),
-        "unread again, as Gmail has it"
-    );
-    assert!(h
-        .events
-        .take()
-        .iter()
-        .any(|e| matches!(e, SyncEvent::OpRejected { op_id, .. } if op_id == &sweep)));
-}
-
-#[tokio::test]
 async fn rejected_op_rolls_back_with_later_ops_reapplied() {
     let h = harness().await;
     synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX"])]).await;

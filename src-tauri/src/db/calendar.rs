@@ -204,8 +204,8 @@ pub async fn apply_event_changes(
     Ok(())
 }
 
-/// Replace a calendar's events with a full read of it, in a single transaction: every
-/// stored event goes, `upserts` (less `deleted_ids`) come in, and the sync token becomes
+/// Replace a calendar's events with a full read of it, in a single transaction: stored
+/// events the read lacks go, `upserts` (less `deleted_ids`) come in, and the sync token becomes
 /// `sync_token` (none when the read stopped short). Used when Google said the old token is
 /// gone, so the old events stay shown until the full read has arrived.
 pub async fn replace_calendar_events(
@@ -217,13 +217,26 @@ pub async fn replace_calendar_events(
     sync_token: Option<&str>,
 ) -> Result<()> {
     let mut tx = super::begin_write(pool).await?;
-    sqlx::query!(
-        "DELETE FROM events WHERE account_id = ? AND calendar_id = ?",
+    // Only events the read doesn't have go. One it does have is upserted below, where a
+    // version saved here while the read was under way (newer than the read's) is kept.
+    let read: std::collections::HashSet<&str> = upserts.iter().map(|e| e.id.as_str()).collect();
+    let stored = sqlx::query_scalar!(
+        "SELECT id FROM events WHERE account_id = ? AND calendar_id = ?",
         account_id,
         calendar_id
     )
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
+    for id in stored.iter().filter(|id| !read.contains(id.as_str())) {
+        sqlx::query!(
+            "DELETE FROM events WHERE account_id = ? AND calendar_id = ? AND id = ?",
+            account_id,
+            calendar_id,
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
     sqlx::query!(
         "UPDATE calendars SET sync_token = NULL WHERE account_id = ? AND id = ?",
         account_id,
@@ -835,6 +848,11 @@ mod tests {
             .unwrap();
         assert_eq!(summary().await, "same");
         apply_event_changes(pool, "a", "C", &[version("newer", 30)], &[], None)
+            .await
+            .unwrap();
+        assert_eq!(summary().await, "newer");
+        // A full read that fetched its page before a save keeps the save too.
+        replace_calendar_events(pool, "a", "C", &[version("stale", 10)], &[], Some("t2"))
             .await
             .unwrap();
         assert_eq!(summary().await, "newer");

@@ -731,3 +731,24 @@ test("a reopened reply keeps its quote out of the editor, and saves it back unto
     },
   ]);
 });
+
+test("saving before quit waits for a send on its way to the outbox, and saves it if the send fails", async () => {
+  let refuse: (e: unknown) => void = () => {};
+  handlers.send_email = () => new Promise((_, reject) => (refuse = reject));
+  const id = written();
+  const sending = store().send(id);
+  await vi.waitFor(() => expect(called("send_email")).toHaveLength(1));
+  let done = false;
+  const saving = store()
+    .saveAll()
+    .then((ok) => {
+      done = true;
+      return ok;
+    });
+  await new Promise((r) => setTimeout(r, 0));
+  expect(done).toBe(false);
+  refuse({ code: "offline", message: "No connection" });
+  await sending;
+  expect(await saving).toBe(true);
+  expect(called("save_draft")).toHaveLength(1);
+});

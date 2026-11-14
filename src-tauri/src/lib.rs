@@ -440,18 +440,25 @@ pub fn run() {
                         if desktop::has_tray_host(window.app_handle()).await {
                             let _ = window.hide();
                         } else {
-                            let _ = window.destroy();
+                            // No tray to live in: closing quits, through the exit request
+                            // that saves open drafts first.
+                            window.app_handle().exit(0);
                         }
                     });
                 }
                 #[cfg(not(target_os = "linux"))]
                 // Unmanaged when startup failed (`startup_failed`): let the window close.
-                if window
-                    .try_state::<Arc<desktop::Desktop>>()
-                    .is_some_and(|d| d.can_hide.load(std::sync::atomic::Ordering::Relaxed))
-                    && window.hide().is_ok()
-                {
-                    api.prevent_close();
+                if let Some(desktop) = window.try_state::<Arc<desktop::Desktop>>() {
+                    if desktop.can_hide.load(std::sync::atomic::Ordering::Relaxed)
+                        && window.hide().is_ok()
+                    {
+                        api.prevent_close();
+                    } else if window.label() == "main" {
+                        // Closing quits: go through the exit request, which saves open
+                        // drafts while the window is still there.
+                        api.prevent_close();
+                        window.app_handle().exit(0);
+                    }
                 }
             }
             if let tauri::WindowEvent::Focused(true) = event {

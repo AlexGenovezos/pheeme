@@ -50,12 +50,6 @@ pub const CHECK_DELAYS_MS: [i64; 3] = [30_000, 120_000, 600_000];
 const SEARCH_RETRY_MS: i64 = 30_000;
 const BACKOFF_BASE_MS: i64 = 5_000;
 const BACKOFF_MAX_MS: i64 = 5 * 60_000;
-/// Failed tries after which a whole-mailbox change (Mark all as read) is rolled back, if Gmail
-/// was reached on that try and still failed (a server error, a dropped response). A try that
-/// never left (offline, signed out, rate limited) always waits and tries again. With the
-/// backoff this is half an hour at the least.
-pub const SWEEP_MAX_ATTEMPTS: i64 = 10;
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Payload {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -837,16 +831,6 @@ async fn apply_batch(
                     return Box::pin(apply_batch(engine, queued, now)).await;
                 }
             }
-            rollback(engine, op, &e).await?;
-            Ok(Some(Step::Continue))
-        }
-        Err(e)
-            if payload.sweep.is_some()
-                && !never_sent(&e)
-                && op.attempts + 1 >= SWEEP_MAX_ATTEMPTS =>
-        {
-            // Every later label change waits behind a whole-mailbox change, so one Gmail
-            // keeps failing is given up on like a refused one instead of retried for ever.
             rollback(engine, op, &e).await?;
             Ok(Some(Step::Continue))
         }

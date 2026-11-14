@@ -195,6 +195,8 @@ const noticed = new Set<string>();
 const checkedAccounts = new Set<string>();
 /** Each window's save in flight, so a send or a second save waits for it. */
 const saves = new Map<number, Promise<boolean>>();
+/** Sends being handed to the outbox, by panel: quitting waits for them. */
+const sends = new Map<number, Promise<void>>();
 /** The Gmail draft each window's last save made, read by a discard that raced it. */
 const savedDrafts = new Map<number, string>();
 /** The message id of each window's last saved draft (it changes with every save), for Send later. */
@@ -576,9 +578,11 @@ export const useComposeStore = create<ComposeState>((set, get) => {
 
     async saveAll() {
       let allSaved = true;
+      // A send on its way to the outbox lands there first; one that fails leaves its panel to save.
+      await Promise.all(sends.values());
       for (const { id } of get().windows) {
         let win = find(id);
-        // A message still loading has nothing typed; one being sent is already in the outbox.
+        // A message still loading has nothing typed.
         while (win && !win.loading && !win.sending && win.version !== win.savedVersion) {
           if (!(await get().save(id))) {
             allSaved = false;
@@ -623,25 +627,30 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         return;
       }
       patch(id, { sending: true, error: null });
-      // A save in flight may be creating the draft this send replaces.
-      await saves.get(id)?.catch(() => {});
-      const current = find(id);
-      if (!current) return;
-      const undoMs = useComposeSettings.getState().undoSendSeconds * 1000;
-      try {
-        const queued = await sendEmail(current.accountId, current.draft, undoMs);
-        remove(id);
-        const entry: PendingSend = { window: current, toastId: null };
-        pending.set(queued.opId, entry);
-        const left = queued.sendAt - Date.now();
-        entry.toastId = toast({
-          title: "Sending…",
-          duration: undoMs > 0 ? Math.max(left, 1000) : 0,
-          action: undoMs > 0 ? { label: "Undo", run: () => void undo(queued.opId) } : undefined,
-        });
-      } catch (e) {
-        patch(id, { sending: false, error: toCommandError(e).message });
-      }
+      const queue = async () => {
+        // A save in flight may be creating the draft this send replaces.
+        await saves.get(id)?.catch(() => {});
+        const current = find(id);
+        if (!current) return;
+        const undoMs = useComposeSettings.getState().undoSendSeconds * 1000;
+        try {
+          const queued = await sendEmail(current.accountId, current.draft, undoMs);
+          remove(id);
+          const entry: PendingSend = { window: current, toastId: null };
+          pending.set(queued.opId, entry);
+          const left = queued.sendAt - Date.now();
+          entry.toastId = toast({
+            title: "Sending…",
+            duration: undoMs > 0 ? Math.max(left, 1000) : 0,
+            action: undoMs > 0 ? { label: "Undo", run: () => void undo(queued.opId) } : undefined,
+          });
+        } catch (e) {
+          patch(id, { sending: false, error: toCommandError(e).message });
+        }
+      };
+      const queued = queue().finally(() => sends.delete(id));
+      sends.set(id, queued);
+      await queued;
     },
 
     async sendLater(id) {
