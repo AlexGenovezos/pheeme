@@ -42,11 +42,6 @@ body.stage {
   box-shadow: 0 -30px 90px -20px rgba(232, 197, 121, .55), inset 0 40px 120px -40px rgba(74, 141, 242, .55);
   background: radial-gradient(closest-side, rgba(14, 34, 84, .0) 92%, rgba(74, 141, 242, .12));
 }
-.spark { position: absolute; width: 34px; fill: #f8e2a8; filter: drop-shadow(0 0 12px rgba(232, 197, 121, .9)); animation: twinkle 3.2s ease-in-out infinite; }
-.spark--a { left: 200px; top: 610px; }
-.spark--b { right: 250px; top: 300px; width: 24px; animation-delay: -1.2s; }
-.spark--c { left: 1520px; top: 880px; width: 18px; animation-delay: -2.1s; }
-@keyframes twinkle { 50% { opacity: .35; scale: .7; } }
 
 /* ---------- the app window and its camera ---------- */
 .space { position: absolute; inset: 0; perspective: 2400px; perspective-origin: 50% 30%; }
@@ -101,6 +96,17 @@ body.stage {
   z-index: 3;
 }
 .headline--top { align-content: start; padding-top: 70px; gap: 22px; }
+/* The top headline sits on the horizon's lit edge; a patch of night behind it keeps the words readable. */
+.headline::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(ellipse 900px 140px at 50% 175px, rgba(7, 20, 52, .97), rgba(7, 20, 52, .92) 60%, transparent);
+  opacity: 0;
+  transition: opacity .6s var(--ease);
+}
+.headline--top.on::before { opacity: 1; }
 .headline--top .headline__title { font-size: 104px; }
 .headline--top .headline__body { font-size: 36px; }
 .headline__title {
