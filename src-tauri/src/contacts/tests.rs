@@ -64,10 +64,15 @@ struct FakePeople {
     saved: Mutex<VecDeque<Result<PeoplePage, GmailError>>>,
     other: Mutex<VecDeque<Result<PeoplePage, GmailError>>>,
     calls: Mutex<Vec<(ContactList, Option<String>)>>,
+    creates: Mutex<Vec<(String, Option<String>)>>,
 }
 
 #[async_trait::async_trait]
 impl PeopleApi for FakePeople {
+    async fn create_contact(&self, address: &str, name: Option<&str>) -> Result<(), GmailError> {
+        lock(&self.creates).push((address.to_owned(), name.map(str::to_owned)));
+        Ok(())
+    }
     async fn list_people(
         &self,
         list: ContactList,
@@ -82,6 +87,94 @@ impl PeopleApi for FakePeople {
             .pop_front()
             .unwrap_or_else(|| Ok(PeoplePage::default()))
     }
+}
+
+#[tokio::test]
+async fn saving_a_person_is_confirmed_cached_and_serialized_against_duplicate_clicks() {
+    let db = TestDb::with_account("a1").await;
+    let fake = Arc::new(FakePeople::default());
+    let svc = service(&db.pool, fake.clone());
+    let (a, b) = tokio::join!(
+        svc.save_person("a1", " Ada@Example.com ", Some("Ada")),
+        svc.save_person("a1", "ada@example.com", Some("Ada")),
+    );
+    a.unwrap();
+    b.unwrap();
+    assert_eq!(
+        *lock(&fake.creates),
+        vec![("ada@example.com".into(), Some("Ada".into()))]
+    );
+    assert_eq!(suggest(&svc, "ada").await, vec!["ada@example.com"]);
+    let rows = db::contacts::all(&db.pool, "a1").await.unwrap();
+    assert!(rows[0].saved);
+    assert!(svc
+        .save_person("missing", "ada@example.com", None)
+        .await
+        .is_err());
+    assert!(svc.save_person("a1", "not an address", None).await.is_err());
+    assert_eq!(lock(&fake.creates).len(), 1);
+}
+
+#[tokio::test]
+async fn person_conversations_match_exact_addresses_and_respect_accounts_and_mail_state() {
+    let db = TestDb::with_account("a1").await;
+    let mut other = db::accounts::get_account(&db.pool, "a1")
+        .await
+        .unwrap()
+        .unwrap();
+    other.id = "a2".into();
+    other.email = "second@example.com".into();
+    db::accounts::insert_account(&db.pool, &other)
+        .await
+        .unwrap();
+    for (id, labels, from, to) in [
+        (
+            "received",
+            vec!["INBOX"],
+            ("Ada@Example.com", Some("Ada")),
+            vec![ME],
+        ),
+        (
+            "sent",
+            vec!["SENT"],
+            ME,
+            vec![("ada@example.com", Some("Ada"))],
+        ),
+        (
+            "substring",
+            vec!["INBOX"],
+            ("notada@example.com", Some("ada@example.com")),
+            vec![ME],
+        ),
+        ("spam", vec!["SPAM"], ("ada@example.com", None), vec![ME]),
+        ("trash", vec!["TRASH"], ("ada@example.com", None), vec![ME]),
+        ("draft", vec!["DRAFT"], ME, vec![("ada@example.com", None)]),
+    ] {
+        upsert_message(&db.pool, &message(id, &labels, from, &to, 100))
+            .await
+            .unwrap();
+    }
+    let mut other_message = message("private", &["INBOX"], ("ada@example.com", None), &[ME], 200);
+    other_message.account_id = "a2".into();
+    upsert_message(&db.pool, &other_message).await.unwrap();
+    let mut tx = db::begin_write(&db.pool).await.unwrap();
+    db::threads::recompute_threads(
+        &mut tx,
+        "a1",
+        &["received", "sent", "substring", "spam", "trash", "draft"].map(str::to_owned),
+    )
+    .await
+    .unwrap();
+    db::threads::recompute_threads(&mut tx, "a2", &["private".to_owned()])
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let rows = db::contacts::person_threads(&db.pool, "a1", "ada@example.com")
+        .await
+        .unwrap();
+    let mut ids: Vec<_> = rows.into_iter().map(|t| t.id).collect();
+    ids.sort();
+    assert_eq!(ids, vec!["received", "sent"]);
 }
 
 fn page(people: &[(&str, Option<&str>)], next: Option<&str>) -> Result<PeoplePage, GmailError> {

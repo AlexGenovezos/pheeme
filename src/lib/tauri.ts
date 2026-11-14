@@ -16,7 +16,9 @@ export type ClientChoice =
   /** Sign an existing account in again with its own client, keeping its mail. */
   | { kind: "reconnect"; accountId: string }
   /** Allow calendar and tasks access for an existing account (asked when Calendar first opens). */
-  | { kind: "calendar"; accountId: string };
+  | { kind: "calendar"; accountId: string }
+  | { kind: "drive"; accountId: string }
+  | { kind: "contacts"; accountId: string };
 
 export interface SignInStart {
   flowId: string;

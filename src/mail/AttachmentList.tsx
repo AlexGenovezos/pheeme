@@ -1,4 +1,5 @@
-import { Download, File } from "lucide-react";
+import { Download, File, HardDrive } from "lucide-react";
+import { DriveDialog } from "../drive/DriveDialog";
 import { useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import type { AttachmentInfo } from "../lib/tauri";
@@ -28,6 +29,7 @@ export interface AttachmentListProps {
 /** The message's files, each opening the preview panel. Inline images belong to the body, so they're left out. */
 export function AttachmentList({ accountId, messageId, attachments }: AttachmentListProps) {
   const [saving, setSaving] = useState<ReadonlySet<string>>(new Set());
+  const [driveFile, setDriveFile] = useState<AttachmentInfo | null>(null);
   // The invite card stands in for an invitation's unnamed calendar part.
   const files = attachments.filter((a) => !a.isInline && !isCalendarBodyPart(a));
   if (files.length === 0) return null;
@@ -49,43 +51,60 @@ export function AttachmentList({ accountId, messageId, attachments }: Attachment
     usePreviewStore.getState().open({ accountId, messageId, files, index });
 
   return (
-    <ul className="attachments" aria-label="Attachments">
-      {files.map((file, index) => {
-        const name = file.filename ?? "Attachment";
-        const downloading = saving.has(file.id);
-        return (
-          <li key={file.id} className="attachments__item">
-            {/* Click, or Space/Enter with it focused, opens the preview (like Quick Look). */}
-            <button
-              type="button"
-              className="attachments__open"
-              aria-label={`Preview ${name}`}
-              title={`Preview ${name}`}
-              onClick={() => preview(index)}
-            >
-              <File className="attachments__icon" aria-hidden="true" />
-              <span className="attachments__name">{name}</span>
-            </button>
-            {downloading ? (
-              <span className="attachments__size" role="status">
-                Downloading…
-              </span>
-            ) : (
-              file.size != null && (
-                <span className="attachments__size">{formatSize(file.size)}</span>
-              )
-            )}
-            <IconButton
-              label={`${downloading ? "Downloading" : "Download"} ${name}`}
-              icon={<Download />}
-              size="sm"
-              disabled={downloading}
-              aria-busy={downloading}
-              onClick={() => void download(file)}
-            />
-          </li>
-        );
-      })}
-    </ul>
+    <>
+      <ul className="attachments" aria-label="Attachments">
+        {files.map((file, index) => {
+          const name = file.filename ?? "Attachment";
+          const downloading = saving.has(file.id);
+          return (
+            <li key={file.id} className="attachments__item">
+              {/* Click, or Space/Enter with it focused, opens the preview (like Quick Look). */}
+              <button
+                type="button"
+                className="attachments__open"
+                aria-label={`Preview ${name}`}
+                title={`Preview ${name}`}
+                onClick={() => preview(index)}
+              >
+                <File className="attachments__icon" aria-hidden="true" />
+                <span className="attachments__name">{name}</span>
+              </button>
+              {downloading ? (
+                <span className="attachments__size" role="status">
+                  Downloading…
+                </span>
+              ) : (
+                file.size != null && (
+                  <span className="attachments__size">{formatSize(file.size)}</span>
+                )
+              )}
+              <IconButton
+                label={`Save ${name} to Google Drive`}
+                icon={<HardDrive />}
+                size="sm"
+                onClick={() => setDriveFile(file)}
+              />
+              <IconButton
+                label={`${downloading ? "Downloading" : "Download"} ${name}`}
+                icon={<Download />}
+                size="sm"
+                disabled={downloading}
+                aria-busy={downloading}
+                onClick={() => void download(file)}
+              />
+            </li>
+          );
+        })}
+      </ul>
+      {driveFile && (
+        <DriveDialog
+          key={`${accountId}:${messageId}:${driveFile.id}`}
+          accountId={accountId}
+          attachment={driveFile}
+          messageId={messageId}
+          onClose={() => setDriveFile(null)}
+        />
+      )}
+    </>
   );
 }

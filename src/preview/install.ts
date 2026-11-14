@@ -34,6 +34,7 @@ import { createContactHandlers } from "./contacts";
 import { createTransferHandlers } from "./transfer";
 import { previewQuotaUsage } from "./quota";
 import { previewMailStats, previewUnsubscribe } from "./stats";
+import { createDriveHandlers } from "./drive";
 
 type Args = Record<string, unknown> | undefined;
 /** Browser-test hook installed before startup, so speculative reads see the same fixtures as opens. */
@@ -111,10 +112,10 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
           clientId: "1.apps.googleusercontent.com",
           synced: true,
         }));
-  const flows = new Set<string>();
-  const beginSignIn = () => {
+  const flows = new Map<string, { kind?: string; accountId?: string }>();
+  const beginSignIn = (args?: Args) => {
     const flowId = crypto.randomUUID();
-    flows.add(flowId);
+    flows.set(flowId, (args?.client ?? {}) as { kind?: string; accountId?: string });
     return { flowId, authUrl: "https://accounts.google.com/o/oauth2/v2/auth?mock=1" };
   };
   const threads = [
@@ -122,6 +123,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     ...generatedThreads(Number(params.get("threads")) || 0),
   ];
   const labels = createPreviewLabels();
+  const drive = createDriveHandlers(accounts, threads, params.get("drive"));
   const summary = (t: FixtureThread) => toSummary(t, labels);
 
   /** Apply `change` to the named threads, then tell the stores, as the backend does after a cache write. */
@@ -270,6 +272,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     ),
     ...createCalendarHandlers(accounts, params.get("calendar")),
     ...createTasksHandlers(accounts, params.get("tasks")),
+    ...drive.handlers,
     list_threads: (args): ThreadPage => ({
       threads: threadsIn(
         threads,
@@ -393,9 +396,20 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     complete_oauth: async (args) => {
       const flowId = String(args?.flowId);
       await new Promise((resolve) => setTimeout(resolve, Number(params.get("delay") ?? 2500)));
-      if (!flows.delete(flowId)) throw { code: "cancelled", message: "Sign-in cancelled." };
+      const choice = flows.get(flowId);
+      if (!choice) throw { code: "cancelled", message: "Sign-in cancelled." };
+      flows.delete(flowId);
       const fail = params.get("fail");
       if (fail) throw { code: fail, message: `Mock failure: ${fail}.` };
+      if (
+        choice.accountId &&
+        ["drive", "contacts", "calendar", "reconnect"].includes(choice.kind ?? "")
+      ) {
+        const existing = accounts.find((a) => a.id === choice.accountId);
+        if (!existing) throw { code: "not_found", message: "That account isn't connected." };
+        if (choice.kind === "drive") drive.allow(existing.id);
+        return existing;
+      }
       const account = accounts.find((a) => a.email === "you@example.com") ?? {
         id: crypto.randomUUID(),
         email: "you@example.com",

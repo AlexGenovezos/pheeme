@@ -36,6 +36,15 @@ pub const CALENDAR_SCOPES: &[&str] = &[
 /// The calendar scope without which Calendar mode can't show anything.
 pub const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
 
+/// Drive is optional: read file metadata for links, create files for saved attachments.
+/// Never ask for permission to edit or delete every existing Drive file.
+pub const DRIVE_SCOPES: &[&str] = &[
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "https://www.googleapis.com/auth/drive.file",
+];
+
+pub const CONTACT_WRITE_SCOPES: &[&str] = &["https://www.googleapis.com/auth/contacts"];
+
 /// Google's consent screen lets users untick scopes; without this one the app is useless.
 pub const REQUIRED_SCOPE: &str = "https://www.googleapis.com/auth/gmail.modify";
 

@@ -10,6 +10,8 @@ A fast, open-source desktop client for Gmail and Google Calendar, for macOS, Win
 - **Multi-account:** one combined inbox, or switch between accounts.
 - **Calendar and Tasks:** every account's Google calendars in Day, Week and Month views. Create, edit, drag and delete events, answer invites, and get event reminders as notifications. Google Tasks sit in a side panel and dated tasks on the calendar.
 - **Calendar inside Mail:** answer an invitation from the email itself, with the rest of that day and any clashes beside it, open it in Calendar, or turn any email into an event.
+- **Drive inside Mail:** find Drive files while composing and insert their links, or save a received attachment to My Drive. Existing sharing permissions stay as they are.
+- **People inside Mail:** click a sender or recipient to see recent cached conversations and upcoming meetings, start an email, or save them to Google Contacts.
 
 > **Status:** beta. Pheeme works as a day-to-day Gmail client and updates itself; 1.0 will be the first non-beta release.
 

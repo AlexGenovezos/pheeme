@@ -3,6 +3,7 @@ pub mod auth;
 pub mod calendar;
 pub mod client;
 pub mod drafts;
+pub mod drive;
 pub mod error;
 pub mod filters;
 pub mod history;

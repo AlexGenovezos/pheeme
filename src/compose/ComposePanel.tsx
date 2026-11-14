@@ -1,6 +1,8 @@
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import DOMPurify from "dompurify";
-import { ChevronDown, Minus, MoreHorizontal, Paperclip, Trash2, X } from "lucide-react";
+import { ChevronDown, HardDrive, Minus, MoreHorizontal, Paperclip, Trash2, X } from "lucide-react";
+import { DriveDialog } from "../drive/DriveDialog";
+import { driveFileUrl } from "../drive/api";
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
@@ -186,6 +188,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   const [showCc, setShowCc] = useState(win.draft.cc.length > 0);
   const [showBcc, setShowBcc] = useState(win.draft.bcc.length > 0);
   const [showQuote, setShowQuote] = useState(false);
+  const [driveOpen, setDriveOpen] = useState(false);
   const [editorFocus, setEditorFocus] = useState(0);
   const { draft } = win;
   const editor = useComposeEditor(draft.bodyHtml, (bodyHtml) => store.update(win.id, { bodyHtml }));
@@ -458,6 +461,12 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
           />
         </span>
         <IconButton label="Attach files" icon={<Paperclip />} onClick={() => void pickFiles()} />
+        <IconButton
+          label="Attach from Google Drive"
+          icon={<HardDrive />}
+          disabled={win.sending || !editor}
+          onClick={() => setDriveOpen(true)}
+        />
         {bytes > 0 && (
           <span
             className={cx("compose__size", overLimit && "compose__size--over")}
@@ -475,6 +484,32 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
           onClick={() => void store.discard(win.id)}
         />
       </footer>
+      {driveOpen && (
+        <DriveDialog
+          key={win.accountId}
+          accountId={win.accountId}
+          onClose={() => setDriveOpen(false)}
+          onPick={(files) => {
+            // TipTap text nodes escape file names, including markup, and preserve the selection.
+            editor
+              ?.chain()
+              .focus()
+              .insertContent(
+                files.map((file) => ({
+                  type: "paragraph",
+                  content: [
+                    {
+                      type: "text",
+                      text: file.name,
+                      marks: [{ type: "link", attrs: { href: driveFileUrl(file) } }],
+                    },
+                  ],
+                })),
+              )
+              .run();
+          }}
+        />
+      )}
     </>
   );
 }

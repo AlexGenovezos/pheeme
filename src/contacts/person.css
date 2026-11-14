@@ -1,0 +1,32 @@
+.person-panel__body {
+  display: flex;
+  flex-direction: column;
+}
+.person-panel__body > section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.person-panel__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.person-link {
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+.person-link:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+.person-link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+}

@@ -1,0 +1,106 @@
+.detail-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--color-scrim);
+  -webkit-backdrop-filter: blur(var(--settings-backdrop-blur));
+  backdrop-filter: blur(var(--settings-backdrop-blur));
+}
+.detail-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: var(--detail-dialog-width);
+  height: var(--detail-dialog-height);
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  color: var(--color-foreground);
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  contain: layout;
+  background: var(--color-pane-bg);
+  box-shadow: var(--shadow-overlay);
+}
+.detail-dialog:focus-visible {
+  outline: none;
+}
+.detail-dialog__title-row,
+.detail-dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.detail-dialog__title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+.detail-dialog__note,
+.detail-dialog__error {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  overflow-wrap: anywhere;
+  color: var(--color-foreground-muted);
+}
+.detail-dialog__error {
+  color: var(--color-danger);
+}
+.detail-dialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.detail-dialog__actions {
+  justify-content: flex-end;
+}
+.detail-dialog__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--space-12);
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: start;
+  color: inherit;
+}
+.detail-dialog__row:hover:not(:disabled) {
+  background: var(--color-control-hover-bg);
+}
+.detail-dialog__row[aria-pressed="true"] {
+  background: var(--color-control-active-bg);
+}
+.detail-dialog__row:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+.detail-dialog__row > svg {
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  flex-shrink: 0;
+}
+.detail-dialog__row-text {
+  flex: 1;
+  min-width: 0;
+}
+.detail-dialog__row-name {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--font-size-md);
+}
+.detail-dialog__section-title {
+  font-size: var(--font-size-sm);
+  margin: var(--space-4) 0 var(--space-2);
+}

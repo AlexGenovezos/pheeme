@@ -412,7 +412,13 @@ impl ApiRequest {
     /// Send `metadata` and a raw RFC 2822 message through Gmail's media upload endpoint, which
     /// takes messages far larger than a JSON `raw` field can.
     pub fn upload_message(mut self, metadata: Value, rfc822: &[u8]) -> Self {
-        self.upload = Some(Upload::new(metadata, rfc822));
+        self.upload = Some(Upload::new(metadata, "message/rfc822", rfc822));
+        self.query("uploadType", "multipart")
+    }
+
+    /// A Drive file upload uses the same multipart/related transport as Gmail messages.
+    pub fn upload_file(mut self, metadata: Value, bytes: &[u8]) -> Self {
+        self.upload = Some(Upload::new(metadata, "application/octet-stream", bytes));
         self.query("uploadType", "multipart")
     }
 
@@ -433,13 +439,13 @@ struct Upload {
 }
 
 impl Upload {
-    fn new(metadata: Value, rfc822: &[u8]) -> Self {
+    fn new(metadata: Value, media_type: &str, rfc822: &[u8]) -> Self {
         let boundary = format!("pheeme-{}", uuid::Uuid::new_v4().simple());
         let mut body = Vec::with_capacity(rfc822.len() + 256);
         body.extend_from_slice(
             format!(
                 "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata}\r\n\
-                 --{boundary}\r\nContent-Type: message/rfc822\r\n\r\n"
+                 --{boundary}\r\nContent-Type: {media_type}\r\n\r\n"
             )
             .as_bytes(),
         );

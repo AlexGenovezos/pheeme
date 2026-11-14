@@ -83,6 +83,12 @@ pub enum ClientChoice {
     /// Allow calendar and tasks access for an existing account (incremental consent).
     #[serde(rename_all = "camelCase")]
     Calendar { account_id: String },
+    /// Browse Drive and save new files, without access to change existing files.
+    #[serde(rename_all = "camelCase")]
+    Drive { account_id: String },
+    /// Save a sender to Google Contacts (incremental write consent).
+    #[serde(rename_all = "camelCase")]
+    Contacts { account_id: String },
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -245,6 +251,8 @@ impl AccountService {
     pub async fn begin_sign_in(&self, choice: ClientChoice) -> Result<SignInStart, AccountError> {
         let extra_scopes = match &choice {
             ClientChoice::Calendar { .. } => auth::CALENDAR_SCOPES,
+            ClientChoice::Drive { .. } => auth::DRIVE_SCOPES,
+            ClientChoice::Contacts { .. } => auth::CONTACT_WRITE_SCOPES,
             _ => &[],
         };
         let (creds, expected_email) = match choice {
@@ -256,7 +264,10 @@ impl AccountService {
                 let account = self.account(&account_id).await?;
                 (self.saved_credentials(&account).await?.0, None)
             }
-            ClientChoice::Reconnect { account_id } | ClientChoice::Calendar { account_id } => {
+            ClientChoice::Reconnect { account_id }
+            | ClientChoice::Calendar { account_id }
+            | ClientChoice::Drive { account_id }
+            | ClientChoice::Contacts { account_id } => {
                 let account = self.account(&account_id).await?;
                 let creds = self.saved_credentials(&account).await?.0;
                 (creds, Some(account.email))
@@ -1120,6 +1131,58 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error.code(), "no_saved_sign_in");
+    }
+
+    #[tokio::test]
+    async fn optional_drive_and_contact_consent_keep_identity_and_scopes_separate() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+        for (choice, expected, absent) in [
+            (
+                ClientChoice::Drive {
+                    account_id: account.id.clone(),
+                },
+                auth::DRIVE_SCOPES[0],
+                auth::CONTACT_WRITE_SCOPES[0],
+            ),
+            (
+                ClientChoice::Contacts {
+                    account_id: account.id.clone(),
+                },
+                auth::CONTACT_WRITE_SCOPES[0],
+                auth::DRIVE_SCOPES[0],
+            ),
+        ] {
+            let start = h.service.begin_sign_in(choice).await.unwrap();
+            let q: HashMap<_, _> = Url::parse(&start.auth_url)
+                .unwrap()
+                .query_pairs()
+                .into_owned()
+                .collect();
+            assert_eq!(q["login_hint"], account.email);
+            assert_eq!(q["include_granted_scopes"], "true");
+            assert!(q["scope"].split(' ').any(|s| s == expected));
+            assert!(!q["scope"].split(' ').any(|s| s == absent));
+            assert!(!q["scope"]
+                .split(' ')
+                .any(|s| s == "https://www.googleapis.com/auth/drive"));
+            h.service.cancel_sign_in(&start.flow_id);
+        }
+        mock_google(&h.server, "other@example.com", "refresh-2").await;
+        let error = sign_in(
+            &h,
+            ClientChoice::Drive {
+                account_id: account.id.clone(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code(), "wrong_account");
+        assert_eq!(
+            h.secrets.get(&account.id).unwrap().unwrap().refresh_token,
+            "refresh-1"
+        );
     }
 
     struct BrokenStore;

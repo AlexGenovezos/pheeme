@@ -5,6 +5,7 @@ pub mod auth;
 pub mod calendar;
 pub mod compose;
 pub mod contacts;
+pub mod drive;
 pub mod labels;
 pub mod mods;
 pub mod search;
@@ -45,6 +46,15 @@ impl From<AccountError> for CommandError {
 
 impl From<MailError> for CommandError {
     fn from(error: MailError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<crate::drive::DriveError> for CommandError {
+    fn from(error: crate::drive::DriveError) -> Self {
         Self {
             code: error.code().to_owned(),
             message: error.to_string(),

@@ -4,6 +4,54 @@
 use anyhow::Result;
 use sqlx::{SqliteConnection, SqliteExecutor};
 
+#[derive(Debug, Clone)]
+pub struct PersonThreadRow {
+    pub id: String,
+    pub subject: Option<String>,
+    pub snippet: Option<String>,
+    pub date: i64,
+}
+
+/// Recent conversations involving this exact address, in this account. Search JSON
+/// addresses, never substrings in names or bodies. Spam, Trash and drafts stay out.
+pub async fn person_threads<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    address: &str,
+) -> Result<Vec<PersonThreadRow>> {
+    Ok(sqlx::query_as!(PersonThreadRow,
+        r#"SELECT t.id, t.subject, t.snippet, coalesce(t.last_message_date, 0) AS "date!: i64"
+           FROM threads t WHERE t.account_id = ?1 AND EXISTS (
+             SELECT 1 FROM messages m WHERE m.account_id = t.account_id AND m.thread_id = t.id
+               AND NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(m.label_ids) THEN m.label_ids ELSE '[]' END) WHERE value IN ('SPAM', 'TRASH', 'DRAFT'))
+               AND (lower(trim(m.from_address)) = ?2 OR EXISTS (
+                 SELECT 1 FROM json_each(CASE WHEN json_valid(m.to_addresses) THEN m.to_addresses ELSE '[]' END) j
+                   WHERE lower(trim(json_extract(CASE WHEN j.type = 'object' THEN j.value ELSE '{}' END, '$.address'))) = ?2
+               ) OR EXISTS (
+                 SELECT 1 FROM json_each(CASE WHEN json_valid(m.cc_addresses) THEN m.cc_addresses ELSE '[]' END) j
+                   WHERE lower(trim(json_extract(CASE WHEN j.type = 'object' THEN j.value ELSE '{}' END, '$.address'))) = ?2
+               ))
+           ) AND NOT EXISTS (SELECT 1 FROM thread_labels l WHERE l.account_id = t.account_id AND l.thread_id = t.id AND l.label_id IN ('SPAM', 'TRASH'))
+           ORDER BY t.last_message_date DESC, t.id DESC LIMIT 8"#,
+        account_id, address
+    ).fetch_all(ex).await?)
+}
+
+/// Cache a contact only after Google confirms its creation. Call under the refresh gate.
+pub async fn save_person<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    address: &str,
+    name: Option<&str>,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO google_contacts (account_id, address, name, saved) VALUES (?, ?, ?, 1)
+         ON CONFLICT(account_id, saved, address) DO UPDATE SET name = coalesce(excluded.name, google_contacts.name)",
+        account_id, address, name
+    ).execute(ex).await?;
+    Ok(())
+}
+
 /// One address the account could write to, its mail and Google Contacts rows merged.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContactRow {
