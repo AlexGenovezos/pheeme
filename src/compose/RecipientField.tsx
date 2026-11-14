@@ -47,6 +47,8 @@ export const RecipientField = forwardRef<HTMLInputElement, RecipientFieldProps>(
     const [hidden, setHidden] = useState(false);
     const [focused, setFocused] = useState(false);
     const listId = useId();
+    // Unique to this field: several panels are open at once, each with its own To, Cc and Bcc.
+    const inputId = `${listId}-input`;
     const latest = useRef(0);
 
     const chosen = new Set(value.map((r) => r.address.toLowerCase()));
@@ -143,7 +145,7 @@ export const RecipientField = forwardRef<HTMLInputElement, RecipientFieldProps>(
 
     return (
       <div className="compose-field compose-field--recipients">
-        <label className="compose-field__label" htmlFor={`${label}-input`}>
+        <label className="compose-field__label" htmlFor={inputId}>
           {label}
         </label>
         <ul className="compose-chips" aria-label={`${label} recipients`}>
@@ -177,7 +179,7 @@ export const RecipientField = forwardRef<HTMLInputElement, RecipientFieldProps>(
           <li className="compose-chips__input">
             <input
               ref={ref}
-              id={`${label}-input`}
+              id={inputId}
               className="compose-field__input"
               value={text}
               onChange={(e) => typed(e.target.value)}

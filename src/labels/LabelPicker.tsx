@@ -17,6 +17,7 @@ import { cx } from "../lib/utils";
 import { applyLabel, labelMembership, moveOrigin, moveTo, shownCategory } from "../mail/actions";
 import { openCategoryMove } from "../mail/CategoryMoveDialog";
 import { CATEGORIES, type MailboxRow } from "../mail/mailboxes";
+import { useInboxTabs } from "../store/inboxTabsStore";
 import { useLabelStore } from "../store/labelStore";
 import { openLabelDialog } from "./dialogStore";
 import { chipColors } from "./palette";
@@ -90,6 +91,7 @@ function LabelDot({ label }: { label: LabelInfo }) {
 }
 
 const NO_LABELS: LabelInfo[] = [];
+const NO_TABS: string[] = [];
 
 export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): void }) {
   const { mode, accountId, keys, at } = spec;
@@ -99,6 +101,8 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   const [origin] = useState(() => (mode === "move" ? moveOrigin(accountId) : null));
   // The category tab being shown isn't somewhere to move to.
   const [shown] = useState(() => (mode === "move" ? shownCategory() : null));
+  // Nor is a tab the account hides: its mail lists under Primary, so the move would seem to undo itself.
+  const hiddenTabs = useInboxTabs((s) => s.hidden[accountId] ?? NO_TABS);
   const tree = useMemo(() => labelTreeOptions(userLabels, origin), [userLabels, origin]);
   const [membership, setMembership] = useState(() => new Map(spec.membership));
   const [query, setQuery] = useState("");
@@ -123,7 +127,11 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
       if (mode === "move" && origin !== "INBOX" && matches("Inbox")) list.push({ kind: "inbox" });
       if (mode === "move")
         for (const category of CATEGORIES)
-          if (category.labelId !== shown && matches(category.name))
+          if (
+            category.labelId !== shown &&
+            !hiddenTabs.includes(category.labelId) &&
+            matches(category.name)
+          )
             list.push({ kind: "category", category });
       if (!q) list.push(...tree);
       else for (const { label } of tree) if (matches(label.name)) list.push(searchOption(label));
@@ -133,7 +141,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     if (name && !all.some((l) => l.name.toLowerCase() === q)) list.push({ kind: "create", name });
     list.push({ kind: "manage" });
     return list;
-  }, [all, createOnly, mode, origin, query, shown, tree]);
+  }, [all, createOnly, hiddenTabs, mode, origin, query, shown, tree]);
 
   // Keep the popover inside the viewport once its size is known.
   useLayoutEffect(() => {

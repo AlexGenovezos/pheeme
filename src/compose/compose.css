@@ -396,6 +396,13 @@ button.compose-from:hover {
 }
 /* The signature: one block, selected and deleted as a whole. */
 .compose-editor__content .gmail_signature {
+  /* Its HTML is shown as written, so nothing in it may leave this box: positioned content is placed against
+     the box and clipped by it, and can't stack above the app. */
+  position: relative;
+  overflow: hidden;
+  contain: layout paint;
+  will-change: transform;
+  isolation: isolate;
   margin-top: var(--space-3);
   border-radius: var(--radius-sm);
   color: var(--color-foreground-muted);
@@ -562,6 +569,9 @@ button.compose-from:hover {
   color: var(--color-danger);
 }
 
+.compose__status--failed {
+  color: var(--color-danger);
+}
 .compose__status {
   flex: 1;
   overflow: hidden;

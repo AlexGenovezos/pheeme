@@ -5,6 +5,7 @@
 //
 // usage: node scripts/installs.mjs [--json]
 // Needs Alex's `wrangler login` (it reuses wrangler's OAuth token, refreshed first).
+// Exits 1 if any object couldn't be read, since the counts would be too low.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -54,22 +55,77 @@ export function format(s) {
   ].join("\n");
 }
 
+/** Where wrangler keeps its OAuth config: the XDG path on Linux, Library on macOS, AppData on Windows. */
+export function wranglerConfigPath(
+  platform = process.platform,
+  env = process.env,
+  home = os.homedir(),
+) {
+  if (env.WRANGLER_CONFIG_PATH) return env.WRANGLER_CONFIG_PATH;
+  // Joined in the named platform's own style, whichever machine this runs on.
+  const { join } = platform === "win32" ? path.win32 : path.posix;
+  if (platform === "darwin") {
+    return join(home, "Library/Preferences/.wrangler/config/default.toml");
+  }
+  if (platform === "win32") {
+    return join(
+      env.APPDATA ?? join(home, "AppData/Roaming"),
+      "xdg.config/.wrangler/config/default.toml",
+    );
+  }
+  return join(env.XDG_CONFIG_HOME ?? join(home, ".config"), ".wrangler/config/default.toml");
+}
+
 function token() {
   // Wrangler's OAuth token lasts an hour; any authenticated wrangler call refreshes it.
   execFileSync("wrangler", ["r2", "bucket", "info", BUCKET], {
     env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT },
     stdio: ["ignore", "ignore", "inherit"],
   });
-  const config = path.join(os.homedir(), ".config/.wrangler/config/default.toml");
-  const match = fs.readFileSync(config, "utf8").match(/^oauth_token\s*=\s*"([^"]+)"/m);
+  const config = wranglerConfigPath();
+  let text;
+  try {
+    text = fs.readFileSync(config, "utf8");
+  } catch {
+    throw new Error(`can't read wrangler's config at ${config}; set WRANGLER_CONFIG_PATH to it`);
+  }
+  const match = text.match(/^oauth_token\s*=\s*"([^"]+)"/m);
   if (!match) throw new Error("no wrangler OAuth token; run `wrangler login`");
   return match[1];
 }
 
 async function api(route, tok) {
   const res = await fetch(API + route, { headers: { authorization: `Bearer ${tok}` } });
-  if (!res.ok) throw new Error(`R2 API ${route}: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    throw Object.assign(new Error(`R2 API ${route}: ${res.status} ${await res.text()}`), {
+      status: res.status,
+    });
+  }
   return res;
+}
+
+/** Reads each key with `read`; an object that fails is counted, not dropped. A 404 means it
+ * expired between the list and the get (the 30-day rule), which is expected and not a failure. */
+export async function readAll(keys, read, concurrency = 20) {
+  const records = [];
+  const failures = [];
+  let expired = 0;
+  for (let i = 0; i < keys.length; i += concurrency) {
+    const batch = keys.slice(i, i + concurrency).map(async (key) => {
+      try {
+        return { record: await read(key) };
+      } catch (error) {
+        if (error?.status === 404) return { expired: true };
+        return { failure: `${key}: ${error?.message ?? error}` };
+      }
+    });
+    for (const r of await Promise.all(batch)) {
+      if (r.failure) failures.push(r.failure);
+      else if (r.expired) expired += 1;
+      else records.push(r.record);
+    }
+  }
+  return { records, failures, expired };
 }
 
 async function loadRecords(tok) {
@@ -82,21 +138,25 @@ async function loadRecords(tok) {
     keys.push(...page.result.map((o) => o.key));
     cursor = page.result_info?.is_truncated ? page.result_info.cursor : null;
   } while (cursor);
-  const records = [];
-  for (let i = 0; i < keys.length; i += 20) {
-    const batch = keys.slice(i, i + 20).map(async (key) => {
-      try {
-        return await (await api(`/objects/${encodeURIComponent(key)}`, tok)).json();
-      } catch {
-        return null; // expired between list and get, or unreadable
-      }
-    });
-    records.push(...(await Promise.all(batch)).filter(Boolean));
-  }
-  return records;
+  return readAll(keys, async (key) =>
+    (await api(`/objects/${encodeURIComponent(key)}`, tok)).json(),
+  );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const summary = summarize(await loadRecords(token()));
-  console.log(process.argv.includes("--json") ? JSON.stringify(summary, null, 2) : format(summary));
+  const { records, failures } = await loadRecords(token());
+  const summary = summarize(records);
+  if (process.argv.includes("--json")) {
+    console.log(JSON.stringify({ ...summary, failed: failures.length }, null, 2));
+  } else {
+    console.log(format(summary));
+  }
+  if (failures.length > 0) {
+    console.error(
+      `\nINCOMPLETE: ${failures.length} install record(s) could not be read, so the counts above are too low:`,
+    );
+    for (const f of failures.slice(0, 10)) console.error(`  ${f}`);
+    if (failures.length > 10) console.error(`  ... and ${failures.length - 10} more`);
+    process.exitCode = 1;
+  }
 }

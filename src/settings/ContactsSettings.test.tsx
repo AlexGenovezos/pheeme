@@ -74,3 +74,14 @@ test("each account shows its Google Contacts and the steps to turn them on", asy
   );
   expect(screen.getByRole("region", { name: "a4@example.com" })).toHaveTextContent("Sign in again");
 });
+
+test("before the status arrives the row has the final slots and no Checking message", async () => {
+  useAccountStore.setState({ accounts: [{ id: "a1", email: "a1@example.com" } as never] });
+  mockIPC((cmd) => (cmd === "google_contacts_status" ? new Promise(() => {}) : undefined));
+  render(<ContactsSettings />);
+  const section = screen.getByRole("region", { name: "a1@example.com" });
+  expect(section).toHaveTextContent("Google Contacts");
+  expect(section).not.toHaveTextContent(/checking/i);
+  expect(section.querySelectorAll(".settings-row")).toHaveLength(1);
+  expect(section.querySelectorAll(".ui-skeleton").length).toBeGreaterThan(0);
+});

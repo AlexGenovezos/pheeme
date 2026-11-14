@@ -241,5 +241,8 @@ export function createComposeHandlers(
       sends.delete(String(args?.opId));
       return true;
     },
+    // Preview sends always go through, so nothing is ever left failed in the outbox.
+    failed_sends: () => [],
+    reopen_failed_send: () => null,
   };
 }

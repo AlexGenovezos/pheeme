@@ -1084,6 +1084,16 @@ fn safe_file_name_cases() {
     assert_eq!(safe_file_name(Some("dir/")), "attachment");
     assert_eq!(safe_file_name(Some(".hidden")), "hidden");
     assert_eq!(safe_file_name(Some("ok name.txt ")), "ok name.txt");
+    // A right-to-left override would show `invoice\u{202E}fdp.exe` as `invoiceexe.pdf`.
+    assert_eq!(
+        safe_file_name(Some("invoice\u{202E}fdp.exe")),
+        "invoicefdp.exe"
+    );
+    assert_eq!(
+        safe_file_name(Some("\u{200F}a\u{2066}b\u{2069}\u{061C}c\u{202A}.txt")),
+        "abc.txt"
+    );
+    assert_eq!(safe_file_name(Some("Отчёт 報告.pdf")), "Отчёт 報告.pdf");
 }
 
 #[test]

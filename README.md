@@ -111,7 +111,9 @@ Signing setup:
 
 - macOS signing and notarization need a one-time
   `scripts/setup-release-secrets-macos.sh` run on a Mac with your Developer ID
-  certificate. Without those secrets the macOS build is unsigned.
+  certificate. A `v*` tag release fails if any of the six Apple secrets is missing, so an
+  unsigned build is never published; only dry runs (pull requests, forks) fall
+  back to an unsigned macOS build.
 - The updater private key lives in the GitHub secrets
   `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and in
   Alex's password manager. If the key is lost, existing installs can't

@@ -45,6 +45,122 @@ pub fn full_html(draft: &ComposeDraft) -> String {
     }
 }
 
+/// A saved message's HTML taken apart again: what the user wrote, and the quoted original
+/// below it (`None` when there is none). The reverse of [`full_html`].
+///
+/// The quote starts at the first element carrying the `gmail_quote` class: the wrapper both
+/// our reply and forward templates and Gmail's own write. What the user wrote comes first
+/// and never has that class (the editor keeps no classes), so nothing in the quoted mail
+/// can move the boundary. A message without such an element (written by another client, or
+/// flattened by an older Pheeme) is all body.
+pub fn split_quote(html: &str) -> (String, Option<String>) {
+    let Some(at) = quote_start(html) else {
+        return (html.to_owned(), None);
+    };
+    let body = html[..at].trim_end();
+    // The line break `full_html` (and Gmail) puts between the two.
+    let body = ["<br>", "<br/>", "<br />"]
+        .iter()
+        .find_map(|br| {
+            let cut = body.len().checked_sub(br.len())?;
+            (body.is_char_boundary(cut) && body[cut..].eq_ignore_ascii_case(br))
+                .then(|| &body[..cut])
+        })
+        .unwrap_or(body);
+    (body.to_owned(), Some(html[at..].to_owned()))
+}
+
+/// Byte offset of the first start tag whose `class` has the `gmail_quote` token.
+fn quote_start(html: &str) -> Option<usize> {
+    let mut from = 0;
+    while let Some(lt) = html[from..].find('<').map(|i| from + i) {
+        let after = &html[lt..];
+        if after.starts_with("<!--") {
+            from = lt + after.find("-->").map_or(after.len(), |end| end + 3);
+            continue;
+        }
+        let end = tag_end(after)?;
+        let tag = &after[1..end];
+        if tag.starts_with(|c: char| c.is_ascii_alphabetic())
+            && class_of(tag).is_some_and(|class| {
+                class
+                    .split_ascii_whitespace()
+                    .any(|token| token.eq_ignore_ascii_case("gmail_quote"))
+            })
+        {
+            return Some(lt);
+        }
+        from = lt + end + 1;
+    }
+    None
+}
+
+/// Offset of the `>` closing the tag that `tag` starts with (a `>` inside a quoted attribute
+/// value doesn't count).
+fn tag_end(tag: &str) -> Option<usize> {
+    let mut quote: Option<u8> = None;
+    for (i, b) in tag.bytes().enumerate() {
+        match (quote, b) {
+            (Some(q), _) if b == q => quote = None,
+            (None, b'"' | b'\'') => quote = Some(b),
+            (None, b'>') => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The value of a start tag's `class` attribute (`tag` is the text between `<` and `>`).
+fn class_of(tag: &str) -> Option<&str> {
+    let bytes = tag.as_bytes();
+    let mut i = tag.find(|c: char| c.is_ascii_whitespace() || c == '/')?;
+    loop {
+        while i < bytes.len() && (bytes[i].is_ascii_whitespace() || bytes[i] == b'/') {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            return None;
+        }
+        let name_start = i;
+        while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'=' {
+            i += 1;
+        }
+        let name = &tag[name_start..i];
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let mut value = "";
+        if i < bytes.len() && bytes[i] == b'=' {
+            i += 1;
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            let start;
+            match bytes.get(i) {
+                Some(&q @ (b'"' | b'\'')) => {
+                    start = i + 1;
+                    i = start;
+                    while i < bytes.len() && bytes[i] != q {
+                        i += 1;
+                    }
+                    value = &tag[start..i];
+                    i = (i + 1).min(bytes.len());
+                }
+                _ => {
+                    start = i;
+                    while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
+                        i += 1;
+                    }
+                    value = &tag[start..i];
+                }
+            }
+        }
+        if name.eq_ignore_ascii_case("class") {
+            return Some(value);
+        }
+    }
+}
+
 pub fn build_message(out: &Outgoing<'_>) -> Result<Vec<u8>, MailError> {
     let draft = out.draft;
     let total: u64 = out.attachments.iter().map(|(_, b)| b.len() as u64).sum();
@@ -330,6 +446,58 @@ mod tests {
             date: SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000),
         })
         .unwrap()
+    }
+
+    #[test]
+    fn split_quote_undoes_full_html() {
+        let quote = "<div class=\"gmail_quote\"><div dir=\"ltr\" class=\"gmail_attr\">On Monday, Bo wrote:<br></div><blockquote class=\"gmail_quote\" style=\"margin:0\"><div class=\"gmail_signature\">theirs</div></blockquote></div>";
+        for body in [
+            "<p>Hi</p>",
+            "",
+            "<p>Hi</p><div class=\"gmail_signature\" data-smartmail=\"gmail_signature\">mine</div>",
+            "<p>ends with a break</p><br>",
+        ] {
+            let draft = ComposeDraft {
+                body_html: body.into(),
+                quote_html: Some(quote.into()),
+                ..Default::default()
+            };
+            assert_eq!(
+                split_quote(&full_html(&draft)),
+                (body.to_owned(), Some(quote.to_owned())),
+                "{body:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn split_quote_finds_gmails_wrapper_and_nothing_else() {
+        // Gmail on the web.
+        let (body, quote) = split_quote(
+            "<div dir=\"ltr\">Sure<a title=\"a > b\" class=\"x\">.</a></div><br>\n<div class='gmail_quote gmail_quote_container'><blockquote>hi</blockquote></div>",
+        );
+        assert_eq!(
+            body,
+            "<div dir=\"ltr\">Sure<a title=\"a > b\" class=\"x\">.</a></div>"
+        );
+        assert_eq!(
+            quote.as_deref(),
+            Some(
+                "<div class='gmail_quote gmail_quote_container'><blockquote>hi</blockquote></div>"
+            )
+        );
+
+        // No wrapper: all body, as written.
+        for html in [
+            "<p>Hi</p><blockquote><p>quoted by hand</p></blockquote>",
+            "<p>about class=\"gmail_quote\" in text</p>",
+            "<p data-class=\"gmail_quote\">x</p><p class=\"gmail_quoted\">y</p>",
+            "<!-- <div class=\"gmail_quote\"> --><p>Hi</p>",
+            "<p>unclosed <div class=\"gmail_quote\"",
+            "",
+        ] {
+            assert_eq!(split_quote(html), (html.to_owned(), None), "{html}");
+        }
     }
 
     #[test]

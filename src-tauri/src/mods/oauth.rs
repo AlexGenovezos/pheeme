@@ -181,12 +181,16 @@ pub async fn connect(
     .await
 }
 
+/// Most requests one login waits through; the 180 s deadline normally ends it first.
+const MAX_CALLBACK_REQUESTS: usize = 500;
+
 async fn receive_code(listener: TcpListener, state: &str) -> Result<String, String> {
     tokio::time::timeout(Duration::from_secs(180), async {
-        // Ignore unrelated browser requests, but cap attempts and every individual read.
-        for _ in 0..12 {
+        // Ignore requests that aren't the login's callback (any local page can send some), so
+        // only the deadline ends the wait. The cap is a backstop so it can never spin.
+        for _ in 0..MAX_CALLBACK_REQUESTS {
             let (mut socket, _) = listener.accept().await.map_err(|_| "Login callback failed")?;
-            let bytes = tokio::time::timeout(Duration::from_secs(2), async {
+            let read = tokio::time::timeout(Duration::from_secs(2), async {
                 let mut bytes = Vec::new();
                 loop {
                     let mut chunk = [0u8; 1024];
@@ -197,7 +201,9 @@ async fn receive_code(listener: TcpListener, state: &str) -> Result<String, Stri
                     if bytes.windows(4).any(|part| part == b"\r\n\r\n") { break; }
                 }
                 Ok::<_, String>(bytes)
-            }).await.map_err(|_| "Login callback timed out")??;
+            }).await;
+            // A stalled, broken or oversized request is someone else's: move on.
+            let Ok(Ok(bytes)) = read else { continue };
             let request = String::from_utf8_lossy(&bytes);
             let path = request.lines().next().and_then(|line| line.strip_prefix("GET ")).and_then(|line| line.split_once(' ')).map(|(path, _)| path).unwrap_or("");
             let result = callback(path, state);
@@ -356,6 +362,32 @@ mod tests {
             1,
             "token redirects must not be followed"
         );
+    }
+
+    #[tokio::test]
+    async fn stray_requests_do_not_end_the_login() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let flow = tokio::spawn(receive_code(listener, "expected"));
+        // Far more than the old 12-request limit: wrong state, wrong path, junk.
+        for n in 0..40 {
+            let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
+            let line = match n % 3 {
+                0 => "GET /callback?state=wrong&code=x HTTP/1.1\r\n\r\n".to_owned(),
+                1 => "GET /favicon.ico HTTP/1.1\r\n\r\n".to_owned(),
+                _ => "nonsense\r\n\r\n".to_owned(),
+            };
+            socket.write_all(line.as_bytes()).await.unwrap();
+            let mut reply = Vec::new();
+            let _ = socket.read_to_end(&mut reply).await;
+        }
+        assert!(!flow.is_finished(), "login must still be waiting");
+        let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
+        socket
+            .write_all(b"GET /callback?state=expected&code=good HTTP/1.1\r\n\r\n")
+            .await
+            .unwrap();
+        assert_eq!(flow.await.unwrap().unwrap(), "good");
     }
 
     #[tokio::test]

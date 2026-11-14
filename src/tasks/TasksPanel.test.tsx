@@ -23,6 +23,9 @@ const settle = async () => {
 
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
 let fail: Set<string>;
+/** Commands whose answer waits until the test releases it. */
+let hold: Set<string>;
+let held: Array<() => void>;
 
 function backend(access: string | null = null) {
   const handlers = createTasksHandlers(ACCOUNTS, access, NOW) as Record<
@@ -34,6 +37,8 @@ function backend(access: string | null = null) {
       const a = (args ?? {}) as Record<string, unknown>;
       calls.push({ cmd, args: a });
       if (fail.has(cmd)) throw { code: "gmail_api", message: "Google said no." };
+      if (hold.has(cmd))
+        return new Promise((resolve) => held.push(() => resolve(handlers[cmd]?.(a))));
       return handlers[cmd]?.(a);
     },
     { shouldMockEvents: true },
@@ -68,6 +73,8 @@ beforeEach(() => {
   localStorage.clear();
   calls = [];
   fail = new Set();
+  hold = new Set();
+  held = [];
   useAccountStore.setState({ accounts: ACCOUNTS as never });
   useToastStore.setState({ toasts: [] });
   useTasksStore.setState({
@@ -127,6 +134,42 @@ describe("Tasks panel", () => {
     fireEvent.click(within(done).getByRole("checkbox", { name: "Mark not done: Renew passport" }));
     await settle();
     expect(rows("My Tasks")).toContain("Renew passport");
+  });
+
+  test("two changes at once: the first one's reload never undoes the second while it's saving", async () => {
+    await openPanel();
+    hold.add("set_task_completed");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mark done: Renew passport" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mark done: Send the lease back" }));
+    await settle();
+    expect(held).toHaveLength(2);
+    // The first write lands and its reload reads a cache where the second is still open.
+    held.shift()!();
+    await settle();
+    expect(rows("My Tasks")).not.toContain("Renew passport");
+    expect(rows("My Tasks")).not.toContain("Send the lease back");
+    held.shift()!();
+    await settle();
+    expect(rows("My Tasks")).not.toContain("Send the lease back");
+    expect(rows("My Tasks")).not.toContain("Renew passport");
+  });
+
+  test("two quick moves: the first one's reload keeps the second in place", async () => {
+    await openPanel();
+    hold.add("move_task");
+    const renew = () => screen.getByRole("button", { name: "Edit task: Renew passport" });
+    fireEvent.keyDown(renew(), { key: "ArrowUp", ctrlKey: true });
+    await settle();
+    fireEvent.keyDown(renew(), { key: "ArrowUp", ctrlKey: true });
+    await settle();
+    const moved = ["Renew passport", "Send the lease back", "Plan the Lisbon trip", "Book flights"];
+    expect(rows("My Tasks")).toEqual(moved);
+    held.shift()!();
+    await settle();
+    expect(rows("My Tasks")).toEqual(moved);
+    held.shift()!();
+    await settle();
+    expect(rows("My Tasks")).toEqual(moved);
   });
 
   test("adds tasks one after another with Enter, and edits a task's details and date", async () => {
@@ -268,6 +311,31 @@ describe("Tasks panel", () => {
       description: "Google said no.",
       tone: "danger",
     });
+  });
+
+  test("a new task Google refuses keeps its editor open with what was typed, and saves on retry", async () => {
+    await openPanel();
+    fail.add("create_task");
+    fireEvent.click(within(list("Errands")).getByRole("button", { name: "Add a task" }));
+    const editor = () => within(list("Errands")).getByRole("form", { name: "New task" });
+    fireEvent.change(within(editor()).getByRole("textbox", { name: "Title" }), {
+      target: { value: "Return the library books" },
+    });
+    fireEvent.change(within(editor()).getByRole("textbox", { name: "Details" }), {
+      target: { value: "Two of them" },
+    });
+    fireEvent.submit(within(editor()).getByRole("textbox", { name: "Title" }));
+    await settle();
+    expect(last(useToastStore.getState().toasts)).toMatchObject({ title: "Couldn't add the task" });
+    expect(within(editor()).getByRole("textbox", { name: "Title" })).toHaveValue(
+      "Return the library books",
+    );
+    expect(within(editor()).getByRole("textbox", { name: "Details" })).toHaveValue("Two of them");
+
+    fail.delete("create_task");
+    fireEvent.keyDown(within(editor()).getByRole("textbox", { name: "Title" }), { key: "Escape" });
+    await settle();
+    expect(rows("Errands")[0]).toBe("Return the library books");
   });
 
   test("creates, renames and deletes lists, and moves a task to another list", async () => {

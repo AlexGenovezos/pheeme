@@ -32,6 +32,16 @@ const MAX_TEXT_BYTES = 1024 * 1024;
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+const INTERACTIVE =
+  'button, a[href], input, select, textarea, summary, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="switch"], [role="menuitem"], [role="option"]';
+
+/** Space goes to `target` rather than closing: a control, or anything focusable other than the stage itself. */
+function ownsSpace(target: EventTarget | null, stage: HTMLElement | null): boolean {
+  if (!(target instanceof HTMLElement) || target === stage) return false;
+  if (!target.closest(".file-preview")) return false;
+  return target.closest(INTERACTIVE) !== null || target.tabIndex >= 0;
+}
+
 /** The attachment preview over the blurred app. Mount once, inside the mail screen. */
 export function AttachmentPreview() {
   const session = usePreviewStore((s) => s.session);
@@ -110,7 +120,9 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
       } else if (isEditableTarget(e.target)) {
         return;
       } else if (e.key === " ") {
-        // Quick Look's toggle: Space opened it, Space closes it.
+        // Quick Look's toggle: Space opened it, Space closes it. A focused control (a button, a sheet tab,
+        // the sheet's grid) keeps Space for itself: to press it, or to scroll.
+        if (ownsSpace(e.target, stageRef.current)) return;
         e.preventDefault();
         close();
       } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {

@@ -22,7 +22,16 @@ export function useCommands(commands: Command[], reg: CommandRegistry = registry
   });
   const signature = commands
     .map((c) =>
-      [c.id, c.title, c.group, c.shortcut, c.global, c.hidden, c.keywords?.join(" ")].join("|"),
+      [
+        c.id,
+        c.title,
+        c.group,
+        c.shortcut,
+        c.global,
+        c.hidden,
+        c.repeat,
+        c.keywords?.join(" "),
+      ].join("|"),
     )
     .join("\n");
 

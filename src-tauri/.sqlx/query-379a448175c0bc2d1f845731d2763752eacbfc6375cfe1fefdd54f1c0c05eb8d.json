@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE outbox SET status = 'cleanup', payload = ?, attempts = 0, next_attempt_at = 0,\n                             checks_done = 0, last_error = NULL, updated_at = ?\n           WHERE id = ? AND kind = 'send'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "379a448175c0bc2d1f845731d2763752eacbfc6375cfe1fefdd54f1c0c05eb8d"
+}

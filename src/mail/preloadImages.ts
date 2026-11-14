@@ -14,6 +14,14 @@ const CONCURRENT = 4;
 
 const parsed = new WeakMap<ThreadDetail, string[]>();
 
+/**
+ * Spam or Trash anywhere in the conversation. Its remote images are never fetched ahead of the reader: a tracking
+ * pixel would tell the sender the address is live without the email being opened. That holds wherever the row is
+ * listed (Spam, Trash, All Mail, search results), since it goes by the messages' own labels.
+ */
+export const isJunk = (detail: ThreadDetail) =>
+  detail.messages.some((m) => m.labelIds.includes("SPAM") || m.labelIds.includes("TRASH"));
+
 /** A CSS background's image. Only backgrounds: fonts and imports are blocked in the email frame, so never fetched. */
 const CSS_BACKGROUND = /background(?:-image)?\s*:[^;}]*?url\(\s*["']?(https?:\/\/[^"')\s]+)/gi;
 
@@ -64,7 +72,7 @@ export function startImagePreloading() {
     let partial = false;
     for (const key of keys) {
       const detail = details.get(key);
-      if (!detail) continue;
+      if (!detail || isJunk(detail)) continue;
       let urls = parsed.get(detail);
       if (!urls) {
         parsed.set(detail, (urls = imageUrls(detail)));

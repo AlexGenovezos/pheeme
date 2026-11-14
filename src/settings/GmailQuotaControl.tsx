@@ -9,7 +9,11 @@ const parse = (text: string) => {
   return /^\d+$/.test(typed) ? Number(typed) : null;
 };
 
-/** Gmail's per-user limit in units per minute. Saved on Enter or when the field loses focus. */
+/**
+ * Gmail's per-user limit in units per minute. Saved on Enter or when the field loses focus, and
+ * when Settings closes with a valid edit still in the field. Escape in the field with an edit
+ * puts the stored value back instead (and doesn't close Settings).
+ */
 export function GmailQuotaControl() {
   const [saved, setSaved] = useState<number | null>(null);
   const [text, setText] = useState("");
@@ -76,6 +80,14 @@ export function GmailQuotaControl() {
     if (next !== null) await save(next);
   }
 
+  // Closing Settings any other way (its close button, the backdrop, Escape from outside the
+  // field) unmounts the field without a blur: save a valid edit rather than drop it.
+  const commitOnClose = useRef(() => {});
+  useEffect(() => {
+    commitOnClose.current = () => void save();
+  });
+  useEffect(() => () => commitOnClose.current(), []);
+
   return (
     <>
       <TextInput
@@ -89,6 +101,15 @@ export function GmailQuotaControl() {
         onBlur={() => void save()}
         onKeyDown={(e) => {
           if (e.key === "Enter") void save();
+          else if (e.key === "Escape" && stored.current !== null) {
+            const original = format(stored.current);
+            if (draft.current === original) return; // nothing to undo: Escape closes Settings
+            e.preventDefault();
+            e.stopPropagation();
+            queued.current = null;
+            setError(null);
+            edit(original);
+          }
         }}
         className="settings-quota"
       />

@@ -86,11 +86,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           # No npm install here, and a release job should never restore a cache it doesn't need.
           package-manager-cache: false
+      # A release tag must point at a commit that is on main.
+      - name: Tagged commit is on main
+        env:
+          TAG_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$TAG_SHA" refs/remotes/origin/main; then
+            echo "::error::$TAG_SHA (tag $GITHUB_REF_NAME) is not an ancestor of origin/main; tag a commit that is on main"
+            exit 1
+          fi
       # Versions match the tag, and docs/releases/<tag>.md is written (no TODO or DRAFT left).
       - run: node scripts/release.mjs check "$GITHUB_REF_NAME"
 
@@ -154,6 +165,8 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: bash scripts/resolve-apple-env.sh
         env:
+          # This job only runs for v* tags: a release must never ship unsigned.
+          APPLE_SIGNING_REQUIRED: "true"
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}

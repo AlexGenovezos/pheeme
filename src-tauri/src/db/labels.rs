@@ -65,11 +65,16 @@ pub async fn upsert_label(pool: &SqlitePool, label: &DbLabel) -> Result<()> {
 
 /// Make the account's labels exactly `labels`: upsert each, purge the rest from the cache.
 /// Returns the threads that lost a label, for the caller to recompute in the same transaction.
+/// An empty `labels` changes nothing: Gmail always has its system labels, so an empty list is
+/// a faulty answer, not a mailbox whose every label was deleted.
 pub async fn replace_labels(
     conn: &mut SqliteConnection,
     account_id: &str,
     labels: &[DbLabel],
 ) -> Result<Vec<String>> {
+    if labels.is_empty() {
+        return Ok(Vec::new());
+    }
     for label in labels {
         upsert_label_tx(conn, label).await?;
     }
@@ -499,6 +504,27 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn replace_labels_with_an_empty_list_purges_nothing() {
+        let db = TestDb::with_account(A).await;
+        seed(&db, &[&["INBOX", "Label_1"]]).await;
+        let mut conn = db.pool.acquire().await.unwrap();
+        let keep = [
+            label("INBOX", "INBOX", "system"),
+            label("Label_1", "a", "user"),
+        ];
+        replace_labels(&mut conn, A, &keep).await.unwrap();
+
+        assert!(replace_labels(&mut conn, A, &[]).await.unwrap().is_empty());
+        drop(conn);
+        let m = messages::get_message(&db.pool, A, "m0")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(m.labels(), ["INBOX", "Label_1"]);
+        assert_eq!(get_labels(&db.pool, A).await.unwrap().len(), 2);
     }
 
     #[tokio::test]

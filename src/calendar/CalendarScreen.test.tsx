@@ -145,6 +145,29 @@ describe("CalendarScreen", () => {
     expect(screen.queryByRole("dialog", { name: "Design review" })).toBeNull();
   });
 
+  test("the popover focuses Close when it opens, and leaves focus alone when the events are read again", async () => {
+    backend(null);
+    render(<CalendarScreen />);
+    await flush();
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Design review,/ }));
+    await flush();
+    const pop = screen.getByRole("dialog", { name: "Design review" });
+    expect(document.activeElement).toHaveClass("cal-pop__close");
+
+    const yes = within(pop).getByRole("radio", { name: "Yes" });
+    yes.focus();
+    fireEvent.click(yes);
+    await flush();
+    await flush();
+    expect(calls.some((c) => c.cmd === "respond_to_calendar_event")).toBe(true);
+    // A sync reads the events again: the popover's event is a new object, focus stays put.
+    await act(() => useCalendarStore.getState().loadEvents());
+    await flush();
+    expect(document.activeElement).toBe(within(pop).getByRole("radio", { name: "Yes" }));
+  });
+
   test("events with a video call show a camera and Join any provider, from the first frame", async () => {
     backend(null);
     render(<CalendarScreen />);
@@ -279,6 +302,86 @@ describe("CalendarScreen", () => {
     const main = screen.getByRole("main");
     expect(within(main).getAllByRole("button", { name: "Allow calendar access" })).toHaveLength(1);
     expect(within(main).getByText("The Calendar API is still off.")).toBeInTheDocument();
+  });
+});
+
+describe("calendarStore event reads", () => {
+  /** Each `calendar_events` read waits; `answer(i)` lets the i-th one land, its titles marked `#i`. */
+  function heldReads() {
+    const handlers = createCalendarHandlers(ACCOUNTS, null, NOW) as Record<
+      string,
+      (args?: Record<string, unknown>) => unknown
+    >;
+    const reads: Array<() => void> = [];
+    let holding = false;
+    mockIPC(
+      (cmd, args) => {
+        const a = (args ?? {}) as Record<string, unknown>;
+        const answer = handlers[cmd]?.(a);
+        if (cmd !== "calendar_events" || !holding) return answer;
+        const n = reads.length;
+        return new Promise((resolve) =>
+          reads.push(() =>
+            resolve(
+              (answer as { summary: string | null }[]).map((e) => ({
+                ...e,
+                summary: `${e.summary} #${n}`,
+              })),
+            ),
+          ),
+        );
+      },
+      { shouldMockEvents: true },
+    );
+    return {
+      reads,
+      hold: () => (holding = true),
+      answer: async (i: number) => {
+        reads[i]();
+        await flush();
+        await flush();
+      },
+    };
+  }
+  const titles = () => useCalendarStore.getState().events?.map((e) => e.summary ?? "") ?? [];
+
+  test("moving within the days in memory doesn't cancel a reload that's still going", async () => {
+    const backend = heldReads();
+    await act(() => useCalendarStore.getState().loadAccounts());
+    await flush();
+    expect(titles().length).toBeGreaterThan(0);
+    backend.hold();
+    void useCalendarStore.getState().loadEvents();
+    // `j`/`k` or a click on a day already in memory: nothing new to read.
+    let moved = false;
+    void useCalendarStore
+      .getState()
+      .goTo("2026-11-12")
+      .then(() => (moved = true));
+    expect(useCalendarStore.getState().anchor).toBe("2026-11-12");
+    expect(backend.reads).toHaveLength(1);
+    await backend.answer(0);
+    expect(titles().every((t) => t.endsWith(" #0"))).toBe(true);
+    expect(moved).toBe(true);
+  });
+
+  test("a read overtaken by a newer one resolves only once the newer one has landed", async () => {
+    const backend = heldReads();
+    await act(() => useCalendarStore.getState().loadAccounts());
+    await flush();
+    backend.hold();
+    // A write's own read, then the reload calendar:updated starts.
+    let first = false;
+    void useCalendarStore
+      .getState()
+      .loadEvents()
+      .then(() => (first = true));
+    void useCalendarStore.getState().loadEvents();
+    await backend.answer(0);
+    expect(first).toBe(false);
+    await backend.answer(1);
+    expect(first).toBe(true);
+    expect(titles().every((t) => t.endsWith(" #1"))).toBe(true);
   });
 });
 

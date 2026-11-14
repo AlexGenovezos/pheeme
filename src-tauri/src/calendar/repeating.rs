@@ -28,6 +28,8 @@ const UNREADABLE_TIMES: &str = "Pheeme couldn't read this series' times.";
 const NO_SUCH_TIME: &str =
     "That time doesn't exist on the series' first day, because the clocks change then.";
 const ORGANIZER_ONLY: &str = "Only the organizer can change this event.";
+const GUESTS_NOT_INVITED: &str = "The change was saved, but its guests couldn't be invited \
+     to the new series. Open the event and add them again.";
 const SPLIT_UNKNOWN: &str = "Pheeme couldn't tell whether the new part of this series was \
      saved, so some occurrences may show twice. Check this series on calendar.google.com.";
 
@@ -348,8 +350,9 @@ impl CalendarService {
         let master = s.master.as_ref().ok_or_else(|| invalid(NO_SERIES))?;
         if scope == EditScope::Following && !is_first(master, &s.at) {
             if let Some(split) = series::split(master, &s.at)? {
+                let row = s.row.as_ref().filter(|r| r.status != "cancelled");
                 return self
-                    .update_following(calendar, master, &s.at, split, &edit, send)
+                    .update_following(calendar, master, row, &s.at, split, &edit, send)
                     .await;
             }
         }
@@ -422,13 +425,20 @@ impl CalendarService {
         self.save(account_id, calendar_id, saved).await
     }
 
-    /// "This and following": a new series from `at` with the edit, then the old one cut
-    /// short just before it. If the old one can't be cut, the new one is deleted again, so
-    /// no occurrence shows twice.
+    /// "This and following": a new series from `at` (`row` is the occurrence's own changed
+    /// copy, when it has one) with the edit, then the old one cut short just before it. If
+    /// the old one can't be cut, the new one is deleted again, so no occurrence shows twice.
+    ///
+    /// Guests hear nothing until the cut has landed: the new series is inserted without
+    /// them and silently, and they are added (which is what invites them) only after the
+    /// old series is cut. So a refused cut (someone else changed the series) undoes a series
+    /// no guest was ever told about, rather than inviting and then cancelling.
+    #[allow(clippy::too_many_arguments)]
     async fn update_following(
         &self,
         calendar: &DbCalendar,
         master: &DbEvent,
+        row: Option<&DbEvent>,
         at: &OriginalStart,
         split: Split,
         edit: &EventEdit,
@@ -439,15 +449,28 @@ impl CalendarService {
             .time_zone
             .as_deref()
             .unwrap_or_else(|| zone_of(calendar));
-        let body = new_series_body(master, at, &split, edit, zone)?;
+        let mut body = new_series_body(master, row, at, &split, edit, zone)?;
         let id = body["id"].as_str().unwrap_or_default().to_owned();
         let conference = body.get("conferenceData").is_some();
+        // Guests are invited after the cut, when they'd be told at all.
+        let guests = match (send, body.as_object_mut()) {
+            (SendUpdates::None, _) | (_, None) => None,
+            (_, Some(fields)) => fields
+                .remove("attendees")
+                .filter(|a| a.as_array().is_some_and(|a| !a.is_empty())),
+        };
         let api = (self.api_for)(account_id);
 
         // 1. The new series. If it may have landed unseen, it's looked for, and removed when
-        //    it can't be found, so the unchanged old series doesn't show twice.
+        //    it can't be found, so the unchanged old series doesn't show twice. Nobody is
+        //    told yet: with guests to tell, it has none until step 4.
+        let quiet = if guests.is_some() {
+            SendUpdates::None
+        } else {
+            send
+        };
         let opts = WriteOptions {
-            send_updates: send,
+            send_updates: quiet,
             if_match: None,
             conference,
         };
@@ -457,7 +480,7 @@ impl CalendarService {
                 Err(_) => {
                     self.trigger(Some(account_id.to_owned()));
                     let opts = WriteOptions {
-                        send_updates: send,
+                        send_updates: quiet,
                         if_match: None,
                         conference: false,
                     };
@@ -496,7 +519,7 @@ impl CalendarService {
             Ok(e) => e,
             Err(err) => {
                 let opts = WriteOptions {
-                    send_updates: send,
+                    send_updates: quiet,
                     if_match: Some(&inserted.etag),
                     conference: false,
                 };
@@ -516,7 +539,33 @@ impl CalendarService {
             }
         };
 
-        // 4. Changed occurrences from `at` on went with the old tail (Google drops them too).
+        // 4. The old series is cut: now the guests join the new one, and are invited.
+        let mut guests_failed = None;
+        let inserted = match guests {
+            None => inserted,
+            Some(attendees) => {
+                let opts = WriteOptions {
+                    send_updates: send,
+                    if_match: None,
+                    conference: false,
+                };
+                let invite = json!({ "attendees": attendees });
+                match api
+                    .patch_event(calendar_id, &inserted.id, invite, opts)
+                    .await
+                {
+                    Ok(e) => e,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "couldn't invite the new series' guests");
+                        self.trigger(Some(account_id.to_owned()));
+                        guests_failed = Some(e);
+                        inserted
+                    }
+                }
+            }
+        };
+
+        // 5. Changed occurrences from `at` on went with the old tail (Google drops them too).
         db::calendar::delete_overrides_from(
             &self.db,
             account_id,
@@ -528,6 +577,9 @@ impl CalendarService {
         let new_id = inserted.id.clone();
         self.save_all(account_id, calendar_id, vec![truncated, inserted])
             .await?;
+        if guests_failed.is_some() {
+            return Err(CalendarError::Incomplete(GUESTS_NOT_INVITED.into()));
+        }
         Ok(EventRef {
             account_id: account_id.to_owned(),
             calendar_id: calendar_id.to_owned(),
@@ -604,11 +656,21 @@ impl CalendarService {
     }
 }
 
-/// The insert body of the series that takes over at `at`: the old series' fields without
-/// Google's ids (its Meet kept, minus the request that made it), starting at the
-/// occurrence's original times, the edit on top. A new time or day moves its rule too.
+/// Whether two events start and end at the same times (all-day ones on the same dates).
+fn same_times(a: &DbEvent, b: &DbEvent) -> bool {
+    a.start_date == b.start_date
+        && a.end_date == b.end_date
+        && (a.start_date.is_some() || (a.start_ms == b.start_ms && a.end_ms == b.end_ms))
+}
+
+/// The insert body of the series that takes over at `at`, as calendar.google.com builds it
+/// from what the occurrence shows: its fields (from `row`, its own changed copy, when it
+/// has one, else the old series') without Google's ids (its Meet kept, minus the request
+/// that made it), at the occurrence's times, the edit on top. A new time or day moves its
+/// rule too, and so does the occurrence's own move (as if the edit had made it).
 fn new_series_body(
     master: &DbEvent,
+    row: Option<&DbEvent>,
     at: &OriginalStart,
     split: &Split,
     edit: &EventEdit,
@@ -638,6 +700,20 @@ fn new_series_body(
         time_zone: master.time_zone.clone(),
     };
     let mut edit = edit.clone();
+    // An occurrence moved before starts the new series where it shows, unless this edit
+    // moves it again.
+    if let (None, None, Some(r)) = (&edit.start, &edit.end, row) {
+        if !same_times(r, &tail) {
+            let zone = r.time_zone.clone().or_else(|| master.time_zone.clone());
+            let shown = |ms: Option<i64>, date: &Option<String>| TimeInput {
+                ms: date.is_none().then_some(ms).flatten(),
+                date: date.clone(),
+                time_zone: zone.clone(),
+            };
+            edit.start = Some(shown(r.start_ms, &r.start_date));
+            edit.end = Some(shown(r.end_ms, &r.end_date));
+        }
+    }
     let mut lines = edit.recurrence.clone().unwrap_or_else(|| split.new.clone());
     match (&edit.start, &edit.end) {
         (Some(start), Some(end)) => {
@@ -656,7 +732,7 @@ fn new_series_body(
     }
     edit.recurrence = None;
 
-    let existing = raw(master);
+    let existing = raw(row.unwrap_or(master));
     let mut body = existing.clone();
     let fields = body.as_object_mut().ok_or(CalendarError::NotFound)?;
     for key in NOT_COPIED.iter().filter(|k| **k != "conferenceData") {
@@ -1304,20 +1380,150 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.code(), "api");
         let writes = h.fake("a").writes();
-        let methods: Vec<&str> = writes.iter().map(|w| w.method).collect();
+        let methods = methods(&writes);
         assert_eq!(methods, vec!["insert", "patch", "delete"]);
         let new_id = writes[0].body["id"].as_str().unwrap();
         assert_eq!(writes[2].event_id.as_deref(), Some(new_id));
+        assert_split_undone(&h, new_id);
+        assert_eq!(rows(&h).await, before, "the cache is unchanged");
+        assert!(h.events.names().is_empty());
+    }
+
+    #[tokio::test]
+    async fn following_edit_of_a_changed_occurrence_keeps_its_changes() {
+        let h = harness(&["a"]).await;
+        h.fake("a").put(CAL, weekly());
+        // Week 6 renamed and moved from 10:00 to 12:00.
+        let mut late = moved_week_6();
+        late["summary"] = json!("Weekly (late)");
+        late["start"] =
+            json!({"dateTime": "2026-11-24T12:00:00-05:00", "timeZone": "America/New_York"});
+        late["end"] =
+            json!({"dateTime": "2026-11-24T13:00:00-05:00", "timeZone": "America/New_York"});
+        h.fake("a").put(CAL, late);
+        h.grant("a").await;
+
+        let edit = EventEdit {
+            location: Some("Room 2".into()),
+            ..Default::default()
+        };
+        update(&h, WEEK_6, EditScope::Following, edit)
+            .await
+            .unwrap();
+        let insert = &h.fake("a").writes()[0];
+        assert_eq!(insert.method, "insert");
+        assert_eq!(insert.body["summary"], "Weekly (late)");
+        assert_eq!(insert.body["location"], "Room 2");
+        assert_eq!(
+            insert.body["start"]["dateTime"],
+            "2026-11-24T12:00:00-05:00"
+        );
+        assert_eq!(insert.body["end"]["dateTime"], "2026-11-24T13:00:00-05:00");
+        assert_eq!(
+            insert.body["recurrence"],
+            json!(["RRULE:FREQ=WEEKLY;COUNT=5;BYDAY=TU"])
+        );
+        for key in ["recurringEventId", "originalStartTime"] {
+            assert!(insert.body.get(key).is_none(), "{key} should be stripped");
+        }
+
+        let shown = lines(&h).await;
+        assert_eq!(shown.len(), 10, "{shown:?}");
+        assert!(shown[..5].iter().all(|l| l.ends_with(" 10:00 Weekly")));
+        assert!(
+            shown[5..]
+                .iter()
+                .all(|l| l.ends_with(" 12:00 Weekly (late)")),
+            "{shown:?}"
+        );
+    }
+
+    /// `weekly` with a guest besides its organizer.
+    fn weekly_with_guest() -> Value {
+        let mut e = weekly();
+        e["attendees"] = json!([
+            {"email": CAL, "organizer": true, "self": true, "responseStatus": "accepted"},
+            {"email": "b@example.com", "responseStatus": "accepted"}
+        ]);
+        e
+    }
+
+    async fn update_telling_guests(
+        h: &Harness,
+        id: &str,
+        edit: EventEdit,
+    ) -> Result<crate::calendar::writes::EventRef, CalendarError> {
+        h.service
+            .update_event("a", CAL, id, EditScope::Following, edit, SendUpdates::All)
+            .await
+    }
+
+    #[tokio::test]
+    async fn following_split_invites_guests_only_after_the_cut() {
+        let h = seeded_with(weekly_with_guest()).await;
+        let r = update_telling_guests(&h, &occ(4), summary("Renamed"))
+            .await
+            .unwrap();
+        let writes = h.fake("a").writes();
+        let methods = methods(&writes);
+        assert_eq!(methods, vec!["insert", "patch", "patch"]);
+        assert_eq!(writes[0].send_updates, Some(SendUpdates::None));
+        assert!(writes[0].body.get("attendees").is_none(), "no guests yet");
+        assert_eq!(writes[1].event_id.as_deref(), Some("weekly"));
+        assert_eq!(writes[1].send_updates, Some(SendUpdates::All));
+        assert_eq!(writes[2].event_id.as_deref(), Some(r.id.as_str()));
+        assert_eq!(writes[2].send_updates, Some(SendUpdates::All));
+        assert_eq!(
+            writes[2].body,
+            json!({"attendees": weekly_with_guest()["attendees"]})
+        );
+        let google = h.fake("a").event(CAL, &r.id).unwrap();
+        assert_eq!(google["attendees"], weekly_with_guest()["attendees"]);
+        assert_eq!(google["summary"], "Renamed");
+    }
+
+    #[tokio::test]
+    async fn following_split_rollback_tells_no_guest() {
+        let h = seeded_with(weekly_with_guest()).await;
+        let before = rows(&h).await;
+        h.fake("a").fail_write(1, || GmailError::Api {
+            status: 412,
+            reason: Some("conditionNotMet".into()),
+            message: "Precondition Failed".into(),
+        });
+        let err = update_telling_guests(&h, &occ(4), summary("Renamed"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CalendarError::Conflict), "{err:?}");
+        let writes = h.fake("a").writes();
+        let methods = methods(&writes);
+        assert_eq!(methods, vec!["insert", "patch", "delete"]);
+        let new_id = writes[0].body["id"].as_str().unwrap();
+        for w in writes
+            .iter()
+            .filter(|w| w.event_id.as_deref() != Some("weekly"))
+        {
+            assert_eq!(w.send_updates, Some(SendUpdates::None), "{w:?}");
+        }
+        assert!(writes[0].body.get("attendees").is_none());
         assert_eq!(
             h.fake("a").event(CAL, new_id).unwrap()["status"],
             "cancelled"
         );
-        assert_eq!(
-            h.fake("a").event(CAL, "weekly").unwrap()["recurrence"],
-            json!([RULE])
-        );
         assert_eq!(rows(&h).await, before, "the cache is unchanged");
-        assert!(h.events.names().is_empty());
+    }
+
+    #[tokio::test]
+    async fn following_split_reports_guests_it_could_not_invite() {
+        let h = seeded_with(weekly_with_guest()).await;
+        h.fake("a").fail_write(2, api_500);
+        let err = update_telling_guests(&h, &occ(4), summary("Renamed"))
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), "incomplete");
+        let shown = lines(&h).await;
+        assert_eq!(shown.len(), 10, "both halves are shown: {shown:?}");
+        assert!(shown[3..].iter().all(|l| l.ends_with("Renamed")));
     }
 
     #[tokio::test]
@@ -1362,6 +1568,34 @@ mod tests {
         assert!(shown[3..].iter().all(|l| l.ends_with("Renamed")));
     }
 
+    /// Splits the series at its fourth occurrence while Google can't be read: the edit ends
+    /// unconfirmed. Returns the writes it made.
+    async fn unconfirmed_split(h: &Harness) -> Vec<crate::calendar::fake::FakeWrite> {
+        h.fake("a").fail_reads(Some(offline));
+        let err = update(h, &occ(4), EditScope::Following, summary("Renamed"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CalendarError::Unconfirmed), "{err:?}");
+        h.fake("a").writes()
+    }
+
+    /// The Calendar API calls a write made, in order.
+    fn methods(writes: &[crate::calendar::fake::FakeWrite]) -> Vec<&'static str> {
+        writes.iter().map(|w| w.method).collect()
+    }
+
+    /// The new series was taken back and the old one repeats as it did.
+    fn assert_split_undone(h: &Harness, new_id: &str) {
+        assert_eq!(
+            h.fake("a").event(CAL, new_id).unwrap()["status"],
+            "cancelled"
+        );
+        assert_eq!(
+            h.fake("a").event(CAL, "weekly").unwrap()["recurrence"],
+            json!([RULE])
+        );
+    }
+
     fn offline() -> GmailError {
         GmailError::Offline("down".into())
     }
@@ -1375,13 +1609,8 @@ mod tests {
             reason: Some("backendError".into()),
             message: "Service Unavailable".into(),
         });
-        h.fake("a").fail_reads(Some(offline));
-        let err = update(&h, &occ(4), EditScope::Following, summary("Renamed"))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, CalendarError::Unconfirmed), "{err:?}");
-        let writes = h.fake("a").writes();
-        let methods: Vec<&str> = writes.iter().map(|w| w.method).collect();
+        let writes = unconfirmed_split(&h).await;
+        let methods = methods(&writes);
         assert_eq!(
             methods,
             vec!["insert", "patch"],
@@ -1413,25 +1642,13 @@ mod tests {
         let before = rows(&h).await;
         // The insert lands but its reply is lost, and Google can't be asked about it.
         h.fake("a").lose_reply(0);
-        h.fake("a").fail_reads(Some(offline));
-        let err = update(&h, &occ(4), EditScope::Following, summary("Renamed"))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, CalendarError::Unconfirmed), "{err:?}");
-        let writes = h.fake("a").writes();
-        let methods: Vec<&str> = writes.iter().map(|w| w.method).collect();
+        let writes = unconfirmed_split(&h).await;
+        let methods = methods(&writes);
         assert_eq!(methods, vec!["insert", "delete"]);
         let new_id = writes[0].body["id"].as_str().unwrap();
         assert_eq!(writes[1].event_id.as_deref(), Some(new_id));
         assert_eq!(writes[1].if_match, None);
-        assert_eq!(
-            h.fake("a").event(CAL, new_id).unwrap()["status"],
-            "cancelled"
-        );
-        assert_eq!(
-            h.fake("a").event(CAL, "weekly").unwrap()["recurrence"],
-            json!([RULE])
-        );
+        assert_split_undone(&h, new_id);
         assert_eq!(rows(&h).await, before);
         assert!(h.service.is_forced("a"));
     }

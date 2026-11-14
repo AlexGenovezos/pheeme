@@ -1,5 +1,5 @@
 import { Node } from "@tiptap/react";
-import { cleanSignature } from "./signatures";
+import { cleanSignature, isOwnSignatureBlock } from "./signatures";
 
 function signatureDom(html: unknown): HTMLElement {
   const dom = document.createElement("div");
@@ -13,6 +13,10 @@ function signatureDom(html: unknown): HTMLElement {
  * The signature in the compose editor: one block (`div.gmail_signature`, as Gmail writes it) that keeps its
  * HTML as it is, logo and table included, rather than being flattened into paragraphs. It can be selected and
  * deleted, not edited in place: Settings › Signatures is where it changes.
+ *
+ * Only the message's own signature becomes this node. A signature block inside quoted mail (a draft another
+ * client saved, something pasted) is someone else's HTML: it falls through to the ordinary rules and is read as
+ * plain paragraphs. What does render is sanitized (`cleanSignature`) and boxed in by `compose.css`.
  */
 export const SignatureNode = Node.create({
   name: "signature",
@@ -32,7 +36,13 @@ export const SignatureNode = Node.create({
   },
 
   parseHTML() {
-    return [{ tag: "div.gmail_signature", priority: 1000 }];
+    return [
+      {
+        tag: "div.gmail_signature",
+        priority: 1000,
+        getAttrs: (el: HTMLElement) => (isOwnSignatureBlock(el) ? null : false),
+      },
+    ];
   },
 
   renderHTML({ node }) {

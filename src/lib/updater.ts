@@ -2,6 +2,8 @@ import { listen } from "@tauri-apps/api/event";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { create } from "zustand";
+import { toast } from "../components/ui/Toast";
+import { useComposeStore } from "../compose/composeStore";
 import { createSubscriptionScope } from "./subscriptions";
 import { logUpdate, type UpdateEvent } from "./tauri";
 
@@ -16,6 +18,11 @@ export interface PendingUpdate {
 export interface UpdaterDeps {
   check(): Promise<PendingUpdate | null>;
   relaunch(): Promise<void>;
+  /**
+   * Save every message being written to Gmail Drafts, before the app goes away. False when one couldn't be
+   * saved (its panel says why).
+   */
+  saveDrafts?(): Promise<boolean>;
   /** Record an updater step in the diagnostics log; must not throw. */
   report(event: UpdateEvent, version?: string, err?: unknown): void;
 }
@@ -49,6 +56,7 @@ const tauriDeps: UpdaterDeps = {
     );
   },
   relaunch,
+  saveDrafts: () => useComposeStore.getState().saveAll(),
   report: (event, version, err) => {
     if (err !== undefined) console.error(`update ${event}`, err);
     const error = err === undefined ? null : String(err instanceof Error ? err.message : err);
@@ -95,9 +103,21 @@ const initialState: UpdateState = {
   // release is out would mean a second update right after the restart.
   // On Windows install() launches the NSIS installer and exits the app, so relaunch() is
   // never reached there; the tests cover the ordering, not that platform behavior.
+  // Either way the app goes away, so messages being written are saved to Drafts first, and
+  // nothing is installed while one of them can't be.
   apply: async () => {
     if (!pending || useUpdateStore.getState().applying) return;
     useUpdateStore.setState({ applying: true });
+    const saved = await (deps.saveDrafts?.() ?? Promise.resolve(true)).catch(() => false);
+    if (!saved) {
+      useUpdateStore.setState({ applying: false });
+      toast({
+        title: "Update not installed",
+        description: "A draft couldn't be saved. Save or discard it, then update again.",
+        tone: "danger",
+      });
+      return;
+    }
     await doCheck(true);
     const { version } = pending;
     try {

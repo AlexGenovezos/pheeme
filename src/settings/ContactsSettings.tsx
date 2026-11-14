@@ -13,7 +13,8 @@ import {
 } from "../lib/tauri";
 import { ReconnectButton } from "../onboarding/Reconnect";
 import { useAccountStore } from "../store/accountStore";
-import { SettingsRow, SettingsSection } from "./rows";
+import { Skeleton } from "../components/ui/Skeleton";
+import { PendingButton, SettingsRow, SettingsSection } from "./rows";
 
 export const PEOPLE_API_URL = "https://console.cloud.google.com/apis/library/people.googleapis.com";
 
@@ -21,6 +22,17 @@ type State =
   | { kind: "loading" }
   | { kind: "ready"; status: GoogleContactsStatus }
   | { kind: "failed"; message: string };
+
+/** The Google Contacts row before its status is known: same slots as the "On" row. */
+function PendingRow() {
+  return (
+    <SettingsRow
+      title="Google Contacts"
+      description={<Skeleton width="20em" />}
+      control={<PendingButton />}
+    />
+  );
+}
 
 function AccountContacts({ accountId, email }: { accountId: string; email: string }) {
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -74,7 +86,7 @@ function AccountContacts({ accountId, email }: { accountId: string; email: strin
   const statusRows = (status: GoogleContactsStatus) => {
     switch (status.status) {
       case "unknown":
-        return <SettingsRow title="Checking Google Contacts…" />;
+        return <PendingRow />;
       case "on":
         return (
           <SettingsRow
@@ -132,7 +144,7 @@ function AccountContacts({ accountId, email }: { accountId: string; email: strin
 
   return (
     <SettingsSection title={email}>
-      {state.kind === "loading" && <SettingsRow title="Checking Google Contacts…" />}
+      {state.kind === "loading" && <PendingRow />}
       {state.kind === "failed" && (
         <SettingsRow
           title="Couldn't check Google Contacts"

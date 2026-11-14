@@ -25,6 +25,8 @@ struct State {
     fail: Option<fn() -> GmailError>,
     /// Every `get_event` fails with this until cleared.
     read_fail: Option<fn() -> GmailError>,
+    /// Pages of a full read (no sync token) from this page index on fail with this.
+    full_read_fail: Option<(usize, fn() -> GmailError)>,
     settings: CalendarSettings,
     pub calls: usize,
     /// Every write received, in order (a failed one too).
@@ -318,6 +320,12 @@ impl FakeCalendar {
         self.lock().read_fail = make;
     }
 
+    /// Pages of full reads (`list_events` with no sync token), from page `from` (0-based) on,
+    /// fail with `make()`; `None` clears it.
+    pub fn fail_full_reads(&self, from: Option<(usize, fn() -> GmailError)>) {
+        self.lock().full_read_fail = from;
+    }
+
     /// The newest version of an event (a cancelled one too), for assertions.
     pub fn event(&self, calendar_id: &str, id: &str) -> Option<Value> {
         self.lock().current(calendar_id, id)
@@ -401,6 +409,11 @@ impl CalendarApi for FakeCalendar {
             }
         }
         let offset: usize = page_token.map_or(0, |p| p.parse().unwrap());
+        if let (None, Some((from, make))) = (sync_token, s.full_read_fail) {
+            if offset / PAGE >= from {
+                return Err(make());
+            }
+        }
         let page: Vec<ApiEvent> = latest
             .iter()
             .skip(offset)

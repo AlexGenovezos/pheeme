@@ -26,7 +26,7 @@ import {
 import { displayZone, screenDays, useCalendarStore } from "./calendarStore";
 import { useTasksStore } from "../tasks/tasksStore";
 import { dateOf, formatDay, wallClock, zonedMs } from "./dates";
-import { ask, type EditorSpec, useEditStore } from "./editStore";
+import { ask, type EditorSpec, setMoving, useEditStore } from "./editStore";
 import { eventKey, eventTitle } from "./EventBlock";
 import {
   type EventForm,
@@ -452,9 +452,10 @@ export async function saveEditor(spec: EditorSpec, form: EventForm): Promise<str
 /** Drop an event at a new time (drag to move or resize). */
 export async function moveEvent(event: CalendarEvent, start: EventTime, end: EventTime) {
   const key = eventKey(event);
-  useEditStore.setState({ moving: { key, start, end } });
-  const settle = () =>
-    useEditStore.setState((s) => (s.moving?.key === key ? { moving: null } : {}));
+  // Its own entry: another event dragged meanwhile has its own, and doesn't undo this one.
+  const mine = { start, end };
+  setMoving(key, mine);
+  const settle = () => setMoving(key, null, mine);
   let scope: EditScope = "this";
   if (event.recurring) {
     const answer = await askScope("edit");

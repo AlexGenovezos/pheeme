@@ -78,11 +78,45 @@ fn rule_text(
             if all_day_start.is_some() {
                 dates_at_utc_midnight(line)
             } else {
-                line.to_owned()
+                until_as_utc(line, tz)
             }
         }))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// A timed series' `UNTIL` as UTC, which `rrule` requires when DTSTART has a zone. A
+/// date-only value covers that whole day in the series' zone (RFC 5545), so it becomes the
+/// end of that local day; a floating date-time is local time in the series' zone. A value
+/// already in UTC, or one that doesn't read as a time, stays as it is.
+fn until_as_utc(line: &str, tz: chrono_tz::Tz) -> String {
+    static UNTIL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i)UNTIL=(\d{8})(?:T(\d{6}))?(Z?)(;|$)").unwrap()
+    });
+    UNTIL
+        .replace(line, |c: &regex::Captures| {
+            let keep = || c[0].to_owned();
+            if !c[3].is_empty() {
+                return keep();
+            }
+            let time = c.get(2).map_or("235959", |t| t.as_str());
+            let Ok(local) = chrono::NaiveDateTime::parse_from_str(
+                &format!("{}T{time}", &c[1]),
+                "%Y%m%dT%H%M%S",
+            ) else {
+                return keep();
+            };
+            // Both ends of a repeated hour are before the end of a day; take the later.
+            let Some(at) = tz.from_local_datetime(&local).latest() else {
+                return keep();
+            };
+            format!(
+                "UNTIL={}{}",
+                at.with_timezone(&Utc).format("%Y%m%dT%H%M%SZ"),
+                &c[4]
+            )
+        })
+        .into_owned()
 }
 
 /// An all-day series' date-only values as UTC midnights, to match its DTSTART:
@@ -108,7 +142,14 @@ fn parse_set(event: &DbEvent, recurrence: &[String]) -> Option<RRuleSet> {
     let start_ms = event.start_ms?;
     let all_day = event.start_date.as_deref().and_then(date);
     let tz = zone(event.time_zone.as_deref());
-    rule_text(recurrence, start_ms, all_day, tz).parse().ok()
+    parse_limited(&rule_text(recurrence, start_ms, all_day, tz))
+}
+
+/// Reads rule text for iteration in the crate's limited mode: a rule that yields nothing
+/// (`FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30`) ends after 100,000 empty steps instead of
+/// spinning to the year limit. Rules that do yield are unaffected.
+fn parse_limited(text: &str) -> Option<RRuleSet> {
+    text.parse::<RRuleSet>().ok().map(RRuleSet::limit)
 }
 
 pub(crate) fn recurrence_lines(event: &DbEvent) -> Vec<String> {
@@ -321,9 +362,7 @@ pub fn recur_until_ms(
         .then(|| Utc.timestamp_millis_opt(start_ms).single())
         .flatten()
         .map(|d| d.date_naive());
-    let set: RRuleSet = rule_text(recurrence, start_ms, all_day_start, tz)
-        .parse()
-        .ok()?;
+    let set = parse_limited(&rule_text(recurrence, start_ms, all_day_start, tz))?;
     let mut last = None;
     for (i, start) in set.into_iter().enumerate() {
         if i >= MAX_BOUND_STEPS {
@@ -604,6 +643,91 @@ mod tests {
             true,
         );
         assert_eq!(until, Some(ms("2026-11-13T00:00:00Z")));
+    }
+
+    #[test]
+    fn timed_series_until_without_a_utc_marker_still_expands() {
+        let mondays = vec![
+            "2026-12-07T14:00Z",
+            "2026-12-14T14:00Z",
+            "2026-12-21T14:00Z",
+            "2026-12-28T14:00Z",
+        ];
+        for until in ["20261231", "20261231T235959", "20261231T235959Z"] {
+            let rule = format!("RRULE:FREQ=WEEKLY;UNTIL={until};BYDAY=MO");
+            let master = series(
+                "2026-12-07T09:00:00-05:00",
+                "2026-12-07T09:30:00-05:00",
+                &[rule.as_str()],
+            );
+            let got = expand(
+                &master,
+                &[],
+                ms("2026-12-01T00:00:00Z"),
+                ms("2027-02-01T00:00:00Z"),
+                chrono_tz::UTC,
+            );
+            assert_eq!(starts(&got), mondays, "UNTIL={until}");
+            // The series ends on the last Monday, not at its first occurrence.
+            let end = recur_until_ms(
+                std::slice::from_ref(&rule),
+                master.start_ms.unwrap(),
+                master.end_ms.unwrap(),
+                NY,
+                false,
+            );
+            assert_eq!(end, Some(ms("2026-12-28T14:30:00Z")), "UNTIL={until}");
+        }
+        // A whole local day: an occurrence late on the UNTIL date still counts.
+        let late = series(
+            "2026-12-31T22:00:00-05:00",
+            "2026-12-31T22:30:00-05:00",
+            &["RRULE:FREQ=DAILY;UNTIL=20261231"],
+        );
+        let got = expand(
+            &late,
+            &[],
+            ms("2026-12-30T00:00:00Z"),
+            ms("2027-01-10T00:00:00Z"),
+            chrono_tz::UTC,
+        );
+        assert_eq!(starts(&got), vec!["2027-01-01T03:00Z"]);
+    }
+
+    #[test]
+    fn rule_that_never_yields_returns_promptly() {
+        let master = series(
+            "2026-10-26T09:00:00-04:00",
+            "2026-10-26T09:15:00-04:00",
+            &["RRULE:FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30"],
+        );
+        let began = std::time::Instant::now();
+        let got = expand(
+            &master,
+            &[],
+            ms("2026-11-01T00:00:00Z"),
+            ms("2026-12-01T00:00:00Z"),
+            chrono_tz::UTC,
+        );
+        assert!(got.is_empty());
+        let at = OriginalStart::Ms(ms("2026-11-02T14:00:00Z"));
+        let recurrence = recurrence_lines(&master);
+        assert!(position(&master, &recurrence, &at).is_some());
+        assert_eq!(
+            recur_until_ms(
+                &["RRULE:FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30;COUNT=3".to_owned()],
+                master.start_ms.unwrap(),
+                master.end_ms.unwrap(),
+                NY,
+                false,
+            ),
+            Some(ms("2026-10-26T13:15:00Z"))
+        );
+        assert!(
+            began.elapsed() < std::time::Duration::from_secs(20),
+            "took {:?}",
+            began.elapsed()
+        );
     }
 
     #[test]

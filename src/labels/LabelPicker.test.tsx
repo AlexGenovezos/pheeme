@@ -8,6 +8,7 @@ import { openLabelMenu, openMoveMenu } from "../mail/actions";
 import { useCategoryMoveStore } from "../mail/CategoryMoveDialog";
 import { threadKey } from "../mail/mailboxes";
 import { useAccountStore } from "../store/accountStore";
+import { useInboxTabs } from "../store/inboxTabsStore";
 import { __resetLabelStoreForTests, useLabelStore } from "../store/labelStore";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
 import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore";
@@ -65,6 +66,7 @@ const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
 beforeEach(() => {
   localStorage.clear();
+  useInboxTabs.setState({ hidden: {} });
   __resetUiStoreForTests();
   __resetMailStoreForTests();
   __resetThreadStoreForTests();
@@ -493,6 +495,16 @@ describe("Move to…", () => {
     });
     expect(modifyCalls()).toEqual([]);
     act(() => useCategoryMoveStore.getState().close());
+  });
+
+  test("leaves out the Inbox tabs the account hides", () => {
+    useInboxTabs.setState({ hidden: { a1: ["CATEGORY_SOCIAL", "CATEGORY_FORUMS"] } });
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "Label_3" }, checked: [key(1)] });
+    render(<LabelPickerHost />);
+    act(() => openMoveMenu({ x: 0, y: 0 }));
+    expect(optionNames().slice(0, 4)).toEqual(["Inbox", "Primary", "Promotions", "Updates"]);
+    type("soc");
+    expect(optionNames()).not.toContain("Social");
   });
 
   test("lists Inbox, the categories, the labels and Trash without ticks, leaving out where the mail is", async () => {

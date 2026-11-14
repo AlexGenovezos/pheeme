@@ -58,7 +58,8 @@ pub struct EventEdit {
     pub guests_can_modify: Option<bool>,
     pub guests_can_invite_others: Option<bool>,
     pub guests_can_see_other_guests: Option<bool>,
-    /// `true` adds a Google Meet link, `false` removes it.
+    /// `true` adds a Google Meet link, `false` removes it. Another provider's conference
+    /// (a Zoom or Teams add-on) is never removed by `false`: the flag is about Meet.
     pub conference: Option<bool>,
     pub reminders: Option<RemindersInput>,
     pub transparency: Option<String>,
@@ -207,11 +208,25 @@ fn has_conference(existing: Option<&Value>) -> bool {
         .is_some_and(|c| !c.is_null())
 }
 
+/// Whether the existing conference is known to be another provider's (an add-on such as
+/// Zoom or Teams), not Google Meet.
+fn has_other_conference(existing: Option<&Value>) -> bool {
+    let Some(e) = existing else {
+        return false;
+    };
+    let c = &e["conferenceData"];
+    let kind = c["conferenceSolution"]["key"]["type"]
+        .as_str()
+        .or_else(|| c["createRequest"]["conferenceSolutionKey"]["type"].as_str());
+    !e["hangoutLink"].is_string() && kind.is_some_and(|k| k != "hangoutsMeet")
+}
+
 /// Whether writing `edit` sends `conferenceData`, which needs `conferenceDataVersion=1`.
+/// Removing Meet leaves another provider's conference alone.
 pub fn touches_conference(edit: &EventEdit, existing: Option<&Value>) -> bool {
     match edit.conference {
         Some(true) => !has_conference(existing),
-        Some(false) => true,
+        Some(false) => !has_other_conference(existing),
         None => false,
     }
 }
@@ -489,6 +504,32 @@ mod tests {
         assert!(b.get("conferenceData").is_some_and(Value::is_null));
         assert!(touches_conference(&edit, Some(&existing)));
         assert!(!touches_conference(&EventEdit::default(), Some(&existing)));
+    }
+
+    #[test]
+    fn meet_off_keeps_another_providers_conference() {
+        let edit = EventEdit {
+            conference: Some(false),
+            ..Default::default()
+        };
+        let zoom = json!({"conferenceData": {
+            "conferenceId": "123",
+            "conferenceSolution": {"key": {"type": "addOn"}, "name": "Zoom Meeting"},
+            "entryPoints": [{"entryPointType": "video", "uri": "https://zoom.us/j/123"}]
+        }});
+        assert!(!touches_conference(&edit, Some(&zoom)));
+        assert!(body(&edit, Some(&zoom), "UTC")
+            .get("conferenceData")
+            .is_none());
+
+        let meet = json!({
+            "hangoutLink": "https://meet.google.com/abc-defg-hij",
+            "conferenceData": {"conferenceSolution": {"key": {"type": "hangoutsMeet"}}}
+        });
+        assert!(touches_conference(&edit, Some(&meet)));
+        assert!(body(&edit, Some(&meet), "UTC")
+            .get("conferenceData")
+            .is_some_and(Value::is_null));
     }
 
     #[test]

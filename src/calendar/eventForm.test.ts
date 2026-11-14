@@ -7,10 +7,13 @@ import {
   formFromDetail,
   formProblem,
   formTimes,
+  hasMeet,
   moveStart,
   newForm,
   nthWeekday,
+  otherCall,
   parseRecurrence,
+  type Repeat,
   reminderFrom,
   repeatChoice,
   repeatPresets,
@@ -140,6 +143,83 @@ describe("the event form", () => {
       start: { ms: zonedMs("2026-11-12", 23 * 60 + 30, TZ), timeZone: TZ },
       end: { ms: zonedMs("2026-11-13", 30, TZ), timeZone: TZ },
     });
+  });
+
+  test("Meet comes from a Google Meet conference only, not another provider's", () => {
+    const zoom = { url: "https://acme.zoom.us/j/1", provider: "Zoom" };
+    const meet = { url: "https://meet.google.com/abc-defg-hij", provider: "Google Meet" };
+    // A Zoom add-on conference: its video entry point is the Zoom link.
+    const zoomConf = detail({ hasConference: true, meetUrl: zoom.url, meeting: zoom });
+    expect(hasMeet(zoomConf)).toBe(false);
+    expect(otherCall(zoomConf)).toEqual(zoom);
+    const form = formFromDetail(zoomConf, TZ);
+    expect(form.meet).toBe(false);
+    // Saving another change never sends `conference`.
+    expect(formEdit({ ...form, summary: "Planning v2" }, form).conference).toBeUndefined();
+
+    const meetConf = detail({ hasConference: true, meetUrl: meet.url, meeting: meet });
+    expect(hasMeet(meetConf)).toBe(true);
+    expect(otherCall(meetConf)).toBeNull();
+    // An old hangoutLink-only Meet, and one Google is still making.
+    expect(hasMeet(detail({ hasConference: true, meeting: meet }))).toBe(true);
+    expect(hasMeet(detail({ conferencePending: true }))).toBe(true);
+    // A Teams link in the description: not Meet, shown as the event's call.
+    const teams = {
+      url: "https://teams.microsoft.com/l/meetup-join/x",
+      provider: "Microsoft Teams",
+    };
+    expect(hasMeet(detail({ meeting: teams }))).toBe(false);
+    expect(otherCall(detail({ meeting: teams }))).toEqual(teams);
+  });
+
+  test("moving the start to another day takes a day-based Repeat preset with it", () => {
+    const ruleOf = (r: Repeat) => {
+      if (r.kind !== "rule") throw new Error(`no rule: ${r.kind}`);
+      return r.rule;
+    };
+    const base = newForm({
+      accountId: "a",
+      calendarId: "c",
+      zone: TZ,
+      allDay: false,
+      start: zonedMs("2026-11-13", 9 * 60, TZ),
+      end: zonedMs("2026-11-13", 10 * 60, TZ),
+    });
+    const preset = (id: string, date: string) =>
+      ({ kind: "rule", rule: repeatPresets(date).find((p) => p.id === id)!.rule }) as const;
+    // Friday the 13th → Monday the 16th.
+    const weekly = moveStart(
+      { ...base, repeat: preset("weekly", "2026-11-13") },
+      "2026-11-16",
+      540,
+    );
+    expect(repeatChoice(weekly.repeat, "2026-11-16")).toBe("weekly");
+    expect(ruleLine(ruleOf(weekly.repeat), false, TZ)).toBe("RRULE:FREQ=WEEKLY;BYDAY=MO");
+    // Wednesday the 11th (second Wednesday) → Tuesday the 24th (fourth Tuesday).
+    const monthly = moveStart(
+      { ...base, startDate: "2026-11-11", repeat: preset("monthly", "2026-11-11") },
+      "2026-11-24",
+      540,
+    );
+    expect(ruleLine(ruleOf(monthly.repeat), false, TZ)).toBe("RRULE:FREQ=MONTHLY;BYDAY=4TU");
+    // A rule of the user's own stays as it is.
+    const custom = {
+      kind: "rule" as const,
+      rule: {
+        freq: "WEEKLY" as const,
+        interval: 2,
+        byDay: ["FR"],
+        ends: { kind: "never" as const },
+      },
+    };
+    expect(moveStart({ ...base, repeat: custom }, "2026-11-16", 540).repeat).toEqual(custom);
+    // Only the time changes: the preset stays.
+    const sameDay = moveStart(
+      { ...base, repeat: preset("weekly", "2026-11-13") },
+      "2026-11-13",
+      600,
+    );
+    expect(sameDay.repeat).toEqual(preset("weekly", "2026-11-13"));
   });
 
   test("a new all-day event sends Google's exclusive end date and no empty fields", () => {

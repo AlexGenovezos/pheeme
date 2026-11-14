@@ -81,7 +81,7 @@
       <li><strong>Your computer's chip type</strong>, for example Apple Silicon (aarch64) or Intel/AMD (x86_64).</li>
     </ul>
     <p>It never includes your email address, your accounts, how many there are, your mail or anything about it, or how you use the app.</p>
-    <p>The ping goes to the same small service as diagnostics (diagnostics.pheeme.email, on Cloudflare). We keep one record per install, the latest ping, which is replaced by the next one and deleted automatically about 30 days after the last. We don't store your IP address with it, though Cloudflare processes it to deliver the request. Turning the stats off stops the pings and deletes the install ID from your device, so turning them back on later starts a new, unconnected ID. The app doesn't collect crash reports or any other analytics.</p>
+    <p>The ping goes to the same small service as diagnostics (diagnostics.pheeme.email, on Cloudflare). We keep one record per install, the latest ping, which is replaced by the next one and deleted automatically about 30 days after the last. We don't store your IP address with it, though Cloudflare processes it to deliver the request. To stop one address from flooding the service, it counts requests per day using a one-way hash of the IP address and a random salt that is thrown away at the end of that day; the address itself isn't kept. Turning the stats off stops the pings and deletes the install ID from your device, so turning them back on later starts a new, unconnected ID. The app doesn't collect crash reports or any other analytics.</p>
 
     <h2>Sending diagnostics</h2>
     <p>If something is slow or broken, you can send us diagnostics from Settings › Diagnostics. Nothing is uploaded until you click Send. If you'd rather check first, you can save the same file to your computer and email it to us yourself.</p>
@@ -95,14 +95,21 @@
     <p>When an upload arrives, we get a notification email with your note, your reply address, and the summary, but not the logs. That email stays in our inbox like any other support email you send us. We use diagnostics only to find and fix problems in pheeme.</p>
 
     <h2>The website</h2>
-    <p>pheeme.app is a static site. It doesn't use cookies, analytics, or tracking scripts, and it has no sign-up forms. The site is hosted on Cloudflare, which processes standard request information such as IP addresses to deliver pages and protect the site from abuse. See the <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare Privacy Policy</a>.</p>
+    <p>pheeme.app is a static site. It doesn't use cookies, analytics, or tracking scripts, and it has no sign-up forms. The Download and Changelog pages do contact one other server: when you open them, your browser asks GitHub's public API (api.github.com) for the latest release and the release notes, so GitHub sees your IP address and browser details for those requests. The site is hosted on Cloudflare, which processes standard request information such as IP addresses to deliver pages and protect the site from abuse. See the <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare Privacy Policy</a>.</p>
     <p>Links to GitHub take you to GitHub, which has its own privacy policy.</p>
 
     <h2>Deleting your data</h2>
     <ul>
       <li><strong>Remove the account in the app.</strong> This deletes the mail, search index, and sign-in tokens pheeme stored on your device for that account.</li>
       <li><strong>Revoke access.</strong> For Google accounts, open <a href="https://myaccount.google.com/permissions">your Google Account's third-party access page</a> and remove pheeme. The app can no longer reach your account after that.</li>
-      <li><strong>Uninstall the app.</strong> This removes the app and its local data from your device.</li>
+      <li><strong>Uninstall the app, then remove what it leaves behind.</strong> Uninstalling removes the app, but not reliably its data. On Windows the uninstaller deletes the data only if you tick its "Delete the application data" box. On macOS (deleting pheeme from Applications) and Linux nothing else is deleted, and on every system the saved sign-in item stays in your credential storage. To remove everything yourself, first use Remove on each account in Settings › Accounts (and Clear downloaded mail in Settings › Privacy), so the mail and sign-in tokens go while the app can still do it, then delete these:
+        <ul>
+          <li><strong>macOS:</strong> the folders <code>~/Library/Application Support/app.pheeme.desktop</code>, <code>~/Library/Caches/app.pheeme.desktop</code> and <code>~/Library/Logs/app.pheeme.desktop</code>.</li>
+          <li><strong>Linux:</strong> the folders <code>~/.local/share/app.pheeme.desktop</code> (which includes the logs) and <code>~/.cache/app.pheeme.desktop</code>.</li>
+          <li><strong>Windows:</strong> the folders <code>%APPDATA%\app.pheeme.desktop</code> and <code>%LOCALAPPDATA%\app.pheeme.desktop</code>, if you didn't tick the box.</li>
+          <li><strong>Sign-in item, on every system:</strong> the credential named <code>accounts</code> under the service <code>app.pheeme.desktop</code> in Keychain Access (macOS), Credential Manager (Windows) or your Secret Service keyring such as GNOME Keyring or KWallet (Linux).</li>
+        </ul>
+      </li>
     </ul>
     <p>Deleting data in pheeme doesn't delete anything from your email provider. Your mail stays in your account.</p>
 

@@ -4,6 +4,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import type { ThreadPage, ThreadSummary } from "../lib/tauri";
 import { threadKey } from "../mail/mailboxes";
 import { __resetMailStoreForTests, newOp, reuseUnchanged, useMailStore } from "./mailStore";
+import { __resetUiStoreForTests, useUiStore } from "./uiStore";
 
 const summary = (id: string, accountId = "a"): ThreadSummary => ({
   id,
@@ -26,7 +27,10 @@ const page = (...ids: string[]): ThreadPage => ({
 });
 const ids = () => useMailStore.getState().threads.map((t) => t.id);
 
-beforeEach(() => __resetMailStoreForTests());
+beforeEach(() => {
+  __resetMailStoreForTests();
+  __resetUiStoreForTests();
+});
 
 test("loads threads for the active mailbox across accounts", async () => {
   const calls: [string, unknown][] = [];
@@ -97,6 +101,63 @@ test("reload clamps the depth to 50..500", async () => {
   await useMailStore.getState().reload();
   await useMailStore.getState().reload();
   expect(limits).toEqual([undefined, 50, 50, 500]);
+});
+
+test("a reload capped below a deep list keeps the rows beyond it, and paging continues past them", async () => {
+  const cursorAt = (n: number) => ({
+    lastMessageDate: 1000 - n,
+    accountId: "a",
+    threadId: `t${n}`,
+  });
+  const newest = { ...summary("new"), date: 5000 };
+  const calls: Record<string, unknown>[] = [];
+  mockIPC(
+    (cmd, args) => {
+      if (cmd !== "list_threads") return undefined;
+      const a = args as Record<string, unknown>;
+      calls.push(a);
+      if (a.before) return { threads: rows(600, 10), next: null };
+      if (a.limit === 600) return { threads: rows(0, 600), next: cursorAt(599) };
+      // New mail on top pushes t499 below the 500 rows the reload reads; t3 was deleted.
+      const fresh = [newest, ...rows(0, 500).filter((t) => t.id !== "t3")];
+      return { threads: fresh.slice(0, 500), next: cursorAt(499) };
+    },
+    { shouldMockEvents: true },
+  );
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" }, 600);
+  const stop = await useMailStore.getState().subscribe();
+  await emit("sync:messages_updated", {
+    accountId: "a",
+    added: ["new"],
+    removed: ["t3", "t550"],
+    modified: [],
+  });
+  await vi.waitFor(() => expect(ids()[0]).toBe("new"));
+  expect(calls[calls.length - 1]).toMatchObject({ limit: 500 });
+  const expected = [
+    "new",
+    ...rows(0, 600)
+      .map((t) => t.id)
+      .filter((id) => id !== "t3" && id !== "t550"),
+  ];
+  expect(ids()).toEqual(expected);
+  expect(useMailStore.getState().next).toEqual(cursorAt(599));
+  await useMailStore.getState().loadMore();
+  expect(calls[calls.length - 1]).toMatchObject({ before: cursorAt(599) });
+  expect(ids()).toEqual([...expected, ...rows(600, 10).map((t) => t.id)]);
+  stop();
+});
+
+test("a checked conversation that leaves the list is unchecked when the list reloads", async () => {
+  let shown = ["t1", "t2", "t3"];
+  mockIPC((cmd) => (cmd === "list_threads" ? page(...shown) : undefined));
+  await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX" });
+  const k = (id: string) => threadKey("a", id);
+  for (const id of ["t1", "t2", "t3"]) useUiStore.getState().toggleChecked(k(id));
+  // t2 archived on another device.
+  shown = ["t1", "t3"];
+  await useMailStore.getState().reload();
+  expect(useUiStore.getState().checked).toEqual([k("t1"), k("t3")]);
 });
 
 test("loadMore appends and is idempotent while in flight", async () => {

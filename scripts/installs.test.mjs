@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { format, summarize } from "./installs.mjs";
+import { format, readAll, summarize, wranglerConfigPath } from "./installs.mjs";
 
 const NOW = new Date("2026-11-07T12:00:00Z");
 const record = (over) => ({
@@ -43,5 +43,41 @@ describe("summarize", () => {
 
   it("handles no installs", () => {
     expect(summarize([], NOW)).toMatchObject({ active30d: 0, byOs: [] });
+  });
+});
+
+describe("readAll", () => {
+  it("counts failures instead of dropping them, and ignores expired objects", async () => {
+    const read = async (key) => {
+      if (key === "a") return { os: "macos" };
+      if (key === "gone") throw Object.assign(new Error("not found"), { status: 404 });
+      if (key === "limited")
+        throw Object.assign(new Error("R2 API: 429 slow down"), { status: 429 });
+      throw new Error("boom");
+    };
+    const out = await readAll(["a", "gone", "limited", "bad"], read, 2);
+    expect(out.records).toEqual([{ os: "macos" }]);
+    expect(out.expired).toBe(1);
+    expect(out.failures).toEqual(["limited: R2 API: 429 slow down", "bad: boom"]);
+  });
+});
+
+describe("wranglerConfigPath", () => {
+  it("defaults to the XDG path on Linux and follows the platform elsewhere", () => {
+    expect(wranglerConfigPath("linux", {}, "/home/a")).toBe(
+      "/home/a/.config/.wrangler/config/default.toml",
+    );
+    expect(wranglerConfigPath("linux", { XDG_CONFIG_HOME: "/x" }, "/home/a")).toBe(
+      "/x/.wrangler/config/default.toml",
+    );
+    expect(wranglerConfigPath("darwin", {}, "/Users/a")).toBe(
+      "/Users/a/Library/Preferences/.wrangler/config/default.toml",
+    );
+    expect(
+      wranglerConfigPath("win32", { APPDATA: "C:\\Users\\a\\AppData\\Roaming" }, "C:\\Users\\a"),
+    ).toContain("xdg.config");
+    expect(wranglerConfigPath("linux", { WRANGLER_CONFIG_PATH: "/custom.toml" }, "/h")).toBe(
+      "/custom.toml",
+    );
   });
 });

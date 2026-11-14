@@ -1,7 +1,8 @@
 // Receives diagnostics uploads from the app. Pure: every binding comes in
 // through `Deps`, so tests run it under plain Node.
 
-import type { DailyCapState, Deps, KvStorage, Notification } from "./types";
+import { takeQuotaSlot, utcDay } from "./quota";
+import type { Deps, KvStorage, Notification, QuotaResult } from "./types";
 
 /** Largest accepted bundle. The app keeps its zip under 4.5 MB. */
 export const MAX_BUNDLE_BYTES = 5 * 1024 * 1024;
@@ -9,6 +10,8 @@ export const MAX_BUNDLE_BYTES = 5 * 1024 * 1024;
 const MAX_BODY_BYTES = MAX_BUNDLE_BYTES + 64 * 1024;
 /** Accepted uploads per UTC day, across all locations. */
 export const DAILY_CAP = 200;
+/** Accepted uploads per UTC day from one IP, so one address can't use up the cap. */
+export const DAILY_PER_IP = 5;
 /** Must match `simple.period` of the `PER_IP` binding in wrangler.jsonc. */
 const PER_IP_PERIOD_SECONDS = 60;
 export const BUCKET_NAME = "pheeme-diagnostics";
@@ -73,7 +76,7 @@ export async function handleUpload(request: Request, deps: Deps): Promise<Respon
   if (!meta) return status(400, "Malformed meta");
 
   const now = deps.now();
-  if (!(await deps.dailyCap.take())) {
+  if ((await deps.dailyCap.take(ip)) !== "ok") {
     return status(429, "Daily upload limit reached, try again tomorrow", {
       "retry-after": String(secondsUntilUtcMidnight(now)),
     });
@@ -96,20 +99,9 @@ export async function handleUpload(request: Request, deps: Deps): Promise<Respon
   return new Response(null, { status: 204 });
 }
 
-/** Counts one accepted upload against today's cap. Exact as long as a single
- * Durable Object calls it: no await sits between the read and the write, so
- * the input gate keeps concurrent calls from interleaving. */
-export async function takeDailySlot(
-  storage: KvStorage,
-  now: Date,
-  cap: number = DAILY_CAP,
-): Promise<boolean> {
-  const day = utcDay(now);
-  const state = await storage.get<DailyCapState>("state");
-  const count = state?.day === day ? state.count : 0;
-  if (count >= cap) return false;
-  await storage.put("state", { day, count: count + 1 } satisfies DailyCapState);
-  return true;
+/** Counts one accepted upload against today's caps (global and per IP). */
+export function takeDailySlot(storage: KvStorage, now: Date, ip: string): Promise<QuotaResult> {
+  return takeQuotaSlot(storage, "state", now, ip, { daily: DAILY_CAP, perIp: DAILY_PER_IP });
 }
 
 export function secondsUntilUtcMidnight(now: Date): number {
@@ -200,7 +192,7 @@ function isZip(bytes: ArrayBuffer): boolean {
 }
 
 /** Reads the whole body, giving up once it passes `cap` bytes. */
-async function readCapped(
+export async function readCapped(
   body: ReadableStream<Uint8Array> | null,
   cap: number,
 ): Promise<Uint8Array<ArrayBuffer> | "too_large"> {
@@ -225,10 +217,6 @@ async function readCapped(
     offset += chunk.byteLength;
   }
   return out;
-}
-
-function utcDay(date: Date): string {
-  return date.toISOString().slice(0, 10);
 }
 
 function status(code: number, message: string, headers: Record<string, string> = {}): Response {

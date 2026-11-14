@@ -440,18 +440,25 @@ pub fn run() {
                         if desktop::has_tray_host(window.app_handle()).await {
                             let _ = window.hide();
                         } else {
-                            let _ = window.destroy();
+                            // No tray to live in: closing quits, through the exit request
+                            // that saves open drafts first.
+                            window.app_handle().exit(0);
                         }
                     });
                 }
                 #[cfg(not(target_os = "linux"))]
                 // Unmanaged when startup failed (`startup_failed`): let the window close.
-                if window
-                    .try_state::<Arc<desktop::Desktop>>()
-                    .is_some_and(|d| d.can_hide.load(std::sync::atomic::Ordering::Relaxed))
-                    && window.hide().is_ok()
-                {
-                    api.prevent_close();
+                if let Some(desktop) = window.try_state::<Arc<desktop::Desktop>>() {
+                    if desktop.can_hide.load(std::sync::atomic::Ordering::Relaxed)
+                        && window.hide().is_ok()
+                    {
+                        api.prevent_close();
+                    } else if window.label() == "main" {
+                        // Closing quits: go through the exit request, which saves open
+                        // drafts while the window is still there.
+                        api.prevent_close();
+                        window.app_handle().exit(0);
+                    }
                 }
             }
             if let tauri::WindowEvent::Focused(true) = event {
@@ -591,6 +598,8 @@ pub fn run() {
             commands::compose::delete_draft,
             commands::compose::send_email,
             commands::compose::cancel_send,
+            commands::compose::failed_sends,
+            commands::compose::reopen_failed_send,
             commands::support::send_diagnostics,
             commands::support::save_diagnostics,
             commands::updater::log_update,
@@ -605,6 +614,10 @@ pub fn run() {
                 if app.try_state::<AppState>().is_some() {
                     desktop::show_window(app);
                 }
+            }
+            // Quit or restart: open compose panels are saved to Drafts first.
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                commands::compose::save_drafts_before_exit(app, *code, api);
             }
             if let tauri::RunEvent::Exit = event {
                 info!("Pheeme exiting");

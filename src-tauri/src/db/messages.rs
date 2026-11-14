@@ -127,7 +127,8 @@ pub async fn insert_message_if_absent(
 }
 
 /// Replace a cached message's label set, keeping `is_read`/`is_starred` in step.
-/// Returns false when the message isn't cached.
+/// Returns whether anything changed: false when the message isn't cached or already has
+/// exactly these labels (in this order), so callers recompute only threads that changed.
 pub async fn set_labels(
     conn: &mut SqliteConnection,
     account_id: &str,
@@ -138,7 +139,9 @@ pub async fn set_labels(
     let is_read: i64 = (!labels.iter().any(|l| l == "UNREAD")).into();
     let is_starred: i64 = labels.iter().any(|l| l == "STARRED").into();
     let done = sqlx::query!(
-        "UPDATE messages SET label_ids = ?, is_read = ?, is_starred = ? WHERE account_id = ? AND id = ?",
+        r#"UPDATE messages SET label_ids = ?1, is_read = ?2, is_starred = ?3
+           WHERE account_id = ?4 AND id = ?5
+             AND (label_ids IS NOT ?1 OR is_read != ?2 OR is_starred != ?3)"#,
         json,
         is_read,
         is_starred,
@@ -182,19 +185,30 @@ pub async fn existing_ids(
         .collect())
 }
 
-/// Every cached message as `(id, thread id)`, newest first.
-pub async fn all_ids<'e>(
+/// Up to `limit` cached message ids that sort below `below` (every id when `None`), highest
+/// first. Gmail's ids are hex numbers that grow over time, so this pages through the cache
+/// from about the newest message to the oldest, in an order that stays put while messages
+/// come and go.
+pub async fn ids_below<'e>(
     ex: impl SqliteExecutor<'e>,
     account_id: &str,
-) -> Result<Vec<(String, String)>> {
-    let rows = sqlx::query!(
-        r#"SELECT id AS "id!", thread_id AS "thread_id!" FROM messages
-           WHERE account_id = ? ORDER BY date DESC"#,
-        account_id
+    below: Option<&str>,
+    limit: i64,
+) -> Result<Vec<String>> {
+    // Sorts after every id (ids are ASCII), so the first page needs no query of its own.
+    let below = below.unwrap_or("\u{10ffff}");
+    // `+account_id` keeps SQLite on the primary key `(id, account_id)`, read downwards from
+    // `below`; left to choose, it takes an `account_id` index and sorts the account's ids
+    // for every page.
+    Ok(sqlx::query_scalar!(
+        r#"SELECT id AS "id!" FROM messages
+           WHERE +account_id = ? AND id < ? ORDER BY id DESC LIMIT ?"#,
+        account_id,
+        below,
+        limit
     )
     .fetch_all(ex)
-    .await?;
-    Ok(rows.into_iter().map(|r| (r.id, r.thread_id)).collect())
+    .await?)
 }
 
 /// Ids of a thread's messages whose body hasn't been fetched yet.
@@ -609,6 +623,67 @@ pub async fn get_messages_for_thread<'e>(
     Ok(messages)
 }
 
+/// One cached message's id, labels and date: what label changes need, without the body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageLabels {
+    pub id: String,
+    pub labels: Vec<String>,
+    pub date: Option<i64>,
+}
+
+/// A thread's cached messages, oldest first, without their bodies. The outbox reads these
+/// inside write transactions, where loading every body would hold the write lock for long.
+pub async fn labels_for_thread<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    thread_id: &str,
+) -> Result<Vec<MessageLabels>> {
+    let rows = sqlx::query!(
+        r#"SELECT id AS "id!", label_ids, date FROM messages
+           WHERE account_id = ? AND thread_id = ?
+           ORDER BY date ASC, id ASC"#,
+        account_id,
+        thread_id
+    )
+    .fetch_all(ex)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| MessageLabels {
+            id: r.id,
+            labels: parse_labels(r.label_ids.as_deref()),
+            date: r.date,
+        })
+        .collect())
+}
+
+/// [`get_messages_for_thread`] without the bodies and headers (they read as `None`): what
+/// deriving the thread row needs. Threads are recomputed inside every sync and outbox write.
+pub async fn thread_messages_without_bodies<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    thread_id: &str,
+) -> Result<Vec<DbMessage>> {
+    let messages = sqlx::query_as!(
+        DbMessage,
+        r#"
+        SELECT id, account_id, thread_id, label_ids,
+               from_address, from_name, to_addresses, cc_addresses,
+               subject, snippet, NULL AS "body_html: String", NULL AS "body_text: String",
+               date, size_estimate, has_attachment, is_read, is_starred,
+               NULL AS "raw_headers: String", fully_fetched, rfc822_message_id
+        FROM messages
+        WHERE account_id = ? AND thread_id = ?
+        ORDER BY date ASC, id ASC
+        "#,
+        account_id,
+        thread_id
+    )
+    .fetch_all(ex)
+    .await?;
+    Ok(messages)
+}
+
 pub async fn get_message<'e>(
     ex: impl SqliteExecutor<'e>,
     account_id: &str,
@@ -650,6 +725,98 @@ pub async fn delete_message<'e>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn message(id: &str, thread: &str) -> DbMessage {
+        DbMessage {
+            id: id.into(),
+            account_id: "a".into(),
+            thread_id: thread.into(),
+            label_ids: Some(r#"["INBOX"]"#.into()),
+            from_address: Some("x@y.com".into()),
+            from_name: None,
+            to_addresses: None,
+            cc_addresses: None,
+            subject: Some("Hi".into()),
+            snippet: Some("snip".into()),
+            body_html: Some("<p>body</p>".into()),
+            body_text: Some("body".into()),
+            date: Some(1),
+            size_estimate: None,
+            has_attachment: 0,
+            is_read: 1,
+            is_starred: 0,
+            raw_headers: Some("[]".into()),
+            fully_fetched: 1,
+            rfc822_message_id: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn thread_reads_for_label_work_leave_the_bodies_on_disk() {
+        let db = crate::db::test_support::TestDb::with_account("a").await;
+        upsert_message(&db.pool, &message("m1", "t1"))
+            .await
+            .unwrap();
+        let full = get_messages_for_thread(&db.pool, "a", "t1").await.unwrap();
+        let light = thread_messages_without_bodies(&db.pool, "a", "t1")
+            .await
+            .unwrap();
+        assert_eq!(light.len(), 1);
+        assert_eq!(
+            (
+                &light[0].body_html,
+                &light[0].body_text,
+                &light[0].raw_headers
+            ),
+            (&None, &None, &None)
+        );
+        assert_eq!(
+            (&light[0].subject, &light[0].snippet, light[0].labels()),
+            (&full[0].subject, &full[0].snippet, full[0].labels())
+        );
+        assert_eq!(
+            labels_for_thread(&db.pool, "a", "t1").await.unwrap(),
+            [MessageLabels {
+                id: "m1".into(),
+                labels: vec!["INBOX".into()],
+                date: Some(1),
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn ids_below_pages_from_the_highest_id_down() {
+        let db = crate::db::test_support::TestDb::with_account("a").await;
+        for id in ["19a1", "19a3", "19a2", "18ff"] {
+            upsert_message(&db.pool, &message(id, id)).await.unwrap();
+        }
+        let first = ids_below(&db.pool, "a", None, 3).await.unwrap();
+        assert_eq!(first, ["19a3", "19a2", "19a1"]);
+        let rest = ids_below(&db.pool, "a", first.last().map(String::as_str), 3)
+            .await
+            .unwrap();
+        assert_eq!(rest, ["18ff"]);
+        assert!(ids_below(&db.pool, "a", Some("18ff"), 3)
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(ids_below(&db.pool, "b", None, 3).await.unwrap().is_empty());
+
+        // Each page is a walk down the primary key from `below`: no sort, no full scan.
+        let plan: Vec<(i64, i64, i64, String)> = sqlx::query_as(
+            "EXPLAIN QUERY PLAN SELECT id FROM messages
+             WHERE +account_id = 'a' AND id < 'x' ORDER BY id DESC LIMIT 3",
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        assert!(
+            plan.iter()
+                .all(|(_, _, _, step)| !step.contains("TEMP B-TREE"))
+                && plan.iter().any(|(_, _, _, step)| step.contains("id<?")),
+            "{plan:?}"
+        );
+    }
 
     #[tokio::test]
     async fn latest_from_reads_only_the_window() {

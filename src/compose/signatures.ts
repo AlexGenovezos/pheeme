@@ -95,8 +95,25 @@ export function hasContent(html: string | null | undefined): html is string {
   return /<img\b/i.test(html);
 }
 
+// The signature is the one piece of HTML the app document renders as it is (the editor's `SignatureNode`), so
+// beyond scripts it loses whatever could reach outside its own box: stylesheets, form controls, and styles
+// that take an element out of the flow or stack it over the app.
+const signaturePurifier = DOMPurify(window);
+const ESCAPING_STYLES = ["position", "z-index"];
+signaturePurifier.addHook("afterSanitizeAttributes", (node) => {
+  const style = (node as Partial<HTMLElement>).style;
+  if (!style || !node.hasAttribute("style")) return;
+  if (!ESCAPING_STYLES.some((name) => style.getPropertyValue(name) !== "")) return;
+  for (const name of ESCAPING_STYLES) style.removeProperty(name);
+  if (!node.getAttribute("style")?.trim()) node.removeAttribute("style");
+});
+
 /** Signature HTML made safe to show in the editor and to send. */
-export const cleanSignature = (html: string) => DOMPurify.sanitize(html, { WHOLE_DOCUMENT: false });
+export const cleanSignature = (html: string) =>
+  signaturePurifier.sanitize(html, {
+    WHOLE_DOCUMENT: false,
+    FORBID_TAGS: ["style", "form", "input", "button", "select", "textarea", "option", "dialog"],
+  });
 
 /** The block a signature takes in a message body; the editor keeps it as one piece (`SignatureNode`). */
 export const signatureBlock = (html: string) =>
@@ -105,6 +122,20 @@ export const signatureBlock = (html: string) =>
 /** A fresh body: an empty line to type on, then the signature. Empty without one. */
 export const bodyWithSignature = (html: string | null) =>
   html ? `<p></p>${signatureBlock(html)}` : "";
+
+/**
+ * Whether a `div.gmail_signature` is the message's own signature block: at the top of the body, or inside plain
+ * `div`s only (Gmail on the web wraps the body in one). One inside a quote, a table, a list or another signature
+ * came with someone else's mail and is ordinary content.
+ */
+export function isOwnSignatureBlock(el: Element): boolean {
+  for (let up = el.parentElement; up; up = up.parentElement) {
+    if (up.tagName === "BODY" || up.tagName === "HTML") continue;
+    if (up.tagName !== "DIV") return false;
+    if (up.matches(".gmail_quote, .gmail_attr, .gmail_signature, .gmail_extra")) return false;
+  }
+  return true;
+}
 
 /** `html` without its signature block, for telling whether anything was typed. */
 export function withoutSignature(html: string): string {

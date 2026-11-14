@@ -1,7 +1,7 @@
 // The event editor's model: what the form holds, how an event's detail fills it, which presets
 // "Repeat" offers, and the `EventEdit` a save sends (only what changed, for an existing event).
 // Pure: no React, no IPC.
-import type { EventDetail, EventEdit } from "../lib/tauri";
+import type { EventDetail, EventEdit, MeetingLink } from "../lib/tauri";
 import { addDays, dateOf, daysBetween, formatDay, wallClock, weekday, zonedMs } from "./dates";
 
 export type ReminderUnit = "minutes" | "hours" | "days" | "weeks";
@@ -275,6 +275,32 @@ export function describeRule(rule: RepeatRule): string {
 
 // ── Building the form ────────────────────────────────────────────────────────
 
+const isMeetUrl = (url: string | null) =>
+  url != null && /^https:\/\/meet\.google\.com\//i.test(url);
+
+/**
+ * Whether the event has a Google Meet conference (or one Google is still making). Another
+ * provider's conference (a Zoom or Teams add-on) isn't Meet: the editor's Meet switch neither shows
+ * it nor removes it.
+ */
+export function hasMeet(
+  d: Pick<EventDetail, "meetUrl" | "conferencePending" | "hasConference" | "meeting">,
+): boolean {
+  return (
+    d.conferencePending ||
+    isMeetUrl(d.meetUrl) ||
+    (d.hasConference && d.meeting?.provider === "Google Meet")
+  );
+}
+
+/** The event's video call when it's another provider's (Zoom, Teams, …), shown as it is. */
+export function otherCall(
+  d: Pick<EventDetail, "meetUrl" | "conferencePending" | "hasConference" | "meeting">,
+): MeetingLink | null {
+  if (hasMeet(d) || !d.meeting || d.meeting.provider === "Google Meet") return null;
+  return d.meeting;
+}
+
 /** A new event's form: `start`/`end` UTC ms (timed) or first/last day (all-day). */
 export function newForm(init: {
   accountId: string;
@@ -364,7 +390,7 @@ export function formFromDetail(d: EventDetail, displayZone: string): EventForm {
     guestsCanModify: d.guestsCanModify,
     guestsCanInviteOthers: d.guestsCanInviteOthers,
     guestsCanSeeOtherGuests: d.guestsCanSeeOtherGuests,
-    meet: d.hasConference || d.meetUrl != null || d.conferencePending,
+    meet: hasMeet(d),
     location: d.location ?? "",
     description: d.description ? plainText(d.description) : "",
     colorId: d.colorId ?? "",
@@ -474,17 +500,30 @@ export function formEdit(form: EventForm, initial: EventForm | null): EventEdit 
 /** Whether an edit changes nothing. */
 export const isEmptyEdit = (edit: EventEdit) => Object.keys(edit).length === 0;
 
+/**
+ * `repeat` for an event moved from `from` to `to`: a preset taken from the start's day ("Weekly on
+ * Friday", "Monthly on the second Wednesday", "Annually on …") follows it to the new day, as on the
+ * website; a custom rule stays as it is.
+ */
+function repeatFor(repeat: Repeat, from: string, to: string): Repeat {
+  if (from === to) return repeat;
+  const id = repeatChoice(repeat, from);
+  const preset = repeatPresets(to).find((p) => p.id === id);
+  return preset ? { kind: "rule", rule: { ...preset.rule } } : repeat;
+}
+
 /** Moves the end with the start, keeping the length (as the website does when the start changes). */
 export function moveStart(f: EventForm, startDate: string, startMinutes: number): EventForm {
+  const repeat = repeatFor(f.repeat, f.startDate, startDate);
   if (f.allDay) {
     const days = daysBetween(f.startDate, f.endDate);
-    return { ...f, startDate, endDate: addDays(startDate, Math.max(0, days)) };
+    return { ...f, repeat, startDate, endDate: addDays(startDate, Math.max(0, days)) };
   }
   const length =
     zonedMs(f.endDate, f.endMinutes, f.endZone) - zonedMs(f.startDate, f.startMinutes, f.startZone);
   const start = zonedMs(startDate, startMinutes, f.startZone);
   const end = wallClock(start + Math.max(0, length), f.endZone);
-  return { ...f, startDate, startMinutes, endDate: end.date, endMinutes: end.minutes };
+  return { ...f, repeat, startDate, startMinutes, endDate: end.date, endMinutes: end.minutes };
 }
 
 /** Whether guests other than the account itself are on the event (so they could be emailed). */

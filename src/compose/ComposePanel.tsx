@@ -37,11 +37,11 @@ const TITLES: Record<ComposeWindow["kind"], string> = {
   forward: "Forward",
 };
 
-/** "Saving…" or "Draft saved", for the footer. */
+/** "Saving…", "Draft saved" or "Not saved" (the last save failed and what's typed is only here), for the footer. */
 function saveStatus(win: ComposeWindow): string {
   if (win.saving) return "Saving…";
-  if (win.savedAt && win.version === win.savedVersion) return "Draft saved";
-  return "";
+  if (win.version === win.savedVersion) return win.savedAt ? "Draft saved" : "";
+  return win.saveError ? "Not saved" : "";
 }
 
 /** One message being written: a panel docked to the bottom of the window. */
@@ -323,6 +323,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   );
 
   const canChooseFrom = fromChoices.length > 1;
+  const status = saveStatus(win);
   return (
     <>
       <div className="compose__fields">
@@ -475,8 +476,12 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
             {formatSize(bytes)} of 25 MB
           </span>
         )}
-        <span className="compose__status" aria-live="polite">
-          {saveStatus(win)}
+        <span
+          className={cx("compose__status", status === "Not saved" && "compose__status--failed")}
+          aria-live="polite"
+          title={status === "Not saved" ? (win.saveError ?? undefined) : undefined}
+        >
+          {status}
         </span>
         <IconButton
           label="Discard draft"

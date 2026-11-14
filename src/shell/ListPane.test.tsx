@@ -75,3 +75,24 @@ test("switching mailboxes selects their own unread totals", () => {
     expect(screen.getByText(`${unread} unread`)).toBeInTheDocument();
   }
 });
+
+test("the controls bar and the unread slot are there before the list and counts load", () => {
+  useUiStore.setState({ mailbox: { accountId: "a1", labelId: "INBOX" } });
+  act(() => useMailStore.setState({ loading: true }));
+  const { container } = render(<ListPane />);
+  const controls = container.querySelector(".list-pane__controls");
+  expect(controls).not.toBeNull();
+  expect(screen.getByRole("button", { name: "Select all" })).toBeDisabled();
+  const subtitle = container.querySelector(".toolbar--list .toolbar__subtitle");
+  expect(subtitle?.querySelector(".ui-skeleton")).not.toBeNull();
+
+  act(() => {
+    useMailStore.setState({ threads: rows, loading: false });
+    useLabelStore.setState({ counts: { a1: { INBOX: { unread: 31, total: 50 } } } });
+  });
+  expect(container.querySelector(".list-pane__controls")).toBe(controls);
+  expect(container.querySelector(".toolbar--list .toolbar__subtitle")).toBe(subtitle);
+  expect(subtitle).toHaveTextContent("31 unread");
+  expect(screen.getByRole("button", { name: "Select all" })).toBeEnabled();
+  expect(controls).toHaveTextContent("50 conversations");
+});

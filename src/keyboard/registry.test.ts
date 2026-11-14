@@ -60,6 +60,25 @@ describe("single keys", () => {
     reg.handleKeyDown(press("e", { ctrlKey: true }));
     expect(run).not.toHaveBeenCalled();
   });
+
+  test("a held key runs a command once unless it opts in to repeat", () => {
+    const trash = vi.fn();
+    const next = vi.fn();
+    reg.register({ id: "trash", title: "Trash", shortcut: "#", run: trash });
+    reg.register({ id: "next", title: "Next", shortcut: "j", repeat: true, run: next });
+    reg.handleKeyDown(press("#", { shiftKey: true }));
+    const held = press("#", { shiftKey: true, repeat: true });
+    // Swallowed, not handed to the page.
+    expect(reg.handleKeyDown(held)).toBe(true);
+    expect(held.defaultPrevented).toBe(true);
+    reg.handleKeyDown(press("#", { shiftKey: true, repeat: true }));
+    expect(trash).toHaveBeenCalledTimes(1);
+
+    reg.handleKeyDown(press("j"));
+    reg.handleKeyDown(press("j", { repeat: true }));
+    reg.handleKeyDown(press("j", { repeat: true }));
+    expect(next).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("g chords", () => {

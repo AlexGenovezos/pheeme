@@ -9,9 +9,10 @@ import {
   Plus,
   TriangleAlert,
 } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { focusFromKeyboard } from "../keyboard/focus";
 import { describeShortcut } from "../keyboard/format";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useKeybinding } from "../keyboard/useCommands";
@@ -25,6 +26,7 @@ import { screenDays, useCalendarStore, weekStartOf, displayZone } from "./calend
 import { calendarColor, eventColors, textOn } from "./colors";
 import { addDays, addMonths, dateOf, formatDay, startOfMonth } from "./dates";
 import { useCalendarLookup } from "./EventBlock";
+import { gridKeyStep } from "./MonthGrid";
 import { eventDays } from "./layout";
 import { useRangeEvents } from "./rangeEvents";
 import { SidebarAgenda } from "./SidebarAgenda";
@@ -81,6 +83,46 @@ function MiniMonth() {
   const tz = displayZone(accounts);
   const dots = dayDots(events, tz, lookup, days[days.length - 1]);
 
+  // Roving focus, as in the Month view: one day is in the tab order, the last one focused, else the
+  // day the calendar is on, else today, else the 1st. Arrows move by day and week, Home/End to the
+  // week's ends, Page Up/Down by month; Enter or Space shows the day.
+  const gridRef = useRef<HTMLTableElement>(null);
+  const [focused, setFocused] = useState<string | null>(null);
+  const pendingFocus = useRef<string | null>(null);
+  const tabStop =
+    focused && days.includes(focused)
+      ? focused
+      : days.includes(anchor)
+        ? anchor
+        : days.includes(today)
+          ? today
+          : `${month.slice(0, 7)}-01`;
+  const focusDay = (day: string) => {
+    const button = gridRef.current?.querySelector<HTMLElement>(
+      `[data-date="${day}"] .mini-month__day`,
+    );
+    if (!button) return false;
+    pendingFocus.current = null;
+    focusFromKeyboard(button);
+    return true;
+  };
+  // A move past the edge shows the other month first; focus the day once it's drawn.
+  useEffect(() => {
+    if (pendingFocus.current) focusDay(pendingFocus.current);
+  });
+  const onKeyDown = (e: KeyboardEvent<HTMLTableElement>) => {
+    const step = gridKeyStep(e, "mini-month__day", days);
+    if (!step) return;
+    const { next, byMonth } = step;
+    e.preventDefault();
+    e.stopPropagation();
+    setFocused(next);
+    if (byMonth || !focusDay(next)) {
+      pendingFocus.current = next;
+      setMonth(startOfMonth(next));
+    }
+  };
+
   return (
     <div className="mini-month">
       <div className="mini-month__head">
@@ -101,7 +143,12 @@ function MiniMonth() {
           onClick={() => setMonth(addMonths(month, 1))}
         />
       </div>
-      <table className="mini-month__grid" aria-labelledby={labelId}>
+      <table
+        className="mini-month__grid"
+        aria-labelledby={labelId}
+        ref={gridRef}
+        onKeyDown={onKeyDown}
+      >
         <thead>
           <tr>
             {days.slice(0, 7).map((d) => (
@@ -117,6 +164,7 @@ function MiniMonth() {
               {week.map((d, i) => (
                 <td
                   key={d}
+                  data-date={d}
                   className={cx(
                     onScreen.has(d) && "mini-month__cell--shown",
                     onScreen.has(d) &&
@@ -136,7 +184,8 @@ function MiniMonth() {
                     )}
                     aria-current={d === today ? "date" : undefined}
                     aria-label={formatDay(d, { weekday: "long", month: "long", day: "numeric" })}
-                    tabIndex={-1}
+                    tabIndex={d === tabStop ? 0 : -1}
+                    onFocus={() => setFocused(d)}
                     onClick={() => useCalendarStore.getState().goTo(d)}
                   >
                     {Number(d.slice(8))}

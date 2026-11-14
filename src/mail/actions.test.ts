@@ -791,6 +791,31 @@ describe("a thread removed underneath", () => {
     expect(useUiStore.getState().openThread).toBe(key(1));
   });
 
+  test("j and k step from where the open conversation sorted when it left the list, not from the top", () => {
+    setList([thread(1), thread(2), thread(4), thread(5)]);
+    const gone = (n: number) =>
+      useThreadStore.setState({
+        details: new Map([[key(n), { thread: thread(n), messages: [], bodyError: null }]]),
+      });
+    gone(3);
+    useUiStore.setState({ openThread: key(3) });
+    moveSelection(1);
+    expect(useUiStore.getState().openThread).toBe(key(4));
+
+    gone(3);
+    useUiStore.setState({ openThread: key(3) });
+    moveSelection(-1);
+    expect(useUiStore.getState().openThread).toBe(key(2));
+
+    // Below the last row, k goes to the last; j has nowhere to go.
+    gone(6);
+    useUiStore.setState({ openThread: key(6) });
+    moveSelection(1);
+    expect(useUiStore.getState().openThread).toBe(key(6));
+    moveSelection(-1);
+    expect(useUiStore.getState().openThread).toBe(key(5));
+  });
+
   test("a checked row that vanished is skipped, the others are still acted on", async () => {
     setList([thread(1)]);
     useUiStore.setState({ checked: [key(9), key(1)] });

@@ -85,6 +85,7 @@ test("with accounts it shows them and can add or remove one", async () => {
   const calls: string[] = [];
   mockIPC((cmd) => {
     calls.push(cmd);
+    if (cmd === "failed_sends") return [];
     return cmd === "list_accounts" ? [account] : undefined;
   });
   render(<App />);

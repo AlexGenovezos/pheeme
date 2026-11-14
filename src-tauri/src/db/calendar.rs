@@ -1,7 +1,7 @@
 //! Calendar cache: `calendars`, `events` and `calendar_access` (migration 010).
 
 use anyhow::Result;
-use sqlx::{SqliteExecutor, SqlitePool};
+use sqlx::{SqliteConnection, SqliteExecutor, SqlitePool};
 use std::collections::HashSet;
 
 /// One of an account's Google calendars, as listed by `calendarList`.
@@ -179,6 +179,9 @@ pub async fn set_hidden<'e>(
 
 /// Apply one sync page (or one write's result) to a calendar in a single transaction:
 /// upsert `upserts`, delete `deleted_ids`, and store `sync_token` when given.
+///
+/// A row is never replaced by an older version of itself (by Google's `updated`): a sync
+/// that read its page just before a write landed can't put the pre-write copy back.
 pub async fn apply_event_changes(
     pool: &SqlitePool,
     account_id: &str,
@@ -188,6 +191,80 @@ pub async fn apply_event_changes(
     sync_token: Option<&str>,
 ) -> Result<()> {
     let mut tx = super::begin_write(pool).await?;
+    apply_changes_in(
+        &mut tx,
+        account_id,
+        calendar_id,
+        upserts,
+        deleted_ids,
+        sync_token,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Replace a calendar's events with a full read of it, in a single transaction: stored
+/// events the read lacks go, `upserts` (less `deleted_ids`) come in, and the sync token becomes
+/// `sync_token` (none when the read stopped short). Used when Google said the old token is
+/// gone, so the old events stay shown until the full read has arrived.
+pub async fn replace_calendar_events(
+    pool: &SqlitePool,
+    account_id: &str,
+    calendar_id: &str,
+    upserts: &[DbEvent],
+    deleted_ids: &[String],
+    sync_token: Option<&str>,
+) -> Result<()> {
+    let mut tx = super::begin_write(pool).await?;
+    // Only events the read doesn't have go. One it does have is upserted below, where a
+    // version saved here while the read was under way (newer than the read's) is kept.
+    let read: std::collections::HashSet<&str> = upserts.iter().map(|e| e.id.as_str()).collect();
+    let stored = sqlx::query_scalar!(
+        "SELECT id FROM events WHERE account_id = ? AND calendar_id = ?",
+        account_id,
+        calendar_id
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    for id in stored.iter().filter(|id| !read.contains(id.as_str())) {
+        sqlx::query!(
+            "DELETE FROM events WHERE account_id = ? AND calendar_id = ? AND id = ?",
+            account_id,
+            calendar_id,
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query!(
+        "UPDATE calendars SET sync_token = NULL WHERE account_id = ? AND id = ?",
+        account_id,
+        calendar_id
+    )
+    .execute(&mut *tx)
+    .await?;
+    apply_changes_in(
+        &mut tx,
+        account_id,
+        calendar_id,
+        upserts,
+        deleted_ids,
+        sync_token,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn apply_changes_in(
+    conn: &mut SqliteConnection,
+    account_id: &str,
+    calendar_id: &str,
+    upserts: &[DbEvent],
+    deleted_ids: &[String],
+    sync_token: Option<&str>,
+) -> Result<()> {
     for id in deleted_ids {
         sqlx::query!(
             // A deleted series takes its changed and cancelled occurrences with it.
@@ -197,7 +274,7 @@ pub async fn apply_event_changes(
             calendar_id,
             id
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     }
     for e in upserts {
@@ -236,7 +313,8 @@ pub async fn apply_event_changes(
                  html_link = excluded.html_link,
                  etag = excluded.etag,
                  updated_ms = excluded.updated_ms,
-                 raw = excluded.raw",
+                 raw = excluded.raw
+             WHERE excluded.updated_ms = 0 OR excluded.updated_ms >= events.updated_ms",
             account_id,
             calendar_id,
             e.id,
@@ -268,7 +346,7 @@ pub async fn apply_event_changes(
             e.updated_ms,
             e.raw
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     }
     if let Some(token) = sync_token {
@@ -278,39 +356,13 @@ pub async fn apply_event_changes(
             account_id,
             calendar_id
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
         anyhow::ensure!(
             updated.rows_affected() == 1,
             "no calendar {calendar_id} to store a sync token on"
         );
     }
-    tx.commit().await?;
-    Ok(())
-}
-
-/// Forget a calendar's events and sync token (Google said the token is gone; sync in full).
-pub async fn clear_calendar_events(
-    pool: &SqlitePool,
-    account_id: &str,
-    calendar_id: &str,
-) -> Result<()> {
-    let mut tx = super::begin_write(pool).await?;
-    sqlx::query!(
-        "DELETE FROM events WHERE account_id = ? AND calendar_id = ?",
-        account_id,
-        calendar_id
-    )
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query!(
-        "UPDATE calendars SET sync_token = NULL WHERE account_id = ? AND id = ?",
-        account_id,
-        calendar_id
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
     Ok(())
 }
 
@@ -756,6 +808,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_older_version_never_replaces_a_newer_one() {
+        use super::event as stored;
+        let db = TestDb::with_account("a").await;
+        let pool = &db.pool;
+        replace_calendars(pool, "a", &[cal("C")]).await.unwrap();
+        let version = |summary: &str, updated_ms: i64| {
+            let mut e = event("C", "e1", 0, H);
+            e.summary = Some(summary.into());
+            e.updated_ms = updated_ms;
+            e
+        };
+        let summary = || async {
+            stored(pool, "a", "C", "e1")
+                .await
+                .unwrap()
+                .unwrap()
+                .summary
+                .unwrap()
+        };
+        // A write's result, then a sync page read before the write landed.
+        apply_event_changes(pool, "a", "C", &[version("saved", 20)], &[], None)
+            .await
+            .unwrap();
+        apply_event_changes(pool, "a", "C", &[version("stale", 10)], &[], Some("t"))
+            .await
+            .unwrap();
+        assert_eq!(summary().await, "saved");
+        assert_eq!(
+            calendars(pool, Some("a")).await.unwrap()[0]
+                .sync_token
+                .as_deref(),
+            Some("t"),
+            "the page's token is still stored"
+        );
+        // The same version again, a newer one, and one without a time all apply.
+        apply_event_changes(pool, "a", "C", &[version("same", 20)], &[], None)
+            .await
+            .unwrap();
+        assert_eq!(summary().await, "same");
+        apply_event_changes(pool, "a", "C", &[version("newer", 30)], &[], None)
+            .await
+            .unwrap();
+        assert_eq!(summary().await, "newer");
+        // A full read that fetched its page before a save keeps the save too.
+        replace_calendar_events(pool, "a", "C", &[version("stale", 10)], &[], Some("t2"))
+            .await
+            .unwrap();
+        assert_eq!(summary().await, "newer");
+        apply_event_changes(pool, "a", "C", &[version("untimed", 0)], &[], None)
+            .await
+            .unwrap();
+        assert_eq!(summary().await, "untimed");
+    }
+
+    #[tokio::test]
     async fn deleting_a_series_deletes_its_changed_occurrences() {
         let db = TestDb::with_account("a").await;
         let pool = &db.pool;
@@ -780,15 +887,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn clear_calendar_events_drops_rows_and_token() {
+    async fn replace_calendar_events_swaps_rows_and_token() {
         let db = TestDb::with_account("a").await;
         let pool = &db.pool;
-        replace_calendars(pool, "a", &[cal("C")]).await.unwrap();
+        replace_calendars(pool, "a", &[cal("C"), cal("D")])
+            .await
+            .unwrap();
         apply_event_changes(pool, "a", "C", &[event("C", "e1", 0, H)], &[], Some("t"))
             .await
             .unwrap();
-        clear_calendar_events(pool, "a", "C").await.unwrap();
-        assert!(events_overlapping(pool, 0, H).await.unwrap().is_empty());
+        apply_event_changes(pool, "a", "D", &[event("D", "d1", 0, H)], &[], None)
+            .await
+            .unwrap();
+        replace_calendar_events(pool, "a", "C", &[event("C", "e2", 0, H)], &[], Some("t2"))
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&events_overlapping(pool, 0, H).await.unwrap()),
+            vec!["d1", "e2"]
+        );
+        assert_eq!(
+            calendars(pool, Some("a")).await.unwrap()[0]
+                .sync_token
+                .as_deref(),
+            Some("t2")
+        );
+
+        // A read that stopped short leaves no token, so the next sync reads in full again.
+        replace_calendar_events(pool, "a", "C", &[], &[], None)
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&events_overlapping(pool, 0, H).await.unwrap()),
+            vec!["d1"]
+        );
         assert_eq!(
             calendars(pool, Some("a")).await.unwrap()[0].sync_token,
             None

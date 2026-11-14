@@ -3,6 +3,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { dismissToast, useToastStore } from "../components/ui/Toast";
 import {
   CHECK_FOR_UPDATES_EVENT,
   CHECK_INTERVAL_MS,
@@ -38,6 +39,7 @@ function sleepFor(ms: number) {
 beforeEach(() => {
   vi.useFakeTimers();
   __resetForTests();
+  useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
 });
 
 afterEach(() => {
@@ -275,6 +277,39 @@ test("reports an up-to-date check", async () => {
   stop = startUpdateChecks(deps);
   await vi.advanceTimersByTimeAsync(0);
   expect(deps.report).toHaveBeenCalledWith("up_to_date");
+});
+
+test("apply saves open drafts first, and installs nothing when one can't be saved", async () => {
+  const order: string[] = [];
+  const update = fakeUpdate(async () => {
+    order.push("install");
+  });
+  const deps = {
+    ...fakeDeps(async () => update),
+    saveDrafts: vi.fn(async () => {
+      order.push("save");
+      return false;
+    }),
+  };
+  stop = startUpdateChecks(deps);
+  await vi.advanceTimersByTimeAsync(0);
+
+  await useUpdateStore.getState().apply();
+  expect(order).toEqual(["save"]);
+  expect(deps.relaunch).not.toHaveBeenCalled();
+  expect(useUpdateStore.getState()).toMatchObject({ applying: false, available: "0.2.0" });
+  expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Update not installed");
+
+  // Once the draft saves, the update goes ahead: save, then install, then relaunch.
+  deps.saveDrafts.mockImplementation(async () => {
+    order.push("save");
+    return true;
+  });
+  deps.relaunch.mockImplementation(async () => {
+    order.push("relaunch");
+  });
+  await useUpdateStore.getState().apply();
+  expect(order).toEqual(["save", "save", "install", "relaunch"]);
 });
 
 test("apply failure keeps the banner", async () => {

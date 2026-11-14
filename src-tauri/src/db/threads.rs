@@ -857,7 +857,8 @@ pub async fn recompute_threads(
         .fetch_optional(&mut *conn)
         .await?
         .is_some();
-        let msgs = messages::get_messages_for_thread(&mut *conn, account_id, thread_id).await?;
+        let msgs =
+            messages::thread_messages_without_bodies(&mut *conn, account_id, thread_id).await?;
         match derive_thread(account_id, thread_id, &msgs) {
             Some((thread, labels)) => {
                 upsert_thread_tx(conn, &thread, &labels).await?;

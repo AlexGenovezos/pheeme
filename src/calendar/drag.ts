@@ -6,7 +6,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { CalendarEvent, EventTime } from "../lib/tauri";
 import { cancelDraft, moveEvent, startDraft } from "./actions";
 import { addDays, daysBetween, wallClock, zonedMs } from "./dates";
-import { DRAFT_ID, useEditStore } from "./editStore";
+import { DRAFT_ID, setMoving, useEditStore } from "./editStore";
 import { eventKey } from "./EventBlock";
 
 const DAY_MINUTES = 24 * 60;
@@ -188,17 +188,17 @@ export function shiftDays(
 const sameTime = (a: EventTime, b: EventTime) => a.ms === b.ms && a.date === b.date;
 
 function drop(event: CalendarEvent, dragged: boolean) {
-  const moving = useEditStore.getState().moving;
   const key = eventKey(event);
+  const moving = useEditStore.getState().moving[key];
   if (
     dragged &&
-    moving?.key === key &&
+    moving &&
     !(sameTime(moving.start, event.start) && sameTime(moving.end, event.end))
   ) {
     void moveEvent(event, moving.start, moving.end);
     return;
   }
-  if (moving?.key === key) useEditStore.setState({ moving: null });
+  setMoving(key, null);
 }
 
 const editable = (event: CalendarEvent) => event.canEdit && event.id !== DRAFT_ID;
@@ -225,23 +225,18 @@ export function dragTimed(e: ReactPointerEvent<HTMLElement>, event: CalendarEven
       if (resizing) {
         const w = wallClock(at, tz);
         const end = Math.max(zonedMs(w.date, snap(w.minutes), tz), startMs + SNAP * 60_000);
-        useEditStore.setState({
-          moving: { key, start: event.start, end: { ...event.end, ms: end } },
-        });
+        setMoving(key, { start: event.start, end: { ...event.end, ms: end } });
         return;
       }
       const w = wallClock(at - grab, tz);
       const start = zonedMs(w.date, snap(w.minutes), tz);
-      useEditStore.setState({
-        moving: {
-          key,
-          start: { ...event.start, ms: start },
-          end: { ...event.end, ms: start + (endMs - startMs) },
-        },
+      setMoving(key, {
+        start: { ...event.start, ms: start },
+        end: { ...event.end, ms: start + (endMs - startMs) },
       });
     },
     end: (dragged) => drop(event, dragged),
-    cancel: () => useEditStore.setState({ moving: null }),
+    cancel: () => setMoving(key, null),
   });
 }
 
@@ -255,9 +250,9 @@ export function dragOnDays(e: ReactPointerEvent<HTMLElement>, event: CalendarEve
     move: (x, y) => {
       const over = targetAt(x, y, "day")?.dataset.date;
       if (!over) return;
-      useEditStore.setState({ moving: { key, ...shiftDays(event, daysBetween(from, over), tz) } });
+      setMoving(key, shiftDays(event, daysBetween(from, over), tz));
     },
     end: (dragged) => drop(event, dragged),
-    cancel: () => useEditStore.setState({ moving: null }),
+    cancel: () => setMoving(key, null),
   });
 }

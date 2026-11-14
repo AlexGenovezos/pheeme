@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE messages SET label_ids = ?1, is_read = ?2, is_starred = ?3\n           WHERE account_id = ?4 AND id = ?5\n             AND (label_ids IS NOT ?1 OR is_read != ?2 OR is_starred != ?3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "19521945106311ae9af3cc9ebbf2a252be00b341e7cef498f420eec202c79343"
+}

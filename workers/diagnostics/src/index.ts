@@ -5,8 +5,8 @@ import { EmailMessage } from "cloudflare:email";
 import { DurableObject } from "cloudflare:workers";
 import { handleUpload, takeDailySlot } from "./handler";
 import { buildMime } from "./mime";
-import { handlePing } from "./ping";
-import type { Env } from "./types";
+import { handlePing, takeInstallSlot } from "./ping";
+import type { Env, QuotaResult } from "./types";
 
 const FROM = "diagnostics@pheeme.email";
 // Must match `destination_address` of the NOTIFY binding in wrangler.jsonc.
@@ -18,6 +18,7 @@ export default {
       return handlePing(request, {
         bucket: env.BUNDLES,
         perIp: env.PING_PER_IP,
+        installs: env.DAILY_CAP.getByName("global"),
         now: () => new Date(),
       });
     }
@@ -44,9 +45,13 @@ export default {
   },
 };
 
-/** One instance (named "global") counts accepted uploads per UTC day. */
+/** One instance (named "global") counts accepted uploads and new install IDs per UTC day. */
 export class DailyCap extends DurableObject<Env> {
-  async take(): Promise<boolean> {
-    return takeDailySlot(this.ctx.storage, new Date());
+  async take(ip: string): Promise<QuotaResult> {
+    return takeDailySlot(this.ctx.storage, new Date(), ip);
+  }
+
+  async takeInstall(ip: string): Promise<QuotaResult> {
+    return takeInstallSlot(this.ctx.storage, new Date(), ip);
   }
 }

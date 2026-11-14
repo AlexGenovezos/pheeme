@@ -424,6 +424,18 @@
   vertical-align: text-bottom;
 }
 
+/* A switch not loaded yet, the size of the switch so nothing moves when it arrives. */
+.settings-switch-pending {
+  width: var(--switch-width);
+  height: var(--control-height-sm);
+}
+
+/* A button not loaded yet, sized like a small button. */
+.settings-button-pending {
+  width: calc(var(--space-12) + var(--space-8));
+  height: var(--control-height-sm);
+}
+
 /* Gmail quota, last hour (QuotaUsage.tsx): stacked bars per minute under the limit line. */
 .settings-usage__peak {
   color: var(--color-foreground-muted);

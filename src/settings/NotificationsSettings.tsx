@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Select } from "../components/ui/Select";
+import { Skeleton } from "../components/ui/Skeleton";
 import { Switch } from "../components/ui/Switch";
 import {
   getDesktopSettings,
@@ -14,13 +15,15 @@ import {
 } from "../desktop/api";
 import { resetNotificationPrompt } from "../desktop/prompt";
 import { toCommandError } from "../lib/tauri";
+import { useAccountStore } from "../store/accountStore";
 import { SettingsRow, SettingsSection } from "./rows";
 
+type Mode = NotifySchedule["mode"];
 const MODES = [
   { value: "always", label: "Any time" },
   { value: "workHours", label: "Work hours" },
   { value: "off", label: "Off" },
-] as const;
+] as const satisfies readonly { value: Mode; label: string }[];
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
   value: hour,
   label: `${String(hour).padStart(2, "0")}:00`,
@@ -53,6 +56,8 @@ export function NotificationsSettings() {
   const [settings, setSettings] = useState<DesktopSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const knownAccounts = useAccountStore((s) => s.accounts);
+  const accountsLoaded = useAccountStore((s) => s.loaded);
   const load = async () => {
     setError(null);
     try {
@@ -100,6 +105,12 @@ export function NotificationsSettings() {
     if (schedule) void change(() => setNotificationSchedule({ ...schedule, ...patch }));
   };
 
+  // The account list is already known when Settings opens, so its rows are there from the first
+  // frame; each switch is a skeleton until the saved choices arrive.
+  const accountRows: Array<{ accountId: string; email: string; enabled: boolean | null }> = settings
+    ? settings.accounts
+    : knownAccounts.map((a) => ({ accountId: a.id, email: a.email, enabled: null }));
+
   return (
     <>
       <SettingsSection title="Schedule">
@@ -109,9 +120,10 @@ export function NotificationsSettings() {
           control={
             <SegmentedControl
               label="When to alert"
-              value={schedule?.mode ?? "always"}
+              // Before the settings load nothing is chosen (no segment matches), so no wrong mode shows.
+              value={schedule?.mode as Mode}
               options={MODES}
-              disabled={busy}
+              disabled={busy || !schedule}
               onChange={(mode) => saveSchedule({ mode })}
             />
           }
@@ -169,27 +181,30 @@ export function NotificationsSettings() {
           title="System preferences"
           description="Your system controls banners, sounds, lock-screen previews and Focus / Do Not Disturb. Enabling an account may ask for notification permission."
         />
-        {settings?.accounts.map((account) => (
+        {accountRows.map((account) => (
           <SettingsRow
             key={account.accountId}
             title={account.email}
             description="Notify for new unread Primary mail"
             control={
-              <Switch
-                label={`Notifications for ${account.email}`}
-                checked={account.enabled}
-                disabled={busy}
-                onChange={(enabled) =>
-                  void change(() => setAccountNotifications(account.accountId, enabled))
-                }
-              />
+              account.enabled === null ? (
+                <Skeleton shape="block" className="settings-switch-pending" />
+              ) : (
+                <Switch
+                  label={`Notifications for ${account.email}`}
+                  checked={account.enabled}
+                  disabled={busy}
+                  onChange={(enabled) =>
+                    void change(() => setAccountNotifications(account.accountId, enabled))
+                  }
+                />
+              )
             }
           />
         ))}
-        {settings?.accounts.length === 0 && (
+        {accountRows.length === 0 && (settings || accountsLoaded) && (
           <SettingsRow title="Connect an account to enable notifications" />
         )}
-        {!settings && !error && <SettingsRow title="Loading notification settings…" />}
       </SettingsSection>
       <SettingsSection title="Calendar">
         <SettingsRow
@@ -220,16 +235,24 @@ export function NotificationsSettings() {
         />
         <SettingsRow
           title={
-            settings?.trayAvailable
-              ? "Pheeme keeps running when you close its window"
-              : "Closing the window quits Pheeme"
+            !settings ? (
+              <Skeleton width="24em" />
+            ) : settings.trayAvailable ? (
+              "Pheeme keeps running when you close its window"
+            ) : (
+              "Closing the window quits Pheeme"
+            )
           }
           description={
-            settings?.trayAvailable
-              ? "Choose Quit Pheeme from the icon's menu to stop sync and notifications."
-              : settings?.trayEnabled
-                ? "Keep Pheeme open for sync and notifications. On Linux, the icon needs a desktop with an AppIndicator / StatusNotifier host."
-                : "Keep Pheeme open for sync and notifications, or show the icon to keep it running in the background."
+            !settings ? (
+              <Skeleton width="32em" />
+            ) : settings.trayAvailable ? (
+              "Choose Quit Pheeme from the icon's menu to stop sync and notifications."
+            ) : settings.trayEnabled ? (
+              "Keep Pheeme open for sync and notifications. On Linux, the icon needs a desktop with an AppIndicator / StatusNotifier host."
+            ) : (
+              "Keep Pheeme open for sync and notifications, or show the icon to keep it running in the background."
+            )
           }
         />
       </SettingsSection>

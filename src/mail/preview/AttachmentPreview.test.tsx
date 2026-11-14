@@ -94,6 +94,24 @@ test("Space and Escape close it; mail shortcuts are off while it's open", () => 
   off();
 });
 
+test("Space on a focused button, tab or the sheet's grid goes to it instead of closing", async () => {
+  render(<AttachmentPreview />);
+  open([file("xlsx", "budget.xlsx"), file("txt", "notes.txt")]);
+  await screen.findByRole("cell", { name: "Parking signs" }, { timeout: 3000 });
+  for (const target of [
+    screen.getByRole("button", { name: /Download/ }),
+    screen.getByRole("button", { name: /Next attachment/ }),
+    screen.getByRole("tab", { name: "Volunteers" }),
+    screen.getByLabelText(/of budget\.xlsx/),
+  ]) {
+    target.focus();
+    const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+    target.dispatchEvent(space);
+    expect(space.defaultPrevented).toBe(false);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  }
+});
+
 test("a file it can't show says so and offers what's possible", () => {
   render(<AttachmentPreview />);
   open([file("zip", "sources.zip", "application/zip"), file("key", "deck.key")]);
