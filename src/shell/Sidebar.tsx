@@ -3,6 +3,7 @@ import { NotificationOffer } from "../desktop/NotificationOffer";
 import {
   ChevronRight,
   EllipsisVertical,
+  Gauge,
   type LucideIcon,
   Mails,
   PanelLeftClose,
@@ -311,6 +312,29 @@ function OfflineNote() {
     >
       <WifiOff aria-hidden="true" />
       <span>Offline. Changes will sync later.</span>
+    </div>
+  );
+}
+
+/** One calm note while Gmail is slowing sync, however many accounts it slows. */
+function SlowSyncNote() {
+  const offline = useAccountStore((s) => s.offline);
+  const slowSync = useAccountStore((s) => s.slowSync);
+  const slow = Object.values(slowSync);
+  if (offline || slow.length === 0) return null;
+  const contended = slow.some((s) => s.contended);
+  return (
+    <div
+      className="sidebar__sync-error sidebar__offline"
+      role="status"
+      title="Gmail limits how fast an account can sync. Pheeme slows down and carries on by itself; nothing to do."
+    >
+      <Gauge aria-hidden="true" />
+      <span>
+        {contended
+          ? "Gmail is slowing sync. Another device may be syncing this account."
+          : "Gmail is slowing sync."}
+      </span>
     </div>
   );
 }
@@ -719,6 +743,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
       <nav className="sidebar__scroll" aria-label="Mailboxes" onKeyDown={onMailboxKeyDown}>
         <Section title="Inboxes">
           <OfflineNote />
+          <SlowSyncNote />
           {single ? (
             <>
               {errors[single.id] && (

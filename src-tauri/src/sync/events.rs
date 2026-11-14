@@ -123,6 +123,12 @@ pub enum SyncEvent {
         account_id: String,
         status: String,
     },
+    /// Gmail's quota is slowing this account's sync or backfill; it tries again after
+    /// `retry_in_ms` (when known).
+    RateLimited {
+        account_id: String,
+        retry_in_ms: Option<u64>,
+    },
     /// Google stopped (`false`) or started again (`true`) answering this device.
     Network {
         online: bool,
@@ -138,6 +144,7 @@ impl SyncEvent {
             SyncEvent::LabelsUpdated { .. } => "sync:labels_updated",
             SyncEvent::Completed { .. } => "sync:completed",
             SyncEvent::Error { .. } => "sync:error",
+            SyncEvent::RateLimited { .. } => "sync:rate_limited",
             SyncEvent::OpRejected { .. } => "outbox:rejected",
             SyncEvent::SendStatus { .. } => "outbox:send_status",
             SyncEvent::ThreadLoading { .. } => "mail:thread_loading",
@@ -230,6 +237,27 @@ mod tests {
             serde_json::to_value(&e).unwrap(),
             serde_json::json!({"accountId": "a", "threadId": "t", "stage": "retrying",
                 "attempt": 0, "retryInMs": 8000, "reason": "rate_limited", "syncBusy": true})
+        );
+    }
+
+    #[test]
+    fn rate_limited_payload_is_camel_case() {
+        let e = SyncEvent::RateLimited {
+            account_id: "a".into(),
+            retry_in_ms: Some(1500),
+        };
+        assert_eq!(e.name(), "sync:rate_limited");
+        assert_eq!(
+            serde_json::to_value(&e).unwrap(),
+            serde_json::json!({"accountId": "a", "retryInMs": 1500})
+        );
+        let e = SyncEvent::RateLimited {
+            account_id: "a".into(),
+            retry_in_ms: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&e).unwrap(),
+            serde_json::json!({"accountId": "a", "retryInMs": null})
         );
     }
 
