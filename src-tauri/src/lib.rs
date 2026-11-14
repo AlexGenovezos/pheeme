@@ -216,6 +216,66 @@ fn attachment_response(served: mail::InlineResponse) -> tauri::http::Response<Ve
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// The main window starts hidden and the frontend shows it after its first paint. If that never happens (a script
 /// error, a stuck first command), show it anyway so the app is never invisible.
+/// Without its data Pheeme can't run, so say why in a native dialog (the main window never
+/// shows) rather than quitting silently. A lost key can start again from Gmail.
+fn startup_failed(
+    app: &tauri::AppHandle,
+    error: &anyhow::Error,
+    data_dir: std::path::PathBuf,
+    cache_dir: std::path::PathBuf,
+) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    tracing::error!("Pheeme couldn't start: {error:#}");
+    // The frontend shows the window once it loads; keep it from loading without its state.
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.navigate("about:blank".parse().expect("valid URL"));
+    }
+    let lost = error.downcast_ref::<storage::KeyLost>().is_some();
+    let mut message = error.to_string();
+    if lost {
+        message.push_str(
+            "\n\nOr start again: Pheeme moves the unreadable data into a folder in its data \
+             folder, makes a new key and downloads your mail again from Gmail. You'll sign in \
+             to your accounts again, and changes not yet sent to Gmail stay in that folder.",
+        );
+    }
+    let dialog = app
+        .dialog()
+        .message(message)
+        .title("Pheeme couldn't start")
+        .kind(MessageDialogKind::Error);
+    let app = app.clone();
+    if !lost {
+        dialog
+            .buttons(MessageDialogButtons::OkCustom("Quit".into()))
+            .show(move |_| app.exit(1));
+        return;
+    }
+    dialog
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Start again".into(),
+            "Quit".into(),
+        ))
+        .show(move |start_again| {
+            if !start_again {
+                return app.exit(1);
+            }
+            match storage::set_aside(&data_dir, &cache_dir) {
+                Ok(aside) => {
+                    info!(
+                        "Unreadable local data moved to {}",
+                        support::scrub::display_path(&aside)
+                    );
+                    app.restart();
+                }
+                Err(error) => {
+                    tracing::error!("Couldn't set the unreadable data aside: {error:#}");
+                    app.exit(1);
+                }
+            }
+        });
+}
+
 fn reveal_window_fallback(app: tauri::AppHandle) {
     const AFTER: std::time::Duration = std::time::Duration::from_secs(3);
     tauri::async_runtime::spawn(async move {
@@ -299,19 +359,28 @@ pub fn run() {
             // Block until the database is ready so commands never run without state.
             let events = Arc::new(TauriEvents(app.handle().clone()));
             let storage_dir = data_dir.clone();
-            let storage_guard = tauri::async_runtime::block_on(async move {
-                tokio::task::spawn_blocking(move || {
+            let started = tauri::async_runtime::block_on(async {
+                let storage_guard = tokio::task::spawn_blocking(move || {
                     storage::unlock(&storage_dir, &secrets::OsKeychain)
                 })
-                .await?
-            })?;
-            let mut state = tauri::async_runtime::block_on(build_state(
-                &data_dir,
-                &cache_dir,
-                Arc::new(secrets::KeyringStore::new()),
-                events,
-                storage_guard.key.clone(),
-            ))?;
+                .await??;
+                let state = build_state(
+                    &data_dir,
+                    &cache_dir,
+                    Arc::new(secrets::KeyringStore::new()),
+                    events,
+                    storage_guard.key.clone(),
+                )
+                .await?;
+                anyhow::Ok((storage_guard, state))
+            });
+            let (storage_guard, mut state) = match started {
+                Ok(started) => started,
+                Err(error) => {
+                    startup_failed(app.handle(), &error, data_dir, cache_dir);
+                    return Ok(());
+                }
+            };
             state.storage_guard = Some(storage_guard);
             state.log_dir = log_path;
             let sync = state.sync.clone();

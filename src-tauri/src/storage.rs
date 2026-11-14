@@ -46,6 +46,9 @@ impl StorageKey {
             // SQLx executes `key` before every other pragma, on every pooled connection.
             .pragma("key", format!("\"{}\"", *self.database_key()))
             .pragma("temp_store", "MEMORY")
+            // Every page read from disk is decrypted and authenticated, so keep more of them
+            // decrypted in memory than SQLite's 2 MB default (the hot read paths walk more).
+            .pragma("cache_size", "-16384")
             // Connection setup includes the key; SQL text and bind values must not be logged.
             .disable_statement_logging()
     }
@@ -113,18 +116,23 @@ pub fn unlock(data_dir: &Path, keychain: &dyn Keychain) -> Result<UnlockedStorag
     Ok(UnlockedStorage { key, _lock: lock })
 }
 
+/// The keychain answered, but the key that encrypted the local data is missing or damaged.
+/// Startup offers to set that data aside (`set_aside`) and download mail again from Gmail.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct KeyLost(&'static str);
+
+const KEY_DAMAGED: KeyLost =
+    KeyLost("The local mail encryption key is damaged; the existing data has been left untouched.");
+
 fn load_key(data_dir: &Path, keychain: &dyn Keychain) -> Result<StorageKey> {
     let saved = keychain.read(KEY_ENTRY).context(
         "Couldn't unlock local mail encryption. Unlock your system keychain and restart Pheeme.",
     )?;
     if let Some(saved) = saved {
         let saved = Zeroizing::new(saved);
-        let bytes = Zeroizing::new(STANDARD.decode(&*saved).context(
-            "The local mail encryption key is damaged; the existing data has been left untouched.",
-        )?);
-        let key: [u8; 64] = bytes.as_slice().try_into().context(
-            "The local mail encryption key is damaged; the existing data has been left untouched.",
-        )?;
+        let bytes = Zeroizing::new(STANDARD.decode(&*saved).map_err(|_| KEY_DAMAGED)?);
+        let key: [u8; 64] = bytes.as_slice().try_into().map_err(|_| KEY_DAMAGED)?;
         return Ok(StorageKey(Arc::new(Zeroizing::new(key))));
     }
     // Never replace a lost key. In particular, don't turn a keychain reset into data loss.
@@ -133,7 +141,7 @@ fn load_key(data_dir: &Path, keychain: &dyn Keychain) -> Result<StorageKey> {
         || (db.exists() && !is_plaintext_database(&db)?)
         || data_dir.join("db.sqlite.encrypted").exists()
     {
-        bail!("The key for your encrypted local mail is missing from the system keychain. Restore the original keychain; the existing data has been left untouched.");
+        return Err(KeyLost("The key for your encrypted local mail is missing from the system keychain. Restore the original keychain; the existing data has been left untouched.").into());
     }
     let key = StorageKey::generate();
     let encoded = Zeroizing::new(STANDARD.encode(&key.0[..]));
@@ -149,6 +157,47 @@ fn load_key(data_dir: &Path, keychain: &dyn Keychain) -> Result<StorageKey> {
         );
     }
     Ok(key)
+}
+
+/// After `KeyLost`, at the user's request: move everything the lost key encrypted into a new
+/// `unreadable-<time>` folder in the data folder, so the next start makes a new key and
+/// downloads mail again. Nothing is deleted but the attachment cache, which Gmail still has;
+/// restoring the old key and moving the files back recovers the rest.
+pub fn set_aside(data_dir: &Path, cache_dir: &Path) -> Result<PathBuf> {
+    let aside = data_dir.join(format!(
+        "unreadable-{}",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    ));
+    private_dir(&aside)?;
+    let move_aside = |from: PathBuf, name: &str| -> Result<()> {
+        match std::fs::rename(&from, aside.join(name)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(e).with_context(|| format!("Couldn't move {name} aside"))
+            }
+            _ => Ok(()),
+        }
+    };
+    for name in [
+        "db.sqlite",
+        "db.sqlite-wal",
+        "db.sqlite-shm",
+        "db.sqlite-journal",
+        "db.sqlite.encrypted",
+        "db.sqlite.encrypted-wal",
+        "db.sqlite.encrypted-shm",
+        "db.sqlite.encrypted-journal",
+        "storage-v1",
+    ] {
+        move_aside(data_dir.join(name), name)?;
+    }
+    // Staged attachments of unsent drafts; only the lost key can read them.
+    move_aside(cache_dir.join("compose-v1"), "compose-v1")?;
+    match std::fs::remove_dir_all(cache_dir.join("attachments-v1")) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+        _ => {}
+    }
+    sync_dir(data_dir)?;
+    Ok(aside)
 }
 
 pub(crate) fn is_plaintext_database(path: &Path) -> Result<bool> {
@@ -211,6 +260,9 @@ pub struct EncryptedFiles {
     root: PathBuf,
     purpose: &'static str,
     key: StorageKey,
+    /// Flush each write to disk. Only for files that can't be fetched again: a torn cache
+    /// file fails authentication and is downloaded again.
+    durable: bool,
 }
 
 impl EncryptedFiles {
@@ -219,6 +271,7 @@ impl EncryptedFiles {
             root: cache_dir.join("attachments-v1"),
             purpose: "attachments-v1",
             key,
+            durable: false,
         }
     }
 
@@ -227,6 +280,7 @@ impl EncryptedFiles {
             root: cache_dir.join("compose-v1"),
             purpose: "compose-v1",
             key,
+            durable: true,
         }
     }
 
@@ -254,24 +308,35 @@ impl EncryptedFiles {
 
     pub async fn write(&self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         let encrypted = self.key.seal(bytes, &self.aad(path)?)?;
-        let parent = path.parent().ok_or_else(invalid_file)?;
-        private_dir(parent)?;
-        let mut name = path.file_name().ok_or_else(invalid_file)?.to_os_string();
-        name.push(format!(".tmp-{}", uuid::Uuid::new_v4()));
-        let tmp = path.with_file_name(name);
-        // No plaintext temporary file, even if writing or renaming fails.
-        let result = (|| {
-            let mut file = private_file(&tmp, true)?;
-            file.write_all(&encrypted)?;
-            file.sync_all()?;
-            drop(file);
-            std::fs::rename(&tmp, path)?;
-            sync_dir(parent)
-        })();
-        if result.is_err() {
-            let _ = std::fs::remove_file(&tmp);
-        }
-        result
+        let path = path.to_path_buf();
+        let durable = self.durable;
+        tokio::task::spawn_blocking(move || {
+            let parent = path.parent().ok_or_else(invalid_file)?;
+            private_dir(parent)?;
+            let mut name = path.file_name().ok_or_else(invalid_file)?.to_os_string();
+            name.push(format!(".tmp-{}", uuid::Uuid::new_v4()));
+            let tmp = path.with_file_name(name);
+            // No plaintext temporary file, even if writing or renaming fails.
+            let result = (|| {
+                let mut file = private_file(&tmp, true)?;
+                file.write_all(&encrypted)?;
+                if durable {
+                    file.sync_all()?;
+                }
+                drop(file);
+                std::fs::rename(&tmp, &path)?;
+                if durable {
+                    sync_dir(parent)?;
+                }
+                Ok(())
+            })();
+            if result.is_err() {
+                let _ = std::fs::remove_file(&tmp);
+            }
+            result
+        })
+        .await
+        .map_err(std::io::Error::other)?
     }
 
     /// Legacy paths are always plaintext, even if their content resembles our header.
@@ -413,6 +478,46 @@ mod tests {
             std::fs::read(dir.path().join("db.sqlite")).unwrap(),
             original
         );
+    }
+
+    #[test]
+    fn a_lost_key_can_start_again_with_the_old_data_set_aside() {
+        let data = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let keychain = KeychainFixture::default();
+        drop(unlock(data.path(), &keychain).unwrap());
+        std::fs::write(data.path().join("db.sqlite"), [0x91; 128]).unwrap();
+        std::fs::write(data.path().join("db.sqlite-wal"), b"wal").unwrap();
+        private_dir(&cache.path().join("compose-v1")).unwrap();
+        std::fs::write(cache.path().join("compose-v1/draft"), b"sealed").unwrap();
+        private_dir(&cache.path().join("attachments-v1/a")).unwrap();
+        *keychain.value.lock().unwrap() = None;
+        let lost = unlock(data.path(), &keychain).err().unwrap();
+        assert!(lost.downcast_ref::<KeyLost>().is_some());
+        *keychain.value.lock().unwrap() = Some("bad key".into());
+        let damaged = unlock(data.path(), &keychain).err().unwrap();
+        assert!(damaged.downcast_ref::<KeyLost>().is_some());
+
+        let aside = set_aside(data.path(), cache.path()).unwrap();
+        assert_eq!(std::fs::read(aside.join("db.sqlite")).unwrap(), [0x91; 128]);
+        assert_eq!(std::fs::read(aside.join("db.sqlite-wal")).unwrap(), b"wal");
+        assert_eq!(
+            std::fs::read(aside.join("compose-v1/draft")).unwrap(),
+            b"sealed"
+        );
+        assert!(!cache.path().join("attachments-v1").exists());
+        *keychain.value.lock().unwrap() = None;
+        drop(unlock(data.path(), &keychain).unwrap());
+        assert!(keychain.value.lock().unwrap().is_some(), "a new key");
+    }
+
+    #[test]
+    fn a_locked_keychain_is_not_a_lost_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let keychain = KeychainFixture::default();
+        keychain.locked.store(true, Ordering::Relaxed);
+        let error = unlock(dir.path(), &keychain).err().unwrap();
+        assert!(error.downcast_ref::<KeyLost>().is_none());
     }
 
     #[tokio::test]
