@@ -118,24 +118,60 @@ let accountsTicket = 0;
 let datedTicket = 0;
 const listTickets = new Map<string, number>();
 
+/**
+ * An optimistic change whose write hasn't settled. Every read of a list or the dated tasks
+ * re-applies the ones still pending over what the cache returned, so a reload that one write
+ * triggers never undoes another change still on its way to Google.
+ */
+interface PendingChange {
+  /** The lists (`listKey`) it changes. */
+  lists: string[];
+  list(key: string, tasks: Task[]): Task[];
+  dated(tasks: Task[]): Task[];
+}
+const pending = new Set<PendingChange>();
+const overList = (key: string, tasks: Task[]) =>
+  [...pending].reduce((acc, p) => (p.lists.includes(key) ? p.list(key, acc) : acc), tasks);
+const overDated = (tasks: Task[]) => [...pending].reduce((acc, p) => p.dated(acc), tasks);
+
 /** A write Google refused: say why (it has been undone). */
 function failed(title: string, e: unknown) {
   toast({ title, description: toCommandError(e).message, tone: "danger" });
 }
 
 export const useTasksStore = create<TasksState>((set, get) => {
+  /**
+   * Show `change` now and keep it over every read until `write` settles; then read again what it
+   * touched (the cache now has what Google confirmed, or the old state).
+   */
+  const optimistic = async <T>(
+    change: PendingChange,
+    write: () => Promise<T>,
+    reloadListIds: [string, ...string[]],
+    accountId: string,
+  ): Promise<T> => {
+    set((s) => {
+      const lists = { ...s.lists };
+      for (const key of change.lists) if (lists[key]) lists[key] = change.list(key, lists[key]);
+      return { lists, dated: s.dated ? change.dated(s.dated) : null };
+    });
+    pending.add(change);
+    try {
+      return await write();
+    } finally {
+      pending.delete(change);
+      await reload(accountId, ...reloadListIds);
+    }
+  };
   /** Change one task wherever it shows (its list and the calendar). */
-  const patchTask = (task: Task, patch: Partial<Task>) => {
+  const patchChange = (task: Task, patch: Partial<Task>): PendingChange => {
     const key = taskKey(task);
     const apply = (t: Task) => (taskKey(t) === key ? { ...t, ...patch } : t);
-    set((s) => {
-      const lk = listKey(task.accountId, task.listId);
-      const list = s.lists[lk];
-      return {
-        lists: list ? { ...s.lists, [lk]: list.map(apply) } : s.lists,
-        dated: s.dated?.map(apply) ?? null,
-      };
-    });
+    return {
+      lists: [listKey(task.accountId, task.listId)],
+      list: (_, tasks) => tasks.map(apply),
+      dated: (tasks) => tasks.map(apply),
+    };
   };
   const setList = (accountId: string, listId: string, tasks: Task[]) =>
     set((s) => ({ lists: { ...s.lists, [listKey(accountId, listId)]: tasks } }));
@@ -206,7 +242,7 @@ export const useTasksStore = create<TasksState>((set, get) => {
       try {
         const tasks = (await getTasksInList(accountId, listId)) ?? [];
         if (listTickets.get(key) === ticket) {
-          setList(accountId, listId, tasks);
+          setList(accountId, listId, overList(key, tasks));
           set((s) => {
             if (!(key in s.listErrors)) return s;
             const listErrors = { ...s.listErrors };
@@ -226,7 +262,7 @@ export const useTasksStore = create<TasksState>((set, get) => {
       set({ datedFor: `${from}:${to}` });
       try {
         const dated = (await getDatedTasks(from, to)) ?? [];
-        if (ticket === datedTicket) set({ dated, datedError: null });
+        if (ticket === datedTicket) set({ dated: overDated(dated), datedError: null });
       } catch (e) {
         console.warn("couldn't read dated tasks", e);
         if (ticket !== datedTicket) return;
@@ -239,7 +275,7 @@ export const useTasksStore = create<TasksState>((set, get) => {
     setDated: (from, to, dated) => {
       // Anything still reading the old days is out of date now.
       ++datedTicket;
-      set({ dated, datedFor: `${from}:${to}` });
+      set({ dated: overDated(dated), datedFor: `${from}:${to}` });
     },
 
     syncAll: () => {
@@ -293,94 +329,116 @@ export const useTasksStore = create<TasksState>((set, get) => {
       if (edit.title != null) patch.title = edit.title;
       if (edit.notes != null) patch.notes = edit.notes || null;
       if (edit.due != null) patch.due = edit.due || null;
-      patchTask(task, patch);
-      try {
-        await updateTask(task.accountId, task.listId, task.id, edit);
-        return true;
-      } catch (e) {
-        failed("Couldn't save the task", e);
-        return false;
-      } finally {
-        await reload(task.accountId, task.listId);
-      }
+      return optimistic(
+        patchChange(task, patch),
+        async () => {
+          try {
+            await updateTask(task.accountId, task.listId, task.id, edit);
+            return true;
+          } catch (e) {
+            failed("Couldn't save the task", e);
+            return false;
+          }
+        },
+        [task.listId],
+        task.accountId,
+      );
     },
 
-    setCompleted: async (task, completed) => {
-      patchTask(task, { completed, completedAt: completed ? Date.now() : null });
-      try {
-        await setTaskCompleted(task.accountId, task.listId, task.id, completed);
-      } catch (e) {
-        failed(completed ? "Couldn't complete the task" : "Couldn't reopen the task", e);
-      } finally {
-        await reload(task.accountId, task.listId);
-      }
-    },
+    setCompleted: (task, completed) =>
+      optimistic(
+        patchChange(task, { completed, completedAt: completed ? Date.now() : null }),
+        async () => {
+          try {
+            await setTaskCompleted(task.accountId, task.listId, task.id, completed);
+          } catch (e) {
+            failed(completed ? "Couldn't complete the task" : "Couldn't reopen the task", e);
+          }
+        },
+        [task.listId],
+        task.accountId,
+      ),
 
-    deleteTask: async (task) => {
-      const lk = listKey(task.accountId, task.listId);
+    deleteTask: (task) => {
       const gone = (t: Task) =>
         t.accountId === task.accountId &&
         t.listId === task.listId &&
         (t.id === task.id || t.parent === task.id);
-      set((s) => ({
-        lists: s.lists[lk] ? { ...s.lists, [lk]: s.lists[lk].filter((t) => !gone(t)) } : s.lists,
-        dated: s.dated?.filter((t) => !gone(t)) ?? null,
-        editing: s.editing === taskKey(task) ? null : s.editing,
-      }));
-      try {
-        await deleteTask(task.accountId, task.listId, task.id);
-      } catch (e) {
-        failed("Couldn't delete the task", e);
-      } finally {
-        await reload(task.accountId, task.listId);
-      }
+      set((s) => ({ editing: s.editing === taskKey(task) ? null : s.editing }));
+      return optimistic(
+        {
+          lists: [listKey(task.accountId, task.listId)],
+          list: (_, tasks) => tasks.filter((t) => !gone(t)),
+          dated: (tasks) => tasks.filter((t) => !gone(t)),
+        },
+        async () => {
+          try {
+            await deleteTask(task.accountId, task.listId, task.id);
+          } catch (e) {
+            failed("Couldn't delete the task", e);
+          }
+        },
+        [task.listId],
+        task.accountId,
+      );
     },
 
-    moveTask: async (task, placement) => {
-      const lk = listKey(task.accountId, task.listId);
-      const list = get().lists[lk];
-      if (list) setList(task.accountId, task.listId, applyMove(list, task, placement));
-      try {
-        await moveTask(task.accountId, task.listId, task.id, placement.parent, placement.previous);
-      } catch (e) {
-        failed("Couldn't move the task", e);
-      } finally {
-        await reload(task.accountId, task.listId);
-      }
-    },
+    moveTask: (task, placement) =>
+      optimistic(
+        {
+          lists: [listKey(task.accountId, task.listId)],
+          list: (_, tasks) => applyMove(tasks, task, placement),
+          dated: (tasks) => tasks,
+        },
+        async () => {
+          try {
+            await moveTask(
+              task.accountId,
+              task.listId,
+              task.id,
+              placement.parent,
+              placement.previous,
+            );
+          } catch (e) {
+            failed("Couldn't move the task", e);
+          }
+        },
+        [task.listId],
+        task.accountId,
+      ),
 
-    moveToList: async (task, listId) => {
+    moveToList: (task, listId) => {
       const from = listKey(task.accountId, task.listId);
       const to = listKey(task.accountId, listId);
-      const s = get();
-      const block = (s.lists[from] ?? []).filter((t) => t.id === task.id || t.parent === task.id);
+      const inBlock = (t: Task) => t.id === task.id || t.parent === task.id;
       // Goes to the top of the other list, as on Google's side.
-      set({
-        lists: {
-          ...s.lists,
-          [from]: (s.lists[from] ?? []).filter((t) => !block.includes(t)),
-          ...(s.lists[to]
-            ? {
-                [to]: [
-                  ...block.map((t) => ({
-                    ...t,
-                    listId,
-                    parent: t.id === task.id ? null : t.parent,
-                  })),
-                  ...s.lists[to],
-                ],
-              }
-            : {}),
+      const moved = (get().lists[from] ?? []).filter(inBlock).map((t) => ({
+        ...t,
+        listId,
+        parent: t.id === task.id ? null : t.parent,
+      }));
+      const ids = new Set(moved.map((t) => t.id));
+      set((s) => ({ editing: s.editing === taskKey(task) ? null : s.editing }));
+      return optimistic(
+        {
+          lists: [from, to],
+          list: (key, tasks) =>
+            key === from
+              ? tasks.filter((t) => !inBlock(t))
+              : // Once Google has it, the cache already does: don't show it twice.
+                [...moved, ...tasks.filter((t) => !ids.has(t.id))],
+          dated: (tasks) => tasks,
         },
-        editing: s.editing === taskKey(task) ? null : s.editing,
-      });
-      try {
-        await moveTaskToList(task.accountId, task.listId, task.id, listId);
-      } catch (e) {
-        failed("Couldn't move the task", e);
-      } finally {
-        await reload(task.accountId, task.listId, listId);
-      }
+        async () => {
+          try {
+            await moveTaskToList(task.accountId, task.listId, task.id, listId);
+          } catch (e) {
+            failed("Couldn't move the task", e);
+          }
+        },
+        [task.listId, listId],
+        task.accountId,
+      );
     },
 
     createList: async (accountId, title) => {

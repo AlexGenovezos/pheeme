@@ -100,6 +100,362 @@ fn rejected() -> GmailError {
     }
 }
 
+// ---- long histories and the full resync ---------------------------------------------
+
+async fn fully_fetched(pool: &SqlitePool, id: &str) -> Option<(i64, Option<String>)> {
+    messages::get_message(pool, ACCT, id)
+        .await
+        .unwrap()
+        .map(|m| (m.fully_fetched, m.body_text))
+}
+
+#[tokio::test]
+async fn relabelled_mail_that_is_not_cached_gets_its_body_only_inside_the_body_window() {
+    let h = harness().await;
+    h.fake
+        .seed(FakeMsg::new("old", "t-old", &["UNREAD"]).days_ago(FULL_BODY_DAYS + 30));
+    h.fake
+        .seed(FakeMsg::new("recent", "t-recent", &["UNREAD"]).days_ago(5));
+    h.engine.run_initial_sync().await.unwrap();
+    assert!(cached_labels(&h.pool, "old").await.is_none());
+
+    // Read on another device before the backfill got to them; and new mail.
+    h.fake.relabel("old", &["INBOX"], &["UNREAD"]);
+    h.fake.relabel("recent", &["INBOX"], &["UNREAD"]);
+    h.fake.add(FakeMsg::new("new", "t-new", &["INBOX"]));
+    h.engine.run_incremental_sync().await.unwrap();
+
+    assert_eq!(cached_labels(&h.pool, "old").await, Some(s(&["INBOX"])));
+    assert_eq!(
+        fully_fetched(&h.pool, "old").await,
+        Some((0, None)),
+        "older than the body window: headers only, as the backfill stores it"
+    );
+    assert_eq!(cached_labels(&h.pool, "recent").await, Some(s(&["INBOX"])));
+    assert_eq!(
+        fully_fetched(&h.pool, "recent").await,
+        Some((1, Some("Body of recent".into())))
+    );
+    assert_eq!(
+        fully_fetched(&h.pool, "new").await,
+        Some((1, Some("Body of new".into())))
+    );
+    assert_eq!(
+        listed(&h.pool, "INBOX").await,
+        s(&["t-new", "t-recent", "t-old"])
+    );
+    // The backfill leaves what sync cached alone, and opening the old one loads its body.
+    while h.engine.backfill_step().await.unwrap() == BackfillProgress::More {}
+    assert_eq!(cached_labels(&h.pool, "old").await, Some(s(&["INBOX"])));
+    h.engine.load_thread_bodies("t-old").await.unwrap();
+    assert_eq!(
+        fully_fetched(&h.pool, "old").await,
+        Some((1, Some("Body of old".into())))
+    );
+}
+
+#[tokio::test]
+async fn a_long_history_is_applied_in_steps_and_a_failure_keeps_the_steps_before_it() {
+    use super::engine::HISTORY_CHUNK;
+    let h = harness().await;
+    h.engine.run_initial_sync().await.unwrap();
+    let start = history_id(&h.pool).await.unwrap();
+    let total = HISTORY_CHUNK * 2 + 10;
+    for n in 0..total {
+        h.fake.add(FakeMsg::new(
+            &format!("m{n:04}"),
+            &format!("t{n:04}"),
+            &["INBOX", "UNREAD"],
+        ));
+    }
+    let latest = h.fake.history_id().to_string();
+    h.events.take();
+
+    // Gmail fails part-way through the second step.
+    h.fake
+        .fail_after("get_message", HISTORY_CHUNK + 5, network());
+    assert!(h.engine.run_incremental_sync().await.is_err());
+    let cached = |pool: SqlitePool| async move {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM messages")
+            .fetch_one(&pool)
+            .await
+            .unwrap() as usize
+    };
+    assert_eq!(
+        cached(h.pool.clone()).await,
+        HISTORY_CHUNK,
+        "first step kept"
+    );
+    let cursor = history_id(&h.pool).await.unwrap();
+    assert!(
+        cursor != start && cursor != latest,
+        "the cursor moved to the end of the first step: {cursor}"
+    );
+    assert_eq!(
+        arrivals(&h.events).len(),
+        HISTORY_CHUNK,
+        "and its new mail was announced"
+    );
+
+    // The retry picks up after it: nothing is fetched or announced twice.
+    let gets = h.fake.calls("get_message");
+    h.engine.run_incremental_sync().await.unwrap();
+    assert_eq!(cached(h.pool.clone()).await, total);
+    assert_eq!(h.fake.calls("get_message") - gets, total - HISTORY_CHUNK);
+    assert_eq!(history_id(&h.pool).await.as_deref(), Some(latest.as_str()));
+    assert_eq!(arrivals(&h.events).len(), total - HISTORY_CHUNK);
+}
+
+/// Thread ids announced as changed by the events recorded so far.
+fn announced(events: &RecordingEvents) -> Vec<String> {
+    let mut ids: Vec<String> = events
+        .take()
+        .into_iter()
+        .filter_map(|e| match e {
+            SyncEvent::MessagesUpdated {
+                added,
+                removed,
+                modified,
+                ..
+            } => Some([added, removed, modified].concat()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+#[tokio::test]
+async fn resync_after_expired_history_goes_a_slice_per_sync_and_resumes_after_an_error() {
+    use super::engine::RESYNC_CHUNK;
+    use crate::db::settings;
+    let h = harness().await;
+    // Archived mail, so none of it is on the Inbox page; ids sort like their age.
+    let total = RESYNC_CHUNK * 2 + 20;
+    for n in 0..total {
+        let age = (total - n) as i64;
+        h.fake.seed(
+            FakeMsg::new(&format!("m{n:04}"), &format!("t{n:04}"), &["UNREAD"]).days_ago(age),
+        );
+    }
+    h.engine.run_initial_sync().await.unwrap();
+    while h.engine.backfill_step().await.unwrap() == BackfillProgress::More {}
+    let position = || settings::resync_position(&h.pool, ACCT);
+    assert_eq!(position().await.unwrap(), None);
+
+    // A week away: changes at both ends of the cache, a deletion, and new mail.
+    let (newest, oldest) = (format!("m{:04}", total - 1), "m0000".to_owned());
+    h.fake.relabel(&newest, &["STARRED"], &[]);
+    h.fake.relabel(&oldest, &[], &["UNREAD"]);
+    h.fake.delete("m0001");
+    h.fake.add(FakeMsg::new("fresh", "t-fresh", &["INBOX"]));
+    h.fake.expire_history();
+    h.events.take();
+
+    // The sync that finds the history gone: the Inbox shows, the cursor is current, and the
+    // first slice (the newest cached mail) is re-read.
+    let gets = h.fake.calls("get_message");
+    assert!(h.engine.run_incremental_sync().await.unwrap());
+    assert_eq!(listed(&h.pool, "INBOX").await, s(&["t-fresh"]));
+    assert_eq!(
+        history_id(&h.pool).await,
+        Some(h.fake.history_id().to_string())
+    );
+    assert_eq!(h.fake.calls("get_message") - gets, RESYNC_CHUNK);
+    assert_eq!(
+        cached_labels(&h.pool, &newest).await,
+        Some(s(&["STARRED", "UNREAD"]))
+    );
+    assert_eq!(
+        cached_labels(&h.pool, &oldest).await,
+        Some(s(&["UNREAD"])),
+        "not reached yet"
+    );
+    let first = position().await.unwrap().expect("in progress");
+    assert_eq!(first, format!("m{:04}", total - RESYNC_CHUNK));
+    assert_eq!(
+        announced(&h.events),
+        s(&["t-fresh", &format!("t{:04}", total - 1)]),
+        "only what changed is announced"
+    );
+    assert!(arrivals(&h.events).is_empty());
+
+    // Mail that arrives meanwhile syncs as usual, even when the slice after it fails.
+    h.fake
+        .add(FakeMsg::new("later", "t-later", &["INBOX", "UNREAD"]));
+    h.fake.fail_after("get_message", 1 + 5, network());
+    assert!(h.engine.run_incremental_sync().await.is_err());
+    assert_eq!(listed(&h.pool, "INBOX").await, s(&["t-later", "t-fresh"]));
+    assert_eq!(arrivals(&h.events).len(), 1, "new mail is announced");
+    assert_eq!(
+        position().await.unwrap().as_deref(),
+        Some(first.as_str()),
+        "the failed slice is done again, not skipped"
+    );
+
+    // A frequent check with no new history still does the next slice.
+    assert_eq!(h.engine.check_incremental_sync().await.unwrap(), None);
+    assert_eq!(
+        position().await.unwrap(),
+        Some(format!("m{:04}", total - 2 * RESYNC_CHUNK))
+    );
+    assert_eq!(h.engine.check_incremental_sync().await.unwrap(), None);
+    assert_eq!(position().await.unwrap(), None, "finished");
+    assert_eq!(cached_labels(&h.pool, &oldest).await, Some(vec![]));
+    assert!(cached_labels(&h.pool, "m0001").await.is_none());
+    assert_eq!(
+        announced(&h.events),
+        s(&["t0000", "t0001"]),
+        "again only what changed"
+    );
+
+    // Finished: a check with nothing new is silent again.
+    let gets = h.fake.calls("get_message");
+    assert_eq!(h.engine.check_incremental_sync().await.unwrap(), None);
+    assert_eq!(h.fake.calls("get_message"), gets);
+    assert!(h.events.take().is_empty());
+}
+
+#[tokio::test]
+async fn resync_resumes_where_it_was_after_a_restart() {
+    use super::engine::RESYNC_CHUNK;
+    use crate::db::settings;
+    let h = harness().await;
+    for n in 0..RESYNC_CHUNK + 5 {
+        h.fake.seed(
+            FakeMsg::new(&format!("m{n:04}"), &format!("t{n:04}"), &["UNREAD"])
+                .days_ago(400 - n as i64),
+        );
+    }
+    h.engine.run_initial_sync().await.unwrap();
+    while h.engine.backfill_step().await.unwrap() == BackfillProgress::More {}
+    h.fake.relabel("m0000", &["STARRED"], &[]);
+    h.fake.expire_history();
+    h.engine.run_incremental_sync().await.unwrap();
+    assert!(settings::resync_position(&h.pool, ACCT)
+        .await
+        .unwrap()
+        .is_some());
+
+    // The app quits and starts again: a new engine over the same database.
+    let reopened = SyncEngine::new(
+        h.pool.clone(),
+        h.fake.clone(),
+        ACCT,
+        h.events.clone(),
+        Default::default(),
+    );
+    let gets = h.fake.calls("get_message");
+    reopened.run_incremental_sync().await.unwrap();
+    assert_eq!(h.fake.calls("get_message") - gets, 5, "only the rest");
+    assert_eq!(
+        cached_labels(&h.pool, "m0000").await,
+        Some(s(&["STARRED", "UNREAD"]))
+    );
+    assert_eq!(
+        settings::resync_position(&h.pool, ACCT).await.unwrap(),
+        None
+    );
+}
+
+// ---- messages that can't be read ----------------------------------------------------
+
+#[tokio::test]
+async fn a_message_that_cannot_be_read_is_skipped_and_sync_moves_on() {
+    let h = harness().await;
+    h.fake
+        .seed(FakeMsg::new("m1", "t1", &["INBOX"]).days_ago(1));
+    h.fake
+        .seed(FakeMsg::new("bad0", "t0", &["INBOX"]).days_ago(2));
+    h.fake.mangle("bad0");
+    h.engine.run_initial_sync().await.unwrap();
+    assert_eq!(listed(&h.pool, "INBOX").await, s(&["t1"]));
+
+    // New mail: one whose fetch can't be decoded, one that can't be parsed, one fine.
+    h.fake.add(FakeMsg::new("bad1", "t2", &["INBOX"]));
+    h.fake.add(FakeMsg::new("bad2", "t3", &["INBOX"]));
+    h.fake.add(FakeMsg::new("m2", "t4", &["INBOX"]));
+    h.fake.garble("bad1");
+    h.fake.mangle("bad2");
+    let after = h.fake.history_id().to_string();
+    h.engine.run_incremental_sync().await.unwrap();
+    assert_eq!(listed(&h.pool, "INBOX").await, s(&["t4", "t1"]));
+    assert_eq!(
+        history_id(&h.pool).await.as_deref(),
+        Some(after.as_str()),
+        "the cursor moved past them"
+    );
+    let gets = h.fake.calls("get_message");
+    h.engine.run_incremental_sync().await.unwrap();
+    assert_eq!(h.fake.calls("get_message"), gets, "not fetched again");
+
+    // The backfill finishes too.
+    while h.engine.backfill_step().await.unwrap() == BackfillProgress::More {}
+    for bad in ["bad0", "bad1", "bad2"] {
+        assert!(cached_labels(&h.pool, bad).await.is_none());
+    }
+}
+
+#[tokio::test]
+async fn a_passing_error_still_stops_the_sync() {
+    let h = harness().await;
+    h.engine.run_initial_sync().await.unwrap();
+    let before = history_id(&h.pool).await;
+    h.fake.add(FakeMsg::new("m1", "t1", &["INBOX"]));
+    for error in [
+        network(),
+        GmailError::RateLimit { retry_after: None },
+        GmailError::Api {
+            status: 503,
+            reason: None,
+            message: "backend error".into(),
+        },
+    ] {
+        h.fake.fail_next("get_message", error);
+        assert!(h.engine.run_incremental_sync().await.is_err());
+        assert_eq!(history_id(&h.pool).await, before, "nothing applied");
+        assert!(cached_labels(&h.pool, "m1").await.is_none());
+    }
+    h.engine.run_incremental_sync().await.unwrap();
+    assert!(cached_labels(&h.pool, "m1").await.is_some());
+}
+
+#[tokio::test]
+async fn opening_a_thread_with_an_unreadable_message_loads_the_others() {
+    let h = harness().await;
+    h.fake
+        .seed(FakeMsg::new("m1", "t1", &["INBOX"]).days_ago(1));
+    h.fake
+        .seed(FakeMsg::new("m2", "t1", &["INBOX"]).days_ago(2));
+    h.engine.run_initial_sync().await.unwrap();
+    sqlx::query("UPDATE messages SET fully_fetched = 0, body_text = NULL, body_html = NULL")
+        .execute(&h.pool)
+        .await
+        .unwrap();
+    h.fake.mangle("m2");
+    h.events.take();
+
+    h.engine.load_thread_bodies("t1").await.unwrap();
+    let body = |id: &'static str| {
+        let pool = h.pool.clone();
+        async move {
+            messages::get_message(&pool, ACCT, id)
+                .await
+                .unwrap()
+                .unwrap()
+                .fully_fetched
+        }
+    };
+    assert_eq!((body("m1").await, body("m2").await), (1, 0));
+
+    // Only the unreadable one is left: asking again changes and announces nothing.
+    h.events.take();
+    h.engine.load_thread_bodies("t1").await.unwrap();
+    assert!(h.events.names().is_empty());
+}
+
 // ---- initial sync -------------------------------------------------------------------
 
 #[tokio::test]
@@ -923,6 +1279,116 @@ async fn sweep_is_queued_with_nothing_cached() {
     );
 }
 
+const PROMO_SWEEP: &str = "in:inbox is:unread category:promotions";
+
+/// A synced Inbox with unread promotion `m1`/`t1` and plain `m2`/`t2`, and a queued
+/// Mark all as read for the Promotions tab.
+async fn queued_sweep(h: &H) -> String {
+    synced_inbox(
+        h,
+        vec![
+            FakeMsg::new("m1", "t1", &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"]),
+            FakeMsg::new("m2", "t2", &["INBOX"]).days_ago(1),
+        ],
+    )
+    .await;
+    outbox::enqueue_sweep(
+        &h.pool,
+        ACCT,
+        &s(&["t1"]),
+        &[],
+        &s(&["UNREAD"]),
+        PROMO_SWEEP,
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .op_id
+}
+
+#[tokio::test]
+async fn a_waiting_sweep_holds_later_label_changes_but_not_sends() {
+    let h = harness().await;
+    let sweep = queued_sweep(&h).await;
+    let first = send_op(&h).await;
+    archive(&h, "t2").await;
+    h.fake.fail_next("search_messages", network());
+
+    // The pass in which Gmail fails the sweep: the send behind it still goes.
+    let now = now_ms();
+    outbox::process(&h.engine, now).await.unwrap();
+    assert_eq!(h.fake.sent().len(), 1, "a send doesn't wait for the sweep");
+    assert!(op_status(&h, &first.id).await.is_none());
+    assert_eq!(
+        h.fake.calls("batch_modify"),
+        0,
+        "the archive waits its turn"
+    );
+    assert_eq!(server_labels(&h, "m2"), s(&["INBOX"]));
+    let waiting = store::get(&h.pool, &sweep).await.unwrap().unwrap();
+    assert!(waiting.next_attempt_at > now && waiting.attempts == 1);
+
+    // While the sweep backs off: the same for a send queued now.
+    let second = send_op(&h).await;
+    outbox::process(&h.engine, now + 1).await.unwrap();
+    assert_eq!(h.fake.sent().len(), 2);
+    assert!(op_status(&h, &second.id).await.is_none());
+    assert_eq!(h.fake.calls("batch_modify"), 0);
+
+    outbox::process(&h.engine, now + 60_000).await.unwrap();
+    assert!(ops(&h).await.is_empty());
+    assert_eq!(
+        server_labels(&h, "m1"),
+        s(&["CATEGORY_PROMOTIONS", "INBOX"])
+    );
+    assert!(
+        server_labels(&h, "m2").is_empty(),
+        "archived after the sweep"
+    );
+}
+
+#[tokio::test]
+async fn a_sweep_gmail_keeps_failing_is_rolled_back_but_one_that_never_left_waits() {
+    let h = harness().await;
+    let sweep = queued_sweep(&h).await;
+    let mut now = now_ms();
+    for attempt in 1..outbox::SWEEP_MAX_ATTEMPTS {
+        h.fake.fail_next("search_messages", network());
+        outbox::process(&h.engine, now).await.unwrap();
+        let op = store::get(&h.pool, &sweep).await.unwrap().unwrap();
+        assert_eq!(op.attempts, attempt);
+        now = op.next_attempt_at;
+    }
+    // Offline on the last allowed try: it never left, so it keeps waiting.
+    h.fake
+        .fail_next("search_messages", GmailError::Offline("no route".into()));
+    outbox::process(&h.engine, now).await.unwrap();
+    let op = store::get(&h.pool, &sweep).await.unwrap().unwrap();
+    assert_eq!(op.attempts, outbox::SWEEP_MAX_ATTEMPTS);
+    assert_eq!(
+        cached_labels(&h.pool, "m1").await,
+        Some(s(&["CATEGORY_PROMOTIONS", "INBOX"])),
+        "still read in the cache"
+    );
+    h.events.take();
+
+    h.fake.fail_next("search_messages", network());
+    outbox::process(&h.engine, op.next_attempt_at)
+        .await
+        .unwrap();
+    assert!(ops(&h).await.is_empty(), "given up on");
+    assert_eq!(
+        cached_labels(&h.pool, "m1").await,
+        Some(s(&["CATEGORY_PROMOTIONS", "INBOX", "UNREAD"])),
+        "unread again, as Gmail has it"
+    );
+    assert!(h
+        .events
+        .take()
+        .iter()
+        .any(|e| matches!(e, SyncEvent::OpRejected { op_id, .. } if op_id == &sweep)));
+}
+
 #[tokio::test]
 async fn rejected_op_rolls_back_with_later_ops_reapplied() {
     let h = harness().await;
@@ -1254,6 +1720,300 @@ async fn rejected_send_fails_and_resend_keeps_message_id() {
         .contains(op.rfc822_message_id.as_deref().unwrap()));
 }
 
+/// A queued send of `RAW` that came from a saved Gmail draft; returns `(op id, draft id)`.
+async fn send_from_draft(h: &H) -> (String, String) {
+    use crate::sync::api::MailApi;
+    let draft = h.fake.create_draft(RAW, None).await.unwrap();
+    let options = outbox::SendOptions {
+        draft_id: Some(draft.id.clone()),
+        ..Default::default()
+    };
+    let op = outbox::queue_send(&h.pool, ACCT, RAW, &options)
+        .await
+        .unwrap();
+    (op, draft.id)
+}
+
+#[tokio::test]
+async fn a_sent_draft_is_deleted_again_after_a_network_drop_and_never_resent() {
+    let h = harness().await;
+    let (op, draft) = send_from_draft(&h).await;
+    h.fake.fail_next("delete_draft", network());
+    let t = now_ms();
+
+    assert!(outbox::process(&h.engine, t).await.unwrap());
+    assert_eq!(h.fake.sent().len(), 1);
+    assert!(h.fake.drafts().contains_key(&draft), "the delete failed");
+    assert!(h.events.take().iter().any(|e| matches!(
+        e, SyncEvent::SendStatus { op_id, status, .. } if op_id == &op && status == "sent"
+    )));
+    let left = store::get(&h.pool, &op).await.unwrap().unwrap();
+    assert_eq!(left.status, outbox::CLEANUP);
+    assert!(left.next_attempt_at > t);
+    assert!(
+        !left.payload.contains("raw"),
+        "the message itself is gone from the op: {}",
+        left.payload
+    );
+    // Nothing can send it again or bring it back.
+    assert!(!outbox::resend(&h.pool, &op).await.unwrap());
+    assert!(!outbox::cancel_send(&h.pool, &op).await.unwrap());
+
+    outbox::process(&h.engine, t + 1).await.unwrap();
+    assert_eq!(h.fake.calls("delete_draft"), 1, "waits out its backoff");
+    outbox::process(&h.engine, t + 60_000).await.unwrap();
+    assert!(h.fake.drafts().is_empty(), "deleted on the retry");
+    assert!(op_status(&h, &op).await.is_none());
+    assert_eq!(h.fake.calls("send_message"), 1);
+    assert_eq!(h.fake.sent().len(), 1);
+}
+
+#[tokio::test]
+async fn a_send_confirmed_by_sync_still_deletes_its_draft() {
+    let h = harness().await;
+    h.engine.run_initial_sync().await.unwrap();
+    let (op, draft) = send_from_draft(&h).await;
+    h.fake.deliver_then_fail(network());
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert_eq!(op_status(&h, &op).await.as_deref(), Some("checking"));
+
+    // The sent message arrives with the next sync, which confirms the send.
+    h.engine.run_incremental_sync().await.unwrap();
+    assert_eq!(
+        op_status(&h, &op).await.as_deref(),
+        Some(outbox::CLEANUP),
+        "confirmed; its draft is still to go"
+    );
+    assert!(h.fake.drafts().contains_key(&draft));
+
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert!(h.fake.drafts().is_empty());
+    assert!(op_status(&h, &op).await.is_none());
+    assert_eq!(h.fake.calls("send_message"), 1);
+}
+
+#[tokio::test]
+async fn a_draft_gmail_refuses_to_delete_is_given_up_on() {
+    let h = harness().await;
+    let (op, _) = send_from_draft(&h).await;
+    h.fake.fail_next("delete_draft", rejected());
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert!(op_status(&h, &op).await.is_none());
+    assert_eq!(h.fake.sent().len(), 1);
+}
+
+#[tokio::test]
+async fn sends_that_cannot_leave_are_queued_without_their_message() {
+    let h = harness().await;
+    let failed = send_op(&h).await;
+    h.fake.fail_next("send_message", rejected());
+    let t = now_ms();
+    outbox::process(&h.engine, t).await.unwrap();
+    let waiting = outbox::queue_send(
+        &h.pool,
+        ACCT,
+        RAW,
+        &outbox::SendOptions {
+            send_at: t + 10_000,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let due = send_op(&h).await;
+
+    let queue = store::queue(&h.pool, ACCT, t).await.unwrap();
+    let payload = |id: &str| queue.iter().find(|o| o.id == id).unwrap().payload.clone();
+    assert_eq!(payload(&failed.id), "", "failed: not read");
+    assert_eq!(payload(&waiting), "", "in its undo window: not read");
+    assert_eq!(payload(&due.id), due.payload, "about to leave: read");
+    let later = store::queue(&h.pool, ACCT, t + 10_000).await.unwrap();
+    assert!(
+        !later
+            .iter()
+            .find(|o| o.id == waiting)
+            .unwrap()
+            .payload
+            .is_empty(),
+        "read once its window ends"
+    );
+    // The stored ops are untouched.
+    assert_eq!(
+        store::get(&h.pool, &failed.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .payload,
+        failed.payload
+    );
+}
+
+#[tokio::test]
+async fn failed_sends_lists_what_did_not_go_with_subject_and_recipients() {
+    let h = harness().await;
+    assert!(outbox::failed_sends(&h.pool, ACCT)
+        .await
+        .unwrap()
+        .is_empty());
+    let raw = b"From: me@example.com\r\nTo: Ann Lee <ann@example.com>, bob@example.com\r\n\
+Cc: =?UTF-8?B?Sm9zw6k=?= <jose@example.com>\r\nSubject: =?UTF-8?Q?Caf=C3=A9?= plans\r\n\r\n";
+    let mut big = raw.to_vec();
+    big.extend(vec![b'x'; 400_000]);
+    let options = outbox::SendOptions {
+        thread_id: Some("t9".into()),
+        ..Default::default()
+    };
+    let op = outbox::queue_send(&h.pool, ACCT, &big, &options)
+        .await
+        .unwrap();
+    send_op(&h).await;
+    h.fake.fail_next("send_message", rejected());
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert_eq!(h.fake.sent().len(), 1, "the second one went");
+
+    let failed = outbox::failed_sends(&h.pool, ACCT).await.unwrap();
+    assert_eq!(failed.len(), 1);
+    let f = &failed[0];
+    assert_eq!(
+        (f.op_id.as_str(), f.status.as_str()),
+        (op.as_str(), "failed")
+    );
+    assert_eq!(f.subject.as_deref(), Some("Caf\u{e9} plans"));
+    let addresses = |list: &[crate::gmail::mime::EmailAddress]| {
+        list.iter().map(|a| a.address.clone()).collect::<Vec<_>>()
+    };
+    assert_eq!(addresses(&f.to), ["ann@example.com", "bob@example.com"]);
+    assert_eq!(f.to[0].name.as_deref(), Some("Ann Lee"));
+    assert_eq!(addresses(&f.cc), ["jose@example.com"]);
+    assert_eq!(f.cc[0].name.as_deref(), Some("Jos\u{e9}"));
+    assert!(f.bcc.is_empty());
+    assert_eq!(f.thread_id.as_deref(), Some("t9"));
+    assert!(f.error.as_deref().unwrap().contains("Invalid label"));
+    assert!(outbox::failed_sends(&h.pool, "other")
+        .await
+        .unwrap()
+        .is_empty());
+
+    // Sent again, it leaves the list.
+    assert!(outbox::resend(&h.pool, &op).await.unwrap());
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert!(outbox::failed_sends(&h.pool, ACCT)
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn a_refused_send_goes_back_to_drafts_and_leaves_the_outbox() {
+    let h = harness().await;
+    let op = send_op(&h).await;
+    h.fake.fail_next("send_message", rejected());
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert_eq!(op_status(&h, &op.id).await.as_deref(), Some("failed"));
+
+    // Only for the account that queued it.
+    let other = outbox::move_to_drafts(&h.pool, h.fake.as_ref(), "other", &op.id)
+        .await
+        .unwrap();
+    assert!(other.is_none());
+    assert!(h.fake.drafts().is_empty());
+
+    let back = outbox::move_to_drafts(&h.pool, h.fake.as_ref(), ACCT, &op.id)
+        .await
+        .unwrap()
+        .expect("moved");
+    assert_eq!(
+        h.fake.drafts().get(&back.draft_id),
+        Some(&back.message_id),
+        "the draft the window opens by its message id"
+    );
+    assert!(op_status(&h, &op.id).await.is_none());
+    assert!(outbox::failed_sends(&h.pool, ACCT)
+        .await
+        .unwrap()
+        .is_empty());
+    // Never sent, and asking again finds nothing.
+    assert!(h.fake.sent().is_empty());
+    assert!(
+        outbox::move_to_drafts(&h.pool, h.fake.as_ref(), ACCT, &op.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(h.fake.drafts().len(), 1);
+}
+
+#[tokio::test]
+async fn a_refused_send_from_a_draft_goes_back_into_that_draft() {
+    let h = harness().await;
+    let (op, draft) = send_from_draft(&h).await;
+    h.fake.fail_next("send_message", rejected());
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert_eq!(op_status(&h, &op).await.as_deref(), Some("failed"));
+
+    let back = outbox::move_to_drafts(&h.pool, h.fake.as_ref(), ACCT, &op)
+        .await
+        .unwrap()
+        .expect("moved");
+    assert_eq!(back.draft_id, draft);
+    assert_eq!(h.fake.drafts().len(), 1, "no second copy");
+    assert!(op_status(&h, &op).await.is_none());
+}
+
+#[tokio::test]
+async fn an_unconfirmed_send_can_go_back_to_drafts_too() {
+    let h = harness().await;
+    let op = send_op(&h).await;
+    let progress = store::OpProgress {
+        status: outbox::UNCONFIRMED,
+        attempts: 1,
+        next_attempt_at: 0,
+        checks_done: 3,
+        last_error: None,
+    };
+    store::update_progress(&h.pool, &op.id, &progress, 0)
+        .await
+        .unwrap();
+    assert!(
+        outbox::move_to_drafts(&h.pool, h.fake.as_ref(), ACCT, &op.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(h.fake.drafts().len(), 1);
+    assert!(op_status(&h, &op.id).await.is_none());
+}
+
+#[tokio::test]
+async fn a_send_stays_queued_when_its_draft_cannot_be_saved() {
+    let h = harness().await;
+    let op = send_op(&h).await;
+    h.fake.fail_next("send_message", rejected());
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    h.fake.fail_next("create_draft", network());
+    assert!(
+        outbox::move_to_drafts(&h.pool, h.fake.as_ref(), ACCT, &op.id)
+            .await
+            .is_err()
+    );
+    assert_eq!(op_status(&h, &op.id).await.as_deref(), Some("failed"));
+    assert!(h.fake.drafts().is_empty());
+}
+
+#[tokio::test]
+async fn a_pending_send_is_not_moved_to_drafts() {
+    let h = harness().await;
+    let op = send_op(&h).await;
+    assert!(
+        outbox::move_to_drafts(&h.pool, h.fake.as_ref(), ACCT, &op.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(op_status(&h, &op.id).await.as_deref(), Some("pending"));
+    assert!(h.fake.drafts().is_empty());
+}
+
 #[tokio::test]
 async fn offline_send_stays_pending_and_retries() {
     let h = harness().await;
@@ -1503,6 +2263,39 @@ async fn sync_purges_labels_deleted_in_gmail_and_announces_the_threads() {
         .unwrap()
         .is_none());
     assert!(h.events.names().contains(&"sync:messages_updated"));
+}
+
+#[tokio::test]
+async fn an_empty_label_list_from_gmail_strips_nothing() {
+    let h = harness().await;
+    h.fake.add_user_label("Label_1", "work", None);
+    h.fake.seed(FakeMsg::new("m1", "t1", &["INBOX", "Label_1"]));
+    h.engine.run_initial_sync().await.unwrap();
+    let before = labels::get_labels(&h.pool, ACCT).await.unwrap().len();
+    h.events.take();
+
+    h.fake.set_list_omits_labels(true);
+    h.fake.relabel("m1", &["STARRED"], &[]);
+    h.engine.run_incremental_sync().await.unwrap();
+
+    assert_eq!(
+        cached_labels(&h.pool, "m1").await,
+        Some(s(&["INBOX", "Label_1", "STARRED"])),
+        "mail still syncs, and keeps its labels"
+    );
+    assert_eq!(listed(&h.pool, "Label_1").await, s(&["t1"]));
+    assert_eq!(
+        labels::get_labels(&h.pool, ACCT).await.unwrap().len(),
+        before
+    );
+
+    // A real list afterwards still purges what Gmail deleted.
+    h.fake.set_list_omits_labels(false);
+    crate::sync::api::MailApi::delete_label(&*h.fake, "Label_1")
+        .await
+        .unwrap();
+    h.engine.sync_labels().await.unwrap();
+    assert!(listed(&h.pool, "Label_1").await.is_empty());
 }
 
 /// `get_label` calls one `sync_labels` makes.

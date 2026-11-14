@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id FROM outbox\n           WHERE account_id = ? AND kind = 'send' AND status IN ('failed', 'unconfirmed')\n           ORDER BY seq",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "outbox",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c63240506d78223e594bf3e205a798943b27b4871fc02085add781fb35a6d487"
+}

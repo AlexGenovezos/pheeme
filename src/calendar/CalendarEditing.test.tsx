@@ -82,7 +82,7 @@ beforeEach(() => {
     draft: null,
     editor: null,
     prompt: null,
-    moving: null,
+    moving: {},
     removed: [],
     search: null,
     quickAdd: false,
@@ -325,6 +325,25 @@ describe("changing events", () => {
     expect(screen.getByRole("button", { name: /^Team planning \(Q1\),/ })).toBeInTheDocument();
   });
 
+  test("an event whose call is another provider's shows it as it is, not as Google Meet", async () => {
+    backend();
+    await open();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Team planning,/ }));
+    await flush();
+    key("e");
+    await settle();
+
+    const meet = within(dialog("Edit event")).getByRole("group", { name: "Google Meet" });
+    expect(meet).toHaveTextContent("Microsoft Teams: teams.microsoft.com/");
+    expect(meet).not.toHaveTextContent("A Google Meet link is added when you save");
+    expect(within(meet).queryByRole("button", { name: "Remove" })).toBeNull();
+    // The Teams link is in the description, not a conference: Meet can still be added.
+    expect(
+      within(meet).getByRole("button", { name: "Add Google Meet video conferencing" }),
+    ).toBeInTheDocument();
+  });
+
   test("dragging an event to another day moves it there", async () => {
     backend();
     await open();
@@ -352,6 +371,49 @@ describe("changing events", () => {
       },
     });
     expect(within(friday).getByRole("button", { name: /^Lunch with Dana,/ })).toBeInTheDocument();
+  });
+
+  test("dragging a second event while the first is still saving leaves the first where it was dropped", async () => {
+    let release = () => {};
+    const saving = new Promise<void>((resolve) => (release = resolve));
+    backend(undefined, (cmd, a) =>
+      cmd === "update_calendar_event" && a.eventId === "lunch" ? saving : undefined,
+    );
+    await open();
+
+    const friday = screen.getByRole("gridcell", { name: "Friday, November 13" });
+    const thursday = screen.getByRole("gridcell", { name: "Thursday, November 12" });
+    let over = thursday;
+    document.elementsFromPoint = () => [over];
+    const drag = (name: RegExp) => {
+      over = thursday;
+      fireEvent.pointerDown(screen.getByRole("button", { name }), {
+        button: 0,
+        clientX: 10,
+        clientY: 0,
+      });
+      over = friday;
+      fireEvent.pointerMove(window, { clientX: 200, clientY: 0 });
+    };
+    drag(/^Lunch with Dana,/);
+    fireEvent.pointerUp(window);
+    await settle();
+    expect(sent("update_calendar_event")).toHaveLength(1);
+    expect(within(friday).getByRole("button", { name: /^Lunch with Dana,/ })).toBeInTheDocument();
+
+    // Lunch's save is still going: dragging 1:1 Alex doesn't put Lunch back.
+    drag(/^1:1 Alex,/);
+    expect(within(friday).getByRole("button", { name: /^1:1 Alex,/ })).toBeInTheDocument();
+    expect(within(friday).getByRole("button", { name: /^Lunch with Dana,/ })).toBeInTheDocument();
+    fireEvent.pointerUp(window);
+    await settle();
+    expect(within(friday).getByRole("button", { name: /^Lunch with Dana,/ })).toBeInTheDocument();
+
+    release();
+    await settle();
+    expect(within(friday).getByRole("button", { name: /^Lunch with Dana,/ })).toBeInTheDocument();
+    expect(within(friday).getByRole("button", { name: /^1:1 Alex,/ })).toBeInTheDocument();
+    expect(useEditStore.getState().moving).toEqual({});
   });
 
   test("a change made elsewhere first says so and reads the calendar again", async () => {

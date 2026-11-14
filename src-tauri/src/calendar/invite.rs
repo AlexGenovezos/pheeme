@@ -1,6 +1,8 @@
 //! Mail's invite card: the invitation an email carries ([`super::ics`]), with the event as it
-//! is now on the account's calendar when the cache has it (found by iCalendar UID, the primary
-//! calendar first), so an out-of-date email still shows the current time and answers.
+//! is now on the account's calendar when the cache has it (found by iCalendar UID on the
+//! primary calendar), so an out-of-date email still shows the current time and answers.
+//! A copy on another calendar (a colleague's, shared with the account) is never the live
+//! event: the card answers on the live event, and answering there would change theirs.
 
 use super::edit::{self, OriginalStart};
 use super::error::CalendarError;
@@ -216,19 +218,26 @@ impl CalendarService {
     }
 
     /// The cached row behind the invitation and the id to read: the series or single event
-    /// (primary calendar first), or for one occurrence its own row or instance id.
+    /// on the primary calendar, or for one occurrence its own row or instance id.
     async fn live_target(
         &self,
         account_id: &str,
         invite: &Invite,
     ) -> Result<Option<(DbEvent, String)>, CalendarError> {
-        let primary = db::calendar::calendars(&self.db, Some(account_id))
+        let Some(primary) = db::calendar::calendars(&self.db, Some(account_id))
             .await?
             .into_iter()
             .find(|c| c.primary)
-            .map(|c| c.id);
-        let mut rows = db::calendar::events_by_ical_uid(&self.db, account_id, &invite.uid).await?;
-        rows.sort_by_key(|e| Some(&e.calendar_id) != primary.as_ref());
+            .map(|c| c.id)
+        else {
+            return Ok(None);
+        };
+        let rows: Vec<DbEvent> =
+            db::calendar::events_by_ical_uid(&self.db, account_id, &invite.uid)
+                .await?
+                .into_iter()
+                .filter(|e| e.calendar_id == primary)
+                .collect();
         let Some(rid) = &invite.recurrence_id else {
             return Ok(rows
                 .into_iter()
@@ -338,6 +347,40 @@ mod tests {
         assert_eq!(live.event.self_response.as_deref(), Some("tentative"));
         assert_eq!(got.live_sequence, Some(3));
         assert_eq!(got.sequence, 1);
+    }
+
+    #[tokio::test]
+    async fn invite_ignores_a_shared_calendars_copy() {
+        let h = harness(&["a"]).await;
+        h.fake("a")
+            .add_calendar(crate::calendar::fake::calendar("colleague@example.com"));
+        let mut theirs = timed(
+            "review",
+            "Review",
+            "2026-11-12T15:00:00Z",
+            "2026-11-12T16:00:00Z",
+        );
+        theirs["attendees"] = json!([
+            {"email": "boss@example.com", "organizer": true, "responseStatus": "accepted"},
+            {"email": "colleague@example.com", "self": true, "responseStatus": "accepted"},
+            {"email": "a@example.com", "responseStatus": "needsAction"}
+        ]);
+        h.fake("a").put("colleague@example.com", theirs);
+        h.grant("a").await;
+        let got = h
+            .service
+            .invite(
+                "a",
+                &request("review@google.com", 0, "20261112T150000Z", ""),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(got.live.is_none(), "their copy isn't the account's event");
+        assert!(
+            got.import.is_some(),
+            "answered by UID on the primary calendar"
+        );
     }
 
     #[tokio::test]

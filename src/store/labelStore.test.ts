@@ -263,6 +263,37 @@ test("pending reads reject older refreshes and reconcile once all commands settl
   expect(store().allInboxUnread).toBe(3);
 });
 
+test("a refresh while a read waits still loads labels and other accounts, holding only the read's counts", async () => {
+  const w = world();
+  backend(w);
+  await store().load(["a"]);
+  store().patchUnread(1, [readChange()]);
+  expect(store().counts.a.INBOX.unread).toBe(2);
+
+  // Account b is added while a's automatic read waits for its conversation.
+  w.counts.a = [{ labelId: "INBOX", unread: 9, total: 10 }];
+  w.labels.a = [...w.labels.a, label("Label_3", "New")];
+  w.allInbox = 42;
+  await store().load(["a", "b"]);
+  expect(
+    store()
+      .userLabels("b")
+      .map((l) => l.name),
+  ).toEqual(["Work"]);
+  expect(store().counts.b.INBOX.unread).toBe(2);
+  expect(
+    store()
+      .userLabels("a")
+      .map((l) => l.name),
+  ).toContain("New");
+  expect(store().counts.a.INBOX.unread).toBe(2);
+  expect(store().allInboxUnread).toBe(2);
+
+  store().settleUnread(1);
+  await vi.waitFor(() => expect(store().counts.a.INBOX.unread).toBe(9));
+  expect(store().allInboxUnread).toBe(42);
+});
+
 test("failed or cancelled reads restore cached counts, and mark-unread raises them immediately", async () => {
   backend(world());
   await store().load(["a", "b"]);

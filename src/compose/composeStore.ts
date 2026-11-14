@@ -11,9 +11,12 @@ import {
   type EmailAddress,
   deleteDraft,
   discardAttachments,
+  type FailedSend,
+  failedSends,
   openExternal,
   openDraft,
   type OutboxSendStatus,
+  reopenFailedSend,
   saveDraft,
   sendEmail,
   type StagedAttachment,
@@ -43,6 +46,8 @@ export interface ComposeWindow {
   saving: boolean;
   /** When the draft last reached Gmail (Unix ms). */
   savedAt: number | null;
+  /** Why the last save (autosave included) didn't reach Gmail; `null` once one does. */
+  saveError: string | null;
   sending: boolean;
   /** Files being read into staging. */
   attaching: number;
@@ -113,6 +118,11 @@ export function sendProblem(d: ComposeDraft): string | null {
 export const gmailDraftsUrl = (email: string) =>
   `https://mail.google.com/mail/u/${encodeURIComponent(email)}/#drafts`;
 
+/** Rust asks for every open message to be saved before the app quits (`commands/compose.rs`). */
+export const SAVE_BEFORE_EXIT_EVENT = "compose:save_before_exit";
+/** The answer: `true` when nothing is left unsaved, `false` when a save failed (the app then stays open). */
+export const SAVED_BEFORE_EXIT_EVENT = "compose:saved_before_exit";
+
 /** The palette command (registered by `ComposeHost`) behind the Send menu's Send later. */
 export const SEND_LATER_COMMAND = "compose.sendLater";
 
@@ -139,6 +149,11 @@ interface ComposeState {
   removeAttachment(id: number, attachmentId: string): void;
   /** Save to Gmail Drafts now (autosave passes `quiet`, which keeps failures off the toasts). */
   save(id: number, opts?: { quiet?: boolean }): Promise<boolean>;
+  /**
+   * Save every open message with unsaved changes, before the app quits or restarts. False when one couldn't
+   * be saved: its panel comes up saying why.
+   */
+  saveAll(): Promise<boolean>;
   send(id: number): Promise<void>;
   /**
    * Send later: save the message to Gmail Drafts now, close the panel and open the draft in Gmail on the web,
@@ -159,6 +174,11 @@ interface ComposeState {
   focus(id: number): void;
   /** Bumped by `focus`; panels watch it. */
   focusRequest: { id: number; seq: number } | null;
+  /**
+   * Once per session per account: tell the user about sends still in the outbox that Gmail refused or never
+   * confirmed, which no panel remembers after a restart.
+   */
+  checkFailedSends(accountId: string): Promise<void>;
   /** Listen for send outcomes. Resolves to the unlisten fn. */
   subscribe(): Promise<() => void>;
 }
@@ -166,12 +186,25 @@ interface ComposeState {
 let nextId = 1;
 let focusSeq = 0;
 const pending = new Map<string, PendingSend>();
+/**
+ * Failed sends already told about this session, so a dismissed notice doesn't come back until the next launch
+ * (when the send, still in the outbox, is shown again).
+ */
+const noticed = new Set<string>();
+/** Accounts whose failed sends were listed this session. */
+const checkedAccounts = new Set<string>();
 /** Each window's save in flight, so a send or a second save waits for it. */
 const saves = new Map<number, Promise<boolean>>();
 /** The Gmail draft each window's last save made, read by a discard that raced it. */
 const savedDrafts = new Map<number, string>();
 /** The message id of each window's last saved draft (it changes with every save), for Send later. */
 const savedMessages = new Map<number, string>();
+/** Every Drafts message each window's draft has been (the one it was opened from, then one per save). */
+const draftMessages = new Map<number, Set<string>>();
+const noteDraftMessage = (id: number, messageId: string) => {
+  const known = draftMessages.get(id) ?? new Set<string>();
+  draftMessages.set(id, known.add(messageId));
+};
 
 export const useComposeStore = create<ComposeState>((set, get) => {
   const find = (id: number) => get().windows.find((w) => w.id === id);
@@ -212,6 +245,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     savedVersion: 0,
     saving: false,
     savedAt: null,
+    saveError: null,
     sending: false,
     attaching: 0,
     error: null,
@@ -245,9 +279,63 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     );
   };
 
+  /**
+   * A send that didn't go through and that no panel is tracking (queued before a restart): say so until the
+   * user opens it or dismisses the notice. Open puts it back in Drafts and opens it in a panel, where it can
+   * be fixed and sent, or discarded.
+   */
+  const noticeFailedSend = (accountId: string, failed: FailedSend) => {
+    if (noticed.has(failed.opId) || pending.has(failed.opId)) return;
+    noticed.add(failed.opId);
+    const subject = failed.subject ? `“${failed.subject}”` : "your message";
+    const first = [...failed.to, ...failed.cc, ...failed.bcc][0];
+    const to = first ? ` to ${first.name?.trim() || first.address}` : "";
+    const unconfirmed = failed.status === "unconfirmed";
+    const reopenIt = async () => {
+      try {
+        const draft = await reopenFailedSend(accountId, failed.opId);
+        if (draft) await get().editDraft(accountId, draft.messageId);
+        else toast({ title: "That message isn't waiting to be sent any more." });
+      } catch (e) {
+        toast({ title: toCommandError(e).message, tone: "danger" });
+        // Still in the outbox: offer it again.
+        noticed.delete(failed.opId);
+        noticeFailedSend(accountId, failed);
+      }
+    };
+    toast({
+      title: unconfirmed
+        ? `Couldn't confirm ${subject}${to} was sent`
+        : `Couldn't send ${subject}${to}`,
+      description: unconfirmed
+        ? "Check Sent before sending it again."
+        : "Gmail didn't accept this message. Open it to fix it and send it again.",
+      tone: "danger",
+      duration: 0,
+      action: { label: "Open", run: () => void reopenIt() },
+    });
+  };
+
+  /** The account's failed sends, or the one `opId` names. */
+  const noticeFailedSends = async (accountId: string, opId?: string) => {
+    let list: FailedSend[];
+    try {
+      list = await failedSends(accountId);
+    } catch (e) {
+      console.warn("couldn't list failed sends", e);
+      return;
+    }
+    for (const failed of list)
+      if (opId === undefined || failed.opId === opId) noticeFailedSend(accountId, failed);
+  };
+
   const onSendStatus = (event: OutboxSendStatus) => {
     const entry = pending.get(event.opId);
-    if (!entry) return;
+    if (!entry) {
+      if (event.status === "failed" || event.status === "unconfirmed")
+        void noticeFailedSends(event.accountId, event.opId);
+      return;
+    }
     if (event.status === "sent") {
       pending.delete(event.opId);
       if (entry.toastId !== null) dismissToast(entry.toastId);
@@ -262,6 +350,11 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       toast({ title: "Couldn't send your message", tone: "danger" });
     } else if (event.status === "unconfirmed") {
       pending.delete(event.opId);
+      // Told now; it stays in the outbox, so the next launch offers it again.
+      noticed.add(event.opId);
+      if (entry.toastId !== null) dismissToast(entry.toastId);
+      // The message can't come back into a panel from here, so nothing reads its staged files again.
+      dropStaged(entry.window.draft.attachments);
       toast({
         title: "Couldn't confirm your message was sent",
         description: "Check Sent before sending it again.",
@@ -333,8 +426,14 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     },
 
     async editDraft(accountId, messageId) {
+      // Already open (or opening): show that panel, whether or not there's room for another.
+      const opened = get().windows.find(
+        (w) => w.accountId === accountId && draftMessages.get(w.id)?.has(messageId),
+      );
+      if (opened) return get().focus(opened.id);
       const id = open(blank(accountId, "draft", emptyDraft(), true));
       if (id === null) return;
+      noteDraftMessage(id, messageId);
       try {
         const draft = await openDraft(accountId, messageId);
         if (!find(id)) return dropStaged(draft.attachments);
@@ -434,6 +533,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
           const saved = await saveDraft(accountId, win.draft);
           savedDrafts.set(id, saved.draftId);
           savedMessages.set(id, saved.messageId);
+          noteDraftMessage(id, saved.messageId);
           set((s) => ({
             windows: s.windows.map((w) =>
               w.id === id && w.accountId === accountId
@@ -442,6 +542,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
                     saving: false,
                     savedVersion: Math.max(w.savedVersion, version),
                     savedAt: Date.now(),
+                    saveError: null,
                     draft: { ...w.draft, draftId: saved.draftId },
                   }
                 : w,
@@ -455,7 +556,12 @@ export const useComposeStore = create<ComposeState>((set, get) => {
           return true;
         } catch (e) {
           const message = toCommandError(e).message;
-          patch(id, { saving: false, ...(opts?.quiet ? {} : { error: message }) });
+          // Always kept for the footer's "Not saved"; only a save the user asked for interrupts with it.
+          patch(id, {
+            saving: false,
+            saveError: message,
+            ...(opts?.quiet ? {} : { error: message }),
+          });
           return false;
         }
       };
@@ -466,6 +572,23 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         if (saves.get(id) === next) saves.delete(id);
       });
       return next;
+    },
+
+    async saveAll() {
+      let allSaved = true;
+      for (const { id } of get().windows) {
+        let win = find(id);
+        // A message still loading has nothing typed; one being sent is already in the outbox.
+        while (win && !win.loading && !win.sending && win.version !== win.savedVersion) {
+          if (!(await get().save(id))) {
+            allSaved = false;
+            get().focus(id);
+            break;
+          }
+          win = find(id);
+        }
+      }
+      return allSaved;
     },
 
     requestSend(id) {
@@ -636,6 +759,12 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       }));
     },
 
+    async checkFailedSends(accountId) {
+      if (checkedAccounts.has(accountId)) return;
+      checkedAccounts.add(accountId);
+      await noticeFailedSends(accountId);
+    },
+
     async subscribe() {
       return listen<OutboxSendStatus>(SYNC_EVENTS.outboxSendStatus, ({ payload }) =>
         onSendStatus(payload),
@@ -647,9 +776,12 @@ export const useComposeStore = create<ComposeState>((set, get) => {
 /** Test helper. */
 export function __resetComposeStoreForTests() {
   pending.clear();
+  noticed.clear();
+  checkedAccounts.clear();
   saves.clear();
   savedDrafts.clear();
   savedMessages.clear();
+  draftMessages.clear();
   nextId = 1;
   useComposeStore.setState({ windows: [], focusRequest: null });
 }

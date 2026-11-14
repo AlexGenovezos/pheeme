@@ -2,6 +2,7 @@ import { MailOpen, PanelLeftOpen, SquareCheckBig, SquarePen, X } from "lucide-re
 import { useEffect } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { Skeleton } from "../components/ui/Skeleton";
 import { toast } from "../components/ui/Toast";
 import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
@@ -129,10 +130,16 @@ export function ListPane() {
   const userLabels = useLabelStore((s) => (accountId ? s.userLabels(accountId) : NO_LABELS));
   const mailboxName = mailboxTitle({ accountId, labelId, category }, userLabels);
   const title = searchText ? "Search results" : mailboxName;
-  const unread = useLabelStore((s) => {
-    if (accountId === null) return s.allInboxUnread;
-    if (category) return s.categoryCounts[accountId]?.[category] ?? 0;
-    return s.counts[accountId]?.[labelId]?.unread ?? 0;
+  // `null` until the account's counts have loaded.
+  const unread = useLabelStore((s): number | null => {
+    if (accountId === null)
+      return Object.keys(s.categoryCounts).length > 0 ? s.allInboxUnread : null;
+    if (category) {
+      const counts = s.categoryCounts[accountId];
+      return counts ? (counts[category] ?? 0) : null;
+    }
+    const counts = s.counts[accountId];
+    return counts ? (counts[labelId]?.unread ?? 0) : null;
   });
   const sidebarKey = useKeybinding("view.toggleSidebar", "mod+b");
   const composeKey = useKeybinding("compose.new", "c");
@@ -143,6 +150,7 @@ export function ListPane() {
       title: "Next conversation",
       group: "Conversation",
       shortcut: "j",
+      repeat: true,
       run: () => moveSelection(1),
     },
     {
@@ -150,6 +158,7 @@ export function ListPane() {
       title: "Previous conversation",
       group: "Conversation",
       shortcut: "k",
+      repeat: true,
       run: () => moveSelection(-1),
     },
     {
@@ -237,11 +246,10 @@ export function ListPane() {
             {threads.length === 1 ? "result" : "results"}
           </span>
         ) : (
-          unread > 0 && (
-            <span className="toolbar__subtitle" {...dragRegion}>
-              {unread} unread
-            </span>
-          )
+          // Always there, so the count arriving doesn't move the title row.
+          <span className="toolbar__subtitle" {...dragRegion}>
+            {unread === null ? <Skeleton width="5em" /> : unread > 0 ? `${unread} unread` : null}
+          </span>
         )}
         {!searchText && (
           <Button
@@ -260,42 +268,46 @@ export function ListPane() {
         <SearchBar />
       </div>
 
-      {threads.length > 0 && (
-        <div className="list-pane__controls">
+      {/* Drawn from the first frame (off while there is nothing to select), so rows don't move down when they arrive. */}
+      <div className="list-pane__controls">
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={threads.length === 0 && !anyChecked}
+          icon={anyChecked ? <X aria-hidden="true" /> : <SquareCheckBig aria-hidden="true" />}
+          title={
+            anyChecked ? "Clear selection" : `Select all ${threads.length} loaded conversations`
+          }
+          onClick={() => {
+            const ui = useUiStore.getState();
+            if (anyChecked) ui.clearChecked();
+            else ui.checkAll(threads.map((thread) => threadKey(thread.accountId, thread.id)));
+          }}
+        >
+          {anyChecked ? "Clear selection" : "Select all"}
+        </Button>
+        <span>
+          <span aria-live="polite">{anyChecked ? `${checkedCount} selected` : ""}</span>
+          {!anyChecked &&
+            !searchText &&
+            (threads.length === 0 && loading ? (
+              <Skeleton width="8em" />
+            ) : (
+              `${threads.length}${next ? "+" : ""} ${threads.length === 1 ? "conversation" : "conversations"}`
+            ))}
+        </span>
+        {searchText && !anyChecked && (
           <Button
             variant="ghost"
             size="sm"
-            icon={anyChecked ? <X aria-hidden="true" /> : <SquareCheckBig aria-hidden="true" />}
-            title={
-              anyChecked ? "Clear selection" : `Select all ${threads.length} loaded conversations`
-            }
-            onClick={() => {
-              const ui = useUiStore.getState();
-              if (anyChecked) ui.clearChecked();
-              else ui.checkAll(threads.map((thread) => threadKey(thread.accountId, thread.id)));
-            }}
+            icon={<MailOpen aria-hidden="true" />}
+            title="Mark every match of this search as read, including ones not loaded yet"
+            onClick={() => void markSearchResultsRead()}
           >
-            {anyChecked ? "Clear selection" : "Select all"}
+            Mark all as read
           </Button>
-          <span>
-            <span aria-live="polite">{anyChecked ? `${checkedCount} selected` : ""}</span>
-            {!anyChecked &&
-              !searchText &&
-              `${threads.length}${next ? "+" : ""} ${threads.length === 1 ? "conversation" : "conversations"}`}
-          </span>
-          {searchText && !anyChecked && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<MailOpen aria-hidden="true" />}
-              title="Mark every match of this search as read, including ones not loaded yet"
-              onClick={() => void markSearchResultsRead()}
-            >
-              Mark all as read
-            </Button>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       <ThreadList title={title} onRowAction={onRowAction} rowMenu={rowMenu} />
     </div>

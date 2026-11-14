@@ -619,3 +619,190 @@ async fn a_draft_keeps_its_from_when_reopened() {
     let opened = h.compose.open_draft(ACCT, &saved.message_id).await.unwrap();
     assert_eq!(opened.from, d.from);
 }
+
+/// Mail whose body tries to pass for the user's own signature and cover the app, with the
+/// table, image and styles a quote has to keep.
+const HOSTILE: &[u8] = b"From: Bo <bo@example.com>\r\n\
+To: me@example.com\r\n\
+Subject: Plans\r\n\
+Message-ID: <h1@example.com>\r\n\
+Content-Type: text/html; charset=utf-8\r\n\
+\r\n\
+<table style=\"width:100%\"><tr><td style=\"color:red\">Cell</td></tr></table>\
+<img src=\"https://example.com/a.png\" width=\"40\">\
+<div class=\"gmail_signature\"><div style=\"position:fixed;inset:0;z-index:9999\">Sign in again</div></div>";
+
+fn staged_files(h: &H) -> usize {
+    std::fs::read_dir(h._dir.path().join("cache").join("compose"))
+        .map(|entries| entries.count())
+        .unwrap_or(0)
+}
+
+#[tokio::test]
+async fn a_reopened_reply_keeps_its_quote_apart_and_unchanged_through_an_edit() {
+    for mode in [ComposeMode::Reply, ComposeMode::Forward] {
+        let h = harness().await;
+        h.fake
+            .seed(FakeMsg::from_raw("h1", "t1", &["INBOX"], HOSTILE));
+        h.sync.sync_account(ACCT).await.unwrap();
+
+        let mut d = h.compose.template(ACCT, "h1", mode).await.unwrap();
+        let quote = d.quote_html.clone().expect("a quote");
+        assert!(
+            quote.contains("<table") && quote.contains("<img"),
+            "{quote}"
+        );
+        d.to = vec![addr("bo@example.com")];
+        d.body_html =
+            "<p>Sounds good</p><div class=\"gmail_signature\" data-smartmail=\"gmail_signature\">Me</div>"
+                .into();
+        let saved = h.compose.save_draft(ACCT, &d).await.unwrap();
+
+        let mut opened = h.compose.open_draft(ACCT, &saved.message_id).await.unwrap();
+        // The sender's HTML is back beside the editor, not in what the editor renders.
+        assert_eq!(opened.body_html, d.body_html, "{mode:?}");
+        assert_eq!(
+            opened.quote_html.as_deref(),
+            Some(quote.as_str()),
+            "{mode:?}"
+        );
+        assert!(!opened.body_html.contains("Sign in again"));
+
+        // Edit, save and reopen: the quote that would be sent is still the original one.
+        opened.body_html = "<p>Sounds great</p>".into();
+        let again = h.compose.save_draft(ACCT, &opened).await.unwrap();
+        let reopened = h.compose.open_draft(ACCT, &again.message_id).await.unwrap();
+        assert_eq!(reopened.body_html, "<p>Sounds great</p>", "{mode:?}");
+        assert_eq!(
+            reopened.quote_html.as_deref(),
+            Some(quote.as_str()),
+            "{mode:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_failed_send_as_lookup_is_not_repeated_by_the_next_send() {
+    let h = harness().await;
+    h.fake
+        .fail_next("list_send_as", GmailError::Offline("down".into()));
+    h.compose
+        .send(ACCT, &draft_to("bo@example.com"), 60_000)
+        .await
+        .unwrap();
+    assert_eq!(h.fake.calls("list_send_as"), 1);
+
+    // Queued from the account's own address, without asking Gmail again.
+    h.compose
+        .send(ACCT, &draft_to("bo@example.com"), 60_000)
+        .await
+        .unwrap();
+    h.compose
+        .save_draft(ACCT, &draft_to("bo@example.com"))
+        .await
+        .unwrap();
+    assert_eq!(h.fake.calls("list_send_as"), 1);
+
+    // Asking for the addresses outright (Settings, the From picker) still reaches Gmail,
+    // and a list that arrives is used from then on.
+    h.fake.set_send_as(my_addresses());
+    h.compose.send_as_addresses(ACCT).await.unwrap();
+    assert_eq!(h.fake.calls("list_send_as"), 2);
+    h.compose
+        .send(ACCT, &draft_to("bo@example.com"), 0)
+        .await
+        .unwrap();
+    assert_eq!(sent_from(&h, 1).await, "\"Me at Work\" <work@example.com>");
+    assert_eq!(h.fake.calls("list_send_as"), 2);
+}
+
+#[tokio::test]
+async fn a_reply_goes_on_without_an_inline_image_it_cannot_fetch() {
+    let h = harness().await;
+    h.fake.seed(
+        FakeMsg::new("m1", "t1", &["INBOX"])
+            .with_inline("logo.png", "image/png", "g1", "logo")
+            .with_inline("sig.png", "image/png", "g2", "sig"),
+    );
+    h.fake.seed_attachment("m1", "g1", b"PNG");
+    h.fake.seed_attachment("m1", "g2", b"PNG2");
+    h.sync.sync_account(ACCT).await.unwrap();
+    h.fake
+        .fail_after("get_attachment", 1, GmailError::Offline("down".into()));
+
+    let d = h
+        .compose
+        .template(ACCT, "m1", ComposeMode::Reply)
+        .await
+        .unwrap();
+    let cids: Vec<_> = d
+        .attachments
+        .iter()
+        .map(|a| a.content_id.as_deref())
+        .collect();
+    assert_eq!(cids, [Some("logo")]);
+    assert!(d.quote_html.is_some());
+}
+
+#[tokio::test]
+async fn a_forward_that_fails_leaves_no_staged_files_behind() {
+    let h = harness().await;
+    h.fake.seed(
+        FakeMsg::new("m1", "t1", &["INBOX"])
+            .with_attachment("a.pdf", "application/pdf", "g1")
+            .with_attachment("b.pdf", "application/pdf", "g2"),
+    );
+    h.fake.seed_attachment("m1", "g1", b"%PDF-1");
+    h.fake.seed_attachment("m1", "g2", b"%PDF-2");
+    h.sync.sync_account(ACCT).await.unwrap();
+    h.fake
+        .fail_after("get_attachment", 1, GmailError::Offline("down".into()));
+
+    assert!(h
+        .compose
+        .template(ACCT, "m1", ComposeMode::Forward)
+        .await
+        .is_err());
+    assert_eq!(staged_files(&h), 0);
+}
+
+const INVITATION: &[u8] = b"From: Bo <bo@example.com>\r\n\
+To: me@example.com\r\n\
+Subject: Invitation: Lunch\r\n\
+Message-ID: <i1@example.com>\r\n\
+Content-Type: multipart/mixed; boundary=\"b1\"\r\n\
+\r\n\
+--b1\r\n\
+Content-Type: text/html; charset=utf-8\r\n\
+\r\n\
+<p>Lunch?</p>\r\n\
+--b1\r\n\
+Content-Type: text/calendar; charset=utf-8; method=REQUEST\r\n\
+\r\n\
+BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n\
+--b1\r\n\
+Content-Type: application/ics; name=\"invite.ics\"\r\n\
+Content-Disposition: attachment; filename=\"invite.ics\"\r\n\
+\r\n\
+BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n\
+--b1--\r\n";
+
+#[tokio::test]
+async fn forwarding_an_invitation_attaches_its_file_but_not_the_calendar_part() {
+    let h = harness().await;
+    h.fake
+        .seed(FakeMsg::from_raw("i1", "t1", &["INBOX"], INVITATION));
+    h.sync.sync_account(ACCT).await.unwrap();
+    let rows = attachments::get_attachments_for_message(&h.pool, ACCT, "i1")
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2, "the calendar part and the .ics file");
+
+    let d = h
+        .compose
+        .template(ACCT, "i1", ComposeMode::Forward)
+        .await
+        .unwrap();
+    let names: Vec<&str> = d.attachments.iter().map(|a| a.filename.as_str()).collect();
+    assert_eq!(names, ["invite.ics"]);
+}

@@ -1,10 +1,19 @@
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useCommands } from "../keyboard/useCommands";
+import { toast } from "../components/ui/Toast";
 import { createSubscriptionScope } from "../lib/subscriptions";
+import { stopQuietly } from "../lib/tauri";
 import { isTauri } from "../preview/runtime";
 import { useAccountStore } from "../store/accountStore";
-import { type ComposeWindow, SEND_LATER_COMMAND, useComposeStore } from "./composeStore";
+import {
+  type ComposeWindow,
+  SAVE_BEFORE_EXIT_EVENT,
+  SAVED_BEFORE_EXIT_EVENT,
+  SEND_LATER_COMMAND,
+  useComposeStore,
+} from "./composeStore";
 import { useSignatures } from "./signatures";
 import "./compose.css";
 
@@ -100,8 +109,28 @@ export function ComposeHost() {
 }
 
 /**
- * Follow send outcomes for the whole session (a panel is gone by the time its send is confirmed), and fetch each
- * account's Gmail signature once, so a new message starts with the current one.
+ * The app is about to quit (or restart): save what's being written to Gmail Drafts, then tell Rust how it went.
+ * Rust holds the quit for the answer; on `false` the app stays open, and quitting again goes through.
+ */
+export async function saveBeforeExit(): Promise<void> {
+  const saved = await useComposeStore
+    .getState()
+    .saveAll()
+    .catch(() => false);
+  if (!saved)
+    toast({
+      title: "Pheeme didn't quit",
+      description: "A draft couldn't be saved. Quit again to leave without saving it.",
+      tone: "danger",
+      duration: 0,
+    });
+  await emit(SAVED_BEFORE_EXIT_EVENT, saved);
+}
+
+/**
+ * Follow send outcomes for the whole session (a panel is gone by the time its send is confirmed), save open
+ * messages when the app is about to quit, fetch each account's Gmail signature once, so a new message
+ * starts with the current one, and say which sends from before a restart didn't go through.
  */
 export function useComposeEvents() {
   useEffect(() => {
@@ -109,10 +138,21 @@ export function useComposeEvents() {
     scope
       .add(() => useComposeStore.getState().subscribe())
       .catch((err) => console.warn("send status listener failed", err));
+    scope
+      .add(() =>
+        listen(SAVE_BEFORE_EXIT_EVENT, () => void saveBeforeExit().catch(() => {})).then(
+          (stop) => () => stopQuietly(stop),
+        ),
+      )
+      .catch((err) => console.warn("save-before-exit listener failed", err));
     return scope.dispose;
   }, []);
   const accounts = useAccountStore((s) => s.accounts);
   useEffect(() => {
-    for (const a of accounts) void useSignatures.getState().refreshGmailOnce(a.id);
+    for (const a of accounts) {
+      void useSignatures.getState().refreshGmailOnce(a.id);
+      // Sends from before a restart that didn't go through: no panel is left to say so.
+      void useComposeStore.getState().checkFailedSends(a.id);
+    }
   }, [accounts]);
 }

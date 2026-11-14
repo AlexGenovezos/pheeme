@@ -33,6 +33,7 @@ import {
   type Freq,
   MAX_REMINDERS,
   nthWeekday,
+  otherCall,
   type Reminder,
   type RepeatRule,
   repeatChoice,
@@ -95,6 +96,10 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
     [form.accountId],
   );
   const editing = spec.event !== null;
+  // Another provider's call (Zoom, Teams, …): shown as it is. One that's the event's conference
+  // leaves no room for Meet (Google keeps one conference per event), so Meet isn't offered.
+  const call = editing && spec.detail ? otherCall(spec.detail) : null;
+  const otherConference = call !== null && spec.detail!.hasConference;
   const dirty = JSON.stringify(form) !== JSON.stringify(spec.form);
 
   const close = async () => {
@@ -203,7 +208,7 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
             </div>
           </Section>
           <Section icon={<Video />} label="Google Meet">
-            {form.meet ? (
+            {otherConference ? null : form.meet ? (
               <div className="cal-editor__inline">
                 <span>
                   {spec.form.meet && spec.detail?.meetUrl
@@ -218,6 +223,14 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
               <Button size="sm" onClick={() => set({ meet: true })}>
                 Add Google Meet video conferencing
               </Button>
+            )}
+            {call && (
+              // Another provider's call: shown as it is, changed only where it was made.
+              <div className="cal-editor__inline">
+                <span>
+                  {call.provider ?? "Video call"}: {call.url.replace(/^https?:\/\//, "")}
+                </span>
+              </div>
             )}
           </Section>
           <Section icon={<MapPin />} label="Location">

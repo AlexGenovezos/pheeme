@@ -1,9 +1,10 @@
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { dismissToast, useToastStore } from "../components/ui/Toast";
 import type { ComposeDraft } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
+import { saveBeforeExit } from "./ComposeHost";
 import { __resetComposeSettingsForTests, useComposeSettings } from "./composeSettings";
 import {
   __resetComposeStoreForTests,
@@ -11,6 +12,7 @@ import {
   emptyDraft,
   gmailDraftsUrl,
   MAX_WINDOWS,
+  SAVED_BEFORE_EXIT_EVENT,
   sendProblem,
   useComposeStore,
 } from "./composeStore";
@@ -524,4 +526,208 @@ test("Send later opens the draft in the account it was saved in, and waits for f
   expect(win(next).error).toBe("Wait for the attachments to finish.");
   staged({ id: "s-a", filename: "a.pdf", mimeType: "x/y", size: 5 });
   await attaching;
+});
+
+test("Edit draft on a draft that's already open shows its panel, even with every slot taken", async () => {
+  handlers.open_draft = () => ({ ...emptyDraft(), subject: "Plans", draftId: "d7" });
+  await store().editDraft("a1", "msg7");
+  const draft = store().windows[0].id;
+  store().compose("a1");
+  store().compose("a1");
+  expect(store().windows).toHaveLength(MAX_WINDOWS);
+  expect(win(draft).minimized).toBe(true);
+
+  await store().editDraft("a1", "msg7");
+  expect(titles()).not.toContain("Too many messages open");
+  expect(called("open_draft")).toHaveLength(1);
+  expect(store().windows).toHaveLength(MAX_WINDOWS);
+  expect(win(draft).minimized).toBe(false);
+  expect(store().focusRequest?.id).toBe(draft);
+
+  // Saved since: Drafts now lists it under the message that save made.
+  store().update(draft, { subject: "Plans B" });
+  handlers.save_draft = () => ({ draftId: "d7", messageId: "msg8", threadId: "t1" });
+  await store().save(draft);
+  store().setMinimized(draft, true);
+  await store().editDraft("a1", "msg8");
+  expect(called("open_draft")).toHaveLength(1);
+  expect(win(draft).minimized).toBe(false);
+
+  // Another draft still needs a free slot.
+  await store().editDraft("a1", "other");
+  expect(titles()).toContain("Too many messages open");
+});
+
+test("an unconfirmed send lets its staged files go", async () => {
+  const id = written({
+    attachments: [{ id: "s1", filename: "a.pdf", mimeType: "application/pdf", size: 10 }],
+  });
+  await store().send(id);
+  await emit("outbox:send_status", { accountId: "a1", opId: "op1", status: "unconfirmed" });
+  await vi.waitFor(() => expect(titles()).toContain("Couldn't confirm your message was sent"));
+  expect(titles()).not.toContain("Sending…");
+  expect(called("discard_attachments")).toEqual([{ ids: ["s1"] }]);
+  expect(store().windows).toEqual([]);
+});
+
+const refused = {
+  opId: "old1",
+  status: "failed",
+  subject: "Lunch",
+  to: [mira],
+  cc: [],
+  bcc: [],
+  error: "Invalid To header",
+  threadId: null,
+  queuedAt: 1,
+  failedAt: 2,
+};
+const toast = (title: string) => useToastStore.getState().toasts.find((t) => t.title === title);
+
+test("a send refused after a restart is shown, and Open brings it back from Drafts", async () => {
+  handlers.failed_sends = () => [refused];
+  handlers.reopen_failed_send = () => ({ draftId: "d9", messageId: "m9" });
+  handlers.open_draft = () => ({ ...emptyDraft(), to: [mira], subject: "Lunch", draftId: "d9" });
+  await store().checkFailedSends("a1");
+  const notice = toast("Couldn't send “Lunch” to Mira");
+  expect(notice).toMatchObject({ tone: "danger", duration: 0, action: { label: "Open" } });
+
+  notice!.action!.run();
+  await vi.waitFor(() => expect(store().windows[0]?.loading).toBe(false));
+  expect(called("reopen_failed_send")).toEqual([{ accountId: "a1", opId: "old1" }]);
+  expect(called("open_draft")).toEqual([{ accountId: "a1", messageId: "m9" }]);
+  expect(store().windows[0]).toMatchObject({ accountId: "a1", kind: "draft" });
+  expect(store().windows[0].draft).toMatchObject({ subject: "Lunch", draftId: "d9" });
+});
+
+test("failed sends are listed once per account per session, and not shown twice", async () => {
+  handlers.failed_sends = () => [refused];
+  await store().checkFailedSends("a1");
+  await store().checkFailedSends("a1");
+  expect(called("failed_sends")).toHaveLength(1);
+  // The same op failing again (its event) doesn't bring a dismissed notice back.
+  dismissToast(toast("Couldn't send “Lunch” to Mira")!.id);
+  await emit("outbox:send_status", { accountId: "a1", opId: "old1", status: "failed" });
+  await vi.waitFor(() => expect(called("failed_sends")).toHaveLength(2));
+  expect(titles()).toEqual([]);
+});
+
+test("a failure for a send no panel tracks is shown, worded for unconfirmed sends", async () => {
+  handlers.failed_sends = () => [
+    { ...refused, opId: "x", subject: "Other" },
+    {
+      ...refused,
+      status: "unconfirmed",
+      subject: null,
+      to: [],
+      bcc: [{ name: null, address: "b@x.io" }],
+    },
+  ];
+  await emit("outbox:send_status", { accountId: "a1", opId: "old1", status: "unconfirmed" });
+  await vi.waitFor(() =>
+    expect(titles()).toEqual(["Couldn't confirm your message to b@x.io was sent"]),
+  );
+  expect(toast(titles()[0])!.description).toBe("Check Sent before sending it again.");
+  expect(called("failed_sends")).toEqual([{ accountId: "a1" }]);
+});
+
+test("Open that fails says why and offers the send again", async () => {
+  handlers.failed_sends = () => [refused];
+  handlers.reopen_failed_send = () => {
+    throw { code: "offline", message: "No connection." };
+  };
+  await store().checkFailedSends("a1");
+  toast("Couldn't send “Lunch” to Mira")!.action!.run();
+  dismissToast(toast("Couldn't send “Lunch” to Mira")!.id);
+  await vi.waitFor(() => expect(titles()).toContain("No connection."));
+  expect(titles()).toContain("Couldn't send “Lunch” to Mira");
+  expect(store().windows).toEqual([]);
+});
+
+test("a known unconfirmed send isn't announced a second time by the launch check", async () => {
+  await store().send(written());
+  await emit("outbox:send_status", { accountId: "a1", opId: "op1", status: "unconfirmed" });
+  await vi.waitFor(() => expect(titles()).toContain("Couldn't confirm your message was sent"));
+  handlers.failed_sends = () => [{ ...refused, opId: "op1", status: "unconfirmed" }];
+  await store().checkFailedSends("a1");
+  expect(titles()).toEqual(["Couldn't confirm your message was sent"]);
+});
+
+test("a failed autosave is remembered until a save gets through", async () => {
+  const id = written();
+  handlers.save_draft = () => {
+    throw { code: "offline", message: "No connection." };
+  };
+  expect(await store().save(id, { quiet: true })).toBe(false);
+  expect(win(id)).toMatchObject({ saveError: "No connection.", error: null, saving: false });
+  store().update(id, { subject: "Still typing" });
+  expect(win(id).saveError).toBe("No connection.");
+
+  handlers.save_draft = () => ({ draftId: "d1", messageId: "m1", threadId: "t1" });
+  expect(await store().save(id, { quiet: true })).toBe(true);
+  expect(win(id)).toMatchObject({ saveError: null, savedAt: expect.any(Number) });
+});
+
+test("before quitting, every unsaved message is saved and Rust is told how it went", async () => {
+  const answers: unknown[] = [];
+  const stop = await listen(SAVED_BEFORE_EXIT_EVENT, (e) => answers.push(e.payload));
+  const first = written({ subject: "One" });
+  const second = written({ subject: "Two" });
+  const untouched = store().compose("a1");
+  await store().save(first);
+  expect(called("save_draft")).toHaveLength(1);
+
+  await saveBeforeExit();
+  expect(called("save_draft").map((a) => (a.message as ComposeDraft).subject)).toEqual([
+    "One",
+    "Two",
+  ]);
+  expect(win(second).version).toBe(win(second).savedVersion);
+  expect(answers).toEqual([true]);
+  expect(titles()).not.toContain("Pheeme didn't quit");
+
+  // One can't be saved: the app is told to stay open, and that panel comes up with the reason.
+  store().update(first, { subject: "One, edited" });
+  store().update(second, { subject: "Two, edited" });
+  store().setMinimized(untouched, false);
+  handlers.save_draft = (args) => {
+    if ((args.message as ComposeDraft).subject === "One, edited")
+      throw { code: "offline", message: "No connection." };
+    return { draftId: "d2", messageId: "m9", threadId: "t1" };
+  };
+  await saveBeforeExit();
+  expect(answers).toEqual([true, false]);
+  expect(titles()).toContain("Pheeme didn't quit");
+  expect(win(first)).toMatchObject({ minimized: false, error: "No connection." });
+  expect(win(first).version).not.toBe(win(first).savedVersion);
+  expect(win(second).version).toBe(win(second).savedVersion); // the others are still saved
+  stop();
+});
+
+test("a reopened reply keeps its quote out of the editor, and saves it back untouched", async () => {
+  const quoteHtml =
+    '<div class="gmail_quote"><blockquote class="gmail_quote"><table style="width:100%"><tbody><tr>' +
+    '<td><img src="cid:logo"></td></tr></tbody></table><div class="gmail_signature">Theirs</div></blockquote></div>';
+  handlers.open_draft = () => ({
+    ...emptyDraft(),
+    to: [mira],
+    subject: "Re: Plans",
+    bodyHtml: "<p>Sounds good</p>",
+    quoteHtml,
+    inReplyTo: "<m1@x>",
+    threadId: "t1",
+    draftId: "d7",
+  });
+  await store().editDraft("a1", "msg7");
+  const id = store().windows[0].id;
+  expect(win(id).draft.bodyHtml).not.toContain("Theirs");
+
+  store().update(id, { bodyHtml: "<p>Sounds great</p>" });
+  await store().save(id);
+  expect(called("save_draft")).toEqual([
+    {
+      accountId: "a1",
+      message: expect.objectContaining({ bodyHtml: "<p>Sounds great</p>", quoteHtml }),
+    },
+  ]);
 });

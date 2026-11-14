@@ -27,6 +27,12 @@ use sqlx::{
 use std::path::Path;
 use tracing::info;
 
+/// How long a write waits for another connection's write to finish before it fails with
+/// "database is locked". SQLite has one writer at a time, and sync commits whole batches of
+/// mail in one transaction: sqlx's default of 5 s made the user's own click fail behind one.
+/// Nothing here holds the write lock across a network call, so the wait is for local work only.
+pub const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub async fn init_db(data_dir: &Path, key: &StorageKey) -> Result<SqlitePool> {
     crate::storage::private_dir(data_dir)?;
 
@@ -41,7 +47,8 @@ pub async fn init_db(data_dir: &Path, key: &StorageKey) -> Result<SqlitePool> {
         .database_options(&db_path)
         .create_if_missing(true)
         .foreign_keys(true)
-        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
+        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+        .busy_timeout(BUSY_TIMEOUT);
     // Tests open hundreds of throwaway databases, and flushing every commit to disk made each
     // take ~0.4 s on Linux and much longer on Windows (Rust tests ran 163 s there, 19 s on
     // Linux). Only a power cut can lose an unflushed commit, which no test survives anyway.
@@ -212,6 +219,30 @@ mod tests {
             !options.iter().any(|o| o == "ENABLE_MEMORY_MANAGEMENT"),
             "built with a shared page cache: {options:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn writers_wait_out_a_long_write_instead_of_failing() {
+        let db = test_support::TestDb::with_account("a").await;
+        let timeout_ms: i64 = sqlx::query_scalar("PRAGMA busy_timeout")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(timeout_ms, BUSY_TIMEOUT.as_millis() as i64);
+        assert!(timeout_ms >= 30_000);
+
+        // A second writer queues behind an open write transaction and goes through once it ends.
+        let held = begin_write(&db.pool).await.unwrap();
+        let pool = db.pool.clone();
+        let waiting = tokio::spawn(async move {
+            let tx = begin_write(&pool).await?;
+            tx.commit().await?;
+            anyhow::Ok(())
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(!waiting.is_finished(), "waits for the first writer");
+        held.commit().await.unwrap();
+        waiting.await.unwrap().unwrap();
     }
 
     #[tokio::test]
@@ -866,6 +897,12 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!((m.is_read, m.is_starred), (0, 0));
+        assert!(
+            !messages::set_labels(&mut conn, "acct-1", "m1", &labels(&["UNREAD"]))
+                .await
+                .unwrap(),
+            "the same labels again are no change"
+        );
         assert!(
             !messages::set_labels(&mut conn, "acct-1", "nope", &labels(&[]))
                 .await

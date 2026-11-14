@@ -707,6 +707,32 @@ export const sendEmail = (accountId: string, message: ComposeDraft, undoMs?: num
 /** Undo send: true if stopped before it left. */
 export const cancelSend = (opId: string) => invoke<boolean>("cancel_send", { opId });
 
+/** A send still in the outbox that didn't go through (`sync::outbox::FailedSend`). */
+export interface FailedSend {
+  opId: string;
+  /** `failed`: Gmail refused it, so it wasn't sent. `unconfirmed`: Gmail may have it; it never showed in Sent. */
+  status: "failed" | "unconfirmed";
+  subject: string | null;
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  bcc: EmailAddress[];
+  /** Why Gmail refused it; `null` when unconfirmed. */
+  error: string | null;
+  threadId: string | null;
+  queuedAt: number;
+  failedAt: number;
+}
+
+/** The account's failed and unconfirmed sends, oldest first. */
+export const failedSends = (accountId: string) =>
+  invoke<FailedSend[]>("failed_sends", { accountId });
+/**
+ * Put a failed or unconfirmed send back in the account's Drafts (out of the outbox), to open with `openDraft`
+ * by `messageId`. `null` when it went meanwhile.
+ */
+export const reopenFailedSend = (accountId: string, opId: string) =>
+  invoke<{ draftId: string; messageId: string } | null>("reopen_failed_send", { accountId, opId });
+
 export interface SyncProgress {
   accountId: string;
   syncedMessages: number;

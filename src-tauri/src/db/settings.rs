@@ -1,7 +1,7 @@
 //! App-wide preferences stored in `app_settings`.
 use crate::desktop::NotifySchedule;
 use anyhow::Result;
-use sqlx::SqlitePool;
+use sqlx::{SqliteExecutor, SqlitePool};
 
 const GMAIL_QUOTA: &str = "gmail_quota_per_minute";
 const TRAY_ICON: &str = "tray_icon";
@@ -170,29 +170,59 @@ pub async fn delete_inbox_tabs(pool: &SqlitePool, account_id: &str) -> Result<()
     delete(pool, &inbox_tabs_key(account_id)).await
 }
 
-async fn get(pool: &SqlitePool, key: &str) -> Result<Option<String>> {
+fn resync_key(account_id: &str) -> String {
+    format!("resync.{account_id}")
+}
+
+/// Where the account's full resync (after Gmail's history expired) has got to: `None` when
+/// none is in progress, else the id of the last cached message it re-read (empty when it has
+/// only begun). It walks cached messages from the highest id down, so a quit or an error
+/// resumes here instead of starting over. Kept here, not in `sync_state`, to need no migration.
+pub async fn resync_position<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+) -> Result<Option<String>> {
+    get(ex, &resync_key(account_id)).await
+}
+
+/// Record that the resync has re-read every cached message down to `through` (see
+/// [`resync_position`]). Written in the transaction that stores what it read.
+pub async fn set_resync_position<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    through: &str,
+) -> Result<()> {
+    set(ex, &resync_key(account_id), through).await
+}
+
+/// The resync is finished (or the account starts over): forget its position.
+pub async fn clear_resync<'e>(ex: impl SqliteExecutor<'e>, account_id: &str) -> Result<()> {
+    delete(ex, &resync_key(account_id)).await
+}
+
+async fn get<'e>(ex: impl SqliteExecutor<'e>, key: &str) -> Result<Option<String>> {
     Ok(
         sqlx::query_scalar!("SELECT value FROM app_settings WHERE key = ?", key)
-            .fetch_optional(pool)
+            .fetch_optional(ex)
             .await?,
     )
 }
 
-async fn set(pool: &SqlitePool, key: &str, value: &str) -> Result<()> {
+async fn set<'e>(ex: impl SqliteExecutor<'e>, key: &str, value: &str) -> Result<()> {
     sqlx::query!(
         "INSERT INTO app_settings (key, value) VALUES (?, ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         key,
         value
     )
-    .execute(pool)
+    .execute(ex)
     .await?;
     Ok(())
 }
 
-async fn delete(pool: &SqlitePool, key: &str) -> Result<()> {
+async fn delete<'e>(ex: impl SqliteExecutor<'e>, key: &str) -> Result<()> {
     sqlx::query!("DELETE FROM app_settings WHERE key = ?", key)
-        .execute(pool)
+        .execute(ex)
         .await?;
     Ok(())
 }

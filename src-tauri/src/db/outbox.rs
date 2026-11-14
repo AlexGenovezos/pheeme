@@ -131,6 +131,32 @@ pub async fn for_account<'e>(ex: impl SqliteExecutor<'e>, account_id: &str) -> R
     .await?)
 }
 
+/// Every op of the account, oldest first, for dispatch at `now_ms`. As [`for_account`], except
+/// that a send which can't leave now comes with an empty `payload`: one being confirmed,
+/// unconfirmed or failed, or still in its undo window. A send's payload is the whole message
+/// (attachments included, tens of MB), and those sit in the queue for a long time.
+pub async fn queue<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    now_ms: i64,
+) -> Result<Vec<DbOp>> {
+    Ok(sqlx::query_as!(
+        DbOp,
+        r#"SELECT seq AS "seq!", id, account_id, kind,
+                  CASE WHEN kind = 'send'
+                            AND (status IN ('checking', 'unconfirmed', 'failed')
+                                 OR (attempts = 0 AND next_attempt_at > ?1))
+                       THEN '' ELSE payload END AS "payload!: String",
+                  status, attempts, next_attempt_at, checks_done, rfc822_message_id, last_error,
+                  created_at, updated_at
+           FROM outbox WHERE account_id = ?2 ORDER BY seq"#,
+        now_ms,
+        account_id
+    )
+    .fetch_all(ex)
+    .await?)
+}
+
 /// Pending label/trash ops that target messages in `thread_ids`, oldest first.
 pub async fn pending_touching_threads(
     conn: &mut SqliteConnection,
@@ -269,20 +295,64 @@ pub async fn delete_unsent<'e>(ex: impl SqliteExecutor<'e>, op_id: &str) -> Resu
     Ok(done.rows_affected() == 1)
 }
 
+/// A send whose delivery isn't confirmed yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwaitingSend {
+    pub id: String,
+    pub rfc822_message_id: Option<String>,
+}
+
 /// Sends whose delivery isn't confirmed yet, matched against incoming mail by Message-ID.
+/// Read in every sync write, so without their payloads (the whole message).
 pub async fn sends_awaiting_confirmation<'e>(
     ex: impl SqliteExecutor<'e>,
     account_id: &str,
-) -> Result<Vec<DbOp>> {
+) -> Result<Vec<AwaitingSend>> {
     Ok(sqlx::query_as!(
-        DbOp,
-        r#"SELECT seq AS "seq!", id, account_id, kind, payload, status, attempts, next_attempt_at,
-                  checks_done, rfc822_message_id, last_error, created_at, updated_at
-           FROM outbox
+        AwaitingSend,
+        r#"SELECT id, rfc822_message_id FROM outbox
            WHERE account_id = ? AND kind = 'send' AND status IN ('checking', 'unconfirmed')
            ORDER BY seq"#,
         account_id
     )
     .fetch_all(ex)
     .await?)
+}
+
+/// Ids of the account's sends that didn't go through and are still queued (`failed`, or
+/// `unconfirmed`), oldest first.
+pub async fn unsent_send_ids<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+) -> Result<Vec<String>> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT id FROM outbox
+           WHERE account_id = ? AND kind = 'send' AND status IN ('failed', 'unconfirmed')
+           ORDER BY seq"#,
+        account_id
+    )
+    .fetch_all(ex)
+    .await?)
+}
+
+/// Gmail has this send's message: turn the op into the follow-up that deletes the draft it came
+/// from (`status = 'cleanup'`, due now), with `payload` in place of the message. A `cleanup`
+/// op is never sent: [`claim_send`] only takes `pending` ones.
+pub async fn to_cleanup<'e>(
+    ex: impl SqliteExecutor<'e>,
+    op_id: &str,
+    payload: &str,
+    now_ms: i64,
+) -> Result<()> {
+    sqlx::query!(
+        r#"UPDATE outbox SET status = 'cleanup', payload = ?, attempts = 0, next_attempt_at = 0,
+                             checks_done = 0, last_error = NULL, updated_at = ?
+           WHERE id = ? AND kind = 'send'"#,
+        payload,
+        now_ms,
+        op_id
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
 }

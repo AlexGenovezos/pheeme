@@ -38,7 +38,6 @@ export interface PromptSpec {
 
 /** Where an event draws while it's dragged, or while its new place is being saved. */
 export interface Moving {
-  key: string;
   start: EventTime;
   end: EventTime;
 }
@@ -47,7 +46,8 @@ interface EditState {
   draft: Draft | null;
   editor: EditorSpec | null;
   prompt: PromptSpec | null;
-  moving: Moving | null;
+  /** By event key: several can be saving somewhere new at once (and one more dragged). */
+  moving: Record<string, Moving>;
   /** Keys of events hidden while their delete is under way. */
   removed: string[];
   /** Calendar search is showing, with what's typed. */
@@ -60,11 +60,26 @@ export const useEditStore = create<EditState>(() => ({
   draft: null,
   editor: null,
   prompt: null,
-  moving: null,
+  moving: {},
   removed: [],
   search: null,
   quickAdd: false,
 }));
+
+/**
+ * Draw the event `key` at `to` (null: back where its event says). With `only`, clears it only while
+ * it's still that move, so a newer drag of the same event isn't undone.
+ */
+export function setMoving(key: string, to: Moving | null, only?: Moving) {
+  useEditStore.setState((s) => {
+    if (only && s.moving[key] !== only) return {};
+    if (!to && !(key in s.moving)) return {};
+    const moving = { ...s.moving };
+    if (to) moving[key] = to;
+    else delete moving[key];
+    return { moving };
+  });
+}
 
 /** Ask the user, and wait for the answer (null: they backed out). */
 export function ask(spec: Omit<PromptSpec, "resolve">): Promise<string | null> {

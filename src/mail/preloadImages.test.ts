@@ -6,7 +6,8 @@ import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore
 import { useUiStore } from "../store/uiStore";
 import { startImagePreloading } from "./preloadImages";
 
-const detail = (html: string) => ({ messages: [{ bodyHtml: html }] }) as ThreadDetail;
+const detail = (html: string, labelIds: string[] = ["INBOX"]) =>
+  ({ messages: [{ bodyHtml: html, labelIds }] }) as unknown as ThreadDetail;
 let created: HTMLImageElement[];
 let warm: ReturnType<typeof startImagePreloading>;
 
@@ -92,4 +93,16 @@ test("with Preload images off, nothing is requested", async () => {
   useReadingSettings.setState({ preloadImages: true });
   await settle();
   expect(created).toHaveLength(1);
+});
+
+test("never warms the images of a conversation in Spam or Trash, wherever it is listed", async () => {
+  cache({
+    "a:1": detail(`<img src="https://spam/pixel.gif">`, ["SPAM", "UNREAD"]),
+    "a:2": detail(`<img src="https://trash/pixel.gif">`, ["TRASH"]),
+    "a:3": detail(`<img src="https://x/ok.png">`),
+  });
+  warm.update(["a:1", "a:2", "a:3"]);
+  await settle();
+  await settle();
+  expect(sources()).toEqual(["https://x/ok.png"]);
 });

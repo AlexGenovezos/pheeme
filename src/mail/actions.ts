@@ -22,7 +22,7 @@ import {
 } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { type UnreadCountChange, useLabelStore } from "../store/labelStore";
-import { newOp, useMailStore } from "../store/mailStore";
+import { newOp, sortsAfter, useMailStore } from "../store/mailStore";
 import { useThreadStore } from "../store/threadStore";
 import { focusedThread, readingPaneShown, useUiStore } from "../store/uiStore";
 import {
@@ -807,17 +807,30 @@ export function openAndMarkRead(
  * pane off and nothing open, they move the highlight instead.
  */
 export function moveSelection(delta: 1 | -1): void {
-  const keys = mail().threads.map(keyOf);
+  const { threads } = mail();
+  const keys = threads.map(keyOf);
   if (keys.length === 0) return;
   const browsing = !readingPaneShown(ui()) && ui().openThread === null;
   const current = focusedThread(ui());
   const at = current === null ? -1 : keys.indexOf(current);
-  const to =
-    at < 0
-      ? delta === 1
-        ? 0
-        : keys.length - 1
-      : Math.min(Math.max(at + delta, 0), keys.length - 1);
+  let to: number;
+  if (at >= 0) to = Math.min(Math.max(at + delta, 0), keys.length - 1);
+  else {
+    // Not in the list (archived elsewhere, say): step from where it sorted, not from the top. Without its
+    // summary there's nowhere to step from, so start from the end, as when nothing is open.
+    const gone = current === null ? undefined : useThreadStore.getState().details.get(current);
+    if (!gone) to = delta === 1 ? 0 : keys.length - 1;
+    else {
+      const cursor = {
+        lastMessageDate: gone.thread.date,
+        accountId: gone.thread.accountId,
+        threadId: gone.thread.id,
+      };
+      const below = threads.findIndex((t) => sortsAfter(t, cursor));
+      to = delta === 1 ? below : (below < 0 ? keys.length : below) - 1;
+      if (to < 0) return;
+    }
+  }
   if (to === at) return;
   if (browsing) ui().setCursor(keys[to]);
   else openAndMarkRead(keys[to], delta);

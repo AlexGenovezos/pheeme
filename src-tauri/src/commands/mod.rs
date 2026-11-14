@@ -176,11 +176,20 @@ fn open_in_default_app(url: &Url) -> Result<(), CommandError> {
 /// scripts, and WebKit skips event listeners in a script-less document even when the parent added them.
 /// A clicked link arrives as a navigation instead, so the webview cancels these and opens them here.
 pub fn is_external_navigation(url: &Url) -> bool {
-    parse_mail_link(url.as_str()).is_some()
-        && !matches!(
-            (url.scheme(), url.host_str(), url.port()),
-            (_, Some("tauri.localhost"), None) | ("http", Some("localhost"), Some(1420))
-        )
+    is_external_navigation_on(url, cfg!(windows), cfg!(debug_assertions))
+}
+
+/// [`is_external_navigation`] for a given platform and build. Tauri serves the app from
+/// `http(s)://tauri.localhost` only on Windows and Android (elsewhere it is `tauri://localhost`,
+/// which isn't a web link), and the Vite dev server on `localhost:1420` exists only in debug
+/// builds. In any other build those addresses are external, so a link can't load them in the app.
+fn is_external_navigation_on(url: &Url, windows: bool, debug: bool) -> bool {
+    let own_page = match (url.scheme(), url.host_str(), url.port()) {
+        (_, Some("tauri.localhost"), None) => windows,
+        ("http", Some("localhost"), Some(1420)) => debug,
+        _ => false,
+    };
+    parse_mail_link(url.as_str()).is_some() && !own_page
 }
 
 /// The webview's navigation hook: keeps external links out of the app and opens them in the default app.
@@ -265,9 +274,6 @@ mod tests {
         }
         for internal in [
             "tauri://localhost/index.html",
-            "http://tauri.localhost/",
-            "https://tauri.localhost/",
-            "http://localhost:1420/",
             "about:srcdoc",
             "about:blank",
         ] {
@@ -275,6 +281,26 @@ mod tests {
                 !is_external_navigation(&Url::parse(internal).unwrap()),
                 "{internal}"
             );
+        }
+    }
+
+    #[test]
+    fn app_pages_are_external_where_the_app_never_serves_them() {
+        let external_on = |url: &str, windows, debug| {
+            is_external_navigation_on(&Url::parse(url).unwrap(), windows, debug)
+        };
+        // `tauri.localhost` is the app only on Windows.
+        assert!(!external_on("http://tauri.localhost/", true, false));
+        assert!(!external_on("https://tauri.localhost/", true, false));
+        assert!(external_on("http://tauri.localhost/", false, true));
+        assert!(external_on("https://tauri.localhost/", false, true));
+        // The dev server is the app only in debug builds.
+        assert!(!external_on("http://localhost:1420/", false, true));
+        assert!(external_on("http://localhost:1420/", true, false));
+        // The pages macOS and Linux really use stay internal in every build.
+        for (windows, debug) in [(false, false), (false, true), (true, false)] {
+            assert!(!external_on("tauri://localhost/index.html", windows, debug));
+            assert!(!external_on("about:srcdoc", windows, debug));
         }
     }
 

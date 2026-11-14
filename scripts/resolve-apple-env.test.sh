@@ -44,6 +44,17 @@ for value in cert-line dummy-cert-pass 'Dummy (ABCDE12345)' dummy@example.com AB
 done
 echo "ok: one missing"
 
+# Case 2b: required (tag release) and incomplete must fail
+set_dummies
+export APPLE_PASSWORD=
+: >"$scratch/env"
+if APPLE_SIGNING_REQUIRED=true GITHUB_ENV="$scratch/env" bash "$resolver" >"$scratch/out" 2>&1; then
+  fail "required + missing: resolver exited zero"
+fi
+grep -qF '::error::Apple signing secrets incomplete (missing: APPLE_PASSWORD)' "$scratch/out" || fail "required + missing: no ::error::"
+[ ! -s "$scratch/env" ] || fail "required + missing: GITHUB_ENV was written"
+echo "ok: required and incomplete fails"
+
 # Case 3: all set, multi-line certificate
 set_dummies
 run_resolver

@@ -1,27 +1,27 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!\", thread_id AS \"thread_id!\" FROM messages\n           WHERE account_id = ? ORDER BY date DESC",
+  "query": "SELECT id, rfc822_message_id FROM outbox\n           WHERE account_id = ? AND kind = 'send' AND status IN ('checking', 'unconfirmed')\n           ORDER BY seq",
   "describe": {
     "columns": [
       {
-        "name": "id!",
+        "name": "id",
         "ordinal": 0,
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "messages",
+            "table": "outbox",
             "name": "id"
           }
         }
       },
       {
-        "name": "thread_id!",
+        "name": "rfc822_message_id",
         "ordinal": 1,
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "messages",
-            "name": "thread_id"
+            "table": "outbox",
+            "name": "rfc822_message_id"
           }
         }
       }
@@ -31,8 +31,8 @@
     },
     "nullable": [
       false,
-      false
+      true
     ]
   },
-  "hash": "d4921aadca4ad84f54565dee00a11964c1d95b2dd1e638fe8ace87f718065aa0"
+  "hash": "e4f18e244bf7b081755e9f78c6e1e294bdd030458692b3ebf95c14877b8c868e"
 }

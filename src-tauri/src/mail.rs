@@ -394,7 +394,8 @@ impl InlineResponse {
 }
 
 /// A file name that is safe to create in a directory: only the last path component,
-/// without `:` or control characters, no leading/trailing dots or spaces.
+/// without `:`, control characters or invisible bidirectional formatting (which can make
+/// `gnp.exe` display as `exe.png`), no leading/trailing dots or spaces.
 pub fn safe_file_name(name: Option<&str>) -> String {
     let last = name
         .unwrap_or_default()
@@ -403,7 +404,7 @@ pub fn safe_file_name(name: Option<&str>) -> String {
         .unwrap_or_default();
     let cleaned: String = last
         .chars()
-        .filter(|c| *c != ':' && !c.is_control())
+        .filter(|c| *c != ':' && !c.is_control() && !is_bidi_format(*c))
         .collect();
     let cleaned = cleaned.trim_matches(|c: char| c == '.' || c.is_whitespace());
     if cleaned.is_empty() {
@@ -411,6 +412,12 @@ pub fn safe_file_name(name: Option<&str>) -> String {
     } else {
         cleaned.to_owned()
     }
+}
+
+/// Invisible characters that reorder how text displays: LRM/RLM, the embeddings and
+/// overrides (U+202A-U+202E), the isolates (U+2066-U+2069) and the Arabic letter mark.
+fn is_bidi_format(c: char) -> bool {
+    matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
 /// [`safe_file_name`], also valid on Windows: `<>"|?*` become `_` and a reserved device name

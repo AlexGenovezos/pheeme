@@ -24,7 +24,7 @@ use staging::Staging;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use template::Original;
 
 /// Gmail's limit on attachments per message.
@@ -33,6 +33,11 @@ pub const MAX_ATTACHMENT_BYTES: u64 = 25 * 1024 * 1024;
 pub const MAX_UNDO_MS: u64 = 60_000;
 /// Staged attachment files older than this are swept at startup.
 const STAGING_MAX_AGE: Duration = Duration::from_secs(3 * 24 * 60 * 60);
+/// How long a send, a save or a reply template waits for the account's send-as addresses
+/// before going on without them.
+const SEND_AS_WAIT: Duration = Duration::from_secs(5);
+/// How long a failed send-as lookup is remembered, so the ones after it don't wait again.
+const SEND_AS_RETRY: Duration = Duration::from_secs(120);
 
 /// A message being written, as the compose panel holds it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,6 +136,8 @@ pub struct ComposeService {
     staging: Staging,
     /// Each account's sendable addresses, from the last `sendAs` fetch this session.
     send_as: Arc<Mutex<HashMap<String, Vec<SendAs>>>>,
+    /// When each account's last `sendAs` lookup failed (offline, or no settings scope).
+    send_as_failed: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 fn gmail(e: GmailError) -> MailError {
@@ -152,6 +159,7 @@ impl ComposeService {
             mail,
             staging: Staging::new(cache_dir, key),
             send_as: Arc::default(),
+            send_as_failed: Arc::default(),
         }
     }
 
@@ -187,6 +195,10 @@ impl ComposeService {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .insert(account_id.to_owned(), sendable);
+        self.send_as_failed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(account_id);
         Ok(list)
     }
 
@@ -200,17 +212,36 @@ impl ComposeService {
 
     /// The account's sendable addresses: from this session's fetch, else fetched now.
     /// `None` when Gmail can't be asked (offline, or the settings scope wasn't granted).
+    ///
+    /// Sends, saves and reply templates call this, so it never holds them up for long: it
+    /// doesn't ask while Google is known to be unreachable, gives up after [`SEND_AS_WAIT`],
+    /// and after a failure doesn't ask again for [`SEND_AS_RETRY`].
     async fn known_send_as(&self, account_id: &str) -> Option<Vec<SendAs>> {
         if let Some(list) = self.cached_send_as(account_id) {
             return Some(list);
         }
-        match self.fetch_send_as(account_id).await {
-            Ok(_) => self.cached_send_as(account_id),
-            Err(e) => {
-                tracing::info!(error = %e, "send-as addresses unavailable");
-                None
-            }
+        if !self.sync.online() {
+            return None;
         }
+        let failed_recently = self
+            .send_as_failed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(account_id)
+            .is_some_and(|at| at.elapsed() < SEND_AS_RETRY);
+        if failed_recently {
+            return None;
+        }
+        match tokio::time::timeout(SEND_AS_WAIT, self.fetch_send_as(account_id)).await {
+            Ok(Ok(_)) => return self.cached_send_as(account_id),
+            Ok(Err(e)) => tracing::info!(error = %e, "send-as addresses unavailable"),
+            Err(_) => tracing::info!("send-as addresses took too long; going on without them"),
+        }
+        self.send_as_failed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(account_id.to_owned(), Instant::now());
+        None
     }
 
     /// The addresses the account can send from (its own first), fetched from Gmail now.
@@ -398,25 +429,45 @@ impl ComposeService {
         {
             let mut rows =
                 attachments::get_attachments_for_message(&self.db, account_id, message_id).await?;
+            let forward = mode == ComposeMode::Forward;
             rows.retain(|r| {
-                mode == ComposeMode::Forward || (r.is_inline != 0 && r.content_id.is_some())
+                if forward {
+                    // The invitation beside the body isn't a file (the invite card stands in
+                    // for it), so it isn't forwarded as one.
+                    !is_calendar_body_part(r)
+                } else {
+                    r.is_inline != 0 && r.content_id.is_some()
+                }
             });
             rows.sort_by_key(|r| r.id.parse::<u64>().unwrap_or(u64::MAX));
             for row in rows {
-                let bytes = self
-                    .mail
-                    .attachment(account_id, message_id, &row.id)
-                    .await?;
-                let staged = self
-                    .staging
-                    .stage_bytes(
-                        row.filename.as_deref().unwrap_or("attachment"),
-                        &bytes.mime_type,
-                        row.content_id.filter(|_| row.is_inline != 0),
-                        &bytes.bytes,
-                    )
-                    .await?;
-                draft.attachments.push(staged);
+                let staged = async {
+                    let bytes = self
+                        .mail
+                        .attachment(account_id, message_id, &row.id)
+                        .await?;
+                    self.staging
+                        .stage_bytes(
+                            row.filename.as_deref().unwrap_or("attachment"),
+                            &bytes.mime_type,
+                            row.content_id.clone().filter(|_| row.is_inline != 0),
+                            &bytes.bytes,
+                        )
+                        .await
+                }
+                .await;
+                match staged {
+                    Ok(staged) => draft.attachments.push(staged),
+                    // A reply only carries the images its quote shows: without one (offline,
+                    // say) the quote goes out with that image missing.
+                    Err(e) if !forward => {
+                        tracing::info!(error = %e, "replying without an inline image");
+                    }
+                    Err(e) => {
+                        self.discard_staged(&draft.attachments).await;
+                        return Err(e);
+                    }
+                }
             }
         }
         Ok(draft)
@@ -439,6 +490,12 @@ impl ComposeService {
 
     pub async fn stage_file(&self, path: &Path) -> Result<StagedAttachment, MailError> {
         self.staging.stage_file(path).await
+    }
+
+    /// Drop files staged for a message that won't be opened after all.
+    async fn discard_staged(&self, staged: &[StagedAttachment]) {
+        let ids: Vec<String> = staged.iter().map(|a| a.id.clone()).collect();
+        self.staging.discard(&ids).await;
     }
 
     /// The compose panel closed (sent, discarded or saved): drop its staged files.
@@ -539,12 +596,12 @@ impl ComposeService {
         };
         let mut attachments = Vec::new();
         for att in &parsed.attachments {
-            let bytes = match (&att.data, att.attachment_id.as_deref()) {
-                (Some(data), _) => data.clone(),
-                (None, Some(id)) => api.get_attachment(&message.id, id).await.map_err(gmail)?,
-                (None, None) => continue,
-            };
-            attachments.push(
+            let staged = async {
+                let bytes = match (&att.data, att.attachment_id.as_deref()) {
+                    (Some(data), _) => data.clone(),
+                    (None, Some(id)) => api.get_attachment(&message.id, id).await.map_err(gmail)?,
+                    (None, None) => return Ok(None),
+                };
                 self.staging
                     .stage_bytes(
                         att.filename.as_deref().unwrap_or("attachment"),
@@ -552,10 +609,29 @@ impl ComposeService {
                         att.content_id.clone().filter(|_| att.is_inline),
                         &bytes,
                     )
-                    .await?,
-            );
+                    .await
+                    .map(Some)
+            }
+            .await;
+            match staged {
+                Ok(Some(staged)) => attachments.push(staged),
+                Ok(None) => {}
+                Err(e) => {
+                    self.discard_staged(&attachments).await;
+                    return Err(e);
+                }
+            }
         }
         let is_reply = parsed.in_reply_to.is_some();
+        // The quoted original goes back where the panel keeps it: beside the editor, in the
+        // sandboxed frame, never through the editor (which would render and rewrite it).
+        let (body_html, quote_html) = match parsed.body_html {
+            Some(html) => build::split_quote(&html),
+            None => (
+                build::text_to_html(parsed.body_text.as_deref().unwrap_or("")),
+                None,
+            ),
+        };
         Ok(ComposeDraft {
             // Reopens from the address it was saved with.
             from: header("From").and_then(|v| mime::parse_addresses("From", v).into_iter().next()),
@@ -565,11 +641,8 @@ impl ComposeService {
                 .map(|v| mime::parse_addresses("Bcc", v))
                 .unwrap_or_default(),
             subject: parsed.subject.unwrap_or_default(),
-            body_html: match parsed.body_html {
-                Some(html) => html,
-                None => build::text_to_html(parsed.body_text.as_deref().unwrap_or("")),
-            },
-            quote_html: None,
+            body_html,
+            quote_html,
             attachments,
             in_reply_to: parsed.in_reply_to,
             references: parsed.references,
@@ -635,6 +708,14 @@ impl ComposeService {
     pub async fn cancel_send(&self, op_id: &str) -> Result<bool, MailError> {
         Ok(outbox::cancel_send(&self.db, op_id).await?)
     }
+}
+
+/// The unnamed `text/calendar` part an invitation carries beside its body (what `mail.rs`'s
+/// `invite_part` ranks first, and `invitePart.ts` keeps out of the attachment list).
+fn is_calendar_body_part(row: &attachments::DbAttachment) -> bool {
+    let unnamed = row.filename.as_deref().is_none_or(|f| f.trim().is_empty());
+    let mime = row.mime_type.as_deref().unwrap_or("").trim();
+    unnamed && mime.eq_ignore_ascii_case("text/calendar")
 }
 
 fn same_address(a: &str, b: &str) -> bool {

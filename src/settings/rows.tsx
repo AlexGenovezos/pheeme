@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Skeleton } from "../components/ui/Skeleton";
 import { cx } from "../lib/utils";
 
 /** A titled card of rows, the building block of every settings page. `card={false}` leaves the children to draw their own cards. */
@@ -45,4 +46,9 @@ export function SettingsRow({
       {control && <div className="settings-row__control">{control}</div>}
     </div>
   );
+}
+
+/** Stands in a row's control slot for a small button that isn't ready yet. */
+export function PendingButton() {
+  return <Skeleton shape="block" className="settings-button-pending" />;
 }

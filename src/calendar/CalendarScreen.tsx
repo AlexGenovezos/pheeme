@@ -308,10 +308,11 @@ function useShownEvents(events: CalendarEvent[] | null): CalendarEvent[] | null 
     if (events === null) return null;
     let list = events;
     if (removed.length) list = list.filter((e) => !removed.includes(eventKey(e)));
-    if (moving)
-      list = list.map((e) =>
-        eventKey(e) === moving.key ? { ...e, start: moving.start, end: moving.end } : e,
-      );
+    if (Object.keys(moving).length)
+      list = list.map((e) => {
+        const to = moving[eventKey(e)];
+        return to ? { ...e, start: to.start, end: to.end } : e;
+      });
     return draft ? [...list, draftEvent(draft)] : list;
   }, [events, draft, moving, removed]);
 }
@@ -359,6 +360,7 @@ function useCalendarCommands() {
       title: "Next period",
       group: "Calendar",
       shortcut: "j",
+      repeat: true,
       run: () => store().step(1),
     },
     {
@@ -366,6 +368,7 @@ function useCalendarCommands() {
       title: "Previous period",
       group: "Calendar",
       shortcut: "k",
+      repeat: true,
       run: () => store().step(-1),
     },
     {
@@ -373,6 +376,7 @@ function useCalendarCommands() {
       title: "Next period",
       group: "Calendar",
       shortcut: "n",
+      repeat: true,
       hidden: true,
       run: () => store().step(1),
     },
@@ -381,6 +385,7 @@ function useCalendarCommands() {
       title: "Previous period",
       group: "Calendar",
       shortcut: "p",
+      repeat: true,
       hidden: true,
       run: () => store().step(-1),
     },
@@ -389,6 +394,7 @@ function useCalendarCommands() {
       title: "Next period",
       group: "Calendar",
       shortcut: "right",
+      repeat: true,
       hidden: true,
       run: () => store().step(1),
     },
@@ -397,6 +403,7 @@ function useCalendarCommands() {
       title: "Previous period",
       group: "Calendar",
       shortcut: "left",
+      repeat: true,
       hidden: true,
       run: () => store().step(-1),
     },

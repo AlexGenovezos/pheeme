@@ -52,7 +52,10 @@ let latest = 0;
 let knownIds: string[] = [];
 let refreshing = false;
 let refreshAgain = false;
-const pendingReads = new Set<number>();
+/** Read/unread changes waiting for their commands, by op: the accounts whose counts they patched. */
+const pendingReads = new Map<number, Set<string>>();
+/** Accounts whose counts a pending read has patched: a refresh keeps their counts until it settles. */
+const heldAccounts = () => new Set([...pendingReads.values()].flatMap((ids) => [...ids]));
 
 interface PendingLabelChange {
   accountId: string;
@@ -144,14 +147,15 @@ export const useLabelStore = create<LabelState>((set, get) => ({
   load: async (accountIds) => {
     const ticket = ++latest;
     knownIds = accountIds;
-    // A count query can include some pending writes and miss others. Keep the optimistic
-    // counts until all writes finish, then query once without risking a double decrement.
-    if (pendingReads.size > 0) return;
     const [accounts, inbox] = await Promise.all([
       Promise.all(accountIds.map(fetchAccount)),
       fetchInboxUnread(accountIds),
     ]);
     if (ticket !== latest) return;
+    // A count query can include some pending writes and miss others, so the counts a pending read patched stay as
+    // they are (and the All Inboxes total with them) until every read settles and `settleUnread` queries again.
+    // Everything else, labels and other accounts (one just added, say), refreshes as usual.
+    const held = heldAccounts();
     // A failed account keeps whatever it had before.
     set((s) => {
       const labels: LabelState["labels"] = {};
@@ -161,20 +165,29 @@ export const useLabelStore = create<LabelState>((set, get) => ({
         const data = accounts[i];
         if (data) {
           labels[id] = withPending(id, data.labels);
-          counts[id] = data.counts;
-          categoryCounts[id] = data.categories;
+          counts[id] = held.has(id) && s.counts[id] ? s.counts[id] : data.counts;
+          categoryCounts[id] =
+            held.has(id) && s.categoryCounts[id] ? s.categoryCounts[id] : data.categories;
         } else {
           if (s.labels[id]) labels[id] = s.labels[id];
           if (s.counts[id]) counts[id] = s.counts[id];
           if (s.categoryCounts[id]) categoryCounts[id] = s.categoryCounts[id];
         }
       });
-      return { labels, counts, categoryCounts, allInboxUnread: inbox ?? s.allInboxUnread };
+      return {
+        labels,
+        counts,
+        categoryCounts,
+        allInboxUnread: held.size > 0 ? s.allInboxUnread : (inbox ?? s.allInboxUnread),
+      };
     });
   },
   patchUnread: (op, changes) => {
     if (changes.length === 0) return;
-    pendingReads.add(op);
+    pendingReads.set(
+      op,
+      new Set([...(pendingReads.get(op) ?? []), ...changes.map((c) => c.accountId)]),
+    );
     ++latest; // A refresh started before this read mustn't put the old counts back.
     set((s) => {
       const counts = { ...s.counts };

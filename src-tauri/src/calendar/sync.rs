@@ -147,7 +147,9 @@ async fn sync_settings(
     Ok(())
 }
 
-/// Sync one calendar's events; returns whether any row changed.
+/// Sync one calendar's events; returns whether any row changed. When Google says the sync
+/// token is gone, the calendar is read in full and its events replaced only once the whole
+/// read has arrived, so a failed re-read leaves the old events (and their reminders) shown.
 async fn sync_calendar(
     db: &SqlitePool,
     api: &dyn CalendarApi,
@@ -157,7 +159,8 @@ async fn sync_calendar(
     mut sync_token: Option<String>,
 ) -> Result<bool, SyncError> {
     let mut changed = false;
-    let mut restarted = false;
+    // The full re-read after a 410, kept until its last page.
+    let mut reread: Option<(Vec<cache::DbEvent>, Vec<String>)> = None;
     let mut page_token: Option<String> = None;
     let mut pages = 0;
     loop {
@@ -166,13 +169,12 @@ async fn sync_calendar(
             .await
         {
             Ok(page) => page,
-            Err(e) if e.is_gone() && !restarted => {
-                // The token expired: forget the calendar's events and sync it in full.
-                cache::clear_calendar_events(db, account_id, calendar_id).await?;
-                restarted = true;
-                changed = true;
+            Err(e) if e.is_gone() && reread.is_none() => {
+                // The token expired: read the calendar in full.
+                reread = Some(Default::default());
                 sync_token = None;
                 page_token = None;
+                pages = 0;
                 continue;
             }
             Err(e) => return Err(e.into()),
@@ -185,7 +187,6 @@ async fn sync_calendar(
                 EventChange::Delete(id) => deleted.push(id),
             }
         }
-        changed |= !upserts.is_empty() || !deleted.is_empty();
         pages += 1;
         let last = page.next_page_token.is_none() || pages >= MAX_EVENT_PAGES;
         let token = if last {
@@ -193,9 +194,24 @@ async fn sync_calendar(
         } else {
             None
         };
-        cache::apply_event_changes(db, account_id, calendar_id, &upserts, &deleted, token).await?;
-        if last {
-            return Ok(changed);
+        match &mut reread {
+            Some((rows, gone)) => {
+                rows.extend(upserts);
+                gone.extend(deleted);
+                if last {
+                    cache::replace_calendar_events(db, account_id, calendar_id, rows, gone, token)
+                        .await?;
+                    return Ok(true);
+                }
+            }
+            None => {
+                changed |= !upserts.is_empty() || !deleted.is_empty();
+                cache::apply_event_changes(db, account_id, calendar_id, &upserts, &deleted, token)
+                    .await?;
+                if last {
+                    return Ok(changed);
+                }
+            }
         }
         page_token = page.next_page_token;
     }
@@ -357,6 +373,65 @@ mod tests {
                 .unwrap()
                 .changed
         );
+    }
+
+    fn api_500() -> GmailError {
+        GmailError::Api {
+            status: 500,
+            reason: Some("backendError".into()),
+            message: "Backend Error".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn gone_token_keeps_old_events_until_the_full_read_succeeds() {
+        let db = TestDb::with_account("a").await;
+        let fake = fake_with_two_calendars();
+        sync_account(&db.pool, &fake, "a", 1, false).await.unwrap();
+        let before = all_events(&db.pool).await;
+        let token = || async {
+            cache::calendars(&db.pool, Some("a"))
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|c| c.id == "me@example.com")
+                .unwrap()
+                .sync_token
+        };
+        let old_token = token().await;
+        assert!(old_token.is_some());
+
+        fake.forget("me@example.com", "e3");
+        fake.put(
+            "me@example.com",
+            timed(
+                "e4",
+                "e4",
+                "2026-11-12T12:00:00-05:00",
+                "2026-11-12T12:30:00-05:00",
+            ),
+        );
+        fake.expire_tokens();
+        // The full read (two pages) fails on its first page, then (next time) on its second.
+        for from in [0, 1] {
+            fake.fail_full_reads(Some((from, api_500)));
+            assert!(sync_account(&db.pool, &fake, "a", 2, false).await.is_err());
+            assert_eq!(all_events(&db.pool).await, before, "page {from}");
+            assert_eq!(token().await, old_token, "page {from}");
+        }
+
+        fake.fail_full_reads(None);
+        let report = sync_account(&db.pool, &fake, "a", 3, false).await.unwrap();
+        assert!(report.changed);
+        let ids: Vec<String> = all_events(&db.pool)
+            .await
+            .into_iter()
+            .map(|(_, id)| id)
+            .collect();
+        assert_eq!(ids, vec!["e1", "e2", "e4", "t1"]);
+        assert!(token()
+            .await
+            .is_some_and(|t| Some(&t) != old_token.as_ref()));
     }
 
     #[tokio::test]

@@ -54,3 +54,13 @@ test("lists each account's rules, deletes one, and asks old accounts to sign in 
   expect(deleted).toEqual([{ accountId: "a1", ruleId: "f1" }]);
   expect(one).not.toHaveTextContent("news@x.com");
 });
+
+test("while rules load, the section shows a placeholder shaped like a rule, not a Loading message", async () => {
+  useAccountStore.setState({ accounts: [{ id: "a1", email: "one@example.com" } as never] });
+  mockIPC((cmd) => (cmd === "list_sender_rules" ? new Promise(() => {}) : undefined));
+  render(<SenderRulesSettings />);
+  const one = screen.getByRole("region", { name: "one@example.com" });
+  expect(one).not.toHaveTextContent(/loading/i);
+  expect(one.querySelectorAll(".settings-row")).toHaveLength(1);
+  expect(one.querySelectorAll(".ui-skeleton").length).toBeGreaterThan(0);
+});

@@ -2,12 +2,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   DAILY_CAP,
+  DAILY_PER_IP,
   MAX_BUNDLE_BYTES,
   handleUpload,
   secondsUntilUtcMidnight,
   takeDailySlot,
 } from "./handler";
-import type { DailyCapState, Deps, KvStorage, Notification } from "./types";
+import type { Deps, KvStorage, Notification, QuotaResult, QuotaState } from "./types";
 
 const NOW = new Date("2026-11-06T15:30:00Z");
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
@@ -61,14 +62,16 @@ function upload(
 function deps(over: { limited?: boolean; capped?: boolean; notifyFails?: boolean } = {}) {
   const put = vi.fn(async () => ({}));
   const limit = vi.fn(async () => ({ success: !over.limited }));
-  const take = vi.fn(async () => !over.capped);
+  const take = vi.fn<(ip: string) => Promise<QuotaResult>>(async () =>
+    over.capped ? "global_limit" : "ok",
+  );
   const notify = vi.fn<(mail: Notification) => Promise<void>>(async () => {
     if (over.notifyFails) throw new Error("E_SENDER_NOT_VERIFIED");
   });
   const d: Deps = {
     bucket: { put, get: async () => null },
     perIp: { limit },
-    dailyCap: { take },
+    dailyCap: { take, takeInstall: async () => "ok" },
     notify,
     now: () => NOW,
     id: () => "abc123",
@@ -206,8 +209,9 @@ describe("handleUpload", () => {
   });
 
   it("answers 429 with Retry-After until UTC midnight when the daily cap is reached", async () => {
-    const { d, put, notify } = deps({ capped: true });
+    const { d, put, notify, take } = deps({ capped: true });
     const res = await handleUpload(upload(), d);
+    expect(take).toHaveBeenCalledWith("203.0.113.7");
 
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe(String(8 * 3600 + 30 * 60));
@@ -248,24 +252,57 @@ describe("takeDailySlot", () => {
     };
   }
 
-  it("allows exactly the cap per UTC day", async () => {
+  it("allows exactly the cap per UTC day, spread over enough IPs", async () => {
     const storage = memory();
-    const results = [];
-    for (let i = 0; i < DAILY_CAP + 1; i++) results.push(await takeDailySlot(storage, NOW));
+    const results: QuotaResult[] = [];
+    for (let i = 0; i < DAILY_CAP + 1; i++) {
+      results.push(await takeDailySlot(storage, NOW, `198.51.100.${Math.floor(i / DAILY_PER_IP)}`));
+    }
 
-    expect(results.filter(Boolean)).toHaveLength(DAILY_CAP);
-    expect(results[results.length - 1]).toBe(false);
-    expect(storage.data.get("state")).toEqual({ day: "2026-11-06", count: DAILY_CAP });
+    expect(results.filter((r) => r === "ok")).toHaveLength(DAILY_CAP);
+    expect(results[results.length - 1]).toBe("global_limit");
+    expect(storage.data.get("state")).toMatchObject({ day: "2026-11-06", count: DAILY_CAP });
+  });
+
+  it("stops one IP at its daily share without using up the global cap", async () => {
+    const storage = memory();
+    const results: QuotaResult[] = [];
+    for (let i = 0; i < DAILY_PER_IP + 3; i++) {
+      results.push(await takeDailySlot(storage, NOW, "203.0.113.7"));
+    }
+    expect(results.filter((r) => r === "ok")).toHaveLength(DAILY_PER_IP);
+    expect(results.slice(DAILY_PER_IP)).toEqual(["ip_limit", "ip_limit", "ip_limit"]);
+    expect(storage.data.get("state")).toMatchObject({ count: DAILY_PER_IP });
+    // Another address still gets in.
+    expect(await takeDailySlot(storage, NOW, "203.0.113.8")).toBe("ok");
+  });
+
+  it("never stores the IP, and forgets it the next UTC day", async () => {
+    const storage = memory();
+    await takeDailySlot(storage, NOW, "203.0.113.7");
+    expect(JSON.stringify([...storage.data.entries()])).not.toContain("203.0.113.7");
+
+    for (let i = 0; i < DAILY_PER_IP; i++) await takeDailySlot(storage, NOW, "203.0.113.7");
+    expect(await takeDailySlot(storage, NOW, "203.0.113.7")).toBe("ip_limit");
+    const next = new Date("2026-11-07T00:00:00Z");
+    expect(await takeDailySlot(storage, next, "203.0.113.7")).toBe("ok");
+    const state = storage.data.get("state") as QuotaState;
+    expect(state).toMatchObject({ day: "2026-11-07", count: 1 });
+    expect(Object.keys(state.ips ?? {})).toHaveLength(1);
   });
 
   it("starts a fresh count on the next UTC day", async () => {
     const storage = memory();
-    const full: DailyCapState = { day: "2026-11-06", count: DAILY_CAP };
+    const full: QuotaState = { day: "2026-11-06", count: DAILY_CAP };
     await storage.put("state", full);
 
-    expect(await takeDailySlot(storage, new Date("2026-11-06T23:59:59Z"))).toBe(false);
-    expect(await takeDailySlot(storage, new Date("2026-11-07T00:00:00Z"))).toBe(true);
-    expect(storage.data.get("state")).toEqual({ day: "2026-11-07", count: 1 });
+    expect(await takeDailySlot(storage, new Date("2026-11-06T23:59:59Z"), "203.0.113.7")).toBe(
+      "global_limit",
+    );
+    expect(await takeDailySlot(storage, new Date("2026-11-07T00:00:00Z"), "203.0.113.7")).toBe(
+      "ok",
+    );
+    expect(storage.data.get("state")).toMatchObject({ day: "2026-11-07", count: 1 });
   });
 });
 

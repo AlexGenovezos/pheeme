@@ -220,6 +220,35 @@ fn non_empty(token: Option<String>) -> Option<String> {
     token.filter(|t| !t.is_empty())
 }
 
+/// One item of an events page. An item that can't be read is skipped (logged) rather than
+/// failing the page, which would stop every later calendar's sync; a cancellation is kept
+/// from the few fields it needs, so the removal isn't lost.
+fn page_event(raw: Value) -> Option<ApiEvent> {
+    let error = match ApiEvent::try_from(raw.clone()) {
+        Ok(e) => return Some(e),
+        Err(e) => e,
+    };
+    let id = raw["id"].as_str().map(str::to_owned);
+    if raw["status"] == "cancelled" {
+        if let Some(id) = &id {
+            let mut slim = serde_json::json!({ "id": id, "status": "cancelled" });
+            for key in ["recurringEventId", "originalStartTime"] {
+                if let Some(v) = raw.get(key) {
+                    slim[key] = v.clone();
+                }
+            }
+            let slim = ApiEvent::try_from(slim.clone()).or_else(|_| {
+                ApiEvent::try_from(serde_json::json!({ "id": id, "status": "cancelled" }))
+            });
+            if let Ok(e) = slim {
+                return Some(e);
+            }
+        }
+    }
+    tracing::warn!(event = id.as_deref().unwrap_or("?"), %error, "skipping an unreadable Calendar event");
+    None
+}
+
 impl GmailClient {
     /// A client for the Calendar API, signed in as the same account.
     pub fn calendar(tokens: Arc<dyn TokenProvider>) -> Self {
@@ -259,11 +288,7 @@ impl GmailClient {
             .query_opt("pageToken", page_token);
         let res: EventsResponse = self.send_json(req).await?;
         Ok(EventsPage {
-            items: res
-                .items
-                .into_iter()
-                .map(ApiEvent::try_from)
-                .collect::<Result<_, _>>()?,
+            items: res.items.into_iter().filter_map(page_event).collect(),
             next_page_token: non_empty(res.next_page_token),
             next_sync_token: non_empty(res.next_sync_token),
         })
@@ -575,6 +600,35 @@ mod tests {
             .list_events("en.usa#holiday@group.v.calendar.google.com", None, None)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_event_is_skipped_not_the_page() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/calendars/primary/events"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [
+                    {"id": "good", "status": "confirmed", "etag": "\"1\""},
+                    {"id": "bad", "status": "confirmed", "start": "tomorrow"},
+                    {"status": "confirmed", "summary": "no id"},
+                    {"id": "gone", "status": "cancelled", "summary": 7,
+                     "recurringEventId": "series1",
+                     "originalStartTime": {"dateTime": "2026-11-12T14:00:00Z"}}
+                ],
+                "nextSyncToken": "s2"
+            })))
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let page = client.list_events("primary", None, None).await.unwrap();
+        let ids: Vec<&str> = page.items.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, vec!["good", "gone"]);
+        let gone = &page.items[1];
+        assert_eq!(gone.status.as_deref(), Some("cancelled"));
+        assert_eq!(gone.recurring_event_id.as_deref(), Some("series1"));
+        assert!(gone.original_start_time.is_some());
+        assert_eq!(page.next_sync_token.as_deref(), Some("s2"));
     }
 
     #[tokio::test]

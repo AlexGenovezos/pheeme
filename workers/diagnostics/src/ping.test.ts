@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { handlePing } from "./ping";
-import type { InstallRecord, PingDeps } from "./types";
+import { DAILY_NEW_INSTALLS, DAILY_NEW_INSTALLS_PER_IP, handlePing, takeInstallSlot } from "./ping";
+import type { InstallRecord, KvStorage, PingDeps, QuotaResult } from "./types";
 
 const NOW = new Date("2026-11-07T15:30:00Z");
 const ID = "3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b";
@@ -31,7 +31,13 @@ function ping(
   return new Request(url, { method, headers, body: text });
 }
 
-function deps(over: { limited?: boolean; stored?: Partial<InstallRecord> | "garbage" } = {}) {
+function deps(
+  over: {
+    limited?: boolean;
+    quota?: QuotaResult;
+    stored?: Partial<InstallRecord> | "garbage";
+  } = {},
+) {
   const put = vi.fn(async () => ({}));
   const get = vi.fn(async () => {
     if (over.stored === undefined) return null;
@@ -44,8 +50,14 @@ function deps(over: { limited?: boolean; stored?: Partial<InstallRecord> | "garb
     };
   });
   const limit = vi.fn(async () => ({ success: !over.limited }));
-  const d: PingDeps = { bucket: { put, get }, perIp: { limit }, now: () => NOW };
-  return { d, put, get, limit };
+  const takeInstall = vi.fn<(ip: string) => Promise<QuotaResult>>(async () => over.quota ?? "ok");
+  const d: PingDeps = {
+    bucket: { put, get },
+    perIp: { limit },
+    installs: { takeInstall },
+    now: () => NOW,
+  };
+  return { d, put, get, limit, takeInstall };
 }
 
 function written(put: ReturnType<typeof deps>["put"]): { key: string; record: InstallRecord } {
@@ -127,5 +139,81 @@ describe("handlePing", () => {
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe("60");
     expect(put).not.toHaveBeenCalled();
+  });
+});
+
+describe("new install quota", () => {
+  it("charges a first-time ID and refuses it over the daily limit", async () => {
+    const { d, put, takeInstall } = deps({ quota: "ip_limit" });
+    const res = await handlePing(ping(), d);
+    expect(takeInstall).toHaveBeenCalledWith("203.0.113.7");
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe(String(8 * 3600 + 30 * 60));
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("lets a known install update for free even when the quota is spent", async () => {
+    const { d, put, takeInstall } = deps({
+      quota: "global_limit",
+      stored: { firstSeen: "2026-10-01T08:00:00.000Z" },
+    });
+    expect((await handlePing(ping(), d)).status).toBe(204);
+    expect(takeInstall).not.toHaveBeenCalled();
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a chunked body past 2 KB without a content-length", async () => {
+    const { d, put } = deps();
+    const chunk = new TextEncoder().encode("x".repeat(1500));
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(chunk);
+        c.enqueue(chunk);
+        c.close();
+      },
+    });
+    const req = new Request("https://diagnostics.pheeme.email/v1/ping", {
+      method: "POST",
+      headers: { "cf-connecting-ip": "203.0.113.7", "content-type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit);
+    expect(req.headers.get("content-length")).toBeNull();
+    expect((await handlePing(req, d)).status).toBe(413);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  describe("takeInstallSlot", () => {
+    function memory(): KvStorage & { data: Map<string, unknown> } {
+      const data = new Map<string, unknown>();
+      return {
+        data,
+        get: async <T>(key: string) => data.get(key) as T | undefined,
+        put: async (key: string, value: unknown) => {
+          data.set(key, value);
+        },
+      };
+    }
+
+    it("caps new IDs per IP and in all, per UTC day", async () => {
+      const storage = memory();
+      const results: QuotaResult[] = [];
+      for (let i = 0; i < DAILY_NEW_INSTALLS_PER_IP + 1; i++) {
+        results.push(await takeInstallSlot(storage, NOW, "203.0.113.7"));
+      }
+      expect(results.filter((r) => r === "ok")).toHaveLength(DAILY_NEW_INSTALLS_PER_IP);
+      expect(results[results.length - 1]).toBe("ip_limit");
+
+      const other = memory();
+      const all: QuotaResult[] = [];
+      for (let i = 0; i < DAILY_NEW_INSTALLS + 1; i++) {
+        all.push(
+          await takeInstallSlot(other, NOW, `ip-${Math.floor(i / DAILY_NEW_INSTALLS_PER_IP)}`),
+        );
+      }
+      expect(all.filter((r) => r === "ok")).toHaveLength(DAILY_NEW_INSTALLS);
+      expect(all[all.length - 1]).toBe("global_limit");
+      expect(await takeInstallSlot(other, new Date("2026-11-08T00:00:00Z"), "ip-0")).toBe("ok");
+    });
   });
 });

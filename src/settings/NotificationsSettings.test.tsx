@@ -209,3 +209,34 @@ test("the schedule can't be changed again while a save is in flight", async () =
   finish();
   await waitFor(() => expect(screen.getByRole("radio", { name: "Off" })).not.toBeDisabled());
 });
+
+test("before settings load the page has its final shape and shows no value it doesn't know", async () => {
+  let answer: (value: unknown) => void = () => {};
+  mockIPC((command) => {
+    if (command === "desktop_settings") return new Promise((resolve) => (answer = resolve));
+  });
+  useAccountStore.setState({
+    accounts: [{ id: "a", email: "a@example.com" }] as never,
+    loaded: true,
+  });
+  const { container } = render(<NotificationsSettings />);
+  // No "Any time" pre-selected for someone on Work hours, and no click that would be dropped.
+  const radios = screen.getAllByRole("radio");
+  expect(radios).toHaveLength(3);
+  for (const radio of radios) {
+    expect(radio).toHaveAttribute("aria-checked", "false");
+    expect(radio).toBeDisabled();
+  }
+  // The account's row is there already, its switch a placeholder; nothing says "Loading…".
+  expect(screen.getByText("a@example.com")).toBeInTheDocument();
+  expect(screen.queryByRole("switch", { name: "Notifications for a@example.com" })).toBeNull();
+  expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+  expect(screen.queryByText("Connect an account to enable notifications")).toBeNull();
+  const rowsBefore = container.querySelectorAll(".settings-row").length;
+
+  answer({ ...snapshot, schedule: { ...snapshot.schedule, mode: "off" } });
+  const toggle = await screen.findByRole("switch", { name: "Notifications for a@example.com" });
+  expect(toggle).toHaveAttribute("aria-checked", "false");
+  expect(screen.getByRole("radio", { name: "Off" })).toHaveAttribute("aria-checked", "true");
+  expect(container.querySelectorAll(".settings-row").length).toBe(rowsBefore);
+});

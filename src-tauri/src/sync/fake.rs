@@ -9,7 +9,7 @@ use crate::gmail::types::{
     MessagePart, MessagePartBody, MessageRef, SendAs, Thread, ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailError, MessageFormat};
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
 
 pub const DAY_MS: i64 = 24 * 60 * 60 * 1000;
@@ -274,6 +274,12 @@ struct State {
     user_labels: BTreeMap<String, Label>,
     next_label: u64,
     list_omits_color: bool,
+    /// Messages whose fetch always fails to decode (see [`FakeGmail::garble`]).
+    garbled: HashSet<String>,
+    /// Messages fetched with content that can't be parsed (see [`FakeGmail::mangle`]).
+    mangled: HashSet<String>,
+    /// While set, `list_labels` answers with no labels at all (a faulty 200).
+    list_omits_labels: bool,
     /// Filters by id (`users.settings.filters`).
     filters: BTreeMap<String, Filter>,
     next_filter: u64,
@@ -534,6 +540,40 @@ impl FakeGmail {
 
     /// While set, `list_labels` leaves user labels' colour out (as Gmail's list can);
     /// `get_label` still returns it.
+    /// Every fetch of this message fails with a decode error (a response Pheeme can't read).
+    pub fn garble(&self, id: &str) {
+        self.lock().garbled.insert(id.to_owned());
+    }
+
+    /// This message is fetched with content that can't be parsed, every time.
+    pub fn mangle(&self, id: &str) {
+        self.lock().mangled.insert(id.to_owned());
+    }
+
+    /// The message as a fetch returns it, with [`Self::garble`] and [`Self::mangle`] applied.
+    fn fetched(s: &State, id: &str, format: MessageFormat) -> Result<Message, GmailError> {
+        if s.garbled.contains(id) {
+            return Err(GmailError::Decode("unexpected Gmail response".into()));
+        }
+        let msg = s.messages.get(id).ok_or_else(not_found)?;
+        Ok(Self::mangled(s, msg.to_message(format)))
+    }
+
+    /// `msg` as fetched: a mangled one (in any format with content) carries only a `raw` that
+    /// isn't base64url.
+    fn mangled(s: &State, mut msg: Message) -> Message {
+        if s.mangled.contains(&msg.id) && (msg.payload.is_some() || msg.raw.is_some()) {
+            msg.payload = None;
+            msg.raw = Some("*".into());
+        }
+        msg
+    }
+
+    /// Make `list_labels` answer with an empty list, system labels included.
+    pub fn set_list_omits_labels(&self, omit: bool) {
+        self.lock().list_omits_labels = omit;
+    }
+
     pub fn set_list_omits_color(&self, omit: bool) {
         self.lock().list_omits_color = omit;
     }
@@ -717,6 +757,9 @@ impl MailApi for FakeGmail {
     async fn list_labels(&self) -> Result<Vec<Label>, GmailError> {
         self.enter("list_labels")?;
         let s = self.lock();
+        if s.list_omits_labels {
+            return Ok(Vec::new());
+        }
         let system = SYSTEM_LABELS.iter().map(|id| Label {
             id: (*id).into(),
             name: (*id).into(),
@@ -931,7 +974,10 @@ impl MailApi for FakeGmail {
         msgs.sort_by_key(|m| m.date_ms);
         Ok(Thread {
             id: id.into(),
-            messages: msgs.into_iter().map(|m| m.to_message(format)).collect(),
+            messages: msgs
+                .into_iter()
+                .map(|m| Self::mangled(&s, m.to_message(format)))
+                .collect(),
             ..Default::default()
         })
     }
@@ -1051,13 +1097,9 @@ impl MailApi for FakeGmail {
         }
         let mut out = Vec::new();
         for id in ids {
-            let result = self.enter("get_message").and_then(|()| {
-                self.lock()
-                    .messages
-                    .get(id)
-                    .map(|m| m.to_message(format))
-                    .ok_or_else(not_found)
-            });
+            let result = self
+                .enter("get_message")
+                .and_then(|()| Self::fetched(&self.lock(), id, format));
             out.push((id.clone(), result));
         }
         out

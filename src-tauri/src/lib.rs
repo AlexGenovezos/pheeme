@@ -591,6 +591,8 @@ pub fn run() {
             commands::compose::delete_draft,
             commands::compose::send_email,
             commands::compose::cancel_send,
+            commands::compose::failed_sends,
+            commands::compose::reopen_failed_send,
             commands::support::send_diagnostics,
             commands::support::save_diagnostics,
             commands::updater::log_update,
@@ -605,6 +607,10 @@ pub fn run() {
                 if app.try_state::<AppState>().is_some() {
                     desktop::show_window(app);
                 }
+            }
+            // Quit or restart: open compose panels are saved to Drafts first.
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                commands::compose::save_drafts_before_exit(app, *code, api);
             }
             if let tauri::RunEvent::Exit = event {
                 info!("Pheeme exiting");

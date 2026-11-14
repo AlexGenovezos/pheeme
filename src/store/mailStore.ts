@@ -16,6 +16,7 @@ import {
   type SyncMessagesUpdated,
   toCommandError,
 } from "../lib/tauri";
+import { useUiStore } from "./uiStore";
 
 /** Search spans the chosen accounts, independently of the mailbox underneath it. */
 export interface MailQuery extends ThreadQuery {
@@ -79,6 +80,30 @@ const MAX_RELOAD = 500;
 /** A reload re-queries what is loaded, within one page and the backend's page cap. */
 const reloadDepth = (loaded: number) => Math.min(Math.max(loaded, PAGE), MAX_RELOAD);
 const keyOf = (t: ThreadSummary) => threadKey(t.accountId, t.id);
+
+/** The backend's list order (newest first, then account and thread id, descending): `t` comes after `cursor`. */
+export const sortsAfter = (t: ThreadSummary, c: ThreadCursor) =>
+  t.date !== c.lastMessageDate
+    ? t.date < c.lastMessageDate
+    : t.accountId !== c.accountId
+      ? t.accountId < c.accountId
+      : t.id < c.threadId;
+
+/**
+ * A reload re-reads at most `MAX_RELOAD` rows, so it stops at `cursor` in a list scrolled deeper than that. The
+ * rows already loaded below that point stay (as last read) rather than snapping the list back to its first rows and
+ * losing the open one; `fresh` wins for any row it has, and a row that sorts above `cursor` but isn't in `fresh` is
+ * gone. Paging then continues from the old cursor, below all of them.
+ */
+function keptBelow(
+  previous: ThreadSummary[],
+  fresh: ThreadSummary[],
+  cursor: ThreadCursor | null,
+): ThreadSummary[] {
+  if (!cursor || previous.length === 0) return [];
+  const have = new Set(fresh.map(keyOf));
+  return previous.filter((t) => !have.has(keyOf(t)) && sortsAfter(t, cursor));
+}
 
 /**
  * A change not yet in the cache. `fn: null` removes the row, from results of `query` only (`null`: of any query).
@@ -270,15 +295,27 @@ export const useMailStore = create<MailState>((set, get) => {
         const combined = more ? appendUnique(retained, rows) : appendUnique(rows, retained);
         // Reloads refresh matching rows but keep the order the user is already reading.
         const byKey = new Map(combined.map((t) => [keyOf(t), matches.get(keyOf(t)) ?? t]));
+        // A reload capped below what is loaded keeps the local matches beyond its last row (see `keptBelow`).
+        const below =
+          more || !limit || !sameQuery(s.loadedQuery, query)
+            ? []
+            : keptBelow(
+                s.threads.filter((t) => !removedFromSearch.has(keyOf(t))),
+                combined,
+                page.next,
+              );
+        const kept = new Set(below.map(keyOf));
         const stable = more
           ? combined
           : appendUnique(
-              s.threads.filter((t) => byKey.has(keyOf(t))).map((t) => byKey.get(keyOf(t))!),
+              s.threads
+                .filter((t) => byKey.has(keyOf(t)) || kept.has(keyOf(t)))
+                .map((t) => byKey.get(keyOf(t)) ?? t),
               combined,
             );
         return {
           threads: stable,
-          next: page.next,
+          next: below.length ? s.next : page.next,
           loadedQuery: query,
           loading: false,
           error: null,
@@ -441,13 +478,21 @@ export const useMailStore = create<MailState>((set, get) => {
           ...(limit ? { limit } : {}),
         });
         if (ticket !== latest) return;
-        set((s) => ({
-          threads: reuseUnchanged(s.threads, overlay(page?.threads ?? [], query)),
-          next: page?.next ?? null,
-          loadedQuery: query,
-          loading: false,
-          error: null,
-        }));
+        set((s) => {
+          const fresh = overlay(page?.threads ?? [], query);
+          // A reload capped below what is loaded keeps the rows beyond its last one (see `keptBelow`).
+          const below =
+            limit && sameQuery(s.loadedQuery, query)
+              ? keptBelow(s.threads, fresh, page?.next ?? null)
+              : [];
+          return {
+            threads: reuseUnchanged(s.threads, below.length ? [...fresh, ...below] : fresh),
+            next: below.length ? s.next : (page?.next ?? null),
+            loadedQuery: query,
+            loading: false,
+            error: null,
+          };
+        });
       } catch (error) {
         if (ticket !== latest) return;
         // The previous mailbox's rows and cursor mustn't masquerade as this one's; a failed reload of the same query keeps its rows.
@@ -574,12 +619,14 @@ export const useMailStore = create<MailState>((set, get) => {
         [
           () =>
             listen<SyncMessagesUpdated>(SYNC_EVENTS.messagesUpdated, ({ payload }) => {
-              if (get().search && payload.removed.length) {
+              if (payload.removed.length) {
+                // Gone from the cache: drop them now, including rows kept below a capped reload (`keptBelow`).
                 const gone = new Set(payload.removed.map((id) => threadKey(payload.accountId, id)));
-                for (const key of gone) {
-                  remoteRows.delete(key);
-                  removedFromSearch.add(key);
-                }
+                if (get().search)
+                  for (const key of gone) {
+                    remoteRows.delete(key);
+                    removedFromSearch.add(key);
+                  }
                 set((s) => ({ threads: s.threads.filter((t) => !gone.has(keyOf(t))) }));
               }
               reload();
@@ -626,6 +673,21 @@ export const useMailStore = create<MailState>((set, get) => {
       );
     },
   };
+});
+
+/**
+ * A checked conversation that is no longer in the list is unchecked, so "3 selected" counts what is there and the
+ * actions don't keep aiming at a row that left (archived on another device, say). The rule is the same whether it
+ * left the mailbox or just isn't loaded any more: a reload keeps every row it loaded (see `keptBelow`), so for the
+ * query on screen only rows that left drop out. Switching mailbox, search or Unread only clears the selection anyway.
+ */
+useMailStore.subscribe((s, prev) => {
+  if (s.threads === prev.threads || s.loadedQuery === null) return;
+  const { checked, uncheck } = useUiStore.getState();
+  if (checked.length === 0) return;
+  const shown = new Set(s.threads.map(keyOf));
+  const gone = checked.filter((key) => !shown.has(key));
+  if (gone.length) uncheck(gone);
 });
 
 /** Test helper. */

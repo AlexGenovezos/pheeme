@@ -25,10 +25,20 @@ export interface RateLimiter {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
-/** The daily upload cap, a Durable Object stub in production. */
+/** Outcome of taking a daily slot: which limit, if any, said no. */
+export type QuotaResult = "ok" | "ip_limit" | "global_limit";
+
+/** The daily quotas, a Durable Object stub in production. The IP is hashed
+ * with a daily salt inside; it is never stored as is. */
 export interface DailyCapCounter {
-  take(): Promise<boolean>;
+  /** One accepted upload. */
+  take(ip: string): Promise<QuotaResult>;
+  /** One install ID never seen before. */
+  takeInstall(ip: string): Promise<QuotaResult>;
 }
+
+/** The part of the daily quotas `handlePing` uses. */
+export type InstallQuota = Pick<DailyCapCounter, "takeInstall">;
 
 /** The notification email, before it becomes MIME. */
 export interface Notification {
@@ -51,6 +61,7 @@ export interface Deps {
 export interface PingDeps {
   bucket: Bucket;
   perIp: RateLimiter;
+  installs: InstallQuota;
   now(): Date;
 }
 
@@ -71,11 +82,13 @@ export interface KvStorage {
   put(key: string, value: unknown): Promise<void>;
 }
 
-/** What the daily cap Durable Object keeps under the key `state`. */
-export interface DailyCapState {
+/** What the daily cap Durable Object keeps per quota (`state`, `installs`). */
+export interface QuotaState {
   /** UTC day, `YYYY-MM-DD`. */
   day: string;
   count: number;
+  /** Slots taken per IP today, keyed by a salted hash of the IP. */
+  ips?: Record<string, number>;
 }
 
 /** `send_email` binding. */

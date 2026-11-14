@@ -345,6 +345,19 @@ impl AccountService {
         )
         .await?;
         if !tokens.has_scope(auth::REQUIRED_SCOPE) {
+            // Revoke the grant just issued, but only if it belongs to nobody connected:
+            // see `revoke_unused_grant`. The email is unknown without the userinfo call,
+            // and if that fails we can't tell, so nothing is revoked.
+            let email = auth::user_info(&self.http, &self.endpoints, &tokens.access_token)
+                .await
+                .ok()
+                .map(|profile| profile.email);
+            let token = tokens
+                .refresh_token
+                .as_deref()
+                .unwrap_or(&tokens.access_token);
+            self.revoke_unused_grant(&pending.creds, token, email.as_deref())
+                .await;
             return Err(OAuthError::MissingScope.into());
         }
         let refresh_token = tokens
@@ -365,6 +378,8 @@ impl AccountService {
         // Reconnecting must not quietly add (or overwrite) a different account.
         if let Some(expected) = pending.expected_email {
             if !expected.eq_ignore_ascii_case(&profile.email) {
+                self.revoke_unused_grant(&pending.creds, &refresh_token, Some(&profile.email))
+                    .await;
                 return Err(AccountError::WrongAccount {
                     expected,
                     actual: profile.email,
@@ -379,6 +394,38 @@ impl AccountService {
             .await?;
         self.cache_token(&account.id, tokens.access_token, tokens.expires_in);
         Ok(account.into())
+    }
+
+    /// Best-effort revoke of a token Google just issued for a sign-in that is being
+    /// rejected, so a stray grant isn't left on the user's Google account. Google's revoke
+    /// drops the whole user + OAuth client grant, so it is skipped when `email` is unknown
+    /// or already connected with this same client: that would sign a working account out.
+    async fn revoke_unused_grant(
+        &self,
+        creds: &ClientCredentials,
+        token: &str,
+        email: Option<&str>,
+    ) {
+        let Some(email) = email else { return };
+        match db_accounts::list_accounts(&self.db).await {
+            Ok(accounts) => {
+                if accounts.iter().any(|account| {
+                    account.client_id == creds.client_id
+                        && account.email.eq_ignore_ascii_case(email)
+                }) {
+                    return;
+                }
+            }
+            // Can't tell whether the grant is shared, so leave it.
+            Err(_) => return,
+        }
+        let revoke = auth::revoke(&self.http, &self.endpoints, token);
+        if let Ok(Err(error)) | Err(error) = tokio::time::timeout(REVOKE_TIMEOUT, revoke)
+            .await
+            .map_err(|_| OAuthError::Timeout)
+        {
+            tracing::warn!("couldn't revoke the rejected sign-in's token: {error}");
+        }
     }
 
     /// Signing in to an account that's already connected updates it in place, keeping
@@ -455,10 +502,13 @@ impl AccountService {
             .collect())
     }
 
-    /// Revokes Google access (best effort), then deletes the secrets and cached mail.
-    /// Attachment files on disk are the mail service's ([`crate::mail::MailService::forget_account`]).
+    /// Revokes Google access (best effort), then deletes the secrets, cached mail, the
+    /// account's resync position and the AI-assistant activity that mentions it (matched by
+    /// its id or email in the logged arguments, summary and result: the log has no account
+    /// column, so calls that named no account stay). Attachment files on disk are the mail
+    /// service's ([`crate::mail::MailService::forget_account`]).
     pub async fn remove_account(&self, account_id: &str) -> Result<(), AccountError> {
-        self.account(account_id).await?;
+        let account = self.account(account_id).await?;
         let id = account_id.to_owned();
         if let Some(secrets) = self.keychain(move |store| store.get(&id)).await? {
             let revoke = auth::revoke(&self.http, &self.endpoints, &secrets.refresh_token);
@@ -473,6 +523,9 @@ impl AccountService {
         self.keychain(move |store| store.delete(&id)).await?;
         db_accounts::delete_account(&self.db, account_id).await?;
         crate::db::settings::delete_inbox_tabs(&self.db, account_id).await?;
+        crate::db::settings::clear_resync(&self.db, account_id).await?;
+        crate::db::assistant::delete_activity_mentioning(&self.db, &[account_id, &account.email])
+            .await?;
         lock(&self.tokens).remove(account_id);
         Ok(())
     }
@@ -930,8 +983,8 @@ mod tests {
         assert!(h.service.list_accounts().await.unwrap().is_empty());
     }
 
-    #[tokio::test]
-    async fn remove_account_forgets_inbox_tabs() {
+    /// A signed-in account whose revoke Google will accept, ready to be removed.
+    async fn removable_account() -> (Harness, AccountInfo) {
         let h = harness().await;
         mock_google(&h.server, "me@example.com", "refresh-1").await;
         let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
@@ -939,6 +992,12 @@ mod tests {
             .respond_with(ResponseTemplate::new(200))
             .mount(&h.server)
             .await;
+        (h, account)
+    }
+
+    #[tokio::test]
+    async fn remove_account_forgets_inbox_tabs() {
+        let (h, account) = removable_account().await;
         let pool = &h.db.pool;
         crate::db::settings::set_inbox_tabs(pool, &account.id, &["CATEGORY_SOCIAL".to_owned()])
             .await
@@ -955,6 +1014,47 @@ mod tests {
 
         h.service.remove_account(&account.id).await.unwrap();
         assert_eq!(stored().await, None);
+    }
+
+    #[tokio::test]
+    async fn remove_account_forgets_resync_position_and_assistant_activity() {
+        let (h, account) = removable_account().await;
+        let pool = &h.db.pool;
+        crate::db::settings::set_resync_position(pool, &account.id, "m1")
+            .await
+            .unwrap();
+        for arguments in [
+            r#"{"account":"me@example.com","query":"secret"}"#.to_owned(),
+            format!(r#"{{"account":"{}"}}"#, account.id),
+            r#"{"account":"keep@example.com"}"#.to_owned(),
+        ] {
+            crate::db::assistant::add_activity(
+                pool,
+                &crate::db::assistant::NewActivity {
+                    client_id: "c",
+                    client_name: "Claude",
+                    tool: "search_mail",
+                    summary: "",
+                    arguments: &arguments,
+                    result: None,
+                    error: None,
+                    at: 1,
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        h.service.remove_account(&account.id).await.unwrap();
+        assert_eq!(
+            crate::db::settings::resync_position(pool, &account.id)
+                .await
+                .unwrap(),
+            None
+        );
+        let left = crate::db::assistant::list_activity(pool, 10).await.unwrap();
+        assert_eq!(left.len(), 1);
+        assert!(left[0].arguments.contains("keep@example.com"));
     }
 
     #[tokio::test]
@@ -1060,6 +1160,14 @@ mod tests {
         let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
 
         mock_google(&h.server, "other@example.com", "refresh-2").await;
+        // The stranger isn't connected, so the grant just issued to them is revoked.
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .and(body_string_contains("token=refresh-2"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&h.server)
+            .await;
         let error = sign_in(
             &h,
             ClientChoice::Reconnect {
@@ -1079,6 +1187,100 @@ mod tests {
             h.secrets.get(&account.id).unwrap().unwrap().refresh_token,
             "refresh-1"
         );
+    }
+
+    #[tokio::test]
+    async fn wrong_account_that_is_already_connected_keeps_its_grant() {
+        let h = harness().await;
+        mock_google(&h.server, "one@example.com", "refresh-1").await;
+        let one = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+        mock_google(&h.server, "two@example.com", "refresh-2").await;
+        let _two = sign_in(
+            &h,
+            ClientChoice::SameAs {
+                account_id: one.id.clone(),
+            },
+        )
+        .await
+        .unwrap();
+
+        // Reconnecting `one` but signing in as `two`: revoking would sign `two` out.
+        Mock::given(path("/revoke"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&h.server)
+            .await;
+        let error = sign_in(
+            &h,
+            ClientChoice::Reconnect {
+                account_id: one.id.clone(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code(), "wrong_account");
+        h.server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn missing_scope_revokes_only_a_grant_nobody_connected_uses() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+
+        let thin = token_body(
+            Some("thin-refresh"),
+            "https://www.googleapis.com/auth/userinfo.email",
+        );
+        let mock_thin = |email: &'static str| {
+            let thin = thin.clone();
+            let server = &h.server;
+            async move {
+                mock_google(server, email, "unused").await;
+                server.reset().await;
+                Mock::given(path("/token"))
+                    .respond_with(ResponseTemplate::new(200).set_body_json(thin))
+                    .mount(server)
+                    .await;
+                Mock::given(path("/userinfo"))
+                    .respond_with(
+                        ResponseTemplate::new(200)
+                            .set_body_json(serde_json::json!({"email": email})),
+                    )
+                    .mount(server)
+                    .await;
+            }
+        };
+
+        // Re-auth of a connected account: its grant is shared, so it is left alone.
+        mock_thin("me@example.com").await;
+        Mock::given(path("/revoke"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&h.server)
+            .await;
+        let error = sign_in(
+            &h,
+            ClientChoice::Reconnect {
+                account_id: account.id.clone(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code(), "missing_scope");
+        h.server.verify().await;
+
+        // A new user who withheld the scope: the grant just issued is revoked.
+        mock_thin("new@example.com").await;
+        Mock::given(path("/revoke"))
+            .and(body_string_contains("token=thin-refresh"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&h.server)
+            .await;
+        let error = sign_in(&h, new_client(CLIENT_A)).await.unwrap_err();
+        assert_eq!(error.code(), "missing_scope");
+        h.server.verify().await;
     }
 
     #[tokio::test]

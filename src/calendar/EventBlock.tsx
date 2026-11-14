@@ -47,7 +47,7 @@ function responseClass(e: CalendarEvent) {
 }
 
 /** Being dragged, or saved at a new time. */
-const useMoving = (event: CalendarEvent) => useEditStore((s) => s.moving?.key === eventKey(event));
+const useMoving = (event: CalendarEvent) => useEditStore((s) => eventKey(event) in s.moving);
 
 function openFrom(event: CalendarEvent) {
   return (e: MouseEvent<HTMLElement>) => {

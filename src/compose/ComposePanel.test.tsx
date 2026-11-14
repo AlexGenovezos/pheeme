@@ -452,3 +452,52 @@ test("Send later is a palette command while a message is open", async () => {
   expect(sendLater).toHaveBeenCalledWith(1);
   sendLater.mockRestore();
 });
+
+test("each panel's To, Cc and Bcc labels belong to its own fields", async () => {
+  renderHost();
+  act(() => void useComposeStore.getState().compose("a1"));
+  act(() => void useComposeStore.getState().compose("a1"));
+  // Opening the second tucked the first away; bring both up.
+  act(() =>
+    useComposeStore.setState((s) => ({
+      windows: s.windows.map((w) => ({ ...w, minimized: false })),
+    })),
+  );
+  await waitFor(() => expect(screen.getAllByRole("combobox", { name: "To" })).toHaveLength(2), {
+    timeout: 5000,
+  });
+  const panels = screen.getAllByRole("region", { name: "New message" });
+  expect(panels).toHaveLength(2);
+  const inputs = panels.map((p) => within(p).getByRole("combobox", { name: "To" }));
+  expect(inputs[0].id).not.toBe(inputs[1].id);
+  panels.forEach((panel, i) => {
+    const label = within(panel).getByText("To", { selector: "label" });
+    expect(label).toHaveAttribute("for", inputs[i].id);
+    fireEvent.click(within(panel).getByRole("button", { name: "Cc" }));
+    expect(within(panel).getByRole("combobox", { name: "Cc" }).id).not.toBe(inputs[i].id);
+  });
+  const ids = screen.getAllByRole("combobox").map((el) => el.id);
+  expect(new Set(ids).size).toBe(ids.length);
+});
+
+test("a failed autosave shows Not saved in the footer, in the place Draft saved takes", async () => {
+  const panel = await openNew();
+  const status = panel.querySelector(".compose__status")!;
+  expect(status).toHaveTextContent("");
+  mockIPC((cmd) => {
+    if (cmd === "save_draft") throw { code: "offline", message: "No connection." };
+    return undefined;
+  });
+  act(() => useComposeStore.getState().update(1, { subject: "Plans" }));
+  await act(async () => void (await useComposeStore.getState().save(1, { quiet: true })));
+  expect(panel.querySelector(".compose__status")).toBe(status);
+  expect(status).toHaveTextContent("Not saved");
+  expect(status).toHaveAttribute("title", "No connection.");
+  expect(within(panel).queryByRole("alert")).toBeNull();
+
+  mockIPC((cmd) =>
+    cmd === "save_draft" ? { draftId: "d1", messageId: "m1", threadId: "t1" } : undefined,
+  );
+  await act(async () => void (await useComposeStore.getState().save(1, { quiet: true })));
+  expect(status).toHaveTextContent("Draft saved");
+});

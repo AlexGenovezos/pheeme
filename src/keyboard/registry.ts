@@ -21,6 +21,11 @@ export interface Command {
   global?: boolean;
   /** Keep out of the palette (still reachable by shortcut). */
   hidden?: boolean;
+  /**
+   * Run again while the key is held (auto-repeat). Off by default: holding `#` must trash one
+   * conversation, not every one after it. Only stepping commands (next/previous) opt in.
+   */
+  repeat?: boolean;
   run(): void;
 }
 
@@ -322,6 +327,8 @@ export function createRegistry({
       const single = live.find((en) => en.steps.length === 1 && stepMatches(en.steps[0], e, isMac));
       if (!single) return false;
       e.preventDefault();
+      // A held key: swallowed, so it neither repeats the command nor falls through to the page.
+      if (e.repeat && !single.command.repeat) return true;
       single.command.run();
       return true;
     },

@@ -37,22 +37,37 @@ impl Answer {
 }
 
 /// `{"attendees": [...]}` from `base`'s list with this account's answer: its own entry
-/// (`self`, or its address in any case) changed, or added when there is none. Everyone
-/// else's entry is sent back as it was.
-fn answered(base: &Value, email: &str, response: &str, comment: Option<&str>) -> Value {
+/// changed, or added when there is none. Everyone else's entry is sent back as it was.
+///
+/// Its own entry is the one with its address (in any case), or on its primary calendar
+/// (`own_calendar`) also the one Google marks `self`, which may be an alias. On anyone
+/// else's calendar `self` is that calendar's owner, so only the address counts, and an event
+/// the account isn't a guest of is `None`: answering there would add it to their event.
+fn answered(
+    base: &Value,
+    email: &str,
+    own_calendar: bool,
+    response: &str,
+    comment: Option<&str>,
+) -> Option<Value> {
     let mut attendees = base["attendees"].as_array().cloned().unwrap_or_default();
-    let is_self = |a: &Value| {
-        a["self"] == true
-            || a["email"]
-                .as_str()
-                .is_some_and(|e| e.eq_ignore_ascii_case(email))
+    let by_address = |a: &Value| {
+        a["email"]
+            .as_str()
+            .is_some_and(|e| e.eq_ignore_ascii_case(email))
     };
-    let at = match attendees.iter().position(is_self) {
+    let found = attendees.iter().position(by_address).or_else(|| {
+        own_calendar
+            .then(|| attendees.iter().position(|a| a["self"] == true))
+            .flatten()
+    });
+    let at = match found {
         Some(i) => i,
-        None => {
+        None if own_calendar => {
             attendees.push(json!({ "email": email }));
             attendees.len() - 1
         }
+        None => return None,
     };
     if let Some(me) = attendees[at].as_object_mut() {
         me.insert("responseStatus".into(), json!(response));
@@ -66,7 +81,7 @@ fn answered(base: &Value, email: &str, response: &str, comment: Option<&str>) ->
             None => {}
         }
     }
-    json!({ "attendees": attendees })
+    Some(json!({ "attendees": attendees }))
 }
 
 impl CalendarService {
@@ -91,7 +106,7 @@ impl CalendarService {
                 "An answer is for one event or the whole series, not this and following.",
             ));
         }
-        self.calendar(account_id, calendar_id).await?;
+        let own_calendar = self.calendar(account_id, calendar_id).await?.primary;
         let email = db::accounts::get_account(&self.db, account_id)
             .await?
             .ok_or(CalendarError::NotFound)?
@@ -102,7 +117,14 @@ impl CalendarService {
             let answer = self
                 .answer_target(account_id, calendar_id, event_id, scope)
                 .await?;
-            let body = answered(&answer.base, &email, response, comment.as_deref());
+            let body = answered(
+                &answer.base,
+                &email,
+                own_calendar,
+                response,
+                comment.as_deref(),
+            )
+            .ok_or_else(|| invalid("You aren't a guest of this event on this calendar."))?;
             let opts = WriteOptions {
                 send_updates: SendUpdates::All,
                 if_match: answer.etag.as_deref(),
@@ -159,9 +181,11 @@ impl CalendarService {
     }
 
     /// Answers the invitation with this iCalendar UID for the whole event (Mail's invite
-    /// card). It is looked for in the cache (primary calendar first), then at Google on the
+    /// card). It is looked for in the cache on the primary calendar, then at Google on the
     /// primary calendar; failing both, `import` (the invite as an event resource) is
-    /// imported there first. Without `import` a missing invite is `NotFound`.
+    /// imported there first. Without `import` a missing invite is `NotFound`. A copy on
+    /// another calendar (a colleague's, shared with the account) is never answered: that
+    /// would change their event, not the account's answer.
     pub async fn respond_to_invite(
         &self,
         account_id: &str,
@@ -178,14 +202,15 @@ impl CalendarService {
             .into_iter()
             .find(|c| c.primary)
             .map(|c| c.id);
-        let mut cached: Vec<DbEvent> =
-            db::calendar::events_by_ical_uid(&self.db, account_id, ical_uid)
-                .await?
-                .into_iter()
-                .filter(|e| e.recurring_event_id.is_none() && e.status != "cancelled")
-                .collect();
-        cached.sort_by_key(|e| Some(&e.calendar_id) != primary.as_ref());
-        let (calendar_id, id, newly_cached) = match cached.into_iter().next() {
+        let cached = db::calendar::events_by_ical_uid(&self.db, account_id, ical_uid)
+            .await?
+            .into_iter()
+            .find(|e| {
+                Some(&e.calendar_id) == primary.as_ref()
+                    && e.recurring_event_id.is_none()
+                    && e.status != "cancelled"
+            });
+        let (calendar_id, id, newly_cached) = match cached {
             Some(e) => (e.calendar_id, e.id, false),
             None => {
                 let primary = primary.ok_or(CalendarError::NotFound)?;
@@ -563,6 +588,86 @@ mod tests {
         assert_eq!(writes[0].method, "patch");
         assert_eq!(writes[0].calendar_id, CAL, "primary calendar first");
         assert_eq!(writes[0].send_updates, Some(SendUpdates::All));
+    }
+
+    /// `review` as it sits on a colleague's calendar shared with a: Google marks the
+    /// colleague `self` there, and a is another guest.
+    fn colleagues_review() -> Value {
+        let mut e = guest_event();
+        e["attendees"] = json!([
+            {"email": "boss@example.com", "organizer": true, "responseStatus": "accepted"},
+            {"email": "colleague@example.com", "self": true, "responseStatus": "accepted"},
+            {"email": "a@example.com", "responseStatus": "needsAction"}
+        ]);
+        e
+    }
+
+    #[tokio::test]
+    async fn respond_to_invite_never_answers_on_a_shared_calendar() {
+        let h = harness(&["a"]).await;
+        let colleague = "colleague@example.com";
+        h.fake("a").add_calendar(calendar(colleague));
+        h.fake("a").put(colleague, colleagues_review());
+        h.grant("a").await;
+        let mut invite = review();
+        for key in ["id", "etag", "updated", "status"] {
+            invite.as_object_mut().unwrap().remove(key);
+        }
+        let r = h
+            .service
+            .respond_to_invite("a", "review@google.com", "accepted", None, Some(invite))
+            .await
+            .unwrap();
+        assert_eq!(r.calendar_id, CAL);
+        let writes = h.fake("a").writes();
+        assert_eq!(methods(&h), vec!["import", "patch"]);
+        assert!(writes.iter().all(|w| w.calendar_id == CAL), "{writes:?}");
+        let theirs = h.fake("a").event(colleague, "review").unwrap();
+        assert_eq!(theirs["attendees"], colleagues_review()["attendees"]);
+    }
+
+    #[tokio::test]
+    async fn rsvp_on_a_shared_calendar_answers_for_the_account_not_its_owner() {
+        let h = harness(&["a"]).await;
+        let colleague = "colleague@example.com";
+        h.fake("a").add_calendar(calendar(colleague));
+        h.fake("a").put(colleague, colleagues_review());
+        h.grant("a").await;
+        h.service
+            .respond("a", colleague, "review", EditScope::All, "declined", None)
+            .await
+            .unwrap();
+        let w = h.fake("a").writes().pop().unwrap();
+        assert_eq!(w.body["attendees"][1]["responseStatus"], "accepted");
+        assert_eq!(w.body["attendees"][2]["responseStatus"], "declined");
+
+        // Not a guest there: nothing to answer, and a isn't added to their event.
+        let mut not_invited = colleagues_review();
+        not_invited["attendees"].as_array_mut().unwrap().pop();
+        not_invited["etag"] = json!("\"r2\"");
+        h.fake("a").put(colleague, not_invited);
+        h.service.sync_now("a").await.unwrap();
+        let err = h
+            .service
+            .respond("a", colleague, "review", EditScope::All, "accepted", None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CalendarError::Invalid(_)), "{err:?}");
+        assert_eq!(methods(&h), vec!["patch"]);
+    }
+
+    #[test]
+    fn answered_trusts_self_only_on_the_primary_calendar() {
+        let base = json!({"attendees": [
+            {"email": "alias@example.com", "self": true, "responseStatus": "needsAction"}
+        ]});
+        let own = answered(&base, "a@example.com", true, "accepted", None).unwrap();
+        assert_eq!(own["attendees"][0]["responseStatus"], "accepted");
+        assert_eq!(own["attendees"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            answered(&base, "a@example.com", false, "accepted", None),
+            None
+        );
     }
 
     #[tokio::test]

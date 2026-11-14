@@ -9,15 +9,22 @@
 //! Sends are never retried automatically once Gmail may have received them: they're
 //! marked `checking` before the request goes out and then confirmed by finding the
 //! message in Sent (cache, search with backoff, or incoming sync). A send may wait for an
-//! undo window (`next_attempt_at`); until it's claimed it can be cancelled.
+//! undo window (`next_attempt_at`); until it's claimed it can be cancelled. Once Gmail has a
+//! send that came from a saved draft, its op stays as a `cleanup` follow-up, holding only the
+//! draft's id, until that draft is deleted.
 
+use super::api::MailApi;
 use super::engine::{now_ms, SyncEngine, SyncError};
 use super::events::SyncEvent;
 use crate::db::outbox::{self as store, DbOp, DbOpMessage, OpProgress};
 use crate::db::threads::{self, RecomputeResult};
 use crate::db::{self, messages};
-use crate::gmail::mime::{decode_base64url, encode_base64url, rfc822_message_id};
+use crate::gmail::mime::{
+    decode_base64url, decode_header_value, encode_base64url, parse_addresses, rfc822_message_id,
+    EmailAddress,
+};
 use crate::gmail::{GmailError, MessageFormat};
+use mailparse::MailHeaderMap;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 use std::collections::{BTreeSet, HashMap};
@@ -33,6 +40,9 @@ pub const CHECKING: &str = "checking";
 pub const UNCONFIRMED: &str = "unconfirmed";
 /// Sends only: Gmail rejected it.
 pub const FAILED: &str = "failed";
+/// Sends only: Gmail has the message, and the saved draft it came from is still to be deleted.
+/// The op keeps the draft's id and nothing of the message, so it can never be sent again.
+pub const CLEANUP: &str = "cleanup";
 
 /// Delay before each Sent search after an ambiguous send: ≈30 s, 2 min, 10 min.
 pub const CHECK_DELAYS_MS: [i64; 3] = [30_000, 120_000, 600_000];
@@ -40,6 +50,11 @@ pub const CHECK_DELAYS_MS: [i64; 3] = [30_000, 120_000, 600_000];
 const SEARCH_RETRY_MS: i64 = 30_000;
 const BACKOFF_BASE_MS: i64 = 5_000;
 const BACKOFF_MAX_MS: i64 = 5 * 60_000;
+/// Failed tries after which a whole-mailbox change (Mark all as read) is rolled back, if Gmail
+/// was reached on that try and still failed (a server error, a dropped response). A try that
+/// never left (offline, signed out, rate limited) always waits and tries again. With the
+/// backoff this is half an hour at the least.
+pub const SWEEP_MAX_ATTEMPTS: i64 = 10;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Payload {
@@ -180,8 +195,8 @@ async fn enqueue(
     let op_id = uuid::Uuid::new_v4().to_string();
     let mut targets = Vec::new();
     for thread_id in &payload.thread_ids {
-        for msg in messages::get_messages_for_thread(&mut *tx, account_id, thread_id).await? {
-            targets.push((msg.id.clone(), thread_id.clone(), msg.labels()));
+        for msg in messages::labels_for_thread(&mut *tx, account_id, thread_id).await? {
+            targets.push((msg.id, thread_id.clone(), msg.labels));
         }
     }
     if targets.is_empty() && payload.sweep.is_none() {
@@ -264,8 +279,8 @@ pub async fn rebase_threads(
             .map(|t| t.message_id)
             .collect();
         for thread_id in payload.thread_ids.iter().filter(|t| wanted.contains(t)) {
-            for msg in messages::get_messages_for_thread(&mut *conn, account_id, thread_id).await? {
-                let labels = msg.labels();
+            for msg in messages::labels_for_thread(&mut *conn, account_id, thread_id).await? {
+                let labels = msg.labels;
                 let target = DbOpMessage {
                     op_id: op.id.clone(),
                     account_id: account_id.to_owned(),
@@ -299,25 +314,60 @@ fn covers(op: &DbOp, recorded: bool, date_ms: Option<i64>) -> bool {
     recorded || date_ms.is_some_and(|d| d <= op.created_at)
 }
 
-/// Confirm sends whose message is now cached in Sent. Returns the confirmed op ids.
+/// Confirm sends whose message is now cached in Sent. Returns the confirmed op ids. One that
+/// came from a saved draft stays as its `cleanup` follow-up, which the next [`process`] runs.
 pub async fn match_sends(
     conn: &mut SqliteConnection,
     account_id: &str,
 ) -> Result<Vec<String>, SyncError> {
     let mut done = Vec::new();
-    for op in store::sends_awaiting_confirmation(&mut *conn, account_id).await? {
-        let Some(rfc) = op.rfc822_message_id.as_deref() else {
+    for send in store::sends_awaiting_confirmation(&mut *conn, account_id).await? {
+        let Some(rfc) = send.rfc822_message_id.as_deref() else {
             continue;
         };
         if messages::find_sent_by_rfc822(&mut *conn, account_id, rfc)
             .await?
             .is_some()
         {
-            store::delete(&mut *conn, &op.id).await?;
-            done.push(op.id);
+            let draft = source_draft(&mut *conn, &send.id).await?;
+            settle_send(&mut *conn, &send.id, draft.as_deref(), now_ms()).await?;
+            done.push(send.id);
         }
     }
     Ok(done)
+}
+
+/// The saved draft a queued send came from, read from the op as stored.
+async fn source_draft(
+    conn: &mut SqliteConnection,
+    op_id: &str,
+) -> Result<Option<String>, SyncError> {
+    Ok(match store::get(conn, op_id).await? {
+        Some(op) => Payload::of(&op)?.draft_id,
+        None => None,
+    })
+}
+
+/// Gmail has the send's message: the op is done, unless it came from a saved draft, which it
+/// stays for as a `cleanup` op until that draft is deleted.
+async fn settle_send<'e>(
+    ex: impl sqlx::SqliteExecutor<'e>,
+    op_id: &str,
+    draft_id: Option<&str>,
+    now: i64,
+) -> Result<(), SyncError> {
+    match draft_id {
+        None => store::delete(ex, op_id).await?,
+        Some(draft) => {
+            let payload = Payload {
+                draft_id: Some(draft.to_owned()),
+                ..Default::default()
+            };
+            let json = serde_json::to_string(&payload).map_err(anyhow::Error::from)?;
+            store::to_cleanup(ex, op_id, &json, now).await?;
+        }
+    }
+    Ok(())
 }
 
 /// Where and when a queued message is sent.
@@ -402,6 +452,145 @@ pub async fn resend(pool: &SqlitePool, op_id: &str) -> Result<bool, SyncError> {
     Ok(true)
 }
 
+/// A send that didn't go through and is still in the outbox, with enough to show it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FailedSend {
+    pub op_id: String,
+    /// [`FAILED`]: Gmail refused it, so it was never sent. [`UNCONFIRMED`]: Gmail may have it,
+    /// but it never showed up in Sent.
+    pub status: String,
+    pub subject: Option<String>,
+    pub to: Vec<EmailAddress>,
+    pub cc: Vec<EmailAddress>,
+    pub bcc: Vec<EmailAddress>,
+    /// Why Gmail refused it; `None` for an unconfirmed send.
+    pub error: Option<String>,
+    /// The conversation a reply was for.
+    pub thread_id: Option<String>,
+    /// When it was queued and when it failed (Unix ms).
+    pub queued_at: i64,
+    pub failed_at: i64,
+}
+
+/// As much of a queued message's base64url text as is decoded to read its headers.
+const HEADER_PREFIX_B64: usize = 256 * 1024;
+
+/// The account's sends that failed or were never confirmed, oldest first: what [`resend`] and
+/// [`cancel_send`] act on. Each message is read one at a time and only its headers are decoded.
+pub async fn failed_sends(
+    pool: &SqlitePool,
+    account_id: &str,
+) -> Result<Vec<FailedSend>, SyncError> {
+    let mut out = Vec::new();
+    for id in store::unsent_send_ids(pool, account_id).await? {
+        // It may have been confirmed, resent or cancelled since the list was read.
+        let Some(op) = store::get(pool, &id).await? else {
+            continue;
+        };
+        if op.kind != KIND_SEND || !(op.status == UNCONFIRMED || op.status == FAILED) {
+            continue;
+        }
+        let payload = Payload::of(&op)?;
+        let headers = payload.raw.as_deref().and_then(header_block);
+        // As written in the message: encoded words are decoded by the two readers below.
+        let header = |name: &str| {
+            let (headers, _) = mailparse::parse_headers(headers.as_deref()?).ok()?;
+            let value = headers.get_first_header(name)?.get_value_raw().to_vec();
+            Some(String::from_utf8_lossy(&value).into_owned())
+        };
+        let addresses =
+            |name: &str| header(name).map_or_else(Vec::new, |v| parse_addresses(name, &v));
+        out.push(FailedSend {
+            subject: header("Subject")
+                .map(|v| decode_header_value("Subject", &v))
+                .filter(|s| !s.is_empty()),
+            to: addresses("To"),
+            cc: addresses("Cc"),
+            bcc: addresses("Bcc"),
+            error: op.last_error,
+            thread_id: payload.thread_id,
+            queued_at: op.created_at,
+            failed_at: op.updated_at,
+            status: op.status,
+            op_id: op.id,
+        });
+    }
+    Ok(out)
+}
+
+/// Where [`move_to_drafts`] put a send back: the Gmail draft and its message (what Drafts lists).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReturnedDraft {
+    pub draft_id: String,
+    pub message_id: String,
+}
+
+/// Put a failed or unconfirmed send of `account_id`'s back in its Gmail Drafts, exactly as it
+/// was queued, and drop it from the outbox, so the user can open it, fix it and send it again
+/// (or discard it). The draft it came from is updated in place, else a new one is made. `None`
+/// when the op isn't such a send any more (sent, sent again, cancelled or gone): then nothing
+/// is left behind in Drafts.
+pub async fn move_to_drafts(
+    pool: &SqlitePool,
+    api: &dyn MailApi,
+    account_id: &str,
+    op_id: &str,
+) -> Result<Option<ReturnedDraft>, SyncError> {
+    let unsent = |op: &DbOp| {
+        op.kind == KIND_SEND
+            && op.account_id == account_id
+            && (op.status == UNCONFIRMED || op.status == FAILED)
+    };
+    let Some(op) = store::get(pool, op_id).await?.filter(unsent) else {
+        return Ok(None);
+    };
+    let payload = Payload::of(&op)?;
+    let Some(raw) = payload.raw.as_deref() else {
+        return Ok(None);
+    };
+    let raw = decode_base64url(raw).map_err(|e| anyhow::anyhow!("send {op_id}: {e}"))?;
+    let thread = payload.thread_id.as_deref();
+    let (draft, created) = match payload.draft_id.as_deref() {
+        Some(id) => match api.update_draft(id, &raw, thread).await {
+            Err(e) if e.is_not_found() => (api.create_draft(&raw, thread).await?, true),
+            other => (other?, false),
+        },
+        None => (api.create_draft(&raw, thread).await?, true),
+    };
+    // Dropped only now the message is safe in Drafts, and only if nothing else settled it.
+    let mut tx = db::begin_write(pool).await?;
+    let still_unsent = store::get(&mut *tx, op_id)
+        .await?
+        .is_some_and(|op| unsent(&op));
+    if still_unsent {
+        store::delete(&mut *tx, op_id).await?;
+    }
+    tx.commit().await?;
+    if !still_unsent {
+        // It went after all: the copy made here would only be a stray draft. (A source draft
+        // that was updated goes with the send's own cleanup.)
+        if created {
+            let _ = api.delete_draft(&draft.id).await;
+        }
+        return Ok(None);
+    }
+    Ok(Some(ReturnedDraft {
+        message_id: draft.message.map(|m| m.id).unwrap_or_default(),
+        draft_id: draft.id,
+    }))
+}
+
+/// The start of a base64url RFC 2822 message, decoded: its headers, and usually some body.
+fn header_block(raw: &str) -> Option<Vec<u8>> {
+    if raw.len() <= HEADER_PREFIX_B64 {
+        return decode_base64url(raw).ok();
+    }
+    // Whole 4-character groups decode on their own; `raw` is ASCII.
+    decode_base64url(raw.get(..HEADER_PREFIX_B64 / 4 * 4)?).ok()
+}
+
 /// Gmail definitively refused (not a network, auth, rate-limit or server problem).
 fn is_rejection(e: &GmailError) -> bool {
     matches!(e, GmailError::Api { status, .. } if (400..500).contains(status) && *status != 401 && *status != 429)
@@ -426,14 +615,19 @@ fn backoff(attempts: i64) -> i64 {
 
 /// Push the account's queued changes to Gmail, oldest first. A change that hits a
 /// network problem stops the queue (order matters) until its backoff passes. Sends being
-/// confirmed don't block anything. Returns whether any op finished.
+/// confirmed don't block anything, and a whole-mailbox change that is waiting holds up later
+/// label and trash changes but never a send. Returns whether any op finished.
 pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
     let mut progressed = false;
     // Conversations of earlier changes still waiting for Gmail. A later change to none of them
     // goes ahead, so a big job waiting out a refusal doesn't hold up the user's next click.
     let mut waiting: BTreeSet<String> = BTreeSet::new();
     let mut send_waiting = false;
-    for op in store::for_account(&engine.db, &engine.account_id).await? {
+    // A whole-mailbox change is waiting: it may touch any conversation, so no later label or
+    // trash change overtakes it. Sends change no labels and go ahead.
+    let mut sweep_waiting = false;
+    // Sends that can't leave now come without their message (see `store::queue`).
+    for op in store::queue(&engine.db, &engine.account_id, now).await? {
         match (op.kind.as_str(), op.status.as_str()) {
             (KIND_SEND, CHECKING) => {
                 if op.next_attempt_at <= now && check_send(engine, &op, now).await? {
@@ -441,6 +635,16 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
                 }
             }
             (KIND_SEND, UNCONFIRMED | FAILED) => {}
+            (KIND_SEND, CLEANUP) => {
+                if op.next_attempt_at <= now {
+                    match Payload::of(&op)?.draft_id {
+                        Some(draft) => {
+                            delete_source_draft(engine, &op.id, &draft, op.attempts, now).await?
+                        }
+                        None => store::delete(&engine.db, &op.id).await?,
+                    }
+                }
+            }
             (_, PENDING) => {
                 let is_send = op.kind == KIND_SEND;
                 // A send waiting out its undo window holds nothing else up.
@@ -450,11 +654,14 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
                 let payload = Payload::of(&op)?;
                 let held = op.next_attempt_at > now
                     || (is_send && send_waiting)
+                    || (!is_send && sweep_waiting)
                     || payload.touched_threads().any(|t| waiting.contains(t));
-                if payload.sweep.is_some() && (held || !waiting.is_empty() || send_waiting) {
-                    // A whole-mailbox change may touch any conversation: nothing overtakes it,
-                    // and it overtakes nothing.
-                    break;
+                let is_sweep = payload.sweep.is_some();
+                if is_sweep && (held || !waiting.is_empty() || send_waiting) {
+                    // A whole-mailbox change may touch any conversation: no label or trash
+                    // change overtakes it, and it overtakes nothing.
+                    sweep_waiting = true;
+                    continue;
                 }
                 if held {
                     waiting.extend(payload.touched_threads().cloned());
@@ -469,6 +676,9 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
                 match step {
                     Step::Done => progressed = true,
                     Step::Continue => {}
+                    // Gmail didn't take the whole-mailbox change this time: like one still
+                    // backing off, it holds label changes, not sends.
+                    Step::Blocked if is_sweep => sweep_waiting = true,
                     Step::Blocked => break,
                 }
             }
@@ -627,6 +837,16 @@ async fn apply_batch(
                     return Box::pin(apply_batch(engine, queued, now)).await;
                 }
             }
+            rollback(engine, op, &e).await?;
+            Ok(Some(Step::Continue))
+        }
+        Err(e)
+            if payload.sweep.is_some()
+                && !never_sent(&e)
+                && op.attempts + 1 >= SWEEP_MAX_ATTEMPTS =>
+        {
+            // Every later label change waits behind a whole-mailbox change, so one Gmail
+            // keeps failing is given up on like a refused one instead of retried for ever.
             rollback(engine, op, &e).await?;
             Ok(Some(Step::Continue))
         }
@@ -790,9 +1010,7 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
     );
     match result {
         Ok(_) => {
-            store::delete(&engine.db, &op.id).await?;
-            send_status(engine, op, "sent");
-            delete_source_draft(engine, op).await;
+            sent(engine, op, payload.draft_id.as_deref(), now).await?;
             Ok(Step::Done)
         }
         Err(e) if never_sent(&e) => {
@@ -828,17 +1046,56 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
     }
 }
 
-/// The message replaced a saved draft: remove it once the message is in Sent. Kept until
-/// then, so a send that never leaves (and is cancelled) loses nothing.
-async fn delete_source_draft(engine: &SyncEngine, op: &DbOp) {
-    let Ok(Some(draft)) = Payload::of(op).map(|p| p.draft_id) else {
-        return;
-    };
-    match engine.api.delete_draft(&draft).await {
+/// Gmail has the message: settle the op, tell the app, then delete the draft it came from.
+async fn sent(
+    engine: &SyncEngine,
+    op: &DbOp,
+    draft_id: Option<&str>,
+    now: i64,
+) -> Result<(), SyncError> {
+    settle_send(&engine.db, &op.id, draft_id, now).await?;
+    send_status(engine, op, "sent");
+    if let Some(draft) = draft_id {
+        delete_source_draft(engine, &op.id, draft, 0, now).await?;
+    }
+    Ok(())
+}
+
+/// The message replaced a saved draft: remove it now that the message is in Sent (kept until
+/// then, so a send that never leaves and is cancelled loses nothing). `op_id` is the send's
+/// `cleanup` op, which goes once the draft is gone or Gmail refuses for good; a network or
+/// server failure keeps it, to try again after a backoff, so the sent message doesn't stay in
+/// Drafts on every device.
+async fn delete_source_draft(
+    engine: &SyncEngine,
+    op_id: &str,
+    draft: &str,
+    attempts: i64,
+    now: i64,
+) -> Result<(), SyncError> {
+    match engine.api.delete_draft(draft).await {
         Ok(()) => {}
         Err(e) if e.is_not_found() => {}
-        Err(e) => tracing::warn!(op = %op.id, error = %e, "couldn't delete the sent draft"),
+        Err(e) if is_rejection(&e) => {
+            tracing::warn!(op = %op_id, error = %e, "Gmail refused to delete the sent draft; leaving it");
+        }
+        Err(e) => {
+            if attempts == 0 {
+                tracing::warn!(op = %op_id, error = %e, "couldn't delete the sent draft; retrying");
+            }
+            let retry = OpProgress {
+                status: CLEANUP,
+                attempts: attempts + 1,
+                next_attempt_at: now + backoff(attempts),
+                checks_done: 0,
+                last_error: Some(&e.to_string()),
+            };
+            store::update_progress(&engine.db, op_id, &retry, now).await?;
+            return Ok(());
+        }
     }
+    store::delete(&engine.db, op_id).await?;
+    Ok(())
 }
 
 /// One scheduled confirmation check for an ambiguous send. Returns whether it confirmed.
@@ -874,9 +1131,11 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
         }
     };
     if found {
-        store::delete(&engine.db, &op.id).await?;
-        send_status(engine, op, "sent");
-        delete_source_draft(engine, op).await;
+        // `op` came from the queue without its payload: read the draft from the stored op.
+        let mut conn = engine.db.acquire().await?;
+        let draft = source_draft(&mut conn, &op.id).await?;
+        drop(conn);
+        sent(engine, op, draft.as_deref(), now).await?;
         return Ok(true);
     }
     let checks_done = op.checks_done + 1;

@@ -305,12 +305,14 @@ function PopoverBody({ open }: { open: OpenEvent }) {
     setPos({ left, top });
   }, [open, ready, load]);
 
-  // Focus moves in when it opens and back to the event when it closes.
+  // Focus moves in when it opens and back to the event when it closes. Only on opening (another
+  // event is a new body, by its key): `open` is a new object after every events read (a sync, an
+  // answer to the invite), and that mustn't pull focus away from what the user is on.
+  const anchor = open.anchor;
   useEffect(() => {
     if (!ready) return;
     ref.current?.querySelector<HTMLElement>(".cal-pop__close")?.focus();
-  }, [open, ready]);
-  const anchor = open.anchor;
+  }, [anchor, ready]);
   useEffect(() => {
     if (!anchor) return;
     return () => {

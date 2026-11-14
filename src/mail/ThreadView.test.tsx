@@ -764,6 +764,25 @@ test("nearby cached conversations keep their iframe documents through navigation
   expect(container.querySelectorAll("iframe").length).toBeLessThanOrEqual(5);
 });
 
+test("Spam and Trash neighbours aren't rendered out of sight, so their remote images stay unloaded", () => {
+  const ds = Array.from({ length: 3 }, (_, i) => {
+    const d = detail([
+      message(i, {
+        bodyHtml: `<img src="https://example.com/${i}.png">`,
+        labelIds: i === 0 ? ["SPAM"] : i === 1 ? ["TRASH"] : ["INBOX"],
+      }),
+    ]);
+    return { ...d, thread: { ...d.thread, id: `t${i}` } };
+  });
+  useMailStore.setState({ threads: ds.map((d) => d.thread) });
+  useThreadStore.setState({ details: new Map(ds.map((d) => [threadKey("a1", d.thread.id), d])) });
+  const { container } = renderView();
+  expect(container.querySelectorAll("iframe")).toHaveLength(0);
+  // Opened, it shows like any conversation.
+  act(() => useUiStore.setState({ openThread: threadKey("a1", "t0") }));
+  expect(container.querySelectorAll("iframe")).toHaveLength(2);
+});
+
 test("opting out releases hidden frames, keeping current images and text cache", () => {
   const d = detail([
     message(1, { bodyHtml: '<img src="pheeme-att://localhost/a1/m1/logo?t=signed">' }),

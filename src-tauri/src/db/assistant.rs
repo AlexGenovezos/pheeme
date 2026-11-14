@@ -136,6 +136,25 @@ pub async fn list_activity(pool: &SqlitePool, limit: i64) -> Result<Vec<DbActivi
     .await?)
 }
 
+/// Delete the activity rows whose summary, arguments, result or error contain any of
+/// `needles` (case-insensitive), e.g. a removed account's id and email. `assistant_activity`
+/// has no account column, so this is the only way to tie a row to an account.
+pub async fn delete_activity_mentioning(pool: &SqlitePool, needles: &[&str]) -> Result<()> {
+    for needle in needles.iter().filter(|n| !n.is_empty()) {
+        sqlx::query!(
+            "DELETE FROM assistant_activity
+             WHERE instr(lower(summary), lower(?1)) > 0
+                OR instr(lower(arguments), lower(?1)) > 0
+                OR instr(lower(COALESCE(result, '')), lower(?1)) > 0
+                OR instr(lower(COALESCE(error, '')), lower(?1)) > 0",
+            needle
+        )
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
 pub async fn clear_activity(pool: &SqlitePool) -> Result<()> {
     sqlx::query!("DELETE FROM assistant_activity")
         .execute(pool)
@@ -218,5 +237,42 @@ mod tests {
 
         clear_activity(&db.pool).await.unwrap();
         assert!(list_activity(&db.pool, 10).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn activity_of_a_removed_account_is_deleted_by_id_or_email() {
+        let db = TestDb::with_account("a").await;
+        for (n, arguments, result) in [
+            (1, r#"{"account":"Me@Example.com"}"#, None),
+            (2, r#"{"thread_id":"t"}"#, Some(r#"{"account":"acct-1"}"#)),
+            (3, r#"{"account":"other@example.com"}"#, None),
+            (4, r#"{}"#, None),
+        ] {
+            add_activity(
+                &db.pool,
+                &NewActivity {
+                    client_id: "c",
+                    client_name: "Claude",
+                    tool: "t",
+                    summary: "",
+                    arguments,
+                    result,
+                    error: None,
+                    at: n,
+                },
+            )
+            .await
+            .unwrap();
+        }
+        delete_activity_mentioning(&db.pool, &["acct-1", "me@example.com", ""])
+            .await
+            .unwrap();
+        let left: Vec<_> = list_activity(&db.pool, 10)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|a| a.at)
+            .collect();
+        assert_eq!(left, [4, 3]);
     }
 }

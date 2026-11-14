@@ -16,8 +16,11 @@ attached to the email.
 - `src/types.ts`, `src/cloudflare.d.ts` — the minimal runtime types used; no npm dependencies.
 
 Limits: 2 uploads per IP per minute (approximate, per Cloudflare location),
-200 accepted uploads per UTC day (exact, one Durable Object), 5 MB per bundle.
-Over a limit the Worker answers 429 and stores and sends nothing.
+5 accepted uploads per IP per UTC day and 200 in all (exact, one Durable Object;
+the per-IP count is checked first, so one address can't use up the 200), 5 MB
+per bundle. Over a limit the Worker answers 429 and stores and sends nothing.
+The Durable Object keys the per-IP counts by a hash of the IP and a random salt
+that is replaced every UTC day, so no address is kept past the day.
 
 ## Request contract
 
@@ -34,13 +37,16 @@ Responses: `204` stored; `400` malformed; `404`/`405` wrong path or method; `413
 `{ installId, version, os, osVersion, arch }`. `installId` is a lowercase v4
 UUID the app makes up on first use; the other fields are at most 100
 characters with no line breaks. Responses: `204` stored; `400` malformed;
-`405` wrong method; `413` too large; `429` over 30 pings per IP per minute.
+`405` wrong method; `413` too large; `429` over 30 pings per IP per minute, or
+over the daily limit on new install IDs (10 per IP and 1000 in all per UTC day;
+an install the Worker already knows is never counted).
 
 Each install has one object, `installs/<installId>.json`
 (`{ firstSeen, lastSeen, version, os, osVersion, arch }`), overwritten by every
 ping. The bucket's 30-day expiry rule deletes it 30 days after the last ping,
 so the objects under `installs/` are the installs active in the last 30 days.
-No IP address or ping history is kept. The app pings at most once every 20
+No IP address or ping history is kept (Workers invocation logs are turned off
+in `wrangler.jsonc` for that reason). The app pings at most once every 20
 hours, only once an account is connected, and never from debug builds (unless
 `PHEEME_TELEMETRY_URL` is set). Settings › Diagnostics and the welcome screen
 turn it off; the privacy policy (`site/public/privacy.html`) describes it.
@@ -135,6 +141,8 @@ Overview); each object's custom metadata holds `version`, `os` and `replyTo`.
 Replying to the notification email goes straight to the user's reply address.
 
 Live logs (for example a failed notification): `wrangler tail pheeme-diagnostics`.
+Nothing is logged persistently (observability is off), so a failure is only
+visible while a tail is running.
 
 ## Development
 

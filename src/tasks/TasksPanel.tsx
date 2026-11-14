@@ -802,7 +802,13 @@ function TaskEditor({
     if (notes.trim()) edit.notes = notes;
     if (due) edit.due = due;
     const created = await store().addTask(accountId, listId, edit, placement);
-    if (another && created && useTasksStore.getState().editing === current)
+    if (!created) {
+      // Not added (offline, or Google refused; the toast says why): keep the editor open with what
+      // was typed, so Enter or leaving it again tries again.
+      done.current = false;
+      return;
+    }
+    if (another && useTasksStore.getState().editing === current)
       store().setEditing(
         newTaskKey(accountId, listId, { parent: placement?.parent ?? null, previous: created.id }),
       );

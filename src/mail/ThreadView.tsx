@@ -20,6 +20,7 @@ import { registry } from "../keyboard/registry";
 import { FindBar } from "./find/FindBar";
 import { handleScrollKeyDown, handleScrollKeyUp, stopKeyScroll } from "./keyScroll";
 import { parseThreadKey, threadKey } from "./mailboxes";
+import { isJunk } from "./preloadImages";
 import { openTimer } from "./openTiming";
 import { conversationCode } from "./verificationCode";
 import "./mail.css";
@@ -135,8 +136,12 @@ export function ThreadView() {
     : at < 0
       ? keys.slice(0, 2)
       : keys.slice(Math.max(0, at - 2), at + 3);
+  // Neighbours in Spam or Trash aren't rendered ahead: that would load their remote images unopened (`isJunk`).
   const wanted = new Set(
-    [...nearby, ...(openKey ? [openKey] : [])].filter((key) => details.has(key)),
+    [...nearby, ...(openKey ? [openKey] : [])].filter((key) => {
+      const cached = details.get(key);
+      return cached !== undefined && (key === openKey || !isJunk(cached));
+    }),
   );
   // Survivors keep their place: moving an iframe in the DOM throws its document away.
   const next = [

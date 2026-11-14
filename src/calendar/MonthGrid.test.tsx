@@ -86,3 +86,36 @@ describe("MonthGrid keyboard navigation", () => {
     expect(screen.getByRole("grid")).toBeTruthy();
   });
 });
+
+describe("Mini month keyboard navigation", () => {
+  const mini = (day: string) =>
+    document.querySelector<HTMLElement>(`.mini-month [data-date="${day}"] .mini-month__day`)!;
+  const tabbable = () =>
+    [...document.querySelectorAll<HTMLElement>(".mini-month__day")].filter((b) => b.tabIndex === 0);
+
+  test("the day the calendar is on is the one tab stop; arrows move by day and week", async () => {
+    await open();
+    expect(tabbable()).toEqual([mini("2026-11-11")]);
+    mini("2026-11-11").focus();
+    fireEvent.keyDown(mini("2026-11-11"), { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(mini("2026-11-10"));
+    expect(tabbable()).toEqual([mini("2026-11-10")]);
+    fireEvent.keyDown(mini("2026-11-10"), { key: "ArrowUp" });
+    expect(document.activeElement).toBe(mini("2026-11-03"));
+    // Moving focus doesn't move the calendar; Enter (a click) does.
+    expect(useCalendarStore.getState().anchor).toBe("2026-11-11");
+    fireEvent.click(mini("2026-11-03"));
+    await flush();
+    expect(useCalendarStore.getState().anchor).toBe("2026-11-03");
+  });
+
+  test("Page Down shows the next month in the mini month and focuses the same day there", async () => {
+    await open();
+    mini("2026-11-11").focus();
+    fireEvent.keyDown(mini("2026-11-11"), { key: "PageDown" });
+    await flush();
+    expect(screen.getByRole("table", { name: "December 2026" })).toBeInTheDocument();
+    expect(document.activeElement).toBe(mini("2026-12-11"));
+    expect(useCalendarStore.getState().anchor).toBe("2026-11-11");
+  });
+});

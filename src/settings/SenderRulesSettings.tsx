@@ -6,7 +6,8 @@ import { deleteSenderRule, listSenderRules, type SenderRule, toCommandError } fr
 import { categoryName } from "../mail/CategoryMoveDialog";
 import { ReconnectButton } from "../onboarding/Reconnect";
 import { useAccountStore } from "../store/accountStore";
-import { SettingsRow, SettingsSection } from "./rows";
+import { Skeleton } from "../components/ui/Skeleton";
+import { PendingButton, SettingsRow, SettingsSection } from "./rows";
 
 type Rules =
   | { kind: "loading" }
@@ -66,7 +67,14 @@ function AccountRules({ accountId, email }: { accountId: string; email: string }
 
   return (
     <SettingsSection title={email}>
-      {state.kind === "loading" && <SettingsRow title="Loading sender rules…" />}
+      {state.kind === "loading" && (
+        // One row shaped like a rule's, so the first rule arrives in its place.
+        <SettingsRow
+          title={<Skeleton width="14em" />}
+          description={<Skeleton width="9em" />}
+          control={<PendingButton />}
+        />
+      )}
       {state.kind === "missing-scope" && (
         <SettingsRow
           title="Pheeme can't see this account's Gmail filters"

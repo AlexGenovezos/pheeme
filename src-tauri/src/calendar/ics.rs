@@ -5,7 +5,7 @@
 
 use super::meeting::{self, MeetingLink};
 use chrono::{
-    DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc, Weekday,
+    DateTime, Datelike, Days, Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc, Weekday,
 };
 use chrono_tz::Tz;
 
@@ -199,10 +199,9 @@ fn address(line: &Line) -> Option<String> {
         }
     }
     let v = line.value.trim();
-    let v = if v.len() >= 7 && v[..7].eq_ignore_ascii_case("mailto:") {
-        &v[7..]
-    } else {
-        v
+    let v = match v.get(..7) {
+        Some(prefix) if prefix.eq_ignore_ascii_case("mailto:") => &v[7..],
+        _ => v,
     };
     v.contains('@').then(|| v.trim().to_owned())
 }
@@ -347,8 +346,8 @@ fn parse_offset(v: &str) -> Option<i32> {
     if rest.len() < 4 {
         return None;
     }
-    let h: i32 = rest[..2].parse().ok()?;
-    let m: i32 = rest[2..4].parse().ok()?;
+    let h: i32 = rest.get(..2)?.parse().ok()?;
+    let m: i32 = rest.get(2..4)?.parse().ok()?;
     let s: i32 = rest.get(4..6).and_then(|s| s.parse().ok()).unwrap_or(0);
     Some(sign * (h * 3600 + m * 60 + s))
 }
@@ -378,11 +377,11 @@ fn yearly_rule(rule: &str) -> Option<(u32, i32, Weekday)> {
             "BYDAY" => {
                 let v = v.to_ascii_uppercase();
                 let split = v.len().checked_sub(2)?;
-                let n: i32 = match &v[..split] {
+                let n: i32 = match v.get(..split)? {
                     "" => 1,
                     n => n.trim_start_matches('+').parse().ok()?,
                 };
-                day = Some((n, weekday(&v[split..])?));
+                day = Some((n, weekday(v.get(split..)?)?));
             }
             _ => {}
         }
@@ -396,7 +395,9 @@ fn nth_weekday(year: i32, month: u32, n: i32, wd: Weekday) -> Option<NaiveDate> 
     if n > 0 {
         let first = NaiveDate::from_ymd_opt(year, month, 1)?;
         let shift = (7 + wd.num_days_from_monday() - first.weekday().num_days_from_monday()) % 7;
-        first.checked_add_signed(Duration::days(i64::from(shift) + 7 * i64::from(n - 1)))
+        first.checked_add_signed(Duration::try_days(
+            i64::from(shift) + 7 * i64::from(n).checked_sub(1)?,
+        )?)
     } else {
         let next = if month == 12 {
             NaiveDate::from_ymd_opt(year + 1, 1, 1)?
@@ -405,7 +406,9 @@ fn nth_weekday(year: i32, month: u32, n: i32, wd: Weekday) -> Option<NaiveDate> 
         };
         let last = next.pred_opt()?;
         let shift = (7 + last.weekday().num_days_from_monday() - wd.num_days_from_monday()) % 7;
-        last.checked_sub_signed(Duration::days(i64::from(shift) + 7 * i64::from(-n - 1)))
+        last.checked_sub_signed(Duration::try_days(
+            i64::from(shift) + 7 * (-i64::from(n) - 1),
+        )?)
     }
 }
 
@@ -452,7 +455,10 @@ impl Zones<'_> {
                 .from_local_datetime(&t)
                 .earliest()
                 // A time skipped by daylight saving: an hour later is the same instant.
-                .or_else(|| tz.from_local_datetime(&(t + Duration::hours(1))).earliest())?;
+                .or_else(|| {
+                    let later = t.checked_add_signed(Duration::hours(1))?;
+                    tz.from_local_datetime(&later).earliest()
+                })?;
             return Some((at.timestamp_millis(), Some(tz.name().to_owned())));
         }
         // An unknown name: its VTIMEZONE's offsets, else UTC.
@@ -460,7 +466,7 @@ impl Zones<'_> {
             .and_then(|id| self.defined.iter().find(|(name, _)| name == id))
             .and_then(|(_, vtz)| vtz.offset_at(t))
             .unwrap_or(0);
-        let utc = t - Duration::seconds(i64::from(offset));
+        let utc = t.checked_sub_signed(Duration::try_seconds(i64::from(offset))?)?;
         Some((Utc.from_utc_datetime(&utc).timestamp_millis(), None))
     }
 
@@ -471,7 +477,7 @@ impl Zones<'_> {
             .is_some_and(|x| x.eq_ignore_ascii_case("DATE"))
             || (v.len() == 8 && v.bytes().all(|b| b.is_ascii_digit()));
         if is_date {
-            return NaiveDate::parse_from_str(&v[..8.min(v.len())], "%Y%m%d")
+            return NaiveDate::parse_from_str(v.get(..8).unwrap_or(v), "%Y%m%d")
                 .ok()
                 .map(IcsTime::Day);
         }
@@ -509,14 +515,15 @@ fn parse_duration(v: &str) -> Option<Duration> {
             d if d.is_ascii_digit() => number.push(d),
             unit => {
                 let n: i64 = std::mem::take(&mut number).parse().ok()?;
-                total += match (unit, in_time) {
-                    ('W', false) => Duration::weeks(n),
-                    ('D', false) => Duration::days(n),
-                    ('H', true) => Duration::hours(n),
-                    ('M', true) => Duration::minutes(n),
-                    ('S', true) => Duration::seconds(n),
+                let part = match (unit, in_time) {
+                    ('W', false) => Duration::try_weeks(n),
+                    ('D', false) => Duration::try_days(n),
+                    ('H', true) => Duration::try_hours(n),
+                    ('M', true) => Duration::try_minutes(n),
+                    ('S', true) => Duration::try_seconds(n),
                     _ => return None,
                 };
+                total = total.checked_add(&part?)?;
             }
         }
     }
@@ -621,15 +628,17 @@ fn event_of(lines: &[Line], method: String, zones: &Zones) -> Option<Invite> {
             let d = parse_duration(&get("DURATION")?.value)?;
             Some(match &start {
                 IcsTime::At { ms, zone } => IcsTime::At {
-                    ms: ms + d.num_milliseconds(),
+                    ms: ms.checked_add(d.num_milliseconds())?,
                     zone: zone.clone(),
                 },
-                IcsTime::Day(day) => IcsTime::Day(*day + Duration::days(d.num_days().max(1))),
+                IcsTime::Day(day) => {
+                    IcsTime::Day(day.checked_add_signed(Duration::try_days(d.num_days().max(1))?)?)
+                }
             })
         })
         // RFC 5545: no end is a one-day event for a date, an instant for a time.
         .unwrap_or_else(|| match &start {
-            IcsTime::Day(d) => IcsTime::Day(*d + Duration::days(1)),
+            IcsTime::Day(d) => IcsTime::Day(d.checked_add_days(Days::new(1)).unwrap_or(*d)),
             at => at.clone(),
         });
     let recurrence = lines
@@ -941,6 +950,47 @@ mod tests {
         let i = parse(ics, None).unwrap();
         assert_eq!(i.summary.as_deref(), Some("One, two; three four"));
         assert_eq!(i.description.as_deref(), Some("a\nb\\c"));
+    }
+
+    #[test]
+    fn hostile_input_does_not_panic() {
+        let wrap = |body: &str| {
+            format!("BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:u\n{body}\nEND:VEVENT\nEND:VCALENDAR\n")
+        };
+        // A multi-byte character straddling the byte offset of a slice.
+        let i = parse(
+            &wrap("DTSTART:20261112T090000Z\nATTENDEE:aaaaaaé@x.org"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(i.attendees.len(), 1);
+        assert_eq!(parse_offset("aé1"), None);
+        assert_eq!(parse_offset("+aé1"), None);
+        assert_eq!(yearly_rule("FREQ=YEARLY;BYMONTH=3;BYDAY=éa"), None);
+        let tz = "BEGIN:VTIMEZONE\nTZID:X\nBEGIN:STANDARD\nDTSTART:20260101T000000\nTZOFFSETTO:aé1\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=éa\nEND:STANDARD\nEND:VTIMEZONE\n";
+        let ics = format!(
+            "BEGIN:VCALENDAR\n{tz}BEGIN:VEVENT\nUID:u\nDTSTART;TZID=X:20261112T090000\nEND:VEVENT\nEND:VCALENDAR\n"
+        );
+        assert!(parse(&ics, None).is_some());
+        assert!(parse(&wrap("DTSTART;VALUE=DATE:2026111é"), None).is_none());
+        assert_eq!(parse_duration("P99999999999999999W"), None);
+        assert_eq!(parse_duration("P9223372036854775807W"), None);
+        assert_eq!(parse_duration("P99999999999D99999999999W"), None);
+        let i = parse(
+            &wrap("DTSTART:20261112T090000Z\nDURATION:P99999999999999999W"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(i.end, i.start, "an unreadable duration leaves no end");
+        let i = parse(
+            &wrap("DTSTART;VALUE=DATE:20261112\nDURATION:P999999999D"),
+            None,
+        );
+        assert!(i.is_some());
+        let i = parse(&wrap("DTSTART;VALUE=DATE:+262142\nDURATION:P1D"), None);
+        assert!(i.is_none());
+        assert_eq!(nth_weekday(2026, 3, i32::MAX, Weekday::Sun), None);
+        assert_eq!(nth_weekday(2026, 3, i32::MIN, Weekday::Sun), None);
     }
 
     #[test]

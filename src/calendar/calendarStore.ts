@@ -143,6 +143,10 @@ export function screenDays(s: Pick<CalendarState, "view" | "anchor" | "accounts"
 
 let accountsTicket = 0;
 let eventsTicket = 0;
+/** The newest events read still going, what it reads (`key`), and when it lands. */
+let latest: { ticket: number; key: string; done: Promise<void> } | null = null;
+/** Resolves once the newest read has landed (at once when none is going). */
+const settled = (): Promise<void> => latest?.done ?? Promise.resolve();
 /** Where the calendar is going while it waits for the events there (they weren't in memory). */
 let pending: Place | null = null;
 
@@ -157,9 +161,10 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
    * days are already in memory it shows at once (and reads the new months in the background);
    * otherwise it stays where it is until they're read, then shows with them, never half-filled.
    * `reload` reads the events again even when they're in memory (sync, a write).
+   * Resolves once the events on screen are current: a read overtaken by a newer one resolves when
+   * that one lands, so a caller that awaits it never goes on with events older than its change.
    */
-  const show = async (place: Place, reload: boolean) => {
-    const ticket = ++eventsTicket;
+  const show = (place: Place, reload: boolean): Promise<void> => {
     const s = get();
     const tz = displayZone(s.accounts);
     const weekStart = weekStartOf(s.accounts);
@@ -177,13 +182,38 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
     const tasks = useTasksStore.getState();
     const end = addDays(around.last, 1);
     const tasksMoved = tasks.datedFor !== `${around.first}:${end}`;
-    if (ready && !moved && !reload && !tasksMoved) return;
+    const key = `${tz}:${want.from}:${want.to}:${around.first}:${end}`;
+    if (ready && !moved && !reload && !tasksMoved) {
+      // Nothing new to read. A read still going for these same days (a reload) carries on; one for
+      // days left behind would show them, so it's dropped.
+      if (latest && latest.key !== key) {
+        ++eventsTicket;
+        latest = null;
+      }
+      return settled();
+    }
+    const ticket = ++eventsTicket;
+    const done = read(ticket, place, ready, want, around.first, end, tasksMoved, tz);
+    latest = { ticket, key, done };
+    return done;
+  };
 
+  const read = async (
+    ticket: number,
+    place: Place,
+    ready: boolean,
+    want: EventsRange,
+    first: string,
+    end: string,
+    tasksMoved: boolean,
+    tz: string,
+  ): Promise<void> => {
+    const tasks = useTasksStore.getState();
     // Read here rather than through the tasks store, so the grid on screen keeps its tasks until
     // these show together with the events. `undefined`: the read failed.
     const datedBefore = tasks.dated;
     const datedRead = tasksMoved
-      ? getDatedTasks(around.first, end).then(
+      ? getDatedTasks(first, end).then(
           (d) => d ?? [],
           () => undefined,
         )
@@ -193,12 +223,13 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
         getCalendarEvents(want.from, want.to, tz),
         datedRead,
       ]);
-      if (ticket !== eventsTicket) return;
+      if (ticket !== eventsTicket) return settled();
+      latest = null;
       pending = null;
       // A task edited or synced meanwhile may be missing from what was read: read again.
       const changed = useTasksStore.getState().dated !== datedBefore;
-      if (dated && !changed) useTasksStore.getState().setDated(around.first, end, dated);
-      else if (dated !== null) void useTasksStore.getState().loadDated(around.first, end);
+      if (dated && !changed) useTasksStore.getState().setDated(first, end, dated);
+      else if (dated !== null) void useTasksStore.getState().loadDated(first, end);
       // The open popover's event may have moved or gone; keep it only while it's still there.
       const open = get().open;
       const still =
@@ -217,7 +248,8 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
         open: open && still ? { ...open, event: still } : null,
       });
     } catch (e) {
-      if (ticket !== eventsTicket) return;
+      if (ticket !== eventsTicket) return settled();
+      latest = null;
       pending = null;
       set({ ...(ready ? {} : place), loadError: toCommandError(e).message });
     }

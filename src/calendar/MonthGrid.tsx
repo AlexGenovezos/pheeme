@@ -137,6 +137,43 @@ function sameDayInMonth(day: string, n: number): string {
   return addDays(first, Math.min(Number(day.slice(8)), length) - 1);
 }
 
+/**
+ * Where a key pressed on a day button (class `dayClass`) of a grid of weeks moves the focus: arrows by day
+ * and week, Home/End to the ends of the week, Page Up/Down by month. `null` for any other key or target.
+ */
+export function gridKeyStep(
+  e: KeyboardEvent<HTMLElement>,
+  dayClass: string,
+  days: string[],
+): { next: string; byMonth: boolean } | null {
+  const target = e.target as HTMLElement;
+  if (!target.classList.contains(dayClass) || e.altKey || e.ctrlKey || e.metaKey) return null;
+  const day = target.closest<HTMLElement>("[data-date]")?.dataset.date;
+  if (!day) return null;
+  const col = days.indexOf(day) % 7;
+  const by = (next: string, byMonth = false) => ({ next, byMonth });
+  switch (e.key) {
+    case "ArrowLeft":
+      return by(addDays(day, -1));
+    case "ArrowRight":
+      return by(addDays(day, 1));
+    case "ArrowUp":
+      return by(addDays(day, -7));
+    case "ArrowDown":
+      return by(addDays(day, 7));
+    case "Home":
+      return by(addDays(day, -col));
+    case "End":
+      return by(addDays(day, 6 - col));
+    case "PageUp":
+      return by(sameDayInMonth(day, -1), true);
+    case "PageDown":
+      return by(sameDayInMonth(day, 1), true);
+    default:
+      return null;
+  }
+}
+
 export function MonthGrid({
   days,
   anchor,
@@ -187,43 +224,9 @@ export function MonthGrid({
   }, [days]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    if (!target.classList.contains("cal-month__date") || e.altKey || e.ctrlKey || e.metaKey) return;
-    const day = target.closest<HTMLElement>("[data-date]")?.dataset.date;
-    if (!day) return;
-    const col = days.indexOf(day) % 7;
-    let next: string;
-    let byMonth = false;
-    switch (e.key) {
-      case "ArrowLeft":
-        next = addDays(day, -1);
-        break;
-      case "ArrowRight":
-        next = addDays(day, 1);
-        break;
-      case "ArrowUp":
-        next = addDays(day, -7);
-        break;
-      case "ArrowDown":
-        next = addDays(day, 7);
-        break;
-      case "Home":
-        next = addDays(day, -col);
-        break;
-      case "End":
-        next = addDays(day, 6 - col);
-        break;
-      case "PageUp":
-        next = sameDayInMonth(day, -1);
-        byMonth = true;
-        break;
-      case "PageDown":
-        next = sameDayInMonth(day, 1);
-        byMonth = true;
-        break;
-      default:
-        return;
-    }
+    const step = gridKeyStep(e, "cal-month__date", days);
+    if (!step) return;
+    const { next, byMonth } = step;
     e.preventDefault();
     setFocused(next);
     if (byMonth || !focusDay(next)) {

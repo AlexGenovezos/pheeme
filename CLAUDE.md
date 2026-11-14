@@ -53,7 +53,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 
 ### Two-Process Model
 
-- **Frontend** (`src/`) — React 18 + TypeScript, built with Vite. Communicates with Rust via Tauri's `invoke()` IPC. Typed wrappers live in [src/lib/tauri.ts](src/lib/tauri.ts).
+- **Frontend** (`src/`) — React 19 + TypeScript, built with Vite. Communicates with Rust via Tauri's `invoke()` IPC. Typed wrappers live in [src/lib/tauri.ts](src/lib/tauri.ts).
 - **Backend** (`src-tauri/src/`) — Rust Tauri app. Exposes commands, manages DB, handles Gmail API and OAuth.
 
 ### Rust Module Layout
@@ -64,7 +64,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 | `db/` | All SQLite CRUD via SQLx — one file per entity (messages, threads, labels) |
 | `commands/` | Tauri command handlers (the IPC surface the frontend calls) |
 | `gmail/` | Gmail REST API client. `auth.rs` is OAuth (PKCE + loopback redirect); `usage.rs` counts, in memory, each account's Gmail quota units per minute for the last hour by source (`usage_source` scopes: the outbox in `sync/manager.rs`, assistants in `local_api`; else by priority) and Gmail's rate-limit refusals, for Settings › Accounts (`gmail_quota_usage`) |
-| `sync/` | `engine.rs` initial/incremental (`history.list`)/expiry-reconcile/backfill; `outbox.rs` optimistic ops + safe sends; `manager.rs` per-account scheduling and triggers; `connectivity.rs` notices when Google can't be reached (a sync fails to connect): syncs and queued changes pause, a light check runs every 5 s, and reconnecting syncs every account and makes waiting changes due (`network:status`, one sidebar note); a Gmail rate limit on a sync or the backfill is a slowdown, not a failure: `sync:rate_limited` (not `sync:error`), one sidebar note that names another device when Settings' usage check shows this Pheeme couldn't have hit the limit alone; `api.rs` the `MailApi` trait (`fake.rs` is the in-memory Gmail for tests) |
+| `sync/` | `engine.rs` initial/incremental (`history.list`)/expiry-reconcile/backfill (after history expiry the full resync proceeds in resumable slices of `RESYNC_CHUNK` cached messages between ordinary syncs, its position kept in `app_settings`, so queued changes and new mail never wait for the whole mailbox); `outbox.rs` optimistic ops + safe sends (a sent message's source draft is deleted by a retried `cleanup` op: a network or server failure keeps it for another try after a backoff, Gmail refusing for good drops it); `manager.rs` per-account scheduling and triggers; `connectivity.rs` notices when Google can't be reached (a sync fails to connect): syncs and queued changes pause, a light check runs every 5 s, and reconnecting syncs every account and makes waiting changes due (`network:status`, one sidebar note); a Gmail rate limit on a sync or the backfill is a slowdown, not a failure: `sync:rate_limited` (not `sync:error`), one sidebar note that names another device when Settings' usage check shows this Pheeme couldn't have hit the limit alone; `api.rs` the `MailApi` trait (`fake.rs` is the in-memory Gmail for tests) |
 | `http.rs` | Every `reqwest` client is built here (`client`, `client_builder`), which installs the rustls crypto provider; clippy rejects `reqwest::Client::new`/`builder` and `reqwest::get` |
 | `cadence.rs` | One clock for the background checks: mail (10 s), calendar and tasks (60 s, 15 s in front) each sleep until the next whole multiple of their period after a shared start, so they wake the computer together |
 | `render.rs` | Email HTML sanitizer (`ammonia`) and signed `pheeme-att` URLs for inline `cid:` images |
@@ -87,7 +87,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 
 ### Frontend State
 
-Eleven Zustand stores:
+The main Zustand stores:
 - `accountStore` — connected accounts (load, upsert, remove)
 - `mailStore` — the active mailbox or search results (paged, optimistic patches), reloaded on `sync:*` events; search combines instant local matches with background Gmail pages
 - `labelStore` — per-account labels, label counts and category counts, plus the All Inboxes unread count
@@ -118,7 +118,7 @@ The speed reader (`src/speedread/`) flashes one word at a time from emails that 
 
 ### Database Schema Summary
 
-Twenty-two tables.
+Twenty-five tables, plus the `messages_fts` full-text index.
 - `accounts` — Account identity and Gmail history_id for sync (no tokens; those are in the keychain)
 - `labels` — Gmail labels with message/thread unread/total counters
 - `threads` — Conversation rows, derived from their messages by `threads::recompute_threads` (never written directly by sync)
@@ -135,6 +135,9 @@ Twenty-two tables.
 - `calendar_access` — Per account: whether calendar access was allowed and how the last calendar sync went, plus the user's Calendar time zone and week start
 - `task_lists` / `tasks` — Each account's Google Tasks lists (with `hidden`, Pheeme's local sidebar tick, and the poll mark `synced_through_ms` / `full_synced_at`) and their tasks (parent, position, notes, due date, status, raw JSON)
 - `tasks_access` — Per account: whether its tasks can be read (`api_disabled` means the Tasks API is off) and when they last synced, kept apart from `calendar_access`
+- `app_settings` — App-wide preferences the Rust side needs before the window loads, one text row per setting (`db/settings.rs`: Gmail quota pace, tray icon, telemetry and its install ID, notification schedule, calendar reminders, assistant switches, per-account hidden inbox tabs, the resync position)
+- `notification_settings` — Per account: whether new-mail notifications are on (`db/desktop.rs`); cascades from accounts
+- `recent_searches` — The last 20 searches, newest first (`db/search.rs`)
 - `assistant_clients` / `assistant_activity` — Connected MCP clients (token hashes) and their latest 1,000 tool calls with arguments and results
 
 ## Key Conventions

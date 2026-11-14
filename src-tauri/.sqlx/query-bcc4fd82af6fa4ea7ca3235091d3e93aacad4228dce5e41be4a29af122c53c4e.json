@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM assistant_activity\n             WHERE instr(lower(summary), lower(?1)) > 0\n                OR instr(lower(arguments), lower(?1)) > 0\n                OR instr(lower(COALESCE(result, '')), lower(?1)) > 0\n                OR instr(lower(COALESCE(error, '')), lower(?1)) > 0",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "bcc4fd82af6fa4ea7ca3235091d3e93aacad4228dce5e41be4a29af122c53c4e"
+}
