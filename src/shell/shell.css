@@ -15,6 +15,11 @@
   transition: grid-template-columns var(--duration-base) var(--ease-standard);
 }
 
+/* macOS vibrancy: let the material show behind the sidebar, unless a sidebar color painted it solid. */
+html[data-vibrancy] .shell {
+  background: var(--color-sidebar-surface, transparent);
+}
+
 .shell:is([data-sidebar="collapsed"], [data-sidebar="overlay"]) {
   grid-template-columns:
     0

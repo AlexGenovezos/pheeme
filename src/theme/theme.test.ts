@@ -10,10 +10,15 @@ import { CUSTOM_THEMES_KEY, parseThemeText } from "./customThemes";
 import {
   definitionOf,
   initTheme,
+  inkSidebarTheme,
   previewTheme,
+  readSidebarStyle,
   readThemeMode,
   resolveTheme,
+  SIDEBAR_STYLE_KEY,
   sidebarSurfaceCss,
+  TINTED_SIDEBAR_BG,
+  tintedSidebarTokens,
   THEME_BOOT_KEY,
   THEME_CHOICE_KEYS,
   THEME_MODE_KEY,
@@ -426,8 +431,13 @@ describe("no white flash", () => {
 });
 
 describe("sidebarSurfaceCss", () => {
-  test("Pheeme Light's sidebar wears Pheeme Dark's colours, solid", () => {
-    const css = sidebarSurfaceCss(lightTheme);
+  test("Light, the default, leaves Pheeme Light's own sidebar (and macOS vibrancy) alone", () => {
+    expect(readSidebarStyle()).toBe("light");
+    expect(sidebarSurfaceCss(lightTheme, "light")).toBe("");
+  });
+
+  test("Dark: Pheeme Light's sidebar wears Pheeme Dark's colours, solid", () => {
+    const css = sidebarSurfaceCss(lightTheme, "dark");
     expect(css).toContain(`--color-sidebar-surface:${darkTheme.tokens["--color-sidebar-bg"]}`);
     expect(css).toContain(`.shell__sidebar{`);
     expect(css).toContain(`--color-foreground:${darkTheme.tokens["--color-foreground"]}`);
@@ -435,13 +445,45 @@ describe("sidebarSurfaceCss", () => {
     expect(css).toContain("--color-pane-border:transparent");
   });
 
+  test("Ink: a whole deep-blue palette, every color readable on it", () => {
+    const ink = inkSidebarTheme().tokens;
+    expect(ink["--color-sidebar-bg"]).not.toBe(darkTheme.tokens["--color-sidebar-bg"]);
+    expect(contrastFailures(ink)).toEqual([]);
+    const css = sidebarSurfaceCss(lightTheme, "ink");
+    expect(css).toContain(`--color-sidebar-surface:${ink["--color-sidebar-bg"]}`);
+    expect(css).toContain("color-scheme:dark");
+  });
+
+  test("Tinted: Pheeme Light on a blue wash, changing only what must change to stay readable", () => {
+    const bg = toCanonicalThemeColor(TINTED_SIDEBAR_BG)!;
+    const tinted = tintedSidebarTokens();
+    expect(tinted["--color-sidebar-bg"]).toBe(bg);
+    expect(tinted["--color-foreground"]).toBeUndefined();
+    expect(contrastFailures({ ...lightTheme.tokens, ...tinted })).toEqual([]);
+    const css = sidebarSurfaceCss(lightTheme, "tinted");
+    expect(css).toContain(`:root{--color-sidebar-surface:${bg}}`);
+    expect(css).toContain(`--color-sidebar-vibrant-bg:${bg}`);
+    expect(css).not.toContain("color-scheme:dark");
+  });
+
   test("without oklch support the colours are hex", () => {
-    const css = sidebarSurfaceCss(lightTheme, false);
-    expect(css).not.toMatch(/oklch\(/);
-    expect(css).toMatch(/--color-sidebar-surface:#[0-9a-f]{6}/i);
+    for (const style of ["tinted", "ink", "dark"] as const) {
+      const css = sidebarSurfaceCss(lightTheme, style, false);
+      expect(css).not.toMatch(/oklch\(/);
+      expect(css).toMatch(/--color-sidebar-surface:#[0-9a-f]{6}/i);
+    }
   });
 
   test("every other theme keeps its own sidebar", () => {
-    expect(sidebarSurfaceCss(darkTheme)).toBe("");
+    for (const style of ["light", "tinted", "ink", "dark"] as const)
+      expect(sidebarSurfaceCss(darkTheme, style)).toBe("");
+  });
+
+  test("the choice is remembered, and an unknown value falls back to Light", () => {
+    useThemeStore.getState().setSidebarStyle("ink");
+    expect(localStorage.getItem(SIDEBAR_STYLE_KEY)).toBe("ink");
+    expect(readSidebarStyle()).toBe("ink");
+    localStorage.setItem(SIDEBAR_STYLE_KEY, "purple");
+    expect(readSidebarStyle()).toBe("light");
   });
 });

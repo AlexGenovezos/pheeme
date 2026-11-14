@@ -27,7 +27,13 @@ import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Switch } from "../components/ui/Switch";
 import { registry } from "../keyboard/registry";
 import { type ListDensity, useUiStore } from "../store/uiStore";
-import { THEME_MODES, type ThemeMode, useThemeStore } from "../theme/theme";
+import {
+  SIDEBAR_STYLES,
+  type SidebarStyle,
+  THEME_MODES,
+  type ThemeMode,
+  useThemeStore,
+} from "../theme/theme";
 import { AboutSettings } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
 import { AssistantSettings } from "./AssistantSettings";
@@ -66,6 +72,26 @@ function ThemeModeControl() {
       value={mode}
       options={THEME_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] }))}
       onChange={setMode}
+    />
+  );
+}
+
+const SIDEBAR_STYLE_LABELS: Record<SidebarStyle, string> = {
+  light: "Light",
+  tinted: "Tinted",
+  ink: "Ink",
+  dark: "Dark",
+};
+
+function SidebarStyleControl() {
+  const style = useThemeStore((s) => s.sidebarStyle);
+  const setStyle = useThemeStore((s) => s.setSidebarStyle);
+  return (
+    <SegmentedControl
+      label="Sidebar color"
+      value={style}
+      options={SIDEBAR_STYLES.map((s) => ({ value: s, label: SIDEBAR_STYLE_LABELS[s] }))}
+      onChange={setStyle}
     />
   );
 }
@@ -198,6 +224,14 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
               "Used in Dark mode, and in System mode when your system is dark. Any theme fits, even a light one.",
             keywords: ["color scheme", "custom theme", "edit theme", "customize"],
             Control: DarkThemeControl,
+          },
+          {
+            id: "theme.sidebar",
+            title: "Sidebar color",
+            description:
+              "With Pheeme Light: pale grey, a pale blue wash, deep ink blue or dark. Other themes bring their own sidebar.",
+            keywords: ["sidebar", "dark sidebar", "left bar", "background", "ink", "tinted"],
+            Control: SidebarStyleControl,
           },
           {
             id: "theme.create",
