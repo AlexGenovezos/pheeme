@@ -543,6 +543,39 @@ describe("states", () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  test("a failed page retries the page, not a reload", () => {
+    const reload = vi.fn(async () => {});
+    const loadMore = vi.fn(async () => {});
+    useMailStore.setState({
+      threads: many(5),
+      error: { code: "internal", message: "Couldn't load more" },
+      errorSource: "more",
+      reload,
+      loadMore,
+    });
+    render(<ThreadList {...props()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(loadMore).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  test("a failed refresh with rows shown reloads", () => {
+    const reload = vi.fn(async () => {});
+    const loadMore = vi.fn(async () => {});
+    useMailStore.setState({
+      threads: many(5),
+      error: { code: "internal", message: "Couldn't refresh" },
+      errorSource: "load",
+      reload,
+      loadMore,
+    });
+    render(<ThreadList {...props()} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't refresh");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(loadMore).not.toHaveBeenCalled();
+  });
+
   test("never shows a spinner or the empty copy while the first page loads", () => {
     useMailStore.setState({ threads: [], loading: true });
     render(<ThreadList {...props()} />);
