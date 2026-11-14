@@ -120,35 +120,38 @@ export function TimedEventBlock({
       )}
       style={{ ...style, "--cal-event-bg": background, "--cal-event-fg": text } as CSSProperties}
       aria-label={accessibleName(event, when)}
+      title={[eventTitle(event), when, event.location].filter(Boolean).join("\n")}
       aria-haspopup="dialog"
       data-event-key={eventKey(event)}
       onClick={openFrom(event)}
       onPointerDown={(e) => dragTimed(e, event, tz)}
     >
-      <Title event={event} />
-      {compact ? (
-        !narrow && <span className="cal-event__time">, {when.split(" – ")[0]}</span>
-      ) : narrow && !stacked ? null : (
-        <span className="cal-event__details">
-          <span className="cal-event__time cal-event__detail">
-            <Clock className="cal-event__detail-icon" aria-hidden="true" />
-            <span className="cal-event__range">
-              {when.split(" – ").map((time, i) => (
-                <span key={i}>
-                  {i > 0 && " – "}
-                  {time}
-                </span>
-              ))}
+      <span className="cal-event__content">
+        <Title event={event} />
+        {compact ? (
+          !narrow && <span className="cal-event__time">, {when.split(" – ")[0]}</span>
+        ) : narrow && !stacked ? null : (
+          <span className="cal-event__details">
+            <span className="cal-event__time cal-event__detail">
+              <Clock className="cal-event__detail-icon" aria-hidden="true" />
+              <span className="cal-event__range">
+                {when.split(" – ").map((time, i) => (
+                  <span key={i}>
+                    {i > 0 && " – "}
+                    {time}
+                  </span>
+                ))}
+              </span>
             </span>
+            {event.location && (
+              <span className="cal-event__location cal-event__detail">
+                <MapPin className="cal-event__detail-icon" aria-hidden="true" />
+                <span>{event.location}</span>
+              </span>
+            )}
           </span>
-          {event.location && (
-            <span className="cal-event__location cal-event__detail">
-              <MapPin className="cal-event__detail-icon" aria-hidden="true" />
-              <span>{event.location}</span>
-            </span>
-          )}
-        </span>
-      )}
+        )}
+      </span>
       {event.canEdit && <span className="cal-event__resize" aria-hidden="true" />}
     </button>
   );

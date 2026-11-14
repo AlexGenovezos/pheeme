@@ -1,4 +1,4 @@
-// Where events sit on the grid: side-by-side columns for overlapping timed events (as on
+// Where events sit on the grid: staggered cards for overlapping timed events (as on
 // calendar.google.com), rows for all-day and multi-day bars, and month cells with "+N more".
 import type { CalendarEvent } from "../lib/tauri";
 import { addDays, daysBetween, wallClock, zonedMs } from "./dates";
@@ -7,6 +7,8 @@ const DAY_MINUTES = 24 * 60;
 const DAY_MS = DAY_MINUTES * 60_000;
 /** Events shorter than this still take this much room, so their titles fit and overlaps show. */
 export const MIN_EVENT_MINUTES = 30;
+/** Keep the first hour's title and time clear of cards drawn in front. */
+const EVENT_HEADER_MINUTES = 60;
 
 /** Days an event covers: `[first, last]` inclusive. */
 export function eventDays(e: CalendarEvent, tz: string): { first: string; last: string } | null {
@@ -39,12 +41,16 @@ export interface TimedBlock {
   column: number;
   span: number;
   columns: number;
+  /** Horizontal position, card width and unobscured header width, as fractions of the day. */
+  left: number;
+  width: number;
+  contentWidth: number;
   /** Starts before or ends after this day. */
   clippedStart: boolean;
   clippedEnd: boolean;
 }
 
-/** The timed events of `date`, positioned in columns where they overlap. */
+/** The timed events of `date`, sharing space with a partial overlap between adjacent lanes. */
 export function layoutDay(events: CalendarEvent[], date: string, tz: string): TimedBlock[] {
   const dayStart = zonedMs(date, 0, tz);
   const dayEnd = zonedMs(addDays(date, 1), 0, tz);
@@ -65,6 +71,9 @@ export function layoutDay(events: CalendarEvent[], date: string, tz: string): Ti
       column: 0,
       span: 1,
       columns: 1,
+      left: 0,
+      width: 1,
+      contentWidth: 1,
       clippedStart: s < dayStart,
       clippedEnd: e > dayEnd,
     });
@@ -96,6 +105,21 @@ export function layoutDay(events: CalendarEvent[], date: string, tz: string): Ti
         span++;
       }
       b.span = span;
+      // Compress lane offsets so every card gets an extra lane of width. The last lane still
+      // reaches the right edge, and a card can never cover its neighbour completely.
+      b.left = b.column / (b.columns + 1);
+      b.width = (span + 1) / (b.columns + 1);
+    }
+    for (const b of group) {
+      // A later lane paints above this one. Keep text inside the exposed part when that lane
+      // crosses the header, but use the whole card when the overlap starts further down.
+      const headerEnd = Math.min(shownEnd(b), b.start + EVENT_HEADER_MINUTES);
+      let right = b.left + b.width;
+      for (const other of group) {
+        if (other.column > b.column && other.start < headerEnd && shownEnd(other) > b.start)
+          right = Math.min(right, other.left);
+      }
+      b.contentWidth = right - b.left;
     }
     group = [];
   };
