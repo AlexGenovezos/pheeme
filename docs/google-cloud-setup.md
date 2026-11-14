@@ -136,6 +136,10 @@ Use the **Desktop app** type: other types fail with `redirect_uri_mismatch`.
    read, organize and send your mail, but can't permanently delete it (only move
    it to Trash).
 4. When the browser says you can close the tab, go back to Pheeme.
+5. Pheeme asks whether to alert you when new Primary mail arrives for the
+   account. **Turn on alerts** may bring up your system's notification
+   permission; **Not now** leaves them off. Each account you add is asked once,
+   and Settings › Notifications changes it later.
 
 To add another account, use **Add account**. It reuses this app by default; pick
 "Use a different OAuth client" for a work account whose administrator requires

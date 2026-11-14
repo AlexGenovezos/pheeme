@@ -241,5 +241,8 @@ export const STEPS: GuideStep[] = [
   },
 ];
 
+/** The rail's last step, after signing in: turning on new mail alerts for the account. */
+export const ALERTS_STEP = "New mail alerts";
+
 export const stepIndex = (id: StepId) => STEPS.findIndex((step) => step.id === id);
 export const stepById = (id: StepId) => STEPS[stepIndex(id)];

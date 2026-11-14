@@ -1,6 +1,7 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
+import { useNotificationOffer } from "../desktop/prompt";
 import type { AccountInfo } from "../lib/tauri";
 import { Onboarding } from "./Onboarding";
 import { loadProgress, saveProgress } from "./progress";
@@ -171,6 +172,106 @@ test("signs in: explains the warning, opens Google, and confirms the account", a
   });
   expect(calls.map((c) => c.cmd)).toContain("open_external");
   await waitFor(() => expect(localStorage.getItem("pheeme.onboarding.v1")).toBeNull());
+  click("Continue");
+  expect(onConnected).toHaveBeenCalledWith(account);
+});
+
+function desktopSettings(asked: boolean, enabled = false) {
+  return {
+    accounts: [{ accountId: account.id, email: account.email, enabled, asked }],
+    permission: "notDetermined",
+    trayAvailable: false,
+    trayEnabled: false,
+    schedule: { mode: "always", startHour: 9, endHour: 17, weekdaysOnly: true },
+    calendarReminders: true,
+  };
+}
+
+async function signInFirstRun(handlers: Record<string, Handler>, onConnected = vi.fn()) {
+  const calls = backend({
+    begin_oauth: () => ({ flowId: "f1", authUrl: "https://accounts.google.com/x" }),
+    complete_oauth: () => account,
+    ...handlers,
+  });
+  saveProgress({ step: "credentials", clientId: "" });
+  render(<Onboarding accounts={[]} onConnected={onConnected} />);
+  fillCredentials();
+  click("Next");
+  click("Continue to Google");
+  await screen.findByText("me@example.com is connected");
+  return calls;
+}
+
+test.each([
+  ["Turn on alerts", true],
+  ["Not now", false],
+])("after signing in, the last step asks about new mail alerts: %s", async (button, enabled) => {
+  const onConnected = vi.fn();
+  const calls = await signInFirstRun(
+    {
+      desktop_settings: () => desktopSettings(false),
+      set_account_notifications: () => desktopSettings(true, enabled),
+    },
+    onConnected,
+  );
+  const rail = screen.getByRole("navigation", { name: "Setup steps" });
+  expect(rail.querySelector('[aria-current="step"]')).toHaveTextContent("New mail alerts");
+  expect(await screen.findByText(/when new Primary mail arrives for me@example.com/)).toBeVisible();
+  await waitFor(() => expect(screen.getByRole("button", { name: button })).toBeEnabled());
+  click(button);
+  await waitFor(() => expect(onConnected).toHaveBeenCalledWith(account));
+  expect(calls).toContainEqual({
+    cmd: "set_account_notifications",
+    args: { accountId: "a1", enabled },
+  });
+});
+
+test("an account already answered for skips the alerts question", async () => {
+  const onConnected = vi.fn();
+  const calls = backend({
+    begin_oauth: () => ({ flowId: "f1", authUrl: "https://accounts.google.com/x" }),
+    complete_oauth: () => account,
+    desktop_settings: () => desktopSettings(true, true),
+  });
+  render(
+    <Onboarding
+      accounts={[account]}
+      reconnect={account}
+      onConnected={onConnected}
+      onClose={() => {}}
+    />,
+  );
+  expect(await screen.findByText(/Alerts are on for this account/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Turn on alerts" })).toBeNull();
+  click("Continue");
+  expect(onConnected).toHaveBeenCalledWith(account);
+  expect(calls.map((c) => c.cmd)).not.toContain("set_account_notifications");
+});
+
+test("blocked notifications explain how to allow them, then continue", async () => {
+  const onConnected = vi.fn();
+  useNotificationOffer.setState({ offer: "Get an alert when new Primary mail arrives." });
+  let answered = false;
+  await signInFirstRun(
+    {
+      desktop_settings: () => desktopSettings(answered),
+      set_account_notifications: () => {
+        // The backend saves a blocked answer as off before refusing.
+        answered = true;
+        throw {
+          code: "internal",
+          message:
+            "Notifications are blocked. Allow Pheeme in your system notification settings, then try again.",
+        };
+      },
+    },
+    onConnected,
+  );
+  await waitFor(() => expect(screen.getByRole("button", { name: "Turn on alerts" })).toBeEnabled());
+  click("Turn on alerts");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Notifications are blocked");
+  expect(onConnected).not.toHaveBeenCalled();
+  await waitFor(() => expect(useNotificationOffer.getState().offer).toBeNull());
   click("Continue");
   expect(onConnected).toHaveBeenCalledWith(account);
 });
