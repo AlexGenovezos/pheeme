@@ -428,7 +428,7 @@ test("a signed-out account signs in again in place and goes back to the mail", a
   expect(calls.find((c) => c.cmd === "begin_oauth")?.args).toEqual({
     client: { kind: "reconnect", accountId: "a1" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
   expect(await screen.findByRole("navigation", { name: "Mailboxes" })).toBeInTheDocument();
   expect(useAccountStore.getState().reconnecting).toBeNull();
 });
