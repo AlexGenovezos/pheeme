@@ -571,6 +571,7 @@
 }
 .cal-grid__column {
   position: relative;
+  isolation: isolate;
   border-left: var(--border-width) solid var(--calendar-grid-line);
   /* Hour lines. */
   background: repeating-linear-gradient(
@@ -583,7 +584,7 @@
 }
 .cal-grid__now {
   position: absolute;
-  z-index: 2;
+  z-index: calc(var(--cal-day-layers) + 2);
   right: var(--space-0);
   left: var(--space-0);
   height: var(--calendar-now-line);
@@ -641,11 +642,20 @@
 
 .cal-event--timed {
   position: absolute;
+  z-index: var(--cal-event-layer);
   flex-direction: column;
   padding: var(--space-0-5) var(--space-1);
   box-shadow: 0 0 0 var(--hairline) var(--color-pane-bg);
 }
-.cal-event--timed > *,
+.cal-event__content {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: var(--cal-event-text-width, var(--cal-event-content-width));
+  overflow: hidden;
+}
+.cal-event__content > *,
 .cal-event__details > * {
   overflow: hidden;
   white-space: nowrap;
@@ -666,9 +676,18 @@
 .cal-event__detail-icon {
   display: none;
 }
+/* Reveal the card's full text area without moving it or hiding its neighbours completely. */
+.cal-event--timed:is(:hover, :focus-visible, .cal-event--open) {
+  z-index: calc(var(--cal-day-layers) + 1);
+}
+.cal-event--timed:is(:hover, :focus-visible, .cal-event--open) .cal-event__content {
+  max-width: 100%;
+}
 .cal-event--timed.cal-event--compact {
-  flex-direction: row;
   padding-block: var(--space-0);
+}
+.cal-event--timed.cal-event--compact .cal-event__content {
+  flex-direction: row;
 }
 .cal-event--timed.cal-event--compact .cal-event__title {
   flex-shrink: 1;
@@ -838,7 +857,7 @@
 
 /* The open event fills solid, whatever its answer (after those rules, so it wins over them). */
 .cal-event.cal-event--open {
-  z-index: 1;
+  z-index: calc(var(--cal-day-layers, 0) + 1);
   background: var(--cal-event-bg);
   color: var(--cal-event-fg);
   box-shadow: var(--shadow-popover);

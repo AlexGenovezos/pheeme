@@ -97,7 +97,7 @@ describe("views", () => {
 describe("layoutDay", () => {
   const d = "2026-11-11";
 
-  test("overlapping events share the width and a lone one takes it all", () => {
+  test("overlapping cards are wider than their lanes and a lone one takes the whole day", () => {
     const a = timed(at(d, 14), at(d, 15));
     const b = timed(at(d, 14, 30), at(d, 15, 30));
     const c = timed(at(d, 17), at(d, 18));
@@ -106,6 +106,11 @@ describe("layoutDay", () => {
     expect(of(a)).toMatchObject({ start: 840, end: 900, column: 0, columns: 2, span: 1 });
     expect(of(b)).toMatchObject({ column: 1, columns: 2 });
     expect(of(c)).toMatchObject({ column: 0, columns: 1, span: 1 });
+    expect(of(a).left).toBe(0);
+    expect(of(a).width).toBeCloseTo(2 / 3);
+    expect(of(b).left).toBeCloseTo(1 / 3);
+    expect(of(b).width).toBeCloseTo(2 / 3);
+    expect(of(c)).toMatchObject({ left: 0, width: 1, contentWidth: 1 });
   });
 
   test("an event widens into a column that is free for its whole time", () => {
@@ -119,6 +124,48 @@ describe("layoutDay", () => {
     // `late` lands in column 1 (free after `early`), and nothing is in column 2 at 11.
     expect(of(late)).toMatchObject({ column: 1, span: 2 });
     expect(of(short)).toMatchObject({ column: 2, span: 1 });
+    expect(of(late)).toMatchObject({ left: 0.25, width: 0.75, contentWidth: 0.75 });
+  });
+
+  test("the screenshot's long events overlap without hiding a later event's heading", () => {
+    const morning = timed(at(d, 6), at(d, 11, 30));
+    const chant = timed(at(d, 10), at(d, 17));
+    const legos = timed(at(d, 13), at(d, 21));
+    const wedding = timed(at(d, 15), at(d, 16));
+    const vespers = timed(at(d, 17), at(d, 18));
+    const blocks = layoutDay([morning, chant, legos, wedding, vespers], d, NY);
+    const of = (e: CalendarEvent) => blocks.find((x) => x.event === e)!;
+    expect(of(morning)).toMatchObject({
+      left: 0,
+      width: 0.5,
+      contentWidth: 0.25,
+      clearMinutes: 240,
+    });
+    expect(of(chant)).toMatchObject({
+      left: 0.25,
+      width: 0.5,
+      contentWidth: 0.25,
+      clearMinutes: 300,
+    });
+    // Chant is already in front when LEGOS starts: wrap that heading in the exposed left part.
+    expect(of(legos)).toMatchObject({ left: 0, width: 0.5, contentWidth: 0.25 });
+    expect(of(wedding)).toMatchObject({ left: 0.5, width: 0.5, contentWidth: 0.5 });
+    expect(of(vespers)).toMatchObject({ left: 0.25, width: 0.75, contentWidth: 0.75 });
+  });
+
+  test("simultaneous headings stay in their exposed lanes, including very short events", () => {
+    const events = [
+      timed(at(d, 9), at(d, 12)),
+      timed(at(d, 9), at(d, 10)),
+      timed(at(d, 9, 5), at(d, 9, 10)),
+      timed(at(d, 9, 15), at(d, 9, 15)),
+    ];
+    const blocks = layoutDay(events, d, NY);
+    for (const b of blocks) {
+      expect(b.width).toBeCloseTo(2 / 5);
+      expect(b.contentWidth).toBeCloseTo(b.column === 3 ? 2 / 5 : 1 / 5);
+      expect(b.left + b.width).toBeLessThanOrEqual(1);
+    }
   });
 
   test("an overnight event is clipped to each day", () => {

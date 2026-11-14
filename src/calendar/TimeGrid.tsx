@@ -1,5 +1,5 @@
-// Day and Week: day headers, the all-day band, then 24 hours with a time gutter, overlapping
-// events side by side, and the current-time line on today.
+// Day and Week: day headers, the all-day band, then 24 hours with a time gutter,
+// staggered overlapping events, and the current-time line on today.
 import { type CSSProperties, useLayoutEffect, useMemo, useRef } from "react";
 import type { CalendarEvent } from "../lib/tauri";
 import { cx } from "../lib/utils";
@@ -177,11 +177,16 @@ export function TimeGrid({
               aria-label={formatDay(d, { weekday: "long", month: "long", day: "numeric" })}
               data-cal-drop="time"
               data-date={d}
+              style={
+                {
+                  "--cal-day-layers": columns[i].reduce((n, b) => Math.max(n, b.columns), 0),
+                } as CSSProperties
+              }
               onPointerDown={(e) => createInColumn(e, d, tz)}
             >
               {columns[i].map((b) => {
                 const shown = Math.max(b.end - b.start, MIN_EVENT_MINUTES);
-                const eventWidth = (dayWidth * b.span) / b.columns;
+                const eventWidth = dayWidth * b.contentWidth;
                 return (
                   <TimedEventBlock
                     key={eventKey(b.event)}
@@ -189,20 +194,27 @@ export function TimeGrid({
                     calendar={lookup(b.event)}
                     tz={tz}
                     compact={shown < COMPACT_MINUTES}
+                    clearHeight={(b.clearMinutes / 60) * HOUR_PX}
                     stacked={shown >= STACKED_MINUTES && eventWidth < COMPACT_TIME_MIN_PX}
                     narrow={
                       eventWidth < (shown < COMPACT_MINUTES ? COMPACT_TIME_MIN_PX : NARROW_EVENT_PX)
                     }
-                    style={{
-                      top: (b.start / 60) * HOUR_PX,
-                      height: (shown / 60) * HOUR_PX,
-                      left: `${(b.column / b.columns) * 100}%`,
-                      // A sliver stays free at the column's right edge, for clicking the grid
-                      // behind; events side by side keep only a hairline gap between them.
-                      width: `calc(${(b.span / b.columns) * 100}% - ${
-                        b.column + b.span === b.columns ? "var(--space-2)" : "var(--space-0-5)"
-                      })`,
-                    }}
+                    style={
+                      {
+                        top: (b.start / 60) * HOUR_PX,
+                        height: (shown / 60) * HOUR_PX,
+                        left: `${b.left * 100}%`,
+                        // Keep a sliver free at the day's right edge for clicking the grid behind.
+                        width: `calc(${b.width * 100}% - ${
+                          b.column + b.span === b.columns ? "var(--space-2)" : "var(--space-0-5)"
+                        })`,
+                        "--cal-event-layer": b.column + 1,
+                        "--cal-event-content-width":
+                          b.contentWidth < b.width
+                            ? `calc(${(b.contentWidth / b.width) * 100}% - var(--space-0-5))`
+                            : "100%",
+                      } as CSSProperties
+                    }
                   />
                 );
               })}

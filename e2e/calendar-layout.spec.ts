@@ -76,7 +76,9 @@ test("a tall, narrow event shows its full title and details with inline icons", 
       inline,
     };
   });
-  expect(layout.width).toBeLessThan(80);
+  const dayWidth = (await event.locator("..").boundingBox())!.width;
+  expect(layout.width).toBeGreaterThan(dayWidth / 2);
+  expect(layout.width).toBeLessThan(dayWidth);
   expect(layout.wrapped).toBe(true);
   expect(layout.fits).toBe(true);
   expect(layout.inline).toBe(true);

@@ -1,4 +1,4 @@
-// Where events sit on the grid: side-by-side columns for overlapping timed events (as on
+// Where events sit on the grid: staggered cards for overlapping timed events (as on
 // calendar.google.com), rows for all-day and multi-day bars, and month cells with "+N more".
 import type { CalendarEvent } from "../lib/tauri";
 import { addDays, daysBetween, wallClock, zonedMs } from "./dates";
@@ -39,12 +39,18 @@ export interface TimedBlock {
   column: number;
   span: number;
   columns: number;
+  /** Horizontal position, card width and unobscured header width, as fractions of the day. */
+  left: number;
+  width: number;
+  contentWidth: number;
+  /** Minutes from this card's top to the first card overlapping it from the right. */
+  clearMinutes: number;
   /** Starts before or ends after this day. */
   clippedStart: boolean;
   clippedEnd: boolean;
 }
 
-/** The timed events of `date`, positioned in columns where they overlap. */
+/** The timed events of `date`, sharing space with a partial overlap between adjacent lanes. */
 export function layoutDay(events: CalendarEvent[], date: string, tz: string): TimedBlock[] {
   const dayStart = zonedMs(date, 0, tz);
   const dayEnd = zonedMs(addDays(date, 1), 0, tz);
@@ -65,6 +71,10 @@ export function layoutDay(events: CalendarEvent[], date: string, tz: string): Ti
       column: 0,
       span: 1,
       columns: 1,
+      left: 0,
+      width: 1,
+      contentWidth: 1,
+      clearMinutes: Infinity,
       clippedStart: s < dayStart,
       clippedEnd: e > dayEnd,
     });
@@ -96,6 +106,27 @@ export function layoutDay(events: CalendarEvent[], date: string, tz: string): Ti
         span++;
       }
       b.span = span;
+      // Compress lane offsets so every card gets an extra lane of width. The last lane still
+      // reaches the right edge, and a card can never cover its neighbour completely.
+      b.left = b.column / (b.columns + 1);
+      b.width = (span + 1) / (b.columns + 1);
+    }
+    for (const b of group) {
+      // Record the exposed width and height; the renderer measures whether the text fits
+      // above these foreground cards before narrowing its text area.
+      let right = b.left + b.width;
+      for (const other of group) {
+        if (
+          other.column > b.column &&
+          other.left < b.left + b.width &&
+          other.start < shownEnd(b) &&
+          shownEnd(other) > b.start
+        ) {
+          right = Math.min(right, other.left);
+          b.clearMinutes = Math.min(b.clearMinutes, Math.max(0, other.start - b.start));
+        }
+      }
+      b.contentWidth = right - b.left;
     }
     group = [];
   };
