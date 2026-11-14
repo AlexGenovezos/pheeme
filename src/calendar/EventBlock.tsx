@@ -128,7 +128,7 @@ export function TimedEventBlock({
       <Title event={event} />
       {compact ? (
         !narrow && <span className="cal-event__time">, {when.split(" – ")[0]}</span>
-      ) : (
+      ) : narrow && !stacked ? null : (
         <span className="cal-event__details">
           <span className="cal-event__time cal-event__detail">
             <Clock className="cal-event__detail-icon" aria-hidden="true" />

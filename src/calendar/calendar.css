@@ -645,13 +645,14 @@
   padding: var(--space-0-5) var(--space-1);
   box-shadow: 0 0 0 var(--hairline) var(--color-pane-bg);
 }
-.cal-event--timed > * {
+.cal-event--timed > *,
+.cal-event__details > * {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* Stack and wrap each detail into the block's height, with the title first. */
-.cal-event--timed:not(.cal-event--compact)
+/* Tall blocks use their height; shorter blocks keep their three truncated rows. */
+.cal-event--timed.cal-event--stacked
   :is(.cal-event__title, .cal-event__time, .cal-event__location) {
   flex-shrink: 0;
   max-height: 100%;
@@ -660,10 +661,7 @@
   text-wrap: pretty;
 }
 .cal-event__details {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  min-width: var(--space-0);
+  display: contents;
 }
 .cal-event__detail-icon {
   display: none;
@@ -686,10 +684,6 @@
   font-weight: var(--font-weight-medium);
   text-overflow: clip;
 }
-.cal-event--timed.cal-event--narrow:not(.cal-event--compact):not(.cal-event--stacked)
-  :is(.cal-event__time, .cal-event__location) {
-  margin-top: var(--space-1);
-}
 
 /* Long, slim events read like a little programme: headline, then quiet when/where groups. */
 .cal-event--timed.cal-event--stacked {
@@ -701,6 +695,10 @@
   letter-spacing: var(--letter-spacing-tight);
 }
 .cal-event--stacked .cal-event__details {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: var(--space-0);
   gap: var(--space-2);
   margin-top: var(--space-2);
   padding-top: var(--space-2);

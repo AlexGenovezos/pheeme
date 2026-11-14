@@ -16,13 +16,25 @@ test("a tall, narrow event shows its full title and details with inline icons", 
       const result = await next(cmd, args);
       if (cmd !== "calendar_events") return result;
       const base = (result as CalendarEvent[])[0];
-      return ["Byzantine Chant Workshop", "Another event"].map((summary, i) => ({
+      return [
+        "Byzantine Chant Workshop",
+        "Another event",
+        "Weekly project planning and design review",
+      ].map((summary, i) => ({
         ...base,
         id: `narrow-${i}`,
         summary,
         allDay: false,
-        start: { ms: Date.parse("2026-11-14T10:00:00Z"), date: null, timeZone: "UTC" },
-        end: { ms: Date.parse("2026-11-14T17:00:00Z"), date: null, timeZone: "UTC" },
+        start: {
+          ms: Date.parse(i === 2 ? "2026-11-14T18:00:00Z" : "2026-11-14T10:00:00Z"),
+          date: null,
+          timeZone: "UTC",
+        },
+        end: {
+          ms: Date.parse(i === 2 ? "2026-11-14T19:00:00Z" : "2026-11-14T17:00:00Z"),
+          date: null,
+          timeZone: "UTC",
+        },
         location: "St John the Baptist Church",
         meeting: null,
         selfResponse: null,
@@ -68,4 +80,19 @@ test("a tall, narrow event shows its full title and details with inline icons", 
   expect(layout.wrapped).toBe(true);
   expect(layout.fits).toBe(true);
   expect(layout.inline).toBe(true);
+
+  // A one-hour card still has three visible, truncated rows instead of wrapping off its edge.
+  const short = page.getByRole("button", {
+    name: /^Weekly project planning and design review,/,
+  });
+  await short.scrollIntoViewIfNeeded();
+  const shortLayout = await short.evaluate((el) => {
+    const bounds = el.getBoundingClientRect();
+    return [...el.querySelectorAll<HTMLElement>(".cal-event__title, .cal-event__detail")].every(
+      (row) =>
+        getComputedStyle(row).whiteSpace === "nowrap" &&
+        row.getBoundingClientRect().bottom <= bounds.bottom,
+    );
+  });
+  expect(shortLayout).toBe(true);
 });
