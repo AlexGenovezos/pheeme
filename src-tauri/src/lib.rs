@@ -213,9 +213,6 @@ fn attachment_response(served: mail::InlineResponse) -> tauri::http::Response<Ve
     response.body(served.body).unwrap_or_else(|_| not_found())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-/// The main window starts hidden and the frontend shows it after its first paint. If that never happens (a script
-/// error, a stuck first command), show it anyway so the app is never invisible.
 /// Without its data Pheeme can't run, so say why in a native dialog (the main window never
 /// shows) rather than quitting silently. A lost key can start again from Gmail.
 fn startup_failed(
@@ -231,7 +228,7 @@ fn startup_failed(
         let _ = window.navigate("about:blank".parse().expect("valid URL"));
     }
     let lost = error.downcast_ref::<storage::KeyLost>().is_some();
-    let mut message = error.to_string();
+    let mut message = format!("{error:#}");
     if lost {
         message.push_str(
             "\n\nOr start again: Pheeme moves the unreadable data into a folder in its data \
@@ -260,7 +257,7 @@ fn startup_failed(
             if !start_again {
                 return app.exit(1);
             }
-            match storage::set_aside(&data_dir, &cache_dir) {
+            match storage::set_aside(&data_dir, &cache_dir, &secrets::OsKeychain) {
                 Ok(aside) => {
                     info!(
                         "Unreadable local data moved to {}",
@@ -276,6 +273,9 @@ fn startup_failed(
         });
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// The main window starts hidden and the frontend shows it after its first paint. If that never happens (a script
+/// error, a stuck first command), show it anyway so the app is never invisible.
 fn reveal_window_fallback(app: tauri::AppHandle) {
     const AFTER: std::time::Duration = std::time::Duration::from_secs(3);
     tauri::async_runtime::spawn(async move {
@@ -445,10 +445,10 @@ pub fn run() {
                     });
                 }
                 #[cfg(not(target_os = "linux"))]
+                // Unmanaged when startup failed (`startup_failed`): let the window close.
                 if window
-                    .state::<Arc<desktop::Desktop>>()
-                    .can_hide
-                    .load(std::sync::atomic::Ordering::Relaxed)
+                    .try_state::<Arc<desktop::Desktop>>()
+                    .is_some_and(|d| d.can_hide.load(std::sync::atomic::Ordering::Relaxed))
                     && window.hide().is_ok()
                 {
                     api.prevent_close();
@@ -601,7 +601,10 @@ pub fn run() {
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
-                desktop::show_window(app);
+                // Not after a failed start: that window is blank behind the error dialog.
+                if app.try_state::<AppState>().is_some() {
+                    desktop::show_window(app);
+                }
             }
             if let tauri::RunEvent::Exit = event {
                 info!("Pheeme exiting");

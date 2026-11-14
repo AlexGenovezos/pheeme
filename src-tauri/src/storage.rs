@@ -159,18 +159,21 @@ fn load_key(data_dir: &Path, keychain: &dyn Keychain) -> Result<StorageKey> {
     Ok(key)
 }
 
-/// After `KeyLost`, at the user's request: move everything the lost key encrypted into a new
-/// `unreadable-<time>` folder in the data folder, so the next start makes a new key and
-/// downloads mail again. Nothing is deleted but the attachment cache, which Gmail still has;
-/// restoring the old key and moving the files back recovers the rest.
-pub fn set_aside(data_dir: &Path, cache_dir: &Path) -> Result<PathBuf> {
-    let aside = data_dir.join(format!(
-        "unreadable-{}",
-        chrono::Utc::now().format("%Y%m%d-%H%M%S")
-    ));
-    private_dir(&aside)?;
-    let move_aside = |from: PathBuf, name: &str| -> Result<()> {
-        match std::fs::rename(&from, aside.join(name)) {
+/// After `KeyLost`, at the user's request: move everything the lost key encrypted into
+/// `unreadable-<time>` folders (the database in the data folder, staged draft attachments in
+/// the cache folder) and forget the key, so the next start makes a new one and downloads mail
+/// again. Only the attachment cache, which Gmail still has, is deleted. `storage-v1` moves
+/// last: if anything before it fails, the next start still refuses to make a new key.
+pub fn set_aside(data_dir: &Path, cache_dir: &Path, keychain: &dyn Keychain) -> Result<PathBuf> {
+    let lock = private_file(&data_dir.join("storage.lock"), false)?;
+    lock.try_lock().context(
+        "Pheeme is already using this data folder. Close the other instance and try again.",
+    )?;
+    let folder = format!("unreadable-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
+    let move_aside = |dir: &Path, name: &str| -> Result<()> {
+        let aside = dir.join(&folder);
+        private_dir(&aside)?;
+        match std::fs::rename(dir.join(name), aside.join(name)) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
                 Err(e).with_context(|| format!("Couldn't move {name} aside"))
             }
@@ -186,18 +189,21 @@ pub fn set_aside(data_dir: &Path, cache_dir: &Path) -> Result<PathBuf> {
         "db.sqlite.encrypted-wal",
         "db.sqlite.encrypted-shm",
         "db.sqlite.encrypted-journal",
-        "storage-v1",
     ] {
-        move_aside(data_dir.join(name), name)?;
+        move_aside(data_dir, name)?;
     }
-    // Staged attachments of unsent drafts; only the lost key can read them.
-    move_aside(cache_dir.join("compose-v1"), "compose-v1")?;
+    move_aside(cache_dir, "compose-v1")?;
     match std::fs::remove_dir_all(cache_dir.join("attachments-v1")) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
         _ => {}
     }
+    // A damaged key would otherwise fail the same way on every start.
+    keychain
+        .delete(KEY_ENTRY)
+        .context("Couldn't remove the damaged key from your system keychain")?;
+    move_aside(data_dir, "storage-v1")?;
     sync_dir(data_dir)?;
-    Ok(aside)
+    Ok(data_dir.join(folder))
 }
 
 pub(crate) fn is_plaintext_database(path: &Path) -> Result<bool> {
@@ -341,7 +347,8 @@ impl EncryptedFiles {
 
     /// Legacy paths are always plaintext, even if their content resembles our header.
     /// Separate namespaces make interruption/retry unambiguous. Delete each original only
-    /// after its encrypted replacement is synced; never discard staged draft attachments.
+    /// after its encrypted replacement is written (and synced, for staged draft attachments,
+    /// which are never discarded; a lost cached attachment is downloaded again).
     async fn migrate(&self, legacy: &Path) -> Result<()> {
         if !legacy.exists() {
             return Ok(());
@@ -426,8 +433,10 @@ mod tests {
             }
             Ok(())
         }
-        fn delete(&self, _: &str) -> keyring::Result<()> {
-            unreachable!()
+        fn delete(&self, name: &str) -> keyring::Result<()> {
+            assert_eq!(name, KEY_ENTRY);
+            *self.value.lock().unwrap() = None;
+            Ok(())
         }
     }
 
@@ -498,17 +507,18 @@ mod tests {
         let damaged = unlock(data.path(), &keychain).err().unwrap();
         assert!(damaged.downcast_ref::<KeyLost>().is_some());
 
-        let aside = set_aside(data.path(), cache.path()).unwrap();
+        let aside = set_aside(data.path(), cache.path(), &keychain).unwrap();
         assert_eq!(std::fs::read(aside.join("db.sqlite")).unwrap(), [0x91; 128]);
         assert_eq!(std::fs::read(aside.join("db.sqlite-wal")).unwrap(), b"wal");
-        assert_eq!(
-            std::fs::read(aside.join("compose-v1/draft")).unwrap(),
-            b"sealed"
-        );
+        assert!(aside.join("storage-v1").exists());
+        let folder = aside.file_name().unwrap();
+        let drafts = cache.path().join(folder).join("compose-v1/draft");
+        assert_eq!(std::fs::read(drafts).unwrap(), b"sealed");
         assert!(!cache.path().join("attachments-v1").exists());
-        *keychain.value.lock().unwrap() = None;
+        // The damaged key is gone, so this start makes a new one.
         drop(unlock(data.path(), &keychain).unwrap());
-        assert!(keychain.value.lock().unwrap().is_some(), "a new key");
+        let new_key = keychain.value.lock().unwrap().clone().unwrap();
+        assert_ne!(new_key, "bad key");
     }
 
     #[test]

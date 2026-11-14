@@ -53,10 +53,11 @@ decrypted; mail already synced to Gmail remains available there, but unsynced
 local work may not be recoverable.
 
 If the key is missing or damaged, the startup dialog also offers **Start
-again**: Pheeme moves the unreadable database and staged draft attachments into
-an `unreadable-<time>` folder in its data folder, deletes the attachment cache,
-makes a new key, and downloads mail again after you sign in. If you later
-restore the old key, quit Pheeme and move those files back to read them.
+again**: Pheeme moves the unreadable database into an `unreadable-<time>` folder
+in its data folder and staged draft attachments into one in its cache folder,
+deletes the attachment cache and the damaged key, makes a new key, and downloads
+mail again after you sign in. If you later restore the old key, quit Pheeme and
+move those files back to read them.
 
 ## Files opened or saved outside Pheeme
 
