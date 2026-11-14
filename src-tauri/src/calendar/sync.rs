@@ -59,23 +59,23 @@ fn is_account_wide(e: &GmailError) -> bool {
         )
 }
 
-/// Bring the account's calendars and events up to date. The calendar list and settings are
-/// read when `refresh_list` is set or nothing is stored yet; then every calendar's events.
+/// Bring the account's calendars and events up to date. Reconcile the calendar list every
+/// time so deletions and unsubscriptions are as current as events. Settings are read when
+/// `refresh_settings` is set or nothing is stored yet.
 pub async fn sync_account(
     db: &SqlitePool,
     api: &dyn CalendarApi,
     account_id: &str,
     now_ms: i64,
-    refresh_list: bool,
+    refresh_settings: bool,
 ) -> Result<SyncReport, SyncError> {
     let mut report = SyncReport::default();
-    let mut calendars = cache::calendars(db, Some(account_id)).await?;
-    if refresh_list || calendars.is_empty() {
-        let before: Vec<String> = calendars.iter().map(|c| c.id.clone()).collect();
-        sync_calendar_list(db, api, account_id, now_ms).await?;
-        calendars = cache::calendars(db, Some(account_id)).await?;
-        let after: Vec<String> = calendars.iter().map(|c| c.id.clone()).collect();
-        report.changed |= before != after;
+    let before = cache::calendars(db, Some(account_id)).await?;
+    sync_calendar_list(db, api, account_id).await?;
+    let calendars = cache::calendars(db, Some(account_id)).await?;
+    report.changed |= before != calendars;
+    if refresh_settings || before.is_empty() {
+        sync_settings(db, api, account_id, now_ms).await?;
     }
     for cal in &calendars {
         match sync_calendar(
@@ -90,7 +90,7 @@ pub async fn sync_account(
         {
             Ok(changed) => report.changed |= changed,
             Err(SyncError::Api(e)) if !is_account_wide(&e) => {
-                // Unsubscribed or no longer shared: the next list refresh drops it.
+                // Access changed after reading the list: try again on the next sync.
                 warn!(error = %e, "skipping a calendar Google refused");
             }
             Err(e) => return Err(e),
@@ -103,7 +103,6 @@ async fn sync_calendar_list(
     db: &SqlitePool,
     api: &dyn CalendarApi,
     account_id: &str,
-    now_ms: i64,
 ) -> Result<(), SyncError> {
     let mut rows = Vec::new();
     let mut page_token: Option<String> = None;
@@ -121,6 +120,15 @@ async fn sync_calendar_list(
         }
     }
     cache::replace_calendars(db, account_id, &rows).await?;
+    Ok(())
+}
+
+async fn sync_settings(
+    db: &SqlitePool,
+    api: &dyn CalendarApi,
+    account_id: &str,
+    now_ms: i64,
+) -> Result<(), SyncError> {
     match api.calendar_settings().await {
         Ok(settings) => {
             cache::set_settings(
@@ -358,7 +366,7 @@ mod tests {
         sync_account(&db.pool, &fake, "a", 1, false).await.unwrap();
 
         fake.remove_calendar("team");
-        let report = sync_account(&db.pool, &fake, "a", 2, true).await.unwrap();
+        let report = sync_account(&db.pool, &fake, "a", 2, false).await.unwrap();
 
         assert!(report.changed);
         let cals = cache::calendars(&db.pool, Some("a")).await.unwrap();
@@ -367,11 +375,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn calendar_that_vanished_between_list_and_events_is_skipped() {
+    async fn calendar_metadata_changes_are_reported_without_event_changes() {
+        let db = TestDb::with_account("a").await;
+        let fake = FakeCalendar::default();
+        fake.add_calendar(calendar("team"));
+        sync_account(&db.pool, &fake, "a", 1, false).await.unwrap();
+
+        fake.remove_calendar("team");
+        let mut renamed = calendar("team");
+        renamed.summary = "Renamed team".into();
+        renamed.background_color = Some("#ff0000".into());
+        fake.add_calendar(renamed);
+        let report = sync_account(&db.pool, &fake, "a", 2, false).await.unwrap();
+
+        assert!(report.changed);
+        let calendars = cache::calendars(&db.pool, Some("a")).await.unwrap();
+        assert_eq!(calendars[0].summary, "Renamed team");
+        assert_eq!(calendars[0].background_color.as_deref(), Some("#ff0000"));
+        assert!(
+            !sync_account(&db.pool, &fake, "a", 3, false)
+                .await
+                .unwrap()
+                .changed
+        );
+    }
+
+    #[tokio::test]
+    async fn regular_sync_removes_calendars_and_still_syncs_remaining_events() {
         let db = TestDb::with_account("a").await;
         let fake = fake_with_two_calendars();
         sync_account(&db.pool, &fake, "a", 1, false).await.unwrap();
-        // Still in our list, but Google now answers 404 for its events.
         fake.remove_calendar("team");
         fake.put(
             "me@example.com",
