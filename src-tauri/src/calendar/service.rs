@@ -34,8 +34,8 @@ pub const CALENDAR_API_URL: &str =
 const INTERVAL: Duration = Duration::from_secs(60);
 /// How often while Calendar mode is in front.
 const FOREGROUND_INTERVAL: Duration = Duration::from_secs(15);
-/// How often the calendar list and settings are re-read.
-const LIST_INTERVAL_MS: i64 = 15 * 60 * 1000;
+/// How often Calendar settings are re-read; the calendar list is checked on every sync.
+const SETTINGS_INTERVAL_MS: i64 = 15 * 60 * 1000;
 /// The first check waits for launch and mail's first sync to settle.
 const FIRST_DELAY: Duration = Duration::from_secs(5);
 
@@ -615,11 +615,11 @@ impl CalendarService {
             if !due {
                 continue;
             }
-            let refresh_list = access
+            let refresh_settings = access
                 .as_ref()
                 .and_then(|a| a.settings_checked_at)
-                .is_none_or(|at| now - at >= LIST_INTERVAL_MS);
-            if let Err(e) = self.sync_one(&account.id, now, refresh_list).await {
+                .is_none_or(|at| now - at >= SETTINGS_INTERVAL_MS);
+            if let Err(e) = self.sync_one(&account.id, now, refresh_settings).await {
                 warn!(error = %e, "calendar sync failed");
             }
         }
@@ -631,7 +631,7 @@ impl CalendarService {
         &self,
         account_id: &str,
         now: i64,
-        refresh_list: bool,
+        refresh_settings: bool,
     ) -> Result<(), MailError> {
         let gate = lock(&self.running)
             .entry(account_id.to_owned())
@@ -643,7 +643,7 @@ impl CalendarService {
             .map(|a| a.status);
         let api: Arc<dyn CalendarApi> = (self.api_for)(account_id);
         let (status, detail) =
-            match sync_account(&self.db, api.as_ref(), account_id, now, refresh_list).await {
+            match sync_account(&self.db, api.as_ref(), account_id, now, refresh_settings).await {
                 Ok(report) => {
                     if report.changed {
                         self.events.emit(SyncEvent::CalendarUpdated {
@@ -1103,6 +1103,61 @@ pub(super) mod tests {
         assert_eq!(h.events.names(), vec!["calendar:updated"]);
         let accounts = h.service.accounts().await.unwrap();
         assert!(accounts[0].calendars[0].hidden);
+    }
+
+    #[tokio::test]
+    async fn regular_tick_removes_unsubscribed_calendars_and_notifies_the_sidebar() {
+        let h = harness(&["a"]).await;
+        h.fake("a").add_calendar(calendar("team"));
+        h.fake("a").put("team", standup_series());
+        h.grant("a").await;
+        assert_eq!(h.service.accounts().await.unwrap()[0].calendars.len(), 2);
+        assert_eq!(
+            h.service
+                .events(
+                    ms("2026-11-09T00:00:00Z"),
+                    ms("2026-11-10T00:00:00Z"),
+                    "UTC",
+                )
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        let checked_at = db::calendar::access(&h.service.db, "a")
+            .await
+            .unwrap()
+            .unwrap()
+            .settings_checked_at
+            .unwrap();
+        h.events.take();
+
+        h.fake("a").remove_calendar("team");
+        h.service.tick(checked_at + 15_000).await;
+
+        let accounts = h.service.accounts().await.unwrap();
+        assert_eq!(accounts[0].calendars.len(), 1);
+        assert_eq!(accounts[0].calendars[0].id, "a@example.com");
+        assert!(h
+            .service
+            .events(
+                ms("2026-11-09T00:00:00Z"),
+                ms("2026-11-10T00:00:00Z"),
+                "UTC",
+            )
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(h.events.names(), vec!["calendar:updated"]);
+        assert_eq!(
+            db::calendar::access(&h.service.db, "a")
+                .await
+                .unwrap()
+                .unwrap()
+                .settings_checked_at,
+            Some(checked_at),
+            "settings keep their slower refresh interval"
+        );
     }
 
     #[tokio::test]
