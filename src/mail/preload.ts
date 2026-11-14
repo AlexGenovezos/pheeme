@@ -7,7 +7,7 @@ import { useAccountStore } from "../store/accountStore";
 import { useMailStore } from "../store/mailStore";
 import { useThreadStore } from "../store/threadStore";
 import { useInboxTabs, visibleCategories } from "../store/inboxTabsStore";
-import { useUiStore } from "../store/uiStore";
+import { unreadOnlyFor, useUiStore } from "../store/uiStore";
 import {
   categoryMailbox,
   type MailboxRef,
@@ -68,7 +68,13 @@ export function startPreloading(): () => void {
     const ui = useUiStore.getState();
     const accountId = resolveActiveAccount(ui.activeAccountId, useAccountStore.getState().accounts);
     const hiddenTabs = accountId ? useInboxTabs.getState().hidden[accountId] : null;
-    const scope = JSON.stringify([accountId, ui.unreadOnly, hiddenTabs]);
+    const scope = JSON.stringify([
+      accountId,
+      ui.unreadOnlyScope,
+      ui.unreadOnly,
+      ui.unreadOnlyMailboxes,
+      hiddenTabs,
+    ]);
     if (scope === categoryScope) return;
     categoryScope = scope;
     const refs: MailboxRef[] = accountId
@@ -81,7 +87,7 @@ export function startPreloading(): () => void {
       refs.map((ref) =>
         listThreads({
           ...queryFor(ref, [accountId!]),
-          unreadOnly: ui.unreadOnly,
+          unreadOnly: unreadOnlyFor(ui, ref),
           limit: FIRST,
         }).catch(() => null),
       ),

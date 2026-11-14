@@ -22,7 +22,7 @@ import type { RowAction } from "../mail/ThreadRow";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
-import { sidebarLayout, useUiStore } from "../store/uiStore";
+import { sidebarLayout, unreadOnlyFor, useUiStore } from "../store/uiStore";
 import { SearchBar, SEARCH_INPUT_ID } from "../search/SearchBar";
 import { dragRegion } from "./chrome";
 export { SEARCH_INPUT_ID };
@@ -98,7 +98,7 @@ export function ListPane() {
   const next = useMailStore((s) => s.next);
   const loading = useMailStore((s) => s.loading);
   const error = useMailStore((s) => s.error);
-  const unreadOnly = useUiStore((s) => s.unreadOnly);
+  const unreadOnly = useUiStore((s) => unreadOnlyFor(s, s.mailbox));
   const toggleUnreadOnly = useUiStore((s) => s.toggleUnreadOnly);
   const anyChecked = useUiStore((s) => s.checked.length > 0);
   const checkedCount = useUiStore((s) => s.checked.length);

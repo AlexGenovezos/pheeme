@@ -91,3 +91,23 @@ test("the first rows of Inbox and each category follow the list, with its Unread
   expect(asked.every((q) => q.limit === 20)).toBe(true);
   expect(asked.every((q) => q.unreadOnly === true)).toBe(true);
 });
+
+test("with the each-mailbox scope, each category's first rows use that tab's own Unread only", async () => {
+  const asked: Array<Record<string, unknown>> = [];
+  mockIPC((cmd, args) => {
+    if (cmd !== "list_threads") throw new Error(`unexpected ${cmd}`);
+    const query = args as Record<string, unknown>;
+    asked.push(query);
+    return { threads: [row(String(query.alsoLabelId ?? "inbox"))], next: null };
+  });
+  useAccountStore.setState({ accounts: [{ id: "a" }] as never });
+  useUiStore.setState({
+    unreadOnlyScope: "each",
+    unreadOnlyMailboxes: ["a/INBOX/CATEGORY_PROMOTIONS"],
+  });
+  stop = startPreloading();
+  show(inbox, rows.slice(0, 2));
+  await vi.waitFor(() => expect(asked).toHaveLength(1 + CATEGORIES.length));
+  const unread = asked.filter((q) => q.unreadOnly).map((q) => q.alsoLabelId);
+  expect(unread).toEqual(["CATEGORY_PROMOTIONS"]);
+});
