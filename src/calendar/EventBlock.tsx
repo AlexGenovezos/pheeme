@@ -2,7 +2,7 @@
 // dot-and-time line for a short event in a month cell. Declined events are struck through and
 // dimmed; unanswered invites are dashed, as on the website. Events you can change can be dragged
 // (see `drag.ts`); the new event being placed draws here too, but can't be clicked.
-import { Video } from "lucide-react";
+import { Clock, MapPin, Video } from "lucide-react";
 import { useMemo, type CSSProperties, type MouseEvent } from "react";
 import type { CalendarEvent, CalendarInfo } from "../lib/tauri";
 import { cx } from "../lib/utils";
@@ -90,6 +90,7 @@ export function TimedEventBlock({
   style,
   compact,
   narrow = false,
+  stacked = false,
 }: {
   event: CalendarEvent;
   calendar: CalendarInfo | undefined;
@@ -97,8 +98,10 @@ export function TimedEventBlock({
   style: CSSProperties;
   /** Too short for a second line. */
   compact: boolean;
-  /** Too narrow for more than its title (the time is in its name and popover). */
+  /** Tighter padding; short blocks omit the inline time. */
   narrow?: boolean;
+  /** A tall, slim block has room for a title and distinct detail groups. */
+  stacked?: boolean;
 }) {
   const { background, text } = eventColors(event, calendar);
   const when = timeSpan(event, tz);
@@ -111,6 +114,7 @@ export function TimedEventBlock({
         "cal-event cal-event--timed",
         compact && "cal-event--compact",
         narrow && "cal-event--narrow",
+        stacked && "cal-event--stacked",
         (open || moving) && "cal-event--open",
         responseClass(event),
       )}
@@ -122,13 +126,28 @@ export function TimedEventBlock({
       onPointerDown={(e) => dragTimed(e, event, tz)}
     >
       <Title event={event} />
-      {narrow ? null : compact ? (
-        <span className="cal-event__time">, {when.split(" – ")[0]}</span>
-      ) : (
-        <>
-          <span className="cal-event__time">{when}</span>
-          {event.location && <span className="cal-event__location">{event.location}</span>}
-        </>
+      {compact ? (
+        !narrow && <span className="cal-event__time">, {when.split(" – ")[0]}</span>
+      ) : narrow && !stacked ? null : (
+        <span className="cal-event__details">
+          <span className="cal-event__time cal-event__detail">
+            <Clock className="cal-event__detail-icon" aria-hidden="true" />
+            <span className="cal-event__range">
+              {when.split(" – ").map((time, i) => (
+                <span key={i}>
+                  {i > 0 && " – "}
+                  {time}
+                </span>
+              ))}
+            </span>
+          </span>
+          {event.location && (
+            <span className="cal-event__location cal-event__detail">
+              <MapPin className="cal-event__detail-icon" aria-hidden="true" />
+              <span>{event.location}</span>
+            </span>
+          )}
+        </span>
       )}
       {event.canEdit && <span className="cal-event__resize" aria-hidden="true" />}
     </button>

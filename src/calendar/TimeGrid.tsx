@@ -20,10 +20,12 @@ export const HOUR_PX = 48;
 export const BAND_ROW_PX = 26;
 /** Blocks this short (minutes) show title and time on one line. */
 const COMPACT_MINUTES = 45;
-/** Narrower than this, an event shows only its title, edge to edge. */
+/** Narrower than this, an event uses tighter padding and separates its wrapped details. */
 const NARROW_EVENT_PX = 64;
 /** A short event puts its time beside its title; narrower than this, the time gives way. */
 const COMPACT_TIME_MIN_PX = 140;
+/** Four hours leave room for a headline, divider and separate when/where groups. */
+const STACKED_MINUTES = 240;
 /** The narrowest a day can be for two events side by side to still read. */
 export const MIN_DAY_PX = NARROW_EVENT_PX;
 
@@ -179,6 +181,7 @@ export function TimeGrid({
             >
               {columns[i].map((b) => {
                 const shown = Math.max(b.end - b.start, MIN_EVENT_MINUTES);
+                const eventWidth = (dayWidth * b.span) / b.columns;
                 return (
                   <TimedEventBlock
                     key={eventKey(b.event)}
@@ -186,9 +189,9 @@ export function TimeGrid({
                     calendar={lookup(b.event)}
                     tz={tz}
                     compact={shown < COMPACT_MINUTES}
+                    stacked={shown >= STACKED_MINUTES && eventWidth < COMPACT_TIME_MIN_PX}
                     narrow={
-                      (dayWidth * b.span) / b.columns <
-                      (shown < COMPACT_MINUTES ? COMPACT_TIME_MIN_PX : NARROW_EVENT_PX)
+                      eventWidth < (shown < COMPACT_MINUTES ? COMPACT_TIME_MIN_PX : NARROW_EVENT_PX)
                     }
                     style={{
                       top: (b.start / 60) * HOUR_PX,
