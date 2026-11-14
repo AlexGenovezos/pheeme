@@ -44,17 +44,19 @@ test("import VS Code themes, use them, keep them across a relaunch, and remove o
   await expect(settings.getByRole("combobox", { name: "Light theme" })).toHaveText(
     "Solarized (light)",
   );
-  await expect(settings.getByRole("radio", { name: "Dark" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  await expect(
+    settings.getByRole("radiogroup", { name: "Theme mode" }).getByRole("radio", { name: "Dark" }),
+  ).toHaveAttribute("aria-checked", "true");
   await shot("settings-after-import");
   await page.getByRole("button", { name: "Close settings" }).click();
   expect(await appBg()).toBe("rgb(39, 40, 34)"); // Monokai's editor.background, #272822
   await shot("monokai");
 
   await openAppearance();
-  await settings.getByRole("radio", { name: "Light" }).click();
+  await settings
+    .getByRole("radiogroup", { name: "Theme mode" })
+    .getByRole("radio", { name: "Light" })
+    .click();
   await page.getByRole("button", { name: "Close settings" }).click();
   expect(await appBg()).toBe("rgb(253, 246, 227)"); // Solarized Light, #fdf6e3
   await shot("solarized-light");
