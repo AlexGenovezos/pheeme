@@ -123,7 +123,7 @@ with a disposable GNOME Keyring for the local encryption keys, and records:
 | Start (WebDriver session request to the first list row), median of 5 launches | single starts 0.9 to 2.1 s | 3 s |
 | Memory after a minute idle: app plus its WebKit processes, PSS | 236 to 239 MiB | 330 MiB |
 | The same after a scripted 10-minute session (mailboxes, scrolling, conversations) | 300 MiB | 460 MiB |
-| The app's own (Rust) process after the session, PSS | 134 to 138 MiB | 165 MiB |
+| The app's own (Rust) process after the session, PSS | 180 MiB (134 to 138 MiB before local encryption, #348) | 215 MiB |
 | WebKit's web process: the lowest reading in the last third of the session minus the lowest in passes 20 to 40 | 17 to 26 MiB | 45 MiB |
 
 The budgets sit about 20% above the measurements on an `ubuntu-22.04` runner, which renders
