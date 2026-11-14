@@ -71,6 +71,12 @@ interface TasksState {
   dated: Task[] | null;
   /** `[from, to)` of the dated tasks, as `from:to`. */
   datedFor: string | null;
+  /** Why the last read of the task lists failed; `null` when it worked (`accounts` keeps its old value). */
+  accountsError: string | null;
+  /** Why the last read of a list's tasks failed, by `listKey`; absent when it worked. */
+  listErrors: Record<string, string>;
+  /** Why the last read of the dated tasks failed; `null` when it worked. */
+  datedError: string | null;
   /** The task whose details are open in the panel (`taskKey`), or the list a new task is being added to (`listKey`). */
   editing: string | null;
 
@@ -150,6 +156,9 @@ export const useTasksStore = create<TasksState>((set, get) => {
     lists: {},
     dated: null,
     datedFor: null,
+    accountsError: null,
+    listErrors: {},
+    datedError: null,
     editing: null,
 
     setPanelOpen: (open) => {
@@ -177,7 +186,7 @@ export const useTasksStore = create<TasksState>((set, get) => {
       try {
         const accounts = (await getTasksAccounts()) ?? [];
         if (ticket !== accountsTicket) return;
-        set({ accounts });
+        set({ accounts, accountsError: null });
         if (get().panelOpen)
           await Promise.all(
             accounts.flatMap((a) => a.lists.map((l) => get().loadList(a.accountId, l.id))),
@@ -185,7 +194,7 @@ export const useTasksStore = create<TasksState>((set, get) => {
       } catch (e) {
         if (ticket === accountsTicket) {
           console.warn("couldn't read task lists", e);
-          if (get().accounts === null) set({ accounts: [] });
+          set({ accountsError: toCommandError(e).message });
         }
       }
     },
@@ -196,9 +205,19 @@ export const useTasksStore = create<TasksState>((set, get) => {
       listTickets.set(key, ticket);
       try {
         const tasks = (await getTasksInList(accountId, listId)) ?? [];
-        if (listTickets.get(key) === ticket) setList(accountId, listId, tasks);
+        if (listTickets.get(key) === ticket) {
+          setList(accountId, listId, tasks);
+          set((s) => {
+            if (!(key in s.listErrors)) return s;
+            const listErrors = { ...s.listErrors };
+            delete listErrors[key];
+            return { listErrors };
+          });
+        }
       } catch (e) {
         console.warn("couldn't read tasks", e);
+        if (listTickets.get(key) === ticket)
+          set((s) => ({ listErrors: { ...s.listErrors, [key]: toCommandError(e).message } }));
       }
     },
 
@@ -207,11 +226,13 @@ export const useTasksStore = create<TasksState>((set, get) => {
       set({ datedFor: `${from}:${to}` });
       try {
         const dated = (await getDatedTasks(from, to)) ?? [];
-        if (ticket === datedTicket) set({ dated });
+        if (ticket === datedTicket) set({ dated, datedError: null });
       } catch (e) {
         console.warn("couldn't read dated tasks", e);
+        if (ticket !== datedTicket) return;
+        set({ datedError: toCommandError(e).message });
         // The grid waits for tasks before it shows; don't keep it waiting.
-        if (ticket === datedTicket && get().dated === null) set({ dated: [] });
+        if (get().dated === null) set({ dated: [] });
       }
     },
 

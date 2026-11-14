@@ -112,6 +112,7 @@ export function TasksPanelHost() {
 
 function TasksPanel() {
   const accounts = useTasksStore((s) => s.accounts);
+  const accountsError = useTasksStore((s) => s.accountsError);
   return (
     <aside id="tasks-panel" className="tasks-panel" aria-label="Tasks" data-owns-keys="">
       <div className="toolbar tasks-panel__head" {...dragRegion}>
@@ -121,7 +122,11 @@ function TasksPanel() {
       </div>
       <div className="tasks-panel__scroll">
         {accounts === null ? (
-          <SkeletonList />
+          accountsError ? (
+            <LoadError message={accountsError} onRetry={() => void store().loadAccounts()} />
+          ) : (
+            <SkeletonList />
+          )
         ) : (
           accounts.map((a) => (
             <AccountTasks key={a.accountId} account={a} showEmail={accounts.length > 1} />
@@ -129,6 +134,18 @@ function TasksPanel() {
         )}
       </div>
     </aside>
+  );
+}
+
+/** A read that failed: why, and a way to run it again (replaces what would have loaded). */
+function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="tasks-access">
+      <p role="alert">Couldn't read tasks: {message}</p>
+      <Button size="sm" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
   );
 }
 
@@ -309,6 +326,7 @@ const lastSubtask = (open: Task[], parent: string) =>
 function ListSection({ account, list }: { account: TasksAccount; list: TaskListInfo }) {
   const { accountId } = account;
   const tasks = useTasksStore((s) => s.lists[listKey(accountId, list.id)]);
+  const listError = useTasksStore((s) => s.listErrors[listKey(accountId, list.id)]);
   const editing = useTasksStore((s) => s.editing);
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -467,7 +485,9 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
         <Plus aria-hidden="true" />
         Add a task
       </button>
-      {tasks === undefined ? (
+      {tasks === undefined && listError ? (
+        <LoadError message={listError} onRetry={() => void store().loadList(accountId, list.id)} />
+      ) : tasks === undefined ? (
         [0, 1].map((i) => (
           <div key={i} className="task-row" aria-hidden="true">
             <Skeleton shape="circle" className="task-row__skeleton-check" />
@@ -515,7 +535,16 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
           )}
           {open.length === 0 && !adding && (
             <li className="tasks-list__empty">
-              {completed.length > 0 ? "All tasks complete" : "No tasks yet"}
+              {listError ? (
+                <LoadError
+                  message={listError}
+                  onRetry={() => void store().loadList(accountId, list.id)}
+                />
+              ) : completed.length > 0 ? (
+                "All tasks complete"
+              ) : (
+                "No tasks yet"
+              )}
             </li>
           )}
         </ul>

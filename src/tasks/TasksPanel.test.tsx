@@ -75,6 +75,9 @@ beforeEach(() => {
     lists: {},
     dated: null,
     datedFor: null,
+    accountsError: null,
+    listErrors: {},
+    datedError: null,
     editing: null,
   });
 });
@@ -309,5 +312,58 @@ describe("Tasks panel", () => {
     });
     await settle();
     expect(rows("Work")[0]).toBe("Synced from my phone");
+  });
+
+  test("a failed read of the task lists shows the error with Try again, not an empty panel", async () => {
+    fail.add("tasks_accounts");
+    await openPanel();
+    const panel = screen.getByRole("complementary", { name: "Tasks" });
+    expect(within(panel).getByRole("alert")).toHaveTextContent("Google said no.");
+    expect(useTasksStore.getState().accounts).toBeNull();
+    expect(useTasksStore.getState().accountsError).toBe("Google said no.");
+
+    fail.delete("tasks_accounts");
+    fireEvent.click(within(panel).getByRole("button", { name: "Try again" }));
+    await settle();
+    expect(useTasksStore.getState().accountsError).toBeNull();
+    expect(within(panel).queryByRole("alert")).toBeNull();
+    expect(rows("Work").length).toBeGreaterThan(0);
+  });
+
+  test("a failed reload keeps the accounts it had", async () => {
+    await openPanel();
+    const before = useTasksStore.getState().accounts;
+    expect(before).not.toBeNull();
+    fail.add("tasks_accounts");
+    await act(() => useTasksStore.getState().loadAccounts());
+    expect(useTasksStore.getState().accounts).toBe(before);
+    expect(useTasksStore.getState().accountsError).toBe("Google said no.");
+  });
+
+  test("a list that failed to load shows the error instead of No tasks yet, and Try again reads it", async () => {
+    fail.add("tasks_in_list");
+    await openPanel();
+    const section = list("Work");
+    expect(within(section).getByRole("alert")).toHaveTextContent("Google said no.");
+    expect(within(section).queryByText("No tasks yet")).toBeNull();
+
+    fail.delete("tasks_in_list");
+    fireEvent.click(within(section).getByRole("button", { name: "Try again" }));
+    await settle();
+    expect(within(list("Work")).queryByRole("alert")).toBeNull();
+    expect(rows("Work").length).toBeGreaterThan(0);
+    expect(Object.keys(useTasksStore.getState().listErrors).some((k) => k.includes("work"))).toBe(
+      false,
+    );
+  });
+
+  test("a failed dated read sets datedError and the next good one clears it", async () => {
+    backend();
+    fail.add("dated_tasks");
+    await act(() => useTasksStore.getState().loadDated("2026-11-08", "2026-11-15"));
+    expect(useTasksStore.getState().datedError).toBe("Google said no.");
+    fail.delete("dated_tasks");
+    await act(() => useTasksStore.getState().loadDated("2026-11-08", "2026-11-15"));
+    expect(useTasksStore.getState().datedError).toBeNull();
   });
 });

@@ -583,6 +583,9 @@ export function CalendarScreen({ onAddAccount }: { onAddAccount?: () => void } =
         {loadError && (
           <p className="cal-main__error" role="alert">
             {loadError}
+            <Button size="sm" onClick={() => void useCalendarStore.getState().loadAccounts()}>
+              Try again
+            </Button>
           </p>
         )}
         <div className="cal-main__body">
