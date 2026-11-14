@@ -15,6 +15,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
+mod person;
+pub use person::PersonProfile;
+
 /// Suggestions shown at once.
 pub const DEFAULT_LIMIT: usize = 8;
 /// How long an account's loaded contacts answer suggestions before they're read again, so a
@@ -34,6 +37,7 @@ pub const PEOPLE_API_URL: &str =
 
 #[async_trait::async_trait]
 pub trait PeopleApi: Send + Sync {
+    async fn create_contact(&self, address: &str, name: Option<&str>) -> Result<(), GmailError>;
     async fn list_people(
         &self,
         list: ContactList,
@@ -43,6 +47,9 @@ pub trait PeopleApi: Send + Sync {
 
 #[async_trait::async_trait]
 impl PeopleApi for GmailClient {
+    async fn create_contact(&self, address: &str, name: Option<&str>) -> Result<(), GmailError> {
+        self.create_contact(address, name).await
+    }
     async fn list_people(
         &self,
         list: ContactList,

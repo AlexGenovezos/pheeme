@@ -48,6 +48,39 @@ async function openNew() {
   return screen.findByRole("region", { name: "New message" }, { timeout: 5000 });
 }
 
+test("Drive inserts escaped links into the draft and the picker owns the Send shortcut", async () => {
+  mockIPC((cmd) => {
+    if (cmd === "drive_files")
+      return {
+        files: [
+          {
+            id: "drive-file",
+            name: "Report <script>",
+            mimeType: "application/pdf",
+            size: "42",
+            resourceKey: "key",
+          },
+        ],
+        nextPageToken: null,
+      };
+    return undefined;
+  });
+  const panel = await openNew();
+  fireEvent.click(within(panel).getByRole("button", { name: "Attach from Google Drive" }));
+  const dialog = await screen.findByRole("dialog", { name: "Attach from Google Drive" });
+  fireEvent.keyDown(dialog, { key: "Enter", ctrlKey: true });
+  expect(useComposeStore.getState().windows[0].error).toBeNull();
+  fireEvent.click(await within(dialog).findByRole("button", { name: /Report <script>/ }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Insert 1 link" }));
+  const draft = useComposeStore.getState().windows[0].draft;
+  expect(draft.bodyHtml).toContain("Report &lt;script&gt;");
+  expect(draft.bodyHtml).toContain(
+    "https://drive.google.com/file/d/drive-file/view?resourcekey=key",
+  );
+  expect(draft.attachments).toEqual([]);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
 test("typed addresses become chips; Backspace takes the last one back to edit", async () => {
   const panel = await openNew();
   const to = within(panel).getByRole("combobox", { name: "To" });

@@ -85,6 +85,24 @@ impl From<ApiPerson> for Person {
 }
 
 impl GmailClient {
+    /// Creates a saved contact. Google makes the id: never retry an ambiguous result.
+    pub async fn create_contact(
+        &self,
+        address: &str,
+        name: Option<&str>,
+    ) -> Result<(), GmailError> {
+        let mut body = serde_json::json!({"emailAddresses": [{"value": address}]});
+        if let Some(name) = name.filter(|n| !n.trim().is_empty()) {
+            body["names"] = serde_json::json!([{"unstructuredName": name}]);
+        }
+        self.send_empty(
+            ApiRequest::post(&["people:createContact"])
+                .json(body)
+                .non_idempotent(),
+        )
+        .await
+    }
+
     /// A client for the People API, signed in as the same account.
     pub fn people(tokens: Arc<dyn TokenProvider>) -> Self {
         GmailClient::new(tokens).with_base_url(PEOPLE_BASE_URL)
@@ -124,6 +142,19 @@ mod tests {
     use serde_json::json;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn contact_create_does_not_retry_an_ambiguous_write() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).and(path("/people:createContact"))
+            .and(wiremock::matchers::body_json(json!({"emailAddresses":[{"value":"ada@example.com"}],"names":[{"unstructuredName":"Ada Lovelace"}]})))
+            .respond_with(ResponseTemplate::new(503)).expect(1).mount(&server).await;
+        let (client, _) = client_for(&server);
+        assert!(client
+            .create_contact("ada@example.com", Some("Ada Lovelace"))
+            .await
+            .is_err());
+    }
 
     #[tokio::test]
     async fn lists_saved_contacts_with_names_and_addresses() {

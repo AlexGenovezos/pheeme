@@ -1,10 +1,11 @@
 import { ChevronUp, Forward, Pencil, Reply, ReplyAll } from "lucide-react";
-import { type MouseEvent, useRef } from "react";
+import { type MouseEvent, useRef, useState } from "react";
+import { PersonPanel, type PersonTarget } from "../contacts/PersonPanel";
 import { useComposeStore } from "../compose/composeStore";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { formatFullDate, formatListDate } from "../lib/dates";
-import type { CommandError, EmailAddress, MessageDetail, ThreadLoading } from "../lib/tauri";
+import type { CommandError, MessageDetail, ThreadLoading } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useThreadStore } from "../store/threadStore";
 import { AttachmentList } from "./AttachmentList";
@@ -28,19 +29,6 @@ export interface MessageCardProps {
 
 const senderName = (m: MessageDetail) => m.fromName || m.fromAddress || "Unknown sender";
 
-/** "to me, Mira Okafor": names where known, "me" for the account's own address. */
-function recipientLine(
-  prefix: string,
-  people: EmailAddress[],
-  myAddress: string | undefined,
-): string | null {
-  if (people.length === 0) return null;
-  const names = people.map((p) =>
-    myAddress && p.address.toLowerCase() === myAddress ? "me" : p.name || p.address,
-  );
-  return `${prefix} ${names.join(", ")}`;
-}
-
 export function MessageCard({
   message,
   accountId,
@@ -57,6 +45,7 @@ export function MessageCard({
   const name = isDraft ? "Draft" : senderName(message);
   const when = message.date > 0 ? new Date(message.date) : null;
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
+  const [person, setPerson] = useState<PersonTarget | null>(null);
 
   if (!expanded) {
     return (
@@ -95,10 +84,10 @@ export function MessageCard({
     onToggle();
   };
 
-  const lines = [
-    recipientLine("to", message.to, myAddress),
-    recipientLine("cc", message.cc, myAddress),
-  ].filter(Boolean);
+  const recipientGroups = [
+    { prefix: "to", people: message.to },
+    { prefix: "cc", people: message.cc },
+  ].filter((g) => g.people.length);
   return (
     <article
       className="message-card"
@@ -113,15 +102,50 @@ export function MessageCard({
       >
         <div className="message-card__from">
           <div className="message-card__identity">
-            <span className="message-card__name selectable" data-draft={isDraft || undefined}>
-              {name}
-            </span>
+            {!isDraft && message.fromAddress ? (
+              <button
+                type="button"
+                className="message-card__name person-link"
+                aria-label={`View contact ${name}`}
+                onClick={() => setPerson({ address: message.fromAddress!, name: message.fromName })}
+              >
+                {name}
+              </button>
+            ) : (
+              <span className="message-card__name selectable" data-draft={isDraft || undefined}>
+                {name}
+              </span>
+            )}
             {message.fromName && message.fromAddress && (
               <span className="message-card__address selectable">{message.fromAddress}</span>
             )}
           </div>
-          {lines.length > 0 && (
-            <div className="message-card__to selectable">{lines.join(" · ")}</div>
+          {recipientGroups.length > 0 && (
+            <div className="message-card__to selectable">
+              {recipientGroups.map((group, gi) => (
+                <span key={group.prefix}>
+                  {gi > 0 ? " · " : ""}
+                  {group.prefix}{" "}
+                  {group.people.map((p, i) => (
+                    <span key={`${p.address}:${i}`}>
+                      {i > 0 ? ", " : ""}
+                      {p.address.toLowerCase() === myAddress ? (
+                        "me"
+                      ) : (
+                        <button
+                          type="button"
+                          className="person-link"
+                          aria-label={`View contact ${p.name || p.address}`}
+                          onClick={() => setPerson(p)}
+                        >
+                          {p.name || p.address}
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </span>
+              ))}
+            </div>
           )}
         </div>
         {when && (
@@ -188,6 +212,14 @@ export function MessageCard({
             Edit draft
           </Button>
         </div>
+      )}
+      {person && (
+        <PersonPanel
+          key={`${accountId}:${person.address}`}
+          accountId={accountId}
+          person={person}
+          onClose={() => setPerson(null)}
+        />
       )}
     </article>
   );

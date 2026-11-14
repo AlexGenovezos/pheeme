@@ -83,6 +83,26 @@ calendar.
    https://www.googleapis.com/auth/tasks
    ```
 
+Drive is optional: when you first use **Attach from Google Drive** or **Save to
+Google Drive**, allow Drive access and turn on the [Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com)
+if asked. It lets Pheeme see file names and details, and create new files; sharing
+permissions stay as they are. Saving a person to Google Contacts asks separately
+for permission to write contacts.
+
+Drive consent requests `drive.metadata.readonly` (browse file details) and `drive.file`
+(create files for saved attachments). Attach from Drive inserts links, including
+Google Docs, Sheets and Slides; recipients still need access in Drive. Saved
+attachments go to **My Drive**, where you can move them into a folder afterward.
+If an upload cannot be confirmed, check My Drive before saving again: Pheeme
+doesn't repeat uploads automatically after an uncertain result.
+
+Click a sender or recipient in an expanded email to open their person panel.
+It shows up to eight recent cached conversations and five upcoming meetings in
+the next 90 days, from this account's shown calendars. Names and email addresses
+come from cached mail and Google Contacts. **Save to Google Contacts** requests
+the `contacts` write scope only when needed; **Allow saving contacts** grants it,
+then press **Save to Google Contacts** again to save the person.
+
 ## 7. Add Pheeme's links to the branding
 
 1. Open [Branding](https://console.cloud.google.com/auth/branding) and check

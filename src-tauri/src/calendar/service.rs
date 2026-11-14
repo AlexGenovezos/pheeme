@@ -336,6 +336,72 @@ impl CalendarService {
 
     /// `rows` as the events in `[from_ms, to_ms)`: series expanded, all-day events counted by
     /// their dates in `display_tz`, sorted by start.
+    pub async fn events_with_person(
+        &self,
+        account_id: &str,
+        address: &str,
+        from_ms: i64,
+        to_ms: i64,
+        display_tz: &str,
+    ) -> Result<Vec<CalendarEventDto>, MailError> {
+        let rows: Vec<_> = db::calendar::events_overlapping(&self.db, from_ms, to_ms)
+            .await?
+            .into_iter()
+            .filter(|e| e.account_id == account_id)
+            .collect();
+        let by_id: HashMap<_, _> = rows
+            .iter()
+            .map(|e| ((e.calendar_id.as_str(), e.id.as_str()), e))
+            .collect();
+        let participates = |e: &DbEvent| {
+            e.organizer_email
+                .as_deref()
+                .is_some_and(|a| a.eq_ignore_ascii_case(address))
+                || serde_json::from_str::<Vec<ApiAttendee>>(&e.attendees)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|a| {
+                        a.email
+                            .as_deref()
+                            .is_some_and(|email| email.eq_ignore_ascii_case(address))
+                            && a.response_status.as_deref() != Some("declined")
+                    })
+        };
+        let mut found: Vec<_> = self
+            .expand_rows(&rows, from_ms, to_ms, display_tz)
+            .await?
+            .into_iter()
+            .filter(|e| {
+                if e.self_response.as_deref() == Some("declined") {
+                    return false;
+                }
+                let row = by_id
+                    .get(&(e.calendar_id.as_str(), e.id.as_str()))
+                    .or_else(|| {
+                        e.master_id
+                            .as_deref()
+                            .and_then(|m| by_id.get(&(e.calendar_id.as_str(), m)))
+                    });
+                row.is_some_and(|r| participates(r))
+            })
+            .collect();
+        // The same meeting may be present on several calendars. Keep its first visible copy.
+        let mut seen = HashSet::new();
+        found.retain(|e| {
+            let row = by_id
+                .get(&(e.calendar_id.as_str(), e.id.as_str()))
+                .or_else(|| {
+                    e.master_id
+                        .as_deref()
+                        .and_then(|m| by_id.get(&(e.calendar_id.as_str(), m)))
+                });
+            let uid = row.and_then(|r| r.ical_uid.as_deref()).unwrap_or(&e.id);
+            seen.insert((uid.to_owned(), e.start.ms, e.start.date.clone()))
+        });
+        found.truncate(5);
+        Ok(found)
+    }
+
     async fn expand_rows(
         &self,
         rows: &[DbEvent],
@@ -1629,6 +1695,60 @@ pub(super) mod tests {
         let standups = search("standup").await;
         assert_eq!(standups.len(), 5, "each Monday in November: {standups:?}");
         assert!(standups.iter().all(|id| id.starts_with("standup_")));
+    }
+
+    #[tokio::test]
+    async fn person_meetings_use_exact_guests_and_apply_occurrence_overrides() {
+        let h = harness(&["a", "b"]).await;
+        let mut series = standup_series();
+        series["attendees"] = json!([{"email": "Ada@Example.com", "responseStatus": "accepted"}]);
+        h.fake("a").put("a@example.com", series.clone());
+        h.fake("b").put("b@example.com", series);
+        let mut changed = timed(
+            "standup_20261109T140000Z",
+            "Different guests",
+            "2026-11-09T09:00:00-05:00",
+            "2026-11-09T09:15:00-05:00",
+        );
+        changed["recurringEventId"] = json!("standup");
+        changed["originalStartTime"] =
+            json!({"dateTime":"2026-11-09T09:00:00-05:00", "timeZone":"America/New_York"});
+        changed["attendees"] = json!([{"email":"notada@example.com"}]);
+        h.fake("a").put("a@example.com", changed);
+        let mut declined = timed(
+            "declined",
+            "Declined",
+            "2026-11-11T09:00:00Z",
+            "2026-11-11T10:00:00Z",
+        );
+        declined["attendees"] = json!([{"email":"ada@example.com", "responseStatus":"declined"}]);
+        h.fake("a").put("a@example.com", declined);
+        let mut mentioned = timed(
+            "mentioned",
+            "Email ada@example.com",
+            "2026-11-12T09:00:00Z",
+            "2026-11-12T10:00:00Z",
+        );
+        mentioned["description"] = json!("ada@example.com");
+        h.fake("a").put("a@example.com", mentioned);
+        h.grant("a").await;
+        h.grant("b").await;
+        let events = h
+            .service
+            .events_with_person(
+                "a",
+                "ada@example.com",
+                ms("2026-11-01T00:00:00Z"),
+                ms("2026-12-01T00:00:00Z"),
+                "UTC",
+            )
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 4);
+        assert!(events
+            .iter()
+            .all(|e| e.account_id == "a" && e.master_id.as_deref() == Some("standup")));
+        assert!(!events.iter().any(|e| e.id == "standup_20261109T140000Z"));
     }
 
     #[tokio::test]

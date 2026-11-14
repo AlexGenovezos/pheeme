@@ -12,6 +12,7 @@ pub mod contacts;
 pub mod db;
 pub mod desktop;
 mod diagnostics;
+pub mod drive;
 pub mod filters;
 pub mod gmail;
 pub mod http;
@@ -55,6 +56,7 @@ pub struct AppState {
     pub sender_rules: sender_rules::SenderRuleService,
     pub compose: compose::ComposeService,
     pub contacts: Arc<contacts::ContactService>,
+    pub drive: drive::DriveService,
     pub calendar: Arc<calendar::service::CalendarService>,
     pub tasks: Arc<tasks::service::TasksService>,
     pub sync: Arc<SyncManager>,
@@ -124,6 +126,7 @@ pub async fn build_state(
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
     let compose = compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir);
+    let drive = drive::DriveService::new(accounts.clone(), mail.clone());
     let local_api = local_api::LocalApi::new(
         db.clone(),
         accounts.clone(),
@@ -149,6 +152,7 @@ pub async fn build_state(
         sender_rules,
         compose,
         contacts,
+        drive,
         calendar,
         tasks,
         sync,
@@ -451,6 +455,10 @@ pub fn run() {
             commands::contacts::suggest_contacts,
             commands::contacts::google_contacts_status,
             commands::contacts::refresh_google_contacts,
+            commands::contacts::person_profile,
+            commands::contacts::save_person_contact,
+            commands::drive::drive_files,
+            commands::drive::save_attachment_to_drive,
             commands::calendar::calendar_accounts,
             commands::calendar::calendar_events,
             commands::calendar::search_calendar_events,

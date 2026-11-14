@@ -49,6 +49,8 @@ export function Modal({
   }, [returnFocus]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    // Portals still bubble through their React parents (including compose's Send shortcut).
+    e.stopPropagation();
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();

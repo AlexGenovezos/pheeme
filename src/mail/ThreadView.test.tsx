@@ -139,7 +139,9 @@ test("expanded cards show the sender, a 'to me' line and the full date", () => {
   renderView();
 
   expect(screen.getByText("s1@example.com")).toBeInTheDocument();
-  expect(screen.getByText("to me, Bo Li · cc cc@x.test")).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "View contact Bo Li" }).closest(".message-card__to"),
+  ).toHaveTextContent("to me, Bo Li · cc cc@x.test");
 });
 
 test("clicking a collapsed card expands it, and the chevron collapses it", () => {
