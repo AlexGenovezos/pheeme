@@ -62,19 +62,18 @@ export function wranglerConfigPath(
   home = os.homedir(),
 ) {
   if (env.WRANGLER_CONFIG_PATH) return env.WRANGLER_CONFIG_PATH;
+  // Joined in the named platform's own style, whichever machine this runs on.
+  const { join } = platform === "win32" ? path.win32 : path.posix;
   if (platform === "darwin") {
-    return path.join(home, "Library/Preferences/.wrangler/config/default.toml");
+    return join(home, "Library/Preferences/.wrangler/config/default.toml");
   }
   if (platform === "win32") {
-    return path.join(
-      env.APPDATA ?? path.join(home, "AppData/Roaming"),
+    return join(
+      env.APPDATA ?? join(home, "AppData/Roaming"),
       "xdg.config/.wrangler/config/default.toml",
     );
   }
-  return path.join(
-    env.XDG_CONFIG_HOME ?? path.join(home, ".config"),
-    ".wrangler/config/default.toml",
-  );
+  return join(env.XDG_CONFIG_HOME ?? join(home, ".config"), ".wrangler/config/default.toml");
 }
 
 function token() {
