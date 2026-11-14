@@ -235,7 +235,8 @@ describe("Tasks panel", () => {
     act(() => void registry.run("tasks.focus"));
     await settle();
     const panel = screen.getByRole("complementary", { name: "Tasks" });
-    expect(panel.contains(document.activeElement)).toBe(true);
+    // The first task, once its list has been read, not the Add button that was there before it.
+    expect(document.activeElement).toHaveAccessibleName(/^Edit task: /);
     act(() => (document.activeElement as HTMLElement).blur());
     act(() => void registry.run("tasks.focus"));
     expect(panel.contains(document.activeElement)).toBe(true);
@@ -363,6 +364,24 @@ describe("Tasks panel", () => {
     await act(() => useTasksStore.getState().loadAccounts());
     expect(useTasksStore.getState().accounts).toBe(before);
     expect(useTasksStore.getState().accountsError).toBe("Google said no.");
+    // The error shows above the lists it kept.
+    expect(screen.getByRole("alert")).toHaveTextContent("Google said no.");
+    expect(rows("My Tasks")).toContain("Renew passport");
+  });
+
+  test("a failed reload of a list keeps its tasks and shows the error with Try again", async () => {
+    await openPanel();
+    fail.add("tasks_in_list");
+    const { accountId } = useTasksStore.getState().accounts![0]!;
+    const listId = useTasksStore.getState().accounts![0]!.lists[0]!.id;
+    await act(() => useTasksStore.getState().loadList(accountId, listId));
+    const section = list("My Tasks");
+    expect(within(section).getByRole("alert")).toHaveTextContent("Google said no.");
+    expect(rows("My Tasks")).toContain("Renew passport");
+    fail.delete("tasks_in_list");
+    fireEvent.click(within(section).getByRole("button", { name: "Try again" }));
+    await settle();
+    expect(within(list("My Tasks")).queryByRole("alert")).toBeNull();
   });
 
   test("a list that failed to load shows the error instead of No tasks yet, and Try again reads it", async () => {

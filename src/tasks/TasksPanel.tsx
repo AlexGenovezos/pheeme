@@ -96,8 +96,12 @@ export function TasksPanelHost() {
   useTasksData();
   const open = useTasksStore((s) => s.panelOpen);
   const shortcut = useKeybinding(TOGGLE_TASKS_COMMAND, TOGGLE_TASKS_SHORTCUT);
-  // `tasks.focus` may have to open the panel first; the focus moves in once it is drawn.
+  // `tasks.focus` may have to open the panel first; the focus moves in once its tasks are drawn.
   const wantFocus = useRef(false);
+  const accounts = useTasksStore((s) => s.accounts);
+  const lists = useTasksStore((s) => s.lists);
+  const listErrors = useTasksStore((s) => s.listErrors);
+  const accountsError = useTasksStore((s) => s.accountsError);
   const focusPanel = () => {
     const panel = document.getElementById("tasks-panel");
     if (!panel) return false;
@@ -124,13 +128,17 @@ export function TasksPanelHost() {
     },
   ]);
   useEffect(() => {
-    if (open && wantFocus.current) {
-      wantFocus.current = false;
-      focusPanel();
-    }
+    if (!open || !wantFocus.current) return;
+    // Still reading (skeleton rows): this runs again when the tasks, or the failure, arrive.
+    const reading = document
+      .getElementById("tasks-panel")
+      ?.querySelector('.tasks-list[aria-hidden="true"], .task-row[aria-hidden="true"]');
+    if (reading) return;
+    wantFocus.current = false;
+    focusPanel();
     // `focusPanel` only reads the DOM.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, accounts, lists, listErrors, accountsError]);
   return (
     <>
       {open && <TasksPanel />}
@@ -172,16 +180,21 @@ function TasksPanel() {
             <SkeletonList />
           )
         ) : (
-          accounts.map((a) => (
-            <AccountTasks key={a.accountId} account={a} showEmail={accounts.length > 1} />
-          ))
+          <>
+            {accountsError && (
+              <LoadError message={accountsError} onRetry={() => void store().loadAccounts()} />
+            )}
+            {accounts.map((a) => (
+              <AccountTasks key={a.accountId} account={a} showEmail={accounts.length > 1} />
+            ))}
+          </>
         )}
       </div>
     </aside>
   );
 }
 
-/** A read that failed: why, and a way to run it again (replaces what would have loaded). */
+/** A read that failed: why, and a way to run it again, above whatever the last good read left. */
 function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="tasks-access">
@@ -529,9 +542,11 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
         <Plus aria-hidden="true" />
         Add a task
       </button>
-      {tasks === undefined && listError ? (
+      {listError && (
         <LoadError message={listError} onRetry={() => void store().loadList(accountId, list.id)} />
-      ) : tasks === undefined ? (
+      )}
+      {tasks === undefined ? (
+        !listError &&
         [0, 1].map((i) => (
           <div key={i} className="task-row" aria-hidden="true">
             <Skeleton shape="circle" className="task-row__skeleton-check" />
@@ -577,18 +592,9 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
               </li>
             ),
           )}
-          {open.length === 0 && !adding && (
+          {open.length === 0 && !adding && !listError && (
             <li className="tasks-list__empty">
-              {listError ? (
-                <LoadError
-                  message={listError}
-                  onRetry={() => void store().loadList(accountId, list.id)}
-                />
-              ) : completed.length > 0 ? (
-                "All tasks complete"
-              ) : (
-                "No tasks yet"
-              )}
+              {completed.length > 0 ? "All tasks complete" : "No tasks yet"}
             </li>
           )}
         </ul>
