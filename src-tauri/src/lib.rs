@@ -231,9 +231,9 @@ fn startup_failed(
     let mut message = format!("{error:#}");
     if lost {
         message.push_str(
-            "\n\nOr start again: Pheeme moves the unreadable data into a folder in its data \
-             folder, makes a new key and downloads your mail again from Gmail. You'll sign in \
-             to your accounts again, and changes not yet sent to Gmail stay in that folder.",
+            "\n\nOr start again: Pheeme moves the unreadable data into \"unreadable\" folders \
+             beside it, makes a new key and downloads your mail again from Gmail. You'll sign \
+             in to your accounts again, and changes not yet sent to Gmail stay in those folders.",
         );
     }
     let dialog = app
