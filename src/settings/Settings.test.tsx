@@ -95,17 +95,22 @@ test("app shortcuts don't fire while the dialog is open", () => {
   expect(archive).toHaveBeenCalledTimes(1);
 });
 
-test("Appearance sets the theme mode and the sidebar", () => {
+test("Appearance sets the theme mode, the sidebar color and the sidebar", () => {
   render(<Harness />);
   open("appearance");
-  fireEvent.click(within(dialog()).getByRole("radio", { name: "Dark" }));
+  const modes = () => within(dialog()).getByRole("radiogroup", { name: "Theme mode" });
+  fireEvent.click(within(modes()).getByRole("radio", { name: "Dark" }));
   expect(useThemeStore.getState().mode).toBe("dark");
-  expect(within(dialog()).getByRole("radio", { name: "Dark" })).toHaveAttribute(
+  expect(within(modes()).getByRole("radio", { name: "Dark" })).toHaveAttribute(
     "aria-checked",
     "true",
   );
-  fireEvent.keyDown(within(dialog()).getByRole("radio", { name: "Dark" }), { key: "ArrowLeft" });
+  fireEvent.keyDown(within(modes()).getByRole("radio", { name: "Dark" }), { key: "ArrowLeft" });
   expect(useThemeStore.getState().mode).toBe("light");
+
+  const sidebarColors = within(dialog()).getByRole("radiogroup", { name: "Sidebar color" });
+  fireEvent.click(within(sidebarColors).getByRole("radio", { name: "Ink" }));
+  expect(useThemeStore.getState().sidebarStyle).toBe("ink");
 
   fireEvent.click(within(dialog()).getByRole("switch", { name: "Show sidebar" }));
   expect(useUiStore.getState().sidebarCollapsed).toBe(true);

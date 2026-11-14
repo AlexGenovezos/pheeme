@@ -1,8 +1,10 @@
 import { create } from "zustand";
 import { builtInThemes, type ThemeDefinition } from "../styles/themes";
-import { themeColorToHex } from "../styles/themes/color";
+import { themeColorToHex, toCanonicalThemeColor } from "../styles/themes/color";
+import { makeReadable } from "../styles/themes/contrast";
+import type { ThemeToken } from "../styles/themes/schema";
 import { buildThemeFromFile, type ThemeFile } from "../styles/themes/themeFile";
-import type { ImportedTheme } from "../styles/themes/t3";
+import { type ImportedTheme, themeFromSeeds } from "../styles/themes/t3";
 import { FOLDER_THEMES_KEY, readCustomThemes, writeCustomThemes } from "./customThemes";
 
 export type ThemeMode = "system" | "light" | "dark";
@@ -35,9 +37,37 @@ function defaultStorage(): StorageLike | undefined {
   }
 }
 
+/** The stored value under `key` when it is one of `options`, else `fallback`. */
+function readOption<T extends string>(
+  key: string,
+  options: readonly T[],
+  fallback: T,
+  storage: StorageLike | undefined,
+): T {
+  try {
+    const stored = storage?.getItem(key);
+    return options.includes(stored as T) ? (stored as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function readThemeMode(storage: StorageLike | undefined = defaultStorage()): ThemeMode {
-  const stored = storage?.getItem(THEME_MODE_KEY);
-  return THEME_MODES.includes(stored as ThemeMode) ? (stored as ThemeMode) : "system";
+  return readOption(THEME_MODE_KEY, THEME_MODES, "system", storage);
+}
+
+/**
+ * How the sidebar looks with Pheeme Light: its own pale grey, a pale ink-blue wash, the deep
+ * ink blue of the app icon, or Pheeme Dark's colours. Other themes keep their own sidebar.
+ */
+export type SidebarStyle = "light" | "tinted" | "ink" | "dark";
+export const SIDEBAR_STYLES: readonly SidebarStyle[] = ["light", "tinted", "ink", "dark"];
+export const SIDEBAR_STYLE_KEY = "pheeme.sidebar-style";
+
+export function readSidebarStyle(
+  storage: StorageLike | undefined = defaultStorage(),
+): SidebarStyle {
+  return readOption(SIDEBAR_STYLE_KEY, SIDEBAR_STYLES, "light", storage);
 }
 
 export function writeThemeMode(
@@ -87,7 +117,11 @@ function supportsOklch(): boolean {
 }
 
 /** Write a theme's tokens onto :root so every `var(--color-…)` picks them up. */
-export function applyTheme(theme: ThemeDefinition, root: HTMLElement = document.documentElement) {
+export function applyTheme(
+  theme: ThemeDefinition,
+  root: HTMLElement = document.documentElement,
+  sidebar: SidebarStyle = "light",
+) {
   const oklch = supportsOklch();
   for (const [token, value] of Object.entries(theme.tokens)) {
     const hex = !oklch && token.startsWith("--color-");
@@ -95,33 +129,72 @@ export function applyTheme(theme: ThemeDefinition, root: HTMLElement = document.
   }
   root.dataset.theme = theme.kind;
   root.style.colorScheme = theme.kind;
-  applySidebarSurface(theme, oklch);
+  applySidebarSurface(theme, sidebar, oklch);
 }
 
 const SIDEBAR_STYLE_ID = "pheeme-sidebar-surface";
 
+/** Tinted: Pheeme Light's sidebar grey, washed with the accent's ink blue. */
+export const TINTED_SIDEBAR_BG = "#e8edf8";
+/** Ink: the app icon's engraving ink, a deep blue, with the palette built around it. */
+export const INK_SIDEBAR_SEEDS = { background: "#1a2b5c", accent: "#8ba5f2" };
+
+let tintedSidebar: Partial<Record<ThemeToken, string>> | null = null;
+/** Tinted: Pheeme Light's colours on the blue wash, with only those that must move (a few mailbox colours) darkened. */
+export function tintedSidebarTokens(): Partial<Record<ThemeToken, string>> {
+  if (!tintedSidebar) {
+    const light = builtInThemes.light.tokens;
+    const bg = toCanonicalThemeColor(TINTED_SIDEBAR_BG)!;
+    const readable = makeReadable({ ...light, "--color-sidebar-bg": bg });
+    tintedSidebar = Object.fromEntries(
+      Object.entries(readable).filter(([token, v]) => v !== light[token as ThemeToken]),
+    );
+  }
+  return tintedSidebar;
+}
+
+let inkSidebar: ThemeDefinition | null = null;
+/** The whole palette the Ink sidebar wears: built from its two colours, readable throughout. */
+export function inkSidebarTheme(): ThemeDefinition {
+  inkSidebar ??= buildThemeFromFile(themeFromSeeds("Ink sidebar", INK_SIDEBAR_SEEDS));
+  return inkSidebar;
+}
+
 /**
- * The sidebar is the window's dark surface, so it stands apart from the light panes beside it:
- * with Pheeme Light it wears Pheeme Dark's colours (custom themes keep their own sidebar).
+ * The sidebar's own surface under Pheeme Light, as CSS scoped to `.shell__sidebar`: nothing for
+ * the Light style (and for every other theme, which keeps its own sidebar), a new background for
+ * Tinted, and a whole dark palette for Ink and Dark, so it stands apart from the light panes.
  */
-export function sidebarSurfaceCss(theme: ThemeDefinition, oklch = true): string {
-  if (theme.id !== builtInThemes.light.id) return "";
-  const dark = builtInThemes.dark.tokens;
+export function sidebarSurfaceCss(
+  theme: ThemeDefinition,
+  style: SidebarStyle,
+  oklch = true,
+): string {
+  if (theme.id !== builtInThemes.light.id || style === "light") return "";
   const value = (token: string, v: string) =>
     !oklch && token.startsWith("--color-") ? themeColorToHex(v) : v;
-  const vars = Object.entries(dark)
+  const surface =
+    style === "tinted"
+      ? tintedSidebarTokens()
+      : style === "ink"
+        ? inkSidebarTheme().tokens
+        : builtInThemes.dark.tokens;
+  const vars = Object.entries(surface)
     .map(([token, v]) => `${token}:${value(token, v)}`)
     .join(";");
-  // Solid, not a tint over macOS vibrancy: the material under it is the light one.
-  const solid = value("--color-sidebar-bg", dark["--color-sidebar-bg"]);
+  // Solid, not a tint over macOS vibrancy: the material under it is the light one, and would wash out the colour.
+  const solid = value("--color-sidebar-bg", surface["--color-sidebar-bg"]!);
+  const sidebar = `${vars};--color-sidebar-vibrant-bg:${solid}`;
   return (
     `:root{--color-sidebar-surface:${solid}}` +
-    // No pane lines (its edge, above its footer): the dark surface is edge enough.
-    `.shell__sidebar{${vars};--color-sidebar-vibrant-bg:${solid};--color-pane-border:transparent;color-scheme:dark;color:var(--color-sidebar-foreground)}`
+    (style === "tinted"
+      ? `.shell__sidebar{${sidebar}}`
+      : // No pane lines (its edge, above its footer): the dark surface is edge enough.
+        `.shell__sidebar{${sidebar};--color-pane-border:transparent;color-scheme:dark;color:var(--color-sidebar-foreground)}`)
   );
 }
 
-function applySidebarSurface(theme: ThemeDefinition, oklch: boolean) {
+function applySidebarSurface(theme: ThemeDefinition, sidebar: SidebarStyle, oklch: boolean) {
   if (typeof document === "undefined") return;
   let style = document.getElementById(SIDEBAR_STYLE_ID) as HTMLStyleElement | null;
   if (!style) {
@@ -129,7 +202,7 @@ function applySidebarSurface(theme: ThemeDefinition, oklch: boolean) {
     style.id = SIDEBAR_STYLE_ID;
     document.head.appendChild(style);
   }
-  style.textContent = sidebarSurfaceCss(theme, oklch);
+  style.textContent = sidebarSurfaceCss(theme, sidebar, oklch);
 }
 
 export type ThemeListener = (mode: ThemeMode, theme: ThemeDefinition) => void;
@@ -150,6 +223,8 @@ interface ThemeState {
   resolved: ResolvedTheme;
   /** The chosen theme id for Light and for Dark mode. Any theme can go in either, as in T3 Code. */
   choices: Record<ResolvedTheme, string>;
+  /** How the sidebar looks with Pheeme Light. */
+  sidebarStyle: SidebarStyle;
   /** Installed custom themes, in install order. */
   customThemes: ThemeFile[];
   /** Themes read from the themes folder at launch (not saved; the files are the source). */
@@ -159,6 +234,7 @@ interface ThemeState {
   toggle(): void;
   /** Use theme `id` whenever Pheeme is in `kind` mode. */
   chooseTheme(kind: ResolvedTheme, id: string): void;
+  setSidebarStyle(style: SidebarStyle): void;
   /**
    * Install themes (replacing any with the same id), pick each for the mode it
    * was meant for (a light/dark pair sets both), and show the last one, so the
@@ -236,11 +312,11 @@ export function themeFileById(id: string): ThemeFile | null {
 }
 
 function commit(mode: ThemeMode) {
-  const { choices, customThemes, folderThemes } = useThemeStore.getState();
+  const { choices, customThemes, folderThemes, sidebarStyle } = useThemeStore.getState();
   const resolved = resolveTheme(mode, systemPrefersDark());
   const chosen = themeFor(resolved, choices, customThemes, folderThemes);
   const theme = preview ?? chosen;
-  applyTheme(theme);
+  applyTheme(theme, document.documentElement, sidebarStyle);
   useThemeStore.setState({ mode, resolved });
   const appBg = (kind: ResolvedTheme) =>
     themeColorToHex(themeFor(kind, choices, customThemes, folderThemes).tokens["--color-app-bg"]);
@@ -261,6 +337,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   mode: "system",
   resolved: "light",
   choices: { light: builtInThemes.light.id, dark: builtInThemes.dark.id },
+  sidebarStyle: "light",
   customThemes: [],
   folderThemes: [],
   setMode(mode) {
@@ -273,6 +350,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   chooseTheme(kind, id) {
     writeItem(THEME_CHOICE_KEYS[kind], id);
     set({ choices: { ...get().choices, [kind]: id } });
+    commit(get().mode);
+  },
+  setSidebarStyle(sidebarStyle) {
+    writeItem(SIDEBAR_STYLE_KEY, sidebarStyle);
+    set({ sidebarStyle });
     commit(get().mode);
   },
   installThemes(themes) {
@@ -329,6 +411,7 @@ export function initTheme(onChange?: ThemeListener): () => void {
   const storage = defaultStorage();
   useThemeStore.setState({
     choices: readThemeChoices(storage),
+    sidebarStyle: readSidebarStyle(storage),
     customThemes: readCustomThemes(storage),
     // Last launch's copy, so a chosen folder theme shows before the folder is read again.
     folderThemes: readCustomThemes(storage, FOLDER_THEMES_KEY),
