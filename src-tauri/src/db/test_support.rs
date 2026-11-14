@@ -13,7 +13,9 @@ pub(crate) struct TestDb {
 impl TestDb {
     pub async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let pool = super::init_db(dir.path()).await.unwrap();
+        let pool = super::init_db(dir.path(), &crate::storage::test_key())
+            .await
+            .unwrap();
         Self { dir, pool }
     }
 

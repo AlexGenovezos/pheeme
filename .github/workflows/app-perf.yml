@@ -48,7 +48,7 @@ jobs:
       - name: Install the WebDriver and a virtual display
         run: |
           for _ in 1 2 3; do
-            sudo apt-get update && sudo apt-get install -y webkit2gtk-driver xvfb dbus && exit 0
+            sudo apt-get update && sudo apt-get install -y webkit2gtk-driver xvfb dbus gnome-keyring && exit 0
             sleep 15
           done
           exit 1
@@ -63,37 +63,26 @@ jobs:
           npx tauri build --no-bundle --config
           '{"bundle":{"createUpdaterArtifacts":false},"plugins":{"updater":{"endpoints":["https://127.0.0.1:9/latest.json"]}}}'
           -- --locked
-      # Seeding takes about 4 minutes, so the mailbox is cached. The key changes with the seed
-      # and the database code, and every month, so the mail's dates never drift far from today.
-      - name: Pick the seeded mailbox
-        id: seed-key
-        env:
-          SEED_HASH: ${{ hashFiles('src-tauri/examples/seed_mailbox.rs', 'src-tauri/src/db/**') }}
-        run: |
-          echo "PERF_HOME=$RUNNER_TEMP/perf-home" >> "$GITHUB_ENV"
-          echo "key=seeded-mailbox-$(date -u +%Y-%m)-$SEED_HASH" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: seed-cache
-        with:
-          path: ${{ runner.temp }}/perf-home
-          key: ${{ steps.seed-key.outputs.key }}
-      - name: Seed a 20,000-conversation mailbox
-        if: steps.seed-cache.outputs.cache-hit != 'true'
-        working-directory: src-tauri
-        run: cargo run --locked --release --example seed_mailbox -- "$PERF_HOME/.local/share/app.pheeme.desktop" 20000
-      # Saved before the app opens it (the app writes to it), and only from main, so PRs that
-      # change the database code don't fill the cache budget.
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.seed-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
-        with:
-          path: ${{ runner.temp }}/perf-home
-          key: ${{ steps.seed-key.outputs.key }}
-      - name: Launch, idle, and run a scripted session
+      # The seed and app share an isolated Secret Service session. A cached encrypted
+      # mailbox would be unreadable on the next runner without also caching its key.
+      - name: Seed, launch, idle, and run a scripted session
         id: run
+        env:
+          PERF_HOME: ${{ runner.temp }}/perf-home
         run: |
-          xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- \
+          # shellcheck disable=SC2016 # Variables are expanded by the inner bash.
+          xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- bash -euc '
+            mkdir -p "$PERF_HOME/.local/share"
+            export XDG_DATA_HOME="$PERF_HOME/.local/share"
+            export GNOME_KEYRING_CONTROL="$PERF_HOME/keyring"
+            install -d -m700 "$GNOME_KEYRING_CONTROL"
+            printf "pheeme-perf" | gnome-keyring-daemon --unlock --components=secrets --control-directory "$GNOME_KEYRING_CONTROL"
+            gnome-keyring-daemon --start --components=secrets --control-directory "$GNOME_KEYRING_CONTROL"
+            cargo run --manifest-path src-tauri/Cargo.toml --locked --release --example seed_mailbox -- \
+              "$PERF_HOME/.local/share/app.pheeme.desktop" 20000
             node scripts/perf/app-run.mjs --app src-tauri/target/release/pheeme \
               --home "$PERF_HOME" --out perf.json --idle-seconds 60 --session-minutes 10
+          '
       # History of earlier nightly runs, kept in the Actions cache (only nightly runs save it).
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always()

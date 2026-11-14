@@ -138,18 +138,19 @@ fn gmail(e: GmailError) -> MailError {
 }
 
 impl ComposeService {
-    /// Staged attachments live under `cache_dir/compose`.
+    /// Encrypted staged attachments live under `cache_dir/compose-v1`.
     pub fn new(
         db: SqlitePool,
         sync: Arc<SyncManager>,
         mail: MailService,
         cache_dir: &Path,
+        key: crate::storage::StorageKey,
     ) -> Self {
         Self {
             db,
             sync,
             mail,
-            staging: Staging::new(cache_dir.join("compose")),
+            staging: Staging::new(cache_dir, key),
             send_as: Arc::default(),
         }
     }

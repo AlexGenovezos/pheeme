@@ -748,7 +748,9 @@ async fn ops_survive_restart_and_replay_in_order() {
     archive(&h, "t1").await;
 
     // Restart: a fresh pool on the same file.
-    let pool = crate::db::init_db(h.db.dir()).await.unwrap();
+    let pool = crate::db::init_db(h.db.dir(), &crate::storage::test_key())
+        .await
+        .unwrap();
     let engine = SyncEngine::new(
         pool,
         h.fake.clone(),

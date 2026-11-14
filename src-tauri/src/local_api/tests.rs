@@ -33,12 +33,18 @@ pub(crate) async fn setup(fake: FakeGmail) -> Harness {
         pool.clone(),
         Arc::new(MemoryStore::new()),
     ));
-    let mail = MailService::new(pool.clone(), sync.clone(), db.dir().join("cache"));
+    let mail = MailService::new(
+        pool.clone(),
+        sync.clone(),
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
     let compose = ComposeService::new(
         pool.clone(),
         sync.clone(),
         mail.clone(),
         &db.dir().join("cache"),
+        crate::storage::test_key(),
     );
     let notified = Arc::new(AtomicUsize::new(0));
     let count = notified.clone();

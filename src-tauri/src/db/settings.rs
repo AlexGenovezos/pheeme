@@ -228,7 +228,9 @@ mod tests {
         assert_eq!(gmail_quota(&db.pool).await.unwrap(), None);
         set_gmail_quota(&db.pool, 15_000).await.unwrap();
         set_gmail_quota(&db.pool, 12_000).await.unwrap();
-        let reopened = crate::db::init_db(db.dir()).await.unwrap();
+        let reopened = crate::db::init_db(db.dir(), &crate::storage::test_key())
+            .await
+            .unwrap();
         assert_eq!(gmail_quota(&reopened).await.unwrap(), Some(12_000));
     }
 
@@ -237,7 +239,9 @@ mod tests {
         let db = crate::db::test_support::TestDb::with_account("a").await;
         assert!(tray_icon(&db.pool).await.unwrap());
         set_tray_icon(&db.pool, false).await.unwrap();
-        let reopened = crate::db::init_db(db.dir()).await.unwrap();
+        let reopened = crate::db::init_db(db.dir(), &crate::storage::test_key())
+            .await
+            .unwrap();
         assert!(!tray_icon(&reopened).await.unwrap());
         set_tray_icon(&reopened, true).await.unwrap();
         assert!(tray_icon(&reopened).await.unwrap());
@@ -253,7 +257,9 @@ mod tests {
         assert_eq!(telemetry_last_ping(&db.pool).await.unwrap(), Some(1234));
 
         set_telemetry(&db.pool, false).await.unwrap();
-        let reopened = crate::db::init_db(db.dir()).await.unwrap();
+        let reopened = crate::db::init_db(db.dir(), &crate::storage::test_key())
+            .await
+            .unwrap();
         assert!(!telemetry(&reopened).await.unwrap());
         assert_eq!(telemetry_last_ping(&reopened).await.unwrap(), None);
 
@@ -267,7 +273,9 @@ mod tests {
         let db = crate::db::test_support::TestDb::with_account("a").await;
         assert!(!assistant_enabled(&db.pool).await.unwrap());
         set_assistant_enabled(&db.pool, true).await.unwrap();
-        let reopened = crate::db::init_db(db.dir()).await.unwrap();
+        let reopened = crate::db::init_db(db.dir(), &crate::storage::test_key())
+            .await
+            .unwrap();
         assert!(assistant_enabled(&reopened).await.unwrap());
         set_assistant_enabled(&reopened, false).await.unwrap();
         assert!(!assistant_enabled(&reopened).await.unwrap());
@@ -290,7 +298,9 @@ mod tests {
         assert!(inbox_tabs(&db.pool, "a").await.unwrap().is_empty());
         let hidden = ["CATEGORY_SOCIAL", "CATEGORY_PERSONAL", "X"].map(String::from);
         set_inbox_tabs(&db.pool, "a", &hidden).await.unwrap();
-        let reopened = crate::db::init_db(db.dir()).await.unwrap();
+        let reopened = crate::db::init_db(db.dir(), &crate::storage::test_key())
+            .await
+            .unwrap();
         assert_eq!(
             inbox_tabs(&reopened, "a").await.unwrap(),
             ["CATEGORY_SOCIAL"]

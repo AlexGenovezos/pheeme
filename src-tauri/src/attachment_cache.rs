@@ -1,9 +1,10 @@
-//! Attachment bytes cached on disk under `{cache dir}/attachments/{account}/{message}/{row id}`,
+//! Encrypted attachment bytes under `{cache dir}/attachments-v1/{account}/{message}/{row id}`,
 //! so an attachment or inline image is downloaded from Gmail once. The cache is bounded:
 //! a sweep removes files whose account or attachment row is gone, then, past the size
 //! limit, the least recently opened files (they're downloaded again when next needed).
 
 use crate::db::{accounts, attachments};
+use crate::storage::{EncryptedFiles, StorageKey};
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -24,6 +25,7 @@ const TMP_MARKER: &str = ".tmp-";
 pub struct AttachmentCache {
     db: SqlitePool,
     dir: PathBuf,
+    files: EncryptedFiles,
     max_bytes: u64,
     /// Bytes written since the last sweep; a tenth of the limit starts another one.
     written: Arc<AtomicU64>,
@@ -34,14 +36,16 @@ pub struct AttachmentCache {
 }
 
 impl AttachmentCache {
-    pub fn new(db: SqlitePool, cache_dir: &Path) -> Self {
-        Self::with_limit(db, cache_dir, MAX_BYTES)
+    pub fn new(db: SqlitePool, cache_dir: &Path, key: StorageKey) -> Self {
+        Self::with_limit(db, cache_dir, MAX_BYTES, key)
     }
 
-    pub fn with_limit(db: SqlitePool, cache_dir: &Path, max_bytes: u64) -> Self {
+    pub fn with_limit(db: SqlitePool, cache_dir: &Path, max_bytes: u64, key: StorageKey) -> Self {
+        let files = EncryptedFiles::attachments(cache_dir, key);
         Self {
             db,
-            dir: cache_dir.join("attachments"),
+            dir: files.root().to_path_buf(),
+            files,
             max_bytes,
             written: Arc::default(),
             sweeping: Arc::default(),
@@ -77,7 +81,7 @@ impl AttachmentCache {
 
     /// The cached bytes, if any. A hit marks the file as recently used.
     pub async fn read(&self, path: &Path) -> Option<Vec<u8>> {
-        let bytes = tokio::fs::read(path).await.ok()?;
+        let bytes = self.files.read(path).await.ok()?;
         let path = path.to_owned();
         let _ = tokio::task::spawn_blocking(move || touch(&path)).await;
         Some(bytes)
@@ -85,15 +89,8 @@ impl AttachmentCache {
 
     /// Atomic: a half-written file is never read back as the attachment.
     pub async fn write(&self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        let mut tmp_name = path.file_name().unwrap_or_default().to_owned();
-        tmp_name.push(format!("{TMP_MARKER}{}", uuid::Uuid::new_v4()));
-        let tmp = path.with_file_name(tmp_name);
-        tokio::fs::write(&tmp, bytes).await?;
-        tokio::fs::rename(&tmp, path).await?;
-        let len = bytes.len() as u64;
+        self.files.write(path, bytes).await?;
+        let len = (bytes.len() + crate::storage::FILE_OVERHEAD) as u64;
         if self.written.fetch_add(len, Ordering::Relaxed) + len >= self.max_bytes / 10 {
             let cache = self.clone();
             tokio::spawn(async move { cache.sweep().await });
@@ -326,8 +323,12 @@ mod tests {
             .await
             .unwrap();
         }
-        let cache =
-            AttachmentCache::with_limit(db.pool.clone(), &db.dir().join("cache"), max_bytes);
+        let cache = AttachmentCache::with_limit(
+            db.pool.clone(),
+            &db.dir().join("cache"),
+            max_bytes,
+            crate::storage::test_key(),
+        );
         (db, cache)
     }
 
@@ -372,10 +373,17 @@ mod tests {
 
     #[tokio::test]
     async fn sweep_evicts_least_recently_used_past_the_limit() {
-        let (_db, cache) = fixture(100, 4).await;
-        // 4 × 40 bytes against a 100-byte limit: evict down to 80, so two files go.
+        // 4 × 88 encrypted bytes against a 300-byte limit: evict down below 240.
+        let (_db, cache) = fixture(300, 4).await;
         for (row, age) in [("0", 400), ("1", 300), ("2", 200), ("3", 100)] {
-            put(&cache.path("a1", "m1", row), 40, age);
+            let path = cache.path("a1", "m1", row);
+            cache.files.write(&path, &[0; 40]).await.unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(SystemTime::now() - Duration::from_secs(age))
+                .unwrap();
         }
         // Opening the oldest makes it the most recently used.
         assert!(cache.read(&cache.path("a1", "m1", "0")).await.is_some());

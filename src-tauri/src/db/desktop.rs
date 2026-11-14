@@ -51,7 +51,9 @@ mod tests {
         let db = crate::db::test_support::TestDb::with_account("a").await;
         assert!(!accounts(&db.pool).await.unwrap()[0].enabled);
         set_enabled(&db.pool, "a", true).await.unwrap();
-        let reopened = crate::db::init_db(db.dir()).await.unwrap();
+        let reopened = crate::db::init_db(db.dir(), &crate::storage::test_key())
+            .await
+            .unwrap();
         assert!(accounts(&reopened).await.unwrap()[0].enabled);
         set_enabled(&reopened, "a", false).await.unwrap();
         assert!(!accounts(&reopened).await.unwrap()[0].enabled);

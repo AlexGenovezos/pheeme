@@ -22,7 +22,9 @@ struct H {
 
 async fn harness() -> H {
     let dir = tempfile::tempdir().unwrap();
-    let pool = crate::db::init_db(dir.path()).await.unwrap();
+    let pool = crate::db::init_db(dir.path(), &crate::storage::test_key())
+        .await
+        .unwrap();
     accounts::insert_account(
         &pool,
         &DbAccount {
@@ -46,8 +48,19 @@ async fn harness() -> H {
         Arc::new(RecordingEvents::default()),
     );
     let cache = dir.path().join("cache");
-    let mail = MailService::new(pool.clone(), sync.clone(), cache.clone());
-    let compose = ComposeService::new(pool.clone(), sync.clone(), mail, &cache);
+    let mail = MailService::new(
+        pool.clone(),
+        sync.clone(),
+        cache.clone(),
+        crate::storage::test_key(),
+    );
+    let compose = ComposeService::new(
+        pool.clone(),
+        sync.clone(),
+        mail,
+        &cache,
+        crate::storage::test_key(),
+    );
     let files = dir.path().join("files");
     std::fs::create_dir_all(&files).unwrap();
     H {

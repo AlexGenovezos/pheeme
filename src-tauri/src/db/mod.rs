@@ -15,16 +15,20 @@ pub mod tasks;
 pub mod threads;
 
 #[cfg(test)]
+mod encryption_tests;
+#[cfg(test)]
 pub(crate) mod test_support;
 
-use anyhow::Result;
-use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
+use crate::storage::StorageKey;
+use anyhow::{ensure, Context, Result};
+use sqlx::{
+    sqlite::SqliteConnectOptions, ConnectOptions, Connection, SqliteConnection, SqlitePool,
+};
 use std::path::Path;
-use std::str::FromStr;
 use tracing::info;
 
-pub async fn init_db(data_dir: &Path) -> Result<SqlitePool> {
-    tokio::fs::create_dir_all(data_dir).await?;
+pub async fn init_db(data_dir: &Path, key: &StorageKey) -> Result<SqlitePool> {
+    crate::storage::private_dir(data_dir)?;
 
     let db_path = data_dir.join("db.sqlite");
     info!(
@@ -32,7 +36,9 @@ pub async fn init_db(data_dir: &Path) -> Result<SqlitePool> {
         crate::support::scrub::display_path(&db_path)
     );
 
-    let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", db_path.display()))?
+    encrypt_legacy_database(&db_path, key).await?;
+    let options = key
+        .database_options(&db_path)
         .create_if_missing(true)
         .foreign_keys(true)
         .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
@@ -44,9 +50,127 @@ pub async fn init_db(data_dir: &Path) -> Result<SqlitePool> {
 
     let pool = SqlitePool::connect_with(options).await?;
 
+    // Unknown pragmas are silently ignored by ordinary SQLite. Refuse to run if a build
+    // accidentally loses SQLCipher, rather than accepting `key` and storing plaintext.
+    let cipher: Option<String> = sqlx::query_scalar("PRAGMA cipher_version")
+        .fetch_optional(&pool)
+        .await?;
+    ensure!(
+        cipher.is_some_and(|v| !v.is_empty()),
+        "This build is missing SQLCipher encryption support"
+    );
+
     run_migrations(&pool).await?;
 
     Ok(pool)
+}
+
+/// The original remains authoritative until a fully verified encrypted export replaces it.
+/// Retrying after interruption discards only the incomplete encrypted export. There is no
+/// plaintext backup, rename gap, or window in which old WAL pages can attach to the new DB.
+async fn encrypt_legacy_database(path: &Path, key: &StorageKey) -> Result<()> {
+    if !path.exists() || !crate::storage::is_plaintext_database(path)? {
+        return Ok(());
+    }
+    let exported = path.with_file_name("db.sqlite.encrypted");
+    for suffix in ["", "-journal", "-wal", "-shm"] {
+        let file = path.with_file_name(format!("db.sqlite.encrypted{suffix}"));
+        match tokio::fs::remove_file(file).await {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        }
+    }
+    let options = SqliteConnectOptions::new()
+        .filename(path)
+        // SQLite inherits this flag for ATTACH, which must create the encrypted export.
+        .create_if_missing(true)
+        .journal_mode(sqlx::sqlite::SqliteJournalMode::Delete)
+        .foreign_keys(false)
+        .pragma("temp_store", "MEMORY")
+        .disable_statement_logging();
+    let mut source = SqliteConnection::connect_with(&options).await?;
+    let cipher: Option<String> = sqlx::query_scalar("PRAGMA cipher_version")
+        .fetch_optional(&mut source)
+        .await?;
+    ensure!(
+        cipher.is_some_and(|v| !v.is_empty()),
+        "This build is missing SQLCipher encryption support"
+    );
+    let user_version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(&mut source)
+        .await?;
+    sqlx::query("ATTACH DATABASE ? AS encrypted KEY ?")
+        .bind(
+            exported
+                .to_str()
+                .context("Database path is not valid UTF-8")?,
+        )
+        .bind(&*key.database_key())
+        .execute(&mut source)
+        .await?;
+    sqlx::query("BEGIN EXCLUSIVE").execute(&mut source).await?;
+    sqlx::query("SELECT sqlcipher_export('encrypted')")
+        .execute(&mut source)
+        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PRAGMA encrypted.user_version = {user_version}"
+    )))
+    .execute(&mut source)
+    .await?;
+    sqlx::query("COMMIT").execute(&mut source).await?;
+    sqlx::query("DETACH DATABASE encrypted")
+        .execute(&mut source)
+        .await?;
+    source.close().await?;
+
+    let options = key.database_options(&exported).foreign_keys(true);
+    let mut verified = SqliteConnection::connect_with(&options).await?;
+    // Export can renumber implicit rowids; rebuild the external-content FTS index so
+    // search continues pointing to the right messages, including after deleted rows.
+    let has_fts: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_schema WHERE name = 'messages_fts'")
+            .fetch_one(&mut verified)
+            .await?;
+    if has_fts != 0 {
+        sqlx::query("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
+            .execute(&mut verified)
+            .await?;
+        sqlx::query("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)")
+            .execute(&mut verified)
+            .await?;
+    }
+    let integrity: Vec<String> = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_all(&mut verified)
+        .await?;
+    ensure!(
+        integrity == ["ok"],
+        "Encrypted database did not pass integrity verification; the original is untouched"
+    );
+    let foreign_keys = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(&mut verified)
+        .await?;
+    ensure!(
+        foreign_keys.is_empty(),
+        "Encrypted database has invalid relationships; the original is untouched"
+    );
+    verified.close().await?;
+    std::fs::File::options()
+        .read(true)
+        .write(true)
+        .open(&exported)?
+        .sync_all()?;
+    // DELETE journal mode above checkpoints and removes the old plaintext WAL/SHM.
+    for suffix in ["-wal", "-shm", "-journal"] {
+        ensure!(
+            !path.with_file_name(format!("db.sqlite{suffix}")).exists(),
+            "An old database journal is still in use; close other Pheeme instances and retry"
+        );
+    }
+    std::fs::rename(&exported, path)
+        .context("Couldn't replace the old database with its encrypted copy")?;
+    crate::storage::sync_dir(path.parent().context("Database has no parent directory")?)?;
+    info!("Local mail database encrypted");
+    Ok(())
 }
 
 /// A write transaction that takes SQLite's write lock up front (`BEGIN IMMEDIATE`), so it

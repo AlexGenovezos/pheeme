@@ -15,7 +15,7 @@ use pheeme_lib::sync::engine::SyncEngine;
 use pheeme_lib::sync::fake::{FakeGmail, FakeMsg};
 use pheeme_lib::sync::manager::SyncManager;
 use pheeme_lib::sync::{MailApi, NoopEvents};
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::future::Future;
@@ -124,7 +124,9 @@ fn seed_fixture() {
     let dir = fixture_dir();
     let _ = std::fs::remove_dir_all(&dir);
     runtime().block_on(async {
-        let pool = db::init_db(&dir).await.unwrap();
+        let pool = db::init_db(&dir, &pheeme_lib::storage::test_key())
+            .await
+            .unwrap();
         insert_account(&pool).await;
         let mut tx = db::begin_write(&pool).await.unwrap();
         db_labels::upsert_label_tx(
@@ -177,9 +179,13 @@ fn seed_fixture() {
 /// cold statement cache) instead of reusing the idle one; with one connection every run takes
 /// the same path.
 async fn open(dir: &Path) -> SqlitePool {
-    db::init_db(dir).await.unwrap().close().await;
-    let options = SqliteConnectOptions::new()
-        .filename(dir.join("db.sqlite"))
+    db::init_db(dir, &pheeme_lib::storage::test_key())
+        .await
+        .unwrap()
+        .close()
+        .await;
+    let options = pheeme_lib::storage::test_key()
+        .database_options(&dir.join("db.sqlite"))
         .foreign_keys(true)
         .journal_mode(SqliteJournalMode::Wal);
     SqlitePoolOptions::new()
@@ -593,7 +599,12 @@ fn long_thread() -> (Ctx, MailService) {
         Arc::new(move |_| fake.clone()),
         Arc::new(NoopEvents),
     );
-    let mail = MailService::new(ctx.pool.clone(), sync, fixture_dir());
+    let mail = MailService::new(
+        ctx.pool.clone(),
+        sync,
+        fixture_dir(),
+        pheeme_lib::storage::test_key(),
+    );
     ctx.rt
         .block_on(mail.get_thread(ACCT, LONG_THREAD, true))
         .unwrap();
@@ -655,7 +666,12 @@ fn warm_label_page_service() -> (Ctx, MailService) {
         Arc::new(move |_| fake.clone()),
         Arc::new(NoopEvents),
     );
-    let mail = MailService::new(ctx.pool.clone(), sync, fixture_dir());
+    let mail = MailService::new(
+        ctx.pool.clone(),
+        sync,
+        fixture_dir(),
+        pheeme_lib::storage::test_key(),
+    );
     ctx.rt
         .block_on(mail.list_threads(&[ACCT.to_string()], "Label_1", None, None, Some(PAGE), None))
         .unwrap();

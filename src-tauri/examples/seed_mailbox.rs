@@ -50,7 +50,8 @@ async fn main() -> anyhow::Result<()> {
     let count: usize = args.next().map_or(Ok(20_000), |n| n.parse())?;
     let now = chrono::Utc::now().timestamp_millis();
 
-    let pool = db::init_db(&dir).await?;
+    let storage = pheeme_lib::storage::unlock(&dir, &pheeme_lib::secrets::OsKeychain)?;
+    let pool = db::init_db(&dir, &storage.key).await?;
     // The run is a release build: without this it sends the daily usage ping and counts as an install.
     db::settings::set_telemetry(&pool, false).await?;
     accounts::insert_account(

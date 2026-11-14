@@ -29,6 +29,7 @@ pub mod sender_rules;
 pub mod senders;
 mod spelling;
 pub mod stats;
+pub mod storage;
 pub mod support;
 pub mod sync;
 pub mod tasks;
@@ -70,6 +71,8 @@ pub struct AppState {
     pub gmail_usage: gmail::QuotaUsage,
     /// Where the logs are written (for Send diagnostics); `None` when there is no log dir.
     pub log_dir: Option<PathBuf>,
+    storage_guard: Option<storage::UnlockedStorage>,
+    cache_dir: PathBuf,
 }
 
 /// Build application state: open the database in `data_dir` (attachment bytes are cached
@@ -81,10 +84,12 @@ pub async fn build_state(
     cache_dir: &Path,
     secrets: Arc<dyn SecretStore>,
     events: Arc<dyn SyncEvents>,
+    key: storage::StorageKey,
 ) -> anyhow::Result<AppState> {
-    let db = db::init_db(data_dir)
+    let db = db::init_db(data_dir, &key)
         .await
         .with_context(|| format!("failed to initialize database in {}", data_dir.display()))?;
+    storage::migrate_files(cache_dir, &key).await?;
     let accounts = Arc::new(accounts::AccountService::new(db.clone(), secrets));
     let gmail_quota = match db::settings::gmail_quota(&db).await? {
         Some(per_minute) => gmail::QuotaSetting::new(per_minute),
@@ -122,10 +127,16 @@ pub async fn build_state(
         Arc::new(gmail::GmailClient::tasks(provider)) as Arc<dyn tasks::TasksApi>
     });
     let tasks = tasks::service::TasksService::new(db.clone(), tasks_for, events);
-    let mail = mail::MailService::new(db.clone(), sync.clone(), cache_dir.to_path_buf());
+    let mail = mail::MailService::new(
+        db.clone(),
+        sync.clone(),
+        cache_dir.to_path_buf(),
+        key.clone(),
+    );
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
-    let compose = compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir);
+    let compose =
+        compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir, key);
     let drive = drive::DriveService::new(accounts.clone(), mail.clone());
     let local_api = local_api::LocalApi::new(
         db.clone(),
@@ -161,6 +172,8 @@ pub async fn build_state(
         gmail_quota,
         gmail_usage,
         log_dir: None,
+        storage_guard: None,
+        cache_dir: cache_dir.to_path_buf(),
     })
 }
 
@@ -198,6 +211,66 @@ fn attachment_response(served: mail::InlineResponse) -> tauri::http::Response<Ve
             );
     }
     response.body(served.body).unwrap_or_else(|_| not_found())
+}
+
+/// Without its data Pheeme can't run, so say why in a native dialog (the main window never
+/// shows) rather than quitting silently. A lost key can start again from Gmail.
+fn startup_failed(
+    app: &tauri::AppHandle,
+    error: &anyhow::Error,
+    data_dir: std::path::PathBuf,
+    cache_dir: std::path::PathBuf,
+) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    tracing::error!("Pheeme couldn't start: {error:#}");
+    // The frontend shows the window once it loads; keep it from loading without its state.
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.navigate("about:blank".parse().expect("valid URL"));
+    }
+    let lost = error.downcast_ref::<storage::KeyLost>().is_some();
+    let mut message = format!("{error:#}");
+    if lost {
+        message.push_str(
+            "\n\nOr start again: Pheeme moves the unreadable data into \"unreadable\" folders \
+             beside it, makes a new key and downloads your mail again from Gmail. You'll sign \
+             in to your accounts again, and changes not yet sent to Gmail stay in those folders.",
+        );
+    }
+    let dialog = app
+        .dialog()
+        .message(message)
+        .title("Pheeme couldn't start")
+        .kind(MessageDialogKind::Error);
+    let app = app.clone();
+    if !lost {
+        dialog
+            .buttons(MessageDialogButtons::OkCustom("Quit".into()))
+            .show(move |_| app.exit(1));
+        return;
+    }
+    dialog
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Start again".into(),
+            "Quit".into(),
+        ))
+        .show(move |start_again| {
+            if !start_again {
+                return app.exit(1);
+            }
+            match storage::set_aside(&data_dir, &cache_dir, &secrets::OsKeychain) {
+                Ok(aside) => {
+                    info!(
+                        "Unreadable local data moved to {}",
+                        support::scrub::display_path(&aside)
+                    );
+                    app.restart();
+                }
+                Err(error) => {
+                    tracing::error!("Couldn't set the unreadable data aside: {error:#}");
+                    app.exit(1);
+                }
+            }
+        });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -285,12 +358,30 @@ pub fn run() {
 
             // Block until the database is ready so commands never run without state.
             let events = Arc::new(TauriEvents(app.handle().clone()));
-            let mut state = tauri::async_runtime::block_on(build_state(
-                &data_dir,
-                &cache_dir,
-                Arc::new(secrets::KeyringStore::new()),
-                events,
-            ))?;
+            let storage_dir = data_dir.clone();
+            let started = tauri::async_runtime::block_on(async {
+                let storage_guard = tokio::task::spawn_blocking(move || {
+                    storage::unlock(&storage_dir, &secrets::OsKeychain)
+                })
+                .await??;
+                let state = build_state(
+                    &data_dir,
+                    &cache_dir,
+                    Arc::new(secrets::KeyringStore::new()),
+                    events,
+                    storage_guard.key.clone(),
+                )
+                .await?;
+                anyhow::Ok((storage_guard, state))
+            });
+            let (storage_guard, mut state) = match started {
+                Ok(started) => started,
+                Err(error) => {
+                    startup_failed(app.handle(), &error, data_dir, cache_dir);
+                    return Ok(());
+                }
+            };
+            state.storage_guard = Some(storage_guard);
             state.log_dir = log_path;
             let sync = state.sync.clone();
             let assistants = state.assistants.clone();
@@ -354,10 +445,10 @@ pub fn run() {
                     });
                 }
                 #[cfg(not(target_os = "linux"))]
+                // Unmanaged when startup failed (`startup_failed`): let the window close.
                 if window
-                    .state::<Arc<desktop::Desktop>>()
-                    .can_hide
-                    .load(std::sync::atomic::Ordering::Relaxed)
+                    .try_state::<Arc<desktop::Desktop>>()
+                    .is_some_and(|d| d.can_hide.load(std::sync::atomic::Ordering::Relaxed))
                     && window.hide().is_ok()
                 {
                     api.prevent_close();
@@ -510,10 +601,18 @@ pub fn run() {
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
-                desktop::show_window(app);
+                // Not after a failed start: that window is blank behind the error dialog.
+                if app.try_state::<AppState>().is_some() {
+                    desktop::show_window(app);
+                }
             }
             if let tauri::RunEvent::Exit = event {
                 info!("Pheeme exiting");
+                if let Some(state) = app.try_state::<AppState>() {
+                    if let Err(error) = storage::clear_opened(&state.cache_dir) {
+                        tracing::warn!(%error, "couldn't remove opened attachment copies");
+                    }
+                }
                 if let Some(logs) = app.try_state::<diagnostics::LogGuard>() {
                     logs.shutdown();
                 }
@@ -559,6 +658,7 @@ mod tests {
             &dir.path().join("cache"),
             Arc::new(secrets::MemoryStore::new()),
             Arc::new(sync::NoopEvents),
+            storage::test_key(),
         )
         .await
         .unwrap();
