@@ -1392,6 +1392,10 @@ async fn lists_and_reads_events_in_the_calendar_time_zone() {
     assert_eq!(invite["my_response"], "needsAction");
     assert_eq!(invite["can_answer"], true);
     assert_eq!(invite["can_edit"], false);
+    // The log keeps which events a read returned, not their details.
+    let logged = h.api.activity(10).await.unwrap();
+    let listed = logged.iter().find(|a| a.tool == "list_events").unwrap();
+    assert_eq!(listed.result.as_deref(), Some(r#"{"event_ids":["focus"]}"#));
 }
 
 #[tokio::test]
