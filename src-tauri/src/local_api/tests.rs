@@ -1833,3 +1833,71 @@ fn the_limit_frees_up_as_calls_age_out_of_the_minute() {
     assert!(limiter.take("c", true, 2, 30_000).is_ok());
     assert!(limiter.take("c", false, 2, 60_000).is_ok());
 }
+
+/// The raw MIME of the draft an assistant call saved.
+fn draft_raw(h: &Harness, out: &Value) -> String {
+    let message = h.fake.drafts()[out["draft_id"].as_str().unwrap()].clone();
+    String::from_utf8_lossy(h.fake.message(&message).unwrap().raw.as_deref().unwrap()).into_owned()
+}
+
+#[tokio::test]
+async fn drafts_carry_the_signature_settings_choose() {
+    use crate::compose::signatures::{SignatureChoice, SignatureSettings};
+    use crate::gmail::types::SendAs;
+    let fake = FakeGmail::new();
+    fake.seed(FakeMsg {
+        subject: "Lunch?".into(),
+        ..msg("m1", "t1", &["INBOX"], "Friend <f@x.com>").days_ago(1)
+    });
+    let h = setup(fake).await;
+    h.api.set_allows(Permission::Drafts, true).await.unwrap();
+    h.fake.set_send_as(vec![SendAs {
+        send_as_email: "me@example.com".into(),
+        signature: Some("<b>Gmail Sig</b><script>x()</script>".into()),
+        is_primary: true,
+        ..Default::default()
+    }]);
+
+    // Nothing saved: Gmail's signature, as the compose panel starts with.
+    let out = h
+        .call("create_draft", json!({ "to": ["a@x.com"], "body": "Hi" }))
+        .await
+        .unwrap();
+    assert_eq!(out["signed"], true);
+    let raw = draft_raw(&h, &out);
+    assert!(raw.contains("gmail_signature"), "{raw}");
+    assert!(raw.contains("Gmail Sig"), "{raw}");
+    assert!(!raw.contains("x()"), "{raw}");
+
+    h.api
+        .compose
+        .set_signature_settings(
+            "a1",
+            &SignatureSettings {
+                new_messages: SignatureChoice::Custom,
+                replies: SignatureChoice::None,
+                custom: "<p>Own Sig</p>".into(),
+            },
+        )
+        .await
+        .unwrap();
+    let out = h
+        .call("create_draft", json!({ "to": ["a@x.com"], "body": "Hi" }))
+        .await
+        .unwrap();
+    let raw = draft_raw(&h, &out);
+    assert!(
+        raw.contains("Own Sig") && !raw.contains("Gmail Sig"),
+        "{raw}"
+    );
+    let reply = h
+        .call(
+            "create_draft",
+            json!({ "reply_to_message_id": "m1", "body": "Yes!" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reply["signed"], false);
+    let raw = draft_raw(&h, &reply);
+    assert!(!raw.contains("gmail_signature\""), "{raw}");
+}

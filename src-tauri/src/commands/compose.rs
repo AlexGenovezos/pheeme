@@ -1,6 +1,7 @@
 //! Compose commands: thin adapters over [`crate::compose::ComposeService`].
 
 use super::CommandError;
+use crate::compose::signatures::SignatureSettings;
 use crate::compose::{
     ComposeDraft, ComposeMode, DraftSummary, QueuedSend, SavedDraft, SendAsAddress,
     StagedAttachment,
@@ -124,6 +125,28 @@ pub async fn gmail_signature(
     account_id: String,
 ) -> Result<Option<String>, CommandError> {
     Ok(user_action(state.compose.gmail_signature(&account_id)).await?)
+}
+
+/// The account's signature choices, or `null` if Settings never saved any (local).
+#[tauri::command]
+pub async fn signature_settings(
+    state: State<'_, AppState>,
+    account_id: String,
+) -> Result<Option<SignatureSettings>, CommandError> {
+    Ok(state.compose.signature_settings(&account_id).await?)
+}
+
+/// Save the account's signature choices (local).
+#[tauri::command]
+pub async fn set_signature_settings(
+    state: State<'_, AppState>,
+    account_id: String,
+    settings: SignatureSettings,
+) -> Result<(), CommandError> {
+    Ok(state
+        .compose
+        .set_signature_settings(&account_id, &settings)
+        .await?)
 }
 
 /// The addresses the account can send from (Gmail's "Send mail as"), its own first.

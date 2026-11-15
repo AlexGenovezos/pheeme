@@ -6,6 +6,7 @@
 //! straight to Gmail's drafts API, and the UI keeps the content if that fails.
 
 pub mod build;
+pub mod signatures;
 pub mod staging;
 pub mod template;
 

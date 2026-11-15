@@ -149,8 +149,11 @@ export function useComposeEvents() {
   }, []);
   const accounts = useAccountStore((s) => s.accounts);
   useEffect(() => {
+    const signatures = useSignatures.getState();
+    void signatures.loadSaved(accounts.map((a) => a.id)).then(() => {
+      for (const a of accounts) void useSignatures.getState().refreshGmailOnce(a.id);
+    });
     for (const a of accounts) {
-      void useSignatures.getState().refreshGmailOnce(a.id);
       // Sends from before a restart that didn't go through: no panel is left to say so.
       void useComposeStore.getState().checkFailedSends(a.id);
     }

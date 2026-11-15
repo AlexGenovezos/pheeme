@@ -170,6 +170,23 @@ pub async fn delete_inbox_tabs(pool: &SqlitePool, account_id: &str) -> Result<()
     delete(pool, &inbox_tabs_key(account_id)).await
 }
 
+fn signatures_key(account_id: &str) -> String {
+    format!("signatures.{account_id}")
+}
+
+/// The account's signature choices as Settings › Signatures saved them (JSON), if ever.
+pub async fn signatures(pool: &SqlitePool, account_id: &str) -> Result<Option<String>> {
+    get(pool, &signatures_key(account_id)).await
+}
+
+pub async fn set_signatures(pool: &SqlitePool, account_id: &str, json: &str) -> Result<()> {
+    set(pool, &signatures_key(account_id), json).await
+}
+
+pub async fn delete_signatures(pool: &SqlitePool, account_id: &str) -> Result<()> {
+    delete(pool, &signatures_key(account_id)).await
+}
+
 fn resync_key(account_id: &str) -> String {
     format!("resync.{account_id}")
 }
