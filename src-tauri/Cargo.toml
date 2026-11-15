@@ -78,6 +78,10 @@ rrule = "0.14"
 chrono-tz = "0.10"
 
 # Valgrind only runs on Linux. Optional so that plain builds don't need libclang.
+[target.'cfg(unix)'.dependencies]
+# Ties the Local Network probe to one interface (IP_BOUND_IF), so a VPN can't answer for it.
+socket2 = { version = "0.6", features = ["all"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 gungraun = { version = "0.20.0", features = ["act"], optional = true }

@@ -11,6 +11,10 @@ export interface TransferStatus {
   peer: string | null;
   error: string | null;
 }
+/** macOS asks for Local Network access the first time; "blocked" until the user allows it. */
+export type LocalNetworkAccess = "granted" | "blocked";
+export const localNetworkAccess = () => invoke<LocalNetworkAccess>("local_network_access");
+export const openLocalNetworkSettings = () => invoke<void>("open_local_network_settings");
 export const transferInterfaces = () => invoke<string[]>("transfer_interfaces");
 export const offerClientTransfer = (accountId: string, address: string) =>
   invoke<TransferOffer>("offer_client_transfer", { accountId, address });
