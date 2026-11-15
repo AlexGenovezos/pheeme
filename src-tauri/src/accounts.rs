@@ -523,6 +523,7 @@ impl AccountService {
         self.keychain(move |store| store.delete(&id)).await?;
         db_accounts::delete_account(&self.db, account_id).await?;
         crate::db::settings::delete_inbox_tabs(&self.db, account_id).await?;
+        crate::db::settings::delete_signatures(&self.db, account_id).await?;
         crate::db::settings::clear_resync(&self.db, account_id).await?;
         crate::db::assistant::delete_activity_mentioning(&self.db, &[account_id, &account.email])
             .await?;

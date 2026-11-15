@@ -74,8 +74,8 @@ stop at 120 characters, labels read like mailbox names (`inbox`, `promotions`, `
 labels), flags appear only when set, and a page stops early (its cursor carries on) rather than grow
 past about 60,000 characters. `compact: true` leaves out snippets and labels.
 
-Assistants can't send mail: drafts wait in Drafts for you. They don't include your signature yet
-(Settings › Signatures applies to messages you write in Pheeme).
+Assistants can't send mail: drafts wait in Drafts for you, signed the way Settings › Signatures signs
+the mail you write in Pheeme (new messages and replies each take their own choice).
 
 Try asking: "Audit my Gmail filters: is anything being deleted that shouldn't be?" or "Who sends me the
 most mail, and what should I filter or unsubscribe from?" or "Find an hour next week when I'm free and

@@ -593,6 +593,8 @@ pub fn run() {
             commands::tasks::delete_task_list,
             commands::compose::compose_template,
             commands::compose::gmail_signature,
+            commands::compose::signature_settings,
+            commands::compose::set_signature_settings,
             commands::compose::send_as_addresses,
             commands::compose::stage_attachment,
             commands::compose::discard_attachments,

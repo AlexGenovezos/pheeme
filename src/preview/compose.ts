@@ -10,6 +10,7 @@ import type {
   QueuedSend,
   SavedDraft,
   SendAsAddress,
+  SignatureSettings,
   StagedAttachment,
   SyncMessagesUpdated,
 } from "../lib/tauri";
@@ -36,6 +37,7 @@ export function createComposeHandlers(
 ): Record<string, (args: Args) => unknown> {
   const drafts = new Map<string, { accountId: string; messageId: string; draft: ComposeDraft }>();
   const sends = new Map<string, ReturnType<typeof setTimeout>>();
+  const signatureSettings = new Map<string, SignatureSettings>();
   let seq = 0;
 
   const me = (accountId: string): EmailAddress => {
@@ -119,6 +121,10 @@ export function createComposeHandlers(
       return `<div><b>${escapeHtml(from.name ?? from.address)}</b><br><span style="color:#5f6368">Sent while previewing Pheeme</span></div>`;
     },
     send_as_addresses: (args) => sendAs(String(args?.accountId)),
+    signature_settings: (args) => signatureSettings.get(String(args?.accountId)) ?? null,
+    set_signature_settings: (args) => {
+      signatureSettings.set(String(args?.accountId), args?.settings as SignatureSettings);
+    },
     compose_template: (args) => {
       const accountId = String(args?.accountId);
       const mode = args?.mode as ComposeMode;

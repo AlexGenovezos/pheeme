@@ -81,3 +81,35 @@ test("the body: a line to type on, then the signature, which doesn't count as ty
   expect(withoutSignature(body)).toBe("<p></p>");
   expect(hasContent("<p>&nbsp;</p>")).toBe(false);
 });
+
+test("choices are saved in the app, and ones kept only in this window move there once", async () => {
+  const saved: Record<string, unknown> = {
+    a2: { newMessages: "none", replies: "custom", custom: "<p>From the app</p>" },
+  };
+  mockIPC((cmd, args) => {
+    const { accountId, settings } = args as { accountId: string; settings?: unknown };
+    if (cmd === "signature_settings") return saved[accountId] ?? null;
+    if (cmd === "set_signature_settings") saved[accountId] = settings;
+    return undefined;
+  });
+  // From before the move: only in localStorage.
+  localStorage.setItem(
+    "pheeme.signatures",
+    JSON.stringify({ a1: { newMessages: "custom", replies: "gmail", custom: "<p>Old</p>" } }),
+  );
+  __resetSignaturesForTests();
+
+  await sig().loadSaved(["a1", "a2", "a3"]);
+  expect(saved.a1).toEqual({ newMessages: "custom", replies: "gmail", custom: "<p>Old</p>" });
+  expect(sig().forAccount("a2").custom).toBe("<p>From the app</p>");
+  expect(sig().signatureFor("a2", "reply")).toBe("<p>From the app</p>");
+  expect(saved.a3).toBeUndefined(); // nothing to move, so defaults stay unsaved
+
+  sig().update("a3", { newMessages: "none" });
+  await Promise.resolve();
+  expect(saved.a3).toEqual({ newMessages: "none", replies: "gmail", custom: "" });
+  // The window keeps a copy for panels opened before the next load.
+  expect(JSON.parse(localStorage.getItem("pheeme.signatures") ?? "{}").a2.custom).toBe(
+    "<p>From the app</p>",
+  );
+});

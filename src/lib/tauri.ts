@@ -683,6 +683,17 @@ export const composeTemplate = (accountId: string, messageId: string, mode: Comp
 /** The account's signature as set in Gmail (HTML), or `null` when it has none. */
 export const gmailSignature = (accountId: string) =>
   invoke<string | null>("gmail_signature", { accountId });
+/** An account's choices in Settings › Signatures, as Pheeme keeps them for every compose path (AI drafts too). */
+export interface SignatureSettings {
+  newMessages: "gmail" | "custom" | "none";
+  replies: "gmail" | "custom" | "none";
+  custom: string;
+}
+/** The account's saved signature choices, or `null` if none were ever saved. */
+export const getSignatureSettings = (accountId: string) =>
+  invoke<SignatureSettings | null>("signature_settings", { accountId });
+export const setSignatureSettings = (accountId: string, settings: SignatureSettings) =>
+  invoke<void>("set_signature_settings", { accountId, settings });
 /** An address an account can send from (Gmail's "Send mail as"): its own, or a verified alias. */
 export interface SendAsAddress {
   email: string;

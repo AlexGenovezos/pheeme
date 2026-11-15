@@ -1,9 +1,17 @@
 // Signatures: each account's choice for new messages and for replies/forwards (its Gmail signature, one of its
 // own, or none), and the Gmail signatures themselves, kept from the last fetch so a compose panel opens with one
 // at once, offline too. Settings › Signatures edits them; the compose store puts the chosen one in the body.
+// The choices live in the app's database (so AI assistants' drafts are signed the same way), mirrored in
+// localStorage so a panel opened before they load still has them.
 import DOMPurify from "dompurify";
 import { create } from "zustand";
-import { type CommandError, gmailSignature, toCommandError } from "../lib/tauri";
+import {
+  type CommandError,
+  getSignatureSettings,
+  gmailSignature,
+  setSignatureSettings,
+  toCommandError,
+} from "../lib/tauri";
 import { sameAddress, useSendAs } from "./sendAs";
 
 export type SignatureChoice = "gmail" | "custom" | "none";
@@ -64,15 +72,16 @@ const CHOICES: readonly SignatureChoice[] = ["gmail", "custom", "none"];
 const choice = (v: unknown, fallback: SignatureChoice) =>
   CHOICES.includes(v as SignatureChoice) ? (v as SignatureChoice) : fallback;
 
+const parseSettings = (raw: Partial<AccountSignatures> | null | undefined): AccountSignatures => ({
+  newMessages: choice(raw?.newMessages, DEFAULT_SIGNATURES.newMessages),
+  replies: choice(raw?.replies, DEFAULT_SIGNATURES.replies),
+  custom: typeof raw?.custom === "string" ? raw.custom : "",
+});
+
 function readSettings(): Record<string, AccountSignatures> {
   const out: Record<string, AccountSignatures> = {};
-  for (const [id, raw] of Object.entries(readJson<Partial<AccountSignatures>>(SETTINGS_KEY))) {
-    out[id] = {
-      newMessages: choice(raw?.newMessages, DEFAULT_SIGNATURES.newMessages),
-      replies: choice(raw?.replies, DEFAULT_SIGNATURES.replies),
-      custom: typeof raw?.custom === "string" ? raw.custom : "",
-    };
-  }
+  for (const [id, raw] of Object.entries(readJson<Partial<AccountSignatures>>(SETTINGS_KEY)))
+    out[id] = parseSettings(raw);
   return out;
 }
 
@@ -151,6 +160,11 @@ interface SignatureState {
   /** The account's choices (defaults when it has none saved). */
   forAccount(accountId: string): AccountSignatures;
   update(accountId: string, change: Partial<AccountSignatures>): void;
+  /**
+   * Read the accounts' saved choices from the app. An account with none saved there yet takes the ones this
+   * window kept in localStorage (from before they moved), so nothing is lost.
+   */
+  loadSaved(accountIds: string[]): Promise<void>;
   /** Fetch the account's Gmail signature again. Resolves once it's known (or the fetch failed). */
   refreshGmail(accountId: string): Promise<void>;
   /** Fetch it once per session, when the account uses it. */
@@ -177,6 +191,29 @@ export const useSignatures = create<SignatureState>((set, get) => ({
       ...get().settings,
       [accountId]: { ...get().forAccount(accountId), ...change },
     };
+    persist(SETTINGS_KEY, settings);
+    set({ settings });
+    setSignatureSettings(accountId, settings[accountId]).catch((e: unknown) =>
+      console.warn("couldn't save signature settings", e),
+    );
+  },
+
+  async loadSaved(accountIds) {
+    const local = get().settings;
+    const loaded = await Promise.all(
+      accountIds.map(async (id) => {
+        try {
+          const saved = await getSignatureSettings(id);
+          if (saved) return [id, parseSettings(saved)] as const;
+          if (local[id]) await setSignatureSettings(id, local[id]);
+        } catch (e) {
+          console.warn("couldn't load signature settings", e);
+        }
+        return null;
+      }),
+    );
+    const settings = { ...get().settings };
+    for (const entry of loaded) if (entry) settings[entry[0]] = entry[1];
     persist(SETTINGS_KEY, settings);
     set({ settings });
   },

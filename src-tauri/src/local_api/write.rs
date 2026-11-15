@@ -11,6 +11,7 @@ use super::requests::{
 use super::{ApiError, LocalApi, Request};
 use crate::accounts::AccountInfo;
 use crate::compose::build::text_to_html;
+use crate::compose::signatures::signature_block;
 use crate::compose::{ComposeDraft, ComposeMode};
 use crate::gmail::mime::{parse_addresses, EmailAddress};
 use crate::gmail::types::{Filter, FilterAction, FilterCriteria};
@@ -429,7 +430,7 @@ async fn create_draft(api: &LocalApi, args: CreateDraft) -> Result<Value, ApiErr
         addresses("Bcc", &args.bcc)?,
     );
     let body_html = text_to_html(&args.body);
-    let draft = match args.reply_to_message_id.as_deref().map(str::trim) {
+    let mut draft = match args.reply_to_message_id.as_deref().map(str::trim) {
         Some(message_id) if !message_id.is_empty() => {
             let mode = if args.reply_all {
                 ComposeMode::ReplyAll
@@ -452,6 +453,27 @@ async fn create_draft(api: &LocalApi, args: CreateDraft) -> Result<Value, ApiErr
             ..Default::default()
         },
     };
+    // Signed as the user signs mail they write in Pheeme (Settings › Signatures). A Gmail
+    // signature that can't be read now (offline, Gmail settings not allowed) is left out.
+    let reply = args
+        .reply_to_message_id
+        .as_deref()
+        .is_some_and(|m| !m.trim().is_empty());
+    let from = draft.from.as_ref().map(|f| f.address.clone());
+    let signature = match api
+        .compose
+        .signature_for(&account.id, reply, from.as_deref())
+        .await
+    {
+        Ok(signature) => signature,
+        Err(e) => {
+            tracing::warn!(error = %e, "couldn't read the signature for an assistant's draft");
+            None
+        }
+    };
+    if let Some(html) = &signature {
+        draft.body_html.push_str(&signature_block(html));
+    }
     let saved = api.compose.save_draft(&account.id, &draft).await;
     // A reply's template staged the quoted images; the saved draft carries them now.
     let staged: Vec<String> = draft.attachments.iter().map(|a| a.id.clone()).collect();
@@ -462,6 +484,7 @@ async fn create_draft(api: &LocalApi, args: CreateDraft) -> Result<Value, ApiErr
         "draft_id": saved.draft_id,
         "message_id": saved.message_id,
         "thread_id": saved.thread_id,
+        "signed": signature.is_some(),
         "note": "Saved in Drafts. The user reviews and sends it from Pheeme.",
     }))
 }
