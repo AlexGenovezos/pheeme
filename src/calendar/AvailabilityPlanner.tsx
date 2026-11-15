@@ -4,13 +4,12 @@
 // everyone whose availability is known is free. Asked of Google live through freeBusy, which
 // needs its own consent: until it's allowed, the rows hold an Allow button.
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { Skeleton } from "../components/ui/Skeleton";
 import {
   type AvailabilityResult,
-  type BusyInterval,
   type CommandError,
   type PersonAvailability,
   calendarAvailability,
@@ -27,6 +26,7 @@ import {
   plannerRange,
   plannerTime,
   roundUpToSlot,
+  type SavedSpan,
   SEARCH_DAYS,
   SLOT_MINUTES,
   searchRange,
@@ -76,9 +76,10 @@ export function AvailabilityPlanner({
   saved,
 }: {
   form: EventForm;
-  onChange(form: EventForm): void;
-  /** A saved event's time as Google has it, left out of everyone's busy time; null for a new event. */
-  saved: BusyInterval | null;
+  /** Changes the latest form (an update, so edits made while a search runs aren't lost). */
+  onChange(update: (form: EventForm) => EventForm): void;
+  /** A saved event's time and guests, left out of their busy time; null for a new event. */
+  saved: SavedSpan | null;
   /** The calendar's time zone, which the planner's hours and "working hours" are in. */
   tz: string;
   /** The account's own address, left out of the guest rows (it is "You"). */
@@ -97,6 +98,15 @@ export function AvailabilityPlanner({
   const [note, setNote] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const { state: signIn, start, cancel } = useSignIn();
+  // What a "Next available time" search asked about; null once the planner is gone.
+  const searchKey = `${form.accountId}|${emails.join(",")}|${span.startMs}|${span.endMs}`;
+  const latestSearchKey = useRef<string | null>(searchKey);
+  useEffect(() => {
+    latestSearchKey.current = searchKey;
+    return () => {
+      latestSearchKey.current = null;
+    };
+  });
 
   // Follow the event to another day (a typed date, a click, "Next available time").
   useEffect(() => setDay(startDay), [startDay]);
@@ -129,10 +139,11 @@ export function AvailabilityPlanner({
 
   const move = (ms: number) => {
     setNote(null);
-    onChange(movedTo(form, ms));
+    onChange((f) => movedTo(f, ms));
   };
 
   const findNext = async () => {
+    const askedKey = searchKey;
     setSearching(true);
     setNote(null);
     try {
@@ -142,6 +153,8 @@ export function AvailabilityPlanner({
         await calendarAvailability(form.accountId, emails, fromMs, toMs),
         saved,
       );
+      // The event, its guests or the planner changed meanwhile: the answer is about something else.
+      if (latestSearchKey.current !== askedKey) return;
       const slot = nextFreeSlot(knownBusy(found), span.endMs - span.startMs, from, tz);
       const unknown = unknownNote(found, emails);
       if (slot === null) {
@@ -154,7 +167,7 @@ export function AvailabilityPlanner({
       }
       const when = `${formatDay(dateOf(slot, tz), { weekday: "short", month: "short", day: "numeric" })} at ${formatTime(slot, tz)}`;
       const said = slot === span.startMs ? `Everyone's free ${when}.` : `Moved to ${when}.`;
-      onChange(movedTo(form, slot));
+      onChange((f) => movedTo(f, slot));
       setNote([said, unknown].filter(Boolean).join(" "));
     } catch (e) {
       const err = toCommandError(e);

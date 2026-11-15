@@ -161,8 +161,8 @@ describe("results", () => {
     expect(knownBusy(result)).toEqual([busy("2026-11-16", "09:00", "11:00")]);
   });
 
-  test("withoutSpan leaves the event's saved time out of everyone's busy time", () => {
-    const own = busy("2026-11-16", "09:30", "10:30");
+  test("withoutSpan leaves the event's saved time out of the busy time of its saved guests", () => {
+    const own = { ...busy("2026-11-16", "09:30", "10:30"), guests: ["SAM@x.com"] };
     expect(withoutSpan(result, own)).toEqual({
       you: { ...result.you, busy: [busy("2026-11-16", "09:00", "09:30")] },
       guests: [
@@ -172,12 +172,14 @@ describe("results", () => {
       ],
     });
     // A stretch around the event keeps both ends.
-    const inside = busy("2026-11-16", "09:15", "09:45");
+    const inside = { ...busy("2026-11-16", "09:15", "09:45"), guests: [] };
     expect(withoutSpan(result, inside).you).toEqual({
       ...result.you,
       busy: [busy("2026-11-16", "09:00", "09:15"), busy("2026-11-16", "09:45", "10:00")],
     });
     expect(withoutSpan(result, null)).toBe(result);
+    // A guest added since has no copy of the event: their busy time there is another meeting.
+    expect(withoutSpan(result, { ...own, guests: [] }).guests[0]).toBe(result.guests[0]);
   });
 
   test("unknownNote counts the guests whose availability is unknown", () => {

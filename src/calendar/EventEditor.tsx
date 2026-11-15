@@ -110,7 +110,11 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
   const savedSpan = useMemo(() => {
     if (!editing || spec.form.allDay) return null;
     const { start, end } = formTimes(spec.form);
-    return { startMs: start!.ms!, endMs: end!.ms! };
+    return {
+      startMs: start!.ms!,
+      endMs: end!.ms!,
+      guests: spec.form.guests.map((g) => g.address),
+    };
   }, [editing, spec.form]);
 
   const close = async () => {

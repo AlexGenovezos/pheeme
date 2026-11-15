@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { AvailabilityResult } from "../lib/tauri";
+import type { SavedSpan } from "./availability";
 import { AvailabilityPlanner } from "./AvailabilityPlanner";
 import { zonedMs } from "./dates";
 import { type EventForm, newForm } from "./eventForm";
@@ -35,7 +36,7 @@ function backend() {
   });
 }
 
-function Harness({ saved = null }: { saved?: { startMs: number; endMs: number } | null }) {
+function Harness({ saved = null }: { saved?: SavedSpan | null }) {
   const [form, setForm] = useState<EventForm>(() => ({
     ...newForm({
       accountId: "acc",
@@ -51,18 +52,25 @@ function Harness({ saved = null }: { saved?: { startMs: number; endMs: number } 
       { name: "Me", address: "ME@example.com", optional: false },
     ],
   }));
-  const change = (next: EventForm) => {
-    changed(next);
-    setForm(next);
-  };
+  const change = (update: (f: EventForm) => EventForm) =>
+    setForm((f) => {
+      const next = update(f);
+      changed(next);
+      return next;
+    });
   return (
-    <AvailabilityPlanner
-      form={form}
-      onChange={change}
-      tz={TZ}
-      selfEmail="me@example.com"
-      saved={saved}
-    />
+    <>
+      <button type="button" onClick={() => setForm((f) => ({ ...f, summary: "Renamed" }))}>
+        Rename
+      </button>
+      <AvailabilityPlanner
+        form={form}
+        onChange={change}
+        tz={TZ}
+        selfEmail="me@example.com"
+        saved={saved}
+      />
+    </>
   );
 }
 
@@ -185,6 +193,26 @@ test("Next available time moves the event to the first slot everyone known is fr
   );
 });
 
+test("Next available time keeps edits made while it searched", async () => {
+  let reply: (r: AvailabilityResult) => void = () => {};
+  answer = (args) =>
+    Number(args.toMs) - Number(args.fromMs) > 86_400_000
+      ? new Promise((resolve) => (reply = resolve))
+      : result({ you: [], sam: [] });
+  backend();
+  render(<Harness />);
+  await settle();
+
+  fireEvent.click(screen.getByRole("button", { name: "Next available time" }));
+  await settle();
+  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+  reply(result({ you: [[at("2026-11-16", 9), at("2026-11-16", 12)]], sam: [] }));
+  await settle();
+
+  expect(latest().summary).toBe("Renamed");
+  expect(latest().startMinutes).toBe(12 * 60);
+});
+
 test("without free/busy access the rows hold an Allow button that asks for it", async () => {
   let granted = false;
   answer = () => {
@@ -216,7 +244,7 @@ test("a saved event's own time doesn't count as busy; another clash is flagged",
   answer = () =>
     result({ you: [own], sam: [own, [at("2026-11-16", 10, 30), at("2026-11-16", 12)]] });
   backend();
-  render(<Harness saved={{ startMs: own[0], endMs: own[1] }} />);
+  render(<Harness saved={{ startMs: own[0], endMs: own[1], guests: ["sam@example.com"] }} />);
   await settle();
 
   expect(screen.getByText("You: free all day")).toBeInTheDocument();

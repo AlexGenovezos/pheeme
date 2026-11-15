@@ -80,16 +80,21 @@ export function nextFreeSlot(
   return null;
 }
 
+/** A saved event's time as Google has it, and the guests it was saved with. */
+export type SavedSpan = BusyInterval & { guests: string[] };
+
 /**
- * `result` without `span` in anyone's busy time. Editing a saved event, Google counts the event
- * itself as busy (yours, and every guest who has it on their calendar), and freeBusy can't say
- * which busy time is which; its saved time is left out so it doesn't clash with itself.
+ * `result` without `span` in the busy time of you and the guests it was saved with. Editing a
+ * saved event, Google counts the event itself as busy for everyone who has it on their calendar,
+ * and freeBusy can't say which busy time is which; its saved time is left out so it doesn't clash
+ * with itself. A guest added since has no copy, so their busy time there is another meeting.
  */
 export function withoutSpan(
   result: AvailabilityResult,
-  span: BusyInterval | null,
+  span: SavedSpan | null,
 ): AvailabilityResult {
   if (!span) return result;
+  const holders = new Set(span.guests.map((g) => g.toLowerCase()));
   const cut = (p: PersonAvailability): PersonAvailability =>
     p.status === "known"
       ? {
@@ -102,7 +107,10 @@ export function withoutSpan(
           ),
         }
       : p;
-  return { you: cut(result.you), guests: result.guests.map(cut) };
+  return {
+    you: cut(result.you),
+    guests: result.guests.map((g) => (holders.has(g.email.toLowerCase()) ? cut(g) : g)),
+  };
 }
 
 /** "2 guests' availability unknown", or null when every guest's is known. */
