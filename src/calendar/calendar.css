@@ -670,6 +670,15 @@
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
+/* Shorter blocks with room to spare (set by the block's measure) wrap the title over it. */
+.cal-event--timed[data-title-lines] .cal-event__title {
+  display: -webkit-box;
+  flex-shrink: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--cal-event-title-lines);
+}
 .cal-event__details {
   display: contents;
 }
