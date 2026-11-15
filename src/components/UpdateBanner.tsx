@@ -30,11 +30,10 @@ export function UpdateBanner() {
       <div className="ui-toast__text">
         <span className="ui-toast__title">{manualCheckText[manualCheck]}</span>
       </div>
-      {manualCheck !== "checking" && (
-        <Button size="sm" onClick={dismissManualCheck}>
-          OK
-        </Button>
-      )}
+      {/* Shown from the start, so the toast keeps its size when the result arrives. */}
+      <Button size="sm" disabled={manualCheck === "checking"} onClick={dismissManualCheck}>
+        OK
+      </Button>
     </div>
   );
 }

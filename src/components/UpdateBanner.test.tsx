@@ -40,10 +40,10 @@ test.each([
   expect(screen.getByRole("status")).toHaveTextContent(text);
 });
 
-test("no OK button while checking", () => {
+test("OK is shown but disabled while checking, so the toast keeps its size", () => {
   useUpdateStore.setState({ manualCheck: "checking" });
   render(<UpdateBanner />);
-  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.getByRole("button", { name: "OK" })).toBeDisabled();
 });
 
 test("OK dismisses the manual check result", () => {
