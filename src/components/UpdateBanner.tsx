@@ -17,7 +17,13 @@ export function UpdateBanner() {
         <div className="ui-toast__text">
           <span className="ui-toast__title">Pheeme {displayVersion(available)} is ready</span>
         </div>
-        <Button variant="primary" size="sm" disabled={applying} onClick={() => void apply()}>
+        <Button
+          className="ui-toast__button"
+          variant="primary"
+          size="sm"
+          disabled={applying}
+          onClick={() => void apply()}
+        >
           {applying ? "Updating…" : "Restart to update"}
         </Button>
       </div>
@@ -31,7 +37,12 @@ export function UpdateBanner() {
         <span className="ui-toast__title">{manualCheckText[manualCheck]}</span>
       </div>
       {/* Shown from the start, so the toast keeps its size when the result arrives. */}
-      <Button size="sm" disabled={manualCheck === "checking"} onClick={dismissManualCheck}>
+      <Button
+        className="ui-toast__button"
+        size="sm"
+        disabled={manualCheck === "checking"}
+        onClick={dismissManualCheck}
+      >
         OK
       </Button>
     </div>
