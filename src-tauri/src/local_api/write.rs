@@ -14,24 +14,70 @@ use crate::compose::build::text_to_html;
 use crate::compose::{ComposeDraft, ComposeMode};
 use crate::gmail::mime::{parse_addresses, EmailAddress};
 use crate::gmail::types::{Filter, FilterAction, FilterCriteria};
-use crate::mail::{LabelDto, MailError};
+use crate::mail::{LabelDto, MailError, SearchChange};
 use serde_json::{json, Value};
 
 pub(super) async fn run(api: &LocalApi, request: Request) -> Result<Value, ApiError> {
-    let labels = |add: &[&str], remove: &[&str]| {
-        (
-            add.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-            remove.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-        )
-    };
+    let in_inbox =
+        |t: &crate::mail::ThreadSummaryDto| t.system_label_ids.iter().any(|l| l == "INBOX");
     match request {
-        Request::Archive(t) => modify(api, t, labels(&[], &["INBOX"])).await,
-        Request::MoveToInbox(t) => modify(api, t, labels(&["INBOX"], &[])).await,
-        Request::MarkRead(t) => modify(api, t, labels(&[], &["UNREAD"])).await,
-        Request::MarkUnread(t) => modify(api, t, labels(&["UNREAD"], &[])).await,
-        Request::Star(t) => modify(api, t, labels(&["STARRED"], &[])).await,
-        Request::Unstar(t) => modify(api, t, labels(&[], &["STARRED"])).await,
-        Request::Trash(t) => trash(api, t).await,
+        Request::Archive(t) => {
+            let change = SearchChange {
+                remove: &["INBOX"],
+                narrow: "in:inbox",
+                keep: in_inbox,
+                ..Default::default()
+            };
+            modify(api, t, &change).await
+        }
+        Request::MoveToInbox(t) => {
+            only_threads(&t, "move_to_inbox")?;
+            let change = SearchChange {
+                add: &["INBOX"],
+                ..Default::default()
+            };
+            modify(api, t, &change).await
+        }
+        Request::MarkRead(t) => {
+            let change = SearchChange {
+                remove: &["UNREAD"],
+                narrow: "is:unread",
+                keep: |t| t.unread,
+                ..Default::default()
+            };
+            modify(api, t, &change).await
+        }
+        Request::MarkUnread(t) => {
+            let change = SearchChange {
+                add: &["UNREAD"],
+                narrow: "is:read",
+                keep: |t| !t.unread,
+                ..Default::default()
+            };
+            modify(api, t, &change).await
+        }
+        Request::Star(t) => {
+            let change = SearchChange {
+                add: &["STARRED"],
+                narrow: "-is:starred",
+                keep: |t| !t.starred,
+                ..Default::default()
+            };
+            modify(api, t, &change).await
+        }
+        Request::Unstar(t) => {
+            let change = SearchChange {
+                remove: &["STARRED"],
+                narrow: "is:starred",
+                keep: |t| t.starred,
+                ..Default::default()
+            };
+            modify(api, t, &change).await
+        }
+        Request::Trash(t) => {
+            only_threads(&t, "trash")?;
+            trash(api, t).await
+        }
         Request::ChangeLabels(c) => change_labels(api, c).await,
         Request::CreateLabel(l) => create_label(api, l).await,
         Request::CreateFilter(f) => create_filter(api, f).await,
@@ -95,14 +141,83 @@ fn changed(account: &AccountInfo, found: &[String], missing: &[String]) -> Value
     })
 }
 
+/// The search a thread tool was given instead of thread_ids, if any (not both).
+fn thread_query(args: &ThreadsArg) -> Result<Option<&str>, ApiError> {
+    let query = args
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|q| !q.is_empty());
+    if query.is_some() && !args.thread_ids.is_empty() {
+        return Err(ApiError::Invalid("Give either thread_ids or query.".into()));
+    }
+    if args.dry_run && query.is_none() {
+        return Err(ApiError::Invalid("dry_run goes with query.".into()));
+    }
+    // Gmail's side of a search change leaves Spam and Trash out, so a search into them would
+    // change the cached matches and miss the rest.
+    // Both readings count: Gmail's (`in:anywhere`...) and the local search's, which also
+    // takes operators like `+in:trash`.
+    let reaches_spam_trash = |q: &str| {
+        crate::search::gmail_query(q).1
+            || crate::search::parse(q, crate::sync::engine::now_ms())
+                .is_some_and(|l| l.include_spam_trash)
+    };
+    if query.is_some_and(reaches_spam_trash) {
+        return Err(ApiError::Invalid(
+            "A query can't reach Spam or Trash: list those conversations and give thread_ids."
+                .into(),
+        ));
+    }
+    Ok(query)
+}
+
+/// Trash and Move to inbox change Trash, which a search can't safely sweep: ids only.
+fn only_threads(args: &ThreadsArg, tool: &str) -> Result<(), ApiError> {
+    if thread_query(args)?.is_some() {
+        return Err(ApiError::Invalid(format!(
+            "{tool} takes thread_ids, not a query: list the conversations first."
+        )));
+    }
+    Ok(())
+}
+
 async fn modify(
     api: &LocalApi,
     args: ThreadsArg,
-    (add, remove): (Vec<String>, Vec<String>),
+    change: &SearchChange<'_>,
 ) -> Result<Value, ApiError> {
+    if let Some(query) = thread_query(&args)? {
+        let account = resolve_account(api, args.account.as_deref()).await?;
+        let done = api
+            .mail
+            .modify_search(&account.id, query, change, args.dry_run)
+            .await?;
+        let gmail = "Gmail also changes matching mail that isn't on this computer";
+        let note = match (args.dry_run, done.local) {
+            (true, true) => format!("Nothing changed. {} cached conversations would change; {gmail}.", done.cached),
+            (true, false) => "Nothing changed. Only Gmail understands this search, so nothing cached was counted.".into(),
+            (false, true) => format!("Changed {} cached conversations now; {gmail}, in the background.", done.cached),
+            (false, false) => "Only Gmail understands this search: Gmail changes what it finds, and Pheeme shows it after its next sync.".into(),
+        };
+        return Ok(json!({
+            "account": account.email,
+            "query": query,
+            "dry_run": args.dry_run,
+            "cached_conversations": done.cached,
+            "gmail_query": done.gmail_query,
+            "note": note,
+        }));
+    }
+    let as_strings = |ids: &[&str]| ids.iter().map(|l| l.to_string()).collect::<Vec<_>>();
     let (account, found, missing) = targets(api, args.account.as_deref(), &args.thread_ids).await?;
     api.mail
-        .modify_threads(&account.id, &found, &add, &remove)
+        .modify_threads(
+            &account.id,
+            &found,
+            &as_strings(change.add),
+            &as_strings(change.remove),
+        )
         .await?;
     Ok(changed(&account, &found, &missing))
 }
@@ -181,7 +296,7 @@ async fn create_label(api: &LocalApi, args: CreateLabel) -> Result<Value, ApiErr
     Ok(json!({ "account": account.email, "name": label.name, "id": label.id }))
 }
 
-fn category_id(name: &str) -> Result<&'static str, ApiError> {
+pub(super) fn category_id(name: &str) -> Result<&'static str, ApiError> {
     Ok(match name.trim().to_lowercase().as_str() {
         "primary" => "CATEGORY_PERSONAL",
         "social" => "CATEGORY_SOCIAL",

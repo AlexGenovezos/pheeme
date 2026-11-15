@@ -137,8 +137,13 @@ pub async fn mail_stats(
         {
             labels.entry(row.group.clone()).or_default().add(&row);
         }
-        for s in
-            messages::sender_stats(db, account.id, since_ms, account.email, sender_limit).await?
+        for s in messages::sender_stats(
+            db,
+            account.id,
+            account.email,
+            &messages::SenderQuery::top(since_ms, sender_limit),
+        )
+        .await?
         {
             merge_sender(&mut senders, account.id, s);
         }

@@ -20,6 +20,7 @@ pub enum Request {
     ListLabels(AccountArg),
     ListMailbox(ListMailbox),
     SearchMail(SearchMail),
+    CountMail(CountMail),
     GetThread(GetThread),
     ListFilters(AccountArg),
     Archive(ThreadsArg),
@@ -45,6 +46,10 @@ pub struct SenderReport {
     pub account: Option<String>,
     pub days: Option<i64>,
     pub limit: Option<i64>,
+    /// Only mail in this inbox tab (primary, promotions, social, updates, forums).
+    pub tab: Option<String>,
+    /// `messages` (the default) or `unread`.
+    pub sort_by: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
@@ -73,7 +78,13 @@ pub const MAX_THREADS: usize = 500;
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ThreadsArg {
+    #[serde(default)]
     pub thread_ids: Vec<String>,
+    /// Instead of `thread_ids`: every conversation this search finds (search_mail syntax).
+    pub query: Option<String>,
+    /// With `query`: count what would change, change nothing.
+    #[serde(default)]
+    pub dry_run: bool,
     pub account: Option<String>,
 }
 
@@ -167,6 +178,9 @@ pub struct ListMailbox {
     pub unread_only: bool,
     pub limit: Option<i64>,
     pub cursor: Option<String>,
+    /// Leave out snippets and labels.
+    #[serde(default)]
+    pub compact: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
@@ -179,6 +193,25 @@ pub struct SearchMail {
     pub gmail: bool,
     pub limit: Option<i64>,
     pub cursor: Option<String>,
+    /// Leave out snippets and labels.
+    #[serde(default)]
+    pub compact: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CountMail {
+    /// A search (search_mail syntax); instead of `mailbox`.
+    pub query: Option<String>,
+    /// A mailbox as list_mailbox takes it; inbox when neither this nor `query` is given.
+    pub mailbox: Option<String>,
+    pub account: Option<String>,
+    #[serde(default)]
+    pub unread_only: bool,
+    /// sender, domain, label, tab or month; just the totals when omitted.
+    pub group_by: Option<String>,
+    /// Groups shown (default 25).
+    pub limit: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
@@ -207,6 +240,7 @@ impl Request {
             | Request::ListLabels(_)
             | Request::ListMailbox(_)
             | Request::SearchMail(_)
+            | Request::CountMail(_)
             | Request::GetThread(_)
             | Request::ListFilters(_)
             | Request::SenderReport(_)
@@ -249,6 +283,19 @@ impl Request {
                 if s.gmail { " on Gmail" } else { "" },
                 on(&s.account)
             ),
+            Request::CountMail(c) => format!(
+                "count {}{}{}{}",
+                match &c.query {
+                    Some(q) => format!("\"{q}\""),
+                    None => c.mailbox.clone().unwrap_or_else(|| "inbox".into()),
+                },
+                if c.unread_only { " (unread)" } else { "" },
+                c.group_by
+                    .as_deref()
+                    .map(|g| format!(" by {g}"))
+                    .unwrap_or_default(),
+                on(&c.account)
+            ),
             Request::GetThread(t) => format!("conversation {}{}", t.thread_id, on(&t.account)),
             Request::ListFilters(a) => format!("filters{}", on(&a.account)),
             Request::Archive(t)
@@ -257,9 +304,15 @@ impl Request {
             | Request::MarkUnread(t)
             | Request::Star(t)
             | Request::Unstar(t)
-            | Request::Trash(t) => {
-                format!("{}{}", conversations(t.thread_ids.len()), on(&t.account))
-            }
+            | Request::Trash(t) => format!(
+                "{}{}{}",
+                match &t.query {
+                    Some(q) => format!("every match for \"{q}\""),
+                    None => conversations(t.thread_ids.len()),
+                },
+                if t.dry_run { " (dry run)" } else { "" },
+                on(&t.account)
+            ),
             Request::ChangeLabels(c) => format!(
                 "{}: +[{}] -[{}]{}",
                 match &c.query {
@@ -287,8 +340,12 @@ impl Request {
             }
             Request::DeleteFilter(d) => format!("filter {}{}", d.filter_id, on(&d.account)),
             Request::SenderReport(r) => format!(
-                "top senders, {} days{}",
+                "top senders, {} days{}{}",
                 r.days.unwrap_or(DEFAULT_DAYS),
+                r.tab
+                    .as_deref()
+                    .map(|t| format!(" in {t}"))
+                    .unwrap_or_default(),
                 on(&r.account)
             ),
             Request::FilterAudit(a) => format!(
@@ -340,6 +397,10 @@ fn account_prop() -> Value {
     })
 }
 
+fn compact_prop() -> Value {
+    json!({ "type": "boolean", "description": "Leave out snippets and labels (default false)." })
+}
+
 fn paging_props() -> (Value, Value) {
     (
         json!({
@@ -384,7 +445,8 @@ pub fn catalog() -> Vec<ToolDef> {
             title: "List a mailbox",
             description: "Conversations in a mailbox, newest first: inbox, primary, social, promotions, \
                 updates, forums, starred, important, sent, drafts, spam, trash, all (everything outside \
-                Spam and Trash), or a user label's name. Answered from Pheeme's local copy, so it's instant.",
+                Spam and Trash), or a user label's name. Answered from Pheeme's local copy, so it's instant. \
+                To count or rank (how many, who sends the most), use count_mail instead of paging through.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -392,7 +454,8 @@ pub fn catalog() -> Vec<ToolDef> {
                     "account": account_prop(),
                     "unread_only": { "type": "boolean" },
                     "limit": limit,
-                    "cursor": cursor
+                    "cursor": cursor,
+                    "compact": compact_prop()
                 },
                 "additionalProperties": false
             }),
@@ -414,7 +477,8 @@ pub fn catalog() -> Vec<ToolDef> {
                     "account": account_prop(),
                     "gmail": { "type": "boolean", "description": "Use Gmail's search (default false)." },
                     "limit": limit,
-                    "cursor": cursor
+                    "cursor": cursor,
+                    "compact": compact_prop()
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -422,6 +486,30 @@ pub fn catalog() -> Vec<ToolDef> {
             read_only: true,
             destructive: false,
             example: json!({ "query": "from:news@example.com newer_than:30d", "gmail": true }),
+        },
+        ToolDef {
+            name: "count_mail",
+            title: "Count mail",
+            description: "How many conversations a mailbox or a search holds, and how many are unread, \
+                optionally grouped by sender, domain (the sender's), label, tab (inbox tab) or month, \
+                biggest group first. One call answers questions like \"who has the most unread mail in \
+                Promotions\" (mailbox: promotions, unread_only: true, group_by: sender) without listing \
+                the mail. Counts the mail on this computer (search_mail's local syntax).",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "A search, as search_mail takes it. Instead of mailbox." },
+                    "mailbox": { "type": "string", "description": "A mailbox, as list_mailbox takes it (default inbox)." },
+                    "account": account_prop(),
+                    "unread_only": { "type": "boolean" },
+                    "group_by": { "type": "string", "enum": ["sender", "domain", "label", "tab", "month"] },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": MAX_LIMIT, "description": "Groups shown (default 25)." }
+                },
+                "additionalProperties": false
+            }),
+            read_only: true,
+            destructive: false,
+            example: json!({ "mailbox": "promotions", "unread_only": true, "group_by": "sender", "limit": 10 }),
         },
         ToolDef {
             name: "get_thread",
@@ -467,15 +555,22 @@ pub fn catalog() -> Vec<ToolDef> {
             title: "Who sends the most mail",
             description: "The senders with the most mail over the last N days (default 90), from Pheeme's \
                 local copy: how many messages, how many are unread or sit in Inbox, Trash or Spam, which \
-                inbox tab they land in, how often the user has written to them (0 suggests a list or \
-                notification, not a person), and whether their mail offers unsubscribe (one_click, link, \
-                email, none, or unknown). Use it to suggest filters or unsubscribing.",
+                inbox tab they land in, how often the user has written to them (you_wrote; none suggests \
+                a list or notification, not a person), and whether their mail offers unsubscribe \
+                (one_click, link, email, none, or unknown). Counts that are 0 are left out. Use it to \
+                suggest filters or unsubscribing; for plain counts, count_mail is lighter.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "account": account_prop(),
                     "days": { "type": "integer", "minimum": 1, "maximum": 3650 },
-                    "limit": { "type": "integer", "minimum": 1, "maximum": MAX_LIMIT, "description": "Senders (default 25)." }
+                    "limit": { "type": "integer", "minimum": 1, "maximum": MAX_LIMIT, "description": "Senders (default 25)." },
+                    "tab": {
+                        "type": "string",
+                        "enum": ["primary", "social", "promotions", "updates", "forums"],
+                        "description": "Only mail in this inbox tab."
+                    },
+                    "sort_by": { "type": "string", "enum": ["messages", "unread"], "description": "Default messages." }
                 },
                 "additionalProperties": false
             }),
@@ -505,11 +600,10 @@ pub fn catalog() -> Vec<ToolDef> {
             destructive: false,
             example: json!({ "days": 14 }),
         },
-        threads_tool(
+        query_tool(
             "archive",
             "Archive",
             "Take conversations out of the inbox (they stay in All Mail and their labels).",
-            false,
         ),
         threads_tool(
             "move_to_inbox",
@@ -518,10 +612,10 @@ pub fn catalog() -> Vec<ToolDef> {
              of Trash, which Gmail empties after 30 days).",
             false,
         ),
-        threads_tool("mark_read", "Mark as read", "Mark conversations as read.", false),
-        threads_tool("mark_unread", "Mark as unread", "Mark conversations as unread.", false),
-        threads_tool("star", "Star", "Star conversations.", false),
-        threads_tool("unstar", "Unstar", "Remove the star from conversations.", false),
+        query_tool("mark_read", "Mark as read", "Mark conversations as read."),
+        query_tool("mark_unread", "Mark as unread", "Mark conversations as unread."),
+        query_tool("star", "Star", "Star conversations."),
+        query_tool("unstar", "Unstar", "Remove the star from conversations."),
         threads_tool(
             "trash",
             "Move to Trash",
@@ -677,6 +771,32 @@ fn write_account_prop() -> Value {
         "type": "string",
         "description": "The account (email address or id). Required when more than one is connected."
     })
+}
+
+/// A thread tool that also takes a search: `description` plus how `query` works.
+fn query_tool(name: &'static str, title: &'static str, description: &'static str) -> ToolDef {
+    ToolDef {
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "thread_ids": thread_ids_prop(),
+                "query": {
+                    "type": "string",
+                    "description": "Instead of thread_ids: a search (search_mail syntax, not Spam or Trash). \
+                        Conversations on this computer that match change whole, at once; on Gmail, matching \
+                        messages not downloaded yet change too."
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "With query: say how many cached conversations would change, and change nothing."
+                },
+                "account": write_account_prop()
+            },
+            "additionalProperties": false
+        }),
+        example: json!({ "query": "from:deals@example.com is:unread", "dry_run": true }),
+        ..threads_tool(name, title, description, false)
+    }
 }
 
 fn threads_tool(

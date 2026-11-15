@@ -29,9 +29,10 @@ Other MCP clients that speak Streamable HTTP take the same URL and `Authorizatio
 | `list_labels` | Each account's labels and conversation counts |
 | `list_mailbox` | Conversations in Inbox, a tab (Primary, Promotions…), Starred, Sent, Drafts, Spam, Trash, All Mail or a label |
 | `search_mail` | Gmail search syntax over the cached mail, or Gmail's own search with `gmail: true` |
+| `count_mail` | How many conversations a mailbox or search holds and how many are unread, grouped by sender, domain, label, tab or month: "who has the most unread mail in Promotions" in one call |
 | `get_thread` | A conversation as plain text, with attachment names |
 | `list_filters` | Every Gmail filter, in words, flagging those that delete mail, skip the inbox or mark it read |
-| `sender_report` | Who sent the most mail over the last N days: how much, how much is unread, which tab it lands in, whether you ever write back, and whether it offers unsubscribe |
+| `sender_report` | Who sent the most mail over the last N days: how much, how much is unread, which tab it lands in, whether you ever write back, and whether it offers unsubscribe. Narrow it to one tab, or rank by unread |
 | `filter_audit` | For each filter that deletes, archives or marks mail read, what its criteria matched lately (Gmail search) and where that mail is now |
 
 Writes come in groups, each off until you turn it on under **What clients may change**:
@@ -45,6 +46,16 @@ Writes come in groups, each off until you turn it on under **What clients may ch
 
 Changes go through the same outbox as the app's buttons, so they show in Pheeme at once and reach
 Gmail in order. A tool whose group is off answers with the setting to turn on.
+
+`archive`, `mark_read`, `mark_unread`, `star` and `unstar` take a `query` (search syntax) instead of
+`thread_ids`: the cached matches change at once, and Gmail changes matching mail that isn't downloaded
+yet, without the assistant listing every conversation first. `dry_run: true` says how many cached
+conversations would change and changes nothing. `trash` and `move_to_inbox` take `thread_ids` only.
+
+Lists are kept small for assistants: snippets lose the invisible padding marketing mail puts in them and
+stop at 120 characters, labels read like mailbox names (`inbox`, `promotions`, `trash`, then your
+labels), flags appear only when set, and a page stops early (its cursor carries on) rather than grow
+past about 60,000 characters. `compact: true` leaves out snippets and labels.
 
 Assistants can't send mail: drafts wait in Drafts for you. They don't include your signature yet
 (Settings › Signatures applies to messages you write in Pheeme).

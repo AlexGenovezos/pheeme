@@ -375,8 +375,9 @@ fn clip(mut text: String) -> String {
 }
 
 /// What the activity log keeps of a tool's answer. A change keeps it whole (it says what
-/// changed). A read keeps the ids of the conversations, messages and filters it returned,
-/// so the log shows what the client saw without copying the mail into it.
+/// changed). A read keeps the ids of the conversations, messages and filters it returned
+/// (and the senders and groups a report or count named), so the log shows what the client
+/// saw without copying the mail into it.
 fn audit_result(tool: &str, value: &Value) -> String {
     let read_only = catalog()
         .iter()
@@ -386,7 +387,7 @@ fn audit_result(tool: &str, value: &Value) -> String {
         return clip(value.to_string());
     }
     let mut seen = serde_json::Map::new();
-    for key in ["thread_id", "message_id", "id", "sender"] {
+    for key in ["thread_id", "message_id", "id", "sender", "group"] {
         let mut ids = Vec::new();
         collect(value, key, &mut ids);
         if !ids.is_empty() {

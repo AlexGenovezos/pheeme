@@ -473,6 +473,41 @@ pub struct SearchPageDto {
     pub local: bool,
 }
 
+/// A label change for every match of a search ([`MailService::modify_search`]).
+pub struct SearchChange<'a> {
+    pub add: &'a [&'a str],
+    pub remove: &'a [&'a str],
+    /// Added to the Gmail search so it only finds messages the change does something to
+    /// (`is:unread` to mark read).
+    pub narrow: &'a str,
+    /// The cached conversations to change now (the unread ones, to mark read).
+    pub keep: fn(&ThreadSummaryDto) -> bool,
+}
+
+impl Default for SearchChange<'_> {
+    fn default() -> Self {
+        Self {
+            add: &[],
+            remove: &[],
+            narrow: "",
+            keep: |_| true,
+        }
+    }
+}
+
+/// What [`MailService::modify_search`] changed (or, in a dry run, would change).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchChangeDto {
+    /// Cached conversations changed now.
+    pub cached: usize,
+    /// False when the search uses syntax only Gmail understands: nothing cached was counted,
+    /// and Gmail's change is the whole of it.
+    pub local: bool,
+    /// The search Gmail runs to change mail not downloaded yet.
+    pub gmail_query: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GmailSearchPageDto {
@@ -968,34 +1003,77 @@ impl MailService {
         if query.is_empty() || account_ids.is_empty() {
             return Err(MailError::Invalid("Nothing to mark read.".into()));
         }
-        let (gmail, _) = search::gmail_query(query);
-        let sweep = format!("({gmail}) is:unread");
         for account_id in account_ids {
-            let account = std::slice::from_ref(account_id);
-            let mut thread_ids = Vec::new();
-            let mut before = None;
-            loop {
-                let page = self
-                    .search_messages(account, query, before, Some(MAX_PAGE))
-                    .await?;
-                thread_ids.extend(page.threads.into_iter().filter(|t| t.unread).map(|t| t.id));
-                match page.next {
-                    Some(next) => before = Some(next),
-                    None => break,
-                }
+            self.modify_search(
+                account_id,
+                query,
+                &SearchChange {
+                    remove: &["UNREAD"],
+                    narrow: "is:unread",
+                    keep: |t| t.unread,
+                    ..Default::default()
+                },
+                false,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Change every match of a search (`query`, the search bar's syntax) in `account_id`:
+    /// the cached matches `change.keep` selects change now, and on Gmail every message
+    /// `({query}) {change.narrow}` finds, downloaded or not. `dry_run` only counts them.
+    pub async fn modify_search(
+        &self,
+        account_id: &str,
+        query: &str,
+        change: &SearchChange<'_>,
+        dry_run: bool,
+    ) -> Result<SearchChangeDto, MailError> {
+        let query = query.trim();
+        if query.is_empty() || (change.add.is_empty() && change.remove.is_empty()) {
+            return Err(MailError::Invalid("Nothing to change.".into()));
+        }
+        let account = [account_id.to_owned()];
+        let mut thread_ids = Vec::new();
+        let mut local = true;
+        let mut before = None;
+        loop {
+            let page = self
+                .search_messages(&account, query, before, Some(MAX_PAGE))
+                .await?;
+            local &= page.local;
+            thread_ids.extend(
+                page.threads
+                    .into_iter()
+                    .filter(|t| (change.keep)(t))
+                    .map(|t| t.id),
+            );
+            match page.next {
+                Some(next) => before = Some(next),
+                None => break,
             }
+        }
+        let (gmail, _) = search::gmail_query(query);
+        let sweep = format!("({gmail}) {}", change.narrow).trim_end().to_owned();
+        if !dry_run {
+            let labels = |ids: &[&str]| ids.iter().map(|l| l.to_string()).collect::<Vec<_>>();
             let queued = outbox::enqueue_sweep(
                 &self.db,
                 account_id,
                 &thread_ids,
-                &[],
-                &["UNREAD".to_owned()],
+                &labels(change.add),
+                &labels(change.remove),
                 &sweep,
             )
             .await?;
             self.after_change(account_id, queued);
         }
-        Ok(())
+        Ok(SearchChangeDto {
+            cached: thread_ids.len(),
+            local,
+            gmail_query: sweep,
+        })
     }
 
     pub async fn trash_threads(

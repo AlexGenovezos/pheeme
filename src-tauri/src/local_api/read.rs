@@ -2,14 +2,17 @@
 //! that isn't Pheeme's UI: label names instead of ids, ISO dates, plain-text bodies.
 
 use super::requests::{
-    AccountArg, FilterAudit, GetThread, ListMailbox, SearchMail, SenderReport, AUDIT_DAYS,
-    DEFAULT_DAYS, DEFAULT_LIMIT, MAX_LIMIT,
+    AccountArg, CountMail, FilterAudit, GetThread, ListMailbox, SearchMail, SenderReport,
+    AUDIT_DAYS, DEFAULT_DAYS, DEFAULT_LIMIT, MAX_LIMIT,
 };
 use super::{ApiError, LocalApi, Request};
 use crate::accounts::AccountInfo;
 use crate::compose::build::html_to_text;
 use crate::filters::label_names;
-use crate::mail::{MailError, MessageDetailDto, ThreadCursorDto, ThreadSummaryDto, ALL_MAIL};
+use crate::mail::{
+    MailError, MessageDetailDto, ThreadCursorDto, ThreadSummaryDto, ALL_MAIL, MAX_PAGE,
+    OTHER_CATEGORIES,
+};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{Local, SecondsFormat, TimeZone};
 use serde::{Deserialize, Serialize};
@@ -17,6 +20,15 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 
 const DEFAULT_BODY_CHARS: usize = 8000;
+/// Characters of a snippet a list row keeps.
+const SNIPPET_CHARS: usize = 120;
+/// Most characters of rows one page returns, so an answer stays well inside what an
+/// assistant reads in one go (Claude Code sets a file aside past about 25k tokens). A longer
+/// page stops early and its cursor continues from there.
+const PAGE_CHARS: usize = 60_000;
+/// Most characters of message bodies get_thread returns, shared between its messages unless
+/// the caller sets `max_chars_per_message`.
+const THREAD_CHARS: usize = 60_000;
 
 pub(super) async fn run(api: &LocalApi, request: Request) -> Result<Value, ApiError> {
     match request {
@@ -24,6 +36,7 @@ pub(super) async fn run(api: &LocalApi, request: Request) -> Result<Value, ApiEr
         Request::ListLabels(a) => list_labels(api, a).await,
         Request::ListMailbox(m) => list_mailbox(api, m).await,
         Request::SearchMail(s) => search_mail(api, s).await,
+        Request::CountMail(c) => count_mail(api, c).await,
         Request::GetThread(t) => get_thread(api, t).await,
         Request::ListFilters(a) => list_filters(api, a).await,
         Request::SenderReport(r) => sender_report(api, r).await,
@@ -85,21 +98,111 @@ fn address(a: &crate::gmail::mime::EmailAddress) -> String {
     sender(a.name.as_deref(), Some(&a.address)).unwrap_or_default()
 }
 
-/// A conversation in a list.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+fn is_one(n: &i64) -> bool {
+    *n == 1
+}
+
+/// A conversation in a list. Kept small, since an assistant may read hundreds: flags only
+/// when set, `account` only when there's a choice.
 #[derive(Debug, Serialize)]
 pub(super) struct ThreadRow {
     pub thread_id: String,
-    pub account: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
     pub subject: Option<String>,
     pub from: Option<String>,
     pub date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<String>,
     pub unread: bool,
+    #[serde(skip_serializing_if = "is_false")]
     pub starred: bool,
+    #[serde(skip_serializing_if = "is_false")]
     pub has_attachment: bool,
+    #[serde(skip_serializing_if = "is_one")]
     pub messages: i64,
-    /// System labels (INBOX, CATEGORY_PROMOTIONS, TRASH...) then user label names.
+    /// Where it sits (inbox, promotions, trash...) then user label names.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
+}
+
+/// A Gmail system label as the mailbox names and search syntax say it, or `None` for the
+/// ones a row shows as flags (unread, starred).
+fn system_label(id: &str) -> Option<String> {
+    Some(
+        match id {
+            "UNREAD" | "STARRED" => return None,
+            "CATEGORY_PERSONAL" => "primary",
+            "CATEGORY_PROMOTIONS" => "promotions",
+            "CATEGORY_SOCIAL" => "social",
+            "CATEGORY_UPDATES" => "updates",
+            "CATEGORY_FORUMS" => "forums",
+            other => return Some(other.to_lowercase()),
+        }
+        .to_owned(),
+    )
+}
+
+/// A row's labels: system labels by name (see [`system_label`]), then user labels by name.
+fn label_list(system: &[String], user: &[String], names: &HashMap<String, String>) -> Vec<String> {
+    system
+        .iter()
+        .filter_map(|id| system_label(id))
+        .chain(
+            user.iter()
+                .map(|id| names.get(id).cloned().unwrap_or_else(|| id.clone())),
+        )
+        .collect()
+}
+
+/// Characters mail uses to pad its preview text that show as nothing (zero-width spaces and
+/// joiners, soft hyphens, the combining grapheme joiner, Hangul fillers, BOM...).
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{034F}'
+            | '\u{061C}'
+            | '\u{115F}'
+            | '\u{1160}'
+            | '\u{17B4}'
+            | '\u{17B5}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{2800}'
+            | '\u{3164}'
+            | '\u{FEFF}'
+            | '\u{FFA0}'
+    )
+}
+
+/// A snippet without invisible padding or runs of spaces, cut to [`SNIPPET_CHARS`].
+fn clean_snippet(snippet: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut space = false;
+    for c in snippet.chars().filter(|c| !invisible(*c)) {
+        if c.is_whitespace() {
+            space = !out.is_empty();
+        } else {
+            if space {
+                out.push(' ');
+                space = false;
+            }
+            out.push(c);
+        }
+    }
+    let (mut out, cut_short) = cut(out, SNIPPET_CHARS);
+    if cut_short {
+        out.truncate(out.trim_end().len());
+        out.push('…');
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 /// Turns summaries into rows, naming each account's labels once.
@@ -107,6 +210,8 @@ pub(super) struct Rows<'a> {
     api: &'a LocalApi,
     emails: HashMap<String, String>,
     names: HashMap<String, HashMap<String, String>>,
+    hidden_tabs: HashMap<String, Vec<String>>,
+    compact: bool,
 }
 
 impl<'a> Rows<'a> {
@@ -122,7 +227,24 @@ impl<'a> Rows<'a> {
             api,
             emails,
             names: HashMap::new(),
+            hidden_tabs: HashMap::new(),
+            compact: false,
         })
+    }
+
+    /// Rows without snippets or labels.
+    pub fn compact(mut self, compact: bool) -> Self {
+        self.compact = compact;
+        self
+    }
+
+    /// The inbox tabs the account hides (their mail shows under Primary).
+    pub async fn hidden_tabs(&mut self, account_id: &str) -> Result<&[String], ApiError> {
+        if !self.hidden_tabs.contains_key(account_id) {
+            let hidden = self.api.mail.inbox_tabs(account_id).await?;
+            self.hidden_tabs.insert(account_id.to_owned(), hidden);
+        }
+        Ok(&self.hidden_tabs[account_id])
     }
 
     pub async fn label_names(
@@ -149,28 +271,68 @@ impl<'a> Rows<'a> {
     ) -> Result<Vec<ThreadRow>, ApiError> {
         let mut out = Vec::with_capacity(threads.len());
         for t in threads {
-            let names = self.label_names(&t.account_id).await?;
-            let mut labels = t.system_label_ids.clone();
-            labels.extend(
-                t.label_ids
-                    .iter()
-                    .map(|id| names.get(id).cloned().unwrap_or_else(|| id.clone())),
-            );
-            out.push(ThreadRow {
-                account: self.email(&t.account_id),
-                thread_id: t.id,
-                from: sender(t.from_name.as_deref(), t.from_address.as_deref()),
-                date: iso(t.date),
-                subject: t.subject,
-                snippet: t.snippet,
-                unread: t.unread,
-                starred: t.starred,
-                has_attachment: t.has_attachment,
-                messages: t.message_count,
-                labels,
-            });
+            out.push(self.row(t).await?);
         }
         Ok(out)
+    }
+
+    async fn row(&mut self, t: ThreadSummaryDto) -> Result<ThreadRow, ApiError> {
+        let compact = self.compact;
+        let account = (self.emails.len() > 1).then(|| self.email(&t.account_id));
+        let labels = if compact {
+            Vec::new()
+        } else {
+            let names = self.label_names(&t.account_id).await?;
+            label_list(&t.system_label_ids, &t.label_ids, names)
+        };
+        Ok(ThreadRow {
+            account,
+            thread_id: t.id,
+            from: sender(t.from_name.as_deref(), t.from_address.as_deref()),
+            date: iso(t.date),
+            subject: t.subject,
+            snippet: t
+                .snippet
+                .as_deref()
+                .filter(|_| !compact)
+                .and_then(clean_snippet),
+            unread: t.unread,
+            starred: t.starred,
+            has_attachment: t.has_attachment,
+            messages: t.message_count,
+            labels,
+        })
+    }
+
+    /// Rows for `threads` up to [`PAGE_CHARS`] of JSON (at least one), and when that cut the
+    /// page short, the cursor after the last row kept.
+    pub async fn page(
+        &mut self,
+        threads: Vec<ThreadSummaryDto>,
+    ) -> Result<(Vec<ThreadRow>, Option<ThreadCursorDto>), ApiError> {
+        let total = threads.len();
+        let mut out = Vec::with_capacity(total);
+        let mut size = 0;
+        let mut last = None;
+        for t in threads {
+            let cursor = ThreadCursorDto {
+                last_message_date: t.date,
+                account_id: t.account_id.clone(),
+                thread_id: t.id.clone(),
+            };
+            let row = self.row(t).await?;
+            size += serde_json::to_string(&row).map_or(0, |j| j.len() + 1);
+            if size > PAGE_CHARS && !out.is_empty() {
+                break;
+            }
+            out.push(row);
+            last = Some(cursor);
+        }
+        Ok(if out.len() < total {
+            (out, last)
+        } else {
+            (out, None)
+        })
     }
 }
 
@@ -268,21 +430,24 @@ fn system_mailbox(name: &str) -> Option<(&'static str, Option<&'static str>)> {
     })
 }
 
-async fn list_mailbox(api: &LocalApi, args: ListMailbox) -> Result<Value, ApiError> {
-    let mailbox = args
-        .mailbox
-        .as_deref()
+/// What a mailbox name lists: its label, the inbox tab's category with it, and the accounts.
+struct Mailbox {
+    name: String,
+    label_id: String,
+    also: Option<&'static str>,
+    account_ids: Vec<String>,
+}
+
+async fn resolve_mailbox(
+    api: &LocalApi,
+    mailbox: Option<&str>,
+    account: Option<&str>,
+) -> Result<Mailbox, ApiError> {
+    let mailbox = mailbox
         .map(str::trim)
         .filter(|m| !m.is_empty())
         .unwrap_or("inbox");
-    let before = match decode_cursor(args.cursor.as_deref())? {
-        None => None,
-        Some(Cursor::Local(c)) => Some(c),
-        Some(Cursor::Gmail { .. }) => {
-            return Err(ApiError::Invalid("That cursor is from a search.".into()))
-        }
-    };
-    let accounts = resolve_accounts(api, args.account.as_deref()).await?;
+    let accounts = resolve_accounts(api, account).await?;
     let (label_id, also, account_ids) = match system_mailbox(&mailbox.to_lowercase()) {
         Some((_, Some(_))) if accounts.len() > 1 => {
             let emails: Vec<&str> = accounts.iter().map(|a| a.email.as_str()).collect();
@@ -325,23 +490,59 @@ async fn list_mailbox(api: &LocalApi, args: ListMailbox) -> Result<Value, ApiErr
             }
         }
     };
-    let read_filter: Option<&[(String, String)]> = args.unread_only.then_some(&[]);
-    let page = api
-        .mail
-        .list_threads(
-            &account_ids,
-            &label_id,
-            also,
-            before,
-            Some(limit(args.limit)),
-            read_filter,
-        )
+    Ok(Mailbox {
+        name: mailbox.to_owned(),
+        label_id,
+        also,
+        account_ids,
+    })
+}
+
+impl Mailbox {
+    /// A page of the mailbox (unread conversations only with `unread_only`).
+    async fn page(
+        &self,
+        api: &LocalApi,
+        before: Option<ThreadCursorDto>,
+        limit: i64,
+        unread_only: bool,
+    ) -> Result<crate::mail::ThreadPageDto, ApiError> {
+        let read_filter: Option<&[(String, String)]> = unread_only.then_some(&[]);
+        Ok(api
+            .mail
+            .list_threads(
+                &self.account_ids,
+                &self.label_id,
+                self.also,
+                before,
+                Some(limit),
+                read_filter,
+            )
+            .await?)
+    }
+}
+
+async fn list_mailbox(api: &LocalApi, args: ListMailbox) -> Result<Value, ApiError> {
+    let before = match decode_cursor(args.cursor.as_deref())? {
+        None => None,
+        Some(Cursor::Local(c)) => Some(c),
+        Some(Cursor::Gmail { .. }) => {
+            return Err(ApiError::Invalid("That cursor is from a search.".into()))
+        }
+    };
+    let mailbox = resolve_mailbox(api, args.mailbox.as_deref(), args.account.as_deref()).await?;
+    let page = mailbox
+        .page(api, before, limit(args.limit), args.unread_only)
         .await?;
-    let threads = Rows::new(api).await?.rows(page.threads).await?;
+    let (threads, cut) = Rows::new(api)
+        .await?
+        .compact(args.compact)
+        .page(page.threads)
+        .await?;
     Ok(json!({
-        "mailbox": mailbox,
+        "mailbox": mailbox.name,
         "threads": threads,
-        "next_cursor": page.next.map(|c| encode_cursor(&Cursor::Local(c))),
+        "next_cursor": cut.or(page.next).map(|c| encode_cursor(&Cursor::Local(c))),
     }))
 }
 
@@ -356,7 +557,7 @@ async fn search_mail(api: &LocalApi, args: SearchMail) -> Result<Value, ApiError
         .map(|a| a.id)
         .collect();
     let cursor = decode_cursor(args.cursor.as_deref())?;
-    let mut rows = Rows::new(api).await?;
+    let mut rows = Rows::new(api).await?.compact(args.compact);
 
     let limit = limit(args.limit);
     let local_cursor = match cursor {
@@ -376,12 +577,215 @@ async fn search_mail(api: &LocalApi, args: SearchMail) -> Result<Value, ApiError
     if !page.local {
         return gmail_search(api, &mut rows, &account_ids, query, None, 0, limit).await;
     }
+    let (threads, cut) = rows.page(page.threads).await?;
     Ok(json!({
         "searched": "the mail cached on this computer",
         "note": "Old mail may not be cached. Search again with gmail: true to search the whole mailbox.",
-        "threads": rows.rows(page.threads).await?,
-        "next_cursor": page.next.map(|c| encode_cursor(&Cursor::Local(c))),
+        "threads": threads,
+        "next_cursor": cut.or(page.next).map(|c| encode_cursor(&Cursor::Local(c))),
     }))
+}
+
+/// How count_mail groups conversations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupBy {
+    Sender,
+    Domain,
+    Label,
+    Tab,
+    Month,
+}
+
+impl GroupBy {
+    fn parse(name: Option<&str>) -> Result<Option<Self>, ApiError> {
+        let Some(name) = name.map(str::trim).filter(|n| !n.is_empty()) else {
+            return Ok(None);
+        };
+        Ok(Some(match name.to_lowercase().as_str() {
+            "sender" | "from" => Self::Sender,
+            "domain" => Self::Domain,
+            "label" | "labels" => Self::Label,
+            "tab" | "category" => Self::Tab,
+            "month" => Self::Month,
+            other => {
+                return Err(ApiError::Invalid(format!(
+                    "count_mail can't group by {other}: use sender, domain, label, tab or month."
+                )))
+            }
+        }))
+    }
+
+    /// The groups a conversation counts in, each with a display name when the key isn't one.
+    /// `hidden`: the account's hidden inbox tabs, whose mail shows under Primary.
+    fn keys(
+        self,
+        t: &ThreadSummaryDto,
+        names: &HashMap<String, String>,
+        hidden: &[String],
+    ) -> Vec<(String, Option<String>)> {
+        let address = t
+            .from_address
+            .as_deref()
+            .map(str::to_lowercase)
+            .filter(|a| !a.is_empty());
+        match self {
+            Self::Sender => vec![(
+                address.unwrap_or_else(|| "(no sender)".into()),
+                t.from_name.clone().filter(|n| !n.is_empty()),
+            )],
+            Self::Domain => vec![(
+                address
+                    .as_deref()
+                    .and_then(|a| a.rsplit_once('@'))
+                    .map_or("(no sender)", |(_, d)| d)
+                    .to_owned(),
+                None,
+            )],
+            Self::Label => label_list(&t.system_label_ids, &t.label_ids, names)
+                .into_iter()
+                .map(|l| (l, None))
+                .collect(),
+            Self::Tab => {
+                let tab = t
+                    .system_label_ids
+                    .iter()
+                    .filter(|l| OTHER_CATEGORIES.contains(&l.as_str()) && !hidden.contains(l))
+                    .find_map(|l| system_label(l))
+                    .unwrap_or_else(|| "primary".into());
+                vec![(tab, None)]
+            }
+            Self::Month => vec![(
+                iso(t.date).map_or_else(|| "(no date)".into(), |d| d[..7].to_owned()),
+                None,
+            )],
+        }
+    }
+}
+
+/// count_mail's tally.
+#[derive(Default)]
+struct Tally {
+    conversations: i64,
+    unread: i64,
+    groups: HashMap<String, (Option<String>, i64, i64)>,
+}
+
+impl Tally {
+    async fn add(
+        &mut self,
+        rows: &mut Rows<'_>,
+        group_by: Option<GroupBy>,
+        unread_only: bool,
+        threads: Vec<ThreadSummaryDto>,
+    ) -> Result<(), ApiError> {
+        for t in threads.iter().filter(|t| t.unread || !unread_only) {
+            self.conversations += 1;
+            self.unread += i64::from(t.unread);
+            let Some(group_by) = group_by else { continue };
+            let hidden = match group_by {
+                GroupBy::Tab => rows.hidden_tabs(&t.account_id).await?.to_vec(),
+                _ => Vec::new(),
+            };
+            let names = rows.label_names(&t.account_id).await?;
+            for (key, name) in group_by.keys(t, names, &hidden) {
+                let entry = self.groups.entry(key).or_insert((name, 0, 0));
+                entry.1 += 1;
+                entry.2 += i64::from(t.unread);
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(self, group_by: Option<GroupBy>, limit: usize) -> Value {
+        let mut out = json!({
+            "conversations": self.conversations,
+            "unread": self.unread,
+            "counted": "the mail cached on this computer",
+        });
+        if group_by.is_some() {
+            let mut groups: Vec<_> = self.groups.into_iter().collect();
+            groups.sort_by(|(ka, a), (kb, b)| b.1.cmp(&a.1).then(b.2.cmp(&a.2)).then(ka.cmp(kb)));
+            let more = groups.len().saturating_sub(limit);
+            out["groups"] = groups
+                .into_iter()
+                .take(limit)
+                .map(|(key, (name, conversations, unread))| {
+                    let mut g =
+                        json!({ "group": key, "conversations": conversations, "unread": unread });
+                    if let Some(name) = name {
+                        g["name"] = json!(name);
+                    }
+                    g
+                })
+                .collect();
+            if more > 0 {
+                out["more_groups"] = json!(more);
+            }
+        }
+        out
+    }
+}
+
+async fn count_mail(api: &LocalApi, args: CountMail) -> Result<Value, ApiError> {
+    let group_by = GroupBy::parse(args.group_by.as_deref())?;
+    let query = args
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|q| !q.is_empty());
+    if query.is_some() && args.mailbox.is_some() {
+        return Err(ApiError::Invalid("Give either query or mailbox.".into()));
+    }
+    let mut rows = Rows::new(api).await?;
+    let mut tally = Tally::default();
+    let mut before = None;
+    match query {
+        Some(query) => {
+            let account_ids: Vec<String> = resolve_accounts(api, args.account.as_deref())
+                .await?
+                .into_iter()
+                .map(|a| a.id)
+                .collect();
+            loop {
+                let page = api
+                    .mail
+                    .search_messages(&account_ids, query, before, Some(MAX_PAGE))
+                    .await?;
+                if !page.local {
+                    return Err(ApiError::Invalid(
+                        "count_mail counts the mail on this computer, and only Gmail understands \
+                         that search (OR, -word, grouping...). Rephrase it, or page through \
+                         search_mail with gmail: true."
+                            .into(),
+                    ));
+                }
+                tally
+                    .add(&mut rows, group_by, args.unread_only, page.threads)
+                    .await?;
+                match page.next {
+                    Some(next) => before = Some(next),
+                    None => break,
+                }
+            }
+        }
+        None => {
+            let mailbox =
+                resolve_mailbox(api, args.mailbox.as_deref(), args.account.as_deref()).await?;
+            loop {
+                let page = mailbox
+                    .page(api, before, MAX_PAGE, args.unread_only)
+                    .await?;
+                tally
+                    .add(&mut rows, group_by, args.unread_only, page.threads)
+                    .await?;
+                match page.next {
+                    Some(next) => before = Some(next),
+                    None => break,
+                }
+            }
+        }
+    }
+    Ok(tally.finish(group_by, limit(args.limit) as usize))
 }
 
 /// Up to `limit` conversations of a Gmail results page, from `skip` on. Gmail's pages are
@@ -400,8 +804,16 @@ async fn gmail_search(
         .search_gmail(account_ids, query, tokens.clone())
         .await?;
     let failed: Vec<String> = page.failed.iter().map(|a| rows.email(a)).collect();
-    let end = skip.saturating_add(limit as usize);
-    let next = if end < page.threads.len() {
+    let found = page.threads.len();
+    let threads: Vec<_> = page
+        .threads
+        .into_iter()
+        .skip(skip)
+        .take(limit as usize)
+        .collect();
+    let (threads, cut) = rows.page(threads).await?;
+    let end = skip.saturating_add(threads.len());
+    let next = if cut.is_some() || end < found {
         Some(Cursor::Gmail { tokens, skip: end })
     } else if !page.next.is_empty() {
         Some(Cursor::Gmail {
@@ -411,15 +823,9 @@ async fn gmail_search(
     } else {
         None
     };
-    let threads: Vec<_> = page
-        .threads
-        .into_iter()
-        .skip(skip)
-        .take(limit as usize)
-        .collect();
     Ok(json!({
         "searched": "Gmail",
-        "threads": rows.rows(threads).await?,
+        "threads": threads,
         "failed_accounts": failed,
         "next_cursor": next.map(|c| encode_cursor(&c)),
     }))
@@ -466,10 +872,7 @@ async fn get_thread(api: &LocalApi, args: GetThread) -> Result<Value, ApiError> 
     if thread_id.is_empty() {
         return Err(ApiError::Invalid("Give a thread_id.".into()));
     }
-    let max = args
-        .max_chars_per_message
-        .unwrap_or(DEFAULT_BODY_CHARS)
-        .max(200);
+    let asked = args.max_chars_per_message.map(|m| m.max(200));
     let mut found = None;
     for account in resolve_accounts(api, args.account.as_deref()).await? {
         match api.mail.get_thread(&account.id, thread_id, false).await {
@@ -485,6 +888,10 @@ async fn get_thread(api: &LocalApi, args: GetThread) -> Result<Value, ApiError> 
     let mut rows = Rows::new(api).await?;
     let account_id = detail.thread.account_id.clone();
     let names = rows.label_names(&account_id).await?.clone();
+    // Unless the caller chose, long conversations share THREAD_CHARS between their messages.
+    let max = asked.unwrap_or_else(|| {
+        (THREAD_CHARS / detail.messages.len().max(1)).clamp(200, DEFAULT_BODY_CHARS)
+    });
     let messages: Vec<MessageOut> = detail
         .messages
         .iter()
@@ -508,7 +915,10 @@ async fn get_thread(api: &LocalApi, args: GetThread) -> Result<Value, ApiError> 
                 labels: m
                     .label_ids
                     .iter()
-                    .map(|id| names.get(id).cloned().unwrap_or_else(|| id.clone()))
+                    .filter_map(|id| match names.get(id) {
+                        Some(name) => Some(name.clone()),
+                        None => system_label(id),
+                    })
                     .collect(),
                 body,
                 body_truncated,
@@ -541,17 +951,53 @@ async fn list_filters(api: &LocalApi, args: AccountArg) -> Result<Value, ApiErro
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
+/// The sender report's counts an assistant can read as 0 when they're left out.
+const ZERO_LEFT_OUT: [&str; 8] = [
+    "unread",
+    "replied",
+    "starred",
+    "engaged",
+    "in_inbox",
+    "in_trash",
+    "in_spam",
+    "you_wrote",
+];
+
 async fn sender_report(api: &LocalApi, args: SenderReport) -> Result<Value, ApiError> {
     let days = args.days.unwrap_or(DEFAULT_DAYS).clamp(1, 3650);
     let since = crate::sync::engine::now_ms() - days * DAY_MS;
+    let tab = match args.tab.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        None => None,
+        Some(t) => Some(super::write::category_id(t)?),
+    };
+    let by_unread = match args.sort_by.as_deref().map(str::trim) {
+        None | Some("") | Some("messages") => false,
+        Some("unread") => true,
+        Some(other) => {
+            return Err(ApiError::Invalid(format!(
+                "sender_report sorts by messages or unread, not {other}."
+            )))
+        }
+    };
     let mut out = Vec::new();
     for account in resolve_accounts(api, args.account.as_deref()).await? {
+        // Primary is the mail in no shown tab: a hidden tab's mail shows there.
+        let primary = tab == Some("CATEGORY_PERSONAL");
+        let excludes = match primary {
+            true => crate::mail::primary_excludes(&api.mail.inbox_tabs(&account.id).await?),
+            false => Vec::new(),
+        };
         let senders = crate::senders::report(
             &api.db,
             &account.id,
             &account.email,
-            since,
-            limit(args.limit),
+            &crate::db::messages::SenderQuery {
+                since_ms: since,
+                limit: limit(args.limit),
+                category: tab.filter(|_| !primary),
+                not_in: primary.then_some(excludes.as_slice()),
+                by_unread,
+            },
         )
         .await?;
         let senders: Vec<Value> = senders
@@ -559,6 +1005,11 @@ async fn sender_report(api: &LocalApi, args: SenderReport) -> Result<Value, ApiE
             .map(|s| {
                 let mut v = serde_json::to_value(&s).unwrap_or_default();
                 v["last_date"] = json!(iso(s.last_date));
+                if let Some(fields) = v.as_object_mut() {
+                    fields.retain(|k, v| {
+                        !(v.is_null() || ZERO_LEFT_OUT.contains(&k.as_str()) && v == &json!(0))
+                    });
+                }
                 v
             })
             .collect();
@@ -692,6 +1143,33 @@ mod tests {
         assert_eq!(decode_cursor(None).unwrap(), None);
         assert_eq!(decode_cursor(Some("  ")).unwrap(), None);
         assert!(decode_cursor(Some("not a cursor")).is_err());
+    }
+
+    #[test]
+    fn snippets_lose_invisible_padding_and_stay_short() {
+        let padded = format!(
+            "One last shot at $10k\u{200c} \u{200c} \u{034f}\u{00a0}{}",
+            "\u{200c} ".repeat(80)
+        );
+        assert_eq!(
+            clean_snippet(&padded).as_deref(),
+            Some("One last shot at $10k")
+        );
+        assert_eq!(clean_snippet("\u{200b}\u{feff} "), None);
+        let long = clean_snippet(&"word ".repeat(100)).unwrap();
+        assert!(long.ends_with("word…"), "{long}");
+        assert_eq!(long.chars().count(), SNIPPET_CHARS);
+    }
+
+    #[test]
+    fn system_labels_read_like_mailbox_names() {
+        let names = HashMap::from([("Label_1".to_owned(), "Receipts".to_owned())]);
+        let system =
+            ["CATEGORY_PROMOTIONS", "INBOX", "STARRED", "UNREAD", "TRASH"].map(String::from);
+        assert_eq!(
+            label_list(&system, &["Label_1".into(), "Label_9".into()], &names),
+            ["promotions", "inbox", "trash", "Receipts", "Label_9"]
+        );
     }
 
     #[test]

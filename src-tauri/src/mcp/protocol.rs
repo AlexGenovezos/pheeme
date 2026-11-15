@@ -15,7 +15,12 @@ const INVALID_PARAMS: i64 = -32602;
 const INSTRUCTIONS: &str = "Pheeme is the user's Gmail client. These tools work on their real mailbox \
 through Pheeme, exactly as if they had used the app. Reads come from Pheeme's local copy and are fast; \
 search_mail with gmail: true covers mail that isn't cached. Thread ids belong to one account, so pass \
-the account a result came from when you act on it. To restore mail from Trash, use move_to_inbox.";
+the account a result came from when you act on it. To restore mail from Trash, use move_to_inbox. \
+To count or rank mail (how many, who sends the most, which label), call count_mail once instead of \
+paging through list_mailbox. To change many conversations, give archive, mark_read, mark_unread, star \
+or unstar a query instead of thread_ids (dry_run: true first says how many). In lists, starred and \
+has_attachment appear only when true, messages only when above 1, and account only when more than one \
+is connected; compact: true also drops snippets and labels.";
 
 /// The answer to one JSON-RPC message, or `None` for a notification (or a response the client
 /// sent us), which gets no answer.

@@ -2,7 +2,7 @@
 //! (`List-Unsubscribe`, RFC 2369, and one-click, RFC 8058). Reads the cache through
 //! `db::messages`; the one-click request is the only network call. Tauri-free.
 
-use crate::db::messages::{self, DbSenderStats};
+use crate::db::messages::{self, DbSenderStats, SenderQuery};
 use crate::gmail::types::Header;
 use crate::mail::{MailError, MailService};
 use reqwest::Url;
@@ -55,17 +55,16 @@ pub(crate) fn tab(s: &DbSenderStats) -> &'static str {
     .map_or("primary", |(_, name)| name)
 }
 
-/// The top `limit` senders since `since_ms`, most mail first.
+/// The top senders `q` asks for, most mail (or most unread) first.
 pub async fn report(
     db: &SqlitePool,
     account_id: &str,
     own_address: &str,
-    since_ms: i64,
-    limit: i64,
+    q: &SenderQuery<'_>,
 ) -> Result<Vec<SenderDto>, MailError> {
     let mut out = Vec::new();
-    for s in messages::sender_stats(db, account_id, since_ms, own_address, limit).await? {
-        let latest = messages::latest_from(db, account_id, &s.address, since_ms).await?;
+    for s in messages::sender_stats(db, account_id, own_address, q).await? {
+        let latest = messages::latest_from(db, account_id, &s.address, q.since_ms).await?;
         let unsubscribe = match latest.as_ref().and_then(|(_, _, h)| h.as_deref()) {
             Some(json) => {
                 let headers: Vec<Header> = serde_json::from_str(json).unwrap_or_default();
