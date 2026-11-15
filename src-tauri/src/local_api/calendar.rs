@@ -317,13 +317,16 @@ async fn list_calendars(api: &LocalApi, args: AccountArg) -> Result<Value, ApiEr
                     })
                 })
                 .collect();
-            json!({
+            let mut row = json!({
                 "account": a.email,
                 "access": a.access.status,
-                "note": (a.access.status != "on").then(|| access_note(a)),
                 "time_zone": a.time_zone,
                 "calendars": calendars,
-            })
+            });
+            if a.access.status != "on" {
+                row["note"] = access_note(a).into();
+            }
+            row
         })
         .collect();
     Ok(json!({ "accounts": accounts }))
