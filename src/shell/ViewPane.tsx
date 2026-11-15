@@ -22,7 +22,7 @@ import { useKeybinding } from "../keyboard/useCommands";
 import { showContextMenu } from "../lib/contextMenu";
 import { ARCHIVE_SLOT_LABEL, archiveSlotIcon, useArchiveSlot } from "../mail/archiveSlot";
 import {
-  archive,
+  archiveSlotAction,
   closeConversation,
   findSimilar,
   respond,
@@ -176,7 +176,7 @@ export function ViewPane() {
           shortcut={keys.archive}
           icon={archiveSlotIcon(slot)}
           disabled={stale}
-          onClick={() => void archive()}
+          onClick={() => void archiveSlotAction()}
         />
         <IconButton
           label="Delete"

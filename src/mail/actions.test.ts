@@ -12,6 +12,7 @@ import { useAccountStore } from "../store/accountStore";
 import {
   applyLabel,
   archive,
+  archiveSlotAction,
   findSimilar,
   markSearchResultsRead,
   moveSelection,
@@ -402,7 +403,7 @@ describe("leaving Spam and Trash", () => {
   test("in Spam, archive is Not spam: back to the inbox, out of the list, no Undo", async () => {
     useUiStore.setState({ mailbox: { accountId: "a1", labelId: "SPAM" }, openThread: key(1) });
     setList([thread(1), thread(2)]);
-    await archive();
+    await archiveSlotAction();
     expect(modifyCalls()).toEqual([
       { accountId: "a1", threadIds: ["t1"], add: ["INBOX"], remove: ["SPAM"] },
     ]);
@@ -414,12 +415,21 @@ describe("leaving Spam and Trash", () => {
   test("in Trash, archive is Move to Inbox", async () => {
     useUiStore.setState({ mailbox: { accountId: "a1", labelId: "TRASH" }, openThread: key(1) });
     setList([thread(1)]);
-    await archive();
+    await archiveSlotAction();
     expect(modifyCalls()).toEqual([
       { accountId: "a1", threadIds: ["t1"], add: ["INBOX"], remove: ["SPAM"] },
     ]);
     expect(listKeys()).toEqual([]);
     expect(toasts()[0].title).toBe("Moved to Inbox");
+  });
+
+  test("archive itself stays archive there (the Inbox chip's x on a conversation partly in Trash)", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "TRASH" }, openThread: key(1) });
+    setList([thread(1)]);
+    await archive([key(1)], { evenIfGone: true });
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: [], remove: ["INBOX"] },
+    ]);
   });
 
   test("the open conversation's label chips leave Trash and Spam at once", async () => {
@@ -436,7 +446,7 @@ describe("leaving Spam and Trash", () => {
         ],
       ]),
     });
-    await archive();
+    await archiveSlotAction();
     expect(useThreadStore.getState().details.get(key(1))?.messages[0].labelIds).toEqual([
       "UNREAD",
       "INBOX",

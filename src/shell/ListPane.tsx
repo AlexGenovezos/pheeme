@@ -8,7 +8,7 @@ import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import type { ThreadSummary } from "../lib/tauri";
 import {
-  archive,
+  archiveSlotAction,
   composeNew,
   findSimilar,
   markSearchResultsRead,
@@ -35,7 +35,7 @@ export const notYet = (action: string) =>
 
 const onRowAction = (action: RowAction, t: ThreadSummary) => {
   const keys = [threadKey(t.accountId, t.id)];
-  if (action === "archive") void archive(keys);
+  if (action === "archive") void archiveSlotAction(keys);
   else if (action === "delete") void trash(keys);
   else void setRead(t.unread, keys);
 };
@@ -54,7 +54,7 @@ export const rowMenu = (t: ThreadSummary) => {
       id: "archive",
       label: ARCHIVE_SLOT_LABEL[currentArchiveSlot()],
       shortcut: registry.shortcutFor("conversation.archive", "e"),
-      onSelect: () => void archive(keys),
+      onSelect: () => void archiveSlotAction(keys),
     },
     {
       id: "read",

@@ -353,12 +353,8 @@ async function revert(done: Map<string, string[]>, original: Change, inverse: Ch
 const inMailbox = (labelId: string) => !mail().query?.search && ui().mailbox.labelId === labelId;
 const inInbox = () => inMailbox("INBOX");
 
-/**
- * `evenIfGone`: the conversation view's own controls act on the open thread even when its row has left the list.
- * In Spam and Trash, where archiving does nothing, it moves the conversations to the inbox instead.
- */
+/** `evenIfGone`: the conversation view's own controls act on the open thread even when its row has left the list. */
 export function archive(keys?: ThreadKey[], { evenIfGone = false } = {}): Promise<void> {
-  if (currentArchiveSlot() !== "archive") return moveToInbox(keys);
   return apply(
     keys,
     modify([], ["INBOX"], { leavesList: inInbox(), detail: withLabel("INBOX", false) }),
@@ -371,6 +367,11 @@ export function archive(keys?: ThreadKey[], { evenIfGone = false } = {}): Promis
       evenIfGone,
     },
   );
+}
+
+/** The Archive slot (its buttons, row-menu item and `e`): archive, except Not spam in Spam and Move to Inbox in Trash. */
+export function archiveSlotAction(keys?: ThreadKey[]): Promise<void> {
+  return currentArchiveSlot() === "archive" ? archive(keys) : moveToInbox(keys);
 }
 
 /** The conversation as it will be back in the inbox: out of Spam and Trash. */
