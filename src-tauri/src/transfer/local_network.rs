@@ -71,7 +71,7 @@ fn host_on(
     let mask = u32::MAX << (32 - prefixlen);
     let own = u32::from(ip);
     let (network, last) = (own & mask, own | !mask);
-    (0..3)
+    (0..4)
         .map(|step| network | (random.wrapping_add(step) & !mask))
         .find(|&host| host != network && host != last && host != own)
         .map(Ipv4Addr::from)
@@ -145,6 +145,7 @@ mod tests {
             Some(ip("192.168.1.11"))
         );
         assert_eq!(host_on(ip("10.0.0.1"), 30, BCAST, 0), Some(ip("10.0.0.2")));
+        assert_eq!(host_on(ip("10.0.0.1"), 30, BCAST, 3), Some(ip("10.0.0.2")));
         assert_eq!(
             host_on(ip("169.254.7.9"), 16, BCAST, 0x0102_0304),
             Some(ip("169.254.3.4"))
