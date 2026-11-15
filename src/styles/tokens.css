@@ -160,6 +160,11 @@
   --calendar-goto-width: 360px;
   --calendar-goto-offset-top: 18vh;
   --calendar-guest-list-max-height: 168px;
+  /* The forecast slot in a day's header: icon, high and low; in a month cell, icon and high. */
+  --weather-day-width: 64px;
+  --weather-day-width-compact: 36px;
+  /* Settings › Calendar: the home location field, wide enough for "Town, Region, Country". */
+  --weather-home-width: 280px;
   /* Mail's invite card: its mini day view, and the email pinned beside the calendar. */
   --invite-mini-day-height: 168px;
   --invite-mini-gutter-width: 52px;

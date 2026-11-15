@@ -1,0 +1,80 @@
+/* The forecast in a day's header, after its date: a fixed slot, so headers keep their size while it loads. */
+.weather-day {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-0-5);
+  width: var(--weather-day-width);
+  margin-left: var(--space-1);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.weather-day__icon {
+  flex: none;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  margin-right: var(--space-0-5);
+}
+.weather-day__high {
+  color: var(--color-foreground);
+  font-weight: var(--font-weight-medium);
+}
+.weather-day__low {
+  color: var(--color-foreground-subtle);
+}
+.weather-day__pending.ui-skeleton--block {
+  width: 100%;
+  height: var(--icon-size-sm);
+}
+
+/* A day too narrow for both temperatures (a busy week, a month cell) shows the high. */
+.weather-day--compact {
+  width: var(--weather-day-width-compact);
+}
+.weather-day--compact .weather-day__low {
+  display: none;
+}
+
+/* Narrower still: the icon alone (the words are in its tooltip). */
+.weather-day--icon {
+  width: var(--icon-size-sm);
+}
+.weather-day--icon .weather-day__icon {
+  margin-right: var(--space-0);
+}
+.weather-day--icon .weather-day__high,
+.weather-day--icon .weather-day__low {
+  display: none;
+}
+
+/* Month: a grid item in the date row, at the cell's right; clicks reach the day beneath. */
+.weather-day--month {
+  align-self: center;
+  justify-self: end;
+  justify-content: flex-end;
+  margin-right: var(--space-1-5);
+  pointer-events: none;
+}
+
+/* The event popover's forecast row. */
+.weather-event__low {
+  color: var(--color-foreground-muted);
+}
+.weather-event__pending.ui-skeleton--text {
+  width: var(--weather-day-width);
+  height: var(--font-size-sm);
+}
+
+/* Settings › Calendar › Home location. */
+.weather-home {
+  display: block;
+  width: var(--weather-home-width);
+}
+.weather-home__none {
+  margin: var(--space-0);
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}

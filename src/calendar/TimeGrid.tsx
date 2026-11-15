@@ -13,6 +13,7 @@ import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
 import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
 import { useNow } from "./useNow";
+import { DayWeather } from "../weather/DayWeather";
 
 /** Height of one hour, in px. */
 export const HOUR_PX = 48;
@@ -42,7 +43,22 @@ export function gutterWidth(): number {
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
-function DayHeader({ date, today, single }: { date: string; today: boolean; single: boolean }) {
+/** A day's forecast in its header: high and low from this width, the high alone from the next, else the icon. */
+const WEATHER_FULL_PX = 140;
+const WEATHER_HIGH_PX = 110;
+
+function DayHeader({
+  date,
+  today,
+  single,
+  width,
+}: {
+  date: string;
+  today: boolean;
+  single: boolean;
+  /** The day's width in px (Infinity before it's measured). */
+  width: number;
+}) {
   return (
     <div
       className={cx("cal-grid__day-head", today && "cal-grid__day-head--today")}
@@ -59,6 +75,10 @@ function DayHeader({ date, today, single }: { date: string; today: boolean; sing
       >
         {Number(date.slice(8))}
       </button>
+      <DayWeather
+        date={date}
+        variant={width >= WEATHER_FULL_PX ? "full" : width >= WEATHER_HIGH_PX ? "compact" : "icon"}
+      />
     </div>
   );
 }
@@ -126,7 +146,13 @@ export function TimeGrid({
           {zoneAbbreviation(tz)}
         </div>
         {days.map((d) => (
-          <DayHeader key={d} date={d} today={d === now.date} single={days.length === 1} />
+          <DayHeader
+            key={d}
+            date={d}
+            today={d === now.date}
+            single={days.length === 1}
+            width={dayWidth}
+          />
         ))}
       </div>
       <div className="cal-grid__band" role="row" aria-label="All-day events">

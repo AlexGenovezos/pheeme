@@ -38,6 +38,7 @@ pub mod telemetry;
 mod test_logs;
 mod text;
 pub mod transfer;
+pub mod weather;
 
 use anyhow::Context;
 use secrets::SecretStore;
@@ -334,6 +335,7 @@ pub fn run() {
             let log_dir = app.path().app_log_dir();
             let log_path = log_dir.as_ref().ok().cloned();
             app.manage(diagnostics::init(log_dir));
+            app.manage(weather::WeatherService::new());
             diagnostics::watch_runtime_stalls();
             info!(
                 version = env!("CARGO_PKG_VERSION"),
@@ -577,6 +579,9 @@ pub fn run() {
             commands::calendar::respond_to_calendar_event,
             commands::calendar::respond_to_calendar_invite,
             commands::calendar::message_invite,
+            commands::weather::weather_search_places,
+            commands::weather::weather_forecast,
+            commands::weather::weather_for_location,
             commands::tasks::tasks_accounts,
             commands::tasks::tasks_in_list,
             commands::tasks::dated_tasks,

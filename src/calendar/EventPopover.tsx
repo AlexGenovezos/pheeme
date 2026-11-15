@@ -41,6 +41,7 @@ import { plainText } from "./eventForm";
 import { noteDismiss } from "./drag";
 import { eventTitle, useCalendarLookup } from "./EventBlock";
 import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
+import { EventWeather } from "../weather/EventWeather";
 
 type Answer = "accepted" | "tentative" | "declined";
 
@@ -449,10 +450,13 @@ function PopoverBody({ open }: { open: OpenEvent }) {
         </div>
       )}
       {event.location && !locationIsCall(event.location, meeting) && (
-        <div className="cal-pop__row">
-          <MapPin aria-hidden="true" />
-          <span className="selectable">{event.location}</span>
-        </div>
+        <>
+          <div className="cal-pop__row">
+            <MapPin aria-hidden="true" />
+            <span className="selectable">{event.location}</span>
+          </div>
+          <EventWeather event={event} tz={tz} />
+        </>
       )}
       {guests.length > 0 && (
         <div className="cal-pop__row cal-pop__row--top">

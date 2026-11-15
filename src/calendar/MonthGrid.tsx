@@ -21,6 +21,7 @@ import { useNow } from "./useNow";
 import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
 import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
+import { DayWeather } from "../weather/DayWeather";
 
 /** One event line in a cell, in px. */
 export const MONTH_ROW_PX = 26;
@@ -86,6 +87,9 @@ function Week({
               : Number(d.slice(8))}
           </button>
         </div>
+      ))}
+      {days.map((d, i) => (
+        <DayWeather key={d} date={d} variant="month" style={{ gridColumn: i + 1, gridRow: 1 }} />
       ))}
       {visible.map((s) => {
         const style: CSSProperties = {

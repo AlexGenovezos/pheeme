@@ -4,6 +4,7 @@ import {
   BarChart3,
   Bell,
   Bot,
+  CalendarDays,
   Contact,
   Info,
   Filter,
@@ -60,6 +61,11 @@ import {
   WordSizeControl,
 } from "../speedread/SpeedReader";
 import type { SettingsPageDef } from "./schema";
+import {
+  HomeLocationControl,
+  ShowWeatherControl,
+  TemperatureUnitControl,
+} from "../weather/WeatherSettings";
 
 const MODE_LABELS: Record<ThemeMode, string> = { system: "System", light: "Light", dark: "Dark" };
 
@@ -565,6 +571,42 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
               "Units per minute per user, as shown under Google Cloud Console › Gmail API › Quotas. If you raise it there, enter the new limit here. Pheeme uses up to 80% of it and downloads older mail with at most 40%, so new mail and sending stay quick.",
             keywords: ["throttle", "rate limited", "units per minute", "slow"],
             Control: GmailQuotaControl,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "calendar",
+    title: "Calendar",
+    icon: CalendarDays,
+    group: "Calendar",
+    keywords: ["weather", "forecast", "temperature"],
+    sections: [
+      {
+        title: "Weather",
+        settings: [
+          {
+            id: "weather.show",
+            title: "Show weather",
+            description:
+              "The forecast at the top of each day, and for an event's place when you open it. To get it, Pheeme sends your home location and those places to Open-Meteo (open-meteo.com), and nothing else. Weather data by Open-Meteo.com, CC BY 4.0.",
+            keywords: ["forecast", "open-meteo", "privacy", "location"],
+            Control: ShowWeatherControl,
+          },
+          {
+            id: "weather.home",
+            title: "Home location",
+            description:
+              "The town whose forecast the days show. Type it, or find it from your calendar's time zone.",
+            keywords: ["weather", "city", "town", "location", "detect"],
+            Control: HomeLocationControl,
+          },
+          {
+            id: "weather.unit",
+            title: "Temperature",
+            keywords: ["weather", "fahrenheit", "celsius", "units"],
+            Control: TemperatureUnitControl,
           },
         ],
       },
