@@ -40,8 +40,9 @@ const BUDGETS = {
   // garbage pile up for 40-70 passes before a full collection, then keeps part of that peak, so the same
   // commit ends at 375 or 434 MiB. This ceiling only catches gross growth; the two below catch leaks.
   "Memory after the session (app + WebKit, PSS)": { unit: "MiB", max: 460 },
-  // The Rust process doesn't depend on WebKit's timing: 134-138 MiB after the session on 2026-11-10.
-  "App process after the session (PSS)": { unit: "MiB", max: 165 },
+  // The Rust process doesn't depend on WebKit's timing: 134-138 MiB after the session on 2026-11-10,
+  // 180 MiB on 2026-11-14 after local encryption (#348: a 16 MB SQLite page cache per connection).
+  "App process after the session (PSS)": { unit: "MiB", max: 215 },
   // WebKit's web process, the lowest reading late in the session minus the lowest early on: a leak keeps
   // raising the floor, a late collection doesn't. 17-26 MiB on 2026-11-10 (or below zero after a pile-up).
   "Web process growth during the session (PSS)": { unit: "MiB", max: 45 },
