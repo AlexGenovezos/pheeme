@@ -565,6 +565,7 @@ pub fn run() {
             commands::drive::save_attachment_to_drive,
             commands::calendar::calendar_accounts,
             commands::calendar::calendar_events,
+            commands::calendar::calendar_availability,
             commands::calendar::search_calendar_events,
             commands::calendar::set_calendar_hidden,
             commands::calendar::calendar_sync_now,

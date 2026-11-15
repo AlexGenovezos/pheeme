@@ -68,8 +68,10 @@ calendar.
    sign-in either way. `gmail.settings.basic` only lets Pheeme save sender
    rules (Gmail filters that file a sender's mail in an inbox tab), the two
    contacts scopes only let it read your contacts to suggest recipients, and
-   the calendar scopes (the last four) are asked for when you first open the
-   calendar.
+   the calendar scopes (the next four) are asked for when you first open the
+   calendar. The last, `calendar.events.freebusy`, is asked for separately when
+   you first check guests' availability in the event editor; it only shows when
+   people are busy, never what their events are.
    ```
    https://www.googleapis.com/auth/gmail.modify
    https://www.googleapis.com/auth/gmail.settings.basic
@@ -81,6 +83,7 @@ calendar.
    https://www.googleapis.com/auth/calendar.calendarlist.readonly
    https://www.googleapis.com/auth/calendar.settings.readonly
    https://www.googleapis.com/auth/tasks
+   https://www.googleapis.com/auth/calendar.events.freebusy
    ```
 
 Drive is optional: when you first use **Attach from Google Drive** or **Save to

@@ -1,6 +1,7 @@
 //! Calendar commands: thin adapters over [`crate::calendar::service::CalendarService`].
 
 use super::CommandError;
+use crate::calendar::availability::AvailabilityDto;
 use crate::calendar::edit::EventEdit;
 use crate::calendar::invite::InviteDto;
 use crate::calendar::service::{
@@ -70,6 +71,24 @@ pub async fn calendar_sync_now(
     account_id: String,
 ) -> Result<CalendarAccessDto, CommandError> {
     Ok(user_action(state.calendar.sync_now(&account_id)).await?)
+}
+
+/// When the account and each guest are busy in `[from_ms, to_ms)`, asked of Google now (the
+/// event editor's planner). Rejects with `missing_scope` until free/busy access is allowed.
+#[tauri::command]
+pub async fn calendar_availability(
+    state: State<'_, AppState>,
+    account_id: String,
+    emails: Vec<String>,
+    from_ms: i64,
+    to_ms: i64,
+) -> Result<AvailabilityDto, CommandError> {
+    Ok(user_action(
+        state
+            .calendar
+            .availability(&account_id, &emails, from_ms, to_ms),
+    )
+    .await?)
 }
 
 /// Calendar mode is (or stopped being) in front: calendars and tasks are checked more often.

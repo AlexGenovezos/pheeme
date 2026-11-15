@@ -1,6 +1,7 @@
 //! Calendar mode: each account's Google calendars and events, synced into SQLite and read
 //! from there. Tauri-free; `commands/calendar.rs` is the thin IPC adapter.
 
+pub mod availability;
 pub mod convert;
 pub mod edit;
 pub mod error;
@@ -19,10 +20,12 @@ pub mod sync;
 pub mod writes;
 
 use crate::gmail::calendar::{
-    ApiEvent, CalendarListPage, CalendarSettings, EventsPage, SendUpdates, WriteOptions,
+    ApiEvent, CalendarListPage, CalendarSettings, EventsPage, FreeBusyCalendar, SendUpdates,
+    WriteOptions,
 };
 use crate::gmail::{GmailClient, GmailError};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// The Calendar API calls sync needs, so tests can use [`fake::FakeCalendar`].
@@ -72,6 +75,12 @@ pub trait CalendarApi: Send + Sync {
         calendar_id: &str,
         ical_uid: &str,
     ) -> Result<Vec<ApiEvent>, GmailError>;
+    async fn free_busy(
+        &self,
+        ids: &[String],
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<HashMap<String, FreeBusyCalendar>, GmailError>;
 }
 
 #[async_trait::async_trait]
@@ -148,6 +157,15 @@ impl CalendarApi for GmailClient {
         ical_uid: &str,
     ) -> Result<Vec<ApiEvent>, GmailError> {
         GmailClient::events_by_ical_uid(self, calendar_id, ical_uid).await
+    }
+
+    async fn free_busy(
+        &self,
+        ids: &[String],
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<HashMap<String, FreeBusyCalendar>, GmailError> {
+        GmailClient::free_busy(self, ids, from_ms, to_ms).await
     }
 }
 

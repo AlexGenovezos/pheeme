@@ -223,6 +223,17 @@
   --calendar-search-day-width: 150px;
   --calendar-search-time-width: 150px;
   --calendar-draft-opacity: 0.85;
+  /* The editor's availability planner: a name column, one row per person, busy blocks. */
+  --calendar-avail-name-width: 128px;
+  --calendar-avail-row-height: 26px;
+  --calendar-avail-hours-height: 16px;
+  --calendar-avail-busy: color-mix(in srgb, var(--color-accent) 32%, transparent);
+  --calendar-avail-slot: color-mix(in srgb, var(--color-focus-border) 14%, transparent);
+  --calendar-avail-unknown: repeating-linear-gradient(
+    135deg,
+    var(--color-border-subtle) 0 4px,
+    transparent 4px 8px
+  );
   /* Pickers (components/ui: Select, DateField, TimeField) and the editor's hit targets. The picker
      popover sits above dialogs (--z-overlay) and under toasts. */
   --z-picker: 250;

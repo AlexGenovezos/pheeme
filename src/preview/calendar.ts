@@ -242,6 +242,8 @@ export function createCalendarHandlers(
             ? [
                 guest("dana@example.com", "Dana Whitaker", "accepted"),
                 guest("sam@example.com", null, "needsAction"),
+                // At another company that doesn't share free/busy (`preview/availability.ts`).
+                guest("priya@example.org", "Priya Raman", "needsAction"),
               ]
             : e.id === "design-review"
               ? [

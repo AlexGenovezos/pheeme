@@ -595,3 +595,157 @@
   color: var(--color-foreground-subtle);
   font-size: var(--font-size-xs);
 }
+
+/* ---- The editor's availability planner -------------------------------------- */
+
+.cal-avail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.cal-avail__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+.cal-avail__day {
+  min-width: var(--calendar-search-day-width);
+  font-weight: var(--font-weight-medium);
+  text-align: center;
+}
+.cal-avail__next {
+  margin-left: auto;
+}
+.cal-avail__grid {
+  display: flex;
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-pane-bg);
+}
+.cal-avail__names {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--calendar-avail-name-width);
+  border-right: var(--border-width) solid var(--color-border);
+}
+.cal-avail__corner {
+  height: var(--calendar-avail-hours-height);
+}
+.cal-avail__name {
+  height: var(--calendar-avail-row-height);
+  padding-inline: var(--space-2);
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  line-height: var(--calendar-avail-row-height);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cal-avail__timeline {
+  position: relative;
+  flex: 1;
+  min-width: var(--space-0);
+}
+.cal-avail__hours {
+  position: relative;
+  height: var(--calendar-avail-hours-height);
+}
+.cal-avail__hour {
+  position: absolute;
+  top: var(--space-0-5);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+/* Hour lines every hour across the rows: 14 columns for 7:00–21:00. */
+.cal-avail__rows {
+  position: relative;
+  cursor: pointer;
+  background-image: linear-gradient(
+    to right,
+    var(--calendar-grid-line) var(--border-width),
+    transparent var(--border-width)
+  );
+  background-size: calc(100% / 14) 100%;
+}
+.cal-avail__track {
+  position: relative;
+  height: var(--calendar-avail-row-height);
+  border-top: var(--border-width) solid var(--calendar-grid-line);
+}
+.cal-avail__skeleton {
+  position: absolute;
+  inset: var(--space-1) var(--space-1);
+  width: auto;
+  height: auto;
+}
+.cal-avail__busy {
+  position: absolute;
+  top: var(--space-1);
+  bottom: var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--calendar-avail-busy);
+}
+.cal-avail__track--unknown {
+  display: flex;
+  align-items: center;
+  padding-inline: var(--space-2);
+  background: var(--calendar-avail-unknown);
+  cursor: default;
+}
+.cal-avail__unknown {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}
+/* The proposed time, outlined over every row. */
+.cal-avail__slot {
+  position: absolute;
+  top: var(--space-0);
+  bottom: var(--space-0);
+  border: var(--focus-ring-width) solid var(--color-focus-border);
+  border-radius: var(--radius-xs);
+  background: var(--calendar-avail-slot);
+  pointer-events: none;
+}
+.cal-avail__slot:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--border-width);
+}
+.cal-avail__slot--clash {
+  border-color: var(--color-warning);
+}
+.cal-avail__problem {
+  position: absolute;
+  inset: var(--calendar-avail-hours-height) var(--space-0) var(--space-0);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--color-pane-bg);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+.cal-avail__problem-actions {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+.cal-avail__note {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+/* For screen readers only: each row's busy times in words. */
+.cal-avail__sr {
+  position: absolute;
+  width: var(--hairline);
+  height: var(--hairline);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

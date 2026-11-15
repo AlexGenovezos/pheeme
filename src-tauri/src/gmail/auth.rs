@@ -45,6 +45,12 @@ pub const DRIVE_SCOPES: &[&str] = &[
 
 pub const CONTACT_WRITE_SCOPES: &[&str] = &["https://www.googleapis.com/auth/contacts"];
 
+/// Guests' availability (`freeBusy.query`), asked for only when the user first checks it in
+/// the event editor. `calendar.events.freebusy` sees free/busy on any calendar the user can
+/// access, other people's included; `calendar.freebusy` covers only their own calendars, and
+/// `calendar.events` isn't accepted by `freeBusy` at all.
+pub const FREEBUSY_SCOPES: &[&str] = &["https://www.googleapis.com/auth/calendar.events.freebusy"];
+
 /// Google's consent screen lets users untick scopes; without this one the app is useless.
 pub const REQUIRED_SCOPE: &str = "https://www.googleapis.com/auth/gmail.modify";
 

@@ -29,6 +29,7 @@ import { sampleAttachment } from "./attachments";
 import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel } from "./labels";
 import { createSenderRuleHandlers } from "./senderRules";
 import { createCalendarHandlers } from "./calendar";
+import { createAvailabilityHandlers } from "./availability";
 import { createTasksHandlers } from "./tasks";
 import { createWeatherHandlers } from "./weather";
 import { createContactHandlers, type MeetingsWith } from "./contacts";
@@ -130,6 +131,11 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     params.get("calendar"),
     undefined,
     params.get("calendarZone"),
+  );
+  const availability = createAvailabilityHandlers(
+    accounts,
+    (fromMs, toMs) => calendar.calendar_events({ fromMs, toMs }),
+    params.get("freebusy"),
   );
   const meetingsWith: MeetingsWith = (accountId, address, fromMs, toMs) =>
     calendar
@@ -294,6 +300,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       meetingsWith,
     ),
     ...calendar,
+    calendar_availability: availability.calendar_availability,
     ...createTasksHandlers(accounts, params.get("tasks")),
     ...createWeatherHandlers(),
     ...drive.handlers,
@@ -433,11 +440,12 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       if (fail) throw { code: fail, message: `Mock failure: ${fail}.` };
       if (
         choice.accountId &&
-        ["drive", "contacts", "calendar", "reconnect"].includes(choice.kind ?? "")
+        ["drive", "contacts", "calendar", "availability", "reconnect"].includes(choice.kind ?? "")
       ) {
         const existing = accounts.find((a) => a.id === choice.accountId);
         if (!existing) throw { code: "not_found", message: "That account isn't connected." };
         if (choice.kind === "drive") drive.allow(existing.id);
+        if (choice.kind === "availability") availability.allow(existing.id);
         return existing;
       }
       const account = accounts.find((a) => a.email === "you@example.com") ?? {

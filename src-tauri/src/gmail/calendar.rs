@@ -312,6 +312,93 @@ impl GmailClient {
     }
 }
 
+/// One calendar's answer to `freeBusy.query`: busy intervals as UTC ms (end exclusive), or the
+/// reasons Google couldn't tell (`notFound` for an address it can't see, and the like).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FreeBusyCalendar {
+    pub busy: Vec<(i64, i64)>,
+    pub errors: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct FreeBusyResponse {
+    #[serde(default)]
+    calendars: std::collections::HashMap<String, FreeBusyEntry>,
+}
+
+#[derive(Deserialize)]
+struct FreeBusyEntry {
+    #[serde(default)]
+    busy: Vec<FreeBusyPeriod>,
+    #[serde(default)]
+    errors: Vec<FreeBusyError>,
+}
+
+#[derive(Deserialize)]
+struct FreeBusyPeriod {
+    start: String,
+    end: String,
+}
+
+#[derive(Deserialize)]
+struct FreeBusyError {
+    reason: Option<String>,
+}
+
+fn rfc3339_ms(value: &str) -> Result<i64, GmailError> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|t| t.timestamp_millis())
+        .map_err(|e| GmailError::Decode(format!("unexpected free/busy time {value:?}: {e}")))
+}
+
+fn rfc3339_of(ms: i64) -> Result<String, GmailError> {
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .ok_or_else(|| GmailError::Decode(format!("time out of range: {ms}")))
+}
+
+impl GmailClient {
+    /// Busy time in `[from_ms, to_ms)` on each calendar id (an email address names that
+    /// person's primary calendar). Needs [`super::auth::FREEBUSY_SCOPES`]; an id Google can't
+    /// see answers with `errors` instead of busy time.
+    pub async fn free_busy(
+        &self,
+        ids: &[String],
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<std::collections::HashMap<String, FreeBusyCalendar>, GmailError> {
+        let items: Vec<Value> = ids
+            .iter()
+            .map(|id| serde_json::json!({ "id": id }))
+            .collect();
+        let body = serde_json::json!({
+            "timeMin": rfc3339_of(from_ms)?,
+            "timeMax": rfc3339_of(to_ms)?,
+            "timeZone": "UTC",
+            "items": items,
+        });
+        let res: FreeBusyResponse = self
+            .send_json(ApiRequest::post(&["freeBusy"]).json(body))
+            .await?;
+        res.calendars
+            .into_iter()
+            .map(|(id, entry)| {
+                let busy = entry
+                    .busy
+                    .iter()
+                    .map(|p| Ok((rfc3339_ms(&p.start)?, rfc3339_ms(&p.end)?)))
+                    .collect::<Result<Vec<_>, GmailError>>()?;
+                let errors = entry
+                    .errors
+                    .into_iter()
+                    .map(|e| e.reason.unwrap_or_else(|| "unknown".into()))
+                    .collect();
+                Ok((id, FreeBusyCalendar { busy, errors }))
+            })
+            .collect()
+    }
+}
+
 /// Whether Google emails the guests about a change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -487,6 +574,53 @@ mod tests {
     fn fixture(name: &str) -> serde_json::Value {
         let path = format!("{}/src/gmail/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn free_busy_posts_the_range_and_reads_busy_time_and_errors() {
+        use wiremock::matchers::body_json;
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/freeBusy"))
+            .and(body_json(json!({
+                "timeMin": "2026-11-16T14:00:00.000Z",
+                "timeMax": "2026-11-17T02:00:00.000Z",
+                "timeZone": "UTC",
+                "items": [{"id": "primary"}, {"id": "sam@example.com"}, {"id": "x@other.org"}],
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "kind": "calendar#freeBusy",
+                "calendars": {
+                    "primary": {"busy": [
+                        {"start": "2026-11-16T15:00:00Z", "end": "2026-11-16T16:00:00Z"}
+                    ]},
+                    "sam@example.com": {"busy": [
+                        {"start": "2026-11-16T10:30:00-05:00", "end": "2026-11-16T11:00:00-05:00"}
+                    ]},
+                    "x@other.org": {"errors": [{"domain": "global", "reason": "notFound"}], "busy": []}
+                }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let ids = ["primary", "sam@example.com", "x@other.org"].map(String::from);
+        let from = 1_794_837_600_000; // 2026-11-16T14:00Z
+        let got = client
+            .free_busy(&ids, from, from + 12 * 3_600_000)
+            .await
+            .unwrap();
+        assert_eq!(
+            got["primary"].busy,
+            vec![(from + 3_600_000, from + 7_200_000)]
+        );
+        assert_eq!(
+            got["sam@example.com"].busy,
+            vec![(from + 5_400_000, from + 7_200_000)]
+        );
+        assert!(got["sam@example.com"].errors.is_empty());
+        assert!(got["x@other.org"].busy.is_empty());
+        assert_eq!(got["x@other.org"].errors, vec!["notFound".to_string()]);
     }
 
     #[tokio::test]
