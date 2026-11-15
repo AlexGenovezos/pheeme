@@ -168,7 +168,7 @@ export function createCalendarHandlers(
     }
     events.push(
       timed(first, primary, "lunch", "Lunch with Dana", at(3, 12), at(3, 13), {
-        location: "Tartine",
+        location: "Tartine, 600 Guerrero St, San Francisco, CA 94110",
       }),
       timed(first, primary, "vendor", "Vendor demo", at(1, 16), at(1, 17), {
         selfResponse: "declined",

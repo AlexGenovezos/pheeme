@@ -30,6 +30,7 @@ import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel 
 import { createSenderRuleHandlers } from "./senderRules";
 import { createCalendarHandlers } from "./calendar";
 import { createTasksHandlers } from "./tasks";
+import { createWeatherHandlers } from "./weather";
 import { createContactHandlers, type MeetingsWith } from "./contacts";
 import { createTransferHandlers } from "./transfer";
 import { previewQuotaUsage } from "./quota";
@@ -289,6 +290,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     ),
     ...calendar,
     ...createTasksHandlers(accounts, params.get("tasks")),
+    ...createWeatherHandlers(),
     ...drive.handlers,
     list_threads: (args): ThreadPage => ({
       threads: threadsIn(

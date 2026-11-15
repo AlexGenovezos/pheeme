@@ -19,6 +19,7 @@ pub mod themes;
 pub mod threads;
 pub mod transfer;
 pub mod updater;
+pub mod weather;
 
 use crate::accounts::AccountError;
 use crate::calendar::error::CalendarError;

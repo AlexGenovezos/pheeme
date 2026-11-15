@@ -49,6 +49,7 @@ import { useNow } from "./useNow";
 import "./calendar.css";
 import "./editing.css";
 import "./invite.css";
+import { useWeatherRefresh } from "../weather/forecast";
 
 const VIEW_OPTIONS = [
   { value: "day", label: "Day" },
@@ -515,6 +516,7 @@ function pinnedEmailWidth(): number {
 export function CalendarScreen({ onAddAccount }: { onAddAccount?: () => void } = {}) {
   useCalendarCommands();
   useCalendarData();
+  useWeatherRefresh();
   const ref = useRef<HTMLDivElement>(null);
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
   const pinned = useCalendarStore((s) => s.pinned !== null);

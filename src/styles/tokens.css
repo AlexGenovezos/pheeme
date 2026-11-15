@@ -160,6 +160,41 @@
   --calendar-goto-width: 360px;
   --calendar-goto-offset-top: 18vh;
   --calendar-guest-list-max-height: 168px;
+  /* The forecast slot in a day's header: icon, high and low; in a month cell, icon and high. */
+  --weather-day-width: 64px;
+  --weather-day-width-compact: 36px;
+  /* The drawn weather (src/weather/WeatherArt.tsx): sizes, colours, and how it moves (in its 32-unit drawing). */
+  --weather-art-sm: 18px;
+  --weather-art-lg: 48px;
+  --weather-cloud-light: #ffffff;
+  --weather-cloud-mid: #e2e7ed;
+  --weather-cloud-dark: #a5afbd;
+  --weather-cloud-back-light: #eceff4;
+  --weather-cloud-back-mid: #c3cbd6;
+  --weather-cloud-back-dark: #8995a6;
+  --weather-storm-light: #7b828d;
+  --weather-storm-mid: #424851;
+  --weather-storm-dark: #1c1f25;
+  --weather-cloud-shadow: #1d2733;
+  --weather-sun-light: #ffd66b;
+  --weather-sun-deep: #ff5f2e;
+  --weather-sun-glow: #ffb24a;
+  --weather-rain: #3f86f2;
+  --weather-snow: #86b2e8;
+  --weather-bolt: #ffcf33;
+  --weather-fog: #b1bcca;
+  --weather-puff-duration: 4.5s;
+  --weather-drift-duration: 6s;
+  --weather-glow-duration: 3.6s;
+  --weather-fall-duration: 1s;
+  --weather-snow-duration: 3.4s;
+  --weather-flash-duration: 3.6s;
+  --weather-band-duration: 7s;
+  --weather-bob: 0.35px;
+  --weather-drift: 1px;
+  --weather-fall: 10px;
+  /* Settings › Calendar: the home location field, wide enough for "Town, Region, Country". */
+  --weather-home-width: 280px;
   /* Mail's invite card: its mini day view, and the email pinned beside the calendar. */
   --invite-mini-day-height: 168px;
   --invite-mini-gutter-width: 52px;
@@ -340,6 +375,18 @@
   --quota-you-asked: #c98500;
   --quota-assistants: #d55181;
   --stats-engaged: #3987e5;
+  --weather-cloud-light: #eef2f6;
+  --weather-cloud-mid: #b7c0cc;
+  --weather-cloud-dark: #717d8d;
+  --weather-cloud-back-light: #c6cdd7;
+  --weather-cloud-back-mid: #8d98a7;
+  --weather-cloud-back-dark: #5a6575;
+  --weather-storm-light: #8d95a1;
+  --weather-storm-mid: #4c535d;
+  --weather-storm-dark: #24282f;
+  --weather-cloud-shadow: #000;
+  --weather-snow: #e8f0fa;
+  --weather-fog: #7c8796;
 }
 
 :root[data-reading-size="large"] {
