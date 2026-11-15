@@ -12,6 +12,7 @@ import { useAccountStore } from "../store/accountStore";
 import {
   applyLabel,
   archive,
+  archiveSlotAction,
   findSimilar,
   markSearchResultsRead,
   moveSelection,
@@ -395,6 +396,61 @@ describe("trash", () => {
     expect(calls).toEqual([]);
     expect(listKeys()).toEqual([key(1)]);
     expect(toasts()[0].title).toBe("Already in Trash");
+  });
+});
+
+describe("leaving Spam and Trash", () => {
+  test("in Spam, archive is Not spam: back to the inbox, out of the list, no Undo", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "SPAM" }, openThread: key(1) });
+    setList([thread(1), thread(2)]);
+    await archiveSlotAction();
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: ["INBOX"], remove: ["SPAM"] },
+    ]);
+    expect(listKeys()).toEqual([key(2)]);
+    expect(toasts()[0].title).toBe("Marked as not spam");
+    expect(toasts()[0].action).toBeUndefined();
+  });
+
+  test("in Trash, archive is Move to Inbox", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "TRASH" }, openThread: key(1) });
+    setList([thread(1)]);
+    await archiveSlotAction();
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: ["INBOX"], remove: ["SPAM"] },
+    ]);
+    expect(listKeys()).toEqual([]);
+    expect(toasts()[0].title).toBe("Moved to Inbox");
+  });
+
+  test("archive itself stays archive there (the Inbox chip's x on a conversation partly in Trash)", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "TRASH" }, openThread: key(1) });
+    setList([thread(1)]);
+    await archive([key(1)], { evenIfGone: true });
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: [], remove: ["INBOX"] },
+    ]);
+  });
+
+  test("the open conversation's label chips leave Trash and Spam at once", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "TRASH" }, openThread: key(1) });
+    setList([thread(1)]);
+    useThreadStore.setState({
+      details: new Map([
+        [
+          key(1),
+          {
+            thread: thread(1),
+            messages: [{ id: "m1", labelIds: ["TRASH", "UNREAD"] } as MessageDetail],
+          } as ThreadDetail,
+        ],
+      ]),
+    });
+    await archiveSlotAction();
+    expect(useThreadStore.getState().details.get(key(1))?.messages[0].labelIds).toEqual([
+      "UNREAD",
+      "INBOX",
+    ]);
   });
 });
 
@@ -1186,17 +1242,18 @@ describe("move", () => {
     expect(calls.filter((c) => c.cmd === "trash_threads")).toHaveLength(1);
   });
 
-  test("in Spam and Trash, Move to says it isn't available yet", () => {
+  test("in Spam and Trash, Move to points at Not spam and Move to Inbox", () => {
     setList([thread(1)]);
     for (const labelId of ["SPAM", "TRASH"]) {
       useUiStore.setState({ mailbox: { accountId: "a1", labelId }, openThread: key(1) });
       openMoveMenu({ x: 0, y: 0 });
       expect(usePickerStore.getState().spec).toBeNull();
     }
-    expect(toasts().map((t) => t.title)).toEqual([
-      "Move to isn't available in Spam or Trash yet",
-      "Move to isn't available in Spam or Trash yet",
-    ]);
+    expect(
+      toasts()
+        .map((t) => t.description)
+        .sort(),
+    ).toEqual(["Use Move to Inbox.", "Use Not spam to move it to the inbox."]);
   });
 
   test("Move to opens the picker in move mode for the targets", () => {

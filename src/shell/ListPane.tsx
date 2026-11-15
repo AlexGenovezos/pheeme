@@ -8,7 +8,7 @@ import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import type { ThreadSummary } from "../lib/tauri";
 import {
-  archive,
+  archiveSlotAction,
   composeNew,
   findSimilar,
   markSearchResultsRead,
@@ -17,6 +17,7 @@ import {
   setStarred,
   trash,
 } from "../mail/actions";
+import { ARCHIVE_SLOT_LABEL, currentArchiveSlot } from "../mail/archiveSlot";
 import { mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
 import { ThreadList } from "../mail/ThreadList";
 import type { RowAction } from "../mail/ThreadRow";
@@ -34,7 +35,7 @@ export const notYet = (action: string) =>
 
 const onRowAction = (action: RowAction, t: ThreadSummary) => {
   const keys = [threadKey(t.accountId, t.id)];
-  if (action === "archive") void archive(keys);
+  if (action === "archive") void archiveSlotAction(keys);
   else if (action === "delete") void trash(keys);
   else void setRead(t.unread, keys);
 };
@@ -51,9 +52,9 @@ export const rowMenu = (t: ThreadSummary) => {
   return [
     {
       id: "archive",
-      label: "Archive",
+      label: ARCHIVE_SLOT_LABEL[currentArchiveSlot()],
       shortcut: registry.shortcutFor("conversation.archive", "e"),
-      onSelect: () => void archive(keys),
+      onSelect: () => void archiveSlotAction(keys),
     },
     {
       id: "read",

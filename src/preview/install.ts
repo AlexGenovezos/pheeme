@@ -369,10 +369,16 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     modify_threads: (args) => {
       const add = stringsOf(args?.add);
       const remove = stringsOf(args?.remove);
-      if ([...add, ...remove].some((l) => l === "TRASH" || l === "SPAM")) {
+      // Like the backend: Spam can only be left for the inbox (Not spam), and getting INBOX leaves Trash.
+      const toInbox = add.includes("INBOX");
+      if (
+        add.some((l) => l === "TRASH" || l === "SPAM") ||
+        remove.some((l) => l === "TRASH" || (l === "SPAM" && !toInbox))
+      ) {
         throw { code: "invalid", message: "Use trash for Trash." };
       }
       return changeThreads(args, (t) => {
+        if (toInbox) t.labelIds = t.labelIds.filter((l) => l !== "TRASH");
         for (const label of remove) {
           if (label === "UNREAD") t.messages.forEach((m) => (m.unread = false));
           else t.labelIds = t.labelIds.filter((l) => l !== label);

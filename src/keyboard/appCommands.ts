@@ -1,5 +1,5 @@
 import {
-  archive,
+  archiveSlotAction,
   closeConversation,
   composeNew,
   findSimilar,
@@ -137,7 +137,9 @@ export function appCommands(): Command[] {
       title: "Archive",
       group: "Conversation",
       shortcut: "e",
-      run: () => void archive(),
+      // In Spam and Trash it moves mail back to the inbox.
+      keywords: ["not spam", "move to inbox", "restore", "untrash"],
+      run: () => void archiveSlotAction(),
     },
     {
       id: "conversation.delete",

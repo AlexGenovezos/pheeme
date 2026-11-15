@@ -1,5 +1,5 @@
 // One conversation in the list: selection checkbox, sender, subject, snippet, date and hover actions.
-import { Archive, Mail, MailOpen, Paperclip, Star, Trash2 } from "lucide-react";
+import { Mail, MailOpen, Paperclip, Star, Trash2 } from "lucide-react";
 import { type CSSProperties, memo, type MouseEvent, useEffect, useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { registry } from "../keyboard/registry";
@@ -8,6 +8,7 @@ import { cx } from "../lib/utils";
 import { formatListDate } from "../lib/dates";
 import { LabelChip } from "../labels/LabelChip";
 import type { LabelInfo, ThreadSummary } from "../lib/tauri";
+import { ARCHIVE_SLOT_LABEL, archiveSlotIcon, useArchiveSlot } from "./archiveSlot";
 import { CodeChip } from "./CodeCard";
 import { startMailDrag } from "./dragMail";
 import { type Location, threadKey } from "./mailboxes";
@@ -89,6 +90,7 @@ export const ThreadRow = memo(function ThreadRow({
     );
     return () => clearTimeout(timer);
   }, [code, thread.date]);
+  const slot = useArchiveSlot();
   const act = (action: RowAction) => (e: MouseEvent) => {
     e.stopPropagation();
     onAction(action, thread);
@@ -177,9 +179,9 @@ export const ThreadRow = memo(function ThreadRow({
               <IconButton
                 size="sm"
                 tabIndex={-1}
-                label="Archive"
+                label={ARCHIVE_SLOT_LABEL[slot]}
                 shortcut={registry.shortcutFor("conversation.archive", "e")}
-                icon={<Archive />}
+                icon={archiveSlotIcon(slot)}
                 onClick={act("archive")}
               />
               <IconButton
