@@ -149,3 +149,65 @@ test("a later event cannot cover the bottom lines of a wrapped tall-card title",
   }, foreground);
   expect(titleClear).toBe(true);
 });
+
+test("a card whose strip is narrow beside a later event still wraps its title and shows its time", async ({
+  page,
+}, testInfo) => {
+  await page.clock.setFixedTime(new Date("2026-11-11T16:00:00Z"));
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.addInitScript(() => {
+    localStorage.setItem("pheeme.calendar", JSON.stringify({ mode: "calendar", view: "week" }));
+    const win = window as unknown as { __PHEEME_PREVIEW_INVOKE__: PreviewInvoke };
+    win.__PHEEME_PREVIEW_INVOKE__ = (cmd, args, next) => {
+      const result = next(cmd, args);
+      if (cmd !== "calendar_events") return result;
+      const template = (result as CalendarEvent[]).find((e) => !e.allDay)!;
+      const at = (hour: number) => new Date(2026, 10, 11, 0, hour * 60).getTime();
+      return [
+        ["Homeschool Co-op Meeting", 9, 12.5],
+        ["Byzantine Chant Workshop", 11, 19],
+      ].map(([summary, start, end], i) => ({
+        ...template,
+        id: `strip-${i}`,
+        summary: String(summary),
+        start: { ms: at(Number(start)), date: null, timeZone: null },
+        end: { ms: at(Number(end)), date: null, timeZone: null },
+        location: null,
+        meeting: null,
+        selfResponse: null,
+      }));
+    };
+  });
+  await page.goto("/");
+  // Days as slim as a Week view on a laptop, so the earlier card's uncovered strip is under 64px.
+  await page.addStyleTag({
+    content:
+      ".cal-grid__head, .cal-grid__band, .cal-grid__body { grid-template-columns: var(--calendar-gutter-width) repeat(7, 180px); }",
+  });
+  const event = page.getByRole("button", { name: /^Homeschool Co-op Meeting,/ });
+  await expect(event).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await page.locator(".cal-grid__scroll").evaluate((el) => (el.scrollTop = 384));
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: testInfo.outputPath("strip.png") });
+
+  await expect(event.locator(".cal-event__time")).toHaveText("9:00 AM – 12:30 PM");
+  const layout = await event.evaluate((el) => {
+    const bounds = el.getBoundingClientRect();
+    const inside = (node: Element) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return [...range.getClientRects()].every(
+        (r) => r.right <= bounds.right + 0.5 && r.bottom <= bounds.bottom + 0.5,
+      );
+    };
+    const title = el.querySelector<HTMLElement>(".cal-event__title")!;
+    const time = el.querySelector<HTMLElement>(".cal-event__time")!;
+    return {
+      wrapped: title.clientHeight > parseFloat(getComputedStyle(title).lineHeight),
+      titleInside: inside(title),
+      timeInside: inside(time) && time.scrollWidth <= time.clientWidth,
+    };
+  });
+  expect(layout).toEqual({ wrapped: true, titleInside: true, timeInside: true });
+});

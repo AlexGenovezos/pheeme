@@ -112,6 +112,20 @@ export function TimedEventBlock({
     const button = ref.current!;
     const content = contentRef.current!;
     const measure = () => {
+      // A card with lines to spare wraps its title over them, keeping one for each detail.
+      if (!compact && !stacked) {
+        const title = content.querySelector<HTMLElement>(".cal-event__title")!;
+        const box = getComputedStyle(button);
+        const room =
+          button.clientHeight - parseFloat(box.paddingTop) - parseFloat(box.paddingBottom);
+        const lines =
+          Math.floor(room / parseFloat(getComputedStyle(title).lineHeight)) -
+          content.querySelectorAll(".cal-event__detail").length;
+        if (lines > 1) {
+          button.dataset.titleLines = "";
+          button.style.setProperty("--cal-event-title-lines", String(lines));
+        } else delete button.dataset.titleLines;
+      } else delete button.dataset.titleLines;
       // Measure the full-width text first, regardless of hover/focus or the previous width.
       content.style.maxWidth = "100%";
       const bottom = content.getBoundingClientRect().bottom - button.getBoundingClientRect().top;

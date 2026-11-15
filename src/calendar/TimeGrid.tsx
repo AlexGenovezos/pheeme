@@ -26,6 +26,8 @@ const NARROW_EVENT_PX = 64;
 const COMPACT_TIME_MIN_PX = 140;
 /** Four hours leave room for a headline, divider and separate when/where groups. */
 const STACKED_MINUTES = 240;
+/** A later card starting this far down leaves room for a title and time across the whole card. */
+const TEXT_CLEAR_MINUTES = 60;
 /** The narrowest a day can be for two events side by side to still read. */
 export const MIN_DAY_PX = NARROW_EVENT_PX;
 
@@ -187,6 +189,10 @@ export function TimeGrid({
               {columns[i].map((b) => {
                 const shown = Math.max(b.end - b.start, MIN_EVENT_MINUTES);
                 const eventWidth = dayWidth * b.contentWidth;
+                // The block widens its text to the whole card when it fits above a later card
+                // overlapping it, so a slim uncovered strip alone doesn't make it narrow.
+                const textWidth =
+                  b.clearMinutes >= TEXT_CLEAR_MINUTES ? dayWidth * b.width : eventWidth;
                 return (
                   <TimedEventBlock
                     key={eventKey(b.event)}
@@ -197,7 +203,7 @@ export function TimeGrid({
                     clearHeight={(b.clearMinutes / 60) * HOUR_PX}
                     stacked={shown >= STACKED_MINUTES && eventWidth < COMPACT_TIME_MIN_PX}
                     narrow={
-                      eventWidth < (shown < COMPACT_MINUTES ? COMPACT_TIME_MIN_PX : NARROW_EVENT_PX)
+                      textWidth < (shown < COMPACT_MINUTES ? COMPACT_TIME_MIN_PX : NARROW_EVENT_PX)
                     }
                     style={
                       {
