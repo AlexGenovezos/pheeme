@@ -64,9 +64,9 @@ impl ComposeService {
         Ok(settings::set_signatures(&self.db, account_id, &json).await?)
     }
 
-    /// The signature (sanitized HTML) to start a message from `from` with, or `None` for
-    /// none: `reply` picks the replies-and-forwards choice. With Gmail's chosen, an alias
-    /// takes its own Gmail signature, as in the compose panel.
+    /// The signature (sanitized HTML) to start a message from `from` (else Gmail's default
+    /// address) with, or `None` for none: `reply` picks the replies-and-forwards choice. With
+    /// Gmail's chosen, an alias takes its own Gmail signature, as in the compose panel.
     pub async fn signature_for(
         &self,
         account_id: &str,
@@ -88,15 +88,17 @@ impl ComposeService {
             SignatureChoice::Gmail => {
                 let me = self.sender(account_id).await?;
                 let list = self.fetch_send_as(account_id).await?;
-                let alias = from
-                    .filter(|f| !same_address(f, &me.address))
-                    .and_then(|f| list.iter().find(|s| same_address(&s.send_as_email, f)));
+                // Without a From, the message goes out from Gmail's default address.
+                let sending = match from {
+                    Some(f) => list.iter().find(|s| same_address(&s.send_as_email, f)),
+                    None => list.iter().find(|s| s.is_default),
+                };
                 let own = || {
                     list.iter()
                         .find(|s| same_address(&s.send_as_email, &me.address))
                         .or_else(|| list.iter().find(|s| s.is_primary))
                 };
-                alias
+                sending
                     .or_else(own)
                     .and_then(|s| s.signature.as_deref())
                     .map(template::clean_html)

@@ -1869,6 +1869,36 @@ async fn drafts_carry_the_signature_settings_choose() {
     assert!(raw.contains("Gmail Sig"), "{raw}");
     assert!(!raw.contains("x()"), "{raw}");
 
+    // A new draft goes out from Gmail's default address, so it takes that one's signature.
+    h.fake.set_send_as(vec![
+        SendAs {
+            send_as_email: "me@example.com".into(),
+            signature: Some("<b>Gmail Sig</b>".into()),
+            is_primary: true,
+            ..Default::default()
+        },
+        SendAs {
+            send_as_email: "work@example.com".into(),
+            signature: Some("<b>Work Sig</b>".into()),
+            is_default: true,
+            verification_status: Some("accepted".into()),
+            ..Default::default()
+        },
+    ]);
+    let out = h
+        .call("create_draft", json!({ "to": ["a@x.com"], "body": "Hi" }))
+        .await
+        .unwrap();
+    let raw = draft_raw(&h, &out);
+    assert!(
+        raw.contains("Work Sig") && !raw.contains("Gmail Sig"),
+        "{raw}"
+    );
+    assert!(
+        raw.contains("From: work@example.com") || raw.contains("<work@example.com>"),
+        "{raw}"
+    );
+
     h.api
         .compose
         .set_signature_settings(
