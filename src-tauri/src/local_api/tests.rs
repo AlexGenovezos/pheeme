@@ -305,6 +305,7 @@ async fn gmail_search_honours_the_limit_and_pages_through() {
         }
         let page = h.call("search_mail", args).await.unwrap();
         assert_eq!(page["searched"], "Gmail");
+        assert!(page["note"].as_str().unwrap().contains("in:anywhere"));
         let threads = page["threads"].as_array().unwrap();
         assert!(threads.len() <= 2);
         seen.extend(
@@ -691,6 +692,7 @@ async fn reports_the_heaviest_senders() {
 async fn audits_what_filters_caught() {
     let fake = FakeGmail::new();
     fake.seed(msg("b1", "tb1", &["TRASH"], "alerts@bank.com").days_ago(2));
+    fake.seed(msg("b2", "tb2", &[], "alerts@bank.com").days_ago(3));
     for (from, add, remove) in [
         ("alerts@bank.com", vec!["TRASH"], vec![]),
         ("news@x.com", vec!["STARRED"], vec![]),
@@ -720,12 +722,33 @@ async fn audits_what_filters_caught() {
         filters[0]["gmail_query"],
         "from:(alerts@bank.com) in:anywhere newer_than:7d"
     );
+    assert_eq!(filters[0]["matched"], 2);
+    assert_eq!(filters[0]["more"], false);
+    assert_eq!(filters[0]["now_in"], json!({ "archived": 1, "trash": 1 }));
     let caught = &filters[0]["caught"][0];
     assert_eq!(caught["thread_id"], "tb1");
     assert!(caught["labels"]
         .as_array()
         .unwrap()
         .contains(&json!("trash")));
+    assert!(
+        filters[0].get("worth_checking").is_none(),
+        "nothing that looks wanted: {:?}",
+        filters[0]
+    );
+
+    let compact = h
+        .call(
+            "filter_audit",
+            json!({ "days": 7, "sample": 1, "compact": true }),
+        )
+        .await
+        .unwrap();
+    let caught = compact["accounts"][0]["filters"][0]["caught"]
+        .as_array()
+        .unwrap();
+    assert_eq!(caught.len(), 1);
+    assert!(caught[0].get("labels").is_none() && caught[0].get("snippet").is_none());
 
     let all = h
         .call("filter_audit", json!({ "all": true }))
