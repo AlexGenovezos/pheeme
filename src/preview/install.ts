@@ -30,7 +30,7 @@ import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel 
 import { createSenderRuleHandlers } from "./senderRules";
 import { createCalendarHandlers } from "./calendar";
 import { createTasksHandlers } from "./tasks";
-import { createContactHandlers } from "./contacts";
+import { createContactHandlers, type MeetingsWith } from "./contacts";
 import { createTransferHandlers } from "./transfer";
 import { previewQuotaUsage } from "./quota";
 import { previewMailStats, previewUnsubscribe } from "./stats";
@@ -124,6 +124,22 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   ];
   const labels = createPreviewLabels();
   const drive = createDriveHandlers(accounts, threads, params.get("drive"));
+  const calendar = createCalendarHandlers(accounts, params.get("calendar"));
+  const meetingsWith: MeetingsWith = (accountId, address, fromMs, toMs) =>
+    calendar
+      .calendar_events({ fromMs, toMs })
+      .filter((e) => e.accountId === accountId && e.selfResponse !== "declined")
+      .filter((e) => {
+        const detail = calendar.calendar_event_detail({
+          accountId,
+          calendarId: e.calendarId,
+          eventId: e.id,
+        });
+        return [
+          detail.organizer?.email,
+          ...detail.attendees.filter((a) => a.response !== "declined").map((a) => a.email),
+        ].some((a) => a?.toLowerCase() === address);
+      });
   const summary = (t: FixtureThread) => toSummary(t, labels);
 
   /** Apply `change` to the named threads, then tell the stores, as the backend does after a cache write. */
@@ -269,8 +285,9 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       threads,
       (id) => accounts.find((a) => a.id === id)?.email,
       params.get("contacts"),
+      meetingsWith,
     ),
-    ...createCalendarHandlers(accounts, params.get("calendar")),
+    ...calendar,
     ...createTasksHandlers(accounts, params.get("tasks")),
     ...drive.handlers,
     list_threads: (args): ThreadPage => ({

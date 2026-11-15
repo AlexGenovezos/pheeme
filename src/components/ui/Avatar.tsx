@@ -25,7 +25,7 @@ export interface AvatarProps {
   /** Used for the color seed when present, so "Mira" and "mira@…" match. */
   email?: string;
   src?: string;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
   className?: string;
 }
 

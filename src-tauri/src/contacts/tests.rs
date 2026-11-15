@@ -184,6 +184,7 @@ fn page(people: &[(&str, Option<&str>)], next: Option<&str>) -> Result<PeoplePag
             .map(|(address, name)| Person {
                 name: name.map(str::to_owned),
                 addresses: vec![(*address).to_owned()],
+                ..Person::default()
             })
             .collect(),
         next_page_token: next.map(str::to_owned),
@@ -462,6 +463,55 @@ async fn google_contacts_join_suggestions_with_their_saved_names() {
     );
     assert_eq!(suggest(&svc, "lin").await, ["linus@kernel.org"]);
     assert_eq!(suggest(&svc, "ken").await, ["ken@bell.com"]);
+}
+
+#[tokio::test]
+async fn the_card_prefers_the_saved_contact_and_fills_gaps_from_other_contacts() {
+    let db = TestDb::with_account("a1").await;
+    let people = Arc::new(FakePeople::default());
+    let person = |phone: Option<&str>, organization: Option<&str>, photo: Option<&str>| Person {
+        addresses: vec!["Ada@example.com".into()],
+        phone: phone.map(str::to_owned),
+        organization: organization.map(str::to_owned),
+        photo_url: photo.map(str::to_owned),
+        ..Person::default()
+    };
+    lock(&people.saved).push_back(Ok(PeoplePage {
+        people: vec![person(
+            Some("+1 555 0100"),
+            Some("Programmer at Analytical Engines"),
+            None,
+        )],
+        next_page_token: None,
+    }));
+    lock(&people.other).push_back(Ok(PeoplePage {
+        people: vec![person(
+            Some("+1 555 0199"),
+            None,
+            Some("https://lh3.googleusercontent.com/ada"),
+        )],
+        next_page_token: None,
+    }));
+    let svc = service(&db.pool, people);
+    svc.refresh_google("a1").await.unwrap();
+
+    let card = db::contacts::card(&db.pool, "a1", "ada@example.com")
+        .await
+        .unwrap();
+    assert_eq!(
+        card,
+        db::contacts::CardRow {
+            phone: Some("+1 555 0100".into()),
+            organization: Some("Programmer at Analytical Engines".into()),
+            photo_url: Some("https://lh3.googleusercontent.com/ada".into()),
+        }
+    );
+    assert_eq!(
+        db::contacts::card(&db.pool, "a1", "nobody@example.com")
+            .await
+            .unwrap(),
+        db::contacts::CardRow::default()
+    );
 }
 
 #[tokio::test]

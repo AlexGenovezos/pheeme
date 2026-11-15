@@ -1,17 +1,26 @@
-.person-panel__body {
+.person-panel__identity {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
 }
-.person-panel__body > section {
+.person-panel__facts {
   flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+  min-width: 0;
 }
-.person-panel__list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+.person-panel__facts > p {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.person-panel__address {
+  color: var(--color-foreground);
+}
+.person-panel__actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.person-panel__body > section:first-child .detail-dialog__section-title {
+  margin-top: 0;
 }
 .person-link {
   padding: 0;

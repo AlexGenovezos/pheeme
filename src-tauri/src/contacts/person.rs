@@ -18,10 +18,21 @@ pub struct PersonProfile {
     pub address: String,
     pub name: Option<String>,
     pub saved: bool,
+    /// From Google Contacts (the user's own contact first, then Other contacts).
+    pub phone: Option<String>,
+    pub organization: Option<String>,
+    pub photo_url: Option<String>,
     pub conversations: Vec<PersonConversation>,
+    /// Meetings together in the next 90 days, soonest first.
     pub events: Vec<CalendarEventDto>,
+    /// Meetings together that ended in the last 180 days, newest first.
+    pub past_events: Vec<CalendarEventDto>,
     pub calendar_available: bool,
 }
+
+/// How far back the card looks for meetings together.
+const PAST_DAYS: i64 = 180;
+const DAY_MS: i64 = 86_400_000;
 
 fn validated_address(address: &str) -> Result<String, MailError> {
     let address = address.trim().to_lowercase();
@@ -64,10 +75,39 @@ impl ContactService {
                 date: t.date,
             })
             .collect();
+        let card = db::contacts::card(&self.db, account_id, &address).await?;
         let now = now_ms();
         let events = calendar
-            .events_with_person(account_id, &address, now, now + 90 * 86_400_000, display_tz)
+            .events_with_person(
+                account_id,
+                &address,
+                now,
+                now + 90 * DAY_MS,
+                display_tz,
+                false,
+            )
             .await?;
+        // A meeting still going on is upcoming, not past.
+        let past_events = calendar
+            .events_with_person(
+                account_id,
+                &address,
+                now - PAST_DAYS * DAY_MS,
+                now,
+                display_tz,
+                true,
+            )
+            .await?
+            .into_iter()
+            .filter(|p| {
+                !events.iter().any(|e| {
+                    e.calendar_id == p.calendar_id
+                        && e.id == p.id
+                        && e.start.ms == p.start.ms
+                        && e.start.date == p.start.date
+                })
+            })
+            .collect();
         let calendar_available = calendar
             .accounts()
             .await?
@@ -77,8 +117,12 @@ impl ContactService {
             address,
             name: contact.as_ref().and_then(|c| c.name.clone()),
             saved: contact.is_some_and(|c| c.saved),
+            phone: card.phone,
+            organization: card.organization,
+            photo_url: card.photo_url,
             conversations,
             events,
+            past_events,
             calendar_available,
         })
     }

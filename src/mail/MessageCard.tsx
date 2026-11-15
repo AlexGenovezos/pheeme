@@ -1,6 +1,6 @@
 import { ChevronUp, Forward, Pencil, Reply, ReplyAll } from "lucide-react";
-import { type MouseEvent, useRef, useState } from "react";
-import { PersonPanel, type PersonTarget } from "../contacts/PersonPanel";
+import { type MouseEvent, useRef } from "react";
+import { showPerson } from "../contacts/personStore";
 import { useComposeStore } from "../compose/composeStore";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
@@ -45,7 +45,6 @@ export function MessageCard({
   const name = isDraft ? "Draft" : senderName(message);
   const when = message.date > 0 ? new Date(message.date) : null;
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
-  const [person, setPerson] = useState<PersonTarget | null>(null);
 
   if (!expanded) {
     return (
@@ -107,7 +106,9 @@ export function MessageCard({
                 type="button"
                 className="message-card__name person-link"
                 aria-label={`View contact ${name}`}
-                onClick={() => setPerson({ address: message.fromAddress!, name: message.fromName })}
+                onClick={() =>
+                  showPerson(accountId, { address: message.fromAddress!, name: message.fromName })
+                }
               >
                 {name}
               </button>
@@ -136,7 +137,7 @@ export function MessageCard({
                           type="button"
                           className="person-link"
                           aria-label={`View contact ${p.name || p.address}`}
-                          onClick={() => setPerson(p)}
+                          onClick={() => showPerson(accountId, p)}
                         >
                           {p.name || p.address}
                         </button>
@@ -212,14 +213,6 @@ export function MessageCard({
             Edit draft
           </Button>
         </div>
-      )}
-      {person && (
-        <PersonPanel
-          key={`${accountId}:${person.address}`}
-          accountId={accountId}
-          person={person}
-          onClose={() => setPerson(null)}
-        />
       )}
     </article>
   );

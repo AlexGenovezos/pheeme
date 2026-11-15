@@ -22,6 +22,7 @@ import { Settings } from "./settings/Settings";
 import { Stats } from "./stats/StatsDialog";
 import { ThemeEditorHost } from "./theme/editor/ThemeEditor";
 import { AttachmentPreview } from "./mail/preview/AttachmentPreview";
+import { PersonHost } from "./contacts/PersonPanel";
 import { useSettingsStore } from "./settings/settingsStore";
 import { isTauri } from "./preview/runtime";
 import { revealWindow } from "./theme/nativeWindow";
@@ -112,6 +113,7 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
       <Stats />
       <ThemeEditorHost />
       <AttachmentPreview />
+      <PersonHost />
       <ContextMenuHost />
       <SpeedReaderHost />
       <ModPanel />

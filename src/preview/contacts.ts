@@ -1,6 +1,6 @@
 /** Recipient suggestions for browser preview, from the fixture mail (`src-tauri/src/contacts.rs` in the app). */
 
-import type { ContactSuggestion, GoogleContactsStatus } from "../lib/tauri";
+import type { CalendarEvent, ContactSuggestion, GoogleContactsStatus } from "../lib/tauri";
 import type { FixtureThread } from "./fixtures";
 import type { PersonProfile } from "../contacts/api";
 
@@ -11,6 +11,23 @@ const GOOGLE_CONTACTS: ContactSuggestion[] = [
   { name: "Grace Hopper", address: "grace@example.net" },
   { name: "Linus Pauling", address: "linus@example.net" },
 ];
+
+/** What a few preview people's cards show from Google Contacts. */
+const CARDS: Record<string, Pick<PersonProfile, "phone" | "organization">> = {
+  "morgan@example.org": { phone: "+1 415 555 0142", organization: "Design Lead at Fernwood" },
+  "priya@example.org": { phone: null, organization: "Staff Engineer at Northwind" },
+  "grace@example.net": { phone: "+1 202 555 0117", organization: null },
+};
+
+/** The account's meetings in `[fromMs, toMs)` that `address` organizes or attends, sorted by start. */
+export type MeetingsWith = (
+  accountId: string,
+  address: string,
+  fromMs: number,
+  toMs: number,
+) => CalendarEvent[];
+
+const DAY_MS = 86_400_000;
 
 const words = (s: string) =>
   s
@@ -26,6 +43,7 @@ export function createContactHandlers(
   threads: FixtureThread[],
   emailOf: (accountId: string) => string | undefined,
   googleContacts: string | null,
+  meetingsWith: MeetingsWith = () => [],
 ) {
   let status = (googleContacts ?? "on") as GoogleContactsStatus["status"];
   const saved = new Map<string, Map<string, string | null>>();
@@ -84,14 +102,24 @@ export function createContactHandlers(
         }))
         .sort((a, b) => b.date - a.date)
         .slice(0, 8);
+      const now = Date.now();
+      const events = meetingsWith(accountId, address, now, now + 90 * DAY_MS).slice(0, 5);
+      const pastEvents = meetingsWith(accountId, address, now - 180 * DAY_MS, now)
+        .filter((p) => !events.some((e) => e.calendarId === p.calendarId && e.id === p.id))
+        .reverse()
+        .slice(0, 5);
       return {
         address,
         name: contact?.name ?? null,
         saved:
           (status === "on" && GOOGLE_CONTACTS.some((c) => c.address === address)) ||
           !!saved.get(accountId)?.has(address),
+        phone: CARDS[address]?.phone ?? null,
+        organization: CARDS[address]?.organization ?? null,
+        photoUrl: null,
         conversations,
-        events: [],
+        events,
+        pastEvents,
         calendarAvailable: true,
       };
     },

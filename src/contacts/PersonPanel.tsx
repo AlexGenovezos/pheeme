@@ -1,8 +1,10 @@
-import { CalendarDays, Mail, UserPlus } from "lucide-react";
+import { CalendarDays, CalendarPlus, Copy, Mail, UserCheck, UserPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { revealEvent } from "../calendar/actions";
+import { newEventWith } from "../calendar/mailActions";
 import { displayZone, useCalendarStore } from "../calendar/calendarStore";
 import { formatDay } from "../calendar/dates";
+import { Avatar } from "../components/ui/Avatar";
 import { Button } from "../components/ui/Button";
 import { DetailDialog } from "../components/ui/DetailDialog";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -15,17 +17,27 @@ import { threadKey } from "../mail/mailboxes";
 import { useSignIn } from "../onboarding/useSignIn";
 import { useAccountStore } from "../store/accountStore";
 import { personProfile, type PersonProfile, savePersonContact } from "./api";
+import { type PersonTarget, usePersonStore } from "./personStore";
 import "./person.css";
 
 const profiles = new Map<string, PersonProfile>();
 const PEOPLE_API_URL = "https://console.cloud.google.com/apis/library/people.googleapis.com";
 
-export interface PersonTarget {
-  address: string;
-  name: string | null;
+/** The person card on screen, if one is open (`personStore`). */
+export function PersonHost() {
+  const open = usePersonStore((s) => s.open);
+  if (!open) return null;
+  return (
+    <PersonPanel
+      key={`${open.accountId}:${open.person.address.toLowerCase()}`}
+      accountId={open.accountId}
+      person={open.person}
+      onClose={() => usePersonStore.getState().close()}
+    />
+  );
 }
 
-/** Contact details and related mail/meetings, all read from the account's local cache. */
+/** Who someone is (Google Contacts) and your mail and meetings with them, all read from the account's local cache. */
 export function PersonPanel({
   accountId,
   person,
@@ -107,10 +119,31 @@ export function PersonPanel({
 
   return (
     <DetailDialog title={shownName} onClose={close}>
-      <p className="detail-dialog__note selectable">{person.address}</p>
-      <p className="detail-dialog__note">{account?.email ?? ""}</p>
-      <div className="detail-dialog__actions">
+      <div className="person-panel__identity">
+        <Avatar
+          size="lg"
+          name={shownName}
+          email={person.address}
+          src={profile?.photoUrl ?? undefined}
+        />
+        <div className="person-panel__facts">
+          <p className="detail-dialog__note person-panel__address selectable">{person.address}</p>
+          <p className="detail-dialog__note selectable">
+            {profile ? (
+              [profile.organization, profile.phone].filter(Boolean).join(" · ") ||
+              (profile.saved ? "In your Google Contacts" : "Not in your Google Contacts")
+            ) : error ? (
+              "\u00a0"
+            ) : (
+              <Skeleton width="60%" />
+            )}
+          </p>
+          <p className="detail-dialog__note">{account?.email ?? "\u00a0"}</p>
+        </div>
+      </div>
+      <div className="detail-dialog__actions person-panel__actions">
         <Button
+          size="sm"
           icon={<Mail />}
           disabled={busy}
           onClick={() => {
@@ -128,11 +161,29 @@ export function PersonPanel({
           Email
         </Button>
         <Button
-          icon={<UserPlus />}
+          size="sm"
+          icon={<CalendarPlus />}
+          disabled={busy}
+          onClick={() => {
+            close();
+            void newEventWith(accountId, {
+              address: person.address,
+              name: shownName === person.address ? null : shownName,
+            });
+          }}
+        >
+          New event
+        </Button>
+        <Button size="sm" icon={<Copy />} onClick={() => void copyAddress(person.address)}>
+          Copy address
+        </Button>
+        <Button
+          size="sm"
+          icon={profile?.saved ? <UserCheck /> : <UserPlus />}
           disabled={!profile || profile.saved || busy || authorizing}
           onClick={() => void save()}
         >
-          {profile?.saved ? "Saved contact" : busy ? "Saving…" : "Save to Google Contacts"}
+          {profile?.saved ? "Saved" : busy ? "Saving…" : "Save contact"}
         </Button>
       </div>
       <div className="detail-dialog__body person-panel__body">
@@ -169,43 +220,28 @@ export function PersonPanel({
             )}
           </div>
         </section>
-        <section>
-          <h3 className="detail-dialog__section-title">Upcoming meetings · next 90 days</h3>
-          <div className="person-panel__list">
-            {!profile && !error ? (
-              <ProfilePlaceholder />
-            ) : profile?.events.length ? (
-              profile.events.map((event) => (
-                <button
-                  key={`${event.calendarId}:${event.id}`}
-                  type="button"
-                  className="detail-dialog__row"
-                  onClick={() => void openEvent(event)}
-                >
-                  <CalendarDays aria-hidden="true" />
-                  <span className="detail-dialog__row-text">
-                    <span className="detail-dialog__row-name">{event.summary || "(No title)"}</span>
-                    <span className="detail-dialog__note">
-                      {event.allDay && event.start.date
-                        ? formatDay(event.start.date, { month: "short", day: "numeric" })
-                        : event.start.ms
-                          ? formatFullDate(event.start.ms)
-                          : ""}
-                    </span>
-                  </span>
-                </button>
-              ))
-            ) : (
-              <p className="detail-dialog__note">
-                {error
-                  ? "Couldn't read meetings."
-                  : profile?.calendarAvailable
-                    ? "No upcoming meetings on your shown calendars."
-                    : "Connect this account's calendar to see upcoming meetings."}
-              </p>
-            )}
-          </div>
-        </section>
+        <MeetingList
+          title="Upcoming meetings · next 90 days"
+          events={profile?.events}
+          failed={!!error}
+          empty={
+            profile?.calendarAvailable
+              ? "No upcoming meetings on your shown calendars."
+              : "Connect this account's calendar to see meetings."
+          }
+          onOpen={(event) => void openEvent(event)}
+        />
+        <MeetingList
+          title="Past meetings · last 6 months"
+          events={profile?.pastEvents}
+          failed={!!error}
+          empty={
+            profile?.calendarAvailable
+              ? "No past meetings on your shown calendars."
+              : "Connect this account's calendar to see meetings."
+          }
+          onOpen={(event) => void openEvent(event)}
+        />
       </div>
       <p className="detail-dialog__error" role="alert">
         {error?.message ??
@@ -241,6 +277,62 @@ export function PersonPanel({
         )}
       </div>
     </DetailDialog>
+  );
+}
+
+function copyAddress(address: string) {
+  return navigator.clipboard.writeText(address).then(
+    () => toast({ title: "Address copied", description: address }),
+    () => toast({ title: "Couldn't copy the address", description: address }),
+  );
+}
+
+function MeetingList({
+  title,
+  events,
+  failed,
+  empty,
+  onOpen,
+}: {
+  title: string;
+  /** `undefined` until the profile has loaded. */
+  events: CalendarEvent[] | undefined;
+  failed: boolean;
+  empty: string;
+  onOpen(event: CalendarEvent): void;
+}) {
+  return (
+    <section>
+      <h3 className="detail-dialog__section-title">{title}</h3>
+      <div className="person-panel__list">
+        {!events && !failed ? (
+          <ProfilePlaceholder />
+        ) : events?.length ? (
+          events.map((event) => (
+            <button
+              key={`${event.calendarId}:${event.id}`}
+              type="button"
+              className="detail-dialog__row"
+              onClick={() => onOpen(event)}
+            >
+              <CalendarDays aria-hidden="true" />
+              <span className="detail-dialog__row-text">
+                <span className="detail-dialog__row-name">{event.summary || "(No title)"}</span>
+                <span className="detail-dialog__note">
+                  {event.allDay && event.start.date
+                    ? formatDay(event.start.date, { month: "short", day: "numeric" })
+                    : event.start.ms
+                      ? formatFullDate(event.start.ms)
+                      : ""}
+                </span>
+              </span>
+            </button>
+          ))
+        ) : (
+          <p className="detail-dialog__note">{failed ? "Couldn't read meetings." : empty}</p>
+        )}
+      </div>
+    </section>
   );
 }
 
