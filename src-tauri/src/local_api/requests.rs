@@ -928,8 +928,8 @@ pub fn catalog() -> Vec<ToolDef> {
         threads_tool(
             "move_to_inbox",
             "Move to inbox",
-            "Put archived or trashed conversations back in the inbox (this also takes them out \
-             of Trash, which Gmail empties after 30 days).",
+            "Put archived, trashed or spam conversations back in the inbox: this takes them out \
+             of Trash (which Gmail empties after 30 days) and Spam (as Gmail's Not spam does).",
             false,
         ),
         query_tool("mark_read", "Mark as read", "Mark conversations as read."),

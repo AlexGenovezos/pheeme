@@ -49,6 +49,8 @@ pub enum ApiError {
     NotAllowed(Permission),
     #[error("{0}")]
     Invalid(String),
+    #[error("Too many {} from this client: Pheeme allows {} a minute. Try again in {} s.", .0.what(), .0.per_minute, .0.retry_after_secs)]
+    RateLimited(Limited),
     #[error(transparent)]
     Mail(#[from] MailError),
     #[error(transparent)]
@@ -66,6 +68,7 @@ impl ApiError {
             ApiError::NotAllowed(_) => "not_allowed",
             ApiError::Unauthorized => "unauthorized",
             ApiError::UnknownTool(_) | ApiError::Invalid(_) => "invalid_input",
+            ApiError::RateLimited(_) => "rate_limited",
             ApiError::Mail(e) => e.code(),
             ApiError::Account(e) => e.code(),
             ApiError::Calendar(e) => e.code(),
@@ -142,6 +145,78 @@ impl Permission {
             Permission::Calendar => "change calendar events",
             Permission::Tasks => "change tasks",
         }
+    }
+}
+
+/// A call refused because its client made too many of that kind in the last minute.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limited {
+    pub change: bool,
+    pub per_minute: usize,
+    pub retry_after_secs: i64,
+}
+
+impl Limited {
+    fn what(&self) -> &'static str {
+        if self.change {
+            "changes"
+        } else {
+            "reads"
+        }
+    }
+}
+
+/// Calls one client may make in a minute: generous for an assistant working through a task,
+/// tight enough that a runaway loop can't flood Gmail or the calendar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    pub reads: usize,
+    pub changes: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            reads: 120,
+            changes: 30,
+        }
+    }
+}
+
+const LIMIT_WINDOW_MS: i64 = 60_000;
+
+/// When each client's recent calls ran, reads and changes apart, for [`Limits`]. In memory:
+/// a restart forgets them.
+#[derive(Default)]
+struct RateLimiter {
+    calls: std::sync::Mutex<
+        std::collections::HashMap<(String, bool), std::collections::VecDeque<i64>>,
+    >,
+}
+
+impl RateLimiter {
+    /// Count a call at `now`, or refuse it if the client already made `max` in the window.
+    fn take(&self, client_id: &str, change: bool, max: usize, now: i64) -> Result<(), Limited> {
+        let mut calls = self
+            .calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let times = calls.entry((client_id.to_owned(), change)).or_default();
+        while times.front().is_some_and(|t| now - t >= LIMIT_WINDOW_MS) {
+            times.pop_front();
+        }
+        if times.len() >= max {
+            let oldest = times.front().copied().unwrap_or(now);
+            return Err(Limited {
+                change,
+                per_minute: max,
+                retry_after_secs: ((oldest + LIMIT_WINDOW_MS - now) as f64 / 1000.0)
+                    .ceil()
+                    .max(1.0) as i64,
+            });
+        }
+        times.push_back(now);
+        Ok(())
     }
 }
 
@@ -222,6 +297,8 @@ pub struct LocalApi {
     filters: FilterService,
     calendar: Arc<CalendarService>,
     tasks: Arc<TasksService>,
+    limits: std::sync::Mutex<Limits>,
+    limiter: RateLimiter,
     on_activity: std::sync::OnceLock<ActivityListener>,
 }
 
@@ -244,6 +321,8 @@ impl LocalApi {
             compose,
             calendar,
             tasks,
+            limits: std::sync::Mutex::new(Limits::default()),
+            limiter: RateLimiter::default(),
             on_activity: std::sync::OnceLock::new(),
         }
     }
@@ -252,6 +331,27 @@ impl LocalApi {
     /// first listener set is kept.
     pub fn on_activity(&self, listener: ActivityListener) {
         let _ = self.on_activity.set(listener);
+    }
+
+    /// Change the per-client limits (tests use small ones).
+    #[cfg(test)]
+    pub fn set_limits(&self, limits: Limits) {
+        *self
+            .limits
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = limits;
+    }
+
+    /// Count a call by `caller`, refusing it past the client's limit for its kind.
+    fn admit(&self, caller: &Caller, change: bool) -> Result<(), ApiError> {
+        let limits = *self
+            .limits
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let max = if change { limits.changes } else { limits.reads };
+        self.limiter
+            .take(&caller.client_id, change, max, now_ms())
+            .map_err(ApiError::RateLimited)
     }
 
     pub async fn enabled(&self) -> Result<bool, ApiError> {
@@ -299,11 +399,14 @@ impl LocalApi {
         let result = match parsed {
             Ok(request) => match request.permission() {
                 Some(p) if !self.allows(p).await? => Err(ApiError::NotAllowed(p)),
-                _ => {
-                    let run =
-                        gmail::usage_source(gmail::UsageSource::Assistants, self.run(request));
-                    gmail::user_action(run).await
-                }
+                permission => match self.admit(caller, permission.is_some()) {
+                    Err(e) => Err(e),
+                    Ok(()) => {
+                        let run =
+                            gmail::usage_source(gmail::UsageSource::Assistants, self.run(request));
+                        gmail::user_action(run).await
+                    }
+                },
             },
             Err(e) => Err(e),
         };

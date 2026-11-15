@@ -1754,3 +1754,82 @@ async fn task_changes_need_their_switch_then_go_to_google() {
     assert_eq!(list["title"], "Trips");
     assert!(h.task_api.list_titles().contains(&"Trips".to_string()));
 }
+
+#[tokio::test]
+async fn move_to_inbox_rescues_spam_like_not_spam() {
+    let fake = FakeGmail::new();
+    fake.seed(msg("m1", "t1", &["INBOX"], "a@x.com").days_ago(1));
+    fake.seed(msg("m9", "t9", &["SPAM", "UNREAD"], "friend@x.com").days_ago(2));
+    let h = setup(fake).await;
+    h.api.set_allows(Permission::Organize, true).await.unwrap();
+    // Spam arrives with the backfill; Gmail's own search caches it at once.
+    h.call("search_mail", json!({ "query": "in:spam", "gmail": true }))
+        .await
+        .unwrap();
+    assert_eq!(mailbox(&h, "spam").await, ["t9"]);
+
+    h.call("move_to_inbox", json!({ "thread_ids": ["t9"] }))
+        .await
+        .unwrap();
+    assert!(mailbox(&h, "spam").await.is_empty());
+    assert_eq!(mailbox(&h, "inbox").await, ["t1", "t9"]);
+    h.sync.sync_account("a1").await.unwrap();
+    let labels = h.fake.message("m9").unwrap().labels;
+    assert!(labels.contains(&"INBOX".to_string()), "{labels:?}");
+    assert!(!labels.contains(&"SPAM".to_string()), "{labels:?}");
+}
+
+#[tokio::test]
+async fn each_client_gets_its_own_limit_for_reads_and_changes() {
+    let h = setup(FakeGmail::new()).await;
+    h.api.set_limits(Limits {
+        reads: 2,
+        changes: 1,
+    });
+    h.api.set_allows(Permission::Organize, true).await.unwrap();
+    for _ in 0..2 {
+        h.call("list_accounts", json!({})).await.unwrap();
+    }
+    let err = h.call("list_accounts", json!({})).await.unwrap_err();
+    assert_eq!(err.code(), "rate_limited");
+    assert!(
+        err.to_string()
+            .starts_with("Too many reads from this client"),
+        "{err}"
+    );
+    // Changes count apart from reads, and one that runs but fails (a blank name) counts too.
+    assert!(h.call("create_label", json!({ "name": "" })).await.is_err());
+    let err = h
+        .call("create_label", json!({ "name": "Receipts" }))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ApiError::RateLimited(Limited { change: true, .. })
+    ));
+    // Another client has its own allowance, and refusals are in the activity log.
+    let other = h.api.connect_client("Desktop").await.unwrap();
+    let desktop = h.api.authenticate(&other.token).await.unwrap();
+    h.api
+        .call(&desktop, "list_accounts", json!({}))
+        .await
+        .unwrap();
+    let log = h.api.activity(1).await.unwrap();
+    assert_eq!(log[0].client_name, "Desktop");
+    let refused = h.api.activity(10).await.unwrap();
+    assert!(refused
+        .iter()
+        .any(|a| a.error.as_deref().is_some_and(|e| e.contains("Too many"))));
+}
+
+#[test]
+fn the_limit_frees_up_as_calls_age_out_of_the_minute() {
+    let limiter = RateLimiter::default();
+    assert!(limiter.take("c", false, 2, 0).is_ok());
+    assert!(limiter.take("c", false, 2, 20_000).is_ok());
+    let refused = limiter.take("c", false, 2, 30_000).unwrap_err();
+    assert_eq!(refused.retry_after_secs, 30);
+    assert!(limiter.take("other", false, 2, 30_000).is_ok());
+    assert!(limiter.take("c", true, 2, 30_000).is_ok());
+    assert!(limiter.take("c", false, 2, 60_000).is_ok());
+}

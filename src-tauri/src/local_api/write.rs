@@ -32,8 +32,10 @@ pub(super) async fn run(api: &LocalApi, request: Request) -> Result<Value, ApiEr
         }
         Request::MoveToInbox(t) => {
             only_threads(&t, "move_to_inbox")?;
+            // Like Gmail's Not spam; getting INBOX also takes mail out of Trash.
             let change = SearchChange {
                 add: &["INBOX"],
+                remove: &["SPAM"],
                 ..Default::default()
             };
             modify(api, t, &change).await
