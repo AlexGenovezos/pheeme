@@ -65,6 +65,13 @@
   font-weight: var(--font-weight-semibold);
 }
 
+/* A Button beside one line of text: it reaches into the padding instead of making the toast
+   taller than its text. */
+.ui-toast__button {
+  align-self: center;
+  margin-block: calc(-1 * var(--space-1));
+}
+
 .ui-toast__close {
   width: var(--control-height-sm);
   /* Top-right corner, level with the title row; the action stays centred beside the text. */
