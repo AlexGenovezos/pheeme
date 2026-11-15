@@ -58,6 +58,7 @@ test("turns assistants on, connects one with a one-time command, and removes it"
   expect(calls).toContain("set_assistant_permission");
   expect(screen.getByRole("switch", { name: "Organize mail" })).toBeChecked();
   expect(screen.getByRole("switch", { name: "Write drafts" })).not.toBeChecked();
+  expect(screen.getByRole("switch", { name: "Change calendar" })).not.toBeChecked();
 
   // Connecting opens the command in a dialog; the Connect row stays as it was.
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));

@@ -89,7 +89,10 @@ pub(super) async fn run(api: &LocalApi, request: Request) -> Result<Value, ApiEr
 }
 
 /// The one account a change is for: `account`, or the only account there is.
-async fn resolve_account(api: &LocalApi, account: Option<&str>) -> Result<AccountInfo, ApiError> {
+pub(super) async fn resolve_account(
+    api: &LocalApi,
+    account: Option<&str>,
+) -> Result<AccountInfo, ApiError> {
     let mut found = resolve_accounts(api, account).await?;
     if found.len() > 1 {
         let emails: Vec<&str> = found.iter().map(|a| a.email.as_str()).collect();

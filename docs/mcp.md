@@ -1,6 +1,6 @@
 # MCP (AI assistants)
 
-Pheeme can let AI assistants such as Claude Code work with your mail while Pheeme is open. It runs a
+Pheeme can let AI assistants such as Claude Code work with your mail and calendar while Pheeme is open. It runs a
 [Model Context Protocol](https://modelcontextprotocol.io) server on your computer only
 (`http://127.0.0.1:43830/mcp`). Assistants go through Pheeme's local API, which does what the app's
 own buttons do: the same cache, the same outbox, the same Gmail calls. Nothing touches the database
@@ -34,6 +34,10 @@ Other MCP clients that speak Streamable HTTP take the same URL and `Authorizatio
 | `list_filters` | Every Gmail filter, in words, flagging those that delete mail, skip the inbox or mark it read |
 | `sender_report` | Who sent the most mail over the last N days: how much, how much is unread, which tab it lands in, whether you ever write back, and whether it offers unsubscribe. Narrow it to one tab, or rank by unread |
 | `filter_audit` | For each filter that deletes, archives or marks mail read, what its criteria matched lately (Gmail search) and where that mail is now |
+| `list_calendars` | Each account's calendars, its Calendar time zone, and whether Pheeme may read its calendar |
+| `list_events` | Events in a date range (default the next 7 days), repeating events expanded, optionally only those matching some words |
+| `get_event` | One event in full: description, organizer, guests and their answers, video call, repeat rule |
+| `find_free_time` | Free slots of a given length inside working hours (default 9 to 5 on weekdays), counting timed events you haven't declined or marked free |
 
 Writes come in groups, each off until you turn it on under **What clients may change**:
 
@@ -43,9 +47,17 @@ Writes come in groups, each off until you turn it on under **What clients may ch
 | Change Gmail filters | `create_filter`, `delete_filter` |
 | Write drafts | `create_draft` (new or a reply) |
 | Unsubscribe | `unsubscribe`: one-click unsubscribe (RFC 8058) for lists that offer it; for others it returns the link |
+| Change calendar | `create_event`, `update_event` (time, title, place, description, guests, Meet link, repeat), `delete_event`, `respond_to_event` |
 
-Changes go through the same outbox as the app's buttons, so they show in Pheeme at once and reach
-Gmail in order. A tool whose group is off answers with the setting to turn on.
+Mail changes go through the same outbox as the app's buttons, so they show in Pheeme at once and reach
+Gmail in order. Calendar changes go to Google Calendar the way the Calendar's own buttons do, and show
+once Google confirms them. A tool whose group is off answers with the setting to turn on.
+
+Calendar times come and go in your Google Calendar time zone (`time_zone` picks another): a date-time
+like `2026-11-20T15:00`, or a date like `2026-11-20` for an all-day event. Calendar tools need calendar
+access, which you allow by opening Calendar in Pheeme. Guests an assistant adds see the event on their
+calendars but aren't emailed unless it sets `notify_guests` (the tool tells it to ask you first).
+Answering an invitation always tells the organizer, as it does in Google Calendar.
 
 `archive`, `mark_read`, `mark_unread`, `star` and `unstar` take a `query` (search syntax) instead of
 `thread_ids`: the cached matches change at once, and Gmail changes matching mail that isn't downloaded
@@ -61,7 +73,8 @@ Assistants can't send mail: drafts wait in Drafts for you. They don't include yo
 (Settings › Signatures applies to messages you write in Pheeme).
 
 Try asking: "Audit my Gmail filters: is anything being deleted that shouldn't be?" or "Who sends me the
-most mail, and what should I filter or unsubscribe from?"
+most mail, and what should I filter or unsubscribe from?" or "Find an hour next week when I'm free and
+draft a reply to Sam offering two times."
 
 ## Safety
 

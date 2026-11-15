@@ -1,4 +1,6 @@
 use super::*;
+use crate::calendar::fake::{calendar, FakeCalendar};
+use crate::calendar::CalendarApi;
 use crate::compose::ComposeService;
 use crate::db::test_support::TestDb;
 use crate::gmail::types::{Filter, FilterAction, FilterCriteria};
@@ -12,6 +14,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub(crate) struct Harness {
     pub _db: TestDb,
     pub fake: Arc<FakeGmail>,
+    /// Account a1's Google Calendar: primary calendar `me@example.com`, access not yet allowed.
+    pub cal: Arc<FakeCalendar>,
+    pub calendar: Arc<CalendarService>,
     pub api: LocalApi,
     pub caller: Caller,
     pub notified: Arc<AtomicUsize>,
@@ -48,7 +53,24 @@ pub(crate) async fn setup(fake: FakeGmail) -> Harness {
     );
     let notified = Arc::new(AtomicUsize::new(0));
     let count = notified.clone();
-    let api = LocalApi::new(pool, accounts, mail, compose, sync.clone());
+    let cal = Arc::new(FakeCalendar::default());
+    let mut primary = calendar("me@example.com");
+    primary.primary = true;
+    cal.add_calendar(primary);
+    let cal_api = cal.clone();
+    let calendar = CalendarService::new(
+        pool.clone(),
+        Arc::new(move |_: &str| cal_api.clone() as Arc<dyn CalendarApi>),
+        Arc::new(RecordingEvents::default()),
+    );
+    let api = LocalApi::new(
+        pool,
+        accounts,
+        mail,
+        compose,
+        sync.clone(),
+        calendar.clone(),
+    );
     api.on_activity(Arc::new(move || {
         count.fetch_add(1, Ordering::SeqCst);
     }));
@@ -58,6 +80,8 @@ pub(crate) async fn setup(fake: FakeGmail) -> Harness {
     Harness {
         _db: db,
         fake,
+        cal,
+        calendar,
         api,
         caller,
         notified,
@@ -838,11 +862,12 @@ fn every_permission_is_listed_once() {
             Permission::Organize
             | Permission::Filters
             | Permission::Drafts
-            | Permission::Unsubscribe => 1,
+            | Permission::Unsubscribe
+            | Permission::Calendar => 1,
         };
         assert_eq!(Permission::ALL.iter().filter(|q| **q == p).count(), listed);
     }
-    assert_eq!(Permission::ALL.len(), 4);
+    assert_eq!(Permission::ALL.len(), 5);
 }
 
 #[test]
@@ -1036,8 +1061,8 @@ async fn changes_every_match_of_a_search_with_a_dry_run_first() {
         "{done}"
     );
     assert_eq!(unread().await, 0, "cached matches change at once");
-    h.sync.sync_account("a1").await.unwrap();
     let labels = |id: &str| h.fake.message(id).unwrap().labels;
+    h.sync.sync_account("a1").await.unwrap();
     for id in ["p0", "p1", "p2", "old"] {
         assert!(!labels(id).contains(&"UNREAD".to_string()), "{id}");
     }
@@ -1222,4 +1247,331 @@ async fn query_writes_stay_out_of_spam_and_trash_and_preview_only_real_changes()
         .await
         .unwrap();
     assert_eq!(dry["cached_conversations"], 1, "{dry}");
+}
+
+const CAL: &str = "me@example.com";
+
+/// Account a1's calendar, synced, in New York time: lunch (busy), a declined review and a
+/// focus block marked free on Monday 2 Dec 2030, and an invitation the user hasn't answered.
+async fn with_calendar() -> Harness {
+    use crate::calendar::fake::timed;
+    use crate::gmail::calendar::CalendarSettings;
+    let h = setup(FakeGmail::new()).await;
+    h.cal.set_settings(CalendarSettings {
+        time_zone: Some("America/New_York".into()),
+        week_start: Some(1),
+    });
+    let mut lunch = timed(
+        "lunch",
+        "Lunch with Sam",
+        "2030-12-02T12:00:00-05:00",
+        "2030-12-02T13:00:00-05:00",
+    );
+    lunch["location"] = json!("Joe's");
+    lunch["attendees"] = json!([
+        {"email": "me@example.com", "self": true, "organizer": true, "responseStatus": "accepted"},
+        {"email": "sam@example.com", "responseStatus": "accepted"}
+    ]);
+    lunch["organizer"] = json!({"email": "me@example.com", "self": true});
+    h.cal.put(CAL, lunch);
+    let mut review = timed(
+        "review",
+        "Review",
+        "2030-12-02T14:00:00-05:00",
+        "2030-12-02T15:00:00-05:00",
+    );
+    review["organizer"] = json!({"email": "boss@example.com"});
+    review["attendees"] = json!([
+        {"email": "boss@example.com", "organizer": true, "responseStatus": "accepted"},
+        {"email": "me@example.com", "self": true, "responseStatus": "declined"}
+    ]);
+    h.cal.put(CAL, review);
+    let mut focus = timed(
+        "focus",
+        "Focus",
+        "2030-12-02T09:00:00-05:00",
+        "2030-12-02T11:00:00-05:00",
+    );
+    focus["transparency"] = json!("transparent");
+    h.cal.put(CAL, focus);
+    let mut invite = timed(
+        "invite",
+        "Planning",
+        "2030-12-03T10:00:00-05:00",
+        "2030-12-03T11:00:00-05:00",
+    );
+    invite["organizer"] = json!({"email": "boss@example.com"});
+    invite["attendees"] = json!([
+        {"email": "boss@example.com", "organizer": true, "responseStatus": "accepted"},
+        {"email": "me@example.com", "self": true, "responseStatus": "needsAction"}
+    ]);
+    h.cal.put(CAL, invite);
+    h.calendar.sync_now("a1").await.unwrap();
+    h
+}
+
+#[tokio::test]
+async fn calendar_reads_say_when_access_isnt_allowed() {
+    let h = setup(FakeGmail::new()).await;
+    let out = h.call("list_calendars", json!({})).await.unwrap();
+    assert_eq!(out["accounts"][0]["access"], "unknown");
+    assert!(out["accounts"][0]["note"]
+        .as_str()
+        .unwrap()
+        .contains("opening Calendar in Pheeme"));
+    let out = h.call("list_events", json!({})).await.unwrap();
+    assert_eq!(out["events"], json!([]));
+    assert_eq!(out["calendar_access"][0]["account"], "me@example.com");
+    let err = h
+        .call("get_event", json!({ "event_id": "lunch" }))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("calendar access"), "{err}");
+}
+
+#[tokio::test]
+async fn lists_and_reads_events_in_the_calendar_time_zone() {
+    let h = with_calendar().await;
+    let cals = h.call("list_calendars", json!({})).await.unwrap();
+    assert_eq!(cals["accounts"][0]["time_zone"], "America/New_York");
+    assert_eq!(cals["accounts"][0]["calendars"][0]["calendar_id"], CAL);
+    assert_eq!(cals["accounts"][0]["calendars"][0]["primary"], true);
+
+    let out = h
+        .call(
+            "list_events",
+            json!({ "from": "2030-12-02", "to": "2030-12-03" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(out["time_zone"], "America/New_York");
+    let ids: Vec<_> = out["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["event_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["focus", "lunch", "review", "invite"]);
+    let lunch = &out["events"][1];
+    assert_eq!(lunch["start"], "2030-12-02T12:00:00-05:00");
+    assert_eq!(lunch["location"], "Joe's");
+    assert_eq!(lunch["calendar_id"], CAL);
+    assert_eq!(out["events"][0]["shows_as_free"], true);
+    assert!(out.get("calendar_access").is_none());
+
+    let found = h
+        .call(
+            "list_events",
+            json!({ "from": "2030-12-01", "query": "sam" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found["events"].as_array().unwrap().len(), 1);
+    let paris = h
+        .call(
+            "list_events",
+            json!({ "from": "2030-12-02", "limit": 1, "time_zone": "Europe/Paris" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(paris["events"][0]["start"], "2030-12-02T15:00:00+01:00");
+    assert!(paris["more"].as_str().unwrap().starts_with("3 more"));
+
+    let lunch = h
+        .call("get_event", json!({ "event_id": "lunch" }))
+        .await
+        .unwrap();
+    assert_eq!(lunch["title"], "Lunch with Sam");
+    assert_eq!(lunch["guests"][1]["email"], "sam@example.com");
+    assert_eq!(lunch["guests"][0]["is_me"], true);
+    assert_eq!(lunch["can_edit"], true);
+    let invite = h
+        .call("get_event", json!({ "event_id": "invite" }))
+        .await
+        .unwrap();
+    assert_eq!(invite["my_response"], "needsAction");
+    assert_eq!(invite["can_answer"], true);
+    assert_eq!(invite["can_edit"], false);
+}
+
+#[tokio::test]
+async fn free_time_skips_busy_events_but_not_declined_or_free_ones() {
+    let h = with_calendar().await;
+    let out = h
+        .call(
+            "find_free_time",
+            json!({ "from": "2030-12-02", "to": "2030-12-02", "duration_minutes": 60 }),
+        )
+        .await
+        .unwrap();
+    let slots: Vec<(&str, &str)> = out["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| (s["start"].as_str().unwrap(), s["end"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        slots,
+        [
+            ("2030-12-02T09:00:00-05:00", "2030-12-02T12:00:00-05:00"),
+            ("2030-12-02T13:00:00-05:00", "2030-12-02T17:00:00-05:00"),
+        ]
+    );
+    assert_eq!(out["busy_periods"], 1);
+}
+
+#[tokio::test]
+async fn calendar_changes_need_their_switch() {
+    let h = with_calendar().await;
+    let err = h
+        .call(
+            "create_event",
+            json!({ "title": "Gym", "start": "2030-12-04T07:00" }),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ApiError::NotAllowed(Permission::Calendar)));
+    assert!(err.to_string().contains("Change calendar"), "{err}");
+    assert!(h.cal.writes().is_empty());
+}
+
+#[tokio::test]
+async fn creates_events_with_guests_without_emailing_them() {
+    let h = with_calendar().await;
+    h.api.set_allows(Permission::Calendar, true).await.unwrap();
+    let out = h
+        .call(
+            "create_event",
+            json!({
+                "title": "Coffee",
+                "start": "2030-12-04T09:30",
+                "guests": ["kim@example.com"],
+                "add_meet": true,
+            }),
+        )
+        .await
+        .unwrap();
+    let w = &h.cal.writes()[0];
+    assert_eq!(w.method, "insert");
+    assert_eq!(w.calendar_id, CAL);
+    assert_eq!(
+        w.send_updates,
+        Some(crate::gmail::calendar::SendUpdates::None)
+    );
+    assert!(w.conference);
+    assert_eq!(w.body["summary"], "Coffee");
+    assert_eq!(w.body["start"]["dateTime"], "2030-12-04T09:30:00-05:00");
+    assert_eq!(w.body["end"]["dateTime"], "2030-12-04T10:30:00-05:00");
+    assert_eq!(w.body["attendees"][0]["email"], "kim@example.com");
+    assert_eq!(out["guests_emailed"], false);
+    assert_eq!(out["created"]["title"], "Coffee");
+    assert_eq!(out["created"]["guests"], json!(["kim@example.com"]));
+
+    // An all-day event lasts a day unless told otherwise.
+    h.call(
+        "create_event",
+        json!({ "title": "Off", "start": "2030-12-24", "notify_guests": true }),
+    )
+    .await
+    .unwrap();
+    let w = &h.cal.writes()[1];
+    assert_eq!(w.body["start"]["date"], "2030-12-24");
+    assert_eq!(w.body["end"]["date"], "2030-12-25");
+    assert_eq!(
+        w.send_updates,
+        Some(crate::gmail::calendar::SendUpdates::All)
+    );
+}
+
+#[tokio::test]
+async fn updates_move_events_and_change_guests() {
+    let h = with_calendar().await;
+    h.api.set_allows(Permission::Calendar, true).await.unwrap();
+    let out = h
+        .call(
+            "update_event",
+            json!({
+                "event_id": "lunch",
+                "start": "2030-12-02T12:30",
+                "add_guests": ["kim@example.com"],
+                "remove_guests": ["SAM@example.com"],
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(out["changed"], json!(["time", "guests"]));
+    let w = &h.cal.writes()[0];
+    assert_eq!(w.method, "patch");
+    assert_eq!(w.event_id.as_deref(), Some("lunch"));
+    // The length is kept.
+    assert_eq!(w.body["end"]["dateTime"], "2030-12-02T13:30:00-05:00");
+    let guests: Vec<_> = w.body["attendees"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["email"].as_str().unwrap())
+        .collect();
+    assert_eq!(guests, ["me@example.com", "kim@example.com"]);
+    assert!(h
+        .call("update_event", json!({ "event_id": "lunch" }))
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("Nothing to change"));
+    // Only the organizer changes an invitation.
+    let err = h
+        .call(
+            "update_event",
+            json!({ "event_id": "invite", "title": "Mine" }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "read_only");
+}
+
+#[tokio::test]
+async fn answers_invitations_and_deletes_events() {
+    let h = with_calendar().await;
+    h.api.set_allows(Permission::Calendar, true).await.unwrap();
+    let out = h
+        .call(
+            "respond_to_event",
+            json!({ "event_id": "invite", "response": "maybe", "comment": "Running late" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(out["response"], "tentative");
+    let me = h.cal.event(CAL, "invite").unwrap()["attendees"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["self"] == true)
+        .cloned()
+        .unwrap();
+    assert_eq!(me["responseStatus"], "tentative");
+    assert_eq!(me["comment"], "Running late");
+
+    let out = h
+        .call("delete_event", json!({ "event_id": "lunch" }))
+        .await
+        .unwrap();
+    assert_eq!(out["deleted"]["title"], "Lunch with Sam");
+    let w = h.cal.writes().pop().unwrap();
+    assert_eq!(w.method, "delete");
+    assert_eq!(
+        w.send_updates,
+        Some(crate::gmail::calendar::SendUpdates::None)
+    );
+    let left = h
+        .call(
+            "list_events",
+            json!({ "from": "2030-12-02", "to": "2030-12-02" }),
+        )
+        .await
+        .unwrap();
+    assert!(left["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|e| e["event_id"] != "lunch"));
 }
