@@ -2,14 +2,16 @@
 // title is the answer; choosing it copies the answer.
 import { toast } from "../components/ui/Toast";
 import type { Command } from "../keyboard/registry";
-import { displayZone, useCalendarStore } from "./calendarStore";
 import { parseConversion } from "./zoneConvert";
 
 export const CONVERT_COMMAND = "calendar.convertTime";
 
 /** The answer to `query` as a palette command, or null when it isn't a time to convert. */
-export function conversionCommand(query: string, now = Date.now()): Command | null {
-  const calendarZone = displayZone(useCalendarStore.getState().accounts);
+export function conversionCommand(
+  query: string,
+  calendarZone: string,
+  now = Date.now(),
+): Command | null {
   const conversion = parseConversion(query, { now, calendarZone });
   if (!conversion) return null;
   const { text } = conversion;

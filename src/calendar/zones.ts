@@ -53,7 +53,8 @@ export function zoneRegion(tz: string): string {
 export function offsetMinutes(ms: number, tz: string): number {
   const { date, minutes } = wallClock(ms, tz);
   const [y, m, d] = date.split("-").map(Number);
-  return Math.round((Date.UTC(y, m - 1, d) + minutes * 60_000 - ms) / 60_000);
+  // The wall clock is whole minutes, so compare it with `ms` cut to the minute too.
+  return Math.round((Date.UTC(y, m - 1, d) + minutes * 60_000 - (ms - (ms % 60_000))) / 60_000);
 }
 
 /** "UTC+5:30", "UTC−3", "UTC" for an offset in minutes. */

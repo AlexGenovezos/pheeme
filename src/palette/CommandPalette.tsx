@@ -7,6 +7,7 @@ import {
   type CommandRegistry,
 } from "../keyboard/registry";
 import { useCommandList } from "../keyboard/useCommands";
+import { displayZone, useCalendarAccounts } from "../calendar/calendarStore";
 import { conversionCommand } from "../calendar/convertCommand";
 import { filterCommands } from "./match";
 import { usePaletteStore } from "./paletteStore";
@@ -32,6 +33,8 @@ function Highlighted({ text, indices }: { text: string; indices: number[] }) {
 
 function PaletteDialog({ reg, onClose }: { reg: CommandRegistry; onClose(): void }) {
   const commands = useCommandList(reg);
+  // The converter's default zone is the calendar's, so read it even when opened from Mail.
+  const calendarZone = displayZone(useCalendarAccounts());
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [returnFocus] = useState(() => document.activeElement as HTMLElement | null);
@@ -41,9 +44,9 @@ function PaletteDialog({ reg, onClose }: { reg: CommandRegistry; onClose(): void
   // A time to convert ("3pm PT in Athens") answers first, ahead of any command.
   const results = useMemo(() => {
     const found = filterCommands(commands, query);
-    const conversion = conversionCommand(query);
+    const conversion = conversionCommand(query, calendarZone);
     return conversion ? [{ command: conversion, indices: [] }, ...found] : found;
-  }, [commands, query]);
+  }, [commands, query, calendarZone]);
   const grouped = !query.trim();
 
   const restoreFocus = () => {

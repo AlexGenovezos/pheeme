@@ -36,6 +36,7 @@ describe("zone names", () => {
     expect(offsetMinutes(NOV, "America/New_York")).toBe(-300);
     expect(offsetMinutes(NOV, "Asia/Kolkata")).toBe(330);
     expect(offsetMinutes(Date.UTC(2026, 6, 1), "America/New_York")).toBe(-240);
+    expect(offsetMinutes(NOV + 45_000, "Asia/Kolkata")).toBe(330);
     expect(formatOffset(330)).toBe("UTC+5:30");
     expect(formatOffset(-180)).toBe("UTC−3");
     expect(formatOffset(0)).toBe("UTC");
