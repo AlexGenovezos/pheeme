@@ -1146,3 +1146,51 @@ async fn sender_report_filters_by_tab_and_sorts_by_unread() {
         .await
         .is_err());
 }
+
+#[tokio::test]
+async fn a_hidden_tab_counts_as_primary() {
+    let h = setup(promotions()).await;
+    h.api
+        .mail
+        .set_inbox_tabs("a1", &["CATEGORY_PROMOTIONS".to_owned()])
+        .await
+        .unwrap();
+    let tabs = h
+        .call("count_mail", json!({ "group_by": "tab" }))
+        .await
+        .unwrap();
+    assert_eq!(
+        tabs["groups"],
+        json!([{ "group": "primary", "conversations": 5, "unread": 4 }])
+    );
+    let primary = h
+        .call("sender_report", json!({ "tab": "primary" }))
+        .await
+        .unwrap();
+    let senders: Vec<_> = primary["accounts"][0]["senders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["sender"].as_str().unwrap())
+        .collect();
+    assert_eq!(senders, ["deals@shop.com", "f@x.com", "news@paper.com"]);
+}
+
+#[tokio::test]
+async fn query_writes_stay_out_of_spam_and_trash_and_preview_only_real_changes() {
+    let h = setup(promotions()).await;
+    h.api.set_allows(Permission::Organize, true).await.unwrap();
+    for query in ["in:trash sale", "sale in:anywhere", "label:spam"] {
+        let err = h.call("star", json!({ "query": query })).await.unwrap_err();
+        assert!(err.to_string().contains("Spam or Trash"), "{query}: {err}");
+    }
+    // Every promotion but one is unread already: only that one would change.
+    let dry = h
+        .call(
+            "mark_unread",
+            json!({ "query": "category:promotions", "dry_run": true }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(dry["cached_conversations"], 1, "{dry}");
+}

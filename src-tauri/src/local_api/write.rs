@@ -51,6 +51,7 @@ pub(super) async fn run(api: &LocalApi, request: Request) -> Result<Value, ApiEr
             let change = SearchChange {
                 add: &["UNREAD"],
                 narrow: "is:read",
+                keep: |t| !t.unread,
                 ..Default::default()
             };
             modify(api, t, &change).await
@@ -152,6 +153,14 @@ fn thread_query(args: &ThreadsArg) -> Result<Option<&str>, ApiError> {
     }
     if args.dry_run && query.is_none() {
         return Err(ApiError::Invalid("dry_run goes with query.".into()));
+    }
+    // Gmail's side of a search change leaves Spam and Trash out, so a search into them would
+    // change the cached matches and miss the rest.
+    if query.is_some_and(|q| crate::search::gmail_query(q).1) {
+        return Err(ApiError::Invalid(
+            "A query can't reach Spam or Trash: list those conversations and give thread_ids."
+                .into(),
+        ));
     }
     Ok(query)
 }

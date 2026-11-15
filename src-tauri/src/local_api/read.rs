@@ -11,6 +11,7 @@ use crate::compose::build::html_to_text;
 use crate::filters::label_names;
 use crate::mail::{
     MailError, MessageDetailDto, ThreadCursorDto, ThreadSummaryDto, ALL_MAIL, MAX_PAGE,
+    OTHER_CATEGORIES,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{Local, SecondsFormat, TimeZone};
@@ -209,6 +210,7 @@ pub(super) struct Rows<'a> {
     api: &'a LocalApi,
     emails: HashMap<String, String>,
     names: HashMap<String, HashMap<String, String>>,
+    hidden_tabs: HashMap<String, Vec<String>>,
     compact: bool,
 }
 
@@ -225,6 +227,7 @@ impl<'a> Rows<'a> {
             api,
             emails,
             names: HashMap::new(),
+            hidden_tabs: HashMap::new(),
             compact: false,
         })
     }
@@ -233,6 +236,15 @@ impl<'a> Rows<'a> {
     pub fn compact(mut self, compact: bool) -> Self {
         self.compact = compact;
         self
+    }
+
+    /// The inbox tabs the account hides (their mail shows under Primary).
+    pub async fn hidden_tabs(&mut self, account_id: &str) -> Result<&[String], ApiError> {
+        if !self.hidden_tabs.contains_key(account_id) {
+            let hidden = self.api.mail.inbox_tabs(account_id).await?;
+            self.hidden_tabs.insert(account_id.to_owned(), hidden);
+        }
+        Ok(&self.hidden_tabs[account_id])
     }
 
     pub async fn label_names(
@@ -604,10 +616,12 @@ impl GroupBy {
     }
 
     /// The groups a conversation counts in, each with a display name when the key isn't one.
+    /// `hidden`: the account's hidden inbox tabs, whose mail shows under Primary.
     fn keys(
         self,
         t: &ThreadSummaryDto,
         names: &HashMap<String, String>,
+        hidden: &[String],
     ) -> Vec<(String, Option<String>)> {
         let address = t
             .from_address
@@ -635,7 +649,7 @@ impl GroupBy {
                 let tab = t
                     .system_label_ids
                     .iter()
-                    .filter(|l| l.starts_with("CATEGORY_") && *l != "CATEGORY_PERSONAL")
+                    .filter(|l| OTHER_CATEGORIES.contains(&l.as_str()) && !hidden.contains(l))
                     .find_map(|l| system_label(l))
                     .unwrap_or_else(|| "primary".into());
                 vec![(tab, None)]
@@ -668,8 +682,12 @@ impl Tally {
             self.conversations += 1;
             self.unread += i64::from(t.unread);
             let Some(group_by) = group_by else { continue };
+            let hidden = match group_by {
+                GroupBy::Tab => rows.hidden_tabs(&t.account_id).await?.to_vec(),
+                _ => Vec::new(),
+            };
             let names = rows.label_names(&t.account_id).await?;
-            for (key, name) in group_by.keys(t, names) {
+            for (key, name) in group_by.keys(t, names, &hidden) {
                 let entry = self.groups.entry(key).or_insert((name, 0, 0));
                 entry.1 += 1;
                 entry.2 += i64::from(t.unread);
@@ -950,7 +968,6 @@ async fn sender_report(api: &LocalApi, args: SenderReport) -> Result<Value, ApiE
     let since = crate::sync::engine::now_ms() - days * DAY_MS;
     let tab = match args.tab.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         None => None,
-        Some(t) if t.eq_ignore_ascii_case("primary") => Some("primary"),
         Some(t) => Some(super::write::category_id(t)?),
     };
     let by_unread = match args.sort_by.as_deref().map(str::trim) {
@@ -964,6 +981,12 @@ async fn sender_report(api: &LocalApi, args: SenderReport) -> Result<Value, ApiE
     };
     let mut out = Vec::new();
     for account in resolve_accounts(api, args.account.as_deref()).await? {
+        // Primary is the mail in no shown tab: a hidden tab's mail shows there.
+        let primary = tab == Some("CATEGORY_PERSONAL");
+        let excludes = match primary {
+            true => crate::mail::primary_excludes(&api.mail.inbox_tabs(&account.id).await?),
+            false => Vec::new(),
+        };
         let senders = crate::senders::report(
             &api.db,
             &account.id,
@@ -971,7 +994,8 @@ async fn sender_report(api: &LocalApi, args: SenderReport) -> Result<Value, ApiE
             &crate::db::messages::SenderQuery {
                 since_ms: since,
                 limit: limit(args.limit),
-                tab,
+                category: tab.filter(|_| !primary),
+                not_in: primary.then_some(excludes.as_slice()),
                 by_unread,
             },
         )

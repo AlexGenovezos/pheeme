@@ -782,8 +782,9 @@ fn query_tool(name: &'static str, title: &'static str, description: &'static str
                 "thread_ids": thread_ids_prop(),
                 "query": {
                     "type": "string",
-                    "description": "Instead of thread_ids: a search (search_mail syntax); every conversation \
-                        it finds changes, on this computer now and on Gmail for mail not downloaded yet."
+                    "description": "Instead of thread_ids: a search (search_mail syntax, not Spam or Trash). \
+                        Conversations on this computer that match change whole, at once; on Gmail, matching \
+                        messages not downloaded yet change too."
                 },
                 "dry_run": {
                     "type": "boolean",

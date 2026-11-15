@@ -414,8 +414,10 @@ pub struct DbSenderStats {
 pub struct SenderQuery<'a> {
     pub since_ms: i64,
     pub limit: i64,
-    /// Only mail in one inbox tab: `primary` or a `CATEGORY_*` id.
-    pub tab: Option<&'a str>,
+    /// Only mail with this label (a `CATEGORY_*` id, for one inbox tab).
+    pub category: Option<&'a str>,
+    /// Only mail with none of these labels (for Primary: the tabs the account shows).
+    pub not_in: Option<&'a [String]>,
     /// Most unread first instead of most mail.
     pub by_unread: bool,
 }
@@ -425,7 +427,8 @@ impl SenderQuery<'_> {
         Self {
             since_ms,
             limit,
-            tab: None,
+            category: None,
+            not_in: None,
             by_unread: false,
         }
     }
@@ -439,6 +442,7 @@ pub async fn sender_stats(
     own_address: &str,
     q: &SenderQuery<'_>,
 ) -> Result<Vec<DbSenderStats>> {
+    let not_in = q.not_in.map(serde_json::to_string).transpose()?;
     let rows = sqlx::query_as!(
         DbSenderStats,
         r#"WITH sent AS (SELECT thread_id, MAX(date) AS last_sent FROM messages INDEXED BY idx_messages_date
@@ -468,12 +472,10 @@ pub async fn sender_stats(
              AND m.from_address IS NOT NULL AND m.from_address != ''
              AND lower(m.from_address) != lower(?3)
              AND NOT EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value IN ('DRAFT', 'SENT'))
-             AND (?5 IS NULL
-                  OR (?5 = 'primary' AND NOT EXISTS (
-                        SELECT 1 FROM json_each(m.label_ids)
-                        WHERE value IN ('CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL',
-                                        'CATEGORY_UPDATES', 'CATEGORY_FORUMS')))
-                  OR EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = ?5))
+             AND (?5 IS NULL OR EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = ?5))
+             AND (?7 IS NULL OR NOT EXISTS (
+                    SELECT 1 FROM json_each(m.label_ids)
+                    WHERE value IN (SELECT value FROM json_each(?7))))
            GROUP BY lower(m.from_address)
            ORDER BY CASE WHEN ?6 THEN SUM(m.is_read = 0) ELSE COUNT(*) END DESC,
                     COUNT(*) DESC, MAX(m.date) DESC
@@ -482,8 +484,9 @@ pub async fn sender_stats(
         q.since_ms,
         own_address,
         q.limit,
-        q.tab,
-        q.by_unread
+        q.category,
+        q.by_unread,
+        not_in
     )
     .fetch_all(pool)
     .await?;
