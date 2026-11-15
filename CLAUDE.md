@@ -32,6 +32,7 @@ npm run release:check -- X.Y     # gate before tagging (the release workflow run
 ```
 
 Releases follow the `release` skill (`.claude/skills/release/SKILL.md`).
+PRs follow the `file-pr` skill (`.claude/skills/file-pr/SKILL.md`): a PR that changes the UI carries screenshots.
 
 ### Rust / Database
 
