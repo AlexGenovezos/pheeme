@@ -14,8 +14,7 @@ export interface Img {
   complete: boolean;
   naturalWidth: number;
   loading: string;
-  addEventListener(type: "load" | "error", fn: () => void): void;
-  removeEventListener(type: "load" | "error", fn: () => void): void;
+  src: string;
 }
 
 export interface OpenTimerDeps {
@@ -34,6 +33,13 @@ export interface OpenTimerDeps {
 /** Past this the open is reported as `timed_out`, whatever is still loading. */
 export const SHOWN_TIMEOUT_MS = 30_000;
 
+/**
+ * How often the images are looked at until they've all settled. Polled rather than heard: WebKit (macOS, Linux)
+ * runs no listeners on nodes inside the script-less email frame, so `load`/`error` never arrived there and every
+ * email with an image still downloading at first paint was reported as `left` or a 30 s `timed_out`.
+ */
+export const IMAGE_POLL_MS = 100;
+
 export interface OpenTimer {
   /** The user picked a conversation (null: closed it). Ends the previous pick's timing. */
   picked(key: string | null): void;
@@ -47,6 +53,7 @@ interface Pending {
   fromMemory: boolean;
   dataMs: number | null;
   paintMs: number | null;
+  root: Element | null;
   images: Img[];
   cancel: Array<() => void>;
 }
@@ -61,6 +68,7 @@ export function createOpenTimer(deps: OpenTimerDeps): OpenTimer {
     pending = null;
     for (const cancel of p.cancel) cancel();
     const settled = p.images.filter((img) => img.complete);
+    const failed = settled.filter((img) => img.naturalWidth === 0);
     const done = outcome === "shown";
     deps.report({
       outcome,
@@ -69,26 +77,27 @@ export function createOpenTimer(deps: OpenTimerDeps): OpenTimer {
       paintMs: p.paintMs,
       imagesMs: done && p.images.length > 0 ? elapsed(p) : null,
       images: p.images.length,
-      imagesFailed: settled.filter((img) => img.naturalWidth === 0).length,
+      imagesFailed: failed.length,
+      imagesFailedHttp: failed.filter((img) => /^http:/i.test(img.src)).length,
       imagesPending: p.images.length - settled.length,
       totalMs: elapsed(p),
     });
   };
 
+  // Eager images only: a lazy one below the fold isn't something the user waits for.
+  const imagesOf = (root: Element) => deps.imagesIn(root).filter((img) => img.loading !== "lazy");
+
+  // Read afresh each time: a frame written again (theme change, frame moved) has new elements, and the old
+  // ones read as settled (failed) once their loads are cancelled.
   const waitForImages = (p: Pending) => {
-    const check = () => {
-      if (p.images.every((img) => img.complete)) finish(p, "shown");
-    };
-    for (const img of p.images) {
-      if (img.complete) continue;
-      img.addEventListener("load", check);
-      img.addEventListener("error", check);
-      p.cancel.push(() => {
-        img.removeEventListener("load", check);
-        img.removeEventListener("error", check);
-      });
-    }
-    check();
+    if (pending !== p || !p.root) return;
+    p.images = imagesOf(p.root);
+    if (p.images.every((img) => img.complete)) return finish(p, "shown");
+    const cancel = deps.after(IMAGE_POLL_MS, () => {
+      p.cancel = p.cancel.filter((c) => c !== cancel);
+      waitForImages(p);
+    });
+    p.cancel.push(cancel);
   };
 
   return {
@@ -102,6 +111,7 @@ export function createOpenTimer(deps: OpenTimerDeps): OpenTimer {
         fromMemory: deps.isCached(key),
         dataMs: null,
         paintMs: null,
+        root: null,
         images: [],
         cancel: [],
       };
@@ -117,7 +127,7 @@ export function createOpenTimer(deps: OpenTimerDeps): OpenTimer {
         deps.frame(() => {
           if (pending !== p) return;
           p.paintMs = elapsed(p);
-          p.images = deps.imagesIn(root).filter((img) => img.loading !== "lazy");
+          p.root = root;
           waitForImages(p);
         }),
       );

@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "vitest";
 import type { ShownTiming } from "../lib/tauri";
-import { createOpenTimer, type Img } from "./openTiming";
+import { createOpenTimer, IMAGE_POLL_MS, type Img } from "./openTiming";
 
 /** A clock, a frame queue and an image list the test drives by hand. */
 let clock = 0;
@@ -10,19 +10,15 @@ let reported: ShownTiming[] = [];
 let images: FakeImg[] = [];
 let cached = new Set<string>();
 
+/** No load/error events: WebKit runs no listeners inside the script-less email frame, so none are relied on. */
 class FakeImg implements Img {
   complete = false;
   naturalWidth = 0;
   loading = "eager";
-  private listeners: Array<() => void> = [];
-  addEventListener(_type: "load" | "error", fn: () => void) {
-    this.listeners.push(fn);
-  }
-  removeEventListener() {}
+  constructor(public src = "https://example.com/a.png") {}
   settle(ok: boolean) {
     this.complete = true;
     this.naturalWidth = ok ? 10 : 0;
-    for (const fn of this.listeners.splice(0)) fn();
   }
 }
 
@@ -96,17 +92,20 @@ test("waits for every image to load or fail, and counts the failures", () => {
   images[1]!.settle(false);
   advance(5000);
   images[2]!.settle(true);
+  expect(reported).toEqual([]);
+  advance(IMAGE_POLL_MS);
   expect(reported).toEqual([
     expect.objectContaining({
       outcome: "shown",
       fromMemory: true,
       dataMs: 0,
       paintMs: 0,
-      imagesMs: 9000,
+      imagesMs: 9000 + IMAGE_POLL_MS,
       images: 3,
       imagesFailed: 1,
+      imagesFailedHttp: 0,
       imagesPending: 0,
-      totalMs: 9000,
+      totalMs: 9000 + IMAGE_POLL_MS,
     }),
   ]);
 });
@@ -152,7 +151,47 @@ test("gives up after 30 seconds, reporting the images still loading", () => {
     expect.objectContaining({ outcome: "timed_out", images: 2, imagesPending: 1, imagesMs: null }),
   ]);
   images[1]!.settle(true);
+  advance(IMAGE_POLL_MS);
   expect(reported).toHaveLength(1);
+});
+
+test("a frame rewritten while its images load is followed to the new document", () => {
+  images = [new FakeImg()];
+  const t = timer();
+  t.picked("a:1");
+  t.shown("a:1", root);
+  paint();
+  // The theme changed or the frame moved: its document was written again with new elements.
+  const stale = images[0]!;
+  images = [new FakeImg(), new FakeImg()];
+  stale.settle(false); // a cancelled load in the old document
+  advance(IMAGE_POLL_MS);
+  expect(reported).toEqual([]);
+  for (const img of images) img.settle(true);
+  advance(IMAGE_POLL_MS);
+  expect(reported).toEqual([
+    expect.objectContaining({ outcome: "shown", images: 2, imagesFailed: 0 }),
+  ]);
+});
+
+test("counts failed images served over plain http apart", () => {
+  images = [
+    new FakeImg("http://shop.example/a.jpg"),
+    new FakeImg("HTTP://shop.example/b.jpg"),
+    new FakeImg("https://cdn.example/c.jpg"),
+    new FakeImg("http://shop.example/d.jpg"),
+  ];
+  images[0]!.settle(false);
+  images[1]!.settle(false);
+  images[2]!.settle(false);
+  images[3]!.settle(true);
+  const t = timer();
+  t.picked("a:1");
+  t.shown("a:1", root);
+  paint();
+  expect(reported).toEqual([
+    expect.objectContaining({ outcome: "shown", imagesFailed: 3, imagesFailedHttp: 2 }),
+  ]);
 });
 
 test("a second shown for the same open, or one for another thread, is ignored", () => {
