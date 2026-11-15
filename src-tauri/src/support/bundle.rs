@@ -16,6 +16,8 @@ pub struct BundleInput {
     pub summary: serde_json::Value,
     pub log_dir: Option<PathBuf>,
     pub own_addresses: Vec<String>,
+    /// Added as they are, unscrubbed (the email on screen, when the user chose to include it).
+    pub extra_files: Vec<(String, Vec<u8>)>,
     pub max_bytes: usize,
 }
 
@@ -23,7 +25,7 @@ const LOG_FILE: &str = "pheeme.log";
 
 /// The zip: `summary.json` (the summary plus the note and reply address) and
 /// `logs/pheeme.log`, the newest [`MAX_LOG_BYTES`] of log text, scrubbed. While the zip is
-/// over `max_bytes` the log is halved, dropping the oldest lines.
+/// over `max_bytes` the log is halved, dropping the oldest lines. `extra_files` follow, never trimmed.
 pub fn build(input: &BundleInput) -> Result<Vec<u8>, SupportError> {
     let mut summary = input.summary.clone();
     if let Some(fields) = summary.as_object_mut() {
@@ -39,7 +41,7 @@ pub fn build(input: &BundleInput) -> Result<Vec<u8>, SupportError> {
         .unwrap_or_default();
     let mut log = scrub(&log, &input.own_addresses, std::env::home_dir().as_deref());
     loop {
-        let zip = write_zip(&summary, &log)?;
+        let zip = write_zip(&summary, &log, &input.extra_files)?;
         if zip.len() <= input.max_bytes {
             return Ok(zip);
         }
@@ -106,7 +108,11 @@ fn tail(text: &str, max: usize) -> &str {
     }
 }
 
-fn write_zip(summary: &[u8], log: &str) -> Result<Vec<u8>, SupportError> {
+fn write_zip(
+    summary: &[u8],
+    log: &str,
+    extra_files: &[(String, Vec<u8>)],
+) -> Result<Vec<u8>, SupportError> {
     let failed = |e: &dyn std::fmt::Display| SupportError::Internal(e.to_string());
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
@@ -116,6 +122,11 @@ fn write_zip(summary: &[u8], log: &str) -> Result<Vec<u8>, SupportError> {
     zip.start_file("logs/pheeme.log", options)
         .map_err(|e| failed(&e))?;
     zip.write_all(log.as_bytes()).map_err(|e| failed(&e))?;
+    for (path, bytes) in extra_files {
+        zip.start_file(path.as_str(), options)
+            .map_err(|e| failed(&e))?;
+        zip.write_all(bytes).map_err(|e| failed(&e))?;
+    }
     Ok(zip.finish().map_err(|e| failed(&e))?.into_inner())
 }
 
@@ -131,6 +142,7 @@ mod tests {
             summary: serde_json::json!({"version": "0.12.0"}),
             log_dir: Some(log_dir.to_path_buf()),
             own_addresses: vec!["me@gmail.com".into()],
+            extra_files: vec![],
             max_bytes,
         }
     }
@@ -162,6 +174,15 @@ mod tests {
         assert_eq!(summary["replyTo"], "me@gmail.com");
         let log = read(&zip, "logs/pheeme.log");
         assert_eq!(log, "oldest <email>\nold\nnew\n");
+    }
+
+    #[test]
+    fn extra_files_go_in_as_they_are() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut input = input(dir.path(), 4_500_000);
+        input.extra_files = vec![("email/m1/body.txt".into(), b"from bob@x.com".to_vec())];
+        let zip = build(&input).unwrap();
+        assert_eq!(read(&zip, "email/m1/body.txt"), "from bob@x.com");
     }
 
     #[test]

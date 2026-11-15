@@ -828,8 +828,24 @@ export interface OutboxSendStatus extends SyncAccountEvent {
  * Upload a scrubbed diagnostics bundle with the user's note (sent as typed). Rejects with `rate_limited`,
  * `network`, `rejected` or `too_large`.
  */
-export const sendDiagnostics = (note: string, replyTo: string | null) =>
-  invoke<void>("send_diagnostics", { note, replyTo });
+export const sendDiagnostics = (note: string, replyTo: string | null, email?: DiagnosticsEmail) =>
+  invoke<void>("send_diagnostics", { note, replyTo, ...(email ? { email } : {}) });
+/** The email on screen, added to a diagnostics bundle when the user chooses (`support::email` in Rust). */
+export interface DiagnosticsEmail {
+  accountId: string;
+  threadId: string;
+  images: DiagnosticsImage[];
+}
+/** One `<img>` in the email's frames, as the window saw it. */
+export interface DiagnosticsImage {
+  messageId: string | null;
+  src: string;
+  currentSrc: string;
+  complete: boolean;
+  naturalWidth: number;
+  naturalHeight: number;
+  loading: string;
+}
 /** Updater steps the UI saw; `log_update` in Rust writes them to the diagnostics log. */
 export type UpdateEvent =
   | "available"
@@ -871,8 +887,12 @@ export const telemetryEnabled = () => invoke<boolean>("telemetry_enabled");
 /** Turn the anonymous usage ping on or off; off also forgets the install ID. Returns the stored choice. */
 export const setTelemetry = (enabled: boolean) => invoke<boolean>("set_telemetry", { enabled });
 /** Write the same bundle to `path` (chosen in a save dialog). */
-export const saveDiagnostics = (note: string, replyTo: string | null, path: string) =>
-  invoke<void>("save_diagnostics", { note, replyTo, path });
+export const saveDiagnostics = (
+  note: string,
+  replyTo: string | null,
+  path: string,
+  email?: DiagnosticsEmail,
+) => invoke<void>("save_diagnostics", { note, replyTo, path, ...(email ? { email } : {}) });
 
 // ── Calendar events: detail and writes ───────────────────────────────────────
 

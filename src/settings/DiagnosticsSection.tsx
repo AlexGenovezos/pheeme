@@ -2,9 +2,11 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
+import { Switch } from "../components/ui/Switch";
 import { TextInput } from "../components/ui/TextInput";
 import { saveDiagnostics, sendDiagnostics, toCommandError } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
+import { emailRequest, useEmailOnScreen } from "./emailOnScreen";
 import { SettingsRow, SettingsSection } from "./rows";
 import { TELEMETRY_DESCRIPTION, TELEMETRY_TITLE, TelemetrySwitch } from "./telemetry";
 
@@ -24,6 +26,10 @@ export function DiagnosticsSection() {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState<"send" | "save" | null>(null);
   const [status, setStatus] = useState<Status>(null);
+  const onScreen = useEmailOnScreen();
+  const [includeEmail, setIncludeEmail] = useState(false);
+  // Read when Send is pressed, so the images are reported as they are then.
+  const email = () => (includeEmail && onScreen ? emailRequest(onScreen.key) : undefined);
 
   // A picked account that was since removed falls back to the first.
   const account = accounts.find((a) => a.email === picked) ?? accounts[0];
@@ -33,7 +39,7 @@ export function DiagnosticsSection() {
     setBusy("send");
     setStatus(null);
     try {
-      await sendDiagnostics(note, replyTo);
+      await sendDiagnostics(note, replyTo, email());
       setStatus({ kind: "done", text: "Sent. Thanks, Alex will take a look." });
     } catch (raw) {
       setStatus({
@@ -49,12 +55,13 @@ export function DiagnosticsSection() {
     setBusy("save");
     setStatus(null);
     try {
+      const included = email();
       const path = await save({
         defaultPath: "pheeme-diagnostics.zip",
         filters: [{ name: "Zip archive", extensions: ["zip"] }],
       });
       if (!path) return;
-      await saveDiagnostics(note, replyTo, path);
+      await saveDiagnostics(note, replyTo, path, included);
       setStatus({ kind: "done", text: `Saved to ${path}.` });
     } catch (raw) {
       setStatus({ kind: "failed", text: toCommandError(raw).message });
@@ -108,7 +115,7 @@ export function DiagnosticsSection() {
       <SettingsSection title="Diagnostics">
         <SettingsRow
           title="Send diagnostics"
-          description="Sends recent logs to the developer so they can see why something was slow or broken. Logs never include your emails, subjects or contacts. Your note is sent as you type it."
+          description="Sends recent logs to the developer so they can see why something was slow or broken. Logs never include your emails, subjects or contacts. Your note is sent as you type it, and an email only if you include it."
         />
         <form
           className="settings-diagnostics"
@@ -128,6 +135,21 @@ export function DiagnosticsSection() {
               onChange={(e) => setNote(e.target.value)}
             />
           </label>
+          {onScreen && (
+            <div className="settings-diagnostics__email">
+              <Switch
+                checked={includeEmail}
+                onChange={setIncludeEmail}
+                label="Include the email on screen"
+              />
+              <div className="settings-diagnostics__email-text">
+                <span className="settings-diagnostics__label">Include the email on screen</span>
+                <span className="settings-diagnostics__sender">
+                  {`“${onScreen.subject || "(no subject)"}”: its text, sender and image addresses go to the developer too, so they can see why it looks wrong.`}
+                </span>
+              </div>
+            </div>
+          )}
           {sender}
           <div className="settings-diagnostics__actions">
             <Button type="submit" variant="primary" size="sm" disabled={busy !== null}>

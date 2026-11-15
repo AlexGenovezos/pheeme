@@ -720,6 +720,18 @@
   overflow-wrap: anywhere;
 }
 
+/* "Include the email on screen": the switch beside its label and what it sends. */
+.settings-diagnostics__email {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.settings-diagnostics__email-text {
+  display: grid;
+  gap: var(--space-0-5);
+  min-width: 0;
+}
+
 .settings-diagnostics__reply {
   display: flex;
   flex-wrap: wrap;

@@ -1,8 +1,11 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
-import type { AccountInfo } from "../lib/tauri";
+import { afterEach, beforeEach, expect, test } from "vitest";
+import { useCalendarStore } from "../calendar/calendarStore";
+import type { AccountInfo, ThreadDetail } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
+import { __resetThreadStoreForTests, useThreadStore } from "../store/threadStore";
+import { useUiStore } from "../store/uiStore";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 
 const account = (id: string, email: string): AccountInfo => ({
@@ -29,7 +32,38 @@ const setAccounts = (accounts: AccountInfo[]) => useAccountStore.setState({ acco
 const note = () => screen.getByRole("textbox", { name: "What happened?" });
 const send = () => fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-beforeEach(() => setAccounts([]));
+beforeEach(() => {
+  setAccounts([]);
+  __resetThreadStoreForTests();
+  useUiStore.setState({ openThread: null });
+  useCalendarStore.setState({ mode: "mail" });
+});
+afterEach(() => document.querySelectorAll(".thread-view__retained").forEach((el) => el.remove()));
+
+/** The reading pane behind Settings: `key` open, one message frame holding `srcs`, plus a hidden neighbour. */
+function openEmail(key: string, subject: string, srcs: string[]) {
+  const detail = { thread: { subject }, messages: [{ subject }] } as unknown as ThreadDetail;
+  useThreadStore.setState({ details: new Map([[key, detail]]) });
+  useUiStore.setState({ openThread: key });
+  for (const visible of [false, true]) {
+    const root = document.createElement("div");
+    root.className = "thread-view__retained";
+    root.dataset.visible = String(visible);
+    const body = document.createElement("div");
+    body.className = "email-body";
+    body.dataset.messageId = visible ? "m1" : "other";
+    const frame = document.createElement("iframe");
+    body.append(frame);
+    root.append(body);
+    document.body.append(root);
+    for (const src of visible ? srcs : ["https://neighbour.example/x.png"]) {
+      const img = frame.contentDocument!.createElement("img");
+      img.setAttribute("src", src);
+      frame.contentDocument!.body.append(img);
+    }
+  }
+}
+const includeSwitch = () => screen.queryByRole("switch", { name: "Include the email on screen" });
 
 test("Send uploads the note as the only account's address and says thanks", async () => {
   setAccounts([account("a1", "me@gmail.com")]);
@@ -106,5 +140,56 @@ test("Save a copy writes the bundle where the user chose, and does nothing if th
       "save_diagnostics",
       { note: "Slow", replyTo: "me@gmail.com", path: "/Users/me/pheeme-diagnostics.zip" },
     ],
+  ]);
+});
+
+test("with no email open there's nothing to include", () => {
+  setAccounts([account("a1", "me@gmail.com")]);
+  render(<DiagnosticsSection />);
+  expect(includeSwitch()).toBeNull();
+});
+
+test("in Calendar mode the email left open in Mail isn't offered", () => {
+  setAccounts([account("a1", "me@gmail.com")]);
+  openEmail("a1:t1", "Ammo in stock", []);
+  useCalendarStore.setState({ mode: "calendar" });
+  render(<DiagnosticsSection />);
+  expect(includeSwitch()).toBeNull();
+});
+
+test("the email on screen is sent only when included, with what its images did", async () => {
+  setAccounts([account("a1", "me@gmail.com")]);
+  openEmail("a1:t1", "Ammo in stock", ["http://shop.example/a.jpg"]);
+  const calls = backend();
+  render(<DiagnosticsSection />);
+  expect(
+    screen.getByText(/“Ammo in stock”: its text, sender and image addresses/),
+  ).toBeInTheDocument();
+  expect(includeSwitch()).toHaveAttribute("aria-checked", "false");
+
+  send();
+  await screen.findByText("Sent. Thanks, Alex will take a look.");
+  fireEvent.click(includeSwitch()!);
+  send();
+  await waitFor(() => expect(calls).toHaveLength(2));
+
+  expect(calls[0]).toEqual(["send_diagnostics", { note: "", replyTo: "me@gmail.com" }]);
+  expect(calls[1]).toEqual([
+    "send_diagnostics",
+    {
+      note: "",
+      replyTo: "me@gmail.com",
+      email: {
+        accountId: "a1",
+        threadId: "t1",
+        images: [
+          expect.objectContaining({
+            messageId: "m1",
+            src: "http://shop.example/a.jpg",
+            loading: "",
+          }),
+        ],
+      },
+    },
   ]);
 });
