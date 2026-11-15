@@ -1,5 +1,4 @@
 import {
-  Archive,
   ArrowLeft,
   CalendarPlus,
   Forward,
@@ -21,6 +20,7 @@ import { useWidth } from "../lib/useWidth";
 import { registry } from "../keyboard/registry";
 import { useKeybinding } from "../keyboard/useCommands";
 import { showContextMenu } from "../lib/contextMenu";
+import { ARCHIVE_SLOT_LABEL, archiveSlotIcon, useArchiveSlot } from "../mail/archiveSlot";
 import {
   archive,
   closeConversation,
@@ -95,6 +95,7 @@ export function ViewPane() {
     return [...new Set(targetsOf(checked, openKey))].flatMap((k) => byKey.get(k) ?? []);
   }, [checked, openKey, threads]);
   const stale = rows.length === 0;
+  const slot = useArchiveSlot();
   const anyUnread = rows.some((t) => t.unread);
   const starred = rows[0]?.starred ?? false;
   const keys = {
@@ -171,9 +172,9 @@ export function ViewPane() {
           </>
         )}
         <IconButton
-          label="Archive"
+          label={ARCHIVE_SLOT_LABEL[slot]}
           shortcut={keys.archive}
-          icon={<Archive />}
+          icon={archiveSlotIcon(slot)}
           disabled={stale}
           onClick={() => void archive()}
         />

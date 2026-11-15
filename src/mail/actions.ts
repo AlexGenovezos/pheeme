@@ -35,6 +35,7 @@ import {
 import { rowId } from "./ThreadRow";
 import { similarSender, type SimilarBy, similarQuery } from "./similar";
 import { setTravelDirection } from "./preload";
+import { currentArchiveSlot } from "./archiveSlot";
 
 /** The message a Reply, Reply all or Forward answers: the conversation's latest that isn't a draft. */
 export function replyTarget(detail: ThreadDetail | undefined): string | null {
@@ -352,8 +353,12 @@ async function revert(done: Map<string, string[]>, original: Change, inverse: Ch
 const inMailbox = (labelId: string) => !mail().query?.search && ui().mailbox.labelId === labelId;
 const inInbox = () => inMailbox("INBOX");
 
-/** `evenIfGone`: the conversation view's own controls act on the open thread even when its row has left the list. */
+/**
+ * `evenIfGone`: the conversation view's own controls act on the open thread even when its row has left the list.
+ * In Spam and Trash, where archiving does nothing, it moves the conversations to the inbox instead.
+ */
 export function archive(keys?: ThreadKey[], { evenIfGone = false } = {}): Promise<void> {
+  if (currentArchiveSlot() !== "archive") return moveToInbox(keys);
   return apply(
     keys,
     modify([], ["INBOX"], { leavesList: inInbox(), detail: withLabel("INBOX", false) }),
@@ -368,7 +373,32 @@ export function archive(keys?: ThreadKey[], { evenIfGone = false } = {}): Promis
   );
 }
 
-/** Moves to Trash. Gmail's outbox has no untrash yet, so there is no Undo. */
+/** The conversation as it will be back in the inbox: out of Spam and Trash. */
+const backInInbox = (detail: ThreadDetail): ThreadDetail => {
+  const out = withLabel("INBOX", true)(withLabel("SPAM", false)(detail));
+  return withLabel("TRASH", false)(out);
+};
+
+/**
+ * Gmail's Not spam (in Spam) and Move to Inbox (in Trash): the conversations go back to the inbox. Getting INBOX
+ * takes mail out of Trash; Spam is removed with it. No Undo: Pheeme can't put mail back in Spam or Trash's place.
+ */
+export function moveToInbox(keys?: ThreadKey[]): Promise<void> {
+  const fromSpam = inMailbox("SPAM");
+  return apply(
+    keys,
+    modify(["INBOX"], ["SPAM"], {
+      leavesList: fromSpam || inMailbox("TRASH"),
+      detail: backInInbox,
+    }),
+    {
+      announce: { title: fromSpam ? "Marked as not spam" : "Moved to Inbox" },
+      cancelsAutoRead: true,
+    },
+  );
+}
+
+/** Moves to Trash. There is no Undo: putting it back would also need where it was. */
 export function trash(keys?: ThreadKey[]): Promise<void> {
   if (inMailbox("TRASH")) {
     toast({ title: "Already in Trash" });
@@ -576,11 +606,16 @@ export function moveOrigin(accountId: string): string | null {
   return source.leaves ? source.labelId : null;
 }
 
-/** "Move to…": the picker over Inbox, the account's labels and Trash. Pheeme can't yet take mail out of Spam or Trash. */
+/** "Move to…": the picker over Inbox, the account's labels and Trash. In Spam and Trash, Not spam and Move to Inbox take mail out. */
 export function openMoveMenu(at: { x: number; y: number }): void {
   if (present(undefined).length === 0) return;
   if (inMailbox("SPAM") || inMailbox("TRASH")) {
-    toast({ title: "Move to isn't available in Spam or Trash yet" });
+    toast({
+      title: "Move to isn't available in Spam or Trash",
+      description: inMailbox("SPAM")
+        ? "Use Not spam to move it to the inbox."
+        : "Use Move to Inbox.",
+    });
     return;
   }
   const targets = oneAccountTargets();

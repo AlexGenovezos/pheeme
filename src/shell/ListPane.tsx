@@ -17,6 +17,7 @@ import {
   setStarred,
   trash,
 } from "../mail/actions";
+import { ARCHIVE_SLOT_LABEL, currentArchiveSlot } from "../mail/archiveSlot";
 import { mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
 import { ThreadList } from "../mail/ThreadList";
 import type { RowAction } from "../mail/ThreadRow";
@@ -51,7 +52,7 @@ export const rowMenu = (t: ThreadSummary) => {
   return [
     {
       id: "archive",
-      label: "Archive",
+      label: ARCHIVE_SLOT_LABEL[currentArchiveSlot()],
       shortcut: registry.shortcutFor("conversation.archive", "e"),
       onSelect: () => void archive(keys),
     },

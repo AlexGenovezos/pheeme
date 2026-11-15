@@ -133,3 +133,20 @@ test("the default reply comes first and is the primary button", () => {
   expect(button("Reply")).not.toHaveClass("ui-button--primary");
   act(() => useComposeSettings.getState().setDefaultReply("reply"));
 });
+
+test("in Spam the Archive button is Not spam, and in Trash it's Move to Inbox", () => {
+  act(() => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "SPAM" } });
+    useUiStore.getState().toggleChecked(key(1));
+  });
+  const { unmount } = render(<ViewPane />);
+  expect(screen.queryByRole("button", { name: "Archive" })).toBeNull();
+  fireEvent.click(button("Not spam"));
+  expect(modified).toEqual([
+    { accountId: "a1", threadIds: ["t1"], add: ["INBOX"], remove: ["SPAM"] },
+  ]);
+  unmount();
+  act(() => useUiStore.setState({ mailbox: { accountId: "a1", labelId: "TRASH" } }));
+  render(<ViewPane />);
+  expect(button("Move to Inbox").querySelector("svg")).toHaveClass("lucide-inbox");
+});
