@@ -6,7 +6,8 @@
 import * as chrono from "chrono-node";
 import { addDays, wallClock, weekday, zonedMs } from "./dates";
 import { type RepeatRule, WEEKDAYS } from "./eventForm";
-import { type FoundTime, offsetMinutes } from "./fromEmail";
+import type { FoundTime } from "./fromEmail";
+import { offsetMinutes } from "./zones";
 
 export type SpanKind = "task" | "time" | "repeat" | "place" | "guest" | "calendar";
 /** A part of the sentence that was read as something: `[start, end)` in the text. */

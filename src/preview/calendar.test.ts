@@ -76,6 +76,12 @@ describe("calendar preview", () => {
     expect(access.status).toBe("on");
   });
 
+  test("?calendarZone= sets the Google Calendar time zone", () => {
+    const handlers = createCalendarHandlers(ACCOUNTS, null, NOW, "Asia/Tokyo");
+    const accounts = handlers.calendar_accounts() as CalendarAccount[];
+    expect(accounts.map((a) => a.timeZone)).toEqual(["Asia/Tokyo", "Asia/Tokyo"]);
+  });
+
   test("create then edit then delete round-trips in the preview", async () => {
     const handlers = createCalendarHandlers(ACCOUNTS, null, NOW);
     const calendarId = "avery@example.com";

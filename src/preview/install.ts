@@ -125,7 +125,12 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   ];
   const labels = createPreviewLabels();
   const drive = createDriveHandlers(accounts, threads, params.get("drive"));
-  const calendar = createCalendarHandlers(accounts, params.get("calendar"));
+  const calendar = createCalendarHandlers(
+    accounts,
+    params.get("calendar"),
+    undefined,
+    params.get("calendarZone"),
+  );
   const meetingsWith: MeetingsWith = (accountId, address, fromMs, toMs) =>
     calendar
       .calendar_events({ fromMs, toMs })

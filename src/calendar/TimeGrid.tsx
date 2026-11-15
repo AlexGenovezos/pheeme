@@ -14,6 +14,8 @@ import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
 import { useNow } from "./useNow";
 import { DayWeather, weatherFit } from "../weather/DayWeather";
+import { columnLabel, type OtherZone, useZoneSettings } from "./zoneSettings";
+import { formatGutterTime, gutterTimes, zoneShortName } from "./zones";
 
 /** Height of one hour, in px. */
 export const HOUR_PX = 48;
@@ -32,13 +34,19 @@ const TEXT_CLEAR_MINUTES = 60;
 /** The narrowest a day can be for two events side by side to still read. */
 export const MIN_DAY_PX = NARROW_EVENT_PX;
 
-/** The hour labels' column (--calendar-gutter-width). */
-export function gutterWidth(): number {
+/** The hour labels' columns: one (--calendar-gutter-width) per zone shown. */
+export function gutterWidth(columns = 1): number {
   return (
-    parseFloat(
+    (parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue("--calendar-gutter-width"),
-    ) || 0
+    ) || 0) * columns
   );
+}
+
+/** The other time zones the gutter shows beside `tz`: the user's, less `tz` itself. */
+export function useGutterZones(tz: string): OtherZone[] {
+  const zones = useZoneSettings((s) => s.zones);
+  return useMemo(() => zones.filter((z) => z.zone !== tz), [zones, tz]);
 }
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
@@ -103,7 +111,15 @@ export function TimeGrid({
   // Each day's width, for events too narrow for more than a few letters of their title.
   const bodyRef = useRef<HTMLDivElement>(null);
   const bodyWidth = useWidth(bodyRef);
-  const dayWidth = bodyWidth > 0 ? (bodyWidth - gutterWidth()) / days.length : Infinity;
+  const others = useGutterZones(tz);
+  const dayWidth =
+    bodyWidth > 0 ? (bodyWidth - gutterWidth(1 + others.length)) / days.length : Infinity;
+  // The other zones' hour labels, for today when it's on screen (DST can differ across a week).
+  const gutterDay = days.includes(now.date) ? now.date : days[0];
+  const otherHours = useMemo(
+    () => others.map((z) => gutterTimes(gutterDay, tz, z.zone).map(formatGutterTime)),
+    [others, gutterDay, tz],
+  );
 
   // Open scrolled to the working day (an hour before now, when today is on screen), or to a pinned invitation.
   useLayoutEffect(() => {
@@ -139,9 +155,23 @@ export function TimeGrid({
       data-loading={events === null || tasks === null || undefined}
     >
       <div className="cal-grid__head" role="row">
-        <div className="cal-grid__gutter cal-grid__zone" title={tz}>
-          {zoneAbbreviation(tz)}
-        </div>
+        {others.length === 0 ? (
+          <div className="cal-grid__gutter cal-grid__zone" title={tz}>
+            {zoneShortName(tz)}
+          </div>
+        ) : (
+          // The other zones to the left of the calendar's own, which stays beside the days.
+          <div className="cal-grid__gutter cal-grid__zone cal-grid__zone--multi">
+            {others.map((z) => (
+              <span key={z.zone} className="cal-grid__zone-label" title={z.zone}>
+                {columnLabel(z)}
+              </span>
+            ))}
+            <span className="cal-grid__zone-label" title={tz}>
+              {zoneShortName(tz)}
+            </span>
+          </div>
+        )}
         {days.map((d) => (
           <DayHeader
             key={d}
@@ -193,6 +223,24 @@ export function TimeGrid({
                 {h === 0 ? "" : formatHour(h)}
               </span>
             ))}
+            {otherHours.map((labels, i) =>
+              labels.map((label, h) =>
+                h === 0 ? null : (
+                  <span
+                    key={`${others[i].zone}-${h}`}
+                    className="cal-grid__hour cal-grid__hour--other"
+                    style={
+                      {
+                        top: h * HOUR_PX,
+                        "--cal-zone-col": others.length - i,
+                      } as CSSProperties
+                    }
+                  >
+                    {label}
+                  </span>
+                ),
+              ),
+            )}
           </div>
           {days.map((d, i) => (
             <div
@@ -260,12 +308,4 @@ export function TimeGrid({
       </div>
     </div>
   );
-}
-
-/** "EST"-style name of the zone, or the offset ("GMT+1") where there's no short name. */
-function zoneAbbreviation(tz: string): string {
-  const part = new Intl.DateTimeFormat(undefined, { timeZone: tz, timeZoneName: "short" })
-    .formatToParts(new Date())
-    .find((p) => p.type === "timeZoneName");
-  return part?.value ?? "";
 }

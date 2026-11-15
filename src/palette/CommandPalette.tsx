@@ -7,6 +7,7 @@ import {
   type CommandRegistry,
 } from "../keyboard/registry";
 import { useCommandList } from "../keyboard/useCommands";
+import { conversionCommand } from "../calendar/convertCommand";
 import { filterCommands } from "./match";
 import { usePaletteStore } from "./paletteStore";
 import "./CommandPalette.css";
@@ -37,7 +38,12 @@ function PaletteDialog({ reg, onClose }: { reg: CommandRegistry; onClose(): void
   const restored = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const results = useMemo(() => filterCommands(commands, query), [commands, query]);
+  // A time to convert ("3pm PT in Athens") answers first, ahead of any command.
+  const results = useMemo(() => {
+    const found = filterCommands(commands, query);
+    const conversion = conversionCommand(query);
+    return conversion ? [{ command: conversion, indices: [] }, ...found] : found;
+  }, [commands, query]);
   const grouped = !query.trim();
 
   const restoreFocus = () => {

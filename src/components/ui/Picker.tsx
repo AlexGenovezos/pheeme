@@ -6,6 +6,7 @@
 import { Check } from "lucide-react";
 import {
   type CSSProperties,
+  type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
   type RefObject,
@@ -135,6 +136,36 @@ export interface ListOption {
   selected?: boolean;
   /** A heading shown above the first option of its group. */
   group?: string;
+}
+
+/**
+ * Keys for a search field with a list under it: arrows move through the `count` options while the
+ * list is `open`, Enter picks the active one, and Escape calls `escape` (when given) without
+ * closing the dialog the field is in.
+ */
+export function searchListKeys(
+  e: KeyboardEvent<HTMLElement>,
+  {
+    open,
+    count,
+    setActive,
+    pick,
+    escape,
+  }: {
+    open: boolean;
+    count: number;
+    setActive(update: (active: number) => number): void;
+    pick(): void;
+    escape?: () => void;
+  },
+) {
+  if (e.key === "ArrowDown" && open) setActive((a) => Math.min(a + 1, count - 1));
+  else if (e.key === "ArrowUp" && open) setActive((a) => Math.max(a - 1, 0));
+  else if (e.key === "Enter" && open) pick();
+  else if (e.key === "Escape" && escape) escape();
+  else return;
+  e.preventDefault();
+  e.stopPropagation();
 }
 
 /** Scroll `id` into view inside its popover. */

@@ -5,6 +5,7 @@ import * as chrono from "chrono-node";
 import type { MessageDetail, ThreadDetail } from "../lib/tauri";
 import { addDays, wallClock, zonedMs } from "./dates";
 import { type EventForm, type Guest, newForm, plainText } from "./eventForm";
+import { offsetMinutes } from "./zones";
 
 /** How much of the email is searched for a date, and quoted in the description. */
 const SCAN_CHARS = 2000;
@@ -55,13 +56,6 @@ export function emailDescription(link: string, text: string): string {
 export type FoundTime =
   | { allDay: false; start: number; end: number }
   | { allDay: true; date: string; lastDate: string };
-
-/** `tz`'s offset from UTC at `ms`, in minutes, as chrono-node takes it. */
-export function offsetMinutes(ms: number, tz: string): number {
-  const { date, minutes } = wallClock(ms, tz);
-  const [y, m, d] = date.split("-").map(Number);
-  return Math.round((Date.UTC(y, m - 1, d) + minutes * 60_000 - ms) / 60_000);
-}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 

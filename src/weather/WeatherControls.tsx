@@ -4,7 +4,7 @@ import { LocateFixed, Search } from "lucide-react";
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { displayZone, useCalendarStore } from "../calendar/calendarStore";
 import { IconButton } from "../components/ui/IconButton";
-import { Listbox, PickerPopover } from "../components/ui/Picker";
+import { Listbox, PickerPopover, searchListKeys } from "../components/ui/Picker";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Switch } from "../components/ui/Switch";
 import { TextInput } from "../components/ui/TextInput";
@@ -124,16 +124,15 @@ export function HomeLocationControl() {
   const open = editing && results !== null;
   const options = (results ?? []).map((p, i) => ({ id: `${listId}-${i}`, label: placeLabel(p) }));
 
-  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown" && open) setActive((a) => Math.min(a + 1, options.length - 1));
-    else if (e.key === "ArrowUp" && open) setActive((a) => Math.max(a - 1, 0));
-    else if (e.key === "Enter" && open) choose(results?.[active]);
-    // Escape puts the chosen place back, and doesn't close Settings.
-    else if (e.key === "Escape" && editing) stopEditing();
-    else return;
-    e.preventDefault();
-    e.stopPropagation();
-  };
+  // Escape puts the chosen place back, and doesn't close Settings.
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) =>
+    searchListKeys(e, {
+      open,
+      count: options.length,
+      setActive,
+      pick: () => choose(results?.[active]),
+      escape: editing ? stopEditing : undefined,
+    });
 
   return (
     <>

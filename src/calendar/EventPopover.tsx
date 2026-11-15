@@ -7,6 +7,7 @@ import {
   Clock,
   EllipsisVertical,
   ExternalLink,
+  Globe,
   MapPin,
   Pencil,
   Repeat,
@@ -36,12 +37,14 @@ import { cx } from "../lib/utils";
 import { copyEvent, deleteEvent, duplicateEvent, editEvent, writableCalendars } from "./actions";
 import { displayZone, type OpenEvent, useCalendarStore } from "./calendarStore";
 import { eventColors } from "./colors";
-import { addDays, dateOf, formatDay, formatTime } from "./dates";
+import { addDays, dateOf, formatDay, formatTime, isValidZone } from "./dates";
 import { plainText } from "./eventForm";
 import { noteDismiss } from "./drag";
 import { eventTitle, useCalendarLookup } from "./EventBlock";
 import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
 import { EventWeather } from "../weather/EventWeather";
+import { type OtherZone, placeName, useZoneSettings } from "./zoneSettings";
+import { dayShift, offsetMinutes, zoneCity } from "./zones";
 
 type Answer = "accepted" | "tentative" | "declined";
 
@@ -72,6 +75,69 @@ export function describeWhen(e: CalendarEvent, tz: string): string {
   const end = formatTime(e.end.ms, tz);
   if (endDay === startDay) return `${formatDay(startDay, long)} · ${start} – ${end}`;
   return `${formatDay(startDay, { month: "short", day: "numeric" })}, ${start} – ${formatDay(endDay, { month: "short", day: "numeric" })}, ${end}`;
+}
+
+export interface ZoneLine {
+  zone: string;
+  /** "Athens", or the user's label for the zone. */
+  name: string;
+  /** "9:00 PM – 10:00 PM" in the zone. */
+  when: string;
+  /** "+1 day" when the event starts on another day there, else "". */
+  shift: string;
+  /** The zone the event was made in (Google keeps one with every timed event). */
+  eventZone: boolean;
+}
+
+/**
+ * A timed event's time in the user's other zones, and in its own zone when that keeps another
+ * clock than the calendar's. Nothing for an all-day event.
+ */
+export function zoneLines(e: CalendarEvent, tz: string, others: OtherZone[]): ZoneLine[] {
+  const start = e.start.ms;
+  if (e.allDay || start == null) return [];
+  const startDay = dateOf(start, tz);
+  const zones: { zone: string; name: string; eventZone: boolean }[] = [];
+  const own = e.start.timeZone;
+  if (isValidZone(own) && offsetMinutes(start, own) !== offsetMinutes(start, tz))
+    zones.push({ zone: own, name: zoneCity(own), eventZone: true });
+  for (const z of others) {
+    if (z.zone === tz) continue;
+    const same = zones.find((x) => x.zone === z.zone);
+    if (same) same.name = placeName(z);
+    else zones.push({ zone: z.zone, name: placeName(z), eventZone: false });
+  }
+  return zones.map(({ zone, name, eventZone }) => ({
+    zone,
+    name,
+    eventZone,
+    when:
+      e.end.ms == null
+        ? formatTime(start, zone)
+        : `${formatTime(start, zone)} – ${formatTime(e.end.ms, zone)}`,
+    shift: dayShift(startDay, dateOf(start, zone)),
+  }));
+}
+
+/** The event's time in other zones, one line each, under its time. */
+function OtherZoneTimes({ event, tz }: { event: CalendarEvent; tz: string }) {
+  const others = useZoneSettings((s) => s.zones);
+  const lines = zoneLines(event, tz, others);
+  if (lines.length === 0) return null;
+  return (
+    <div className="cal-pop__row cal-pop__row--top">
+      <Globe aria-hidden="true" />
+      <ul className="cal-pop__zones" aria-label="In other time zones">
+        {lines.map((l) => (
+          <li key={l.zone} title={l.zone}>
+            {l.when} {l.name}
+            {l.shift && <span className="cal-pop__muted"> {l.shift}</span>}
+            {l.eventZone && <span className="cal-pop__muted"> · event's time zone</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 const answerWord: Record<string, string> = {
@@ -431,6 +497,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
           )}
         </span>
       </div>
+      <OtherZoneTimes event={event} tz={tz} />
       {load.kind === "failed" && (
         <p className="cal-pop__error" role="alert">
           {load.message}
