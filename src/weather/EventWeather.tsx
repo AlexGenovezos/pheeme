@@ -1,10 +1,10 @@
 // The forecast for an event's location, a row in its popover. Whether the row shows is decided
 // before anything loads (weather on, a place-like location, a day in the forecast), so the
 // popover keeps its size: the row starts as a placeholder and fills in.
-import { Cloud } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Skeleton } from "../components/ui/Skeleton";
-import { daysBetween, dateOf } from "../calendar/dates";
+import { daysBetween, dateOf, formatDay } from "../calendar/dates";
+import { cx } from "../lib/utils";
 import {
   type CalendarEvent,
   getLocationForecast,
@@ -13,6 +13,7 @@ import {
 } from "../lib/tauri";
 import { condition, degrees } from "./codes";
 import { FORECAST_DAYS } from "./forecast";
+import { WeatherArt } from "./WeatherArt";
 import { useNow } from "../calendar/useNow";
 import { useWeatherSettings } from "./weatherSettings";
 import "./weather.css";
@@ -64,43 +65,71 @@ export function EventWeather({ event, tz }: { event: CalendarEvent; tz: string }
 
   const load = result?.key === key ? result.value : { kind: "loading" as const };
   if (!shown) return null;
-  if (load.kind !== "ready") {
+  if (load.kind === "loading") {
     return (
-      <div className="cal-pop__row">
-        <Cloud aria-hidden="true" />
-        {load.kind === "loading" ? (
-          <Skeleton className="weather-event__pending" />
-        ) : (
-          <span className="cal-pop__muted">{load.message}</span>
-        )}
-      </div>
+      <Card
+        art={<Skeleton shape="block" className="weather-event__art" />}
+        head={<Skeleton className="weather-event__line" width="40%" />}
+        place={<Skeleton className="weather-event__line" width="65%" />}
+      />
     );
   }
-  const { forecast } = load;
+  const forecast = load.kind === "ready" ? load.forecast : null;
   // The day in the place's own time zone, which the forecast's dates are in.
   const placeDate = forecast?.place.timeZone ? eventDate(event, forecast.place.timeZone) : date;
   const day = forecast?.days.find((d) => d.date === placeDate);
-  if (!forecast || !day) {
+  if (!day) {
+    const why =
+      load.kind === "failed"
+        ? load.message
+        : forecast
+          ? `None yet for ${forecast.place.name} that day`
+          : "Pheeme can't tell which town this is";
     return (
-      <div className="cal-pop__row">
-        <Cloud aria-hidden="true" />
-        <span className="cal-pop__muted">
-          {forecast
-            ? `No forecast for ${forecast.place.name} that day`
-            : "No forecast for this place"}
-        </span>
-      </div>
+      <Card
+        art={<WeatherArt kind="cloudy" className="weather-event__art" />}
+        head="No forecast"
+        place={why}
+        muted
+      />
     );
   }
-  const { label, Icon } = condition(day.code);
+  const { label, kind } = condition(day.code);
   return (
-    <div className="cal-pop__row" title={`Forecast for ${forecast.place.name}`}>
-      <Icon aria-hidden="true" />
-      <span>
-        {label}, {degrees(day.high)}{" "}
-        <span className="weather-event__low">/ {degrees(day.low)}</span>
-        <span className="cal-pop__muted"> in {forecast.place.name}</span>
-      </span>
+    <Card
+      art={<WeatherArt kind={kind} live className="weather-event__art" />}
+      head={
+        <>
+          {label}{" "}
+          <span className="weather-event__temps">
+            {degrees(day.high)} <span className="weather-event__low">/ {degrees(day.low)}</span>
+          </span>
+        </>
+      }
+      place={`${forecast!.place.name} · ${formatDay(placeDate!, { weekday: "long" })}`}
+    />
+  );
+}
+
+/** The same box in every state, so the popover doesn't move when the forecast arrives. */
+function Card({
+  art,
+  head,
+  place,
+  muted = false,
+}: {
+  art: ReactNode;
+  head: ReactNode;
+  place: ReactNode;
+  muted?: boolean;
+}) {
+  return (
+    <div className={cx("weather-event", muted && "weather-event--muted")} aria-label="Weather">
+      {art}
+      <div className="weather-event__text">
+        <div className="weather-event__head">{head}</div>
+        <div className="weather-event__place">{place}</div>
+      </div>
     </div>
   );
 }

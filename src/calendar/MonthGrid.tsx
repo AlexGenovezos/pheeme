@@ -21,12 +21,15 @@ import { useNow } from "./useNow";
 import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
 import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
-import { DayWeather } from "../weather/DayWeather";
+import { DayWeather, type DayWeatherFit, weatherFit } from "../weather/DayWeather";
 
 /** One event line in a cell, in px. */
 export const MONTH_ROW_PX = 26;
 /** Days narrower than this show events by title only. */
 const NARROW_DAY_PX = 120;
+/** A cell's forecast beside its centred date: high and low from this width, the high alone from the next, else the drawing. */
+const WEATHER_FULL_PX = 180;
+const WEATHER_HIGH_PX = 120;
 /** The day number at the top of a cell, in px. */
 export const MONTH_DATE_PX = 28;
 
@@ -40,6 +43,7 @@ function Week({
   events,
   tasks,
   capacity,
+  weather,
 }: {
   days: string[];
   month: string;
@@ -50,6 +54,7 @@ function Week({
   events: CalendarEvent[];
   tasks: Task[];
   capacity: number;
+  weather: DayWeatherFit;
 }) {
   const lookup = useCalendarLookup();
   const { visible, more } = useMemo(() => {
@@ -89,7 +94,13 @@ function Week({
         </div>
       ))}
       {days.map((d, i) => (
-        <DayWeather key={d} date={d} variant="month" style={{ gridColumn: i + 1, gridRow: 1 }} />
+        <DayWeather
+          key={d}
+          date={d}
+          fit={weather}
+          inMonth
+          style={{ gridColumn: i + 1, gridRow: 1 }}
+        />
       ))}
       {visible.map((s) => {
         const style: CSSProperties = {
@@ -275,6 +286,7 @@ export function MonthGrid({
             events={list}
             tasks={tasks}
             capacity={capacity}
+            weather={weatherFit(width > 0 ? width / 7 : Infinity, WEATHER_FULL_PX, WEATHER_HIGH_PX)}
           />
         ))}
       </div>

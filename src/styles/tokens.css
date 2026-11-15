@@ -163,6 +163,22 @@
   /* The forecast slot in a day's header: icon, high and low; in a month cell, icon and high. */
   --weather-day-width: 64px;
   --weather-day-width-compact: 36px;
+  /* The drawn weather (src/weather/WeatherArt.tsx): sizes, colours, and how it moves (in its 32-unit drawing). */
+  --weather-art-sm: 18px;
+  --weather-art-lg: 44px;
+  --weather-sun: #f5b400;
+  --weather-cloud: #b6c1cf;
+  --weather-cloud-back: #97a3b4;
+  --weather-rain: #3d8bfd;
+  --weather-snow: #7fb2ea;
+  --weather-bolt: #ffbf1f;
+  --weather-spin-duration: 14s;
+  --weather-drift-duration: 3.5s;
+  --weather-fall-duration: 1.1s;
+  --weather-snow-duration: 2.8s;
+  --weather-flash-duration: 3.2s;
+  --weather-drift: 1.5px;
+  --weather-fall: 5px;
   /* Settings › Calendar: the home location field, wide enough for "Town, Region, Country". */
   --weather-home-width: 280px;
   /* Mail's invite card: its mini day view, and the email pinned beside the calendar. */
@@ -345,6 +361,9 @@
   --quota-you-asked: #c98500;
   --quota-assistants: #d55181;
   --stats-engaged: #3987e5;
+  --weather-cloud: #a2adbc;
+  --weather-cloud-back: #6b7686;
+  --weather-snow: #dde9f7;
 }
 
 :root[data-reading-size="large"] {

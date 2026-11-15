@@ -11,11 +11,10 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.weather-day__icon {
+.weather-day__art {
   flex: none;
-  width: var(--icon-size-sm);
-  height: var(--icon-size-sm);
-  margin-right: var(--space-0-5);
+  width: var(--weather-art-sm);
+  height: var(--weather-art-sm);
 }
 .weather-day__high {
   color: var(--color-foreground);
@@ -29,42 +28,232 @@
   height: var(--icon-size-sm);
 }
 
-/* A day too narrow for both temperatures (a busy week, a month cell) shows the high. */
-.weather-day--compact {
+/* A narrow day shows the high alone, a narrower one the drawing alone (the words are in its tooltip). */
+.weather-day--high {
   width: var(--weather-day-width-compact);
 }
-.weather-day--compact .weather-day__low {
-  display: none;
-}
-
-/* Narrower still: the icon alone (the words are in its tooltip). */
 .weather-day--icon {
-  width: var(--icon-size-sm);
+  width: var(--weather-art-sm);
 }
-.weather-day--icon .weather-day__icon {
-  margin-right: var(--space-0);
-}
+.weather-day--high .weather-day__low,
 .weather-day--icon .weather-day__high,
 .weather-day--icon .weather-day__low {
   display: none;
 }
 
-/* Month: a grid item in the date row, at the cell's right; clicks reach the day beneath. */
+/* Month: a grid item in the date row, at the cell's right. */
 .weather-day--month {
   align-self: center;
   justify-self: end;
   justify-content: flex-end;
   margin-right: var(--space-1-5);
-  pointer-events: none;
 }
 
-/* The event popover's forecast row. */
-.weather-event__low {
+/* The event popover's forecast: the same box loading, loaded or not found. */
+.weather-event {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-list-hover-bg);
+}
+/* Over the popover's icon size for every svg. */
+.weather-event .weather-event__art {
+  flex: none;
+  width: var(--weather-art-lg);
+  height: var(--weather-art-lg);
+}
+.weather-event__art.ui-skeleton--block {
+  border-radius: var(--radius-full);
+}
+.weather-event__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  min-width: var(--space-0);
+}
+.weather-event__head,
+.weather-event__place {
+  overflow: hidden;
+  line-height: var(--line-height-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.weather-event__head {
+  color: var(--color-foreground);
+  font-weight: var(--font-weight-medium);
+}
+.weather-event__temps {
+  margin-left: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+.weather-event__low,
+.weather-event__place {
   color: var(--color-foreground-muted);
 }
-.weather-event__pending.ui-skeleton--text {
-  width: var(--weather-day-width);
+.weather-event__place {
+  font-size: var(--font-size-sm);
+}
+.weather-event__line.ui-skeleton--text {
   height: var(--font-size-sm);
+}
+.weather-event--muted .weather-event__art {
+  opacity: 0.5;
+}
+
+/*
+ * The drawn weather (WeatherArt.tsx). Every part rests visible on its first keyframe and is paused
+ * there: it moves in the event popover (--live) and while a day's forecast is hovered.
+ */
+.weather-art {
+  overflow: visible;
+}
+.wx-sun__core {
+  fill: var(--weather-sun);
+}
+.wx-rays line {
+  stroke: var(--weather-sun);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.wx-rays {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wx-spin var(--weather-spin-duration) linear infinite;
+}
+.wx-cloud {
+  fill: var(--weather-cloud);
+}
+.wx-cloud--back {
+  fill: var(--weather-cloud-back);
+}
+.wx-drift {
+  animation: wx-drift var(--weather-drift-duration) ease-in-out infinite alternate;
+}
+.wx-drift--back {
+  animation-direction: alternate-reverse;
+}
+.wx-drop {
+  stroke: var(--weather-rain);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  animation: wx-fall var(--weather-fall-duration) linear infinite;
+}
+.wx-flake {
+  fill: var(--weather-snow);
+  animation: wx-snow var(--weather-snow-duration) linear infinite;
+}
+.wx-delay-1 {
+  animation-delay: calc(var(--weather-fall-duration) / 3);
+}
+.wx-delay-2 {
+  animation-delay: calc(var(--weather-fall-duration) * 2 / 3);
+}
+.wx-flake.wx-delay-1 {
+  animation-delay: calc(var(--weather-snow-duration) / 3);
+}
+.wx-flake.wx-delay-2 {
+  animation-delay: calc(var(--weather-snow-duration) * 2 / 3);
+}
+.wx-bolt {
+  fill: var(--weather-bolt);
+  animation: wx-flash var(--weather-flash-duration) steps(1, end) infinite;
+}
+.wx-fog line {
+  stroke: var(--weather-cloud-back);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* After the parts: their `animation` shorthand would set it back to running. */
+.weather-art * {
+  animation-play-state: paused;
+}
+.weather-art--live *,
+.weather-day:hover .weather-art * {
+  animation-play-state: running;
+}
+
+@keyframes wx-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+@keyframes wx-drift {
+  from {
+    transform: translateX(calc(var(--weather-drift) * -1));
+  }
+  to {
+    transform: translateX(var(--weather-drift));
+  }
+}
+/* Rain: falls and fades, then starts again from the cloud. */
+@keyframes wx-fall {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  70% {
+    opacity: 0;
+    transform: translateY(var(--weather-fall));
+  }
+  71% {
+    opacity: 0;
+    transform: translateY(calc(var(--weather-fall) * -0.3));
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* Snow: drifts down, swaying. */
+@keyframes wx-snow {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  35% {
+    transform: translate(var(--weather-drift), calc(var(--weather-fall) * 0.4));
+  }
+  70% {
+    opacity: 0;
+    transform: translate(calc(var(--weather-drift) * -1), var(--weather-fall));
+  }
+  71% {
+    opacity: 0;
+    transform: translate(0, calc(var(--weather-fall) * -0.3));
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+}
+/* Lightning: steady, then a double flicker. */
+@keyframes wx-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 0.15;
+  }
+  84% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 0.15;
+  }
+  92% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weather-art * {
+    animation: none;
+  }
 }
 
 /* Settings › Calendar › Home location. */

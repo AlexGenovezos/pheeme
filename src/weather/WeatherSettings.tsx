@@ -10,6 +10,7 @@ import { Switch } from "../components/ui/Switch";
 import { TextInput } from "../components/ui/TextInput";
 import { toast } from "../components/ui/Toast";
 import {
+  getCalendarAccounts,
   searchWeatherPlaces,
   type TemperatureUnit,
   toCommandError,
@@ -35,8 +36,10 @@ export async function placeFromZone(tz: string): Promise<WeatherPlace | null> {
 
 /** Sets home from the calendar's time zone; says so when it can't. */
 async function detectHome(): Promise<boolean> {
-  const tz = displayZone(useCalendarStore.getState().accounts);
   try {
+    // Before Calendar mode has opened, its accounts (and their time zone) aren't read yet.
+    const accounts = useCalendarStore.getState().accounts ?? (await getCalendarAccounts());
+    const tz = displayZone(accounts);
     const place = await placeFromZone(tz);
     if (place) {
       useWeatherSettings.getState().setHome(place);

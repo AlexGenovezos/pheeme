@@ -104,6 +104,22 @@ describe("settings", () => {
     expect(await placeFromZone("UTC")).toBeNull();
   });
 
+  test("before Calendar mode has opened, home comes from the calendar's zone, not the computer's", async () => {
+    useWeatherSettings.setState({ enabled: false, home: null });
+    useCalendarStore.setState({ accounts: null });
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "calendar_accounts")
+        return [{ access: { status: "on" }, timeZone: "Europe/London", weekStart: 1 }];
+      return createWeatherHandlers(NOW).weather_search_places(args as Record<string, unknown>);
+    });
+    render(<ShowWeatherControl />);
+    fireEvent.click(screen.getByRole("switch", { name: "Show weather" }));
+    await flush();
+    expect(calls.find((c) => c.cmd === "weather_search_places")?.args.query).toBe("London");
+    expect(useWeatherSettings.getState().home?.name).toBe("London");
+  });
+
   test("turning weather on the first time finds home from the calendar's time zone", async () => {
     useWeatherSettings.setState({ enabled: false, home: null });
     useCalendarStore.setState({
@@ -177,13 +193,17 @@ describe("event popover", () => {
     });
     // Two days ahead in the preview's forecast: cloudy.
     expect(screen.getByText(/Cloudy/)).toBeInTheDocument();
-    expect(screen.getByText(/in San Francisco/)).toBeInTheDocument();
+    // 2026-11-13 in San Francisco's time zone.
+    expect(screen.getByText("San Francisco · Friday")).toBeInTheDocument();
+    // The drawing moves in the popover.
+    expect(document.querySelector(".weather-art--live")).not.toBeNull();
   });
 
   test("says so when the place isn't a town it knows", async () => {
     render(<EventWeather event={event("Joe's Pizza")} tz="UTC" />);
     await flush();
-    expect(screen.getByText("No forecast for this place")).toBeInTheDocument();
+    expect(screen.getByText("No forecast")).toBeInTheDocument();
+    expect(screen.getByText("Pheeme can't tell which town this is")).toBeInTheDocument();
   });
 
   test("nothing for past events, events past the forecast, rooms, or with weather off", () => {

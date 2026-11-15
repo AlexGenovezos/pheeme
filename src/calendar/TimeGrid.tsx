@@ -13,7 +13,7 @@ import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
 import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
 import { useNow } from "./useNow";
-import { DayWeather } from "../weather/DayWeather";
+import { DayWeather, weatherFit } from "../weather/DayWeather";
 
 /** Height of one hour, in px. */
 export const HOUR_PX = 48;
@@ -75,10 +75,7 @@ function DayHeader({
       >
         {Number(date.slice(8))}
       </button>
-      <DayWeather
-        date={date}
-        variant={width >= WEATHER_FULL_PX ? "full" : width >= WEATHER_HIGH_PX ? "compact" : "icon"}
-      />
+      <DayWeather date={date} fit={weatherFit(width, WEATHER_FULL_PX, WEATHER_HIGH_PX)} />
     </div>
   );
 }

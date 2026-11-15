@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test.use({ timezoneId: "UTC", viewport: { width: 1280, height: 850 } });
+test.use({ timezoneId: "UTC", viewport: { width: 1280, height: 850 }, deviceScaleFactor: 2 });
 
 // Monday: the preview's "Lunch with Dana" (Tartine, San Francisco) is on Thursday.
 const NOW = new Date("2026-11-09T10:00:00Z");
@@ -43,15 +43,34 @@ test("the days and an event's place show the forecast", async ({ page }, testInf
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: testInfo.outputPath("week.png") });
 
+  // The drawings hold still until hovered.
+  const rays = monday.locator(".wx-rays");
+  await expect(rays).toHaveCSS("animation-play-state", "paused");
+  await monday.getByRole("img").hover();
+  await expect(rays).toHaveCSS("animation-play-state", "running");
+
   await page.getByRole("button", { name: /^Lunch with Dana,/ }).click();
   const popover = page.getByRole("dialog", { name: "Lunch with Dana" });
-  await expect(popover.getByText(/in San Francisco/)).toBeVisible();
+  const forecast = popover.locator(".weather-event");
+  await expect(forecast).toContainText("San Francisco · Thursday");
+  // The scene moves: rain falls between two frames.
+  const art = forecast.locator(".weather-art--live");
+  const before = await art.screenshot();
+  await page.waitForTimeout(400);
+  expect((await art.screenshot()).equals(before)).toBe(false);
   await popover.screenshot({ path: testInfo.outputPath("popover.png") });
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("m");
   await expect(page.locator(".cal-month__week .weather-day[role=img]").first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("month.png") });
+  await page
+    .locator(".cal-month__week")
+    .nth(2)
+    .screenshot({
+      path: testInfo.outputPath("month-week.png"),
+      scale: "device",
+    });
 });
 
 test("Settings › Calendar turns weather off and picks a home town", async ({ page }, testInfo) => {
