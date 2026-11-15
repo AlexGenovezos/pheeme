@@ -165,6 +165,9 @@ fn shown_line(t: &ShownTiming) -> String {
         if t.images_failed > 0 {
             why.push(format!("{} failed", t.images_failed));
         }
+        if t.images_failed_http > 0 {
+            why.push(format!("{} of them over plain http", t.images_failed_http));
+        }
         if t.images_pending > 0 {
             why.push(format!("{} still loading", t.images_pending));
         }
@@ -371,6 +374,7 @@ mod tests {
         images.images_ms = Some(12_300);
         images.images = 14;
         images.images_failed = 2;
+        images.images_failed_http = 1;
         let mut left = shown(4_100);
         left.outcome = ShownOutcome::Left;
         left.data_ms = None;
@@ -383,7 +387,7 @@ mod tests {
             lines,
             [
                 "0.0 s from Gmail",
-                "12.3 s to show, from memory: data 0.0 s, painted 0.4 s, 14 images 12.3 s (2 failed)",
+                "12.3 s to show, from memory: data 0.0 s, painted 0.4 s, 14 images 12.3 s (2 failed, 1 of them over plain http)",
                 "4.1 s and left before it showed, from get_thread: data -, painted -",
             ]
         );

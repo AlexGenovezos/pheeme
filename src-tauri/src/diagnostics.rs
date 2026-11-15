@@ -210,6 +210,9 @@ pub struct ShownTiming {
     pub images_ms: Option<u64>,
     pub images: u32,
     pub images_failed: u32,
+    /// Of the failed images, those served over plain `http:`. Absent from older frontends.
+    #[serde(default)]
+    pub images_failed_http: u32,
     pub images_pending: u32,
     pub total_ms: u64,
 }
@@ -228,6 +231,7 @@ impl ShownTiming {
                     images_ms = ?self.images_ms,
                     images = self.images,
                     images_failed = self.images_failed,
+                    images_failed_http = self.images_failed_http,
                     images_pending = self.images_pending,
                     total_ms = self.total_ms,
                     "thread shown"
@@ -414,6 +418,7 @@ mod tests {
             "imagesMs": null,
             "images": 14,
             "imagesFailed": 2,
+            "imagesFailedHttp": 1,
             "imagesPending": 3,
             "totalMs": 30000,
         }))
@@ -428,9 +433,20 @@ mod tests {
             (timing.images, timing.images_failed, timing.images_pending),
             (14, 2, 3)
         );
+        assert_eq!(timing.images_failed_http, 1);
         assert_eq!(
             timing.at_ms, 0,
             "stamped on arrival, not taken from the window"
+        );
+
+        let older: ShownTiming = serde_json::from_value(serde_json::json!({
+            "outcome": "shown", "fromMemory": false, "dataMs": 1, "paintMs": 2,
+            "imagesMs": null, "images": 0, "imagesFailed": 0, "imagesPending": 0, "totalMs": 2,
+        }))
+        .unwrap();
+        assert_eq!(
+            older.images_failed_http, 0,
+            "a window without the field still reports"
         );
 
         let unknown = serde_json::json!({

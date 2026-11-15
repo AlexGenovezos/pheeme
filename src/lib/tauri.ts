@@ -859,6 +859,8 @@ export interface ShownTiming {
   imagesMs: number | null;
   images: number;
   imagesFailed: number;
+  /** Of the failed images, those served over plain `http:`. */
+  imagesFailedHttp: number;
   imagesPending: number;
   totalMs: number;
 }
