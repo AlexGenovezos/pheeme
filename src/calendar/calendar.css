@@ -11,6 +11,8 @@
 }
 
 .cal-main {
+  /* The hour labels: one column per time zone shown (CalendarScreen sets --cal-zone-columns). */
+  --cal-gutter: calc(var(--calendar-gutter-width) * var(--cal-zone-columns, 1));
   display: flex;
   flex-direction: column;
   min-height: var(--space-0);
@@ -89,13 +91,13 @@
   border-bottom: none;
 }
 .cal-toolbar:is([data-view="day"], [data-view="week"]) {
-  --cal-toolbar-offset: var(--calendar-gutter-width);
+  --cal-toolbar-offset: var(--cal-gutter);
 }
 .cal-toolbar[data-pinned] {
   --cal-toolbar-offset: var(--pinned-email-width);
 }
 .cal-toolbar[data-pinned]:is([data-view="day"], [data-view="week"]) {
-  --cal-toolbar-offset: calc(var(--pinned-email-width) + var(--calendar-gutter-width));
+  --cal-toolbar-offset: calc(var(--pinned-email-width) + var(--cal-gutter));
 }
 .cal-toolbar__start,
 .cal-toolbar__end {
@@ -470,10 +472,7 @@
 .cal-grid__band,
 .cal-grid__body {
   display: grid;
-  grid-template-columns: var(--calendar-gutter-width) repeat(
-      var(--cal-days),
-      minmax(var(--space-0), 1fr)
-    );
+  grid-template-columns: var(--cal-gutter) repeat(var(--cal-days), minmax(var(--space-0), 1fr));
 }
 .cal-grid__head,
 .cal-grid__band {
@@ -488,6 +487,20 @@
   color: var(--color-foreground-subtle);
   font-size: var(--font-size-xs);
   text-align: right;
+}
+/* Other time zones: a label over each column of hours, the calendar's own beside the days. */
+.cal-grid__zone--multi {
+  display: flex;
+  justify-content: flex-end;
+  padding-right: var(--space-0);
+}
+.cal-grid__zone-label {
+  flex: none;
+  width: var(--calendar-gutter-width);
+  padding-right: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* "MON 9" on one line, aligned with the events below it; today's date is a small pill. */
@@ -562,7 +575,8 @@
 }
 .cal-grid__hour {
   position: absolute;
-  right: var(--space-1-5);
+  /* Other zones' columns sit to the left, --cal-zone-col columns over. */
+  right: calc(var(--space-1-5) + var(--calendar-gutter-width) * var(--cal-zone-col, 0));
   color: var(--color-foreground-subtle);
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
@@ -1042,6 +1056,14 @@
   color: var(--color-foreground-muted);
   white-space: nowrap;
 }
+/* The popover's other time zones: one line each under the event's time. */
+.cal-pop__zones {
+  display: grid;
+  gap: var(--space-0-5);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
 .cal-pop svg.cal-pop__inline-icon {
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
@@ -1267,4 +1289,38 @@
 }
 .cal-goto__input {
   flex: 1;
+}
+
+/* ---- The travelling note, at the foot of the calendar sidebar ------------ */
+
+.cal-travel {
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1-5);
+  margin: var(--space-0) var(--space-2) var(--space-2);
+  padding: var(--space-2) var(--space-1) var(--space-2) var(--space-2-5);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-pane-bg);
+}
+.cal-travel > .lucide {
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  margin-top: var(--space-0-5);
+  color: var(--color-accent);
+}
+.cal-travel__text {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+.cal-travel__dismiss {
+  margin-top: calc(var(--space-1) * -1);
+}
+.cal-travel__action {
+  grid-column: 2;
+  justify-self: start;
 }

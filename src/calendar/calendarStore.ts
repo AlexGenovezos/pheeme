@@ -3,6 +3,7 @@
 // kept, so changing the view or the day draws at once. Mode and view survive a restart; the day
 // doesn't (Calendar opens on today, as the website does).
 import { listen } from "@tauri-apps/api/event";
+import { useEffect } from "react";
 import { create } from "zustand";
 import { subscribeAll } from "../lib/subscriptions";
 import {
@@ -346,3 +347,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
       ),
   };
 });
+
+/** Every account's calendars, read once outside Calendar mode (Calendar mode keeps them current). */
+export function useCalendarAccounts(): CalendarAccount[] | null {
+  const accounts = useCalendarStore((s) => s.accounts);
+  useEffect(() => {
+    if (accounts === null) void useCalendarStore.getState().loadAccounts();
+  }, [accounts]);
+  return accounts;
+}

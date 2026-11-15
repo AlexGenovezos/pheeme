@@ -30,6 +30,7 @@ import { gridKeyStep } from "./MonthGrid";
 import { eventDays } from "./layout";
 import { useRangeEvents } from "./rangeEvents";
 import { SidebarAgenda } from "./SidebarAgenda";
+import { TravelNote } from "./TravelNote";
 import { SidebarFooter } from "../shell/SidebarFooter";
 import { SidebarTaskLists } from "../tasks/SidebarTaskLists";
 import { useNow } from "./useNow";
@@ -308,6 +309,7 @@ export function CalendarSidebar({ onAddAccount }: { onAddAccount?: () => void })
           accounts.map((a) => <AccountGroup key={a.accountId} account={a} />)
         )}
       </nav>
+      <TravelNote />
       <NotificationOffer />
       <SidebarFooter onAddAccount={onAddAccount} />
     </div>

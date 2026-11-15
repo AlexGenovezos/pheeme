@@ -43,13 +43,17 @@ function calendar(id: string, summary: string, color: string, primary = false): 
 
 /**
  * `access`: the second account's calendar access (`?calendar=missing_scope`, `api_disabled`,
- * `unknown` or `error`; `on` by default). `now` anchors the fixture week.
+ * `unknown` or `error`; `on` by default). `now` anchors the fixture week. `zone` is the Google
+ * Calendar time zone (`?calendarZone=America/New_York`; the computer's by default), for the
+ * travelling note.
  */
 export function createCalendarHandlers(
   accounts: { id: string; email: string }[],
   access: string | null,
   now = Date.now(),
+  zone: string | null = null,
 ) {
+  const calendarZone = zone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const statuses = new Map<string, CalendarAccess["status"]>(
     accounts.map((a, i) => [a.id, (i === 1 && access ? access : "on") as CalendarAccess["status"]]),
   );
@@ -363,7 +367,7 @@ export function createCalendarHandlers(
           accountId: a.id,
           email: a.email,
           access: accessOf(a.id),
-          timeZone: on ? Intl.DateTimeFormat().resolvedOptions().timeZone : null,
+          timeZone: on ? calendarZone : null,
           weekStart: on ? 0 : null,
           calendars: on ? (calendars.get(a.id) ?? []) : [],
         };

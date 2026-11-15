@@ -67,6 +67,7 @@ import {
   ShowWeatherControl,
   TemperatureUnitControl,
 } from "../weather/WeatherControls";
+import { OtherZonesControl } from "../calendar/OtherZonesControl";
 
 const MODE_LABELS: Record<ThemeMode, string> = { system: "System", light: "Light", dark: "Dark" };
 
@@ -582,8 +583,29 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     title: "Calendar",
     icon: CalendarDays,
     group: "Calendar",
-    keywords: ["weather", "forecast", "temperature"],
+    keywords: ["weather", "forecast", "temperature", "time zones"],
     sections: [
+      {
+        title: "Time zones",
+        settings: [
+          {
+            id: "calendar.otherZones",
+            title: "Other time zones",
+            description:
+              "Up to two. Day and Week show their hours beside your calendar's, and an event's popover shows its time in each. A short label replaces the zone's name over its hours. To convert a time, type it in the command palette, like “3pm PT in Athens”.",
+            keywords: [
+              "timezone",
+              "world clock",
+              "second",
+              "travel",
+              "convert",
+              "converter",
+              "city",
+            ],
+            Control: OtherZonesControl,
+          },
+        ],
+      },
       {
         title: "Weather",
         settings: [

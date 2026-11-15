@@ -43,7 +43,7 @@ import { useSlideIn } from "./slide";
 import { useSwipeStep } from "./swipe";
 import { MonthGrid } from "./MonthGrid";
 import { PinnedEmail } from "./PinnedEmail";
-import { gutterWidth, MIN_DAY_PX, TimeGrid } from "./TimeGrid";
+import { gutterWidth, MIN_DAY_PX, TimeGrid, useGutterZones } from "./TimeGrid";
 import { type CalendarView, viewTitle } from "./views";
 import { useNow } from "./useNow";
 import "./calendar.css";
@@ -523,10 +523,13 @@ export function CalendarScreen({ onAddAccount }: { onAddAccount?: () => void } =
   const aside = useRef<HTMLElement>(null);
   const width = useWidth(ref);
   const shownDays = useCalendarStore((s) => (s.view === "week" ? 7 : s.view === "day" ? 1 : 0));
+  const accounts = useCalendarStore((s) => s.accounts);
+  // The hour labels take a column for each other time zone shown.
+  const zoneColumns = 1 + useGutterZones(displayZone(accounts)).length;
   // What the calendar needs: a week, 7 days wide enough for two events side by side to read.
   const calendarMin = Math.max(
     PANE.viewMin,
-    shownDays > 1 ? gutterWidth() + shownDays * MIN_DAY_PX : 0,
+    shownDays > 1 ? gutterWidth(zoneColumns) + shownDays * MIN_DAY_PX : 0,
   );
   // No room for the calendar beside the pinned email (the Tasks panel took it): the email folds
   // away behind a toolbar button until there's room again.
@@ -540,7 +543,6 @@ export function CalendarScreen({ onAddAccount }: { onAddAccount?: () => void } =
   const { setSidebarWidth, resetSidebarWidth } = useUiStore.getState();
   const view = useCalendarStore((s) => s.view);
   const anchor = useCalendarStore((s) => s.anchor);
-  const accounts = useCalendarStore((s) => s.accounts);
   const events = useShownEvents(useCalendarStore((s) => s.events));
   const loadError = useCalendarStore((s) => s.loadError);
   const searching = useEditStore((s) => s.search !== null);
@@ -553,6 +555,7 @@ export function CalendarScreen({ onAddAccount }: { onAddAccount?: () => void } =
   const style = {
     "--shell-sidebar-w": `${sidebarWidth}px`,
     "--shell-view-min": `${PANE.viewMin}px`,
+    "--cal-zone-columns": zoneColumns,
   } as CSSProperties;
 
   return (

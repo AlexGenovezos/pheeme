@@ -127,6 +127,23 @@ describe("CommandPalette", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  test("a time to convert answers first, and Enter copies the answer", () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(<Harness />);
+    openWithKeyboard();
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "3pm UTC in Tokyo" } });
+    expect(options()[0]).toHaveTextContent("3:00 PM UTC is 12:00 AM in Tokyo (+1 day)");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(writeText).toHaveBeenCalledWith("3:00 PM UTC is 12:00 AM in Tokyo (+1 day)");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // "to Inbox" names no zone: just commands.
+    openWithKeyboard();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "go to inbox" } });
+    expect(options()[0]).toHaveTextContent("Go to Inbox");
+  });
+
   test("tracks commands registered while open", () => {
     render(<Harness />);
     openWithKeyboard();

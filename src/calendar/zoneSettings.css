@@ -1,0 +1,36 @@
+/* Settings › Calendar › Other time zones. */
+.zone-settings {
+  display: grid;
+  gap: var(--space-1-5);
+  width: var(--zone-settings-width);
+}
+.zone-settings__zone {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.zone-settings__name {
+  flex: 1;
+  min-width: var(--space-0);
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.zone-settings__offset {
+  color: var(--color-foreground-muted);
+  font-variant-numeric: tabular-nums;
+}
+.zone-settings__label {
+  flex: none;
+  width: var(--zone-label-width);
+}
+.zone-settings__add {
+  display: block;
+}
+.zone-settings__none {
+  margin: var(--space-0);
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}

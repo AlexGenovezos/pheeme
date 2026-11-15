@@ -8,17 +8,13 @@ import { useCalendarStore, weekStartOf } from "./calendarStore";
 import { writableCalendars } from "./actions";
 import { addDays, daysBetween } from "./dates";
 import { type EventForm, moveStart } from "./eventForm";
+import { zoneIds } from "./zones";
 
 const DAY = 24 * 60;
 
 /** Every IANA zone this runtime knows, with `current` in the list. */
 function zones(current: string[]): SelectOption<string>[] {
-  const all =
-    (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ??
-    [];
-  return [...new Set([...all, ...current])]
-    .sort()
-    .map((z) => ({ value: z, label: z.replace(/_/g, " ") }));
+  return zoneIds(current).map((z) => ({ value: z, label: z.replace(/_/g, " ") }));
 }
 
 /** The calendar's first weekday, for the date pickers. */

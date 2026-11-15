@@ -24,7 +24,12 @@ import {
 import { createSubscriptionScope } from "../lib/subscriptions";
 import { cx } from "../lib/utils";
 import { AllowButton, needsAllow } from "./AccessControls";
-import { displayZone, type PinnedEmail, useCalendarStore } from "./calendarStore";
+import {
+  displayZone,
+  type PinnedEmail,
+  useCalendarAccounts,
+  useCalendarStore,
+} from "./calendarStore";
 import { eventColors } from "./colors";
 import { addDays, dateOf, formatDay, formatHour, wallClock, zonedMs } from "./dates";
 import { eventTitle, useCalendarLookup } from "./EventBlock";
@@ -91,15 +96,6 @@ function useInvite(accountId: string, messageId: string): { load: Load; changes:
     return () => scope.dispose();
   }, [accountId]);
   return { load, changes };
-}
-
-/** Every account's calendars, read once in Mail (Calendar mode keeps them current itself). */
-function useCalendarAccounts() {
-  const accounts = useCalendarStore((s) => s.accounts);
-  useEffect(() => {
-    if (accounts === null) void useCalendarStore.getState().loadAccounts();
-  }, [accounts]);
-  return accounts;
 }
 
 /** "Morgan Lee (organizer) · 4 guests: 2 yes, 1 maybe, 1 awaiting". */

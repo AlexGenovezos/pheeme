@@ -195,6 +195,9 @@
   --weather-fall: 10px;
   /* Settings › Calendar: the home location field, wide enough for "Town, Region, Country". */
   --weather-home-width: 280px;
+  /* Settings › Calendar › Other time zones: the list and each zone's short label field. */
+  --zone-settings-width: 280px;
+  --zone-label-width: 88px;
   /* Mail's invite card: its mini day view, and the email pinned beside the calendar. */
   --invite-mini-day-height: 168px;
   --invite-mini-gutter-width: 52px;
