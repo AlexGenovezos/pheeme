@@ -1,6 +1,6 @@
 # MCP (AI assistants)
 
-Pheeme can let AI assistants such as Claude Code work with your mail and calendar while Pheeme is open. It runs a
+Pheeme can let AI assistants such as Claude Code work with your mail, calendar and Google Tasks while Pheeme is open. It runs a
 [Model Context Protocol](https://modelcontextprotocol.io) server on your computer only
 (`http://127.0.0.1:43830/mcp`). Assistants go through Pheeme's local API, which does what the app's
 own buttons do: the same cache, the same outbox, the same Gmail calls. Nothing touches the database
@@ -38,6 +38,8 @@ Other MCP clients that speak Streamable HTTP take the same URL and `Authorizatio
 | `list_events` | Events in a date range (default the next 7 days), repeating events expanded, optionally only those matching some words |
 | `get_event` | One event in full: description, organizer, guests and their answers, video call, repeat rule |
 | `find_free_time` | Free slots of a given length inside working hours (default 9 to 5 on weekdays), counting timed events you haven't declined or marked free |
+| `list_task_lists` | Each account's Google Tasks lists, and whether Pheeme may read its tasks |
+| `list_tasks` | Open tasks in a list or every list (completed ones on request), optionally only those due by a date |
 
 Writes come in groups, each off until you turn it on under **What clients may change**:
 
@@ -48,14 +50,15 @@ Writes come in groups, each off until you turn it on under **What clients may ch
 | Write drafts | `create_draft` (new or a reply) |
 | Unsubscribe | `unsubscribe`: one-click unsubscribe (RFC 8058) for lists that offer it; for others it returns the link |
 | Change calendar | `create_event`, `update_event` (time, title, place, description, guests, Meet link, repeat), `delete_event`, `respond_to_event` |
+| Change tasks | `create_task` (or a subtask), `update_task` (title, notes, due date, completed, move to another list), `delete_task`, `create_task_list` |
 
 Mail changes go through the same outbox as the app's buttons, so they show in Pheeme at once and reach
-Gmail in order. Calendar changes go to Google Calendar the way the Calendar's own buttons do, and show
-once Google confirms them. A tool whose group is off answers with the setting to turn on.
+Gmail in order. Calendar and task changes go to Google the way the Calendar's and Tasks panel's own buttons do,
+and show once Google confirms them. A tool whose group is off answers with the setting to turn on.
 
 Calendar times come and go in your Google Calendar time zone (`time_zone` picks another): a date-time
-like `2026-11-20T15:00`, or a date like `2026-11-20` for an all-day event. Calendar tools need calendar
-access, which you allow by opening Calendar in Pheeme. Guests an assistant adds see the event on their
+like `2026-11-20T15:00`, or a date like `2026-11-20` for an all-day event. Calendar and task tools need
+calendar access (which includes tasks), which you allow by opening Calendar in Pheeme. Guests an assistant adds see the event on their
 calendars but aren't emailed unless it sets `notify_guests` (the tool tells it to ask you first).
 Answering an invitation always tells the organizer, as it does in Google Calendar.
 

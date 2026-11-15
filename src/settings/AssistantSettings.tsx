@@ -58,6 +58,11 @@ export const PERMISSIONS: { id: AssistantPermission; title: string; description:
     description:
       "Create, change and delete events, add guests and answer invitations. Guests are emailed only when the client asks to.",
   },
+  {
+    id: "tasks",
+    title: "Change tasks",
+    description: "Add, change, complete, move and delete Google Tasks, and create task lists.",
+  },
 ];
 
 /** The command that adds Pheeme to Claude Code. */

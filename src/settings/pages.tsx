@@ -610,6 +610,7 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       "automation",
       "calendar",
       "events",
+      "tasks",
     ],
     Component: AssistantSettings,
   },

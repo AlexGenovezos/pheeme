@@ -8,6 +8,7 @@
 mod calendar;
 mod read;
 mod requests;
+mod tasks;
 mod write;
 
 pub use requests::{catalog, Request, ToolDef};
@@ -23,6 +24,8 @@ use crate::labels::LabelService;
 use crate::mail::{MailError, MailService};
 use crate::sync::engine::now_ms;
 use crate::sync::manager::SyncManager;
+use crate::tasks::error::TasksError;
+use crate::tasks::service::TasksService;
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -52,6 +55,8 @@ pub enum ApiError {
     Account(#[from] AccountError),
     #[error(transparent)]
     Calendar(#[from] CalendarError),
+    #[error(transparent)]
+    Tasks(#[from] TasksError),
 }
 
 impl ApiError {
@@ -64,6 +69,7 @@ impl ApiError {
             ApiError::Mail(e) => e.code(),
             ApiError::Account(e) => e.code(),
             ApiError::Calendar(e) => e.code(),
+            ApiError::Tasks(e) => e.code(),
         }
     }
 }
@@ -89,15 +95,18 @@ pub enum Permission {
     Unsubscribe,
     /// Create, change and delete events, invite guests, answer invitations.
     Calendar,
+    /// Add, change, complete and delete Google Tasks, and create task lists.
+    Tasks,
 }
 
 impl Permission {
-    pub const ALL: [Permission; 5] = [
+    pub const ALL: [Permission; 6] = [
         Permission::Organize,
         Permission::Filters,
         Permission::Drafts,
         Permission::Unsubscribe,
         Permission::Calendar,
+        Permission::Tasks,
     ];
 
     /// The `app_settings` key part.
@@ -108,6 +117,7 @@ impl Permission {
             Permission::Drafts => "drafts",
             Permission::Unsubscribe => "unsubscribe",
             Permission::Calendar => "calendar",
+            Permission::Tasks => "tasks",
         }
     }
 
@@ -119,6 +129,7 @@ impl Permission {
             Permission::Drafts => "Write drafts",
             Permission::Unsubscribe => "Unsubscribe",
             Permission::Calendar => "Change calendar",
+            Permission::Tasks => "Change tasks",
         }
     }
 
@@ -129,6 +140,7 @@ impl Permission {
             Permission::Drafts => "write drafts",
             Permission::Unsubscribe => "unsubscribe from mailing lists",
             Permission::Calendar => "change calendar events",
+            Permission::Tasks => "change tasks",
         }
     }
 }
@@ -209,6 +221,7 @@ pub struct LocalApi {
     compose: ComposeService,
     filters: FilterService,
     calendar: Arc<CalendarService>,
+    tasks: Arc<TasksService>,
     on_activity: std::sync::OnceLock<ActivityListener>,
 }
 
@@ -220,6 +233,7 @@ impl LocalApi {
         compose: ComposeService,
         sync: Arc<SyncManager>,
         calendar: Arc<CalendarService>,
+        tasks: Arc<TasksService>,
     ) -> Self {
         Self {
             labels: LabelService::new(db.clone(), sync.clone()),
@@ -229,6 +243,7 @@ impl LocalApi {
             mail,
             compose,
             calendar,
+            tasks,
             on_activity: std::sync::OnceLock::new(),
         }
     }
@@ -321,6 +336,9 @@ impl LocalApi {
         // Boxed: the calendar futures are large, and inline they would grow every call's.
         if request.is_calendar() {
             return Box::pin(calendar::run(self, request)).await;
+        }
+        if request.is_tasks() {
+            return Box::pin(tasks::run(self, request)).await;
         }
         match request.permission() {
             None => read::run(self, request).await,
