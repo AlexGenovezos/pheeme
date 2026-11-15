@@ -5,6 +5,7 @@
 //! click; this layer never reads or writes mail tables itself. The MCP server (`crate::mcp`)
 //! is a thin adapter over [`LocalApi::call`]. Tauri-free.
 
+mod calendar;
 mod read;
 mod requests;
 mod write;
@@ -12,6 +13,8 @@ mod write;
 pub use requests::{catalog, Request, ToolDef};
 
 use crate::accounts::{AccountError, AccountService};
+use crate::calendar::error::CalendarError;
+use crate::calendar::service::CalendarService;
 use crate::compose::ComposeService;
 use crate::db::{assistant as db, settings};
 use crate::filters::FilterService;
@@ -47,6 +50,8 @@ pub enum ApiError {
     Mail(#[from] MailError),
     #[error(transparent)]
     Account(#[from] AccountError),
+    #[error(transparent)]
+    Calendar(#[from] CalendarError),
 }
 
 impl ApiError {
@@ -58,6 +63,7 @@ impl ApiError {
             ApiError::UnknownTool(_) | ApiError::Invalid(_) => "invalid_input",
             ApiError::Mail(e) => e.code(),
             ApiError::Account(e) => e.code(),
+            ApiError::Calendar(e) => e.code(),
         }
     }
 }
@@ -81,14 +87,17 @@ pub enum Permission {
     Drafts,
     /// Unsubscribe in one click.
     Unsubscribe,
+    /// Create, change and delete events, invite guests, answer invitations.
+    Calendar,
 }
 
 impl Permission {
-    pub const ALL: [Permission; 4] = [
+    pub const ALL: [Permission; 5] = [
         Permission::Organize,
         Permission::Filters,
         Permission::Drafts,
         Permission::Unsubscribe,
+        Permission::Calendar,
     ];
 
     /// The `app_settings` key part.
@@ -98,6 +107,7 @@ impl Permission {
             Permission::Filters => "filters",
             Permission::Drafts => "drafts",
             Permission::Unsubscribe => "unsubscribe",
+            Permission::Calendar => "calendar",
         }
     }
 
@@ -108,6 +118,7 @@ impl Permission {
             Permission::Filters => "Change Gmail filters",
             Permission::Drafts => "Write drafts",
             Permission::Unsubscribe => "Unsubscribe",
+            Permission::Calendar => "Change calendar",
         }
     }
 
@@ -117,6 +128,7 @@ impl Permission {
             Permission::Filters => "create or delete Gmail filters",
             Permission::Drafts => "write drafts",
             Permission::Unsubscribe => "unsubscribe from mailing lists",
+            Permission::Calendar => "change calendar events",
         }
     }
 }
@@ -196,6 +208,7 @@ pub struct LocalApi {
     labels: LabelService,
     compose: ComposeService,
     filters: FilterService,
+    calendar: Arc<CalendarService>,
     on_activity: std::sync::OnceLock<ActivityListener>,
 }
 
@@ -206,6 +219,7 @@ impl LocalApi {
         mail: MailService,
         compose: ComposeService,
         sync: Arc<SyncManager>,
+        calendar: Arc<CalendarService>,
     ) -> Self {
         Self {
             labels: LabelService::new(db.clone(), sync.clone()),
@@ -214,6 +228,7 @@ impl LocalApi {
             accounts,
             mail,
             compose,
+            calendar,
             on_activity: std::sync::OnceLock::new(),
         }
     }
@@ -303,6 +318,10 @@ impl LocalApi {
     }
 
     async fn run(&self, request: Request) -> Result<Value, ApiError> {
+        // Boxed: the calendar futures are large, and inline they would grow every call's.
+        if request.is_calendar() {
+            return Box::pin(calendar::run(self, request)).await;
+        }
         match request.permission() {
             None => read::run(self, request).await,
             Some(_) => write::run(self, request).await,
@@ -376,7 +395,8 @@ fn clip(mut text: String) -> String {
 
 /// What the activity log keeps of a tool's answer. A change keeps it whole (it says what
 /// changed). A read keeps the ids of the conversations, messages and filters it returned
-/// (and the senders and groups a report or count named), so the log shows what the client
+/// (and the senders and groups a report or count named, and the events and tasks a calendar or
+/// tasks read listed), so the log shows what the client
 /// saw without copying the mail into it.
 fn audit_result(tool: &str, value: &Value) -> String {
     let read_only = catalog()
@@ -387,7 +407,14 @@ fn audit_result(tool: &str, value: &Value) -> String {
         return clip(value.to_string());
     }
     let mut seen = serde_json::Map::new();
-    for key in ["thread_id", "message_id", "id", "sender", "group"] {
+    for key in [
+        "thread_id",
+        "message_id",
+        "id",
+        "sender",
+        "group",
+        "event_id",
+    ] {
         let mut ids = Vec::new();
         collect(value, key, &mut ids);
         if !ids.is_empty() {

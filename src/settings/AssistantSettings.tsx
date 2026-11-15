@@ -52,6 +52,12 @@ export const PERMISSIONS: { id: AssistantPermission; title: string; description:
     description:
       "Unsubscribe from mailing lists that offer one-click unsubscribe. For others, the client gives you the link.",
   },
+  {
+    id: "calendar",
+    title: "Change calendar",
+    description:
+      "Create, change and delete events, add guests and answer invitations. Guests are emailed only when the client asks to.",
+  },
 ];
 
 /** The command that adds Pheeme to Claude Code. */

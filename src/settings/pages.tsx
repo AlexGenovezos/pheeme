@@ -608,6 +608,8 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       "chatgpt",
       "token",
       "automation",
+      "calendar",
+      "events",
     ],
     Component: AssistantSettings,
   },
