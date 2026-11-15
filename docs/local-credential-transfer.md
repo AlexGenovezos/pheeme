@@ -25,11 +25,21 @@ that transfer. To try again, generate a fresh code.
 
 If the connection fails, check the selected address and allow Pheeme through the
 sending device's firewall. Guest networks often prevent devices from contacting
-each other. On macOS, allow Pheeme's local-network access when prompted (or in
-System Settings → Privacy & Security → Local Network). This version supports
+each other. This version supports
 private IPv4 and IPv4 link-local addresses;
 it does not discover nearby devices or support IPv6-only networks. VPN interfaces
 may also appear, so choose the intended local network explicitly.
+
+## macOS Local Network access
+
+The receiving Mac connects to the sending device, which macOS allows only once
+Pheeme has Local Network access. Pheeme asks as soon as you open **Receive from
+another device**, so choose **Allow** in the macOS prompt before entering the
+code. Until access is allowed, Pheeme explains what is missing, keeps
+**Connect securely** off and offers **Open System Settings**, which goes
+straight to Privacy & Security → Local Network; turn on Pheeme there and the
+screen continues by itself. The sending device only listens for the connection,
+which macOS doesn't restrict.
 
 ## How the connection is protected
 

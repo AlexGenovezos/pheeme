@@ -7,6 +7,8 @@ export function createTransferHandlers(beginSignIn: () => SignInStart) {
   let phase: TransferStatus["phase"] = "waiting";
   return {
     transfer_interfaces: () => ["192.168.1.20"],
+    local_network_access: () => "granted",
+    open_local_network_settings: () => {},
     offer_client_transfer: (): TransferOffer => {
       phase = "waiting";
       offer = {

@@ -59,3 +59,19 @@
 .transfer-note--error {
   color: var(--color-danger);
 }
+
+.transfer-permission {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.transfer-permission p {
+  flex: 1;
+  margin: var(--space-0);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+}

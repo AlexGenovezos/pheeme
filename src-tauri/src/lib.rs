@@ -505,6 +505,8 @@ pub fn run() {
             commands::auth::cancel_oauth,
             commands::auth::refresh_token,
             commands::transfer::transfer_interfaces,
+            commands::transfer::local_network_access,
+            commands::transfer::open_local_network_settings,
             commands::transfer::offer_client_transfer,
             commands::transfer::client_transfer_status,
             commands::transfer::approve_client_transfer,

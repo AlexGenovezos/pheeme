@@ -84,6 +84,29 @@ test("cancelling a receiver cancels the native transfer and discards late sign-i
   expect(calls.some((c) => c.cmd === "open_external" || c.cmd === "complete_oauth")).toBe(false);
 });
 
+test("receiving asks for macOS Local Network access first and waits until it is allowed", async () => {
+  let access = "blocked";
+  const calls = backend({
+    local_network_access: () => access,
+    receive_client_transfer: () => new Promise(() => {}),
+  });
+  render(<Onboarding accounts={[]} onConnected={() => {}} />);
+  click("Receive from another device");
+  await screen.findByText(/Allow Pheeme to use your local network/);
+  fireEvent.change(screen.getByLabelText("Transfer code"), { target: { value: invitation } });
+  expect(screen.getByRole("button", { name: "Connect securely" })).toBeDisabled();
+  click("Open System Settings");
+  expect(calls.some((c) => c.cmd === "open_local_network_settings")).toBe(true);
+  access = "granted";
+  await vi.waitFor(
+    () => expect(screen.getByRole("button", { name: "Connect securely" })).toBeEnabled(),
+    { timeout: 3000 },
+  );
+  expect(screen.queryByText(/Allow Pheeme to use your local network/)).not.toBeInTheDocument();
+  click("Connect securely");
+  expect(calls.some((c) => c.cmd === "receive_client_transfer")).toBe(true);
+});
+
 test("leaving receiver onboarding cancels the pending native transfer", async () => {
   const calls = backend({ receive_client_transfer: () => new Promise(() => {}) });
   const { unmount } = render(<Onboarding accounts={[]} onConnected={() => {}} />);

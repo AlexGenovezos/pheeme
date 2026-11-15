@@ -2,6 +2,7 @@
 //! never the transferred client secret.
 use super::CommandError;
 use crate::accounts::{ClientChoice, SignInStart};
+use crate::transfer::local_network::LocalNetworkAccess;
 use crate::transfer::{TransferError, TransferOffer, TransferStatus};
 use crate::AppState;
 use tauri::State;
@@ -15,6 +16,7 @@ impl From<TransferError> for CommandError {
                 TransferError::Busy => "transfer_busy",
                 TransferError::Expired => "transfer_expired",
                 TransferError::Connection => "transfer_connection",
+                TransferError::LocalNetwork => "local_network_blocked",
                 TransferError::Unconfirmed => "transfer_unconfirmed",
             }
             .into(),
@@ -26,6 +28,27 @@ impl From<TransferError> for CommandError {
 #[tauri::command]
 pub fn transfer_interfaces() -> Result<Vec<String>, CommandError> {
     Ok(crate::transfer::interfaces()?)
+}
+
+/// Brings up macOS's Local Network prompt the first time, and reports whether
+/// this device may connect to another one on the network.
+#[tauri::command]
+pub async fn local_network_access() -> LocalNetworkAccess {
+    tauri::async_runtime::spawn_blocking(crate::transfer::local_network::access)
+        .await
+        .unwrap_or(LocalNetworkAccess::Granted)
+}
+
+/// Opens System Settings › Privacy & Security › Local Network.
+#[tauri::command]
+pub fn open_local_network_settings() -> Result<(), CommandError> {
+    open::that_detached(
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork",
+    )
+    .map_err(|error| CommandError {
+        code: "open_failed".into(),
+        message: format!("Couldn't open System Settings ({error})."),
+    })
 }
 
 #[tauri::command]

@@ -5,6 +5,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rand::TryRng;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -15,6 +16,8 @@ use tokio::task::AbortHandle;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::gmail::auth::ClientCredentials;
+
+pub mod local_network;
 
 const TTL: Duration = Duration::from_secs(300);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -33,6 +36,10 @@ pub enum TransferError {
         "Couldn't connect securely. Check the code, local network and firewall, then try again."
     )]
     Connection,
+    #[error(
+        "Pheeme needs Local Network access to reach your other device. Turn on Pheeme in System Settings → Privacy & Security → Local Network, then try again."
+    )]
+    LocalNetwork,
     #[error("The other device did not confirm receipt. Start a new transfer and try again.")]
     Unconfirmed,
 }
@@ -340,38 +347,44 @@ impl TransferService {
         ttl: Duration,
     ) -> Result<ClientCredentials, TransferError> {
         self.install(id.to_owned(), None)?;
-        let task = tokio::spawn(async move {
-            tokio::time::timeout(ttl, async {
-                let mut stream =
-                    tokio::time::timeout(HANDSHAKE_TIMEOUT, TcpStream::connect(address))
-                        .await
-                        .map_err(|_| TransferError::Connection)?
-                        .map_err(|_| TransferError::Connection)?;
-                let mut noise =
-                    tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(&mut stream, &key, true))
-                        .await
-                        .map_err(|_| TransferError::Connection)??;
-                let json = receive_encrypted(&mut stream, &mut noise).await?;
-                let mut payload: Credentials =
-                    serde_json::from_slice(&json).map_err(|_| TransferError::Invalid)?;
-                if payload.version != 1
-                    || payload.client_id.len() > 1024
-                    || !payload.client_id.ends_with(".apps.googleusercontent.com")
-                    || payload.client_id.contains(char::is_whitespace)
-                    || payload.client_secret.trim().is_empty()
-                    || payload.client_secret.len() > 4096
-                {
-                    return Err(TransferError::Invalid);
-                }
-                send_encrypted(&mut stream, &mut noise, b"received").await?;
-                Ok(ClientCredentials {
-                    client_id: std::mem::take(&mut payload.client_id),
-                    client_secret: std::mem::take(&mut payload.client_secret),
+        let task =
+            tokio::spawn(async move {
+                tokio::time::timeout(ttl, async {
+                    let mut stream =
+                        match tokio::time::timeout(HANDSHAKE_TIMEOUT, TcpStream::connect(address))
+                            .await
+                        {
+                            Ok(Ok(stream)) => stream,
+                            Ok(Err(error)) if error.kind() == ErrorKind::HostUnreachable => {
+                                return Err(unreachable().await)
+                            }
+                            _ => return Err(TransferError::Connection),
+                        };
+                    let mut noise =
+                        tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(&mut stream, &key, true))
+                            .await
+                            .map_err(|_| TransferError::Connection)??;
+                    let json = receive_encrypted(&mut stream, &mut noise).await?;
+                    let mut payload: Credentials =
+                        serde_json::from_slice(&json).map_err(|_| TransferError::Invalid)?;
+                    if payload.version != 1
+                        || payload.client_id.len() > 1024
+                        || !payload.client_id.ends_with(".apps.googleusercontent.com")
+                        || payload.client_id.contains(char::is_whitespace)
+                        || payload.client_secret.trim().is_empty()
+                        || payload.client_secret.len() > 4096
+                    {
+                        return Err(TransferError::Invalid);
+                    }
+                    send_encrypted(&mut stream, &mut noise, b"received").await?;
+                    Ok(ClientCredentials {
+                        client_id: std::mem::take(&mut payload.client_id),
+                        client_secret: std::mem::take(&mut payload.client_secret),
+                    })
                 })
-            })
-            .await
-            .unwrap_or(Err(TransferError::Expired))
-        });
+                .await
+                .unwrap_or(Err(TransferError::Expired))
+            });
         self.task(id, task.abort_handle());
         let result = task.await.unwrap_or(Err(TransferError::Expired));
         self.update(
@@ -385,6 +398,15 @@ impl TransferService {
             result.as_ref().err().map(ToString::to_string),
         );
         result
+    }
+}
+
+/// macOS refuses the connection while Local Network access is off or its prompt
+/// is still open; say so, rather than blame the network.
+async fn unreachable() -> TransferError {
+    match tokio::task::spawn_blocking(local_network::access).await {
+        Ok(local_network::LocalNetworkAccess::Blocked) => TransferError::LocalNetwork,
+        _ => TransferError::Connection,
     }
 }
 
