@@ -8,7 +8,7 @@ import { DayWeather } from "./DayWeather";
 import { WeatherArt } from "./WeatherArt";
 import { EventWeather, mayNameAPlace } from "./EventWeather";
 import { refreshHomeForecast, useHomeForecast } from "./forecast";
-import { ShowWeatherControl, placeFromZone } from "./WeatherSettings";
+import { ShowWeatherControl, placeFromZone } from "./WeatherControls";
 import { localUnit, placeLabel, useWeatherSettings, WEATHER_KEY } from "./weatherSettings";
 
 // Wednesday 2026-11-11, noon local time.

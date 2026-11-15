@@ -66,7 +66,7 @@ import {
   HomeLocationControl,
   ShowWeatherControl,
   TemperatureUnitControl,
-} from "../weather/WeatherSettings";
+} from "../weather/WeatherControls";
 
 const MODE_LABELS: Record<ThemeMode, string> = { system: "System", light: "Light", dark: "Dark" };
 

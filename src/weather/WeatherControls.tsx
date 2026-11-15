@@ -1,5 +1,5 @@
-// Settings › Calendar › Weather: the switch, the home location (typed, or found from the
-// calendar's time zone) and the temperature unit.
+// Settings › Calendar › Weather controls: show weather, the home location (typed, or found from
+// the calendar's time zone), the temperature unit and animation.
 import { LocateFixed, Search } from "lucide-react";
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { displayZone, useCalendarStore } from "../calendar/calendarStore";
