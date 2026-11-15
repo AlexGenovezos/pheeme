@@ -156,7 +156,14 @@ fn thread_query(args: &ThreadsArg) -> Result<Option<&str>, ApiError> {
     }
     // Gmail's side of a search change leaves Spam and Trash out, so a search into them would
     // change the cached matches and miss the rest.
-    if query.is_some_and(|q| crate::search::gmail_query(q).1) {
+    // Both readings count: Gmail's (`in:anywhere`...) and the local search's, which also
+    // takes operators like `+in:trash`.
+    let reaches_spam_trash = |q: &str| {
+        crate::search::gmail_query(q).1
+            || crate::search::parse(q, crate::sync::engine::now_ms())
+                .is_some_and(|l| l.include_spam_trash)
+    };
+    if query.is_some_and(reaches_spam_trash) {
         return Err(ApiError::Invalid(
             "A query can't reach Spam or Trash: list those conversations and give thread_ids."
                 .into(),
