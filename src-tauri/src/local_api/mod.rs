@@ -432,6 +432,7 @@ fn audit_result(tool: &str, value: &Value) -> String {
         "sender",
         "group",
         "event_id",
+        "task_id",
     ] {
         let mut ids = Vec::new();
         collect(value, key, &mut ids);

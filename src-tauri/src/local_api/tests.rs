@@ -1668,6 +1668,12 @@ async fn lists_tasks_open_first_and_by_due_date() {
         .call("list_tasks", json!({ "due_by": "Friday" }))
         .await
         .is_err());
+    let logged = h.api.activity(10).await.unwrap();
+    let listed = logged
+        .iter()
+        .find(|a| a.tool == "list_tasks" && a.error.is_none())
+        .unwrap();
+    assert_eq!(listed.result.as_deref(), Some(r#"{"task_ids":["inv"]}"#));
 }
 
 #[tokio::test]
