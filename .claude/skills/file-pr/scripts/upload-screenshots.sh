@@ -5,7 +5,11 @@
 set -euo pipefail
 [ $# -ge 2 ] || { echo "usage: $0 <pr-number> <file.png>..." >&2; exit 2; }
 pr=$1; shift
-for f in "$@"; do [ -f "$f" ] || { echo "no such file: $f" >&2; exit 2; }; done
+for f in "$@"; do
+  [ -f "$f" ] || { echo "no such file: $f" >&2; exit 2; }
+  # The name goes into a URL and Markdown unescaped.
+  [[ $(basename "$f") =~ ^[A-Za-z0-9._-]+$ ]] || { echo "rename to letters, digits, . _ -: $f" >&2; exit 2; }
+done
 branch=pr-screenshots
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 index=$(mktemp); trap 'rm -f "$index"' EXIT

@@ -25,7 +25,9 @@ This is a public repo: screenshots show preview fixture data, never a real mailb
   answers every command from `src/preview/` fixtures. Drive it with Playwright from the repo's
   `node_modules` (`import { chromium } from "<repo>/node_modules/playwright/index.mjs"`), with the
   script under `$TMPDIR`, outside the repo. When the change needs data the fixtures lack (a field,
-  an event, a state), extend `src/preview/` in the PR: the preview then shows it to everyone.
+  an event, a state), extend `src/preview/` in the PR: the preview then shows it to everyone. For
+  the website, build and serve it as `site/playwright.config.ts` does (`npm run build:site`, then
+  `python3 -m http.server <port> --bind 127.0.0.1 --directory site/dist`).
 - **Stable frames:** viewport 1280×820, `timezoneId: "UTC"`, `page.clock.setFixedTime(…)` (the
   calendar fixtures are a week around "now"), and `localStorage` set in `addInitScript`:
   `pheeme.theme-mode` = `light`, and `pheeme.calendar` = `{"mode":"calendar","view":"week"}` for
@@ -36,7 +38,7 @@ This is a public repo: screenshots show preview fixture data, never a real mailb
   off.
 - **Upload:** `.claude/skills/file-pr/scripts/upload-screenshots.sh <pr> <file.png>…` commits them
   to the `pr-screenshots` branch (images only; no workflow runs on it) and prints one Markdown image
-  per file, pinned to that commit.
+  per file, pinned to that commit. File names: letters, digits, `.`, `_`, `-`.
 - **Native-only UI** (tray, notifications, window chrome) that the preview can't render: use the
   `mac-dev` skill for a screenshot, or say in the body why there is none.
 
