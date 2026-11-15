@@ -62,6 +62,9 @@ pub struct FilterAudit {
     /// Every filter, not just those that delete, archive or mark read.
     #[serde(default)]
     pub all: bool,
+    /// Leave out snippets and labels.
+    #[serde(default)]
+    pub compact: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
@@ -469,7 +472,8 @@ pub fn catalog() -> Vec<ToolDef> {
             description: "Search with Gmail syntax (from:, to:, subject:, label:, is:unread, has:attachment, \
                 newer_than:7d, in:trash...). Searches the mail cached on this computer by default, which is \
                 instant but may not hold old mail; set gmail to true to ask Gmail's own search, which covers \
-                the whole mailbox. Queries only Gmail understands go to Gmail automatically.",
+                the whole mailbox. Queries only Gmail understands go to Gmail automatically. Like Gmail, it \
+                leaves out Trash and Spam unless the query says in:anywhere, in:trash or in:spam.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -583,16 +587,20 @@ pub fn catalog() -> Vec<ToolDef> {
             title: "What filters caught",
             description: "For each Gmail filter that deletes, archives or marks mail read (or every filter \
                 with all: true), the mail it matched over the last N days (default 30), found with Gmail's \
-                search, and where that mail is now (Trash, Inbox...). Use it to find filters that catch \
-                mail the user wants; fix them with delete_filter and create_filter, and rescue what \
-                they trashed or archived with move_to_inbox.",
+                search: how much (matched, first 50), where it is now (now_in: trash, inbox, archived...) \
+                and a sample. For filters that delete, archive or mark read, worth_checking lists matched \
+                mail from the last year that looks wanted (starred, in Primary or Updates, or an order, \
+                bill, delivery or account subject); read it before trusting the filter. Use it to find \
+                filters that catch mail the user wants; fix them with delete_filter and create_filter, \
+                and rescue what they trashed or archived with move_to_inbox.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "account": account_prop(),
                     "days": { "type": "integer", "minimum": 1, "maximum": 3650 },
-                    "sample": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Conversations per filter (default 10)." },
-                    "all": { "type": "boolean" }
+                    "sample": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Conversations per filter and list (default 5)." },
+                    "all": { "type": "boolean" },
+                    "compact": compact_prop()
                 },
                 "additionalProperties": false
             }),

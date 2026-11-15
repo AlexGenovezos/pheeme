@@ -17,7 +17,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{Local, SecondsFormat, TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 const DEFAULT_BODY_CHARS: usize = 8000;
 /// Characters of a snippet a list row keeps.
@@ -578,9 +578,14 @@ async fn search_mail(api: &LocalApi, args: SearchMail) -> Result<Value, ApiError
         return gmail_search(api, &mut rows, &account_ids, query, None, 0, limit).await;
     }
     let (threads, cut) = rows.page(page.threads).await?;
+    let note =
+        "Old mail may not be cached. Search again with gmail: true to search the whole mailbox.";
     Ok(json!({
         "searched": "the mail cached on this computer",
-        "note": "Old mail may not be cached. Search again with gmail: true to search the whole mailbox.",
+        "note": match spam_trash_note(query) {
+            Some(trash) => format!("{note} {trash}"),
+            None => note.to_owned(),
+        },
         "threads": threads,
         "next_cursor": cut.or(page.next).map(|c| encode_cursor(&Cursor::Local(c))),
     }))
@@ -823,12 +828,23 @@ async fn gmail_search(
     } else {
         None
     };
-    Ok(json!({
+    let mut out = json!({
         "searched": "Gmail",
         "threads": threads,
         "failed_accounts": failed,
         "next_cursor": next.map(|c| encode_cursor(&c)),
-    }))
+    });
+    if let Some(note) = spam_trash_note(query) {
+        out["note"] = json!(note);
+    }
+    Ok(out)
+}
+
+/// The reminder that a search left out Trash and Spam, unless it asked for them: an empty
+/// answer otherwise reads as "nothing matches" when a filter put it all in Trash.
+fn spam_trash_note(query: &str) -> Option<&'static str> {
+    (!crate::search::gmail_query(query).1)
+        .then_some("Trash and Spam are left out; add in:anywhere to include them.")
 }
 
 /// A message, as text.
@@ -1056,15 +1072,56 @@ fn filter_query(criteria: &serde_json::Map<String, Value>) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(" "))
 }
 
+/// How far back filter_audit looks for wanted mail: what a filter misfiles turns up now and
+/// then (an order confirmation, a statement), so a month's sample rarely shows it.
+const WANTED_DAYS: i64 = 365;
+
+/// What makes matched mail look wanted, as Gmail search: starred, in Primary or Updates, or
+/// a subject that order, bill, delivery and account email uses. Marketing mostly sits in
+/// Promotions, so few of its conversations qualify.
+const WANTED_HINTS: &str = "{is:starred category:primary category:updates subject:(receipt OR \
+    invoice OR order OR statement OR payment OR bill OR shipped OR delivered OR delivery OR \
+    verify OR verification OR password OR security OR expire OR expires OR expiring OR renew \
+    OR renewal OR refund OR confirmation OR confirmed OR \"action required\" OR \"action needed\")}";
+
+/// The Gmail search for matched mail that looks wanted (see [`WANTED_HINTS`]).
+fn wanted_query(criteria: &str, days: i64) -> String {
+    format!(
+        "{criteria} {WANTED_HINTS} in:anywhere newer_than:{}d",
+        days.max(WANTED_DAYS)
+    )
+}
+
+/// Where each conversation sits now, counted: trash, spam, inbox or archived.
+fn now_in(threads: &[ThreadSummaryDto]) -> BTreeMap<&'static str, usize> {
+    let mut counts = BTreeMap::new();
+    for t in threads {
+        let has = |id: &str| t.system_label_ids.iter().any(|l| l == id);
+        let place = if has("TRASH") {
+            "trash"
+        } else if has("SPAM") {
+            "spam"
+        } else if has("INBOX") {
+            "inbox"
+        } else {
+            "archived"
+        };
+        *counts.entry(place).or_default() += 1;
+    }
+    counts
+}
+
 async fn filter_audit(api: &LocalApi, args: FilterAudit) -> Result<Value, ApiError> {
     let days = args.days.unwrap_or(AUDIT_DAYS).clamp(1, 3650);
-    let sample = args.sample.unwrap_or(10).clamp(1, 50);
-    let mut rows = Rows::new(api).await?;
+    let sample = args.sample.unwrap_or(5).clamp(1, 50);
+    let mut rows = Rows::new(api).await?.compact(args.compact);
     let mut out = Vec::new();
     for account in resolve_accounts(api, args.account.as_deref()).await? {
+        let accounts = std::slice::from_ref(&account.id);
         let mut audited = Vec::new();
         for filter in api.filters.list(&account.id).await? {
-            if !args.all && !(filter.trashes || filter.skips_inbox || filter.marks_read) {
+            let acts = filter.trashes || filter.skips_inbox || filter.marks_read;
+            if !args.all && !acts {
                 continue;
             }
             let Some(criteria) = filter_query(&filter.criteria) else {
@@ -1074,31 +1131,43 @@ async fn filter_audit(api: &LocalApi, args: FilterAudit) -> Result<Value, ApiErr
                 continue;
             };
             let query = format!("{criteria} in:anywhere newer_than:{days}d");
-            let entry = match api
-                .mail
-                .search_gmail(std::slice::from_ref(&account.id), &query, None)
-                .await
-            {
+            let mut entry = match api.mail.search_gmail(accounts, &query, None).await {
                 Ok(page) => {
-                    let more = page.threads.len() > sample || !page.next.is_empty();
+                    let now_in = now_in(&page.threads);
+                    let matched = page.threads.len();
                     let caught: Vec<_> = page.threads.into_iter().take(sample).collect();
                     json!({
                         "filter": filter,
                         "gmail_query": query,
+                        "matched": matched,
+                        "more": !page.next.is_empty(),
+                        "now_in": now_in,
                         "caught": rows.rows(caught).await?,
-                        "more": more,
                     })
                 }
                 Err(e) => json!({ "filter": filter, "gmail_query": query, "error": e.to_string() }),
             };
+            if acts {
+                let wanted = wanted_query(&criteria, days);
+                match api.mail.search_gmail(accounts, &wanted, None).await {
+                    Ok(page) if page.threads.is_empty() => {}
+                    Ok(page) => {
+                        let found: Vec<_> = page.threads.into_iter().take(sample).collect();
+                        entry["worth_checking"] = json!(rows.rows(found).await?);
+                        entry["worth_checking_query"] = json!(wanted);
+                    }
+                    Err(e) => entry["worth_checking_error"] = json!(e.to_string()),
+                }
+            }
             audited.push(entry);
         }
         out.push(json!({ "account": account.email, "filters": audited }));
     }
     Ok(json!({
         "days": days,
-        "note": "Gmail filters act when mail arrives; 'caught' is what their criteria match now, with \
-                 its labels showing where it is (TRASH, INBOX...).",
+        "note": "Gmail filters act when mail arrives; 'caught' is a sample of what their criteria \
+                 match now, 'matched' and 'now_in' count up to the first 50, and 'worth_checking' \
+                 is matched mail from the last year that looks wanted.",
         "accounts": out,
     }))
 }
@@ -1121,6 +1190,25 @@ mod tests {
             filter_query(json!({ "from": " " }).as_object().unwrap()),
             None
         );
+    }
+
+    #[test]
+    fn wanted_mail_is_looked_for_over_a_year_at_least() {
+        let q = wanted_query("from:(shop.com)", 30);
+        assert!(q.starts_with("from:(shop.com) {is:starred category:primary category:updates subject:(receipt OR invoice"));
+        assert!(
+            q.ends_with("\"action needed\")} in:anywhere newer_than:365d"),
+            "{q}"
+        );
+        assert!(!q.contains("  "), "{q}");
+        assert!(wanted_query("x", 800).ends_with("newer_than:800d"));
+    }
+
+    #[test]
+    fn only_searches_that_skip_trash_say_so() {
+        assert!(spam_trash_note("from:shop.com").is_some());
+        assert!(spam_trash_note("from:shop.com in:anywhere").is_none());
+        assert!(spam_trash_note("in:trash sale").is_none());
     }
 
     #[test]
