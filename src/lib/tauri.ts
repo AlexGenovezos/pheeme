@@ -354,7 +354,13 @@ export interface AssistantClient {
   lastUsedAt: number | null;
 }
 /** A group of assistant write tools the user allows separately. */
-export type AssistantPermission = "organize" | "filters" | "drafts" | "unsubscribe" | "calendar";
+export type AssistantPermission =
+  | "organize"
+  | "filters"
+  | "drafts"
+  | "unsubscribe"
+  | "calendar"
+  | "tasks";
 /** Whether assistants are allowed, the MCP server's state, the connected clients and the write groups allowed. */
 export interface AssistantStatus {
   enabled: boolean;

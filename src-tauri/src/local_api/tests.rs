@@ -8,6 +8,8 @@ use crate::secrets::MemoryStore;
 use crate::sync::events::RecordingEvents;
 use crate::sync::fake::{FakeGmail, FakeMsg};
 use crate::sync::MailApi;
+use crate::tasks::fake::FakeTasks;
+use crate::tasks::TasksApi;
 use serde_json::json;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -17,6 +19,9 @@ pub(crate) struct Harness {
     /// Account a1's Google Calendar: primary calendar `me@example.com`, access not yet allowed.
     pub cal: Arc<FakeCalendar>,
     pub calendar: Arc<CalendarService>,
+    /// Account a1's Google Tasks: list `L` ("My Tasks"), access not yet checked.
+    pub task_api: Arc<FakeTasks>,
+    pub tasks: Arc<TasksService>,
     pub api: LocalApi,
     pub caller: Caller,
     pub notified: Arc<AtomicUsize>,
@@ -63,6 +68,14 @@ pub(crate) async fn setup(fake: FakeGmail) -> Harness {
         Arc::new(move |_: &str| cal_api.clone() as Arc<dyn CalendarApi>),
         Arc::new(RecordingEvents::default()),
     );
+    let task_api = Arc::new(FakeTasks::default());
+    task_api.add_list("L", "My Tasks");
+    let fake_tasks = task_api.clone();
+    let tasks = TasksService::new(
+        pool.clone(),
+        Arc::new(move |_: &str| fake_tasks.clone() as Arc<dyn TasksApi>),
+        Arc::new(RecordingEvents::default()),
+    );
     let api = LocalApi::new(
         pool,
         accounts,
@@ -70,6 +83,7 @@ pub(crate) async fn setup(fake: FakeGmail) -> Harness {
         compose,
         sync.clone(),
         calendar.clone(),
+        tasks.clone(),
     );
     api.on_activity(Arc::new(move || {
         count.fetch_add(1, Ordering::SeqCst);
@@ -82,6 +96,8 @@ pub(crate) async fn setup(fake: FakeGmail) -> Harness {
         fake,
         cal,
         calendar,
+        task_api,
+        tasks,
         api,
         caller,
         notified,
@@ -863,11 +879,12 @@ fn every_permission_is_listed_once() {
             | Permission::Filters
             | Permission::Drafts
             | Permission::Unsubscribe
-            | Permission::Calendar => 1,
+            | Permission::Calendar
+            | Permission::Tasks => 1,
         };
         assert_eq!(Permission::ALL.iter().filter(|q| **q == p).count(), listed);
     }
-    assert_eq!(Permission::ALL.len(), 5);
+    assert_eq!(Permission::ALL.len(), 6);
 }
 
 #[test]
@@ -1578,4 +1595,162 @@ async fn answers_invitations_and_deletes_events() {
         .unwrap()
         .iter()
         .all(|e| e["event_id"] != "lunch"));
+}
+
+/// Account a1's tasks, synced: in "My Tasks", an overdue invoice with a subtask, a task
+/// without a date and a completed one; an empty "Errands" list.
+async fn with_tasks() -> Harness {
+    use crate::tasks::fake::task;
+    let h = setup(FakeGmail::new()).await;
+    h.task_api.add_list("E", "Errands");
+    let mut invoice = task("inv", "Send the invoice");
+    invoice["due"] = json!("2030-11-18T00:00:00.000Z");
+    invoice["notes"] = json!("Acme, November");
+    h.task_api.put("L", invoice);
+    let mut sub = task("pdf", "Export the PDF");
+    sub["parent"] = json!("inv");
+    h.task_api.put("L", sub);
+    h.task_api.put("L", task("call", "Call the bank"));
+    let mut done = task("old", "Renew passport");
+    done["status"] = json!("completed");
+    done["completed"] = json!("2030-11-01T00:00:00.000Z");
+    h.task_api.put("L", done);
+    assert_eq!(h.tasks.sync_now("a1").await.unwrap().status, "on");
+    h
+}
+
+#[tokio::test]
+async fn lists_tasks_open_first_and_by_due_date() {
+    let h = with_tasks().await;
+    let lists = h.call("list_task_lists", json!({})).await.unwrap();
+    assert_eq!(lists["accounts"][0]["access"], "on");
+    let titles: Vec<_> = lists["accounts"][0]["lists"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(titles, ["My Tasks", "Errands"]);
+
+    let titles = |out: &Value| -> Vec<String> {
+        out["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["title"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let open = h.call("list_tasks", json!({})).await.unwrap();
+    assert_eq!(
+        titles(&open),
+        ["Send the invoice", "Export the PDF", "Call the bank"]
+    );
+    assert_eq!(open["tasks"][0]["due"], "2030-11-18");
+    assert_eq!(open["tasks"][0]["notes"], "Acme, November");
+    assert_eq!(open["tasks"][0]["list"], "My Tasks");
+    assert_eq!(open["tasks"][1]["parent"], "inv");
+    let all = h
+        .call(
+            "list_tasks",
+            json!({ "list_id": "L", "include_completed": true }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(titles(&all).len(), 4);
+    assert_eq!(all["tasks"][3]["completed"], true);
+    let due = h
+        .call("list_tasks", json!({ "due_by": "2030-11-20", "limit": 1 }))
+        .await
+        .unwrap();
+    assert_eq!(titles(&due), ["Send the invoice"]);
+    assert!(due.get("more").is_none());
+    assert!(h
+        .call("list_tasks", json!({ "due_by": "Friday" }))
+        .await
+        .is_err());
+    let logged = h.api.activity(10).await.unwrap();
+    let listed = logged
+        .iter()
+        .find(|a| a.tool == "list_tasks" && a.error.is_none())
+        .unwrap();
+    assert_eq!(listed.result.as_deref(), Some(r#"{"task_ids":["inv"]}"#));
+}
+
+#[tokio::test]
+async fn tasks_say_when_access_isnt_allowed() {
+    let h = setup(FakeGmail::new()).await;
+    let out = h.call("list_tasks", json!({})).await.unwrap();
+    assert_eq!(out["tasks"], json!([]));
+    assert!(out["tasks_access"][0]["note"]
+        .as_str()
+        .unwrap()
+        .contains("opening Calendar in Pheeme"));
+    h.api.set_allows(Permission::Tasks, true).await.unwrap();
+    let err = h
+        .call("create_task", json!({ "title": "Gym" }))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("hasn't allowed access"), "{err}");
+}
+
+#[tokio::test]
+async fn task_changes_need_their_switch_then_go_to_google() {
+    let h = with_tasks().await;
+    let err = h
+        .call("create_task", json!({ "title": "Buy milk" }))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ApiError::NotAllowed(Permission::Tasks)));
+    assert!(h.task_api.writes().is_empty());
+
+    h.api.set_allows(Permission::Tasks, true).await.unwrap();
+    let made = h
+        .call(
+            "create_task",
+            json!({ "title": "Buy milk", "due": "2030-11-21", "list_id": "E" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(made["created"]["title"], "Buy milk");
+    assert_eq!(made["created"]["due"], "2030-11-21");
+    assert_eq!(made["created"]["list"], "Errands");
+    let id = made["created"]["task_id"].as_str().unwrap().to_owned();
+
+    let done = h
+        .call(
+            "update_task",
+            json!({ "task_id": "inv", "list_id": "L", "completed": true, "notes": "" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(done["changed"], json!(["notes", "completed"]));
+    assert_eq!(h.task_api.task("L", "inv").unwrap()["status"], "completed");
+    assert!(done["task"].get("notes").is_none());
+
+    let moved = h
+        .call(
+            "update_task",
+            json!({ "task_id": "call", "list_id": "L", "move_to_list_id": "E" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(moved["task"]["list_id"], "E");
+    assert!(h
+        .call("update_task", json!({ "task_id": "call", "list_id": "E" }))
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("Nothing to change"));
+
+    let gone = h
+        .call("delete_task", json!({ "task_id": id, "list_id": "E" }))
+        .await
+        .unwrap();
+    assert_eq!(gone["deleted"]["title"], "Buy milk");
+    let list = h
+        .call("create_task_list", json!({ "title": "Trips" }))
+        .await
+        .unwrap();
+    assert_eq!(list["title"], "Trips");
+    assert!(h.task_api.list_titles().contains(&"Trips".to_string()));
 }

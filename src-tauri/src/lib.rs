@@ -145,6 +145,7 @@ pub async fn build_state(
         compose.clone(),
         sync.clone(),
         calendar.clone(),
+        tasks.clone(),
     );
     let assistants = Arc::new(mcp::McpServer::new(Arc::new(local_api), mcp::DEFAULT_PORT));
     compose.sweep_staging().await;
