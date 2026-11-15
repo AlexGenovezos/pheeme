@@ -89,6 +89,9 @@ pub enum ClientChoice {
     /// Save a sender to Google Contacts (incremental write consent).
     #[serde(rename_all = "camelCase")]
     Contacts { account_id: String },
+    /// See guests' free/busy in the event editor (incremental consent).
+    #[serde(rename_all = "camelCase")]
+    Availability { account_id: String },
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -253,6 +256,7 @@ impl AccountService {
             ClientChoice::Calendar { .. } => auth::CALENDAR_SCOPES,
             ClientChoice::Drive { .. } => auth::DRIVE_SCOPES,
             ClientChoice::Contacts { .. } => auth::CONTACT_WRITE_SCOPES,
+            ClientChoice::Availability { .. } => auth::FREEBUSY_SCOPES,
             _ => &[],
         };
         let (creds, expected_email) = match choice {
@@ -267,7 +271,8 @@ impl AccountService {
             ClientChoice::Reconnect { account_id }
             | ClientChoice::Calendar { account_id }
             | ClientChoice::Drive { account_id }
-            | ClientChoice::Contacts { account_id } => {
+            | ClientChoice::Contacts { account_id }
+            | ClientChoice::Availability { account_id } => {
                 let account = self.account(&account_id).await?;
                 let creds = self.saved_credentials(&account).await?.0;
                 (creds, Some(account.email))
@@ -1356,6 +1361,14 @@ mod tests {
                 auth::CONTACT_WRITE_SCOPES[0],
                 auth::DRIVE_SCOPES[0],
             ),
+            (
+                ClientChoice::Availability {
+                    account_id: account.id.clone(),
+                },
+                auth::FREEBUSY_SCOPES[0],
+                // Never the broader calendar scopes: availability is its own consent.
+                auth::CALENDAR_SCOPE,
+            ),
         ] {
             let start = h.service.begin_sign_in(choice).await.unwrap();
             let q: HashMap<_, _> = Url::parse(&start.auth_url)
@@ -1432,6 +1445,12 @@ mod tests {
             serde_json::from_value(serde_json::json!({"kind": "calendar", "accountId": "a"}))
                 .unwrap();
         assert!(matches!(calendar, ClientChoice::Calendar { account_id } if account_id == "a"));
+        let availability: ClientChoice =
+            serde_json::from_value(serde_json::json!({"kind": "availability", "accountId": "a"}))
+                .unwrap();
+        assert!(
+            matches!(availability, ClientChoice::Availability { account_id } if account_id == "a")
+        );
     }
 
     #[test]

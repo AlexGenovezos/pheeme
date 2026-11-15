@@ -18,7 +18,9 @@ export type ClientChoice =
   /** Allow calendar and tasks access for an existing account (asked when Calendar first opens). */
   | { kind: "calendar"; accountId: string }
   | { kind: "drive"; accountId: string }
-  | { kind: "contacts"; accountId: string };
+  | { kind: "contacts"; accountId: string }
+  /** See guests' free/busy in the event editor (asked when the planner first needs it). */
+  | { kind: "availability"; accountId: string };
 
 export interface SignInStart {
   flowId: string;
@@ -566,6 +568,34 @@ export const setCalendarHidden = (accountId: string, calendarId: string, hidden:
 /** Sync the account's calendars now (after allowing access, or "Check again"). */
 export const calendarSyncNow = (accountId: string) =>
   invoke<CalendarAccess>("calendar_sync_now", { accountId });
+/** One busy stretch, UTC ms, end exclusive. */
+export interface BusyInterval {
+  startMs: number;
+  endMs: number;
+}
+
+/** What Google could tell about one person: busy time (empty: free), or `unknown` with Google's reason (`notFound`: not shared). */
+export type PersonAvailability =
+  | { email: string; status: "known"; busy: BusyInterval[] }
+  | { email: string; status: "unknown"; reason: string };
+
+export interface AvailabilityResult {
+  /** The account itself (its primary calendar). */
+  you: PersonAvailability;
+  /** One per guest asked about, in order, duplicates dropped. */
+  guests: PersonAvailability[];
+}
+
+/**
+ * When the account and each guest are busy in `[fromMs, toMs)`, asked of Google now (not cached).
+ * Rejects with `missing_scope` until the account allows free/busy access (`{ kind: "availability" }`).
+ */
+export const calendarAvailability = (
+  accountId: string,
+  emails: string[],
+  fromMs: number,
+  toMs: number,
+) => invoke<AvailabilityResult>("calendar_availability", { accountId, emails, fromMs, toMs });
 /** Calendar mode is (or stopped being) in front: calendars are checked every 15 s instead of 60 s. */
 export const setCalendarForeground = (on: boolean) =>
   invoke<void>("set_calendar_foreground", { on });

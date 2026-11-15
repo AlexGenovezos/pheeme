@@ -5,6 +5,7 @@ import {
   AlignLeft,
   Bell,
   Briefcase,
+  CalendarClock,
   CalendarDays,
   Clock,
   MapPin,
@@ -24,13 +25,16 @@ import { RecipientField } from "../compose/RecipientField";
 import { type EmailAddress, suggestContacts } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { closeEditor, saveEditor } from "./actions";
-import { useCalendarStore } from "./calendarStore";
+import { AvailabilityPlanner } from "./AvailabilityPlanner";
+import { displayZone, useCalendarStore } from "./calendarStore";
 import { calendarColor, EVENT_COLORS } from "./colors";
 import { ask, type EditorSpec, useEditStore } from "./editStore";
 import { CalendarSelect, TimeFields, useWeekStart } from "./EventFields";
 import {
   type EventForm,
+  formTimes,
   type Freq,
+  hasOtherGuests,
   MAX_REMINDERS,
   nthWeekday,
   otherCall,
@@ -87,6 +91,7 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
   const [form, setForm] = useState(spec.form);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [planner, setPlanner] = useState(false);
   const accounts = useCalendarStore((s) => s.accounts);
   const account = accounts?.find((a) => a.accountId === form.accountId);
   const calendar = account?.calendars.find((c) => c.id === form.calendarId);
@@ -101,6 +106,16 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
   const call = editing && spec.detail ? otherCall(spec.detail) : null;
   const otherConference = call !== null && spec.detail!.hasConference;
   const dirty = JSON.stringify(form) !== JSON.stringify(spec.form);
+  // The event's time as saved: Google counts it as busy, so the planner leaves it out.
+  const savedSpan = useMemo(() => {
+    if (!editing || spec.form.allDay) return null;
+    const { start, end } = formTimes(spec.form);
+    return {
+      startMs: start!.ms!,
+      endMs: end!.ms!,
+      guests: spec.form.guests.map((g) => g.address),
+    };
+  }, [editing, spec.form]);
 
   const close = async () => {
     if (dirty) {
@@ -207,6 +222,24 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
               </label>
             </div>
           </Section>
+          {!form.allDay && hasOtherGuests(form.guests, account?.email) && (
+            <Section icon={<CalendarClock />} label="Check availability">
+              <div className="cal-editor__inline">
+                <Button size="sm" aria-expanded={planner} onClick={() => setPlanner((o) => !o)}>
+                  {planner ? "Hide availability" : "Check availability"}
+                </Button>
+              </div>
+              {planner && (
+                <AvailabilityPlanner
+                  form={form}
+                  onChange={setForm}
+                  tz={displayZone(accounts)}
+                  selfEmail={account?.email ?? null}
+                  saved={savedSpan}
+                />
+              )}
+            </Section>
+          )}
           <Section icon={<Video />} label="Google Meet">
             {otherConference ? null : form.meet ? (
               <div className="cal-editor__inline">

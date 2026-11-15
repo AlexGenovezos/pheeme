@@ -72,6 +72,15 @@ impl From<CalendarError> for CommandError {
     }
 }
 
+impl From<crate::calendar::availability::AvailabilityError> for CommandError {
+    fn from(error: crate::calendar::availability::AvailabilityError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
+
 impl From<crate::tasks::error::TasksError> for CommandError {
     fn from(error: crate::tasks::error::TasksError) -> Self {
         Self {

@@ -3,8 +3,8 @@
 
 use super::CalendarApi;
 use crate::gmail::calendar::{
-    ApiCalendar, ApiEvent, CalendarListPage, CalendarSettings, EventsPage, SendUpdates,
-    WriteOptions,
+    ApiCalendar, ApiEvent, CalendarListPage, CalendarSettings, EventsPage, FreeBusyCalendar,
+    SendUpdates, WriteOptions,
 };
 use crate::gmail::GmailError;
 use serde_json::{json, Value};
@@ -35,6 +35,11 @@ struct State {
     write_count: usize,
     /// Planned outcomes by absolute write index.
     plans: HashMap<usize, Plan>,
+    /// Busy time per free/busy id; an id not here answers `notFound`, one mapped to `None`
+    /// answers no busy time.
+    busy: HashMap<String, Vec<(i64, i64)>>,
+    /// Every `free_busy` query: (ids, from, to).
+    free_busy_queries: Vec<(Vec<String>, i64, i64)>,
 }
 
 #[derive(Clone, Copy)]
@@ -324,6 +329,16 @@ impl FakeCalendar {
     /// fail with `make()`; `None` clears it.
     pub fn fail_full_reads(&self, from: Option<(usize, fn() -> GmailError)>) {
         self.lock().full_read_fail = from;
+    }
+
+    /// `id`'s busy time for `free_busy` (an id never set answers `notFound`).
+    pub fn set_busy(&self, id: &str, busy: Vec<(i64, i64)>) {
+        self.lock().busy.insert(id.into(), busy);
+    }
+
+    /// Every `free_busy` query so far: (ids, from, to).
+    pub fn free_busy_queries(&self) -> Vec<(Vec<String>, i64, i64)> {
+        self.lock().free_busy_queries.clone()
     }
 
     /// The newest version of an event (a cancelled one too), for assertions.
@@ -621,6 +636,36 @@ impl CalendarApi for FakeCalendar {
             .filter(|e| e["status"] != "cancelled" && e["iCalUID"] == ical_uid)
             .map(event)
             .collect()
+    }
+
+    async fn free_busy(
+        &self,
+        ids: &[String],
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<HashMap<String, FreeBusyCalendar>, GmailError> {
+        let mut s = self.enter()?;
+        s.free_busy_queries.push((ids.to_vec(), from_ms, to_ms));
+        Ok(ids
+            .iter()
+            .map(|id| {
+                let answer = match s.busy.get(id) {
+                    Some(busy) => FreeBusyCalendar {
+                        busy: busy
+                            .iter()
+                            .filter(|(a, b)| *a < to_ms && *b > from_ms)
+                            .copied()
+                            .collect(),
+                        errors: Vec::new(),
+                    },
+                    None => FreeBusyCalendar {
+                        busy: Vec::new(),
+                        errors: vec!["notFound".into()],
+                    },
+                };
+                (id.clone(), answer)
+            })
+            .collect())
     }
 }
 
