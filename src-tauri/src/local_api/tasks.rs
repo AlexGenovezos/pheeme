@@ -125,12 +125,15 @@ async fn list_task_lists(api: &LocalApi, args: AccountArg) -> Result<Value, ApiE
                 .iter()
                 .map(|l| json!({ "list_id": l.id, "title": l.title }))
                 .collect();
-            json!({
+            let mut row = json!({
                 "account": a.email,
                 "access": a.access.status,
-                "note": (a.access.status != "on").then(|| access_note(a)),
                 "lists": lists,
-            })
+            });
+            if a.access.status != "on" {
+                row["note"] = access_note(a).into();
+            }
+            row
         })
         .collect();
     Ok(json!({ "accounts": accounts }))
