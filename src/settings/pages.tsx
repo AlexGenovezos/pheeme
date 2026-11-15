@@ -62,6 +62,7 @@ import {
 } from "../speedread/SpeedReader";
 import type { SettingsPageDef } from "./schema";
 import {
+  AnimateWeatherControl,
   HomeLocationControl,
   ShowWeatherControl,
   TemperatureUnitControl,
@@ -607,6 +608,14 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             title: "Temperature",
             keywords: ["weather", "fahrenheit", "celsius", "units"],
             Control: TemperatureUnitControl,
+          },
+          {
+            id: "weather.animate",
+            title: "Animate weather",
+            description:
+              "The drawings move in an event's popover, and on the day you point at. Off, they hold still. Reduce motion in your system settings holds them still too.",
+            keywords: ["weather", "animation", "motion", "moving", "still"],
+            Control: AnimateWeatherControl,
           },
         ],
       },

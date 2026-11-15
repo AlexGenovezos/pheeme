@@ -41,12 +41,14 @@
   display: none;
 }
 
-/* Month: a grid item in the date row, at the cell's right. */
+/* Month: a grid item in the date row, at the cell's right. Presses go through to the day beneath
+   (click or drag to create), so it comes alive while its week is pointed at. */
 .weather-day--month {
   align-self: center;
   justify-self: end;
   justify-content: flex-end;
   margin-right: var(--space-1-5);
+  pointer-events: none;
 }
 
 /* The event popover's forecast: the same box loading, loaded or not found. */
@@ -104,67 +106,95 @@
 }
 
 /*
- * The drawn weather (WeatherArt.tsx). Every part rests visible on its first keyframe and is paused
- * there: it moves in the event popover (--live) and while a day's forecast is hovered.
+ * The drawn weather (WeatherArt.tsx). Each part's animation is offset by its phase (--wx-p), so a
+ * paused drawing is a scattered, natural still: rain mid-fall, puffs at different heights. It
+ * plays in the event popover (--live) and while a day's forecast is pointed at (--hover), when
+ * Settings › Calendar › Animate weather is on; reduced motion holds it still.
  */
-.weather-art {
-  overflow: visible;
+.wx-shade--s .wx-stop-light {
+  stop-color: var(--weather-cloud-light);
 }
-.wx-sun__core {
-  fill: var(--weather-sun);
+.wx-shade--s .wx-stop-mid {
+  stop-color: var(--weather-cloud-mid);
 }
-.wx-rays line {
-  stroke: var(--weather-sun);
-  stroke-width: 2;
-  stroke-linecap: round;
+.wx-shade--s .wx-stop-dark {
+  stop-color: var(--weather-cloud-dark);
 }
-.wx-rays {
+.wx-shade--b .wx-stop-light {
+  stop-color: var(--weather-cloud-back-light);
+}
+.wx-shade--b .wx-stop-mid {
+  stop-color: var(--weather-cloud-back-mid);
+}
+.wx-shade--b .wx-stop-dark {
+  stop-color: var(--weather-cloud-back-dark);
+}
+.wx-shade--t .wx-stop-light {
+  stop-color: var(--weather-storm-light);
+}
+.wx-shade--t .wx-stop-mid {
+  stop-color: var(--weather-storm-mid);
+}
+.wx-shade--t .wx-stop-dark {
+  stop-color: var(--weather-storm-dark);
+}
+.wx-stop-sun-light {
+  stop-color: var(--weather-sun-light);
+}
+.wx-stop-sun-deep {
+  stop-color: var(--weather-sun-deep);
+}
+
+.wx-cloud__shadow {
+  fill: var(--weather-cloud-shadow);
+  opacity: 0.16;
+}
+.wx-puff {
   transform-box: fill-box;
   transform-origin: center;
-  animation: wx-spin var(--weather-spin-duration) linear infinite;
-}
-.wx-cloud {
-  fill: var(--weather-cloud);
-}
-.wx-cloud--back {
-  fill: var(--weather-cloud-back);
+  animation: wx-bob var(--weather-puff-duration) ease-in-out infinite alternate;
+  animation-delay: calc(var(--wx-p) * var(--weather-puff-duration) * -2);
 }
 .wx-drift {
   animation: wx-drift var(--weather-drift-duration) ease-in-out infinite alternate;
+  animation-delay: calc(var(--wx-p) * var(--weather-drift-duration) * -2);
 }
-.wx-drift--back {
-  animation-direction: alternate-reverse;
+.wx-sun__glow {
+  fill: var(--weather-sun-glow);
+  opacity: 0.3;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wx-glow var(--weather-glow-duration) ease-in-out infinite alternate;
 }
 .wx-drop {
   stroke: var(--weather-rain);
-  stroke-width: 1.8;
+  stroke-width: 0.95;
   stroke-linecap: round;
   animation: wx-fall var(--weather-fall-duration) linear infinite;
+  animation-delay: calc(var(--wx-p) * var(--weather-fall-duration) * -1);
+}
+.weather-art[data-intensity="3"] .wx-drop {
+  animation-duration: calc(var(--weather-fall-duration) * 0.7);
+  animation-delay: calc(var(--wx-p) * var(--weather-fall-duration) * -0.7);
 }
 .wx-flake {
   fill: var(--weather-snow);
   animation: wx-snow var(--weather-snow-duration) linear infinite;
-}
-.wx-delay-1 {
-  animation-delay: calc(var(--weather-fall-duration) / 3);
-}
-.wx-delay-2 {
-  animation-delay: calc(var(--weather-fall-duration) * 2 / 3);
-}
-.wx-flake.wx-delay-1 {
-  animation-delay: calc(var(--weather-snow-duration) / 3);
-}
-.wx-flake.wx-delay-2 {
-  animation-delay: calc(var(--weather-snow-duration) * 2 / 3);
+  animation-delay: calc(var(--wx-p) * var(--weather-snow-duration) * -1);
 }
 .wx-bolt {
-  fill: var(--weather-bolt);
+  fill: none;
+  stroke: var(--weather-bolt);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: miter;
   animation: wx-flash var(--weather-flash-duration) steps(1, end) infinite;
 }
-.wx-fog line {
-  stroke: var(--weather-cloud-back);
-  stroke-width: 2;
-  stroke-linecap: round;
+.wx-band {
+  fill: var(--weather-fog);
+  opacity: 0.75;
+  animation: wx-drift var(--weather-band-duration) ease-in-out infinite alternate;
+  animation-delay: calc(var(--wx-p) * var(--weather-band-duration) * -2);
 }
 
 /* After the parts: their `animation` shorthand would set it back to running. */
@@ -172,13 +202,23 @@
   animation-play-state: paused;
 }
 .weather-art--live *,
-.weather-day:hover .weather-art * {
+.weather-day:hover .weather-art--hover *,
+.cal-month__week:hover .weather-art--hover * {
   animation-play-state: running;
 }
+@media (prefers-reduced-motion: reduce) {
+  .weather-art * {
+    animation-play-state: paused !important;
+  }
+}
 
-@keyframes wx-spin {
+/* Puffs breathe: rise a little and swell. */
+@keyframes wx-bob {
+  from {
+    transform: translateY(calc(var(--weather-bob) * -1)) scale(1);
+  }
   to {
-    transform: rotate(1turn);
+    transform: translateY(var(--weather-bob)) scale(1.04);
   }
 }
 @keyframes wx-drift {
@@ -189,70 +229,66 @@
     transform: translateX(var(--weather-drift));
   }
 }
-/* Rain: falls and fades, then starts again from the cloud. */
-@keyframes wx-fall {
-  0% {
-    opacity: 1;
-    transform: translateY(0);
+@keyframes wx-glow {
+  from {
+    opacity: 0.22;
+    transform: scale(0.94);
   }
-  70% {
-    opacity: 0;
-    transform: translateY(var(--weather-fall));
-  }
-  71% {
-    opacity: 0;
-    transform: translateY(calc(var(--weather-fall) * -0.3));
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
+  to {
+    opacity: 0.42;
+    transform: scale(1.08);
   }
 }
-/* Snow: drifts down, swaying. */
-@keyframes wx-snow {
+/* Rain: a slanted streak that falls from the cloud and fades out low down. */
+@keyframes wx-fall {
   0% {
-    opacity: 1;
+    opacity: 0;
     transform: translate(0, 0);
   }
-  35% {
-    transform: translate(var(--weather-drift), calc(var(--weather-fall) * 0.4));
+  12%,
+  80% {
+    opacity: 1;
   }
-  70% {
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--weather-fall) * -0.25), var(--weather-fall));
+  }
+}
+/* Snow: drifts down, swaying side to side. */
+@keyframes wx-snow {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  12%,
+  85% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(var(--weather-drift), calc(var(--weather-fall) * 0.5));
+  }
+  100% {
     opacity: 0;
     transform: translate(calc(var(--weather-drift) * -1), var(--weather-fall));
   }
-  71% {
-    opacity: 0;
-    transform: translate(0, calc(var(--weather-fall) * -0.3));
-  }
-  100% {
-    opacity: 1;
-    transform: translate(0, 0);
-  }
 }
-/* Lightning: steady, then a double flicker. */
+/* Lightning: there most of the time, with a double flicker. */
 @keyframes wx-flash {
   0%,
   100% {
+    opacity: 0.95;
+  }
+  78% {
+    opacity: 0;
+  }
+  82% {
     opacity: 1;
   }
-  80% {
-    opacity: 0.15;
+  86% {
+    opacity: 0.1;
   }
-  84% {
+  90% {
     opacity: 1;
-  }
-  88% {
-    opacity: 0.15;
-  }
-  92% {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .weather-art * {
-    animation: none;
   }
 }
 
@@ -266,4 +302,11 @@
   padding: var(--space-2) var(--space-3);
   color: var(--color-foreground-muted);
   font-size: var(--font-size-sm);
+}
+
+/* The popover card's pause/play button, at its right. */
+.weather-event__toggle {
+  flex: none;
+  align-self: flex-start;
+  color: var(--color-foreground-muted);
 }

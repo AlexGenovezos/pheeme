@@ -1,4 +1,4 @@
-// The forecast at the top of a day: the drawn weather (it moves while hovered), the high and the
+// The forecast at the top of a day: the drawn weather (it moves while pointed at, when animation is on), the high and the
 // low. With weather on, every day keeps the same slot from the first frame, empty for days
 // outside the forecast.
 import type { CSSProperties } from "react";
@@ -37,6 +37,7 @@ export function DayWeather({
   );
   const on = useWeatherSettings((s) => s.enabled && s.home !== null);
   const days = useHomeForecast((s) => s.days);
+  const animate = useWeatherSettings((s) => s.animate);
   if (!on) return null;
   const day = days?.[date];
   if (!day) {
@@ -48,11 +49,17 @@ export function DayWeather({
       </span>
     );
   }
-  const { label, kind } = condition(day.code);
+  const { label, kind, intensity } = condition(day.code);
   const words = `${label}, high ${degrees(day.high)}, low ${degrees(day.low)}`;
   return (
     <span className={className} style={style} title={words} aria-label={words} role="img">
-      <WeatherArt kind={kind} className="weather-day__art" />
+      <WeatherArt
+        kind={kind}
+        intensity={intensity}
+        seed={date}
+        motion={animate ? "hover" : "still"}
+        className="weather-day__art"
+      />
       <span className="weather-day__high">{degrees(day.high)}</span>
       <span className="weather-day__low">{degrees(day.low)}</span>
     </span>

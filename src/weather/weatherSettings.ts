@@ -20,18 +20,21 @@ export function localUnit(language = navigator.language): TemperatureUnit {
 
 interface Stored {
   enabled: boolean;
+  /** The drawings move (in the popover, and on the day pointed at); off, they hold still. */
+  animate: boolean;
   home: WeatherPlace | null;
   unit: TemperatureUnit;
 }
 
 function read(): Stored {
-  const fallback: Stored = { enabled: false, home: null, unit: localUnit() };
+  const fallback: Stored = { enabled: false, animate: true, home: null, unit: localUnit() };
   try {
     const raw = localStorage.getItem(WEATHER_KEY);
     if (!raw) return fallback;
     const stored = JSON.parse(raw) as Partial<Stored>;
     return {
       enabled: stored.enabled === true,
+      animate: stored.animate !== false,
       home: stored.home && typeof stored.home.latitude === "number" ? stored.home : fallback.home,
       unit: stored.unit === "fahrenheit" || stored.unit === "celsius" ? stored.unit : fallback.unit,
     };
@@ -42,6 +45,7 @@ function read(): Stored {
 
 interface WeatherSettings extends Stored {
   setEnabled(enabled: boolean): void;
+  setAnimate(animate: boolean): void;
   setHome(home: WeatherPlace | null): void;
   setUnit(unit: TemperatureUnit): void;
 }
@@ -49,9 +53,9 @@ interface WeatherSettings extends Stored {
 export const useWeatherSettings = create<WeatherSettings>((set, get) => {
   const save = (patch: Partial<Stored>) => {
     set(patch);
-    const { enabled, home, unit } = get();
+    const { enabled, animate, home, unit } = get();
     try {
-      localStorage.setItem(WEATHER_KEY, JSON.stringify({ enabled, home, unit }));
+      localStorage.setItem(WEATHER_KEY, JSON.stringify({ enabled, animate, home, unit }));
     } catch {
       // Storage full or blocked: the choice lasts for this session.
     }
@@ -59,6 +63,7 @@ export const useWeatherSettings = create<WeatherSettings>((set, get) => {
   return {
     ...read(),
     setEnabled: (enabled) => save({ enabled }),
+    setAnimate: (animate) => save({ animate }),
     setHome: (home) => save({ home }),
     setUnit: (unit) => save({ unit }),
   };

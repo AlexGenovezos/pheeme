@@ -1,7 +1,9 @@
 // The forecast for an event's location, a row in its popover. Whether the row shows is decided
 // before anything loads (weather on, a place-like location, a day in the forecast), so the
 // popover keeps its size: the row starts as a placeholder and fills in.
+import { Pause, Play } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { IconButton } from "../components/ui/IconButton";
 import { Skeleton } from "../components/ui/Skeleton";
 import { daysBetween, dateOf, formatDay } from "../calendar/dates";
 import { cx } from "../lib/utils";
@@ -40,6 +42,7 @@ type Result =
 export function EventWeather({ event, tz }: { event: CalendarEvent; tz: string }) {
   const enabled = useWeatherSettings((s) => s.enabled);
   const unit = useWeatherSettings((s) => s.unit);
+  const animate = useWeatherSettings((s) => s.animate);
   const now = useNow();
   const location = event.location?.trim() ?? "";
   const date = eventDate(event, tz);
@@ -87,17 +90,25 @@ export function EventWeather({ event, tz }: { event: CalendarEvent; tz: string }
           : "Pheeme can't tell which town this is";
     return (
       <Card
-        art={<WeatherArt kind="cloudy" className="weather-event__art" />}
+        art={<WeatherArt kind="cloudy" seed={location} className="weather-event__art" />}
         head="No forecast"
         place={why}
         muted
       />
     );
   }
-  const { label, kind } = condition(day.code);
+  const { label, kind, intensity } = condition(day.code);
   return (
     <Card
-      art={<WeatherArt kind={kind} live className="weather-event__art" />}
+      art={
+        <WeatherArt
+          kind={kind}
+          intensity={intensity}
+          seed={day.date}
+          motion={animate ? "live" : "still"}
+          className="weather-event__art"
+        />
+      }
       head={
         <>
           {label}{" "}
@@ -107,6 +118,22 @@ export function EventWeather({ event, tz }: { event: CalendarEvent; tz: string }
         </>
       }
       place={`${forecast!.place.name} · ${formatDay(placeDate!, { weekday: "long" })}`}
+    />
+  );
+}
+
+/** Stops or starts the drawings moving (the same switch as Settings › Calendar). */
+function AnimateToggle() {
+  const animate = useWeatherSettings((s) => s.animate);
+  const setAnimate = useWeatherSettings((s) => s.setAnimate);
+  return (
+    <IconButton
+      size="sm"
+      className="weather-event__toggle"
+      label={animate ? "Stop weather animation" : "Animate weather"}
+      aria-pressed={animate}
+      icon={animate ? <Pause /> : <Play />}
+      onClick={() => setAnimate(!animate)}
     />
   );
 }
@@ -130,6 +157,7 @@ function Card({
         <div className="weather-event__head">{head}</div>
         <div className="weather-event__place">{place}</div>
       </div>
+      <AnimateToggle />
     </div>
   );
 }

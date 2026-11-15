@@ -44,7 +44,7 @@ test("the days and an event's place show the forecast", async ({ page }, testInf
   await page.screenshot({ path: testInfo.outputPath("week.png") });
 
   // The drawings hold still until hovered.
-  const rays = monday.locator(".wx-rays");
+  const rays = monday.locator(".wx-sun__glow");
   await expect(rays).toHaveCSS("animation-play-state", "paused");
   await monday.getByRole("img").hover();
   await expect(rays).toHaveCSS("animation-play-state", "running");
@@ -54,11 +54,18 @@ test("the days and an event's place show the forecast", async ({ page }, testInf
   const forecast = popover.locator(".weather-event");
   await expect(forecast).toContainText("San Francisco · Thursday");
   // The scene moves: rain falls between two frames.
-  const art = forecast.locator(".weather-art--live");
+  const art = forecast.locator(".weather-art");
+  await expect(art).toHaveClass(/weather-art--live/);
   const before = await art.screenshot();
   await page.waitForTimeout(400);
   expect((await art.screenshot()).equals(before)).toBe(false);
   await popover.screenshot({ path: testInfo.outputPath("popover.png") });
+  // The little pause button holds every drawing still.
+  await forecast.getByRole("button", { name: "Stop weather animation" }).click();
+  const still = await art.screenshot();
+  await page.waitForTimeout(400);
+  expect((await art.screenshot()).equals(still)).toBe(true);
+  await forecast.getByRole("button", { name: "Animate weather" }).click();
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("m");

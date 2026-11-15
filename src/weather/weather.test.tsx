@@ -5,6 +5,7 @@ import { useCalendarStore } from "../calendar/calendarStore";
 import type { CalendarEvent, WeatherPlace } from "../lib/tauri";
 import { createWeatherHandlers } from "../preview/weather";
 import { DayWeather } from "./DayWeather";
+import { WeatherArt } from "./WeatherArt";
 import { EventWeather, mayNameAPlace } from "./EventWeather";
 import { refreshHomeForecast, useHomeForecast } from "./forecast";
 import { ShowWeatherControl, placeFromZone } from "./WeatherSettings";
@@ -44,7 +45,12 @@ beforeEach(() => {
     if (held.includes(cmd)) return new Promise(() => {});
     return handlers[cmd]?.(a);
   });
-  useWeatherSettings.setState({ enabled: true, home: SPRINGFIELD, unit: "fahrenheit" });
+  useWeatherSettings.setState({
+    enabled: true,
+    animate: true,
+    home: SPRINGFIELD,
+    unit: "fahrenheit",
+  });
   useHomeForecast.setState({ key: null, days: null, at: 0, reading: null });
 });
 
@@ -197,6 +203,50 @@ describe("event popover", () => {
     expect(screen.getByText("San Francisco · Friday")).toBeInTheDocument();
     // The drawing moves in the popover.
     expect(document.querySelector(".weather-art--live")).not.toBeNull();
+  });
+
+  test("the card's pause button stops the drawings, everywhere, and play starts them", async () => {
+    render(
+      <>
+        <EventWeather event={event("San Francisco")} tz="UTC" />
+        <DayWeather date={TODAY} />
+      </>,
+    );
+    refreshHomeForecast();
+    await flush();
+    expect(document.querySelector(".weather-event .weather-art--live")).not.toBeNull();
+    expect(document.querySelector(".weather-day .weather-art--hover")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Stop weather animation" }));
+    expect(document.querySelectorAll(".weather-art--still")).toHaveLength(2);
+    expect(JSON.parse(localStorage.getItem(WEATHER_KEY)!)).toMatchObject({ animate: false });
+    fireEvent.click(screen.getByRole("button", { name: "Animate weather" }));
+    expect(document.querySelector(".weather-event .weather-art--live")).not.toBeNull();
+  });
+
+  test("a day's sky is laid out the same every time it's drawn, and differs between days", () => {
+    const sky = (date: string) => {
+      const { container, unmount } = render(<WeatherArt kind="rain" seed={date} />);
+      const shapes = [...container.querySelectorAll("circle, line")].map((el) =>
+        ["cx", "cy", "r", "x1", "y1"].map((a) => el.getAttribute(a)).join(),
+      );
+      unmount();
+      return shapes.join("|");
+    };
+    expect(sky("2026-11-12")).toBe(sky("2026-11-12"));
+    expect(sky("2026-11-12")).not.toBe(sky("2026-11-13"));
+  });
+
+  test("heavier rain lets more fall", () => {
+    const drops = (intensity: 1 | 2 | 3) => {
+      const { container, unmount } = render(
+        <WeatherArt kind="rain" intensity={intensity} seed="x" />,
+      );
+      const n = container.querySelectorAll(".wx-drop").length;
+      unmount();
+      return n;
+    };
+    expect(drops(1)).toBeLessThan(drops(2));
+    expect(drops(2)).toBeLessThan(drops(3));
   });
 
   test("says so when the place isn't a town it knows", async () => {

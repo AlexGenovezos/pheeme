@@ -75,6 +75,12 @@ export function ShowWeatherControl() {
   );
 }
 
+export function AnimateWeatherControl() {
+  const animate = useWeatherSettings((s) => s.animate);
+  const setAnimate = useWeatherSettings((s) => s.setAnimate);
+  return <Switch label="Animate weather" checked={animate} onChange={setAnimate} />;
+}
+
 export function HomeLocationControl() {
   const home = useWeatherSettings((s) => s.home);
   const setHome = useWeatherSettings((s) => s.setHome);
