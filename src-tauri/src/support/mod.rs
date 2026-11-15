@@ -3,6 +3,7 @@
 //! Tauri-free; the commands in `commands/support.rs` are thin adapters.
 
 pub mod bundle;
+pub mod email;
 pub mod scrub;
 pub mod upload;
 
@@ -269,6 +270,8 @@ pub struct Sources<'a> {
     pub opens: Vec<OpenTiming>,
     pub shown: Vec<ShownTiming>,
     pub log_dir: Option<PathBuf>,
+    /// The email on screen, when the user chose to include it.
+    pub email: Option<email::EmailRequest>,
 }
 
 /// The upload's metadata and the zip. Scrubbing and zipping run off the async runtime.
@@ -281,13 +284,23 @@ pub async fn prepare(
     let summaries = account_summaries(sources.db, sources.accounts).await?;
     let mut own_addresses: Vec<String> = sources.accounts.iter().map(|a| a.email.clone()).collect();
     own_addresses.extend(reply_to.clone());
+    let email = match &sources.email {
+        Some(request) => Some(email::collect(sources.db, sources.accounts, request).await?),
+        None => None,
+    };
+    let mut highlights = highlights(&sources.opens, &sources.shown);
+    let mut extra_files = Vec::new();
+    if let Some(email) = email {
+        highlights.push(email.highlight);
+        extra_files = email.files;
+    }
     let meta = UploadMeta {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         os: std::env::consts::OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         reply_to: reply_to.clone(),
         note: note.clone(),
-        highlights: highlights(&sources.opens, &sources.shown),
+        highlights,
     };
     let input = bundle::BundleInput {
         note,
@@ -300,6 +313,7 @@ pub async fn prepare(
         ),
         log_dir: sources.log_dir,
         own_addresses,
+        extra_files,
         max_bytes: MAX_ZIP_BYTES,
     };
     let zip = tokio::task::spawn_blocking(move || bundle::build(&input))
@@ -517,6 +531,7 @@ mod tests {
                 opens: vec![timing(1500)],
                 shown: vec![],
                 log_dir: Some(logs.path().to_path_buf()),
+                email: None,
             },
             " it hangs ",
             None,

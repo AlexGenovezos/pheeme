@@ -28,7 +28,12 @@ export function EmailBody({
 }) {
   if (message.bodyHtml) {
     return (
-      <HtmlBody key={message.id} html={message.bodyHtml} declaresDark={message.declaresDarkMode} />
+      <HtmlBody
+        key={message.id}
+        messageId={message.id}
+        html={message.bodyHtml}
+        declaresDark={message.declaresDarkMode}
+      />
     );
   }
   if (message.bodyText)
@@ -54,11 +59,13 @@ export function EmailBody({
 }
 
 interface HtmlBodyProps {
+  /** Marks the frame's message, for Send diagnostics' image report (`src/settings/emailOnScreen.ts`). */
+  messageId?: string;
   html: string;
   declaresDark: boolean;
 }
 
-export function HtmlBody({ html, declaresDark }: HtmlBodyProps) {
+export function HtmlBody({ messageId, html, declaresDark }: HtmlBodyProps) {
   const dark = useThemeStore((s) => s.resolved === "dark");
   const wrapper = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -109,7 +116,7 @@ export function HtmlBody({ html, declaresDark }: HtmlBodyProps) {
 
   // `onLoad`: a frame moved in the DOM starts over with a blank document and fires `load`; write it again.
   return (
-    <div className="email-body" ref={wrapper}>
+    <div className="email-body" ref={wrapper} data-message-id={messageId}>
       <iframe
         ref={frame}
         className="email-body__frame"
