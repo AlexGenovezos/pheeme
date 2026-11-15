@@ -66,6 +66,8 @@ Answering an invitation always tells the organizer, as it does in Google Calenda
 `thread_ids`: the cached matches change at once, and Gmail changes matching mail that isn't downloaded
 yet, without the assistant listing every conversation first. `dry_run: true` says how many cached
 conversations would change and changes nothing. `trash` and `move_to_inbox` take `thread_ids` only.
+`move_to_inbox` also rescues mail from Trash and Spam (as Gmail's **Not spam** does), so an assistant
+can undo what a filter caught.
 
 Lists are kept small for assistants: snippets lose the invisible padding marketing mail puts in them and
 stop at 120 characters, labels read like mailbox names (`inbox`, `promotions`, `trash`, then your
@@ -85,6 +87,8 @@ draft a reply to Sam offering two times."
 - Loopback only: the server never listens on a network interface, and refuses requests whose `Host` or
   `Origin` isn't `127.0.0.1`/`localhost` on its port.
 - Each assistant has its own token. **Remove** revokes it at once.
+- Each assistant may make 120 reads and 30 changes a minute. Past that, a call is refused (and logged)
+  with how many seconds to wait, so a runaway loop can't flood Gmail or your calendar.
 - One-click unsubscribe only POSTs to an https link on a public host name, never to an IP address or a
   local name, and doesn't follow redirects.
 - **Activity** lists every tool call (Pheeme keeps the latest 1,000): which client, which tool, when, and

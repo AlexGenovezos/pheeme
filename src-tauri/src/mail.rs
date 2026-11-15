@@ -927,10 +927,12 @@ impl MailService {
         if thread_ids.is_empty() || (add.is_empty() && remove.is_empty()) {
             return Err(MailError::Invalid("Nothing to change.".into()));
         }
-        if add
-            .iter()
-            .chain(remove)
-            .any(|l| l == "TRASH" || l == "SPAM")
+        // Spam can be left only the way Gmail's Not spam leaves it: back to the inbox.
+        let not_spam = add.iter().any(|l| l == "INBOX");
+        if add.iter().any(|l| l == "TRASH" || l == "SPAM")
+            || remove
+                .iter()
+                .any(|l| l == "TRASH" || (l == "SPAM" && !not_spam))
         {
             return Err(MailError::Invalid("Use trash for Trash.".into()));
         }
