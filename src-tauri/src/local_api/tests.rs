@@ -180,13 +180,23 @@ async fn lists_mailboxes_with_label_names() {
         .collect();
     assert_eq!(ids, ["t1", "t2", "t3"]);
     let first = &inbox["threads"][0];
-    assert_eq!(first["account"], "me@example.com");
+    // One account: rows don't repeat it, and flags that are off are left out.
+    assert!(first.get("account").is_none(), "{first}");
+    assert!(first.get("starred").is_none(), "{first}");
+    assert!(first.get("messages").is_none(), "{first}");
     assert_eq!(first["from"], "Shop <shop@x.com>");
     assert_eq!(first["unread"], true);
-    assert!(first["labels"]
-        .as_array()
-        .unwrap()
-        .contains(&json!("Receipts")));
+    assert_eq!(first["labels"], json!(["inbox", "Receipts"]));
+
+    let compact = h
+        .call("list_mailbox", json!({ "compact": true }))
+        .await
+        .unwrap();
+    let row = &compact["threads"][0];
+    assert!(
+        row.get("labels").is_none() && row.get("snippet").is_none(),
+        "{row}"
+    );
 
     let unread = h
         .call("list_mailbox", json!({ "unread_only": true }))
@@ -655,7 +665,8 @@ async fn reports_the_heaviest_senders() {
     assert_eq!(deals["unread"], 3);
     assert_eq!(deals["in_inbox"], 3);
     assert_eq!(deals["tab"], "promotions");
-    assert_eq!(deals["you_wrote"], 0);
+    // Counts of 0 are left out.
+    assert!(deals.get("you_wrote").is_none(), "{deals}");
     assert_eq!(deals["thread_id"], "td0");
     assert!(deals["last_date"].is_string());
     let bank = &senders[1];
@@ -714,7 +725,7 @@ async fn audits_what_filters_caught() {
     assert!(caught["labels"]
         .as_array()
         .unwrap()
-        .contains(&json!("TRASH")));
+        .contains(&json!("trash")));
 
     let all = h
         .call("filter_audit", json!({ "all": true }))
@@ -826,4 +837,312 @@ fn every_catalog_example_parses() {
             tool.name
         );
     }
+}
+
+/// Unread Promotions from two senders, one of them twice, plus a read one and an inbox one.
+fn promotions() -> FakeGmail {
+    let fake = FakeGmail::new();
+    fake.add_user_label("Label_1", "Deals", None);
+    for (n, from) in [
+        "Shop <deals@shop.com>",
+        "Shop <deals@shop.com>",
+        "News <news@paper.com>",
+    ]
+    .iter()
+    .enumerate()
+    {
+        fake.seed(FakeMsg {
+            body: "Big sale today".into(),
+            ..msg(
+                &format!("p{n}"),
+                &format!("tp{n}"),
+                &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS", "Label_1"],
+                from,
+            )
+            .days_ago(n as i64 + 1)
+        });
+    }
+    fake.seed(
+        msg(
+            "r1",
+            "tr1",
+            &["INBOX", "CATEGORY_PROMOTIONS"],
+            "Shop <deals@shop.com>",
+        )
+        .days_ago(5),
+    );
+    fake.seed(msg("i1", "ti1", &["INBOX", "UNREAD"], "Friend <f@x.com>").days_ago(1));
+    fake
+}
+
+#[tokio::test]
+async fn counts_and_groups_mail_in_one_call() {
+    let h = setup(promotions()).await;
+
+    let out = h
+        .call(
+            "count_mail",
+            json!({ "mailbox": "promotions", "unread_only": true, "group_by": "sender" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(out["conversations"], 3);
+    assert_eq!(out["unread"], 3);
+    assert_eq!(
+        out["groups"],
+        json!([
+            { "group": "deals@shop.com", "name": "Shop", "conversations": 2, "unread": 2 },
+            { "group": "news@paper.com", "name": "News", "conversations": 1, "unread": 1 },
+        ])
+    );
+    // The log keeps the groups a count returned.
+    let logged = h.api.activity(1).await.unwrap()[0].result.clone().unwrap();
+    assert!(logged.contains("deals@shop.com"), "{logged}");
+
+    let all = h
+        .call(
+            "count_mail",
+            json!({ "mailbox": "promotions", "group_by": "domain", "limit": 1 }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(all["conversations"], 4);
+    assert_eq!(all["unread"], 3);
+    assert_eq!(all["groups"][0]["group"], "shop.com");
+    assert_eq!(all["groups"][0]["conversations"], 3);
+    assert_eq!(all["more_groups"], 1);
+
+    let tabs = h
+        .call("count_mail", json!({ "group_by": "tab" }))
+        .await
+        .unwrap();
+    assert_eq!(
+        tabs["groups"],
+        json!([
+            { "group": "promotions", "conversations": 4, "unread": 3 },
+            { "group": "primary", "conversations": 1, "unread": 1 },
+        ])
+    );
+
+    let labels = h
+        .call(
+            "count_mail",
+            json!({ "query": "sale", "group_by": "label" }),
+        )
+        .await
+        .unwrap();
+    let groups: Vec<_> = labels["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| {
+            (
+                g["group"].as_str().unwrap(),
+                g["conversations"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert!(groups.contains(&("Deals", 3)), "{groups:?}");
+    assert!(groups.contains(&("promotions", 3)), "{groups:?}");
+
+    let months = h
+        .call(
+            "count_mail",
+            json!({ "query": "is:unread", "group_by": "month" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(months["conversations"], 4);
+    assert_eq!(months["groups"][0]["group"].as_str().unwrap().len(), 7);
+
+    for bad in [
+        json!({ "query": "sale", "mailbox": "inbox" }),
+        json!({ "group_by": "colour" }),
+        json!({ "query": "sale OR deal" }),
+    ] {
+        assert!(h.call("count_mail", bad.clone()).await.is_err(), "{bad}");
+    }
+}
+
+#[tokio::test]
+async fn changes_every_match_of_a_search_with_a_dry_run_first() {
+    let fake = promotions();
+    let h = setup(fake).await;
+    h.api.set_allows(Permission::Organize, true).await.unwrap();
+    // Old promotional mail Pheeme hasn't downloaded changes on Gmail too.
+    h.fake.add(FakeMsg {
+        body: "Big sale today".into(),
+        ..msg(
+            "old",
+            "told",
+            &["UNREAD", "CATEGORY_PROMOTIONS"],
+            "deals@shop.com",
+        )
+        .days_ago(400)
+    });
+    let query = "sale category:promotions";
+
+    let dry = h
+        .call("mark_read", json!({ "query": query, "dry_run": true }))
+        .await
+        .unwrap();
+    // The three unread promotions, and the old one too if the background backfill has
+    // cached it by now.
+    let cached = dry["cached_conversations"].as_i64().unwrap();
+    assert!((3..=4).contains(&cached), "{dry}");
+    assert_eq!(dry["dry_run"], true);
+    assert_eq!(dry["gmail_query"], "(sale category:promotions) is:unread");
+    let unread = || async {
+        h.call(
+            "count_mail",
+            json!({ "mailbox": "promotions", "unread_only": true }),
+        )
+        .await
+        .unwrap()["conversations"]
+            .clone()
+    };
+    assert_eq!(unread().await, 3, "a dry run changes nothing");
+
+    let reads = h.fake.calls("get_thread");
+    let done = h
+        .call("mark_read", json!({ "query": query }))
+        .await
+        .unwrap();
+    assert!(
+        done["cached_conversations"].as_i64().unwrap() >= 3,
+        "{done}"
+    );
+    assert_eq!(unread().await, 0, "cached matches change at once");
+    h.sync.sync_account("a1").await.unwrap();
+    let labels = |id: &str| h.fake.message(id).unwrap().labels;
+    for id in ["p0", "p1", "p2", "old"] {
+        assert!(!labels(id).contains(&"UNREAD".to_string()), "{id}");
+    }
+    assert!(
+        labels("i1").contains(&"UNREAD".to_string()),
+        "outside the search"
+    );
+    assert_eq!(
+        h.fake.calls("get_thread"),
+        reads,
+        "no per-conversation reads"
+    );
+
+    let archived = h
+        .call("archive", json!({ "query": "from:news@paper.com" }))
+        .await
+        .unwrap();
+    assert_eq!(archived["cached_conversations"], 1);
+    assert_eq!(mailbox(&h, "promotions").await, ["tp0", "tp1", "tr1"]);
+
+    for (tool, args, says) in [
+        ("trash", json!({ "query": "sale" }), "takes thread_ids"),
+        (
+            "move_to_inbox",
+            json!({ "query": "sale" }),
+            "takes thread_ids",
+        ),
+        (
+            "mark_read",
+            json!({ "thread_ids": ["tp0"], "dry_run": true }),
+            "dry_run goes with query",
+        ),
+        (
+            "star",
+            json!({ "thread_ids": ["tp0"], "query": "sale" }),
+            "either thread_ids or query",
+        ),
+    ] {
+        let err = h.call(tool, args).await.unwrap_err();
+        assert!(err.to_string().contains(says), "{tool}: {err}");
+    }
+}
+
+#[tokio::test]
+async fn long_pages_stop_early_and_page_on() {
+    let fake = FakeGmail::new();
+    for n in 0..40 {
+        fake.seed(FakeMsg {
+            subject: "x".repeat(2_000),
+            ..msg(&format!("m{n}"), &format!("t{n:02}"), &["INBOX"], "a@x.com").days_ago(n + 1)
+        });
+    }
+    let h = setup(fake).await;
+    let mut seen = Vec::new();
+    let mut cursor: Option<String> = None;
+    let mut pages = 0;
+    loop {
+        let mut args = json!({ "limit": 100 });
+        if let Some(c) = &cursor {
+            args["cursor"] = json!(c);
+        }
+        let page = h.call("list_mailbox", args).await.unwrap();
+        assert!(page.to_string().len() < 70_000, "a page stays small");
+        seen.extend(ids(&page, "threads"));
+        pages += 1;
+        match page["next_cursor"].as_str() {
+            Some(c) => cursor = Some(c.to_owned()),
+            None => break,
+        }
+    }
+    assert!(pages > 1, "40 rows of 2,000 characters don't fit one page");
+    let want: Vec<String> = (0..40).map(|n| format!("t{n:02}")).collect();
+    assert_eq!(seen, want);
+}
+
+#[tokio::test]
+async fn sender_report_filters_by_tab_and_sorts_by_unread() {
+    let fake = FakeGmail::new();
+    for n in 0..3 {
+        fake.seed(
+            msg(
+                &format!("b{n}"),
+                &format!("tb{n}"),
+                &["INBOX"],
+                "bank@x.com",
+            )
+            .days_ago(n + 1),
+        );
+    }
+    for n in 0..2 {
+        fake.seed(
+            msg(
+                &format!("d{n}"),
+                &format!("td{n}"),
+                &["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"],
+                "deals@x.com",
+            )
+            .days_ago(n + 1),
+        );
+    }
+    let h = setup(fake).await;
+    let senders = |out: Value| -> Vec<String> {
+        out["accounts"][0]["senders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["sender"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let most = h.call("sender_report", json!({})).await.unwrap();
+    assert_eq!(senders(most), ["bank@x.com", "deals@x.com"]);
+    let unread = h
+        .call("sender_report", json!({ "sort_by": "unread" }))
+        .await
+        .unwrap();
+    assert_eq!(senders(unread), ["deals@x.com", "bank@x.com"]);
+    let promos = h
+        .call("sender_report", json!({ "tab": "promotions" }))
+        .await
+        .unwrap();
+    assert_eq!(senders(promos), ["deals@x.com"]);
+    let primary = h
+        .call("sender_report", json!({ "tab": "primary" }))
+        .await
+        .unwrap();
+    assert_eq!(senders(primary), ["bank@x.com"]);
+    assert!(h
+        .call("sender_report", json!({ "sort_by": "date" }))
+        .await
+        .is_err());
 }

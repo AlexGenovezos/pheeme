@@ -409,14 +409,35 @@ pub struct DbSenderStats {
     pub you_wrote: i64,
 }
 
-/// Who sent the account the most mail since `since_ms`, most first: received mail only
+/// Which senders [`sender_stats`] counts and how it ranks them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SenderQuery<'a> {
+    pub since_ms: i64,
+    pub limit: i64,
+    /// Only mail in one inbox tab: `primary` or a `CATEGORY_*` id.
+    pub tab: Option<&'a str>,
+    /// Most unread first instead of most mail.
+    pub by_unread: bool,
+}
+
+impl SenderQuery<'_> {
+    pub fn top(since_ms: i64, limit: i64) -> Self {
+        Self {
+            since_ms,
+            limit,
+            tab: None,
+            by_unread: false,
+        }
+    }
+}
+
+/// Who sent the account the most mail since `q.since_ms`, most first: received mail only
 /// (not the account's own, its drafts or what it sent).
 pub async fn sender_stats(
     pool: &SqlitePool,
     account_id: &str,
-    since_ms: i64,
     own_address: &str,
-    limit: i64,
+    q: &SenderQuery<'_>,
 ) -> Result<Vec<DbSenderStats>> {
     let rows = sqlx::query_as!(
         DbSenderStats,
@@ -447,13 +468,22 @@ pub async fn sender_stats(
              AND m.from_address IS NOT NULL AND m.from_address != ''
              AND lower(m.from_address) != lower(?3)
              AND NOT EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value IN ('DRAFT', 'SENT'))
+             AND (?5 IS NULL
+                  OR (?5 = 'primary' AND NOT EXISTS (
+                        SELECT 1 FROM json_each(m.label_ids)
+                        WHERE value IN ('CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL',
+                                        'CATEGORY_UPDATES', 'CATEGORY_FORUMS')))
+                  OR EXISTS (SELECT 1 FROM json_each(m.label_ids) WHERE value = ?5))
            GROUP BY lower(m.from_address)
-           ORDER BY COUNT(*) DESC, MAX(m.date) DESC
+           ORDER BY CASE WHEN ?6 THEN SUM(m.is_read = 0) ELSE COUNT(*) END DESC,
+                    COUNT(*) DESC, MAX(m.date) DESC
            LIMIT ?4"#,
         account_id,
-        since_ms,
+        q.since_ms,
         own_address,
-        limit
+        q.limit,
+        q.tab,
+        q.by_unread
     )
     .fetch_all(pool)
     .await?;
@@ -586,8 +616,8 @@ pub async fn latest_from(
 ) -> Result<Option<(String, String, Option<String>)>> {
     let row = sqlx::query!(
         r#"SELECT id AS "id!", thread_id AS "thread_id!", raw_headers
-           FROM messages INDEXED BY idx_messages_date
-           WHERE date >= ?3 AND account_id = ?1 AND lower(from_address) = lower(?2)
+           FROM messages INDEXED BY idx_messages_sender
+           WHERE account_id = ?1 AND lower(from_address) = lower(?2) AND date >= ?3
            ORDER BY (raw_headers IS NOT NULL) DESC, date DESC LIMIT 1"#,
         account_id,
         address,
