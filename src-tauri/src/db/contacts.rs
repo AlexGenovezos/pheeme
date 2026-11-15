@@ -110,13 +110,24 @@ pub async fn all<'e>(ex: impl SqliteExecutor<'e>, account_id: &str) -> Result<Ve
         .collect())
 }
 
+/// One address from a Google Contacts list, with what its contact card shows.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GoogleContact {
+    /// Lowercased.
+    pub address: String,
+    pub name: Option<String>,
+    pub phone: Option<String>,
+    pub organization: Option<String>,
+    pub photo_url: Option<String>,
+}
+
 /// Replace one of the account's Google Contacts lists (`saved`, or Other contacts) with
-/// `people` (lowercased address, name). Run it in a write transaction.
+/// `people`. Run it in a write transaction.
 pub async fn replace_google(
     conn: &mut SqliteConnection,
     account_id: &str,
     saved: bool,
-    people: &[(String, Option<String>)],
+    people: &[GoogleContact],
 ) -> Result<()> {
     sqlx::query!(
         "DELETE FROM google_contacts WHERE account_id = ? AND saved = ?",
@@ -125,20 +136,57 @@ pub async fn replace_google(
     )
     .execute(&mut *conn)
     .await?;
-    for (address, name) in people {
+    for p in people {
         sqlx::query!(
-            "INSERT INTO google_contacts (account_id, address, name, saved) VALUES (?, ?, ?, ?)
+            "INSERT INTO google_contacts (account_id, address, name, saved, phone, organization, photo_url)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (account_id, saved, address) DO UPDATE SET
-                 name = coalesce(google_contacts.name, excluded.name)",
+                 name = coalesce(google_contacts.name, excluded.name),
+                 phone = coalesce(google_contacts.phone, excluded.phone),
+                 organization = coalesce(google_contacts.organization, excluded.organization),
+                 photo_url = coalesce(google_contacts.photo_url, excluded.photo_url)",
             account_id,
-            address,
-            name,
-            saved
+            p.address,
+            p.name,
+            saved,
+            p.phone,
+            p.organization,
+            p.photo_url
         )
         .execute(&mut *conn)
         .await?;
     }
     Ok(())
+}
+
+/// What the address's contact card shows from Google Contacts: the user's own contact first,
+/// then Other contacts, field by field.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CardRow {
+    pub phone: Option<String>,
+    pub organization: Option<String>,
+    pub photo_url: Option<String>,
+}
+
+pub async fn card<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    address: &str,
+) -> Result<CardRow> {
+    let rows = sqlx::query!(
+        "SELECT phone, organization, photo_url FROM google_contacts
+         WHERE account_id = ? AND address = ? ORDER BY saved DESC",
+        account_id,
+        address
+    )
+    .fetch_all(ex)
+    .await?;
+    let first = |pick: fn(&_) -> &Option<String>| rows.iter().find_map(|r| pick(r).clone());
+    Ok(CardRow {
+        phone: first(|r| &r.phone),
+        organization: first(|r| &r.organization),
+        photo_url: first(|r| &r.photo_url),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

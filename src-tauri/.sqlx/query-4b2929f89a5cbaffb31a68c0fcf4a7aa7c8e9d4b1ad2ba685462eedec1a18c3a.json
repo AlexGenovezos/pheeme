@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT phone, organization, photo_url FROM google_contacts\n         WHERE account_id = ? AND address = ? ORDER BY saved DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "phone",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "google_contacts",
+            "name": "phone"
+          }
+        }
+      },
+      {
+        "name": "organization",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "google_contacts",
+            "name": "organization"
+          }
+        }
+      },
+      {
+        "name": "photo_url",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "google_contacts",
+            "name": "photo_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "4b2929f89a5cbaffb31a68c0fcf4a7aa7c8e9d4b1ad2ba685462eedec1a18c3a"
+}

@@ -10,6 +10,10 @@ use std::sync::Arc;
 
 pub const PEOPLE_BASE_URL: &str = "https://people.googleapis.com/v1";
 
+/// What each list is read with. Other contacts have no organizations.
+const SAVED_FIELDS: &str = "names,emailAddresses,phoneNumbers,organizations,photos";
+const OTHER_FIELDS: &str = "names,emailAddresses,phoneNumbers,photos";
+
 /// Largest page either list returns.
 const PAGE_SIZE: &str = "1000";
 
@@ -26,6 +30,12 @@ pub enum ContactList {
 pub struct Person {
     pub name: Option<String>,
     pub addresses: Vec<String>,
+    /// The first phone number.
+    pub phone: Option<String>,
+    /// "Title at Company", or whichever of the two is there (saved contacts only).
+    pub organization: Option<String>,
+    /// A photo the person or the user chose; Google's generated initial photos are left out.
+    pub photo_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -51,6 +61,12 @@ struct ApiPerson {
     names: Vec<ApiName>,
     #[serde(default)]
     email_addresses: Vec<ApiEmail>,
+    #[serde(default)]
+    phone_numbers: Vec<ApiValue>,
+    #[serde(default)]
+    organizations: Vec<ApiOrganization>,
+    #[serde(default)]
+    photos: Vec<ApiPhoto>,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +78,29 @@ struct ApiName {
 #[derive(Deserialize)]
 struct ApiEmail {
     value: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApiValue {
+    value: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApiOrganization {
+    name: Option<String>,
+    title: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApiPhoto {
+    url: Option<String>,
+    #[serde(default)]
+    default: bool,
+}
+
+/// `value` trimmed, or `None` when it's blank.
+fn text(value: Option<String>) -> Option<String> {
+    value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
 impl From<ApiPerson> for Person {
@@ -80,6 +119,19 @@ impl From<ApiPerson> for Person {
                 .map(|v| v.trim().to_owned())
                 .filter(|v| !v.is_empty())
                 .collect(),
+            phone: p.phone_numbers.into_iter().find_map(|n| text(n.value)),
+            organization: p.organizations.into_iter().find_map(|o| {
+                match (text(o.title), text(o.name)) {
+                    (Some(title), Some(name)) => Some(format!("{title} at {name}")),
+                    (title, name) => title.or(name),
+                }
+            }),
+            photo_url: p
+                .photos
+                .into_iter()
+                .filter(|p| !p.default)
+                .find_map(|p| text(p.url))
+                .filter(|url| url.starts_with("https://")),
         }
     }
 }
@@ -116,9 +168,9 @@ impl GmailClient {
     ) -> Result<PeoplePage, GmailError> {
         let req = match list {
             ContactList::Saved => ApiRequest::get(&["people", "me", "connections"])
-                .query("personFields", "names,emailAddresses"),
+                .query("personFields", SAVED_FIELDS),
             ContactList::Other => {
-                ApiRequest::get(&["otherContacts"]).query("readMask", "names,emailAddresses")
+                ApiRequest::get(&["otherContacts"]).query("readMask", OTHER_FIELDS)
             }
         }
         .query("pageSize", PAGE_SIZE)
@@ -161,14 +213,21 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/people/me/connections"))
-            .and(query_param("personFields", "names,emailAddresses"))
+            .and(query_param("personFields", SAVED_FIELDS))
             .and(query_param("pageSize", "1000"))
             .and(query_param("pageToken", "p2"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "connections": [
                     {"resourceName": "people/1",
                      "names": [{"displayName": "  "}, {"displayName": "Ada Lovelace"}],
-                     "emailAddresses": [{"value": "ada@x.com"}, {"value": " "}, {"value": "a@y.org"}]},
+                     "emailAddresses": [{"value": "ada@x.com"}, {"value": " "}, {"value": "a@y.org"}],
+                     "phoneNumbers": [{"value": " "}, {"value": "+44 20 7946 0000"}],
+                     "organizations": [{"name": "Analytical Engines", "title": "Programmer"}],
+                     "photos": [{"url": "https://lh3.googleusercontent.com/a", "default": true},
+                                {"url": "https://lh3.googleusercontent.com/b"}]},
+                    {"resourceName": "people/3",
+                     "organizations": [{"name": " Acme "}],
+                     "photos": [{"url": "https://lh3.googleusercontent.com/c", "default": true}]},
                     {"resourceName": "people/2"}
                 ],
                 "nextPageToken": "p3"
@@ -187,6 +246,13 @@ mod tests {
                 Person {
                     name: Some("Ada Lovelace".into()),
                     addresses: vec!["ada@x.com".into(), "a@y.org".into()],
+                    phone: Some("+44 20 7946 0000".into()),
+                    organization: Some("Programmer at Analytical Engines".into()),
+                    photo_url: Some("https://lh3.googleusercontent.com/b".into()),
+                },
+                Person {
+                    organization: Some("Acme".into()),
+                    ..Person::default()
                 },
                 Person::default(),
             ]
@@ -199,7 +265,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/otherContacts"))
-            .and(query_param("readMask", "names,emailAddresses"))
+            .and(query_param("readMask", OTHER_FIELDS))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "otherContacts": [{"emailAddresses": [{"value": "bob@x.com"}]}],
                 "nextPageToken": ""

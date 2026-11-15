@@ -1,4 +1,5 @@
-// The event popover: what, when, where, Join (any video call), guests and their answers, and Yes / Maybe / No.
+// The event popover: what, when, where, Join (any video call), guests and their answers (each opens
+// their person card), and Yes / Maybe / No.
 // It opens beside the event clicked and reads the full event from the local cache.
 import {
   Check,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
+import { showPerson } from "../contacts/personStore";
 import { IconButton } from "../components/ui/IconButton";
 import { Menu, type MenuItem } from "../components/ui/Menu";
 import { describeShortcut } from "../keyboard/format";
@@ -91,16 +93,48 @@ function guestSummary(guests: Attendee[]): string {
   return `${guests.length} ${guests.length === 1 ? "guest" : "guests"}${parts.length ? ` · ${parts.join(", ")}` : ""}`;
 }
 
-function GuestRow({ guest }: { guest: Attendee }) {
+/** A guest's or organizer's name; anyone but you opens their person card, closing the popover. */
+function PersonName({
+  accountId,
+  person,
+  className,
+}: {
+  accountId: string;
+  person: { email: string | null; name: string | null; isSelf: boolean };
+  className?: string;
+}) {
+  const shown = person.name || person.email;
+  const email = person.email;
+  if (!email || person.isSelf)
+    return (
+      <span className={className} title={email ?? undefined}>
+        {shown}
+        {person.isSelf && " (you)"}
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      className={cx("person-link", className)}
+      title={email}
+      aria-label={`View contact ${shown}`}
+      onClick={() => {
+        close();
+        showPerson(accountId, { address: email, name: person.name });
+      }}
+    >
+      {shown}
+    </button>
+  );
+}
+
+function GuestRow({ accountId, guest }: { accountId: string; guest: Attendee }) {
   const response = guest.response ?? "needsAction";
   const Icon = response === "accepted" ? Check : response === "declined" ? X : CircleHelp;
   return (
     <li className={cx("cal-pop__guest", `cal-pop__guest--${response}`)}>
       <Icon aria-label={answerWord[response] ?? response} />
-      <span className="cal-pop__guest-name" title={guest.email ?? undefined}>
-        {guest.name || guest.email}
-        {guest.isSelf && " (you)"}
-      </span>
+      <PersonName accountId={accountId} person={guest} className="cal-pop__guest-name" />
       {guest.organizer && <span className="cal-pop__guest-role">Organizer</span>}
       {guest.optional && !guest.organizer && <span className="cal-pop__guest-role">Optional</span>}
     </li>
@@ -427,7 +461,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
             <span>{guestSummary(guests)}</span>
             <ul>
               {guests.map((g, i) => (
-                <GuestRow key={g.email ?? i} guest={g} />
+                <GuestRow key={g.email ?? i} accountId={event.accountId} guest={g} />
               ))}
             </ul>
           </div>
@@ -436,10 +470,16 @@ function PopoverBody({ open }: { open: OpenEvent }) {
       {description && <p className="cal-pop__description selectable">{description}</p>}
       <p className="cal-pop__calendar">
         <span className="cal-pop__dot" style={{ background }} aria-hidden="true" />
-        {calendar?.summary ?? event.calendarId}
-        {detail?.organizer && !detail.organizer.isSelf && (
-          <> · Organized by {detail.organizer.name || detail.organizer.email}</>
-        )}
+        {/* One flex item, so the organizer's name sits in the sentence. */}
+        <span>
+          {calendar?.summary ?? event.calendarId}
+          {detail?.organizer && !detail.organizer.isSelf && (
+            <>
+              {" "}
+              · Organized by <PersonName accountId={event.accountId} person={detail.organizer} />
+            </>
+          )}
+        </span>
       </p>
       {detail?.canRsvp && <Rsvp detail={detail} />}
     </div>

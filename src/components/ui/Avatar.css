@@ -22,6 +22,12 @@
   font-size: var(--font-size-sm);
 }
 
+.ui-avatar--lg {
+  width: var(--avatar-size-lg);
+  height: var(--avatar-size-lg);
+  font-size: var(--font-size-md);
+}
+
 .ui-avatar img {
   width: 100%;
   height: 100%;

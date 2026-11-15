@@ -9,7 +9,8 @@ import { writableCalendars } from "./actions";
 import { displayZone, type PinnedEmail, useCalendarStore } from "./calendarStore";
 import { wallClock } from "./dates";
 import { useEditStore } from "./editStore";
-import { formFromEmail } from "./fromEmail";
+import { newForm } from "./eventForm";
+import { formFromEmail, nextHalfHour } from "./fromEmail";
 import { startDay } from "./invite";
 
 const calendar = () => useCalendarStore.getState();
@@ -44,6 +45,50 @@ async function openDetail() {
   return detail ? { key, detail } : null;
 }
 
+/** The account's calendar new events go on, or `null` (said in a toast) when it has none to write to. */
+async function calendarOf(accountId: string) {
+  if (calendar().accounts === null) await calendar().loadAccounts();
+  const accounts = calendar().accounts;
+  const target = writableCalendars(accounts).find((w) => w.account.accountId === accountId);
+  if (!target) {
+    const email = accounts?.find((a) => a.accountId === accountId)?.email;
+    toast({
+      title: "No calendar to add this event to",
+      description: `Allow calendar access for ${email ?? "this account"} first.`,
+    });
+    calendar().setMode("calendar");
+  }
+  return target ?? null;
+}
+
+/** New event with a person: the editor over Calendar mode, at the next half hour, with them invited. */
+export async function newEventWith(
+  accountId: string,
+  person: { address: string; name: string | null },
+) {
+  const target = await calendarOf(accountId);
+  if (!target) return;
+  const tz = displayZone(calendar().accounts);
+  const form = newForm({
+    accountId,
+    calendarId: target.calendar.id,
+    zone: tz,
+    allDay: false,
+    ...nextHalfHour(Date.now(), tz),
+  });
+  calendar().setMode("calendar");
+  void calendar().goTo(form.startDate);
+  useEditStore.setState({
+    draft: null,
+    editor: {
+      form: { ...form, guests: [{ name: person.name, address: person.address, optional: false }] },
+      initial: null,
+      event: null,
+      detail: null,
+    },
+  });
+}
+
 /**
  * Create event from email: the editor over Calendar mode, filled in from the open conversation (title,
  * guests, a link back, the time it mentions), on the receiving account's calendar, with the email pinned.
@@ -55,23 +100,13 @@ export async function createEventFromEmail() {
     return;
   }
   const { accountId } = parseThreadKey(open.key);
-  if (calendar().accounts === null) await calendar().loadAccounts();
-  const accounts = calendar().accounts;
   // Saved to the calendar of the account that received the email (design §2.9).
-  const target = writableCalendars(accounts).find((w) => w.account.accountId === accountId);
-  if (!target) {
-    const email = accounts?.find((a) => a.accountId === accountId)?.email;
-    toast({
-      title: "No calendar to add this event to",
-      description: `Allow calendar access for ${email ?? "this account"} first.`,
-    });
-    calendar().setMode("calendar");
-    return;
-  }
+  const target = await calendarOf(accountId);
+  if (!target) return;
   const message = open.detail.messages[open.detail.messages.length - 1];
   if (!message) return;
   const email = target.account.email;
-  const tz = displayZone(accounts);
+  const tz = displayZone(calendar().accounts);
   const { form } = formFromEmail(open.detail, message, {
     email,
     accountId: target.account.accountId,

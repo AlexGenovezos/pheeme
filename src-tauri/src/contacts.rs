@@ -304,11 +304,11 @@ impl ContactService {
     }
 }
 
-/// Every person in `list` as (lowercased address, name), one row per address.
+/// Every person in `list`, one row per (lowercased) address.
 async fn download(
     api: &dyn PeopleApi,
     list: ContactList,
-) -> Result<Vec<(String, Option<String>)>, GmailError> {
+) -> Result<Vec<db::contacts::GoogleContact>, GmailError> {
     let mut out = Vec::new();
     let mut token: Option<String> = None;
     for _ in 0..MAX_PAGES {
@@ -317,7 +317,13 @@ async fn download(
             for address in person.addresses {
                 let address = address.to_lowercase();
                 if address.contains('@') {
-                    out.push((address, person.name.clone()));
+                    out.push(db::contacts::GoogleContact {
+                        address,
+                        name: person.name.clone(),
+                        phone: person.phone.clone(),
+                        organization: person.organization.clone(),
+                        photo_url: person.photo_url.clone(),
+                    });
                 }
             }
         }
