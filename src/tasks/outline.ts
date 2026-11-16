@@ -164,3 +164,39 @@ export function newTaskIn(key: string | null, accountId: string, listId: string)
   if (!parts || parts[0] !== "new" || parts[1] !== accountId || parts[2] !== listId) return null;
   return { parent: parts[3] || null, previous: parts[4] || null };
 }
+
+/** An item in the list as drawn: a task, or the field for a new one. */
+export type OutlineRow = { kind: "task"; task: Task } | { kind: "new"; placement: Placement };
+
+/** Stands in for the new task while the outline is arranged; never a real id. */
+const NEW_ID = "\u0000new";
+
+/**
+ * The rows to draw for a list's `open` tasks. While a new task is being typed (`placement` is where it will land,
+ * from `newTaskIn`), its field sits in the outline like the task it will become.
+ */
+export function outlineRows(
+  open: Task[],
+  accountId: string,
+  listId: string,
+  placement: Placement | null,
+): OutlineRow[] {
+  if (!placement) return open.map((task) => ({ kind: "task", task }));
+  const marker: Task = {
+    accountId,
+    listId,
+    id: NEW_ID,
+    parent: placement.parent,
+    title: "",
+    notes: null,
+    due: null,
+    completed: false,
+    completedAt: null,
+    hidden: false,
+    updatedAt: 0,
+    webViewLink: null,
+  };
+  return applyMove([...open, marker], marker, placement).map((t) =>
+    t.id === NEW_ID ? { kind: "new", placement } : { kind: "task", task: t },
+  );
+}

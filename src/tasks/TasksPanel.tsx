@@ -2,19 +2,8 @@
 // to add, edit (title, details, due date), tick off, delete, drag into order, indent into subtasks
 // and move to another list, and lists to create, rename and delete. Completed tasks fold away
 // under "Completed (N)". An account whose tasks can't be read says what it needs instead.
+import { ChevronDown, ChevronRight, ListChecks, MoreHorizontal, Plus, X } from "lucide-react";
 import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  GripVertical,
-  ListChecks,
-  MoreHorizontal,
-  Plus,
-  X,
-} from "lucide-react";
-import {
-  type FocusEvent,
-  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
   useEffect,
@@ -22,54 +11,34 @@ import {
   useRef,
   useState,
 } from "react";
-import { AllowButton, openApiPage, TASKS_API_URL } from "../calendar/AccessControls";
-import { dateOf, systemZone } from "../calendar/dates";
-import { useCalendarStore, weekStartOf } from "../calendar/calendarStore";
+import { AllowButton, CheckAgain, openApiPage, TASKS_API_URL } from "../calendar/AccessControls";
 import { Button } from "../components/ui/Button";
-import { DateField } from "../components/ui/DateField";
 import { IconButton } from "../components/ui/IconButton";
 import { Skeleton } from "../components/ui/Skeleton";
 import { focusFromKeyboard } from "../keyboard/focus";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
-import {
-  type ContextMenuItem,
-  isContextMenuKey,
-  openContextMenuAt,
-  openContextMenuFromEvent,
-  showContextMenu,
-} from "../lib/contextMenu";
+import { showContextMenu } from "../lib/contextMenu";
 import { createSubscriptionScope } from "../lib/subscriptions";
-import {
-  type Task,
-  type TaskEdit,
-  type TaskListInfo,
-  type TasksAccount,
-  tasksSyncNow,
-  toCommandError,
-} from "../lib/tauri";
+import { type Task, type TaskListInfo, type TasksAccount, tasksSyncNow } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { dragRegion } from "../shell/chrome";
 import { useAccountStore } from "../store/accountStore";
 import {
-  applyMove,
   dropPlacement,
-  dueLabel,
-  indentPlacement,
   listKey,
   newTaskIn,
   newTaskKey,
-  outdentPlacement,
+  outlineRows,
   type Placement,
   splitCompleted,
-  stepPlacement,
   taskKey,
-  taskTitle,
 } from "./outline";
+import { TaskEditor } from "./TaskEditor";
+import { TaskRow } from "./TaskRow";
 import { TOGGLE_TASKS_COMMAND, TOGGLE_TASKS_SHORTCUT, useTasksStore } from "./tasksStore";
 import "./tasks.css";
 
 const store = useTasksStore.getState;
-const today = () => dateOf(Date.now(), systemZone());
 
 /** Load task lists for the connected accounts, and follow tasks sync. */
 function useTasksData() {
@@ -259,7 +228,7 @@ function AccessGuide({ account }: { account: TasksAccount }) {
           <Button size="sm" onClick={() => openApiPage(enableUrl ?? TASKS_API_URL)}>
             Turn on the Tasks API
           </Button>
-          <CheckAgain accountId={account.accountId} label="Check again" />
+          <TasksCheckAgain accountId={account.accountId} label="Check again" />
         </span>
       </div>
     );
@@ -267,7 +236,7 @@ function AccessGuide({ account }: { account: TasksAccount }) {
     return (
       <div className="tasks-access">
         <p>Couldn't update tasks: {message ?? "unknown error"}</p>
-        <CheckAgain accountId={account.accountId} label="Try again" />
+        <TasksCheckAgain accountId={account.accountId} label="Try again" />
       </div>
     );
   return (
@@ -281,32 +250,15 @@ function AccessGuide({ account }: { account: TasksAccount }) {
   );
 }
 
-function CheckAgain({ accountId, label }: { accountId: string; label: string }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const check = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await tasksSyncNow(accountId);
-    } catch (e) {
-      setError(toCommandError(e).message);
-    } finally {
-      setBusy(false);
-      void store().loadAccounts();
-    }
-  };
+function TasksCheckAgain({ accountId, label }: { accountId: string; label: string }) {
   return (
-    <span className="tasks-access__buttons">
-      <Button size="sm" disabled={busy} onClick={() => void check()}>
-        {busy ? "Checking…" : label}
-      </Button>
-      {error && (
-        <span className="tasks-access__error" role="alert">
-          {error}
-        </span>
-      )}
-    </span>
+    <CheckAgain
+      label={label}
+      className="tasks-access__buttons"
+      errorClassName="tasks-access__error"
+      sync={() => tasksSyncNow(accountId)}
+      reload={() => void store().loadAccounts()}
+    />
   );
 }
 
@@ -372,11 +324,6 @@ function NameField({
   );
 }
 
-/** An item in the list as drawn: a task, or the field for a new one. */
-type Row = { kind: "task"; task: Task } | { kind: "new"; placement: Placement };
-
-const NEW_ID = "\u0000new";
-
 const lastSubtask = (open: Task[], parent: string) =>
   open.filter((t) => t.parent === parent).pop()?.id ?? null;
 
@@ -397,27 +344,10 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
   const otherLists = account.lists.filter((l) => l.id !== list.id);
 
   // Where the new-task field sits: placed like a task, so it shows where the task will land.
-  const rows: Row[] = useMemo(() => {
-    const placement = newTaskIn(editing, accountId, list.id);
-    if (!placement) return open.map((task) => ({ kind: "task", task }));
-    const marker: Task = {
-      accountId,
-      listId: list.id,
-      id: NEW_ID,
-      parent: placement.parent,
-      title: "",
-      notes: null,
-      due: null,
-      completed: false,
-      completedAt: null,
-      hidden: false,
-      updatedAt: 0,
-      webViewLink: null,
-    };
-    return applyMove([...open, marker], marker, placement).map((t) =>
-      t.id === NEW_ID ? { kind: "new", placement } : { kind: "task", task: t },
-    );
-  }, [open, editing, accountId, list.id]);
+  const rows = useMemo(
+    () => outlineRows(open, accountId, list.id, newTaskIn(editing, accountId, list.id)),
+    [open, editing, accountId, list.id],
+  );
 
   const startAdding = (placement: Placement = { parent: null, previous: null }) =>
     store().setEditing(newTaskKey(accountId, list.id, placement));
@@ -630,264 +560,5 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
         </>
       )}
     </section>
-  );
-}
-
-function TaskRow({
-  task,
-  open,
-  otherLists,
-  onAddSubtask,
-  onGripPointerDown,
-}: {
-  task: Task;
-  /** The list's open tasks, for indenting and moving. */
-  open: Task[];
-  otherLists: TaskListInfo[];
-  onAddSubtask?: () => void;
-  /** Starts dragging the task into another place. */
-  onGripPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
-}) {
-  const title = taskTitle(task);
-  const now = today();
-  const move = (p: Placement | null) => p && void store().moveTask(task, p);
-  const indent = task.completed ? null : indentPlacement(open, task);
-  const outdent = task.completed ? null : outdentPlacement(task);
-  const up = task.completed ? null : stepPlacement(open, task, -1);
-  const down = task.completed ? null : stepPlacement(open, task, 1);
-
-  const items: ContextMenuItem[] = [
-    ...(task.completed
-      ? []
-      : ([
-          ...(onAddSubtask && !task.parent
-            ? [{ id: "subtask", label: "Add a subtask", onSelect: onAddSubtask }]
-            : []),
-          { id: "indent", label: "Indent", disabled: !indent, onSelect: () => move(indent) },
-          { id: "outdent", label: "Outdent", disabled: !outdent, onSelect: () => move(outdent) },
-          { id: "up", label: "Move up", disabled: !up, onSelect: () => move(up) },
-          { id: "down", label: "Move down", disabled: !down, onSelect: () => move(down) },
-        ] satisfies ContextMenuItem[])),
-    ...(otherLists.length > 0 && !task.parent
-      ? ([
-          { type: "separator" },
-          ...otherLists.map((l) => ({
-            id: `move-${l.id}`,
-            label: `Move to ${l.title}`,
-            onSelect: () => void store().moveToList(task, l.id),
-          })),
-        ] satisfies ContextMenuItem[])
-      : []),
-    { type: "separator" },
-    { id: "delete", label: "Delete", danger: true, onSelect: () => void store().deleteTask(task) },
-  ];
-
-  const onKeyDown = (e: KeyboardEvent) => {
-    const mod = e.metaKey || e.ctrlKey;
-    let placement: Placement | null = null;
-    if (isContextMenuKey(e)) {
-      e.preventDefault();
-      openContextMenuAt(e.currentTarget, items);
-      return;
-    }
-    if (mod && e.key === "]") placement = indent;
-    else if (mod && e.key === "[") placement = outdent;
-    else if (mod && e.key === "ArrowUp") placement = up;
-    else if (mod && e.key === "ArrowDown") placement = down;
-    else if (!mod && (e.key === "Delete" || e.key === "Backspace")) {
-      e.preventDefault();
-      void store().deleteTask(task);
-      return;
-    } else return;
-    e.preventDefault();
-    move(placement);
-  };
-
-  return (
-    <div
-      className={cx("task-row", task.completed && "task-row--done")}
-      onContextMenu={(e) => openContextMenuFromEvent(e, items)}
-      onKeyDown={onKeyDown}
-    >
-      {!task.completed && (
-        <span className="task-row__grip" aria-hidden="true" onPointerDown={onGripPointerDown}>
-          <GripVertical />
-        </span>
-      )}
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={task.completed}
-        aria-label={task.completed ? `Mark not done: ${title}` : `Mark done: ${title}`}
-        className="task-check"
-        onClick={() => void store().setCompleted(task, !task.completed)}
-      >
-        <span className="task-check__ring">
-          <Check aria-hidden="true" />
-        </span>
-      </button>
-      <button
-        type="button"
-        className="task-row__main"
-        aria-label={`Edit task: ${title}`}
-        onClick={() => store().setEditing(taskKey(task))}
-      >
-        <span className="task-row__title">{title}</span>
-        {task.notes && <span className="task-row__notes">{task.notes}</span>}
-        {task.due && (
-          <span
-            className={cx(
-              "task-row__due",
-              !task.completed && task.due < now && "task-row__due--overdue",
-            )}
-          >
-            {dueLabel(task.due, now)}
-          </span>
-        )}
-      </button>
-      <IconButton
-        size="sm"
-        className="task-row__menu"
-        label={`Task options: ${title}`}
-        icon={<MoreHorizontal />}
-        onClick={(e) => {
-          const r = e.currentTarget.getBoundingClientRect();
-          void showContextMenu(items, { x: r.left, y: r.bottom });
-        }}
-      />
-    </div>
-  );
-}
-
-/**
- * A task's title, details and due date, edited in place. Enter in the title or leaving the editor
- * saves (a new task's Enter opens another one under it); Escape saves and closes, as in Google
- * Tasks. An empty new task is dropped.
- */
-function TaskEditor({
-  accountId,
-  listId,
-  task,
-  placement,
-}: {
-  accountId: string;
-  listId: string;
-  task?: Task;
-  placement?: Placement;
-}) {
-  const [title, setTitle] = useState(task?.title ?? "");
-  const [notes, setNotes] = useState(task?.notes ?? "");
-  const [due, setDue] = useState(task?.due ?? "");
-  const done = useRef(false);
-  const dateRef = useRef<HTMLButtonElement>(null);
-  const weekStart = useCalendarStore((s) => weekStartOf(s.accounts));
-
-  const save = async (another: boolean) => {
-    if (done.current) return;
-    done.current = true;
-    const close = () => {
-      if (useTasksStore.getState().editing === current) store().setEditing(null);
-    };
-    if (task) {
-      const edit: TaskEdit = {};
-      if (title !== task.title) edit.title = title;
-      if (notes !== (task.notes ?? "")) edit.notes = notes;
-      if (due !== (task.due ?? "")) edit.due = due;
-      close();
-      if (Object.keys(edit).length > 0) await store().editTask(task, edit);
-      return;
-    }
-    if (!title.trim() && !notes.trim() && !due) return close();
-    const edit: TaskEdit = { title: title.trim() };
-    if (notes.trim()) edit.notes = notes;
-    if (due) edit.due = due;
-    const created = await store().addTask(accountId, listId, edit, placement);
-    if (!created) {
-      // Not added (offline, or Google refused; the toast says why): keep the editor open with what
-      // was typed, so Enter or leaving it again tries again.
-      done.current = false;
-      return;
-    }
-    if (another && useTasksStore.getState().editing === current)
-      store().setEditing(
-        newTaskKey(accountId, listId, { parent: placement?.parent ?? null, previous: created.id }),
-      );
-    else close();
-  };
-  const current = task
-    ? taskKey(task)
-    : newTaskKey(accountId, listId, placement ?? { parent: null, previous: null });
-
-  const onBlur = (e: FocusEvent<HTMLFormElement>) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) void save(false);
-  };
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      void save(false);
-    }
-  };
-
-  return (
-    <form
-      className="task-editor"
-      aria-label={task ? `Edit task: ${taskTitle(task)}` : "New task"}
-      onBlur={onBlur}
-      onKeyDown={onKeyDown}
-      onSubmit={(e) => {
-        e.preventDefault();
-        void save(!task);
-      }}
-    >
-      <span className="task-check task-check--placeholder" aria-hidden="true">
-        <span className="task-check__ring" />
-      </span>
-      <div className="task-editor__fields">
-        <input
-          autoFocus
-          className="task-editor__title"
-          aria-label="Title"
-          placeholder="Title"
-          value={title}
-          onChange={(e) => setTitle(e.currentTarget.value)}
-        />
-        <textarea
-          className="task-editor__notes"
-          aria-label="Details"
-          placeholder="Details"
-          rows={2}
-          value={notes}
-          onChange={(e) => setNotes(e.currentTarget.value)}
-        />
-        <span className="task-editor__due">
-          <DateField
-            ref={dateRef}
-            className="task-editor__date"
-            aria-label="Due date"
-            placeholder="Add a due date"
-            value={due}
-            weekStart={weekStart}
-            onChange={setDue}
-          />
-          <IconButton
-            size="sm"
-            label="Remove due date"
-            icon={<X />}
-            disabled={!due}
-            onClick={() => {
-              setDue("");
-              dateRef.current?.focus();
-            }}
-          />
-        </span>
-        {/* Enter submits from the title; the button is for pointer users. */}
-        <span className="task-editor__actions">
-          <Button type="submit" size="sm" variant="primary">
-            {task ? "Done" : "Add"}
-          </Button>
-        </span>
-      </div>
-    </form>
   );
 }

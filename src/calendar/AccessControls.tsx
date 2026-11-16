@@ -62,33 +62,59 @@ export function AllowButton({
   );
 }
 
-/** "Check again" after turning the API on, or "Try again" after an error. */
-export function CheckAgainButton({ account, label }: { account: CalendarAccount; label: string }) {
+/**
+ * "Check again" after turning an API on, or "Try again" after an error: runs `sync` for the account, then `reload`
+ * refreshes what the screen shows. Calendar and Tasks each pass their own sync call and their own classes.
+ */
+export function CheckAgain({
+  sync,
+  reload,
+  label,
+  className = "cal-access__allow",
+  errorClassName = "cal-access__error",
+}: {
+  sync: () => Promise<unknown>;
+  reload: () => void;
+  label: string;
+  className?: string;
+  errorClassName?: string;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const check = async () => {
     setBusy(true);
     setError(null);
     try {
-      await calendarSyncNow(account.accountId);
+      await sync();
     } catch (e) {
       setError(toCommandError(e).message);
     } finally {
       setBusy(false);
-      void useCalendarStore.getState().loadAccounts();
+      reload();
     }
   };
   return (
-    <span className="cal-access__allow">
+    <span className={className}>
       <Button size="sm" disabled={busy} onClick={() => void check()}>
         {busy ? "Checking…" : label}
       </Button>
       {error && (
-        <span className="cal-access__error" role="alert">
+        <span className={errorClassName} role="alert">
           {error}
         </span>
       )}
     </span>
+  );
+}
+
+/** `CheckAgain` for an account's calendar. */
+export function CheckAgainButton({ account, label }: { account: CalendarAccount; label: string }) {
+  return (
+    <CheckAgain
+      label={label}
+      sync={() => calendarSyncNow(account.accountId)}
+      reload={() => void useCalendarStore.getState().loadAccounts()}
+    />
   );
 }
 

@@ -9,6 +9,8 @@ import {
   newTaskIn,
   newTaskKey,
   outdentPlacement,
+  type OutlineRow,
+  outlineRows,
   splitCompleted,
   stepPlacement,
 } from "./outline";
@@ -172,4 +174,46 @@ test("layoutTasks puts each task in its day's first free row", () => {
     ["z", 1, 2],
     ["w", 2, 0],
   ]);
+});
+
+describe("outlineRows", () => {
+  const shown = (rows: OutlineRow[]) =>
+    rows.map((r) =>
+      r.kind === "new" ? "NEW" : r.task.parent ? `${r.task.parent}>${r.task.id}` : r.task.id,
+    );
+
+  test("is just the open tasks when no new task is being typed", () => {
+    expect(shown(outlineRows(LIST, "a", "l", null))).toEqual(ids(LIST));
+  });
+
+  test("puts the new task's field where the task will land", () => {
+    expect(shown(outlineRows(LIST, "a", "l", { parent: null, previous: null }))).toEqual([
+      "NEW",
+      ...ids(LIST),
+    ]);
+    // After B and its subtasks.
+    expect(shown(outlineRows(LIST, "a", "l", { parent: null, previous: "B" }))).toEqual([
+      "A",
+      "B",
+      "B>B1",
+      "B>B2",
+      "NEW",
+      "C",
+    ]);
+    // First subtask of A.
+    expect(shown(outlineRows(LIST, "a", "l", { parent: "A", previous: null }))).toEqual([
+      "A",
+      "NEW",
+      "B",
+      "B>B1",
+      "B>B2",
+      "C",
+    ]);
+  });
+
+  test("carries the placement on the new row", () => {
+    const placement = { parent: "B", previous: "B2" };
+    const row = outlineRows(LIST, "a", "l", placement).find((r) => r.kind === "new");
+    expect(row).toEqual({ kind: "new", placement });
+  });
 });
