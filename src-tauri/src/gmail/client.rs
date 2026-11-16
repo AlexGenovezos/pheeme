@@ -285,16 +285,52 @@ impl Drop for UserWaiting<'_> {
     }
 }
 
+/// Who the requests made inside a [`user_action`] or [`background`] scope are for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Scope {
+    User,
+    Background,
+}
+
 tokio::task_local! {
-    static USER_ACTION: ();
+    static SCOPE: Scope;
 }
 
 /// Run `f` as something the user did (a label edit, a queued change or send, a search, a
 /// draft): its sync-priority Gmail requests run at [`Priority::Interactive`], ahead of sync and
 /// the backfill. A task-local, so it reaches every request `f` makes (`buffer_unordered`
 /// included) but not spawned tasks.
+///
+/// Scopes nest and the innermost wins: a `user_action` inside [`background`] is the user's,
+/// and a `background` inside a `user_action` is background work.
 pub async fn user_action<F: Future>(f: F) -> F::Output {
-    USER_ACTION.scope((), f).await
+    SCOPE.scope(Scope::User, f).await
+}
+
+/// Run `f` as work nobody is waiting on (the mailbox backfill, preloading a thread, prefetching
+/// attachments): every Gmail request it makes runs at [`Priority::Background`], whatever it
+/// would run at otherwise. A task-local like [`user_action`], and the innermost of the two
+/// wins: a `user_action` nested inside `background` runs at the user's priority.
+pub async fn background<F: Future>(f: F) -> F::Output {
+    SCOPE.scope(Scope::Background, f).await
+}
+
+/// Whether requests made here run as background work (inside [`background`], with no
+/// [`user_action`] nested inside it).
+pub(crate) fn in_background() -> bool {
+    SCOPE.try_with(|s| *s) == Ok(Scope::Background)
+}
+
+/// The priority a request asking for `requested` runs at, given the innermost scope around it
+/// and whether a reader's [`probe`] is in scope. Background work stays background even when
+/// probed: nobody is waiting on it.
+fn effective_priority(requested: Priority, scope: Option<Scope>, probed: bool) -> Priority {
+    match (requested, scope) {
+        (_, Some(Scope::Background)) => Priority::Background,
+        (Priority::Sync, Some(Scope::User)) => Priority::Interactive,
+        (Priority::Sync, None) if probed => Priority::Interactive,
+        (p, _) => p,
+    }
 }
 
 /// One Gmail API call, rebuilt for every attempt.
@@ -323,8 +359,9 @@ pub(crate) enum Priority {
     Interactive,
     /// Sync and other calls that keep the app current.
     Sync,
-    /// Bulk work nobody is waiting on (the backfill). Gets a few slots and a share of the
-    /// quota, and gives up at Gmail's first rate limit instead of retrying: its caller pauses.
+    /// Bulk work nobody is waiting on (anything in [`background`]: the backfill, preloads,
+    /// attachment prefetch). Gets a few slots and a share of the quota, and gives up at Gmail's
+    /// first rate limit instead of retrying: its caller pauses.
     Background,
 }
 
@@ -344,12 +381,6 @@ impl ApiRequest {
 
     pub fn get(segments: &[&str]) -> Self {
         Self::new(Method::GET, segments)
-    }
-
-    /// Bulk work nobody is waiting on; see [`Priority::Background`].
-    pub fn background(mut self) -> Self {
-        self.priority = Priority::Background;
-        self
     }
 
     pub(crate) fn with_priority(mut self, priority: Priority) -> Self {
@@ -571,16 +602,13 @@ impl GmailClient {
     ///
     /// With a [`probe`] in scope (the reader opened a thread), a sync request is the reader's:
     /// it runs at [`Priority::Interactive`], and its waits, retries and failures are reported.
-    /// Inside [`user_action`] it is the user's too.
+    /// Inside [`user_action`] it is the user's too; inside [`background`] every request is
+    /// background work (see [`effective_priority`]).
     async fn execute(&self, req: &ApiRequest) -> Result<Vec<u8>, GmailError> {
         let closed = |_| GmailError::Network("request limiter closed".into());
         let probe = probe::current();
-        let priority = match req.priority {
-            Priority::Sync if probe.is_some() || USER_ACTION.try_with(|_| ()).is_ok() => {
-                Priority::Interactive
-            }
-            p => p,
-        };
+        let priority =
+            effective_priority(req.priority, SCOPE.try_with(|s| *s).ok(), probe.is_some());
         let background = priority == Priority::Background;
         let user = priority == Priority::Interactive;
         let url = self.url_for(req)?;

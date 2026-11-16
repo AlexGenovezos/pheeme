@@ -863,7 +863,7 @@ async fn upgraded_backfill_reads_missing_total_and_empty_mailbox_completes() {
         BackfillProgress::Done
     );
     // As background work, so it waits out a rate-limit cooldown like the rest of the backfill.
-    assert_eq!(h.fake.calls("backfill_profile"), 1);
+    assert_eq!(h.fake.background_calls("profile_history_id"), 1);
     let progress = crate::db::sync_state::progress(&h.pool).await.unwrap();
     assert_eq!(progress[0].total_messages, Some(0));
     assert_eq!(progress[0].synced_messages, 0);

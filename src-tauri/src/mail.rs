@@ -12,7 +12,7 @@ use crate::db::{labels, messages, settings};
 use crate::diagnostics::{ms_since, OpenTiming, OpenTimings, ShownTiming, ShownTimings};
 use crate::gmail::mime::EmailAddress;
 use crate::gmail::probe::{with_probe, ProbeStage, ProbeStats, RequestProbe};
-use crate::gmail::{GmailError, MessageFormat};
+use crate::gmail::{background, usage_source, GmailError, MessageFormat, UsageSource};
 use crate::render;
 use crate::search;
 use crate::sync::engine::now_ms;
@@ -1345,7 +1345,13 @@ impl MailService {
                     continue;
                 }
                 budget -= size;
-                match self.download(&row, &cached).await {
+                // Nobody is waiting on it yet: it must not take the reader's slots or skip the
+                // quota queue. Still counted as the user's, who opened the conversation.
+                let download = usage_source(
+                    UsageSource::YouAsked,
+                    background(self.download(&row, &cached)),
+                );
+                match download.await {
                     Ok(_) => fetched += 1,
                     Err(e) => tracing::debug!(error = %e, "couldn't prefetch an attachment"),
                 }

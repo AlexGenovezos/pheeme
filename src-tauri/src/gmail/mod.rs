@@ -21,7 +21,8 @@ pub mod usage;
 pub mod user;
 
 pub use client::{
-    user_action, GmailClient, QuotaSetting, RetryPolicy, TokenProvider, RATE_LIMIT_COOLDOWN,
+    background, user_action, GmailClient, QuotaSetting, RetryPolicy, TokenProvider,
+    RATE_LIMIT_COOLDOWN,
 };
 pub use error::GmailError;
 pub use mime::{ParsedAttachment, ParsedMessage};
