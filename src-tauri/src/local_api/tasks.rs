@@ -8,7 +8,7 @@ use super::requests::{
     MAX_TASKS,
 };
 use super::write::resolve_account;
-use super::{ApiError, LocalApi, Request};
+use super::{AccessWords, ApiError, LocalApi, Request};
 use crate::accounts::AccountInfo;
 use crate::tasks::service::{TaskDto, TasksAccountDto};
 use crate::tasks::writes::{TaskEdit, TaskRef};
@@ -32,18 +32,14 @@ fn invalid(message: impl Into<String>) -> ApiError {
 }
 
 fn access_note(a: &TasksAccountDto) -> String {
-    match a.access.status.as_str() {
-        "on" => "Pheeme reads these tasks.".into(),
-        "api_disabled" => format!(
-            "can't be read: the Google Tasks API is off in the user's Google Cloud project. They can turn it on at {}.",
-            a.access.enable_url.as_deref().unwrap_or("console.cloud.google.com")
-        ),
-        "error" => format!(
-            "can't be read right now: {}",
-            a.access.message.as_deref().unwrap_or("the last sync failed.")
-        ),
-        _ => "hasn't allowed access to its tasks yet. The user can allow it by opening Calendar in Pheeme.".into(),
-    }
+    super::access_note(
+        &a.access,
+        &AccessWords {
+            on: "Pheeme reads these tasks.",
+            api: "Google Tasks API",
+            not_allowed: "hasn't allowed access to its tasks yet.",
+        },
+    )
 }
 
 /// Every account's tasks side.
@@ -69,7 +65,7 @@ impl Lists {
     /// Refused unless Pheeme may use the account's tasks.
     fn require_access(&self, account: &AccountInfo) -> Result<&TasksAccountDto, ApiError> {
         match self.account(&account.id) {
-            Some(a) if a.access.status == "on" => Ok(a),
+            Some(a) if a.access.status.is_on() => Ok(a),
             Some(a) => Err(invalid(format!("{} {}", account.email, access_note(a)))),
             None => Err(invalid(format!("{} isn't connected.", account.email))),
         }
@@ -130,7 +126,7 @@ async fn list_task_lists(api: &LocalApi, args: AccountArg) -> Result<Value, ApiE
                 "access": a.access.status,
                 "lists": lists,
             });
-            if a.access.status != "on" {
+            if !a.access.status.is_on() {
                 row["note"] = access_note(a).into();
             }
             row
@@ -159,7 +155,7 @@ async fn list_tasks(api: &LocalApi, args: ListTasks) -> Result<Value, ApiError> 
     let mut total = 0;
     let mut notes = Vec::new();
     for account in lists.0.iter().filter(|a| ids.contains(&a.account_id)) {
-        if account.access.status != "on" {
+        if !account.access.status.is_on() {
             notes.push(json!({
                 "account": account.email,
                 "access": account.access.status,

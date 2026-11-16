@@ -27,17 +27,10 @@ pub enum AvailabilityError {
     Invalid(String),
     #[error("You're offline; availability can't be checked.")]
     Offline,
-    #[error("Google Calendar couldn't check availability: {}", google_message(.0))]
+    #[error("Google Calendar couldn't check availability: {}", .0.google_message())]
     Google(GmailError),
     #[error("Pheeme couldn't check availability: {0}")]
     Db(#[from] anyhow::Error),
-}
-
-fn google_message(e: &GmailError) -> String {
-    match e {
-        GmailError::Api { message, .. } => message.clone(),
-        other => other.to_string(),
-    }
 }
 
 impl AvailabilityError {

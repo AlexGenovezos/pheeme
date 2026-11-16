@@ -6,13 +6,13 @@ use super::edit::OriginalStart;
 use super::error::CalendarError;
 use super::meeting::{self, MeetingLink};
 use super::recurrence::{self, Occurrence};
-use super::sync::{classify, sync_account, SyncError};
+use super::sync::{sync_account, SyncError};
 use super::writes::{can_edit, can_write, Target};
 use super::{CalendarApi, CalendarFactory};
 use crate::db;
 use crate::db::calendar::{DbCalendarAccess, DbEvent};
 use crate::gmail::calendar::{ApiAttendee, ApiPerson};
-use crate::gmail::GmailError;
+use crate::google_access::{AccessDto, AccessStatus, Adapter, Intervals, Poller, SyncFailure};
 use crate::mail::MailError;
 use crate::sync::engine::now_ms;
 use crate::sync::{SyncEvent, SyncEvents};
@@ -20,27 +20,22 @@ use chrono::{NaiveDate, TimeZone};
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Notify;
-use tracing::warn;
 
 /// The Google Calendar API page in the user's Google Cloud project.
 pub const CALENDAR_API_URL: &str =
     "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com";
 
-/// How often calendars are checked while the app runs.
-const INTERVAL: Duration = Duration::from_secs(60);
-/// How often while Calendar mode is in front.
-const FOREGROUND_INTERVAL: Duration = Duration::from_secs(15);
+/// Calendars are checked every minute while the app runs, every 15 s while Calendar mode is
+/// in front, the first time once launch and mail's first sync have settled.
+const INTERVALS: Intervals = Intervals {
+    first: Duration::from_secs(5),
+    background: Duration::from_secs(60),
+    foreground: Duration::from_secs(15),
+};
 /// How often Calendar settings are re-read; the calendar list is checked on every sync.
 const SETTINGS_INTERVAL_MS: i64 = 15 * 60 * 1000;
-/// The first check waits for launch and mail's first sync to settle.
-const FIRST_DELAY: Duration = Duration::from_secs(5);
-
-/// Statuses that need the user (allow access, turn the API on); not polled until then.
-const HELD: [&str; 2] = ["missing_scope", "api_disabled"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -154,17 +149,9 @@ pub struct CalendarDto {
     pub hidden: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CalendarAccessDto {
-    /// `unknown` (never allowed), `on`, `missing_scope`, `api_disabled` or `error`.
-    pub status: String,
-    /// What failed, for `error`.
-    pub message: Option<String>,
-    /// The Calendar API page for the user's project, for `api_disabled`.
-    pub enable_url: Option<String>,
-    pub synced_at: Option<i64>,
-}
+/// Whether the account allowed calendar access (`unknown` until it did) and how its last
+/// calendar sync went.
+pub type CalendarAccessDto = AccessDto;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -179,56 +166,30 @@ pub struct CalendarAccountDto {
     pub calendars: Vec<CalendarDto>,
 }
 
-fn access_dto(access: Option<&DbCalendarAccess>) -> CalendarAccessDto {
-    let Some(a) = access else {
-        return CalendarAccessDto {
-            status: "unknown".into(),
-            message: None,
-            enable_url: None,
-            synced_at: None,
-        };
-    };
-    CalendarAccessDto {
-        status: a.status.clone(),
-        message: (a.status == "error").then(|| a.detail.clone()).flatten(),
-        enable_url: (a.status == "api_disabled").then(|| match &a.detail {
-            Some(project) => format!("{CALENDAR_API_URL}?project={project}"),
-            None => CALENDAR_API_URL.to_owned(),
-        }),
-        synced_at: a.synced_at,
-    }
-}
-
-fn sync_error(e: SyncError) -> MailError {
-    MailError::Sync(match e {
-        SyncError::Api(e) => crate::sync::engine::SyncError::Gmail(e),
-        SyncError::Db(e) => crate::sync::engine::SyncError::Db(e),
+fn status_of(access: Option<&DbCalendarAccess>) -> AccessStatus {
+    access.map_or(AccessStatus::Unknown, |a| {
+        AccessStatus::from_stored(&a.status, a.detail.as_deref())
     })
 }
 
-/// A failure that may pass by itself, which doesn't change the account's status.
-fn is_transient(e: &GmailError) -> bool {
-    match e {
-        GmailError::Network(_) | GmailError::Offline(_) | GmailError::RateLimit { .. } => true,
-        GmailError::Api { status, .. } => *status >= 500,
-        _ => false,
-    }
+fn access_dto(access: Option<&DbCalendarAccess>) -> CalendarAccessDto {
+    status_of(access).dto(CALENDAR_API_URL, access.and_then(|a| a.synced_at))
 }
 
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+impl From<SyncError> for SyncFailure {
+    fn from(e: SyncError) -> Self {
+        match e {
+            SyncError::Api(e) => SyncFailure::Google(e),
+            SyncError::Db(e) => SyncFailure::Cache(e),
+        }
+    }
 }
 
 pub struct CalendarService {
     pub(super) db: SqlitePool,
     pub(super) api_for: CalendarFactory,
     pub(super) events: Arc<dyn SyncEvents>,
-    foreground: AtomicBool,
-    wake: Notify,
-    /// Accounts to sync on the next tick whatever their status (just signed in, or asked).
-    forced: Mutex<HashSet<String>>,
-    /// One sync per account at a time.
-    running: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    poller: Poller,
 }
 
 impl CalendarService {
@@ -237,10 +198,7 @@ impl CalendarService {
             db,
             api_for,
             events,
-            foreground: AtomicBool::new(false),
-            wake: Notify::new(),
-            forced: Mutex::new(HashSet::new()),
-            running: Mutex::new(HashMap::new()),
+            poller: Poller::new(INTERVALS),
         })
     }
 
@@ -629,142 +587,96 @@ impl CalendarService {
     }
 
     /// Sync the account now, whatever its status (after allowing access, or "Check again"),
-    /// re-reading its calendar list; returns where its access stands.
+    /// re-reading its calendar list and settings; returns where its access stands.
     pub async fn sync_now(&self, account_id: &str) -> Result<CalendarAccessDto, MailError> {
-        lock(&self.forced).remove(account_id);
-        self.sync_one(account_id, now_ms(), true).await?;
+        self.poller.sync_now(self, account_id, now_ms()).await?;
         let access = db::calendar::access(&self.db, account_id).await?;
         Ok(access_dto(access.as_ref()))
     }
 
     /// Calendar mode is (or stopped being) in front: check every 15 s instead of 60 s.
     pub fn set_foreground(&self, on: bool) {
-        let was = self.foreground.swap(on, Ordering::Relaxed);
-        if on && !was {
-            self.wake.notify_one();
-        }
+        self.poller.set_foreground(on);
     }
 
     /// Check `account_id` (or every account) soon; an account named here is checked even if
     /// it never allowed calendar access, so signing in finds out whether it now has.
     pub fn trigger(&self, account_id: Option<String>) {
-        if let Some(id) = account_id {
-            lock(&self.forced).insert(id);
-        }
-        self.wake.notify_one();
+        self.poller.trigger(account_id);
     }
 
     /// Whether a sync of `account_id` was asked for and hasn't run yet.
     #[cfg(test)]
     pub(super) fn is_forced(&self, account_id: &str) -> bool {
-        lock(&self.forced).contains(account_id)
+        self.poller.is_forced(account_id)
     }
 
     /// One pass: every account that allowed calendar access and isn't waiting on the user,
     /// plus any triggered account.
     pub async fn tick(&self, now: i64) {
-        let accounts = match db::accounts::list_accounts(&self.db).await {
-            Ok(a) => a,
-            Err(e) => {
-                warn!(error = %e, "couldn't list accounts for calendar sync");
-                return;
-            }
-        };
-        let forced: HashSet<String> = std::mem::take(&mut *lock(&self.forced));
-        for account in accounts {
-            let access = match db::calendar::access(&self.db, &account.id).await {
-                Ok(a) => a,
-                Err(e) => {
-                    warn!(error = %e, "couldn't read calendar access");
-                    continue;
-                }
-            };
-            let due = forced.contains(&account.id)
-                || access
-                    .as_ref()
-                    .is_some_and(|a| a.status != "unknown" && !HELD.contains(&a.status.as_str()));
-            if !due {
-                continue;
-            }
-            let refresh_settings = access
-                .as_ref()
-                .and_then(|a| a.settings_checked_at)
-                .is_none_or(|at| now - at >= SETTINGS_INTERVAL_MS);
-            if let Err(e) = self.sync_one(&account.id, now, refresh_settings).await {
-                warn!(error = %e, "calendar sync failed");
-            }
-        }
+        self.poller.tick(self, now).await;
     }
 
-    /// Sync one account and record how it went. Errors are recorded (and emitted) here;
-    /// the returned error is only a cache failure.
-    async fn sync_one(
-        &self,
-        account_id: &str,
-        now: i64,
-        refresh_settings: bool,
-    ) -> Result<(), MailError> {
-        let gate = lock(&self.running)
-            .entry(account_id.to_owned())
-            .or_default()
-            .clone();
-        let _held = gate.lock().await;
-        let before = db::calendar::access(&self.db, account_id)
-            .await?
-            .map(|a| a.status);
+    /// Check calendars soon after launch, then every minute (15 s while Calendar mode is in
+    /// front) on the shared clock, or sooner when triggered.
+    pub async fn run(self: Arc<Self>) {
+        self.poller.run(&*self).await;
+    }
+}
+
+#[async_trait::async_trait]
+impl Adapter for CalendarService {
+    const NAME: &'static str = "calendar";
+
+    fn pool(&self) -> &SqlitePool {
+        &self.db
+    }
+
+    /// A row with `unknown` is stored once settings are read, before access is known.
+    async fn access(&self, account_id: &str) -> anyhow::Result<AccessStatus> {
+        Ok(status_of(
+            db::calendar::access(&self.db, account_id).await?.as_ref(),
+        ))
+    }
+
+    /// Accounts that allowed calendar access and aren't waiting on the user.
+    async fn due(&self, _account_id: &str, status: &AccessStatus) -> anyhow::Result<bool> {
+        Ok(!status.is_unknown() && !status.is_held())
+    }
+
+    /// Settings are re-read when asked, or every 15 minutes.
+    async fn sync(&self, account_id: &str, now: i64, asked: bool) -> Result<(), SyncFailure> {
+        let refresh_settings = asked
+            || db::calendar::access(&self.db, account_id)
+                .await
+                .map_err(SyncFailure::Cache)?
+                .and_then(|a| a.settings_checked_at)
+                .is_none_or(|at| now - at >= SETTINGS_INTERVAL_MS);
         let api: Arc<dyn CalendarApi> = (self.api_for)(account_id);
-        let (status, detail) =
-            match sync_account(&self.db, api.as_ref(), account_id, now, refresh_settings).await {
-                Ok(report) => {
-                    if report.changed {
-                        self.events.emit(SyncEvent::CalendarUpdated {
-                            account_id: account_id.to_owned(),
-                        });
-                    }
-                    ("on", None)
-                }
-                Err(SyncError::Api(e)) if is_transient(&e) => {
-                    warn!(error = %e, "calendar sync will retry");
-                    // An account the regular ticks skip (never allowed, or waiting on the
-                    // user) was asked for: keep asking until Google answers.
-                    let polled = before
-                        .as_deref()
-                        .is_some_and(|s| s != "unknown" && !HELD.contains(&s));
-                    if !polled {
-                        lock(&self.forced).insert(account_id.to_owned());
-                    }
-                    return Ok(());
-                }
-                Err(SyncError::Api(e)) => classify(&e),
-                Err(e) => return Err(sync_error(e)),
-            };
-        db::calendar::set_access(&self.db, account_id, status, detail.as_deref(), now).await?;
-        if before.as_deref() != Some(status) {
-            self.events.emit(SyncEvent::CalendarAccess {
+        let report =
+            sync_account(&self.db, api.as_ref(), account_id, now, refresh_settings).await?;
+        if report.changed {
+            self.events.emit(SyncEvent::CalendarUpdated {
                 account_id: account_id.to_owned(),
-                status: status.to_owned(),
             });
         }
         Ok(())
     }
 
-    /// Check calendars soon after launch, then every minute (15 s while Calendar mode is in
-    /// front) on the shared clock, so this check wakes the computer together with the others,
-    /// or sooner when triggered.
-    pub async fn run(self: Arc<Self>) {
-        tokio::time::sleep(FIRST_DELAY).await;
-        loop {
-            self.tick(now_ms()).await;
-            let wait = if self.foreground.load(Ordering::Relaxed) {
-                FOREGROUND_INTERVAL
-            } else {
-                INTERVAL
-            };
-            tokio::select! {
-                () = crate::cadence::sleep_until_next(wait) => {}
-                () = self.wake.notified() => {}
-            }
-        }
+    async fn record(
+        &self,
+        account_id: &str,
+        status: &AccessStatus,
+        now: i64,
+    ) -> anyhow::Result<()> {
+        db::calendar::set_access(&self.db, account_id, status.as_str(), status.detail(), now).await
+    }
+
+    fn access_changed(&self, account_id: &str, status: &AccessStatus) {
+        self.events.emit(SyncEvent::CalendarAccess {
+            account_id: account_id.to_owned(),
+            status: status.as_str().to_owned(),
+        });
     }
 }
 
@@ -936,6 +848,7 @@ pub(super) mod tests {
     use crate::calendar::fake::{calendar, timed, FakeCalendar};
     use crate::db::accounts::{insert_account, DbAccount};
     use crate::db::test_support::TestDb;
+    use crate::gmail::GmailError;
     use crate::sync::events::RecordingEvents;
     use serde_json::json;
     use std::collections::HashMap;

@@ -20,6 +20,7 @@ use crate::compose::ComposeService;
 use crate::db::{assistant as db, settings};
 use crate::filters::FilterService;
 use crate::gmail;
+use crate::google_access::{AccessDto, AccessStatus};
 use crate::labels::LabelService;
 use crate::mail::{MailError, MailService};
 use crate::sync::engine::now_ms;
@@ -496,6 +497,36 @@ impl LocalApi {
 
     pub async fn clear_activity(&self) -> Result<(), ApiError> {
         Ok(db::clear_activity(&self.db).await?)
+    }
+}
+
+/// How the calendar and tasks tools describe an account's access to their Google API.
+struct AccessWords {
+    /// The note when access works ("Pheeme reads this calendar.").
+    on: &'static str,
+    /// The API by name ("Google Calendar API").
+    api: &'static str,
+    /// The note before access was allowed ("hasn't allowed calendar access yet.").
+    not_allowed: &'static str,
+}
+
+/// Why an account's calendar or tasks can (or can't) be read, after its address.
+fn access_note(access: &AccessDto, words: &AccessWords) -> String {
+    match access.status {
+        AccessStatus::On => words.on.into(),
+        AccessStatus::ApiDisabled { .. } => format!(
+            "can't be read: the {} is off in the user's Google Cloud project. They can turn it on at {}.",
+            words.api,
+            access.enable_url.as_deref().unwrap_or("console.cloud.google.com")
+        ),
+        AccessStatus::Error(_) => format!(
+            "can't be read right now: {}",
+            access.message.as_deref().unwrap_or("the last sync failed.")
+        ),
+        AccessStatus::Unknown | AccessStatus::MissingScope => format!(
+            "{} The user can allow it by opening Calendar in Pheeme.",
+            words.not_allowed
+        ),
     }
 }
 

@@ -9,7 +9,7 @@ use super::requests::{
     UpdateEvent, DEFAULT_EVENTS, MAX_EVENTS,
 };
 use super::write::resolve_account;
-use super::{ApiError, LocalApi, Request};
+use super::{AccessWords, ApiError, LocalApi, Request};
 use crate::accounts::AccountInfo;
 use crate::calendar::edit::{AttendeeInput, EventEdit, TimeInput};
 use crate::calendar::error::CalendarError;
@@ -63,7 +63,7 @@ impl Calendars {
             })?,
             None => accounts
                 .iter()
-                .filter(|a| a.access.status == "on")
+                .filter(|a| a.access.status.is_on())
                 .chain(accounts.iter())
                 .find_map(|a| a.time_zone.as_deref().and_then(|z| z.parse().ok()))
                 .unwrap_or(chrono_tz::UTC),
@@ -123,7 +123,7 @@ impl Calendars {
     /// Refused unless Pheeme may use the account's calendar.
     fn require_access(&self, account: &AccountInfo) -> Result<(), ApiError> {
         match self.account(&account.id) {
-            Some(a) if a.access.status == "on" => Ok(()),
+            Some(a) if a.access.status.is_on() => Ok(()),
             Some(a) => Err(invalid(format!("{} {}", account.email, access_note(a)))),
             None => Err(invalid(format!("{} isn't connected.", account.email))),
         }
@@ -133,25 +133,21 @@ impl Calendars {
     fn access_notes(&self, ids: &[String]) -> Vec<Value> {
         self.accounts
             .iter()
-            .filter(|a| ids.contains(&a.account_id) && a.access.status != "on")
+            .filter(|a| ids.contains(&a.account_id) && !a.access.status.is_on())
             .map(|a| json!({ "account": a.email, "access": a.access.status, "note": access_note(a) }))
             .collect()
     }
 }
 
 fn access_note(a: &CalendarAccountDto) -> String {
-    match a.access.status.as_str() {
-        "on" => "Pheeme reads this calendar.".into(),
-        "api_disabled" => format!(
-            "can't be read: the Google Calendar API is off in the user's Google Cloud project. They can turn it on at {}.",
-            a.access.enable_url.as_deref().unwrap_or("console.cloud.google.com")
-        ),
-        "error" => format!(
-            "can't be read right now: {}",
-            a.access.message.as_deref().unwrap_or("the last sync failed.")
-        ),
-        _ => "hasn't allowed calendar access yet. The user can allow it by opening Calendar in Pheeme.".into(),
-    }
+    super::access_note(
+        &a.access,
+        &AccessWords {
+            on: "Pheeme reads this calendar.",
+            api: "Google Calendar API",
+            not_allowed: "hasn't allowed calendar access yet.",
+        },
+    )
 }
 
 /// A time as a call gives it.
@@ -323,7 +319,7 @@ async fn list_calendars(api: &LocalApi, args: AccountArg) -> Result<Value, ApiEr
                 "time_zone": a.time_zone,
                 "calendars": calendars,
             });
-            if a.access.status != "on" {
+            if !a.access.status.is_on() {
                 row["note"] = access_note(a).into();
             }
             row
