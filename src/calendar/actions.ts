@@ -495,14 +495,19 @@ export async function moveEvent(event: CalendarEvent, start: EventTime, end: Eve
   const mine = { start, end };
   setMoving(key, mine);
   const settle = () => setMoving(key, null, mine);
+  // Which events of a series is asked before the detail loads, so the question follows the drop at once.
+  const asked = await askWriteOptions({
+    scope: event.recurring ? { action: "edit" } : undefined,
+  });
+  if (!asked) return settle();
   const detail = await loadDetail(event);
   if (!detail) return settle();
   const options = await askWriteOptions({
-    scope: event.recurring ? { action: "edit" } : undefined,
     send: { kind: "update", guests: guestsOf(detail), accountId: event.accountId },
   });
   if (!options) return settle();
-  const { scope, sendUpdates } = options;
+  const { scope } = asked;
+  const { sendUpdates } = options;
   const edit: EventEdit = event.allDay
     ? { start: { date: start.date }, end: { date: end.date } }
     : {
