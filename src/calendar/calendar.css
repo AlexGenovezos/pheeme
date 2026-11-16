@@ -1292,7 +1292,9 @@
 .cal-travel {
   display: grid;
   flex-shrink: 0;
-  grid-template-columns: auto 1fr auto;
+  /* The text column may shrink below its button's width, so a narrow sidebar never pushes the
+     dismiss button past the card's edge (where the sidebar clips it). */
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
   column-gap: var(--space-2);
   row-gap: var(--space-1-5);
@@ -1317,6 +1319,12 @@
   margin-top: calc(var(--space-1) * -1);
 }
 .cal-travel__action {
-  grid-column: 2;
+  grid-column: 2 / -1;
   justify-self: start;
+  max-width: 100%;
+  height: auto;
+  min-height: var(--control-height-sm);
+  padding-block: var(--space-1);
+  white-space: normal;
+  text-align: start;
 }
