@@ -1,3 +1,5 @@
+use crate::gmail::mime::EmailAddress;
+use crate::gmail::types::Header;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqliteExecutor, SqlitePool};
@@ -32,11 +34,31 @@ impl DbMessage {
     pub fn labels(&self) -> Vec<String> {
         parse_labels(self.label_ids.as_deref())
     }
+
+    /// The `To` recipients; empty when none are stored or the column isn't valid JSON.
+    pub fn to(&self) -> Vec<EmailAddress> {
+        parse_json(self.to_addresses.as_deref())
+    }
+
+    /// The `Cc` recipients, read like [`Self::to`].
+    pub fn cc(&self) -> Vec<EmailAddress> {
+        parse_json(self.cc_addresses.as_deref())
+    }
+
+    /// The message's raw headers; empty when none are stored or the column isn't valid JSON.
+    pub fn headers(&self) -> Vec<Header> {
+        parse_json(self.raw_headers.as_deref())
+    }
+}
+
+/// A JSON column's value, or the type's default for a missing or unreadable one.
+fn parse_json<T: serde::de::DeserializeOwned + Default>(json: Option<&str>) -> T {
+    json.and_then(|j| serde_json::from_str(j).ok())
+        .unwrap_or_default()
 }
 
 pub fn parse_labels(json: Option<&str>) -> Vec<String> {
-    json.and_then(|j| serde_json::from_str(j).ok())
-        .unwrap_or_default()
+    parse_json(json)
 }
 
 /// Insert or update a message. A metadata-only copy (`fully_fetched = 0`) never erases a

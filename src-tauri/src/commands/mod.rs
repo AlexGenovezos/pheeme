@@ -8,6 +8,7 @@ pub mod contacts;
 pub mod drive;
 pub mod labels;
 pub mod mods;
+pub mod quit;
 pub mod search;
 pub mod sender_rules;
 pub mod settings;

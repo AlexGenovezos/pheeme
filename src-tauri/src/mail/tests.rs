@@ -1,6 +1,9 @@
+use super::attachment::{openable_file_name, INVITE_MAX_BYTES, OPEN_COPY_MAX_AGE};
 use super::*;
 use crate::db::accounts::{self, DbAccount};
+use crate::db::attachments::DbAttachment;
 use crate::db::test_support::TestDb;
+use crate::db::threads::DbThread;
 use crate::gmail::GmailError;
 use crate::sync::events::RecordingEvents;
 use crate::sync::fake::{FakeGmail, FakeMsg};

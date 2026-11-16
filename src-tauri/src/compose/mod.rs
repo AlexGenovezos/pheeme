@@ -10,6 +10,7 @@ pub mod signatures;
 pub mod staging;
 pub mod template;
 
+use crate::db::messages::DbMessage;
 use crate::db::{accounts, attachments, messages};
 use crate::gmail::mime::{self, EmailAddress};
 use crate::gmail::types::SendAs;
@@ -335,20 +336,12 @@ impl ComposeService {
             }
         }
         let me = self.sender(account_id).await?;
-        let headers: Vec<crate::gmail::types::Header> = msg
-            .raw_headers
-            .as_deref()
-            .and_then(|j| serde_json::from_str(j).ok())
-            .unwrap_or_default();
+        let headers = msg.headers();
         let header = |name: &str| {
             headers
                 .iter()
                 .find(|h| h.name.eq_ignore_ascii_case(name))
                 .map(|h| h.value.as_str())
-        };
-        let addrs = |json: Option<&str>| -> Vec<EmailAddress> {
-            json.and_then(|j| serde_json::from_str(j).ok())
-                .unwrap_or_default()
         };
         let original = Original {
             thread_id: msg.thread_id.clone(),
@@ -359,8 +352,8 @@ impl ComposeService {
             reply_to: header("Reply-To")
                 .map(|v| mime::parse_addresses("Reply-To", v))
                 .unwrap_or_default(),
-            to: addrs(msg.to_addresses.as_deref()),
-            cc: addrs(msg.cc_addresses.as_deref()),
+            to: msg.to(),
+            cc: msg.cc(),
             delivered_to: headers
                 .iter()
                 .filter(|h| h.name.eq_ignore_ascii_case("Delivered-To"))
@@ -537,11 +530,7 @@ impl ComposeService {
                 message_id: m.id,
                 thread_id: m.thread_id,
                 subject: cached.as_ref().and_then(|c| c.subject.clone()),
-                to: cached
-                    .as_ref()
-                    .and_then(|c| c.to_addresses.as_deref())
-                    .and_then(|j| serde_json::from_str(j).ok())
-                    .unwrap_or_default(),
+                to: cached.as_ref().map(DbMessage::to).unwrap_or_default(),
                 snippet: cached.as_ref().and_then(|c| c.snippet.clone()),
                 date: cached.and_then(|c| c.date).unwrap_or(0),
             });

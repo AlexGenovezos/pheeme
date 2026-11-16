@@ -631,7 +631,7 @@ pub fn run() {
             }
             // Quit or restart: open compose panels are saved to Drafts first.
             if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
-                commands::compose::save_drafts_before_exit(app, *code, api);
+                commands::quit::save_drafts_before_exit(app, *code, api);
             }
             if let tauri::RunEvent::Exit = event {
                 info!("Pheeme exiting");

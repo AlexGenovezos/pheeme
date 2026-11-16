@@ -421,12 +421,19 @@ impl AccountService {
             // Can't tell whether the grant is shared, so leave it.
             Err(_) => return,
         }
-        let revoke = auth::revoke(&self.http, &self.endpoints, token);
-        if let Ok(Err(error)) | Err(error) = tokio::time::timeout(REVOKE_TIMEOUT, revoke)
-            .await
-            .map_err(|_| OAuthError::Timeout)
-        {
+        if let Some(error) = self.revoke_within_timeout(token).await {
             tracing::warn!("couldn't revoke the rejected sign-in's token: {error}");
+        }
+    }
+
+    /// Asks Google to revoke `token`, giving up after [`REVOKE_TIMEOUT`]; the error when it
+    /// didn't work (callers only log it).
+    async fn revoke_within_timeout(&self, token: &str) -> Option<OAuthError> {
+        let revoke = auth::revoke(&self.http, &self.endpoints, token);
+        match tokio::time::timeout(REVOKE_TIMEOUT, revoke).await {
+            Ok(Ok(())) => None,
+            Ok(Err(error)) => Some(error),
+            Err(_) => Some(OAuthError::Timeout),
         }
     }
 
@@ -513,11 +520,7 @@ impl AccountService {
         let account = self.account(account_id).await?;
         let id = account_id.to_owned();
         if let Some(secrets) = self.keychain(move |store| store.get(&id)).await? {
-            let revoke = auth::revoke(&self.http, &self.endpoints, &secrets.refresh_token);
-            if let Ok(Err(error)) | Err(error) = tokio::time::timeout(REVOKE_TIMEOUT, revoke)
-                .await
-                .map_err(|_| OAuthError::Timeout)
-            {
+            if let Some(error) = self.revoke_within_timeout(&secrets.refresh_token).await {
                 tracing::warn!("couldn't revoke Google access for {account_id}: {error}");
             }
         }
