@@ -817,7 +817,7 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
     // trash change overtakes it. Sends change no labels and go ahead.
     let mut sweep_waiting = false;
     // Sends that can't leave now come without their message (see `store::queue`).
-    for op in store::queue(&engine.db, &engine.account_id, now).await? {
+    for op in store::queue(engine.db(), engine.account_id(), now).await? {
         match (op.op_kind(), op.op_status()) {
             (Some(OpKind::Send), Some(OpStatus::Checking)) => {
                 if op.next_attempt_at <= now && check_send(engine, &op, now).await? {
@@ -838,7 +838,7 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
                         Some(draft) => {
                             delete_source_draft(engine, &op.id, draft, op.attempts, now).await?
                         }
-                        None => store::delete(&engine.db, &op.id).await?,
+                        None => store::delete(engine.db(), &op.id).await?,
                     }
                 }
             }
@@ -895,15 +895,15 @@ async fn readable_payload(engine: &SyncEngine, op: &DbOp) -> Result<Option<Paylo
         Ok(payload) => return Ok(Some(payload)),
         Err(e) => e,
     };
-    tracing::error!(account = %engine.account_id, op = %op.id, kind = %op.kind, error = %error, "dropping a queued change that can't be read");
+    tracing::error!(account = %engine.account_id(), op = %op.id, kind = %op.kind, error = %error, "dropping a queued change that can't be read");
     if op.op_kind() == Some(OpKind::Send) {
         // Nothing to put back: a send changes no labels.
-        store::delete(&engine.db, &op.id).await?;
+        store::delete(engine.db(), &op.id).await?;
         // A send that hadn't gone out fails like one Gmail refused, so the compose window
         // waiting on it comes back instead of saying "Sending…" for ever. One already sent
         // (only its draft left to clean up) has nothing to report.
-        if op.status != CLEANUP {
-            send_status(engine, op, FAILED);
+        if op.op_status() != Some(OpStatus::Cleanup) {
+            send_status(engine, op, OpStatus::Failed.as_str());
         }
     } else {
         // The same path as a change Gmail refuses for good: labels go back and the app is told.
@@ -931,10 +931,10 @@ async fn defer(
         checks_done: op.checks_done,
         last_error: Some(&error.to_string()),
     };
-    store::update_progress(&engine.db, &op.id, &progress, now).await?;
+    store::update_progress(engine.db(), &op.id, &progress, now).await?;
     if op.attempts == 0 {
         // Once: it retries with backoff, and its outcome is logged when it lands.
-        tracing::info!(account = %engine.account_id, op = %op.id, kind = %op.kind, error = %error, "change waiting for Gmail; retrying");
+        tracing::info!(account = %engine.account_id(), op = %op.id, kind = %op.kind, error = %error, "change waiting for Gmail; retrying");
     }
     Ok(())
 }
@@ -961,7 +961,7 @@ async fn apply_batch(
 ) -> Result<Option<Step>, SyncError> {
     // The queue was read before earlier ops waited on Gmail; deleting a label meanwhile
     // scrubs it from pending ops (and drops ops left empty), so work from the op as it is now.
-    let Some(op) = store::get(&engine.db, &queued.id).await? else {
+    let Some(op) = store::get(engine.db(), &queued.id).await? else {
         return Ok(Some(Step::Continue));
     };
     let op = &op;
@@ -969,7 +969,7 @@ async fn apply_batch(
     let thread_ids = payload.thread_ids();
     let batch = &thread_ids[..thread_ids.len().min(OP_BATCH_THREADS)];
     let more = payload.sweep().is_none() && batch.len() < thread_ids.len();
-    let recorded: BTreeSet<String> = store::messages_of(&engine.db, &op.id)
+    let recorded: BTreeSet<String> = store::messages_of(engine.db(), &op.id)
         .await?
         .into_iter()
         .map(|t| t.message_id)
@@ -987,7 +987,7 @@ async fn apply_batch(
         let mut ids = Vec::new();
         for thread_id in batch {
             match engine
-                .api
+                .api()
                 .get_thread(thread_id, MessageFormat::Minimal)
                 .await
             {
@@ -1011,7 +1011,7 @@ async fn apply_batch(
         Ok(ids) if !ids.is_empty() => {
             changed = ids.len();
             // Re-read once more: a label may have been deleted while the threads were read.
-            let Some(current) = store::get(&engine.db, &op.id).await? else {
+            let Some(current) = store::get(engine.db(), &op.id).await? else {
                 return Ok(Some(Step::Continue));
             };
             let payload = Payload::of(&current)?;
@@ -1020,7 +1020,7 @@ async fn apply_batch(
                 Payload::Trash(_) => trash_all(engine, &ids).await,
                 _ => {
                     let (add, remove) = payload.label_changes();
-                    engine.api.batch_modify(&ids, add, remove).await
+                    engine.api().batch_modify(&ids, add, remove).await
                 }
             }
         }
@@ -1033,9 +1033,9 @@ async fn apply_batch(
             Ok(None)
         }
         Ok(()) => {
-            store::delete(&engine.db, &op.id).await?;
+            store::delete(engine.db(), &op.id).await?;
             tracing::info!(
-                account = %engine.account_id,
+                account = %engine.account_id(),
                 op = %op.id,
                 kind = %op.kind,
                 messages = changed,
@@ -1049,11 +1049,11 @@ async fn apply_batch(
             // the label lock until then. Message sync never waits on a label change, so while
             // one is running try again later; once none is, send the rest if it was scrubbed.
             if let Some(sent) = sent {
-                let Ok(held) = engine.label_lock.try_lock() else {
+                let Ok(held) = engine.label_lock().try_lock() else {
                     defer(engine, op, now, &e).await?;
                     return Ok(Some(Step::Blocked));
                 };
-                let scrubbed = store::get(&engine.db, &op.id)
+                let scrubbed = store::get(engine.db(), &op.id)
                     .await?
                     .is_none_or(|now| now.payload != sent);
                 drop(held);
@@ -1078,16 +1078,17 @@ async fn drop_done_threads(
     op_id: &str,
     done: &[String],
 ) -> Result<(), SyncError> {
-    let _guard = engine.write_lock.lock().await;
-    let mut tx = db::begin_write(&engine.db).await?;
-    if let Some(op) = store::get(&mut *tx, op_id).await? {
-        let mut payload = Payload::of(&op)?;
-        payload.drop_threads(done);
-        let json = payload.to_json()?;
-        store::drop_threads(&mut tx, op_id, &json, done).await?;
-    }
-    tx.commit().await?;
-    Ok(())
+    engine
+        .write(async |w| {
+            if let Some(op) = store::get(&mut *w.tx, op_id).await? {
+                let mut payload = Payload::of(&op)?;
+                payload.drop_threads(done);
+                let json = payload.to_json()?;
+                store::drop_threads(&mut w.tx, op_id, &json, done).await?;
+            }
+            Ok(())
+        })
+        .await
 }
 
 /// Take deleted labels out of the account's pending label changes, inside the caller's write
@@ -1129,7 +1130,7 @@ async fn swept_ids(
     let mut page_token: Option<String> = None;
     loop {
         let page = engine
-            .api
+            .api()
             .search_messages(&q, false, page_token.as_deref(), SWEEP_PAGE)
             .await?;
         ids.extend(page.messages.into_iter().map(|m| m.id));
@@ -1142,7 +1143,7 @@ async fn swept_ids(
 
 async fn trash_all(engine: &SyncEngine, ids: &[String]) -> Result<(), GmailError> {
     for id in ids {
-        match engine.api.trash_message(id).await {
+        match engine.api().trash_message(id).await {
             Ok(()) => {}
             Err(e) if e.is_not_found() => {}
             Err(e) => return Err(e),
@@ -1154,43 +1155,44 @@ async fn trash_all(engine: &SyncEngine, ids: &[String]) -> Result<(), GmailError
 /// Undo a rejected change: messages go back to Gmail's current labels (or, if those
 /// can't be read, to their labels before the change); later queued changes are re-applied.
 async fn rollback(engine: &SyncEngine, op: &DbOp, error: &GmailError) -> Result<(), SyncError> {
-    tracing::warn!(account = %engine.account_id, op = %op.id, kind = %op.kind, error = %error, "Gmail rejected a queued change; rolling it back");
-    let targets = store::messages_of(&engine.db, &op.id).await?;
+    tracing::warn!(account = %engine.account_id(), op = %op.id, kind = %op.kind, error = %error, "Gmail rejected a queued change; rolling it back");
+    let targets = store::messages_of(engine.db(), &op.id).await?;
     let ids: Vec<String> = targets.iter().map(|t| t.message_id.clone()).collect();
     let server: HashMap<String, Vec<String>> = engine
-        .api
+        .api()
         .batch_get_messages(&ids, MessageFormat::Minimal)
         .await
         .into_iter()
         .filter_map(|(id, r)| r.ok().map(|m| (id, m.label_ids)))
         .collect();
 
-    let _guard = engine.write_lock.lock().await;
-    let mut tx = db::begin_write(&engine.db).await?;
-    // Re-read: backfill may have added targets while Gmail was being asked.
-    let targets = store::messages_of(&mut *tx, &op.id).await?;
-    store::delete(&mut *tx, &op.id).await?;
-    let mut touched = Vec::new();
-    for t in &targets {
-        let labels = match server.get(&t.message_id) {
-            Some(l) => l.clone(),
-            None => messages::parse_labels(Some(&t.prior_label_ids)),
-        };
-        messages::set_labels(&mut tx, &engine.account_id, &t.message_id, &labels).await?;
-        touched.push(t.thread_id.clone());
-    }
-    let restored: BTreeSet<String> = targets.iter().map(|t| t.message_id.clone()).collect();
-    rebase_threads(&mut tx, &engine.account_id, &touched, &restored).await?;
-    let result = threads::recompute_threads(&mut tx, &engine.account_id, &touched).await?;
-    tx.commit().await?;
+    let account_id = engine.account_id();
+    // The rolled-back messages are re-based from their restored labels, and no send is
+    // confirmed here: the threads are recomputed without `CacheWrite::finish`.
+    engine
+        .write(async |w| {
+            // Re-read: backfill may have added targets while Gmail was being asked.
+            let targets = store::messages_of(&mut *w.tx, &op.id).await?;
+            store::delete(&mut *w.tx, &op.id).await?;
+            let mut touched = Vec::new();
+            for t in &targets {
+                let labels = match server.get(&t.message_id) {
+                    Some(l) => l.clone(),
+                    None => messages::parse_labels(Some(&t.prior_label_ids)),
+                };
+                messages::set_labels(&mut w.tx, account_id, &t.message_id, &labels).await?;
+                touched.push(t.thread_id.clone());
+            }
+            let restored: BTreeSet<String> = targets.iter().map(|t| t.message_id.clone()).collect();
+            rebase_threads(&mut w.tx, account_id, &touched, &restored).await?;
+            let result = threads::recompute_threads(&mut w.tx, account_id, &touched).await?;
+            w.announce(result);
+            Ok(())
+        })
+        .await?;
 
-    if !result.is_empty() {
-        engine
-            .events
-            .emit(SyncEvent::messages_updated(&engine.account_id, result));
-    }
-    engine.events.emit(SyncEvent::OpRejected {
-        account_id: engine.account_id.clone(),
+    engine.emit(SyncEvent::OpRejected {
+        account_id: engine.account_id().to_owned(),
         op_id: op.id.clone(),
         kind: op.kind.clone(),
         message: error.to_string(),
@@ -1199,8 +1201,8 @@ async fn rollback(engine: &SyncEngine, op: &DbOp, error: &GmailError) -> Result<
 }
 
 fn send_status(engine: &SyncEngine, op: &DbOp, status: &str) {
-    engine.events.emit(SyncEvent::SendStatus {
-        account_id: engine.account_id.clone(),
+    engine.emit(SyncEvent::SendStatus {
+        account_id: engine.account_id().to_owned(),
         op_id: op.id.clone(),
         status: status.into(),
     });
@@ -1225,7 +1227,7 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
         checks_done: 0,
         last_error: None,
     };
-    if !store::claim_send(&engine.db, &op.id, &checking, now).await? {
+    if !store::claim_send(engine.db(), &op.id, &checking, now).await? {
         return Ok(Step::Continue);
     }
     let started = std::time::Instant::now();
@@ -1237,7 +1239,7 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
         "send dispatch started"
     );
     let result = engine
-        .api
+        .api()
         .send_message(&raw, payload.thread_id.as_deref())
         .await;
     tracing::info!(
@@ -1272,7 +1274,7 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
                 checks_done: 0,
                 last_error: Some(&e.to_string()),
             };
-            store::update_progress(&engine.db, &op.id, &failed, now).await?;
+            store::update_progress(engine.db(), &op.id, &failed, now).await?;
             send_status(engine, op, OpStatus::Failed.as_str());
             Ok(Step::Continue)
         }
@@ -1291,7 +1293,7 @@ async fn sent(
     draft_id: Option<&str>,
     now: i64,
 ) -> Result<(), SyncError> {
-    settle_send(&engine.db, &op.id, draft_id, now).await?;
+    settle_send(engine.db(), &op.id, draft_id, now).await?;
     send_status(engine, op, "sent");
     if let Some(draft) = draft_id {
         delete_source_draft(engine, &op.id, draft, 0, now).await?;
@@ -1311,7 +1313,7 @@ async fn delete_source_draft(
     attempts: i64,
     now: i64,
 ) -> Result<(), SyncError> {
-    match engine.api.delete_draft(draft).await {
+    match engine.api().delete_draft(draft).await {
         Ok(()) => {}
         Err(e) if e.is_not_found() => {}
         Err(e) if is_rejection(&e) => {
@@ -1328,11 +1330,11 @@ async fn delete_source_draft(
                 checks_done: 0,
                 last_error: Some(&e.to_string()),
             };
-            store::update_progress(&engine.db, op_id, &retry, now).await?;
+            store::update_progress(engine.db(), op_id, &retry, now).await?;
             return Ok(());
         }
     }
-    store::delete(&engine.db, op_id).await?;
+    store::delete(engine.db(), op_id).await?;
     Ok(())
 }
 
@@ -1341,14 +1343,14 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
     let Some(rfc) = op.rfc822_message_id.as_deref() else {
         return Ok(false);
     };
-    let found = if messages::find_sent_by_rfc822(&engine.db, &engine.account_id, rfc)
+    let found = if messages::find_sent_by_rfc822(engine.db(), engine.account_id(), rfc)
         .await?
         .is_some()
     {
         true
     } else {
         match engine
-            .api
+            .api()
             .search_messages(&format!("rfc822msgid:{rfc} in:sent"), false, None, 10)
             .await
         {
@@ -1363,14 +1365,14 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
                     checks_done: op.checks_done,
                     last_error: Some(&e.to_string()),
                 };
-                store::update_progress(&engine.db, &op.id, &retry, now).await?;
+                store::update_progress(engine.db(), &op.id, &retry, now).await?;
                 return Ok(false);
             }
         }
     };
     if found {
         // `op` came from the queue without its payload: read the draft from the stored op.
-        let mut conn = engine.db.acquire().await?;
+        let mut conn = engine.db().acquire().await?;
         let draft = source_draft(&mut conn, &op.id).await?;
         drop(conn);
         sent(engine, op, draft.as_deref(), now).await?;
@@ -1388,7 +1390,7 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
         checks_done,
         last_error: None,
     };
-    store::update_progress(&engine.db, &op.id, &progress, now).await?;
+    store::update_progress(engine.db(), &op.id, &progress, now).await?;
     if status == OpStatus::Unconfirmed {
         send_status(engine, op, status.as_str());
     }

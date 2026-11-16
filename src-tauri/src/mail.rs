@@ -1280,7 +1280,7 @@ impl MailService {
     /// Fetch an attachment from Gmail and cache it at `cached`. Hold the file's
     /// [`AttachmentCache::lock`].
     async fn download(&self, row: &DbAttachment, cached: &Path) -> Result<Vec<u8>, MailError> {
-        let api = self.sync.engine(&row.account_id).api;
+        let api = self.sync.api(&row.account_id);
         let bytes = match row.attachment_id.as_deref() {
             Some(gmail_id) => api
                 .get_attachment(&row.message_id, gmail_id)

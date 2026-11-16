@@ -173,13 +173,49 @@ impl ColorSync {
 }
 
 pub struct SyncEngine {
-    pub db: SqlitePool,
-    pub api: Arc<dyn MailApi>,
-    pub account_id: String,
-    pub events: Arc<dyn SyncEvents>,
-    pub write_lock: WriteLock,
-    pub label_lock: LabelLock,
-    pub colors: Arc<ColorSync>,
+    db: SqlitePool,
+    api: Arc<dyn MailApi>,
+    account_id: String,
+    events: Arc<dyn SyncEvents>,
+    write_lock: WriteLock,
+    label_lock: LabelLock,
+    colors: Arc<ColorSync>,
+}
+
+/// One cache write in progress: what the work handed to [`SyncEngine::write`] writes through.
+pub(crate) struct CacheWrite<'a> {
+    /// The write transaction (`BEGIN IMMEDIATE`), committed once the work succeeds.
+    pub(crate) tx: sqlx::Transaction<'static, sqlx::Sqlite>,
+    /// Messages sync deleted while a backfill may still hold an older copy (see [`WriteLock`]).
+    pub(crate) tombstones: &'a mut HashSet<String>,
+    engine: &'a SyncEngine,
+    /// What to announce once committed: recomputed threads and confirmed sends.
+    announce: Option<(RecomputeResult, Vec<String>)>,
+    clear_tombstones: bool,
+}
+
+impl CacheWrite<'_> {
+    /// The tail of a sync write: re-apply pending outbox ops to the `touched` threads,
+    /// recompute them, and confirm sends whose message is now cached, all announced once the
+    /// write commits. Returns whether any thread changed.
+    pub(crate) async fn finish(&mut self, touched: &[String]) -> Result<bool, SyncError> {
+        let (result, confirmed) = self.engine.finish_write(&mut self.tx, touched).await?;
+        let changed = !result.is_empty();
+        self.announce = Some((result, confirmed));
+        Ok(changed)
+    }
+
+    /// Announce threads the work recomputed by its own rules (not through [`Self::finish`])
+    /// once the write commits.
+    pub(crate) fn announce(&mut self, result: RecomputeResult) {
+        self.announce = Some((result, Vec::new()));
+    }
+
+    /// Empty the tombstones after the commit, before the write lock is released (the backfill
+    /// has completed, so nothing can bring a deleted message back any more).
+    fn clear_tombstones_after_commit(&mut self) {
+        self.clear_tombstones = true;
+    }
 }
 
 /// What history says should happen to one message.
@@ -233,8 +269,74 @@ impl SyncEngine {
         self
     }
 
-    fn emit(&self, event: SyncEvent) {
+    pub fn account_id(&self) -> &str {
+        &self.account_id
+    }
+
+    /// The account's Gmail client.
+    pub(crate) fn api(&self) -> &Arc<dyn MailApi> {
+        &self.api
+    }
+
+    pub(super) fn db(&self) -> &SqlitePool {
+        &self.db
+    }
+
+    /// The account's [`LabelLock`].
+    pub(crate) fn label_lock(&self) -> &LabelLock {
+        &self.label_lock
+    }
+
+    #[cfg(test)]
+    pub(super) fn write_lock(&self) -> &WriteLock {
+        &self.write_lock
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_color_sync(&mut self, colors: Arc<ColorSync>) {
+        self.colors = colors;
+    }
+
+    pub(super) fn emit(&self, event: SyncEvent) {
         self.events.emit(event);
+    }
+
+    /// One write to the account's cache, the way every write goes: take the account's write
+    /// lock, open a write transaction, run `work`, commit, release the lock, then announce what
+    /// `work` recorded through [`CacheWrite::finish`] or [`CacheWrite::announce`]. When `work`
+    /// fails nothing is committed or announced.
+    ///
+    /// Lock order: a caller may already hold the account's [`LabelLock`] (label changes do),
+    /// never the write lock, which this takes; `work` must not take the label lock.
+    pub(crate) async fn write<T>(
+        &self,
+        work: impl AsyncFnOnce(&mut CacheWrite<'_>) -> Result<T, SyncError>,
+    ) -> Result<T, SyncError> {
+        let mut guard = self.write_lock.lock().await;
+        let tx = db::begin_write(&self.db).await?;
+        let mut write = CacheWrite {
+            tx,
+            tombstones: &mut guard,
+            engine: self,
+            announce: None,
+            clear_tombstones: false,
+        };
+        let out = work(&mut write).await?;
+        let CacheWrite {
+            tx,
+            announce,
+            clear_tombstones,
+            ..
+        } = write;
+        tx.commit().await?;
+        if clear_tombstones {
+            guard.clear();
+        }
+        drop(guard);
+        if let Some((result, confirmed)) = announce {
+            self.emit_write(result, confirmed);
+        }
+        Ok(out)
     }
 
     fn account(&self) -> String {
@@ -253,21 +355,17 @@ impl SyncEngine {
         self.sync_labels().await?;
         let messages = self.inbox_first_page().await?;
 
-        let guard = self.write_lock.lock().await;
-        let mut tx = db::begin_write(&self.db).await?;
-        let touched = self.store_messages(&mut tx, &messages, true).await?;
-        let (result, confirmed) = self.finish_write(&mut tx, &touched).await?;
-        accounts::update_history_id(&mut *tx, &self.account_id, &history_id, now_ms() / 1000)
-            .await?;
-        sync_state::reset_backfill(&mut tx, &self.account_id).await?;
-        sync_state::set_mailbox_total(&mut tx, &self.account_id, profile.messages_total).await?;
-        sync_state::touch(&mut tx, &self.account_id, now_ms()).await?;
-        // A resync left unfinished by an account that was removed and added again.
-        settings::clear_resync(&mut *tx, &self.account_id).await?;
-        tx.commit().await?;
-        drop(guard);
+        self.write(async |w| {
+            let touched = self.store_messages(&mut w.tx, &messages, true).await?;
+            w.finish(&touched).await?;
+            self.restart_at(&mut w.tx, &history_id, profile.messages_total)
+                .await?;
+            // A resync left unfinished by an account that was removed and added again.
+            settings::clear_resync(&mut *w.tx, &self.account_id).await?;
+            Ok(())
+        })
+        .await?;
 
-        self.emit_write(result, confirmed);
         self.emit(SyncEvent::LabelsUpdated {
             account_id: self.account(),
         });
@@ -419,70 +517,73 @@ impl SyncEngine {
             }
         }
 
-        let mut guard = self.write_lock.lock().await;
-        let mut tx = db::begin_write(&self.db).await?;
-        // Tombstones only matter while a backfill can still bring the message back; it
-        // clears them when it completes, so after that they would pile up for good.
-        let backfilling = !sync_state::get(&mut *tx, &self.account_id)
-            .await?
-            .backfill_complete;
-        // Only history additions can notify. Check cache membership under the same write lock
-        // as the cursor commit: initial sync, search, backfill, label changes and replay stay silent.
-        let added_ids: Vec<String> = records
-            .iter()
-            .flat_map(|r| &r.messages_added)
-            .map(|m| m.message.id.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        let known = messages::existing_ids(&mut tx, &self.account_id, &added_ids).await?;
-        let mut touched: Vec<String> = Vec::new();
-        for (id, intent) in &intents {
-            match intent {
-                Intent::Delete { thread } => {
-                    messages::delete_message(&mut *tx, &self.account_id, id).await?;
-                    if backfilling {
-                        guard.insert(id.clone());
+        let (changed, new_mail) = self
+            .write(async |w| {
+                // Tombstones only matter while a backfill can still bring the message back; it
+                // clears them when it completes, so after that they would pile up for good.
+                let backfilling = !sync_state::get(&mut *w.tx, &self.account_id)
+                    .await?
+                    .backfill_complete;
+                // Only history additions can notify. Check cache membership under the same write
+                // lock as the cursor commit: initial sync, search, backfill, label changes and
+                // replay stay silent.
+                let added_ids: Vec<String> = records
+                    .iter()
+                    .flat_map(|r| &r.messages_added)
+                    .map(|m| m.message.id.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+                let known = messages::existing_ids(&mut w.tx, &self.account_id, &added_ids).await?;
+                let mut touched: Vec<String> = Vec::new();
+                for (id, intent) in &intents {
+                    match intent {
+                        Intent::Delete { thread } => {
+                            messages::delete_message(&mut *w.tx, &self.account_id, id).await?;
+                            if backfilling {
+                                w.tombstones.insert(id.clone());
+                            }
+                            touched.push(thread.clone());
+                        }
+                        Intent::Fetch { thread, .. } if gone.contains(id) => {
+                            messages::delete_message(&mut *w.tx, &self.account_id, id).await?;
+                            if backfilling {
+                                w.tombstones.insert(id.clone());
+                            }
+                            touched.push(thread.clone());
+                        }
+                        Intent::Labels {
+                            thread,
+                            labels,
+                            changed: true,
+                        } => {
+                            messages::set_labels(&mut w.tx, &self.account_id, id, labels).await?;
+                            touched.push(thread.clone());
+                        }
+                        Intent::Fetch { thread, .. } => touched.push(thread.clone()),
+                        Intent::Labels { .. } => {}
                     }
-                    touched.push(thread.clone());
                 }
-                Intent::Fetch { thread, .. } if gone.contains(id) => {
-                    messages::delete_message(&mut *tx, &self.account_id, id).await?;
-                    if backfilling {
-                        guard.insert(id.clone());
+                touched.extend(self.store_messages(&mut w.tx, &full, true).await?);
+                touched.extend(self.store_messages(&mut w.tx, &headers_only, false).await?);
+                let changed = w.finish(&touched).await?;
+                let mut new_mail = Vec::new();
+                for id in added_ids.iter().filter(|id| !known.contains(*id)) {
+                    if let Some(message) =
+                        messages::get_message(&mut *w.tx, &self.account_id, id).await?
+                    {
+                        if let Some(mail) = NewMail::from_message(&message, hidden_tabs) {
+                            new_mail.push(mail);
+                        }
                     }
-                    touched.push(thread.clone());
                 }
-                Intent::Labels {
-                    thread,
-                    labels,
-                    changed: true,
-                } => {
-                    messages::set_labels(&mut tx, &self.account_id, id, labels).await?;
-                    touched.push(thread.clone());
-                }
-                Intent::Fetch { thread, .. } => touched.push(thread.clone()),
-                Intent::Labels { .. } => {}
-            }
-        }
-        touched.extend(self.store_messages(&mut tx, &full, true).await?);
-        touched.extend(self.store_messages(&mut tx, &headers_only, false).await?);
-        let (result, confirmed) = self.finish_write(&mut tx, &touched).await?;
-        let mut new_mail = Vec::new();
-        for id in added_ids.iter().filter(|id| !known.contains(*id)) {
-            if let Some(message) = messages::get_message(&mut *tx, &self.account_id, id).await? {
-                if let Some(mail) = NewMail::from_message(&message, hidden_tabs) {
-                    new_mail.push(mail);
-                }
-            }
-        }
-        accounts::update_history_id(&mut *tx, &self.account_id, cursor, now_ms() / 1000).await?;
-        sync_state::touch(&mut tx, &self.account_id, now_ms()).await?;
-        tx.commit().await?;
-        drop(guard);
+                accounts::update_history_id(&mut *w.tx, &self.account_id, cursor, now_ms() / 1000)
+                    .await?;
+                sync_state::touch(&mut w.tx, &self.account_id, now_ms()).await?;
+                Ok((changed, new_mail))
+            })
+            .await?;
 
-        let changed = !result.is_empty();
-        self.emit_write(result, confirmed);
         if !new_mail.is_empty() {
             self.emit(SyncEvent::NewMail {
                 account_id: self.account(),
@@ -651,25 +752,16 @@ impl SyncEngine {
         self.sync_labels().await?;
         let inbox = self.inbox_first_page().await?;
 
-        let guard = self.write_lock.lock().await;
-        let mut tx = db::begin_write(&self.db).await?;
-        let touched = self.store_messages(&mut tx, &inbox, true).await?;
-        let (result, confirmed) = self.finish_write(&mut tx, &touched).await?;
-        accounts::update_history_id(
-            &mut *tx,
-            &self.account_id,
-            &profile.history_id,
-            now_ms() / 1000,
-        )
+        self.write(async |w| {
+            let touched = self.store_messages(&mut w.tx, &inbox, true).await?;
+            w.finish(&touched).await?;
+            self.restart_at(&mut w.tx, &profile.history_id, profile.messages_total)
+                .await?;
+            settings::set_resync_position(&mut *w.tx, &self.account_id, "").await?;
+            Ok(())
+        })
         .await?;
-        sync_state::reset_backfill(&mut tx, &self.account_id).await?;
-        sync_state::set_mailbox_total(&mut tx, &self.account_id, profile.messages_total).await?;
-        sync_state::touch(&mut tx, &self.account_id, now_ms()).await?;
-        settings::set_resync_position(&mut *tx, &self.account_id, "").await?;
-        tx.commit().await?;
-        drop(guard);
         tracing::info!(account = %self.account_id, "Gmail's history expired; re-reading the cached mail");
-        self.emit_write(result, confirmed);
         Ok(())
     }
 
@@ -710,52 +802,57 @@ impl SyncEngine {
             }
         }
 
-        let mut guard = self.write_lock.lock().await;
-        let mut tx = db::begin_write(&self.db).await?;
-        let backfilling = !sync_state::get(&mut *tx, &self.account_id)
-            .await?
-            .backfill_complete;
-        // As cached now, under the write lock: only real differences are written, so only
-        // threads that changed are rebased, recomputed and announced.
-        let cached = messages::label_map(&mut tx, &self.account_id, &ids).await?;
-        let mut touched = Vec::new();
-        for msg in &fresh {
-            let Some((thread, labels)) = cached.get(&msg.id) else {
-                continue;
-            };
-            let same = labels.len() == msg.label_ids.len()
-                && labels.iter().all(|l| msg.label_ids.contains(l));
-            if !same
-                && messages::set_labels(&mut tx, &self.account_id, &msg.id, &msg.label_ids).await?
-            {
-                touched.push(thread.clone());
-            }
-        }
-        for id in &gone {
-            let Some((thread, _)) = cached.get(id) else {
-                continue;
-            };
-            messages::delete_message(&mut *tx, &self.account_id, id).await?;
-            if backfilling {
-                guard.insert(id.clone());
-            }
-            touched.push(thread.clone());
-        }
-        let (result, confirmed) = self.finish_write(&mut tx, &touched).await?;
-        let done = failure.is_none() && ids.len() < RESYNC_CHUNK;
-        if done {
-            settings::clear_resync(&mut *tx, &self.account_id).await?;
-        } else if let (None, Some(last)) = (&failure, ids.last()) {
-            settings::set_resync_position(&mut *tx, &self.account_id, last).await?;
-        }
-        tx.commit().await?;
-        drop(guard);
+        let (changed, done) = self
+            .write(async |w| {
+                let backfilling = !sync_state::get(&mut *w.tx, &self.account_id)
+                    .await?
+                    .backfill_complete;
+                // As cached now, under the write lock: only real differences are written, so
+                // only threads that changed are rebased, recomputed and announced.
+                let cached = messages::label_map(&mut w.tx, &self.account_id, &ids).await?;
+                let mut touched = Vec::new();
+                for msg in &fresh {
+                    let Some((thread, labels)) = cached.get(&msg.id) else {
+                        continue;
+                    };
+                    let same = labels.len() == msg.label_ids.len()
+                        && labels.iter().all(|l| msg.label_ids.contains(l));
+                    if !same
+                        && messages::set_labels(
+                            &mut w.tx,
+                            &self.account_id,
+                            &msg.id,
+                            &msg.label_ids,
+                        )
+                        .await?
+                    {
+                        touched.push(thread.clone());
+                    }
+                }
+                for id in &gone {
+                    let Some((thread, _)) = cached.get(id) else {
+                        continue;
+                    };
+                    messages::delete_message(&mut *w.tx, &self.account_id, id).await?;
+                    if backfilling {
+                        w.tombstones.insert(id.clone());
+                    }
+                    touched.push(thread.clone());
+                }
+                let changed = w.finish(&touched).await?;
+                let done = failure.is_none() && ids.len() < RESYNC_CHUNK;
+                if done {
+                    settings::clear_resync(&mut *w.tx, &self.account_id).await?;
+                } else if let (None, Some(last)) = (&failure, ids.last()) {
+                    settings::set_resync_position(&mut *w.tx, &self.account_id, last).await?;
+                }
+                Ok((changed, done))
+            })
+            .await?;
         if done {
             tracing::info!(account = %self.account_id, "cached mail re-read after Gmail's history expired");
         }
 
-        let changed = !result.is_empty();
-        self.emit_write(result, confirmed);
         match failure {
             Some(e) => Err(e.into()),
             None => Ok(changed),
@@ -813,61 +910,59 @@ impl SyncEngine {
             }
         }
 
-        let mut guard = self.write_lock.lock().await;
-        let mut tx = db::begin_write(&self.db).await?;
-        // A reset (initial sync or reconcile) while this page was in flight makes it stale.
-        let now_state = sync_state::get(&mut *tx, &self.account_id).await?;
-        if now_state.backfill_generation != state.backfill_generation {
+        // `None` when the page is stale; otherwise whether the walk is complete.
+        let saved = self
+            .write(async |w| {
+                // A reset (initial sync or reconcile) while this page was in flight makes it
+                // stale. Nothing has been written yet, so the commit leaves the cache as it is.
+                let now_state = sync_state::get(&mut *w.tx, &self.account_id).await?;
+                if now_state.backfill_generation != state.backfill_generation {
+                    return Ok(None);
+                }
+                if let Some(total) = total {
+                    sync_state::set_mailbox_total(&mut w.tx, &self.account_id, total).await?;
+                }
+                let mut touched = Vec::new();
+                let mut oldest = messages::oldest_date(&mut w.tx, &self.account_id, &ids).await?;
+                for msg in &fetched {
+                    // Checked under the write lock, right before inserting: sync may have deleted
+                    // this message after we fetched it.
+                    if w.tombstones.contains(&msg.id) {
+                        continue;
+                    }
+                    let Some((row, atts)) = self.rows(msg, full)? else {
+                        continue;
+                    };
+                    oldest = match (oldest, row.date) {
+                        (Some(a), Some(b)) => Some(a.min(b)),
+                        (a, b) => a.or(b),
+                    };
+                    self.insert_absent(&mut w.tx, row, &atts, &mut touched)
+                        .await?;
+                }
+                w.finish(&touched).await?;
+                if failure.is_some() {
+                    // Keep the page token and flags: the page isn't done.
+                    return Ok(Some(false));
+                }
+                let cutoff = now_ms() - FULL_BODY_DAYS * DAY_MS;
+                let bodies_done = state.backfill_bodies_done || oldest.is_some_and(|d| d < cutoff);
+                let next = page.next_page_token.as_deref();
+                let complete = next.is_none();
+                sync_state::save_backfill(&mut w.tx, &self.account_id, next, bodies_done, complete)
+                    .await?;
+                if complete {
+                    w.clear_tombstones_after_commit();
+                }
+                Ok(Some(complete))
+            })
+            .await?;
+        let Some(complete) = saved else {
             return Ok(BackfillProgress::More);
-        }
-        if let Some(total) = total {
-            sync_state::set_mailbox_total(&mut tx, &self.account_id, total).await?;
-        }
-        let mut touched = Vec::new();
-        let mut oldest = messages::oldest_date(&mut tx, &self.account_id, &ids).await?;
-        for msg in &fetched {
-            // Checked under the write lock, right before inserting: sync may have deleted
-            // this message after we fetched it.
-            if guard.contains(&msg.id) {
-                continue;
-            }
-            let Some((row, atts)) = self.rows(msg, full)? else {
-                continue;
-            };
-            oldest = match (oldest, row.date) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (a, b) => a.or(b),
-            };
-            self.insert_absent(&mut tx, row, &atts, &mut touched)
-                .await?;
-        }
-        let (result, confirmed) = self.finish_write(&mut tx, &touched).await?;
+        };
         if let Some(e) = failure {
-            // Keep the page token and flags: the page isn't done.
-            tx.commit().await?;
-            drop(guard);
-            self.emit_write(result, confirmed);
             return Err(e.into());
         }
-        let cutoff = now_ms() - FULL_BODY_DAYS * DAY_MS;
-        let bodies_done = state.backfill_bodies_done || oldest.is_some_and(|d| d < cutoff);
-        let next = page.next_page_token;
-        let complete = next.is_none();
-        sync_state::save_backfill(
-            &mut tx,
-            &self.account_id,
-            next.as_deref(),
-            bodies_done,
-            complete,
-        )
-        .await?;
-        tx.commit().await?;
-        if complete {
-            guard.clear();
-        }
-        drop(guard);
-
-        self.emit_write(result, confirmed);
         Ok(if complete {
             BackfillProgress::Done
         } else {
@@ -913,22 +1008,25 @@ impl SyncEngine {
         if fetched.is_empty() {
             return Ok(());
         }
-        let guard = self.write_lock.lock().await;
-        let mut tx = db::begin_write(&self.db).await?;
-        for (row, atts) in &fetched {
-            messages::set_body(&mut tx, row).await?;
-            attachments::replace_for_message(&mut tx, &self.account_id, &row.id, atts).await?;
-        }
-        let result =
-            threads::recompute_threads(&mut tx, &self.account_id, &[thread_id.to_owned()]).await?;
-        tx.commit().await?;
-        drop(guard);
-        // A preload's caller gets the bodies in its answer. Announcing them would make the
-        // app evict that answer and reload the list for every thread preloaded cold.
-        if !preload {
-            self.emit_write(result, Vec::new());
-        }
-        Ok(())
+        // Only bodies change: the threads are recomputed, with no outbox ops to re-apply and no
+        // sends to confirm.
+        self.write(async |w| {
+            for (row, atts) in &fetched {
+                messages::set_body(&mut w.tx, row).await?;
+                attachments::replace_for_message(&mut w.tx, &self.account_id, &row.id, atts)
+                    .await?;
+            }
+            let result =
+                threads::recompute_threads(&mut w.tx, &self.account_id, &[thread_id.to_owned()])
+                    .await?;
+            // A preload's caller gets the bodies in its answer. Announcing them would make the
+            // app evict that answer and reload the list for every thread preloaded cold.
+            if !preload {
+                w.announce(result);
+            }
+            Ok(())
+        })
+        .await
     }
 
     /// One page of a Gmail search. Threads with matches the cache doesn't have yet are
@@ -977,24 +1075,23 @@ impl SyncEngine {
             }
         }
 
-        let guard = self.write_lock.lock().await;
-        let mut tx = db::begin_write(&self.db).await?;
-        let mut touched = Vec::new();
-        for msg in &fetched {
-            // Sync may have deleted it since; don't bring it back.
-            if guard.contains(&msg.id) {
-                continue;
+        self.write(async |w| {
+            let mut touched = Vec::new();
+            for msg in &fetched {
+                // Sync may have deleted it since; don't bring it back.
+                if w.tombstones.contains(&msg.id) {
+                    continue;
+                }
+                let Some((row, atts)) = self.rows(msg, true)? else {
+                    continue;
+                };
+                self.insert_absent(&mut w.tx, row, &atts, &mut touched)
+                    .await?;
             }
-            let Some((row, atts)) = self.rows(msg, true)? else {
-                continue;
-            };
-            self.insert_absent(&mut tx, row, &atts, &mut touched)
-                .await?;
-        }
-        let (result, confirmed) = self.finish_write(&mut tx, &touched).await?;
-        tx.commit().await?;
-        drop(guard);
-        self.emit_write(result, confirmed);
+            w.finish(&touched).await?;
+            Ok(())
+        })
+        .await?;
         Ok((thread_ids, page.next_page_token))
     }
 
@@ -1200,6 +1297,23 @@ impl SyncEngine {
             touched.push(row.thread_id);
         }
         Ok(touched)
+    }
+
+    /// Move the cursor to `history_id` and start the backfill over for a mailbox of
+    /// `messages_total` messages: the shared part of the initial sync's write and a resync's
+    /// first one.
+    async fn restart_at(
+        &self,
+        conn: &mut SqliteConnection,
+        history_id: &str,
+        messages_total: u64,
+    ) -> Result<(), SyncError> {
+        accounts::update_history_id(&mut *conn, &self.account_id, history_id, now_ms() / 1000)
+            .await?;
+        sync_state::reset_backfill(conn, &self.account_id).await?;
+        sync_state::set_mailbox_total(conn, &self.account_id, messages_total).await?;
+        sync_state::touch(conn, &self.account_id, now_ms()).await?;
+        Ok(())
     }
 
     /// Re-apply pending ops, recompute threads, confirm sends — the tail of every write.

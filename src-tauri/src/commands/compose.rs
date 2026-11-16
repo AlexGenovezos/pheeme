@@ -7,8 +7,7 @@ use crate::compose::{
     StagedAttachment,
 };
 use crate::gmail::user_action;
-use crate::mail::MailError;
-use crate::sync::outbox::{self, FailedSend, ReturnedDraft};
+use crate::sync::outbox::{FailedSend, ReturnedDraft};
 use crate::AppState;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -241,9 +240,7 @@ pub async fn failed_sends(
     state: State<'_, AppState>,
     account_id: String,
 ) -> Result<Vec<FailedSend>, CommandError> {
-    Ok(outbox::failed_sends(&state.db, &account_id)
-        .await
-        .map_err(MailError::from)?)
+    Ok(state.compose.failed_sends(&account_id).await?)
 }
 
 /// Put a failed or unconfirmed send back in the account's Drafts, out of the outbox, for the
@@ -254,19 +251,7 @@ pub async fn reopen_failed_send(
     account_id: String,
     op_id: String,
 ) -> Result<Option<ReturnedDraft>, CommandError> {
-    let api = state.sync.engine(&account_id).api;
-    let returned = user_action(outbox::move_to_drafts(
-        &state.db,
-        api.as_ref(),
-        &account_id,
-        &op_id,
-    ))
-    .await
-    .map_err(MailError::from)?;
-    if returned.is_some() {
-        state.sync.trigger(Some(account_id));
-    }
-    Ok(returned)
+    Ok(user_action(state.compose.reopen_failed_send(&account_id, &op_id)).await?)
 }
 
 #[cfg(test)]

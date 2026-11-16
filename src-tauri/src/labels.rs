@@ -4,13 +4,13 @@
 //! [`LabelService`].
 
 use crate::db::labels::{self as db_labels, DbLabel};
-use crate::db::{self, threads};
+use crate::db::threads;
 use crate::gmail::palette;
 use crate::gmail::types::{LabelColor, LabelUpdate};
 use crate::gmail::GmailError;
 use crate::mail::{LabelDto, MailError};
 use crate::sync::convert::to_db_label;
-use crate::sync::engine::{SyncEngine, SyncError};
+use crate::sync::engine::SyncEngine;
 use crate::sync::manager::SyncManager;
 use crate::sync::SyncEvent;
 use serde::{Deserialize, Serialize};
@@ -89,7 +89,7 @@ impl LabelService {
             return Err(duplicate(&name));
         }
         let created = engine
-            .api
+            .api()
             .create_label(&name, color)
             .await
             .map_err(|e| gmail_error(e, &name))?;
@@ -129,7 +129,7 @@ impl LabelService {
             // Only a full replace (PUT) can remove a colour; start from Gmail's copy so
             // nothing else is reverted.
             let mut full = engine
-                .api
+                .api()
                 .get_label(&label.id)
                 .await
                 .map_err(|e| gmail_error(e, &label.name))?;
@@ -143,7 +143,7 @@ impl LabelService {
             if edit.message_list_visibility.is_some() {
                 full.message_list_visibility = edit.message_list_visibility;
             }
-            engine.api.replace_label(&full).await
+            engine.api().replace_label(&full).await
         } else {
             let update = LabelUpdate {
                 name: new_name.clone(),
@@ -154,7 +154,7 @@ impl LabelService {
             if update == LabelUpdate::default() {
                 return Ok(vec![label.into()]);
             }
-            engine.api.update_label(&label.id, update).await
+            engine.api().update_label(&label.id, update).await
         }
         .map_err(|e| gmail_error(e, new_name.as_deref().unwrap_or(&label.name)))?;
 
@@ -164,7 +164,7 @@ impl LabelService {
                 name: Some(rename.new.clone()),
                 ..Default::default()
             };
-            match engine.api.update_label(&rename.id, update).await {
+            match engine.api().update_label(&rename.id, update).await {
                 Ok(renamed) => done.push(to_db_label(account_id, &renamed)),
                 Err(e) => {
                     let left: Vec<&str> = renames[i..].iter().map(|r| r.old.as_str()).collect();
@@ -192,7 +192,7 @@ impl LabelService {
         doomed.sort_by(|a, b| depth(b).cmp(&depth(a)).then_with(|| b.name.cmp(&a.name)));
         doomed.push(&label);
         for (i, target) in doomed.iter().enumerate() {
-            match engine.api.delete_label(&target.id).await {
+            match engine.api().delete_label(&target.id).await {
                 // Already gone in Gmail: drop it here too.
                 Err(e) if e.is_not_found() => {}
                 Err(e) if i == 0 => return Err(MailError::Sync(e.into())),
@@ -224,7 +224,7 @@ impl LabelService {
             .into_iter()
             .map(|l| l.name.clone())
             .collect();
-        let threads = match self.sync.engine(account_id).api.get_label(label_id).await {
+        let threads = match self.sync.api(account_id).get_label(label_id).await {
             Ok(l) => l.threads_total.map(i64::from),
             Err(e) => {
                 tracing::debug!(error = %e, "no conversation count for the delete preview");
@@ -237,12 +237,12 @@ impl LabelService {
     /// The account's label lock, waiting for a label sync that holds it (that's short: one
     /// `labels.list` and a few counter requests).
     async fn hold_labels<'a>(&self, engine: &'a SyncEngine) -> tokio::sync::MutexGuard<'a, ()> {
-        if let Ok(held) = engine.label_lock.try_lock() {
+        if let Ok(held) = engine.label_lock().try_lock() {
             return held;
         }
         #[cfg(test)]
         self.contended.notify_one();
-        engine.label_lock.lock().await
+        engine.label_lock().lock().await
     }
 
     /// The account's cached labels and the user label `label_id` among them.
@@ -281,7 +281,7 @@ impl LabelService {
         if let Err(e) = engine.refresh_labels(held).await {
             tracing::warn!(error = %e, "couldn't re-read labels after a failed rename");
         }
-        self.labels_updated(&engine.account_id);
+        self.labels_updated(engine.account_id());
         let (verb, what) = if left.len() == 1 {
             ("wasn't", "This sublabel")
         } else {
@@ -295,17 +295,16 @@ impl LabelService {
 
     /// Drop a label Gmail deleted from the cache and recompute the threads that had it.
     async fn purge(&self, engine: &SyncEngine, label_id: &str) -> Result<(), MailError> {
-        let account_id = engine.account_id.as_str();
-        let guard = engine.write_lock.lock().await;
-        let mut tx = db::begin_write(&self.db).await?;
-        let affected = db_labels::purge_labels(&mut tx, account_id, &[label_id.to_owned()]).await?;
-        let result = threads::recompute_threads(&mut tx, account_id, &affected).await?;
-        tx.commit().await.map_err(SyncError::from)?;
-        drop(guard);
-        if !result.is_empty() {
-            self.sync
-                .emit(SyncEvent::messages_updated(account_id, result));
-        }
+        let account_id = engine.account_id();
+        engine
+            .write(async |w| {
+                let affected =
+                    db_labels::purge_labels(&mut w.tx, account_id, &[label_id.to_owned()]).await?;
+                let result = threads::recompute_threads(&mut w.tx, account_id, &affected).await?;
+                w.announce(result);
+                Ok(())
+            })
+            .await?;
         Ok(())
     }
 
@@ -434,12 +433,14 @@ fn quoted(names: &[&str]) -> String {
 
 /// Cache labels Gmail returned (counters are kept; see [`db_labels::upsert_label_tx`]).
 async fn store(engine: &SyncEngine, rows: &[DbLabel]) -> Result<(), MailError> {
-    let _guard = engine.write_lock.lock().await;
-    let mut tx = db::begin_write(&engine.db).await?;
-    for row in rows {
-        db_labels::upsert_label_tx(&mut tx, row).await?;
-    }
-    tx.commit().await.map_err(SyncError::from)?;
+    engine
+        .write(async |w| {
+            for row in rows {
+                db_labels::upsert_label_tx(&mut w.tx, row).await?;
+            }
+            Ok(())
+        })
+        .await?;
     Ok(())
 }
 
@@ -1070,7 +1071,7 @@ mod tests {
         .unwrap();
         // A delete holds the label lock: Gmail has deleted L1, the cache isn't purged yet.
         let engine = h.sync.engine("a1");
-        let held = engine.label_lock.lock().await;
+        let held = engine.label_lock().lock().await;
         h.fake.delete_label("L1").await.unwrap();
 
         // Gmail refuses the move; the sync run neither waits for the delete nor rolls back.
