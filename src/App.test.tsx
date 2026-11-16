@@ -81,12 +81,19 @@ test("first run with no accounts opens the intro, then the setup guide", async (
   expect(screen.getByRole("navigation", { name: "Setup steps" })).toBeInTheDocument();
 });
 
+/** A backend with one account, answering what Settings › Accounts reads (its Gmail API limit). */
+const oneAccount = (cmd: string) => {
+  if (cmd === "list_accounts") return [account];
+  if (cmd === "gmail_quota") return 15_000;
+  return undefined;
+};
+
 test("with accounts it shows them and can add or remove one", async () => {
   const calls: string[] = [];
   mockIPC((cmd) => {
     calls.push(cmd);
     if (cmd === "failed_sends") return [];
-    return cmd === "list_accounts" ? [account] : undefined;
+    return oneAccount(cmd);
   });
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -112,7 +119,7 @@ test("with accounts it shows them and can add or remove one", async () => {
 });
 
 test("Escape closes the add-account dialog and leaves mail as it was", async () => {
-  mockIPC((cmd) => (cmd === "list_accounts" ? [account] : undefined));
+  mockIPC(oneAccount);
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   const settings = screen.getByRole("dialog", { name: /Settings/ });
@@ -125,7 +132,7 @@ test("Escape closes the add-account dialog and leaves mail as it was", async () 
 });
 
 test("Escape still closes the setup dialog after moving to another step", async () => {
-  mockIPC((cmd) => (cmd === "list_accounts" ? [account] : undefined));
+  mockIPC(oneAccount);
   render(<App />);
   await screen.findByRole("button", { name: "Settings" });
   act(() => useSetupGuide.getState().open());
@@ -140,7 +147,7 @@ test("Escape still closes the setup dialog after moving to another step", async 
 });
 
 test("Settings › About › Open guide opens the setup tutorial, not the account chooser", async () => {
-  mockIPC((cmd) => (cmd === "list_accounts" ? [account] : undefined));
+  mockIPC(oneAccount);
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   const dialog = screen.getByRole("dialog", { name: /Settings/ });
@@ -158,10 +165,10 @@ test("Settings › About › Open guide opens the setup tutorial, not the accoun
 
 test("a failed remove keeps the account and shows why", async () => {
   mockIPC((cmd) => {
-    if (cmd === "list_accounts") return [account];
     if (cmd === "transfer_interfaces") return ["192.168.1.2"];
     if (cmd === "remove_account")
       throw { code: "keychain_unavailable", message: "No system keychain is available." };
+    return oneAccount(cmd);
   });
   useSettingsStore.setState({ page: "accounts" });
   render(<App />);
