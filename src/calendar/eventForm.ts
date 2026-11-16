@@ -139,7 +139,7 @@ const HIDDEN =
  * as the local API's snippets).
  */
 export const INVISIBLE =
-  /\u034F|[\u00AD\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\u2800\u3164\uFEFF\uFFA0]/g;
+  /\u034F|\u17B4|\u17B5|[\u00AD\u061C\u115F\u1160\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\u2800\u3164\uFEFF\uFFA0]/g;
 
 const EDGE = "\uE000";
 const BR = "\uE001";
