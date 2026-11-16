@@ -1,5 +1,8 @@
 // "Manage labels": opens the sidebar on its Labels section, which takes focus once it has rendered.
 import { create } from "zustand";
+import { railShown } from "../shell/accountIndicators";
+import { mailboxInAccount } from "../shell/sidebar/rail";
+import { visibleCategories } from "../store/inboxTabsStore";
 import { sidebarLayout, useUiStore } from "../store/uiStore";
 
 /** A pending reveal for the sidebar's Labels section to act on; `0` when there is none. */
@@ -9,11 +12,15 @@ let seq = 0;
 
 /**
  * Expands the sidebar if it's collapsed, scrolls the Labels section into view and focuses its first row. With
- * `accountId`, the sidebar switches to that account's labels first (the mailbox shown stays as it is).
+ * `accountId`, the sidebar switches to that account's labels first (the mailbox shown stays as it is, except with the
+ * account rail, where the sidebar shows only the open mailbox's account: that account's mailbox opens).
  */
 export function revealLabels(accountId?: string): void {
   const ui = useUiStore.getState();
-  if (accountId) ui.setActiveAccount(accountId);
+  if (accountId && railShown() && ui.mailbox.accountId !== accountId) {
+    const tabs = visibleCategories(accountId).map((c) => c.labelId);
+    ui.setMailbox(mailboxInAccount(ui.mailbox, accountId, tabs));
+  } else if (accountId) ui.setActiveAccount(accountId);
   // Hidden by the user or for lack of room: open it (over the content when there's no room).
   if (sidebarLayout(ui) === "collapsed") ui.toggleSidebar();
   useRevealStore.setState({ pending: ++seq });

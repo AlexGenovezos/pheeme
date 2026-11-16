@@ -312,6 +312,8 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   const single = accounts.length === 1 ? accounts[0] : null;
   // With the rail, the sidebar shows the account picked there alone, the way it shows a single account.
   const shown = single ?? (rail ? (accounts.find((a) => a.id === current) ?? null) : null);
+  // The account whose Favorites and labels show.
+  const folders = rail ? shown : active;
 
   // With one account there is no All Inboxes row, so its Primary stands in for it.
   useEffect(() => {
@@ -415,9 +417,9 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
             </>
           )}
         </Section>
-        {/* With the rail in All Inboxes, no one account's: pick one on the rail for its Favorites and labels. */}
-        {active && !(rail && !shown) && <Favorites accountId={active.id} />}
-        {active && !(rail && !shown) && <LabelsSection accountId={active.id} />}
+        {/* With the rail, the shown account's; none in All Inboxes (pick an account on the rail). */}
+        {folders && <Favorites accountId={folders.id} />}
+        {folders && <LabelsSection accountId={folders.id} />}
       </nav>
 
       <ModSidebar />

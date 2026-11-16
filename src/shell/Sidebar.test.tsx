@@ -550,6 +550,22 @@ describe("current account", () => {
     expect(useUiStore.getState().mailbox).toEqual({ accountId: "a1", labelId: "STARRED" });
   });
 
+  test("with the rail, revealing another account's labels opens that account", async () => {
+    seed([ONE, TWO]);
+    act(() => useAccountIndicators.getState().set("rail", true));
+    render(<Sidebar />);
+    // All Inboxes: no one account's labels.
+    expect(screen.queryByRole("region", { name: "Labels" })).not.toBeInTheDocument();
+
+    act(() => revealLabels("a2"));
+    expect(useUiStore.getState().mailbox).toEqual({
+      accountId: "a2",
+      labelId: "INBOX",
+      category: "CATEGORY_PERSONAL",
+    });
+    await waitFor(() => expect(link("Clients", region("Labels"))).toHaveFocus());
+  });
+
   test("no rail with one account", () => {
     seed([ONE]);
     act(() => useAccountIndicators.getState().set("rail", true));

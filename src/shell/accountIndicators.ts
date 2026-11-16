@@ -56,6 +56,10 @@ export function useRailShown(): boolean {
   return rail && several;
 }
 
+/** `useRailShown` outside React. */
+export const railShown = (): boolean =>
+  useAccountIndicators.getState().rail && useAccountStore.getState().accounts.length > 1;
+
 /**
  * Settings › Appearance › Account color across the window: the open mailbox's account color (a CSS `var()`), or null
  * when it's off, in All Inboxes, or with one account.
