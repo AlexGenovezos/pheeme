@@ -3,8 +3,7 @@
 import type { CalendarEvent, ContactSuggestion, GoogleContactsStatus } from "../lib/tauri";
 import type { FixtureThread } from "./fixtures";
 import type { PersonProfile } from "../contacts/api";
-
-type Args = Record<string, unknown> | undefined;
+import type { PartialHandlers } from "./handlers";
 
 /** A few saved Google Contacts for each preview account. */
 const GOOGLE_CONTACTS: ContactSuggestion[] = [
@@ -79,9 +78,9 @@ export function createContactHandlers(
   };
 
   return {
-    person_profile: (args: Args): PersonProfile => {
-      const accountId = String(args?.accountId);
-      const address = String(args?.address).trim().toLowerCase();
+    person_profile: (args): PersonProfile => {
+      const accountId = String(args.accountId);
+      const address = String(args.address).trim().toLowerCase();
       const contact = people(accountId).find((p) => p.address === address);
       const conversations = threads
         .filter(
@@ -123,8 +122,8 @@ export function createContactHandlers(
         calendarAvailable: true,
       };
     },
-    save_person_contact: (args: Args) => {
-      const accountId = String(args?.accountId);
+    save_person_contact: (args) => {
+      const accountId = String(args.accountId);
       if (status === "api_disabled")
         throw {
           code: "api_disabled",
@@ -132,18 +131,18 @@ export function createContactHandlers(
         };
       const list = saved.get(accountId) ?? new Map<string, string | null>();
       list.set(
-        String(args?.address).toLowerCase(),
-        typeof args?.name === "string" ? args.name : null,
+        String(args.address).toLowerCase(),
+        typeof args.name === "string" ? args.name : null,
       );
       saved.set(accountId, list);
     },
-    suggest_contacts: (args: Args): ContactSuggestion[] => {
-      const query = String(args?.query ?? "")
+    suggest_contacts: (args): ContactSuggestion[] => {
+      const query = String(args.query ?? "")
         .trim()
         .toLowerCase();
       if (!query) return [];
       const asked = query.split(/\s+/);
-      return people(String(args?.accountId))
+      return people(String(args.accountId))
         .filter((p) => {
           const own = [...words(p.name ?? ""), ...words(p.address), ...p.address.split("@")];
           return (
@@ -151,7 +150,7 @@ export function createContactHandlers(
           );
         })
         .sort((a, b) => b.score - a.score || a.address.localeCompare(b.address))
-        .slice(0, Number(args?.limit) || 8)
+        .slice(0, Number(args.limit) || 8)
         .map(({ name, address }) => ({ name, address }));
     },
     google_contacts_status: (): GoogleContactsStatus => statusOf(),
@@ -160,5 +159,5 @@ export function createContactHandlers(
       if (status === "api_disabled" || status === "error") status = "on";
       return statusOf();
     },
-  };
+  } satisfies PartialHandlers;
 }

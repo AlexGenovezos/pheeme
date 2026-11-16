@@ -116,8 +116,6 @@ export function sendProblem(d: ComposeDraft): string | null {
 export const gmailDraftsUrl = (email: string) =>
   `https://mail.google.com/mail/u/${encodeURIComponent(email)}/#drafts`;
 
-/** Rust asks for every open message to be saved before the app quits (`commands/compose.rs`). */
-export const SAVE_BEFORE_EXIT_EVENT = "compose:save_before_exit";
 /** The answer: `true` when nothing is left unsaved, `false` when a save failed (the app then stays open). */
 export const SAVED_BEFORE_EXIT_EVENT = "compose:saved_before_exit";
 

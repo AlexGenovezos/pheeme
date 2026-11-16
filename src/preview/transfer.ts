@@ -1,5 +1,6 @@
 import type { SignInStart } from "../lib/tauri";
 import type { TransferOffer, TransferStatus } from "../transfer/api";
+import type { PartialHandlers } from "./handlers";
 
 /** Simulates a second device for UI development; no real credentials or sockets. */
 export function createTransferHandlers(beginSignIn: () => SignInStart) {
@@ -30,5 +31,5 @@ export function createTransferHandlers(beginSignIn: () => SignInStart) {
       offer = null;
     },
     receive_client_transfer: () => beginSignIn(),
-  };
+  } satisfies PartialHandlers;
 }

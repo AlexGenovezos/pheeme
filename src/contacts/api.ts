@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "../lib/ipc/call";
 import type { CalendarEvent } from "../lib/tauri";
 
 export interface PersonProfile {
@@ -18,7 +18,7 @@ export interface PersonProfile {
 }
 
 export const personProfile = (accountId: string, address: string, displayTz: string) =>
-  invoke<PersonProfile>("person_profile", { accountId, address, displayTz });
+  call("person_profile", { accountId, address, displayTz });
 
 export const savePersonContact = (accountId: string, address: string, name: string | null) =>
-  invoke<void>("save_person_contact", { accountId, address, name });
+  call("save_person_contact", { accountId, address, name });

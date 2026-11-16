@@ -1,14 +1,12 @@
 // Conversation details for the reading pane: a small LRU cache, prefetch, and eviction on sync.
-import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { subscribeAll } from "../lib/subscriptions";
 import { parseThreadKey, type ThreadKey, threadKey } from "../mail/mailboxes";
 import {
+  listen,
   type CommandError,
   getThread,
   SYNC_EVENTS,
-  type SyncAccountEvent,
-  type SyncMessagesUpdated,
   THREAD_LOADING_EVENT,
   type ThreadDetail,
   type ThreadLoading,
@@ -247,7 +245,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
       subscribeAll(
         [
           () =>
-            listen<SyncMessagesUpdated>(SYNC_EVENTS.messagesUpdated, ({ payload }) => {
+            listen(SYNC_EVENTS.messagesUpdated, ({ payload }) => {
               const changed = [...payload.modified, ...payload.removed];
               if (changed.length === 0) return;
               const open = useUiStore.getState().openThread;
@@ -265,14 +263,14 @@ export const useThreadStore = create<ThreadState>((set, get) => {
             }),
           // A body that couldn't be fetched offline may be reachable now that a sync got through.
           () =>
-            listen<SyncAccountEvent>(SYNC_EVENTS.completed, ({ payload }) => {
+            listen(SYNC_EVENTS.completed, ({ payload }) => {
               const open = useUiStore.getState().openThread;
               if (!open || parseThreadKey(open).accountId !== payload.accountId) return;
               const cached = get().details.get(open);
               if (cached && !isComplete(cached)) void get().load(open);
             }),
           () =>
-            listen<ThreadLoading>(THREAD_LOADING_EVENT, ({ payload }) => {
+            listen(THREAD_LOADING_EVENT, ({ payload }) => {
               const key = threadKey(payload.accountId, payload.threadId);
               // Events travel apart from the reply: one that lands after the fetch settled is stale.
               if (payload.stage === "done" || !inflight.has(key)) clearLoading(key);

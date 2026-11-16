@@ -2,7 +2,6 @@ import { useDesktopEvents } from "./desktop/events";
 import { useNotificationPrompt } from "./desktop/prompt";
 import { useModCommands, useModEvents } from "./mods/lifecycle";
 import { ModPanel } from "./mods/ModSurfaces";
-import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { toast, ToastProvider } from "./components/ui/Toast";
@@ -15,7 +14,7 @@ import { useAppCommands } from "./keyboard/appCommands";
 import { isEditableTarget } from "./keyboard/registry";
 import { useGlobalShortcuts } from "./keyboard/useCommands";
 import { createSubscriptionScope } from "./lib/subscriptions";
-import { type OutboxRejected, SYNC_EVENTS } from "./lib/tauri";
+import { listen, SYNC_EVENTS } from "./lib/tauri";
 import { listenForManualChecks, startUpdateChecks } from "./lib/updater";
 import { CommandPalette } from "./palette/CommandPalette";
 import { Settings } from "./settings/Settings";
@@ -61,7 +60,7 @@ function useSyncEvents() {
     scope.add((signal) => useLabelStore.getState().subscribe(signal)).catch(log);
     scope
       .add(() =>
-        listen<OutboxRejected>(SYNC_EVENTS.outboxRejected, ({ payload }) =>
+        listen(SYNC_EVENTS.outboxRejected, ({ payload }) =>
           toast({
             title: `Couldn't ${payload.kind}`,
             description: `Gmail said: ${payload.message}. Your change was undone.`,

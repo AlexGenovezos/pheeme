@@ -15,6 +15,8 @@ import { useAccountStore } from "./store/accountStore";
 import { __resetMailStoreForTests, useMailStore } from "./store/mailStore";
 import { __resetThreadStoreForTests } from "./store/threadStore";
 import { stubLayout } from "./test/layout";
+import { byName } from "./preview/handlers";
+import type { ListThreadsArgs } from "./lib/tauri";
 
 const account = {
   id: "a1",
@@ -35,11 +37,13 @@ const backend = (cmd: string, args?: unknown) =>
   cmd === "list_accounts"
     ? [account]
     : cmd === "list_threads"
-      ? fixtureBackend.list_threads({ ...(args as object), accountIds: [] })
+      ? fixtureBackend.list_threads({ ...(args as ListThreadsArgs), accountIds: [] })
       : cmd === "get_thread"
         ? fixtureBackend.get_thread({
-            ...(args as object),
-            accountId: ownerOf((args as { threadId?: unknown }).threadId),
+            opened: false,
+            preload: false,
+            ...(args as { threadId: string }),
+            accountId: ownerOf((args as { threadId?: unknown }).threadId) ?? "",
           })
         : undefined;
 
@@ -471,7 +475,7 @@ test("a sync change to the open conversation while adding an account shows on re
 
 test("the list header toggles unread mail and keeps it on when switching mailboxes", async () => {
   const handlers = createPreviewHandlers();
-  mockIPC((cmd, args) => handlers[cmd]?.(args as Record<string, unknown>), {
+  mockIPC((cmd, args) => byName(handlers)[cmd]?.(args), {
     shouldMockEvents: true,
   });
   render(<App />);

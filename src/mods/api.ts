@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "../lib/ipc/call";
 
 export interface ModConnection {
   id: string;
@@ -44,19 +44,19 @@ export interface PreparedMod {
   replacing: boolean;
 }
 
-export const listMods = () => invoke<ModSnapshot>("list_mods");
-export const prepareMod = (path: string) => invoke<PreparedMod>("prepare_mod_install", { path });
-export const discardMod = (ticket: string) => invoke<void>("discard_mod_install", { ticket });
-export const installMod = (ticket: string) => invoke<void>("install_mod", { ticket });
+export const listMods = () => call("list_mods");
+export const prepareMod = (path: string) => call("prepare_mod_install", { path });
+export const discardMod = (ticket: string) => call("discard_mod_install", { ticket });
+export const installMod = (ticket: string) => call("install_mod", { ticket });
 export const setModEnabled = (id: string, enabled: boolean) =>
-  invoke<void>("set_mod_enabled", { id, enabled });
+  call("set_mod_enabled", { id, enabled });
 export const removeMod = (id: string, keepPreferences: boolean) =>
-  invoke<void>("remove_mod", { id, keepPreferences });
+  call("remove_mod", { id, keepPreferences });
 export const modAction = (id: string, action: string, value: unknown = null) =>
-  invoke<void>("mod_action", { id, action, value });
+  call("mod_action", { id, action, value });
 export const connectionStatus = (id: string, connection: string) =>
-  invoke<boolean>("mod_connection_status", { id, connection });
+  call("mod_connection_status", { id, connection });
 export const connectMod = (id: string, connection: string, clientId: string) =>
-  invoke<void>("connect_mod", { id, connection, clientId });
+  call("connect_mod", { id, connection, clientId });
 export const disconnectMod = (id: string, connection: string) =>
-  invoke<void>("disconnect_mod", { id, connection });
+  call("disconnect_mod", { id, connection });

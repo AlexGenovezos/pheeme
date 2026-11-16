@@ -12,10 +12,10 @@ import { EventPopover } from "../calendar/EventPopover";
 import { useCalendarStore } from "../calendar/calendarStore";
 import { useEditStore } from "../calendar/editStore";
 import { createCalendarHandlers } from "../preview/calendar";
-import type { CalendarEvent } from "../lib/tauri";
 import { PersonHost, PersonPanel } from "./PersonPanel";
 import { usePersonStore } from "./personStore";
 import type { PersonProfile } from "./api";
+import { byName } from "../preview/handlers";
 
 const profile: PersonProfile = {
   address: "ada@example.com",
@@ -50,7 +50,7 @@ test("opening an unread conversation outside the current list marks it read", as
     if (cmd === "person_profile")
       return { ...profile, conversations: [{ ...profile.conversations[0], id: "p-01" }] };
     if (cmd === "modify_threads") mutations(args);
-    return handlers[cmd]?.(args as Record<string, unknown>);
+    return byName(handlers)[cmd]?.(args);
   });
   const close = vi.fn();
   render(
@@ -143,9 +143,9 @@ test("saving a sender requires separate consent and never claims success before 
 
 test("shows who they are and meetings both ways", async () => {
   const handlers = createCalendarHandlers([{ id: "a", email: "me@example.com" }], null);
-  const [soon, earlier] = (
-    handlers.calendar_events({ fromMs: 0, toMs: Date.now() * 2 }) as CalendarEvent[]
-  ).filter((e) => !e.allDay);
+  const [soon, earlier] = handlers
+    .calendar_events({ fromMs: 0, toMs: Date.now() * 2, timeZone: "UTC" })
+    .filter((e) => !e.allDay);
   mockIPC((cmd) => {
     if (cmd === "person_profile")
       return {
@@ -191,9 +191,7 @@ test("says whether an unknown person is in your contacts, and copies their addre
 
 test("New event opens the editor in Calendar with them invited", async () => {
   const handlers = createPreviewHandlers();
-  mockIPC((cmd, args) =>
-    cmd === "person_profile" ? profile : handlers[cmd]?.(args as Record<string, unknown>),
-  );
+  mockIPC((cmd, args) => (cmd === "person_profile" ? profile : byName(handlers)[cmd]?.(args)));
   useCalendarStore.setState({ accounts: null, mode: "mail" });
   useEditStore.setState({ editor: null, draft: null });
   const close = vi.fn();
@@ -220,9 +218,9 @@ test("a guest in the event popover opens their card in place of the popover", as
     { id: "acc-work", email: "avery@example.org" },
   ];
   const handlers = createCalendarHandlers(accounts, null);
-  const review = (
-    handlers.calendar_events({ fromMs: 0, toMs: Date.now() * 2 }) as CalendarEvent[]
-  ).find((e) => e.id === "design-review")!;
+  const review = handlers
+    .calendar_events({ fromMs: 0, toMs: Date.now() * 2, timeZone: "UTC" })
+    .find((e) => e.id === "design-review")!;
   const calls = vi.fn();
   mockIPC((cmd, args) => {
     calls(cmd, args);

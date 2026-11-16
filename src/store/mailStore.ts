@@ -1,9 +1,9 @@
 // Mail state: the thread list for the active mailbox, kept fresh by sync events.
-import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { subscribeAll } from "../lib/subscriptions";
 import { parseThreadKey, type ThreadKey, threadKey } from "../mail/mailboxes";
 import {
+  listen,
   type CommandError,
   listThreads,
   getThread,
@@ -13,7 +13,6 @@ import {
   type ThreadCursor,
   type ThreadQuery,
   type ThreadSummary,
-  type SyncMessagesUpdated,
   toCommandError,
 } from "../lib/tauri";
 import { PendingChanges } from "./pendingChanges";
@@ -605,7 +604,7 @@ export const useMailStore = create<MailState>((set, get) => {
       return subscribeAll(
         [
           () =>
-            listen<SyncMessagesUpdated>(SYNC_EVENTS.messagesUpdated, ({ payload }) => {
+            listen(SYNC_EVENTS.messagesUpdated, ({ payload }) => {
               if (payload.removed.length) {
                 // Gone from the cache: drop them now, including rows kept below a capped reload (`keptBelow`).
                 const gone = new Set(payload.removed.map((id) => threadKey(payload.accountId, id)));

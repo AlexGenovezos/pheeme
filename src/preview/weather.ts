@@ -2,6 +2,7 @@
 // for every place), a few towns to search, and an event's location found when it names one.
 import type { DayForecast, TemperatureUnit, WeatherPlace } from "../lib/tauri";
 import { addDays, dateOf, systemZone } from "../calendar/dates";
+import type { PartialHandlers } from "./handlers";
 
 const PLACES: WeatherPlace[] = [
   {
@@ -51,20 +52,20 @@ function forecast(unit: TemperatureUnit, now: number): DayForecast[] {
 }
 
 export function createWeatherHandlers(now = Date.now()) {
-  const unitOf = (args?: Record<string, unknown>) =>
-    args?.unit === "fahrenheit" ? "fahrenheit" : "celsius";
+  const unitOf = (args: { unit: TemperatureUnit }) =>
+    args.unit === "fahrenheit" ? "fahrenheit" : "celsius";
   return {
-    weather_search_places: (args?: Record<string, unknown>) => {
-      const query = String(args?.query ?? "")
+    weather_search_places: (args) => {
+      const query = String(args.query ?? "")
         .trim()
         .toLowerCase();
       return query.length < 2 ? [] : PLACES.filter((p) => p.name.toLowerCase().startsWith(query));
     },
-    weather_forecast: (args?: Record<string, unknown>) => forecast(unitOf(args), now),
-    weather_for_location: (args?: Record<string, unknown>) => {
-      const location = String(args?.location ?? "").toLowerCase();
+    weather_forecast: (args) => forecast(unitOf(args), now),
+    weather_for_location: (args) => {
+      const location = String(args.location ?? "").toLowerCase();
       const place = PLACES.find((p) => location.includes(p.name.toLowerCase()));
       return place ? { place, days: forecast(unitOf(args), now) } : null;
     },
-  };
+  } satisfies PartialHandlers;
 }

@@ -15,8 +15,7 @@ import {
   type Invite,
   type MeetingLink,
 } from "../lib/tauri";
-
-type Args = Record<string, unknown> | undefined;
+import type { PartialHandlers } from "./handlers";
 
 // Video calls the fixtures join (as `calendar/meeting.rs` would find them).
 const MEET: MeetingLink = { url: "https://meet.google.com/abc-defg-hij", provider: "Google Meet" };
@@ -257,12 +256,12 @@ export function createCalendarHandlers(
     }
     return x;
   };
-  const find = (args: Args) =>
+  const find = (args: { accountId: string; calendarId: string; eventId: string }) =>
     events.find(
       (e) =>
-        e.accountId === String(args?.accountId) &&
-        e.calendarId === String(args?.calendarId) &&
-        e.id === String(args?.eventId),
+        e.accountId === String(args.accountId) &&
+        e.calendarId === String(args.calendarId) &&
+        e.id === String(args.eventId),
     );
   const missing = () => ({ code: "not_found", message: "That event isn't available any more." });
   const readOnly = () => ({
@@ -374,9 +373,9 @@ export function createCalendarHandlers(
           calendars: on ? (calendars.get(a.id) ?? []) : [],
         };
       }),
-    calendar_events: (args: Args): CalendarEvent[] => {
-      const from = Number(args?.fromMs);
-      const to = Number(args?.toMs);
+    calendar_events: (args): CalendarEvent[] => {
+      const from = Number(args.fromMs);
+      const to = Number(args.toMs);
       return events
         .filter((e) => shown(e) && startKey(e) < to && endKey(e) > from)
         .sort(
@@ -387,14 +386,14 @@ export function createCalendarHandlers(
         )
         .map(listed);
     },
-    search_calendar_events: (args: Args): CalendarEvent[] => {
-      const words = String(args?.query ?? "")
+    search_calendar_events: (args): CalendarEvent[] => {
+      const words = String(args.query ?? "")
         .toLowerCase()
         .split(/\s+/)
         .filter(Boolean);
       if (!words.length) return [];
-      const from = Number(args?.fromMs);
-      const to = Number(args?.toMs);
+      const from = Number(args.fromMs);
+      const to = Number(args.toMs);
       const text = (e: CalendarEvent) =>
         [
           e.summary,
@@ -411,21 +410,21 @@ export function createCalendarHandlers(
         .sort((a, b) => startKey(a) - startKey(b))
         .map(listed);
     },
-    set_calendar_hidden: (args: Args) => {
-      const accountId = String(args?.accountId);
-      const cal = calendars.get(accountId)?.find((c) => c.id === String(args?.calendarId));
-      if (cal) cal.hidden = Boolean(args?.hidden);
+    set_calendar_hidden: (args) => {
+      const accountId = String(args.accountId);
+      const cal = calendars.get(accountId)?.find((c) => c.id === String(args.calendarId));
+      if (cal) cal.hidden = Boolean(args.hidden);
       void emit(CALENDAR_EVENTS.updated, { accountId }).catch(() => {});
     },
-    calendar_sync_now: (args: Args): CalendarAccess => {
-      const accountId = String(args?.accountId);
+    calendar_sync_now: (args): CalendarAccess => {
+      const accountId = String(args.accountId);
       // After turning the API on (or allowing access), checking again works.
       statuses.set(accountId, "on");
       void emit(CALENDAR_EVENTS.access, { accountId, status: "on" }).catch(() => {});
       return accessOf(accountId);
     },
     set_calendar_foreground: () => undefined,
-    calendar_event_detail: (args: Args): EventDetail => {
+    calendar_event_detail: (args): EventDetail => {
       const e = find(args);
       if (!e) throw missing();
       const account = accounts.find((a) => a.id === e.accountId);
@@ -461,24 +460,24 @@ export function createCalendarHandlers(
         canDelete: writable(e),
       };
     },
-    create_calendar_event: (args: Args): EventRef => {
-      const e = placeholder(String(args?.accountId), String(args?.calendarId));
-      apply(e, (args?.edit ?? {}) as EventEdit);
+    create_calendar_event: (args): EventRef => {
+      const e = placeholder(String(args.accountId), String(args.calendarId));
+      apply(e, (args.edit ?? {}) as EventEdit);
       events.push(e);
       changed(e.accountId);
       return ref(e);
     },
-    update_calendar_event: (args: Args): EventRef => {
+    update_calendar_event: (args): EventRef => {
       const e = find(args);
       if (!e) throw missing();
       if (!isOrganizer(e)) throw readOnly();
       // "following" behaves like "all" here. Other occurrences move by as much as this one did.
-      const edit = (args?.edit ?? {}) as EventEdit;
+      const edit = (args.edit ?? {}) as EventEdit;
       const shift = (t: EventEdit["start"], from: EventTime) =>
         t?.ms != null && from.ms != null ? t.ms - from.ms : 0;
       const startBy = shift(edit.start, e.start);
       const endBy = shift(edit.end, e.end);
-      for (const o of inScope(e, args?.scope)) {
+      for (const o of inScope(e, args.scope)) {
         if (o === e || (!startBy && !endBy)) apply(o, edit);
         else
           apply(o, {
@@ -490,29 +489,29 @@ export function createCalendarHandlers(
       changed(e.accountId);
       return ref(e);
     },
-    delete_calendar_event: (args: Args) => {
+    delete_calendar_event: (args) => {
       const e = find(args);
       if (!e) throw missing();
       // A guest can take an invite off their own calendar.
       if (!writable(e)) throw readOnly();
-      for (const o of inScope(e, args?.scope)) events.splice(events.indexOf(o), 1);
+      for (const o of inScope(e, args.scope)) events.splice(events.indexOf(o), 1);
       changed(e.accountId);
     },
-    move_calendar_event: (args: Args): EventRef => {
+    move_calendar_event: (args): EventRef => {
       const e = find(args);
       if (!e) throw missing();
       if (!isOrganizer(e)) throw readOnly();
-      e.calendarId = String(args?.destinationCalendarId);
+      e.calendarId = String(args.destinationCalendarId);
       changed(e.accountId);
       return ref(e);
     },
-    copy_calendar_event: (args: Args): EventRef => {
+    copy_calendar_event: (args): EventRef => {
       const e = find(args);
       if (!e) throw missing();
       const copy: CalendarEvent = {
         ...e,
-        accountId: String(args?.toAccountId),
-        calendarId: String(args?.toCalendarId),
+        accountId: String(args.toAccountId),
+        calendarId: String(args.toCalendarId),
         id: `copy-${nextId++}`,
         masterId: null,
         recurring: false,
@@ -522,16 +521,16 @@ export function createCalendarHandlers(
       changed(copy.accountId);
       return ref(copy);
     },
-    respond_to_calendar_event: (args: Args): EventRef => {
+    respond_to_calendar_event: (args): EventRef => {
       const e = find(args);
       if (!e) throw missing();
-      for (const o of inScope(e, args?.scope)) o.selfResponse = String(args?.response);
+      for (const o of inScope(e, args.scope)) o.selfResponse = String(args.response);
       changed(e.accountId);
       return ref(e);
     },
-    message_invite: (args: Args): Invite | null => {
-      const accountId = String(args?.accountId);
-      const spec = invitations.get(String(args?.messageId));
+    message_invite: (args): Invite | null => {
+      const accountId = String(args.accountId);
+      const spec = invitations.get(String(args.messageId));
       if (!spec) return null;
       const account = accounts.find((a) => a.id === accountId);
       const self = (response: string): Attendee => ({
@@ -596,15 +595,15 @@ export function createCalendarHandlers(
         import: { summary: e.summary },
       };
     },
-    respond_to_calendar_invite: (args: Args): EventRef => {
+    respond_to_calendar_invite: (args): EventRef => {
       // The preview's invites carry their event id as iCalendar UID.
-      const uid = String(args?.icalUid);
-      const e = events.find((o) => o.accountId === String(args?.accountId) && o.id === uid);
+      const uid = String(args.icalUid);
+      const e = events.find((o) => o.accountId === String(args.accountId) && o.id === uid);
       if (!e) throw missing();
-      e.selfResponse = String(args?.response);
+      e.selfResponse = String(args.response);
       changed(e.accountId);
       return ref(e);
     },
-  };
+  } satisfies PartialHandlers;
   return handlers;
 }

@@ -1,9 +1,9 @@
 // Sends that left a panel, tracked until Gmail confirms them: Undo, a refused or unconfirmed send, and the notice for
 // failed sends that no panel remembers after a restart. The store hands in what only it can do (`SendingHost`).
-import { listen } from "@tauri-apps/api/event";
 import { dismissToast, toast, toastError } from "../components/ui/Toast";
 import { subscribeAll } from "../lib/subscriptions";
 import {
+  listen,
   cancelSend,
   discardAttachments,
   type FailedSend,
@@ -173,10 +173,7 @@ async function undo(opId: string, host: SendingHost) {
 /** Listen for send outcomes. Resolves to the unlisten fn. */
 export function listenSendStatus(host: SendingHost): Promise<() => void> {
   return subscribeAll([
-    () =>
-      listen<OutboxSendStatus>(SYNC_EVENTS.outboxSendStatus, ({ payload }) =>
-        onSendStatus(payload, host),
-      ),
+    () => listen(SYNC_EVENTS.outboxSendStatus, ({ payload }) => onSendStatus(payload, host)),
   ]);
 }
 

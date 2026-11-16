@@ -1,8 +1,14 @@
 // Labels and the counts the sidebar shows, all read from the local cache and refreshed on sync events.
-import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { subscribeAll } from "../lib/subscriptions";
-import { type LabelInfo, labelCounts, listLabels, mailboxCounts, SYNC_EVENTS } from "../lib/tauri";
+import {
+  listen,
+  type LabelInfo,
+  labelCounts,
+  listLabels,
+  mailboxCounts,
+  SYNC_EVENTS,
+} from "../lib/tauri";
 
 export interface LabelCountEntry {
   unread: number;

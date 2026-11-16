@@ -2,11 +2,11 @@
 // calendars, and the events of the months around the days on screen, read from the local cache and
 // kept, so changing the view or the day draws at once. Mode and view survive a restart; the day
 // doesn't (Calendar opens on today, as the website does).
-import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { create } from "zustand";
 import { subscribeAll } from "../lib/subscriptions";
 import {
+  listen,
   CALENDAR_EVENTS,
   type CalendarAccount,
   type CalendarEvent,

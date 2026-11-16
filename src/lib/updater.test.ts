@@ -4,8 +4,8 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { dismissToast, useToastStore } from "../components/ui/Toast";
+import { CHECK_FOR_UPDATES_EVENT } from "./tauri";
 import {
-  CHECK_FOR_UPDATES_EVENT,
   CHECK_INTERVAL_MS,
   RETRY_MS,
   __resetForTests,

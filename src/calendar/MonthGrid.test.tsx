@@ -5,6 +5,7 @@ import { createCalendarHandlers } from "../preview/calendar";
 import { useAccountStore } from "../store/accountStore";
 import { CalendarScreen } from "./CalendarScreen";
 import { useCalendarStore } from "./calendarStore";
+import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [{ id: "acc-personal", email: "avery@example.com" }];
 // Wednesday 2026-11-11, noon local time.
@@ -19,10 +20,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   localStorage.clear();
-  const handlers = createCalendarHandlers(ACCOUNTS, null, NOW) as Record<
-    string,
-    (args?: Record<string, unknown>) => unknown
-  >;
+  const handlers = byName(createCalendarHandlers(ACCOUNTS, null, NOW));
   mockIPC((cmd, args) => handlers[cmd]?.((args ?? {}) as Record<string, unknown>), {
     shouldMockEvents: true,
   });

@@ -1,10 +1,9 @@
-import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { toastError } from "../components/ui/Toast";
 import { findConflicts } from "../keyboard/bindings";
 import { parseShortcut } from "../keyboard/registry";
 import { useCommandList, useCommands } from "../keyboard/useCommands";
-import { stopQuietly } from "../lib/tauri";
+import { listen, stopQuietly } from "../lib/tauri";
 import { modAction } from "./api";
 import { useModStore } from "./store";
 

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "../lib/ipc/call";
 
 export interface NotificationAccount {
   accountId: string;
@@ -37,14 +37,14 @@ export interface EventTarget {
 }
 /** What a clicked notification opens: new mail's conversation, or a reminder's event. */
 export type NotifyTarget = ({ kind: "thread" } & ThreadTarget) | ({ kind: "event" } & EventTarget);
-export const getDesktopSettings = () => invoke<DesktopSettings>("desktop_settings");
+export const getDesktopSettings = () => call("desktop_settings");
 export const setAccountNotifications = (accountId: string, enabled: boolean) =>
-  invoke<DesktopSettings>("set_account_notifications", { accountId, enabled });
+  call("set_account_notifications", { accountId, enabled });
 export const answerNotificationPrompt = (enable: boolean) =>
-  invoke<DesktopSettings>("answer_notification_prompt", { enable });
-export const setTrayIcon = (shown: boolean) => invoke<DesktopSettings>("set_tray_icon", { shown });
-export const takeNotificationTarget = () => invoke<NotifyTarget | null>("take_notification_target");
+  call("answer_notification_prompt", { enable });
+export const setTrayIcon = (shown: boolean) => call("set_tray_icon", { shown });
+export const takeNotificationTarget = () => call("take_notification_target");
 export const setCalendarReminders = (enabled: boolean) =>
-  invoke<DesktopSettings>("set_calendar_reminders", { enabled });
+  call("set_calendar_reminders", { enabled });
 export const setNotificationSchedule = (schedule: NotifySchedule) =>
-  invoke<DesktopSettings>("set_notification_schedule", { schedule });
+  call("set_notification_schedule", { schedule });

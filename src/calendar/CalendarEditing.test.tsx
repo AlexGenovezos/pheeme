@@ -10,6 +10,7 @@ import { CalendarScreen } from "./CalendarScreen";
 import { useCalendarStore } from "./calendarStore";
 import { systemZone, zonedMs } from "./dates";
 import { useEditStore } from "./editStore";
+import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
   { id: "acc-personal", email: "avery@example.com" },
@@ -33,14 +34,14 @@ function backend(
   fail?: Record<string, unknown>,
   slow?: (cmd: string, args: Record<string, unknown>) => Promise<void> | undefined,
 ) {
-  const handlers = {
+  const handlers = byName({
     ...createCalendarHandlers(ACCOUNTS, null, NOW),
     ...createTasksHandlers(ACCOUNTS, null, NOW),
-    suggest_contacts: (a?: Record<string, unknown>) =>
-      "grace hopper".startsWith(String(a?.query).toLowerCase())
+    suggest_contacts: (a: { query: string }) =>
+      "grace hopper".startsWith(a.query.toLowerCase())
         ? [{ name: "Grace Hopper", address: "grace@example.net" }]
         : [],
-  } as Record<string, (args?: Record<string, unknown>) => unknown>;
+  });
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;

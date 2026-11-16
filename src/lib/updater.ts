@@ -1,11 +1,10 @@
-import { listen } from "@tauri-apps/api/event";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { create } from "zustand";
 import { toast } from "../components/ui/Toast";
 import { useComposeStore } from "../compose/composeStore";
 import { createSubscriptionScope } from "./subscriptions";
-import { logUpdate, type UpdateEvent } from "./tauri";
+import { CHECK_FOR_UPDATES_EVENT, listen, logUpdate, type UpdateEvent } from "./tauri";
 
 export interface PendingUpdate {
   version: string;
@@ -37,9 +36,6 @@ export const RETRY_MS = 15 * 60 * 1000;
 const TICK_MS = 60 * 1000;
 /** A check that hangs would block every later check, so give up on it. */
 const CHECK_TIMEOUT_MS = 60 * 1000;
-
-/** Emitted by the macOS app menu's "Check for Updates…" item (src-tauri/src/app_menu.rs). */
-export const CHECK_FOR_UPDATES_EVENT = "check-for-updates";
 
 /** Outcome of a check the user asked for; background checks stay silent. */
 export type ManualCheckStatus = "idle" | "checking" | "current" | "failed";

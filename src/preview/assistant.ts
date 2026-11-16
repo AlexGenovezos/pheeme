@@ -7,8 +7,7 @@ import type {
   AssistantStatus,
   NewAssistant,
 } from "../lib/tauri";
-
-type Args = Record<string, unknown> | undefined;
+import type { PartialHandlers } from "./handlers";
 
 const URL = "http://127.0.0.1:43830/mcp";
 
@@ -26,18 +25,18 @@ export function createAssistantHandlers() {
   });
   return {
     assistant_status: () => status(),
-    set_assistant_enabled: (args: Args) => {
-      enabled = Boolean(args?.enabled);
+    set_assistant_enabled: (args) => {
+      enabled = Boolean(args.enabled);
       return status();
     },
-    set_assistant_permission: (args: Args) => {
-      const permission = String(args?.permission) as AssistantPermission;
+    set_assistant_permission: (args) => {
+      const permission = String(args.permission) as AssistantPermission;
       allowed = allowed.filter((p) => p !== permission);
-      if (args?.allowed) allowed.push(permission);
+      if (args.allowed) allowed.push(permission);
       return status();
     },
-    connect_assistant: (args: Args): NewAssistant => {
-      const name = String(args?.name ?? "").trim();
+    connect_assistant: (args): NewAssistant => {
+      const name = String(args.name ?? "").trim();
       if (!name) throw { code: "invalid_input", message: "Give the assistant a name." };
       next += 1;
       const client = { id: `client-${next}`, name, createdAt: Date.now(), lastUsedAt: null };
@@ -57,13 +56,13 @@ export function createAssistantHandlers() {
       ];
       return { client: { ...client }, token: `pheeme_preview${next}` };
     },
-    remove_assistant: (args: Args) => {
-      const at = clients.findIndex((c) => c.id === args?.clientId);
+    remove_assistant: (args) => {
+      const at = clients.findIndex((c) => c.id === args.clientId);
       if (at >= 0) clients.splice(at, 1);
     },
     assistant_activity: () => activity.map((a) => ({ ...a })),
     clear_assistant_activity: () => {
       activity = [];
     },
-  };
+  } satisfies PartialHandlers;
 }

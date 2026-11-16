@@ -1,7 +1,6 @@
 // Settings › MCP: lets MCP clients (Claude Code and others) work with mail through Pheeme's local API while the
 // app is open. Off by default; each client connects with its own token, shown once; every tool call is listed
 // under Activity with its exact arguments and what came back. See docs/mcp.md.
-import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Modal } from "../components/ui/Modal";
@@ -11,6 +10,7 @@ import { TextInput } from "../components/ui/TextInput";
 import { formatListDate } from "../lib/dates";
 import { cx } from "../lib/utils";
 import {
+  listen,
   ASSISTANT_ACTIVITY_EVENT,
   type AssistantActivity,
   type AssistantPermission,

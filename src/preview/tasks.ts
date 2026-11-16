@@ -11,8 +11,7 @@ import {
   type TasksAccess,
   type TasksAccount,
 } from "../lib/tauri";
-
-type Args = Record<string, unknown> | undefined;
+import type { PartialHandlers } from "./handlers";
 
 /** A fixture task: the DTO plus its place among its siblings. */
 type Row = Task & { order: number };
@@ -116,16 +115,15 @@ export function createTasksHandlers(
 
   const listOf = (accountId: string, listId: string) =>
     lists.get(accountId)?.find((l) => l.id === listId);
-  const requireList = (args: Args, key = "listId") => {
-    const accountId = String(args?.accountId);
-    const list = listOf(accountId, String(args?.[key]));
+  const requireList = (args: { accountId: string; listId: string }) => {
+    const list = listOf(args.accountId, args.listId);
     if (!list) throw missingList();
     return list;
   };
   const find = (accountId: string, listId: string, id: unknown) =>
     rows.find((r) => r.accountId === accountId && r.listId === listId && r.id === String(id));
-  const requireTask = (args: Args) => {
-    const t = find(String(args?.accountId), String(args?.listId), args?.taskId);
+  const requireTask = (args: { accountId: string; listId: string; taskId: string }) => {
+    const t = find(String(args.accountId), String(args.listId), args.taskId);
     if (!t) throw missingTask();
     return t;
   };
@@ -213,13 +211,13 @@ export function createTasksHandlers(
         access: accessOf(a.id),
         lists: statuses.get(a.id) === "on" ? (lists.get(a.id) ?? []).map((l) => ({ ...l })) : [],
       })),
-    tasks_in_list: (args: Args): Task[] =>
-      statuses.get(String(args?.accountId)) === "on"
-        ? outline(String(args?.accountId), String(args?.listId))
+    tasks_in_list: (args): Task[] =>
+      statuses.get(String(args.accountId)) === "on"
+        ? outline(String(args.accountId), String(args.listId))
         : [],
-    dated_tasks: (args: Args): Task[] => {
-      const from = String(args?.fromDate);
-      const to = String(args?.toDate);
+    dated_tasks: (args): Task[] => {
+      const from = String(args.fromDate);
+      const to = String(args.toDate);
       return rows
         .filter(
           (r) =>
@@ -232,62 +230,65 @@ export function createTasksHandlers(
         .sort((a, b) => a.due!.localeCompare(b.due!) || a.accountId.localeCompare(b.accountId))
         .map(dto);
     },
-    set_task_list_hidden: (args: Args) => {
+    set_task_list_hidden: (args) => {
       const list = requireList(args);
-      list.hidden = Boolean(args?.hidden);
-      changed(String(args?.accountId));
+      list.hidden = Boolean(args.hidden);
+      changed(String(args.accountId));
     },
-    tasks_sync_now: (args: Args): TasksAccess => {
-      const accountId = String(args?.accountId);
+    tasks_sync_now: (args): TasksAccess => {
+      const accountId = String(args.accountId);
       // After turning the API on (or allowing access), checking again works.
       statuses.set(accountId, "on");
       void emit(TASKS_EVENTS.access, { accountId, status: "on" }).catch(() => {});
       return accessOf(accountId);
     },
-    create_task: (args: Args): TaskRef => {
-      const accountId = String(args?.accountId);
+    create_task: (args): TaskRef => {
+      const accountId = String(args.accountId);
       const list = requireList(args);
-      const parent = args?.parent ? String(args.parent) : null;
-      const previous = args?.previous ? String(args.previous) : null;
+      const parent = args.parent ? String(args.parent) : null;
+      const previous = args.previous ? String(args.previous) : null;
       checkPlacement(accountId, list.id, null, parent, previous);
       const t = add({ id: accountId }, list.id, "", { parent });
-      applyEdit(t, (args?.edit ?? {}) as TaskEdit);
+      applyEdit(t, (args.edit ?? {}) as TaskEdit);
       place(t, parent, previous);
       changed(accountId);
       return ref(t);
     },
-    update_task: (args: Args): TaskRef => {
+    update_task: (args): TaskRef => {
       const t = requireTask(args);
-      applyEdit(t, (args?.edit ?? {}) as TaskEdit);
+      applyEdit(t, (args.edit ?? {}) as TaskEdit);
       changed(t.accountId);
       return ref(t);
     },
-    set_task_completed: (args: Args): TaskRef => {
+    set_task_completed: (args): TaskRef => {
       const t = requireTask(args);
-      t.completed = Boolean(args?.completed);
+      t.completed = Boolean(args.completed);
       t.completedAt = t.completed ? Date.now() : null;
       t.updatedAt = Date.now();
       changed(t.accountId);
       return ref(t);
     },
-    delete_task: (args: Args) => {
+    delete_task: (args) => {
       const t = requireTask(args);
       for (const r of rows.filter((r) => r === t || (r.listId === t.listId && r.parent === t.id)))
         rows.splice(rows.indexOf(r), 1);
       changed(t.accountId);
     },
-    move_task: (args: Args): TaskRef => {
+    move_task: (args): TaskRef => {
       const t = requireTask(args);
-      const parent = args?.parent ? String(args.parent) : null;
-      const previous = args?.previous ? String(args.previous) : null;
+      const parent = args.parent ? String(args.parent) : null;
+      const previous = args.previous ? String(args.previous) : null;
       checkPlacement(t.accountId, t.listId, t, parent, previous);
       place(t, parent, previous);
       changed(t.accountId);
       return ref(t);
     },
-    move_task_to_list: (args: Args): TaskRef => {
+    move_task_to_list: (args): TaskRef => {
       const t = requireTask(args);
-      const destination = requireList(args, "destinationListId");
+      const destination = requireList({
+        accountId: args.accountId,
+        listId: args.destinationListId,
+      });
       if (destination.id === t.listId) throw invalid("The task is already in that list.");
       const subtasks = rows.filter((r) => r.listId === t.listId && r.parent === t.id);
       t.listId = destination.id;
@@ -296,9 +297,9 @@ export function createTasksHandlers(
       changed(t.accountId);
       return ref(t);
     },
-    create_task_list: (args: Args): TaskListRef => {
-      const accountId = String(args?.accountId);
-      const title = listTitle(args?.title);
+    create_task_list: (args): TaskListRef => {
+      const accountId = String(args.accountId);
+      const title = listTitle(args.title);
       const id = `list-${nextId++}`;
       const accountLists = lists.get(accountId) ?? [];
       accountLists.push({ id, title, hidden: false });
@@ -306,14 +307,14 @@ export function createTasksHandlers(
       changed(accountId);
       return { accountId, listId: id };
     },
-    rename_task_list: (args: Args): TaskListRef => {
+    rename_task_list: (args): TaskListRef => {
       const list = requireList(args);
-      list.title = listTitle(args?.title);
-      changed(String(args?.accountId));
-      return { accountId: String(args?.accountId), listId: list.id };
+      list.title = listTitle(args.title);
+      changed(String(args.accountId));
+      return { accountId: String(args.accountId), listId: list.id };
     },
-    delete_task_list: (args: Args) => {
-      const accountId = String(args?.accountId);
+    delete_task_list: (args) => {
+      const accountId = String(args.accountId);
       const list = requireList(args);
       lists.set(
         accountId,
@@ -323,5 +324,5 @@ export function createTasksHandlers(
         rows.splice(rows.indexOf(r), 1);
       changed(accountId);
     },
-  };
+  } satisfies PartialHandlers;
 }

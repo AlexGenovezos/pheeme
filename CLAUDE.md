@@ -54,7 +54,7 @@ SQLite DB is created at the platform app data dir at runtime. Migrations live in
 
 ### Two-Process Model
 
-- **Frontend** (`src/`) — React 19 + TypeScript, built with Vite. Communicates with Rust via Tauri's `invoke()` IPC. Typed wrappers live in [src/lib/tauri.ts](src/lib/tauri.ts).
+- **Frontend** (`src/`) — React 19 + TypeScript, built with Vite. Communicates with Rust via Tauri's `invoke()` IPC, always through the typed `call` in [src/lib/ipc/call.ts](src/lib/ipc/call.ts): every command is an entry (name, argument object, result) in the `Commands` map in [src/lib/ipc/commands.ts](src/lib/ipc/commands.ts), and the wrappers live one file per domain in `src/lib/ipc/` (accounts, mail, labels, search, senderRules, stats, compose, contacts, calendar, calendarEvents, weather, tasks, assistants, settings, support, events), re-exported by the barrel [src/lib/tauri.ts](src/lib/tauri.ts) (feature folders keep their own `api.ts` over the same `call`). Events are typed the same way: `AppEvents` in `src/lib/ipc/events.ts` maps each event name to its payload, and `listen` from `src/lib/tauri` takes its payload type from it.
 - **Backend** (`src-tauri/src/`) — Rust Tauri app. Exposes commands, manages DB, handles Gmail API and OAuth.
 
 ### Rust Module Layout
@@ -152,7 +152,7 @@ Twenty-five tables, plus the `messages_fts` full-text index.
 ## Key Conventions
 
 - **One-to-one with Gmail or not at all:** a mail feature that Gmail also has (snooze, scheduled send, and the like) either matches Gmail exactly, showing and changing the same state on every device, or Pheeme doesn't have it. No local-only stand-ins that other devices can't see. Where the Gmail API can't reach the feature, hand off to Gmail itself (for example, Send later saves the draft and opens Gmail's Drafts on the web) instead of imitating it.
-- **IPC pattern:** Add a Rust fn in `commands/<domain>.rs`, register it in `lib.rs`'s `Builder`, add a typed wrapper in `src/lib/tauri.ts`.
+- **IPC pattern:** Add a Rust fn in `commands/<domain>.rs`, register it in `lib.rs`'s `Builder`, add the command to the `Commands` map in `src/lib/ipc/commands.ts` (name, `args`, `result`) and a wrapper over `call` in its domain file under `src/lib/ipc/` (or the feature's `api.ts`). Then give the browser preview a fake in `src/preview/`: `createPreviewHandlers` is typed against `Commands`, so it fails typecheck until the command is faked. A new event goes in `AppEvents`; listen with `listen` from `src/lib/tauri`, never `@tauri-apps/api/event` directly.
 - **DB queries:** Use `sqlx::query_as!` macros for compile-time checking. All queries go in `db/<entity>.rs`.
 - **Thread labels** live in the `thread_labels` table, derived from `messages.label_ids`: change message labels, then call `recompute_threads` in the same transaction.
 - **Mail changes** (archive, read, star, trash, send) go through `sync::outbox`, never straight to Gmail (drafts are the exception: saved straight to the drafts API). Write transactions use `db::begin_write` (`BEGIN IMMEDIATE`).

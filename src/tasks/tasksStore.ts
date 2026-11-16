@@ -2,11 +2,11 @@
 // while the Tasks panel is open), the dated tasks of the days the calendar shows, and whether the
 // panel is open (remembered across launches). Changes show at once and go straight to the Tasks
 // API; one Google refuses snaps back and says why.
-import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { toast } from "../components/ui/Toast";
 import { subscribeAll } from "../lib/subscriptions";
 import {
+  listen,
   createTask,
   createTaskList,
   deleteTask,

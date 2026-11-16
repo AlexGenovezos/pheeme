@@ -9,6 +9,7 @@ import { createCalendarHandlers } from "../preview/calendar";
 import type { CalendarAccess } from "../lib/tauri";
 import { CalendarScreen } from "./CalendarScreen";
 import { CALENDAR_PREFS_KEY, readPrefs, useCalendarStore } from "./calendarStore";
+import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
   { id: "acc-personal", email: "avery@example.com" },
@@ -25,10 +26,8 @@ let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
 let held: string[] = [];
 
 function backend(access: string | null, statuses?: CalendarAccess["status"][]) {
-  const handlers = createCalendarHandlers(ACCOUNTS, access, NOW) as Record<
-    string,
-    (args?: Record<string, unknown>) => unknown
-  >;
+  const handlers = createCalendarHandlers(ACCOUNTS, access, NOW);
+  const lookup = byName(handlers);
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -41,7 +40,7 @@ function backend(access: string | null, statuses?: CalendarAccess["status"][]) {
           access: { ...acc.access, status: statuses[i] },
         }));
       }
-      return handlers[cmd]?.(a);
+      return lookup[cmd]?.(a);
     },
     { shouldMockEvents: true },
   );
@@ -308,10 +307,7 @@ describe("CalendarScreen", () => {
 describe("calendarStore event reads", () => {
   /** Each `calendar_events` read waits; `answer(i)` lets the i-th one land, its titles marked `#i`. */
   function heldReads() {
-    const handlers = createCalendarHandlers(ACCOUNTS, null, NOW) as Record<
-      string,
-      (args?: Record<string, unknown>) => unknown
-    >;
+    const handlers = byName(createCalendarHandlers(ACCOUNTS, null, NOW));
     const reads: Array<() => void> = [];
     let holding = false;
     mockIPC(
@@ -400,10 +396,7 @@ describe("commandsForMode", () => {
 
   test("a failed load shows its error with Try again, which reads the accounts again", async () => {
     let failing = true;
-    const handlers = createCalendarHandlers(ACCOUNTS, null, NOW) as Record<
-      string,
-      (args?: Record<string, unknown>) => unknown
-    >;
+    const handlers = byName(createCalendarHandlers(ACCOUNTS, null, NOW));
     mockIPC(
       (cmd, args) => {
         const a = (args ?? {}) as Record<string, unknown>;

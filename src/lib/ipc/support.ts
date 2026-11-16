@@ -1,0 +1,71 @@
+import { call } from "./call";
+
+/**
+ * Upload a scrubbed diagnostics bundle with the user's note (sent as typed). Rejects with `rate_limited`,
+ * `network`, `rejected` or `too_large`.
+ */
+export const sendDiagnostics = (note: string, replyTo: string | null, email?: DiagnosticsEmail) =>
+  call("send_diagnostics", { note, replyTo, ...(email ? { email } : {}) });
+/** The email on screen, added to a diagnostics bundle when the user chooses (`support::email` in Rust). */
+export interface DiagnosticsEmail {
+  accountId: string;
+  threadId: string;
+  images: DiagnosticsImage[];
+}
+/** One `<img>` in the email's frames, as the window saw it. */
+export interface DiagnosticsImage {
+  messageId: string | null;
+  src: string;
+  currentSrc: string;
+  complete: boolean;
+  naturalWidth: number;
+  naturalHeight: number;
+  loading: string;
+}
+/** Updater steps the UI saw; `log_update` in Rust writes them to the diagnostics log. */
+export type UpdateEvent =
+  | "available"
+  | "up_to_date"
+  | "check_failed"
+  | "installing"
+  | "installed"
+  | "install_failed"
+  | "listener_failed";
+/** Log one updater step with the version it concerns and any error, for Send diagnostics. */
+export const logUpdate = (event: UpdateEvent, version: string | null, error: string | null) =>
+  call("log_update", { event, version, error });
+/**
+ * What the user waited for after picking a conversation, measured in the window: `get_thread` times only the
+ * backend, and a conversation already in memory never calls it. Milliseconds from the pick; no ids or subjects.
+ */
+export interface ShownTiming {
+  /** `shown`: painted with every image settled; `left`: the user moved on first; `timed_out`: gave up waiting. */
+  outcome: "shown" | "left" | "timed_out";
+  /** The conversation was already in memory, so no `get_thread` ran. */
+  fromMemory: boolean;
+  /** Until the conversation's data was in hand, or null if it never was. */
+  dataMs: number | null;
+  /** Until the first frame painted with it. */
+  paintMs: number | null;
+  /** Until every image in its email bodies loaded or failed; null when there were none or it never happened. */
+  imagesMs: number | null;
+  images: number;
+  imagesFailed: number;
+  /** Of the failed images, those served over plain `http:`. */
+  imagesFailedHttp: number;
+  imagesPending: number;
+  totalMs: number;
+}
+/** Log how long a conversation took to show, for Send diagnostics. */
+export const logThreadShown = (timing: ShownTiming) => call("log_thread_shown", { timing });
+/** Whether the daily anonymous usage ping is on (it is unless the user turned it off). */
+export const telemetryEnabled = () => call("telemetry_enabled");
+/** Turn the anonymous usage ping on or off; off also forgets the install ID. Returns the stored choice. */
+export const setTelemetry = (enabled: boolean) => call("set_telemetry", { enabled });
+/** Write the same bundle to `path` (chosen in a save dialog). */
+export const saveDiagnostics = (
+  note: string,
+  replyTo: string | null,
+  path: string,
+  email?: DiagnosticsEmail,
+) => call("save_diagnostics", { note, replyTo, path, ...(email ? { email } : {}) });

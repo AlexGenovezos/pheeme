@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { call } from "../lib/ipc/call";
 
 export interface DriveFile {
   id: string;
@@ -15,10 +15,10 @@ export interface DrivePage {
 }
 
 export const driveFiles = (accountId: string, query: string, pageToken: string | null = null) =>
-  invoke<DrivePage>("drive_files", { accountId, query, pageToken });
+  call("drive_files", { accountId, query, pageToken });
 
 export const saveAttachmentToDrive = (accountId: string, messageId: string, attachmentId: string) =>
-  invoke<DriveFile>("save_attachment_to_drive", { accountId, messageId, attachmentId });
+  call("save_attachment_to_drive", { accountId, messageId, attachmentId });
 
 /** Use a known Google origin, even if a file carries an unexpected URL or name. */
 export function driveFileUrl(file: DriveFile): string {

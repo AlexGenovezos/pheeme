@@ -1,8 +1,7 @@
 import type { AccountInfo } from "../lib/tauri";
 import type { DriveFile, DrivePage } from "../drive/api";
 import type { FixtureThread } from "./fixtures";
-
-type Args = Record<string, unknown> | undefined;
+import type { PartialHandlers } from "./handlers";
 
 /** Stateful Drive fixtures: files and saves are isolated by account. */
 export function createDriveHandlers(
@@ -51,10 +50,10 @@ export function createDriveHandlers(
       statuses.set(accountId, "on");
     },
     handlers: {
-      drive_files: (args: Args): DrivePage => {
-        const accountId = String(args?.accountId);
+      drive_files: (args): DrivePage => {
+        const accountId = String(args.accountId);
         ensure(accountId);
-        const query = String(args?.query ?? "").toLowerCase();
+        const query = String(args.query ?? "").toLowerCase();
         return {
           files: (files.get(accountId) ?? [])
             .filter((f) => f.name.toLowerCase().includes(query))
@@ -62,14 +61,14 @@ export function createDriveHandlers(
           nextPageToken: null,
         };
       },
-      save_attachment_to_drive: (args: Args): DriveFile => {
-        const accountId = String(args?.accountId);
+      save_attachment_to_drive: (args): DriveFile => {
+        const accountId = String(args.accountId);
         ensure(accountId);
         const attachment = threads
           .filter((t) => t.accountId === accountId)
           .flatMap((t) => t.messages)
-          .find((m) => m.id === args?.messageId)
-          ?.attachments.find((a) => a.id === args?.attachmentId);
+          .find((m) => m.id === args.messageId)
+          ?.attachments.find((a) => a.id === args.attachmentId);
         if (!attachment)
           throw { code: "not_found", message: "That attachment isn't on this device." };
         const file: DriveFile = {
@@ -83,6 +82,6 @@ export function createDriveHandlers(
         files.set(accountId, [file, ...(files.get(accountId) ?? [])]);
         return file;
       },
-    },
+    } satisfies PartialHandlers,
   };
 }

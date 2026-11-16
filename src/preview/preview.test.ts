@@ -8,10 +8,14 @@ import {
   type ThreadPage,
   SYNC_EVENTS,
   type SyncMessagesUpdated,
+  type ListThreadsArgs,
 } from "../lib/tauri";
 import { createFixtureThreads, fixtureAccounts } from "./fixtures";
+import { byName } from "./handlers";
 import { createPreviewHandlers, handlePreviewCommand, installPreview } from "./install";
 import { detectTauri, isPreview, isTauri } from "./runtime";
+
+const NEW_CLIENT = { kind: "new", clientId: "1.apps", clientSecret: "secret" } as const;
 
 describe("runtime detection", () => {
   test("Tauri is detected by its injected internals", () => {
@@ -87,7 +91,7 @@ describe("preview IPC", () => {
 
   test("list_threads honours All Mail and the category inboxes", () => {
     const handlers = createPreviewHandlers();
-    const ids = (args: Record<string, unknown>) =>
+    const ids = (args: ListThreadsArgs) =>
       (handlers.list_threads(args) as Page).threads.map((t) => t.id);
     const all = ids({ accountIds: [], labelId: "ALL" });
     expect(all).toContain("p-15");
@@ -213,7 +217,7 @@ describe("preview IPC", () => {
   test("threads cover the long, HTML, remote-image, dark-mode, plain-URL and PDF cases", () => {
     const handlers = createPreviewHandlers();
     const detail = (threadId: string, accountId = "acc-personal") =>
-      handlers.get_thread({ accountId, threadId }) as ThreadDetail;
+      handlers.get_thread({ accountId, threadId, opened: false, preload: false }) as ThreadDetail;
     expect(detail("p-01").messages).toHaveLength(4);
     expect(detail("p-03").messages.length).toBeGreaterThanOrEqual(10);
     const ci = detail("p-02").messages[0];
@@ -233,7 +237,14 @@ describe("preview IPC", () => {
 
   test("a missing or foreign thread is not_found", () => {
     const handlers = createPreviewHandlers();
-    expect(() => handlers.get_thread({ accountId: "acc-work", threadId: "p-01" })).toThrow();
+    expect(() =>
+      handlers.get_thread({
+        accountId: "acc-work",
+        threadId: "p-01",
+        opened: false,
+        preload: false,
+      }),
+    ).toThrow();
   });
 
   test("archive in preview removes the thread from INBOX and fires messages_updated", async () => {
@@ -423,7 +434,7 @@ describe("preview IPC", () => {
 test("preview onboarding can connect and remove an account", async () => {
   const handlers = createPreviewHandlers("?accounts=0&delay=0");
   expect(handlers.list_accounts(undefined)).toEqual([]);
-  const flow = handlers.begin_oauth(undefined) as { flowId: string };
+  const flow = handlers.begin_oauth({ client: NEW_CLIENT }) as { flowId: string };
   const account = (await handlers.complete_oauth(flow)) as { id: string };
   expect(handlers.list_accounts(undefined)).toEqual([account]);
   handlers.remove_account({ accountId: "missing" });
@@ -434,7 +445,7 @@ test("preview onboarding can connect and remove an account", async () => {
 
 test("cancelled preview sign-in cannot save an account", async () => {
   const handlers = createPreviewHandlers("?accounts=0&delay=0");
-  const flow = handlers.begin_oauth(undefined) as { flowId: string };
+  const flow = handlers.begin_oauth({ client: NEW_CLIENT }) as { flowId: string };
   const completion = handlers.complete_oauth(flow);
   handlers.cancel_oauth(flow);
   await expect(completion).rejects.toMatchObject({ code: "cancelled" });
@@ -443,7 +454,7 @@ test("cancelled preview sign-in cannot save an account", async () => {
 
 test("preview sign-in preserves failure simulation", async () => {
   const handlers = createPreviewHandlers("?accounts=0&delay=0&fail=invalid_grant");
-  const flow = handlers.begin_oauth(undefined) as { flowId: string };
+  const flow = handlers.begin_oauth({ client: NEW_CLIENT }) as { flowId: string };
   await expect(handlers.complete_oauth(flow)).rejects.toMatchObject({ code: "invalid_grant" });
   expect(handlers.list_accounts(undefined)).toEqual([]);
 });
@@ -457,7 +468,14 @@ test("?threads=N adds that many Inbox conversations that open", () => {
     );
   expect(ids(handlers, "INBOX")).toEqual([...ids(plain, "INBOX"), "gen-0", "gen-1", "gen-2"]);
   expect(ids(handlers, "SENT")).toEqual(ids(plain, "SENT"));
-  expect(handlers.get_thread({ accountId: "acc-personal", threadId: "gen-2" })).toMatchObject({
+  expect(
+    handlers.get_thread({
+      accountId: "acc-personal",
+      threadId: "gen-2",
+      opened: false,
+      preload: false,
+    }),
+  ).toMatchObject({
     thread: { id: "gen-2" },
   });
 });
@@ -658,7 +676,7 @@ describe("inbox tabs", () => {
 describe("sender rules", () => {
   type Handlers = ReturnType<typeof createPreviewHandlers>;
   const call = <T>(handlers: Handlers, cmd: string, args: Record<string, unknown>) =>
-    handlers[cmd](args) as T;
+    byName(handlers)[cmd]!(args) as T;
 
   test("save reuses and replaces like the backend, and undo puts it back", () => {
     const handlers = createPreviewHandlers();
