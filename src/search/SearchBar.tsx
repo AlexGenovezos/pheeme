@@ -27,7 +27,7 @@ export function SearchBar() {
   const [focused, setFocused] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const shortcut = useKeybinding("search.focus", "/");
+  const shortcut = useKeybinding("search.focus");
   const active = text.trim().length > 0;
 
   useEffect(() => {

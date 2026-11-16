@@ -180,7 +180,7 @@ export const ThreadRow = memo(function ThreadRow({
                 size="sm"
                 tabIndex={-1}
                 label={ARCHIVE_SLOT_LABEL[slot]}
-                shortcut={registry.shortcutFor("conversation.archive", "e")}
+                shortcut={registry.shortcutFor("conversation.archive")}
                 icon={archiveSlotIcon(slot)}
                 onClick={act("archive")}
               />
@@ -188,7 +188,7 @@ export const ThreadRow = memo(function ThreadRow({
                 size="sm"
                 tabIndex={-1}
                 label="Delete"
-                shortcut={registry.shortcutFor("conversation.delete", "#")}
+                shortcut={registry.shortcutFor("conversation.delete")}
                 icon={<Trash2 />}
                 onClick={act("delete")}
               />
@@ -198,8 +198,8 @@ export const ThreadRow = memo(function ThreadRow({
                 label={thread.unread ? "Mark as read" : "Mark as unread"}
                 shortcut={
                   thread.unread
-                    ? registry.shortcutFor("conversation.mark-read", "shift+i")
-                    : registry.shortcutFor("conversation.mark-unread", "shift+u")
+                    ? registry.shortcutFor("conversation.mark-read")
+                    : registry.shortcutFor("conversation.mark-unread")
                 }
                 icon={thread.unread ? <MailOpen /> : <Mail />}
                 onClick={act("read")}

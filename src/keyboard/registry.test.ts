@@ -229,6 +229,14 @@ describe("user bindings", () => {
     expect(reg.shortcutFor("unregistered", "v")).toBe("v");
   });
 
+  test("a label for a command that isn't registered yet shows its default key, unless rebound", () => {
+    expect(reg.shortcutFor("conversation.archive")).toBe("e");
+    reg.setOverrides({ "conversation.archive": "y" });
+    expect(reg.shortcutFor("conversation.archive")).toBe("y");
+    reg.setOverrides({ "conversation.archive": null });
+    expect(reg.shortcutFor("conversation.archive")).toBeUndefined();
+  });
+
   test("a stored binding that doesn't parse falls back to the default", () => {
     const run = vi.fn();
     reg.setOverrides({ archive: "mod+shift" });

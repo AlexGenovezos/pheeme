@@ -2,17 +2,10 @@
 // Gmail signature. Kept from the last fetch so the From picker and an alias's signature are there at once,
 // offline too; fetched again once a session.
 import { create } from "zustand";
+import { readJson, writeJson } from "../lib/storage";
 import { type EmailAddress, type SendAsAddress, sendAsAddresses } from "../lib/tauri";
 
 const KEY = "pheeme.send-as";
-
-function storage(): Pick<Storage, "getItem" | "setItem"> | undefined {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined;
-  }
-}
 
 const isAddress = (v: unknown): v is SendAsAddress =>
   !!v &&
@@ -22,16 +15,12 @@ const isAddress = (v: unknown): v is SendAsAddress =>
   typeof (v as SendAsAddress).isDefault === "boolean";
 
 function read(): Record<string, SendAsAddress[]> {
-  try {
-    const parsed: unknown = JSON.parse(storage()?.getItem(KEY) ?? "{}");
-    if (!parsed || typeof parsed !== "object") return {};
-    const out: Record<string, SendAsAddress[]> = {};
-    for (const [id, list] of Object.entries(parsed))
-      if (Array.isArray(list)) out[id] = list.filter(isAddress);
-    return out;
-  } catch {
-    return {};
-  }
+  const parsed = readJson(KEY);
+  if (!parsed || typeof parsed !== "object") return {};
+  const out: Record<string, SendAsAddress[]> = {};
+  for (const [id, list] of Object.entries(parsed))
+    if (Array.isArray(list)) out[id] = list.filter(isAddress);
+  return out;
 }
 
 export const sameAddress = (a: string | null | undefined, b: string | null | undefined) =>
@@ -66,11 +55,7 @@ export const useSendAs = create<SendAsState>((set, get) => ({
         if (!Array.isArray(list)) return;
         const lists = { ...get().lists, [accountId]: list };
         set({ lists });
-        try {
-          storage()?.setItem(KEY, JSON.stringify(lists));
-        } catch {
-          // Kept until the app closes.
-        }
+        writeJson(KEY, lists); // kept until the app closes if storage is unavailable
       })
       .catch(() => {})
       .finally(() => inflight.delete(accountId));

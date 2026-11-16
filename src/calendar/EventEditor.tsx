@@ -138,9 +138,9 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
     if (saving) return;
     setSaving(true);
     setError(null);
-    const problem = await saveEditor(spec, form);
-    // "" means the user backed out of a question: stay as it was.
-    if (problem) setError(problem);
+    const result = await saveEditor(spec, form);
+    // A user who backed out of a question stays in the editor as it was.
+    if (result.kind === "failed") setError(result.message);
     setSaving(false);
   };
 

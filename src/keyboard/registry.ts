@@ -1,4 +1,5 @@
 import { platform } from "../lib/platform";
+import { defaultKeyFor } from "./defaultKeys";
 
 /**
  * The single list of things a user can do from the keyboard. The global
@@ -228,11 +229,12 @@ export function createRegistry({
 
     /**
      * The shortcut to show for a command: the user's binding, else the registered default, else
-     * `fallback` (for labels drawn while the command isn't registered).
+     * `fallback`, else the default in `DEFAULT_KEYS` (for labels drawn while the command isn't
+     * registered).
      */
     shortcutFor(id: string, fallback?: string): string | undefined {
       if (hasOverride(id)) return overrides[id] ?? undefined;
-      return entries.get(id)?.command.shortcut ?? fallback;
+      return entries.get(id)?.command.shortcut ?? fallback ?? defaultKeyFor(id);
     },
 
     overrides: () => overrides,

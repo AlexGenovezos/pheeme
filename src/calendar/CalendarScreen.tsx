@@ -50,6 +50,7 @@ import "./calendar.css";
 import "./editing.css";
 import "./invite.css";
 import { useWeatherRefresh } from "../weather/forecast";
+import { DEFAULT_KEYS } from "../keyboard/defaultKeys";
 
 const VIEW_OPTIONS = [
   { value: "day", label: "Day" },
@@ -70,11 +71,11 @@ function Toolbar({
   const view = useCalendarStore((s) => s.view);
   const accounts = useCalendarStore((s) => s.accounts);
   const collapsed = useUiStore((s) => sidebarLayout(s) !== "expanded");
-  const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
-  const todayShortcut = useKeybinding("calendar.today", "t");
-  const prevShortcut = useKeybinding("calendar.previous", "k");
-  const nextShortcut = useKeybinding("calendar.next", "j");
-  const searchShortcut = useKeybinding("calendar.search", "/");
+  const sidebarShortcut = useKeybinding("view.toggleSidebar");
+  const todayShortcut = useKeybinding("calendar.today");
+  const prevShortcut = useKeybinding("calendar.previous");
+  const nextShortcut = useKeybinding("calendar.next");
+  const searchShortcut = useKeybinding("calendar.search");
   const store = useCalendarStore.getState;
   const today = formatDay(dateOf(useNow(), displayZone(accounts)), {
     weekday: "long",
@@ -353,14 +354,14 @@ function useCalendarCommands() {
       id: "calendar.today",
       title: "Go to today",
       group: "Calendar",
-      shortcut: "t",
+      shortcut: DEFAULT_KEYS["calendar.today"],
       run: () => store().today(),
     },
     {
       id: "calendar.next",
       title: "Next period",
       group: "Calendar",
-      shortcut: "j",
+      shortcut: DEFAULT_KEYS["calendar.next"],
       repeat: true,
       run: () => store().step(1),
     },
@@ -368,7 +369,7 @@ function useCalendarCommands() {
       id: "calendar.previous",
       title: "Previous period",
       group: "Calendar",
-      shortcut: "k",
+      shortcut: DEFAULT_KEYS["calendar.previous"],
       repeat: true,
       run: () => store().step(-1),
     },
@@ -419,7 +420,7 @@ function useCalendarCommands() {
       id: "calendar.create",
       title: "Create event",
       group: "Calendar",
-      shortcut: "c",
+      shortcut: DEFAULT_KEYS["calendar.create"],
       keywords: ["new event", "add", "quick add", "task", "todo"],
       run: openQuickAdd,
     },
@@ -427,7 +428,7 @@ function useCalendarCommands() {
       id: "calendar.edit",
       title: "Edit event",
       group: "Calendar",
-      shortcut: "e",
+      shortcut: DEFAULT_KEYS["calendar.edit"],
       hidden: noEventOpen,
       run: () => {
         const event = openEventNow();
@@ -438,7 +439,7 @@ function useCalendarCommands() {
       id: "calendar.delete",
       title: "Delete event",
       group: "Calendar",
-      shortcut: "delete",
+      shortcut: DEFAULT_KEYS["calendar.delete"],
       hidden: noEventOpen,
       run: removeOpen,
     },
@@ -454,7 +455,7 @@ function useCalendarCommands() {
       id: "calendar.join",
       title: "Join video call",
       group: "Calendar",
-      shortcut: "shift+j",
+      shortcut: DEFAULT_KEYS["calendar.join"],
       keywords: ["meet", "zoom", "teams", "webex", "call", "conference"],
       hidden: openCall === null,
       run: () => {
@@ -466,7 +467,7 @@ function useCalendarCommands() {
       id: "calendar.search",
       title: "Search events",
       group: "Calendar",
-      shortcut: "/",
+      shortcut: DEFAULT_KEYS["calendar.search"],
       keywords: ["find"],
       run: () => useEditStore.setState({ search: "" }),
     },

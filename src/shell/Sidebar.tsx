@@ -683,8 +683,8 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const allInboxUnread = useLabelStore((s) => s.allInboxUnread);
   const errors = useAccountStore((s) => s.syncErrors);
-  const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
-  const composeShortcut = useKeybinding("compose.new", "c");
+  const sidebarShortcut = useKeybinding("view.toggleSidebar");
+  const composeShortcut = useKeybinding("compose.new");
 
   const activeId = resolveActiveAccount(storedActive, accounts);
   const active = accounts.find((a) => a.id === activeId);

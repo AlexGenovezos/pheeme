@@ -99,16 +99,16 @@ export function ViewPane() {
   const anyUnread = rows.some((t) => t.unread);
   const starred = rows[0]?.starred ?? false;
   const keys = {
-    back: useKeybinding("conversation.close", "u"),
-    archive: useKeybinding("conversation.archive", "e"),
-    delete: useKeybinding("conversation.delete", "#"),
-    read: useKeybinding("conversation.mark-read", "shift+i"),
-    unread: useKeybinding("conversation.mark-unread", "shift+u"),
-    star: useKeybinding("conversation.star", "s"),
-    reply: useKeybinding("conversation.reply", "r"),
-    replyAll: useKeybinding("conversation.reply-all", "a"),
-    forward: useKeybinding("conversation.forward", "f"),
-    speedRead: useKeybinding("conversation.speed-read", "shift+r"),
+    back: useKeybinding("conversation.close"),
+    archive: useKeybinding("conversation.archive"),
+    delete: useKeybinding("conversation.delete"),
+    read: useKeybinding("conversation.mark-read"),
+    unread: useKeybinding("conversation.mark-unread"),
+    star: useKeybinding("conversation.star"),
+    reply: useKeybinding("conversation.reply"),
+    replyAll: useKeybinding("conversation.reply-all"),
+    forward: useKeybinding("conversation.forward"),
+    speedRead: useKeybinding("conversation.speed-read"),
     createEvent: useKeybinding(CREATE_EVENT_COMMAND, CREATE_EVENT_SHORTCUT),
   };
   // Offered only on simple prose emails; the shortcut still says so when there's nothing to read.
@@ -122,13 +122,13 @@ export function ViewPane() {
         {
           id: "label",
           label: "Label as…",
-          shortcut: registry.shortcutFor("conversation.labels", "l"),
+          shortcut: registry.shortcutFor("conversation.labels"),
           onSelect: () => void openLabelMenu({ x: r.left, y: r.bottom }),
         },
         {
           id: "move",
           label: "Move to…",
-          shortcut: registry.shortcutFor("conversation.move", "v"),
+          shortcut: registry.shortcutFor("conversation.move"),
           onSelect: () => openMoveMenu({ x: r.left, y: r.bottom }),
         },
         {

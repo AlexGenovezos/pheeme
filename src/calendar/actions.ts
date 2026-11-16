@@ -34,6 +34,8 @@ import {
   formFromDetail,
   formProblem,
   formTimes,
+  type Guest,
+  guestsOf,
   hasOtherGuests,
   isEmptyEdit,
   newForm,
@@ -173,13 +175,11 @@ interface Created {
 }
 
 async function saveNew(form: EventForm, done: () => void): Promise<Created | null> {
-  const account = calendars().accounts?.find((a) => a.accountId === form.accountId);
-  let sendUpdates: SendUpdates = "none";
-  if (hasOtherGuests(form.guests, account?.email)) {
-    const answer = await askSendUpdates("invite");
-    if (!answer) return null;
-    sendUpdates = answer;
-  }
+  const options = await askWriteOptions({
+    send: { kind: "invite", guests: form.guests, accountId: form.accountId },
+  });
+  if (!options) return null;
+  const { sendUpdates } = options;
   let ref: EventRef;
   try {
     ref = await createCalendarEvent(
@@ -389,35 +389,74 @@ export async function askSendUpdates(
   return answer === "all" || answer === "none" ? answer : null;
 }
 
-/** Save the editor. Resolves to an error to show in it, or null when it saved (and closed). */
-export async function saveEditor(spec: EditorSpec, form: EventForm): Promise<string | null> {
+interface WriteQuestions {
+  /** Which events of a repeating series; left out for an event that doesn't repeat. */
+  scope?: { action: "edit" | "delete"; allowThis?: boolean };
+  /** Whether to email the guests, asked only when one of `guests` isn't the account itself. */
+  send?: { kind: "invite" | "update" | "cancel"; guests: Guest[]; accountId: string };
+}
+
+/**
+ * The questions before a write: which events of a series, then whether to email the guests. Answers
+ * for what wasn't asked are "this" and "none"; null if the user backed out of either.
+ */
+async function askWriteOptions(
+  questions: WriteQuestions,
+): Promise<{ scope: EditScope; sendUpdates: SendUpdates } | null> {
+  let scope: EditScope = "this";
+  if (questions.scope) {
+    const answer = await askScope(questions.scope.action, questions.scope.allowThis);
+    if (!answer) return null;
+    scope = answer;
+  }
+  let sendUpdates: SendUpdates = "none";
+  const send = questions.send;
+  if (send) {
+    const self = calendars().accounts?.find((a) => a.accountId === send.accountId)?.email;
+    if (hasOtherGuests(send.guests, self)) {
+      const answer = await askSendUpdates(send.kind);
+      if (!answer) return null;
+      sendUpdates = answer;
+    }
+  }
+  return { scope, sendUpdates };
+}
+
+/** How saving the editor ended: closed after saving, the user backed out of a question, or a message to show in it. */
+export type SaveResult =
+  | { kind: "saved" }
+  | { kind: "cancelled" }
+  | { kind: "failed"; message: string };
+
+/** Save the editor. A failure carries the message to show in it. */
+export async function saveEditor(spec: EditorSpec, form: EventForm): Promise<SaveResult> {
   const problem = formProblem(form);
-  if (problem) return problem;
+  if (problem) return { kind: "failed", message: problem };
   if (!spec.event || !spec.initial) {
     await saveNew(form, closeEditor);
-    return null;
+    return { kind: "saved" };
   }
   const event = spec.event;
   const edit = formEdit(form, spec.initial);
   const moved = form.calendarId !== spec.initial.calendarId;
   if (isEmptyEdit(edit) && !moved) {
     closeEditor();
-    return null;
+    return { kind: "saved" };
   }
-  let scope: EditScope = "this";
-  if (event.recurring && !isEmptyEdit(edit)) {
+  const options = await askWriteOptions({
     // Repeat can only change for the whole series or from here on.
-    const answer = await askScope("edit", edit.recurrence === undefined);
-    if (!answer) return "";
-    scope = answer;
-  }
-  const self = calendars().accounts?.find((a) => a.accountId === event.accountId)?.email;
-  let sendUpdates: SendUpdates = "none";
-  if (hasOtherGuests([...spec.initial.guests, ...form.guests], self)) {
-    const answer = await askSendUpdates("update");
-    if (!answer) return "";
-    sendUpdates = answer;
-  }
+    scope:
+      event.recurring && !isEmptyEdit(edit)
+        ? { action: "edit", allowThis: edit.recurrence === undefined }
+        : undefined,
+    send: {
+      kind: "update",
+      guests: [...spec.initial.guests, ...form.guests],
+      accountId: event.accountId,
+    },
+  });
+  if (!options) return { kind: "cancelled" };
+  const { scope, sendUpdates } = options;
   try {
     let id = event.id;
     if (!isEmptyEdit(edit)) {
@@ -438,13 +477,13 @@ export async function saveEditor(spec: EditorSpec, form: EventForm): Promise<str
     if (err.code === "conflict") {
       reportError(e, "", event.accountId);
       closeEditor();
-      return null;
+      return { kind: "saved" };
     }
-    return err.message;
+    return { kind: "failed", message: err.message };
   }
   closeEditor();
   await calendars().loadEvents();
-  return null;
+  return { kind: "saved" };
 }
 
 // ── Moving, deleting and copying from the grid and the popover ──────────────
@@ -456,24 +495,14 @@ export async function moveEvent(event: CalendarEvent, start: EventTime, end: Eve
   const mine = { start, end };
   setMoving(key, mine);
   const settle = () => setMoving(key, null, mine);
-  let scope: EditScope = "this";
-  if (event.recurring) {
-    const answer = await askScope("edit");
-    if (!answer) return settle();
-    scope = answer;
-  }
   const detail = await loadDetail(event);
   if (!detail) return settle();
-  const self = calendars().accounts?.find((a) => a.accountId === event.accountId)?.email;
-  const guests = detail.attendees
-    .filter((a) => !a.resource && a.email)
-    .map((a) => ({ name: a.name, address: a.email!, optional: a.optional }));
-  let sendUpdates: SendUpdates = "none";
-  if (hasOtherGuests(guests, self)) {
-    const answer = await askSendUpdates("update");
-    if (!answer) return settle();
-    sendUpdates = answer;
-  }
+  const options = await askWriteOptions({
+    scope: event.recurring ? { action: "edit" } : undefined,
+    send: { kind: "update", guests: guestsOf(detail), accountId: event.accountId },
+  });
+  if (!options) return settle();
+  const { scope, sendUpdates } = options;
   const edit: EventEdit = event.allDay
     ? { start: { date: start.date }, end: { date: end.date } }
     : {
@@ -504,23 +533,16 @@ export async function deleteEvent(event: CalendarEvent) {
     toast({ title: "You can't delete events from this calendar." });
     return;
   }
-  let scope: EditScope = "this";
-  if (event.recurring) {
-    const answer = await askScope("delete");
-    if (!answer) return;
-    scope = answer;
-  }
-  const self = calendars().accounts?.find((a) => a.accountId === event.accountId)?.email;
   const organizer = detail.organizer?.isSelf ?? true;
-  const guests = detail.attendees
-    .filter((a) => !a.resource && a.email)
-    .map((a) => ({ name: a.name, address: a.email!, optional: a.optional }));
-  let sendUpdates: SendUpdates = "none";
-  if (organizer && hasOtherGuests(guests, self)) {
-    const answer = await askSendUpdates("cancel");
-    if (!answer) return;
-    sendUpdates = answer;
-  }
+  const options = await askWriteOptions({
+    scope: event.recurring ? { action: "delete" } : undefined,
+    // Only the organizer cancels the event for the guests.
+    send: organizer
+      ? { kind: "cancel", guests: guestsOf(detail), accountId: event.accountId }
+      : undefined,
+  });
+  if (!options) return;
+  const { scope, sendUpdates } = options;
   const key = eventKey(event);
   calendars().openEvent(null);
   useEditStore.setState((s) => ({ removed: [...s.removed, key] }));

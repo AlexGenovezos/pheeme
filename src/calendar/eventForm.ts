@@ -381,9 +381,7 @@ export function formFromDetail(d: EventDetail, displayZone: string): EventForm {
     endZone,
     repeat,
     extraLines: extra,
-    guests: d.attendees
-      .filter((a) => !a.resource && a.email)
-      .map((a) => ({ name: a.name, address: a.email!, optional: a.optional })),
+    guests: guestsOf(d),
     resources: d.attendees
       .filter((a) => a.resource && a.email)
       .map((a) => ({ email: a.email!, optional: a.optional })),
@@ -525,6 +523,12 @@ export function moveStart(f: EventForm, startDate: string, startMinutes: number)
   const end = wallClock(start + Math.max(0, length), f.endZone);
   return { ...f, repeat, startDate, startMinutes, endDate: end.date, endMinutes: end.minutes };
 }
+
+/** The people an event is shared with: its attendees that aren't rooms or equipment and have an address. */
+export const guestsOf = (detail: Pick<EventDetail, "attendees">): Guest[] =>
+  detail.attendees.flatMap((a) =>
+    a.email && !a.resource ? [{ name: a.name, address: a.email, optional: a.optional }] : [],
+  );
 
 /** Whether guests other than the account itself are on the event (so they could be emailed). */
 export const hasOtherGuests = (guests: Guest[], selfEmail: string | null | undefined) =>

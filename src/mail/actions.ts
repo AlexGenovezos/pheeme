@@ -4,7 +4,7 @@
 // the command updates the cache and the resulting `sync:messages_updated` reload confirms it. A rejection toasts
 // the error and reloads from the cache, which still holds whatever Gmail refused.
 import { useComposeStore } from "../compose/composeStore";
-import { toast } from "../components/ui/Toast";
+import { toast, toastError } from "../components/ui/Toast";
 import { type Membership, usePickerStore } from "../labels/pickerStore";
 import {
   type ComposeMode,
@@ -16,7 +16,6 @@ import {
   type SavedRules,
   type ThreadDetail,
   type ThreadSummary,
-  toCommandError,
   trashThreads,
   undoSenderRules,
 } from "../lib/tauri";
@@ -177,7 +176,7 @@ async function send(
         failure !== null,
       );
       if (failure) {
-        toast({ title: toCommandError(failure.reason).message, tone: "danger" });
+        toastError(failure.reason);
         if (change.detail) refreshDetails(new Map([[accountId, ids]]));
         reloadLists();
       }
@@ -899,7 +898,7 @@ export async function markTabRead(accountId: string, category: string) {
   try {
     await markInboxTabRead(accountId, category);
   } catch (e) {
-    toast({ title: toCommandError(e).message, tone: "danger" });
+    toastError(e);
   }
 }
 
@@ -946,6 +945,6 @@ export async function markSearchResultsRead(): Promise<void> {
     await markSearchRead(accountIds, query);
     toast({ title: "Marked every match as read" });
   } catch (e) {
-    toast({ title: toCommandError(e).message, tone: "danger" });
+    toastError(e);
   }
 }
