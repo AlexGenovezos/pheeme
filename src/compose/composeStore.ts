@@ -625,7 +625,10 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       dispose(id, win.draft.attachments);
       await saving?.catch(() => {});
       const draftId = savedDrafts.get(id) ?? win.draft.draftId ?? null;
+      // The save may have put back what removing the panel cleared.
       savedDrafts.delete(id);
+      savedMessages.delete(id);
+      draftMessages.delete(id);
       if (draftId) {
         try {
           await deleteDraft(win.accountId, draftId);
