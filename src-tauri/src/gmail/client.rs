@@ -8,6 +8,9 @@
 
 use super::error::GmailError;
 use super::probe::{self, ProbeStage, RetryReason};
+use super::quota::QuotaLimiter;
+#[cfg(test)]
+use super::quota::{QUOTA_BURST, QUOTA_RECOVERY};
 use super::usage::{AccountUsage, UsageSource};
 use rand::RngExt;
 use reqwest::{Method, StatusCode};
@@ -57,7 +60,7 @@ pub const RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(60);
 /// The user's Gmail per-user limit (units per minute), shared by every account's client so a
 /// change in Settings applies at once.
 #[derive(Debug, Clone)]
-pub struct QuotaSetting(Arc<AtomicU32>);
+pub struct QuotaSetting(pub(super) Arc<AtomicU32>);
 
 impl QuotaSetting {
     /// `per_minute` is clamped to [`QUOTA_PER_MINUTE_RANGE`].
@@ -138,143 +141,6 @@ fn jittered(delay: Duration) -> Duration {
     delay.mul_f64(rand::rng().random_range(0.5..=1.0))
 }
 
-/// Paces requests by Gmail quota units, adapting to the limit Gmail actually enforces.
-///
-/// Each request reserves a send time on a schedule advancing `units / rate` seconds per call,
-/// allowing up to [`QUOTA_BURST`] of backlog to go at once (a GCRA). A rate-limit answer halves
-/// the rate and pauses the schedule; the rate then climbs back linearly, regaining the full
-/// rate's worth per [`QUOTA_RECOVERY`] (so 30 s from half speed). Gmail enforces its limit per
-/// minute, so a fixed rate either wastes quota or keeps tripping it, and recovering much faster
-/// trips it again.
-struct QuotaLimiter {
-    /// Units per second at full speed: `share` of a per-minute limit that may change.
-    limit: Arc<AtomicU32>,
-    share: f64,
-    state: std::sync::Mutex<Pace>,
-}
-
-struct Pace {
-    /// When the schedule is next free.
-    next: Instant,
-    /// When the user's schedule is next free.
-    first: Instant,
-    /// The rate set by the last cut, and when it took effect (may be ahead: a cooldown).
-    cut: Option<(f64, Instant)>,
-}
-
-const QUOTA_BURST: Duration = Duration::from_secs(1);
-const QUOTA_RECOVERY: Duration = Duration::from_secs(60);
-
-impl QuotaLimiter {
-    fn new(limit: &QuotaSetting, share: f64) -> Self {
-        Self {
-            limit: limit.0.clone(),
-            share,
-            state: std::sync::Mutex::new(Pace {
-                next: Instant::now(),
-                first: Instant::now(),
-                cut: None,
-            }),
-        }
-    }
-
-    /// A fixed rate, for tests.
-    fn fixed(units_per_sec: u32) -> Self {
-        let limit = Arc::new(AtomicU32::new(units_per_sec.saturating_mul(60)));
-        Self::new(&QuotaSetting(limit), 1.0)
-    }
-
-    fn max_rate(&self) -> f64 {
-        (f64::from(self.limit.load(Ordering::Relaxed)) / 60.0 * self.share).max(0.1)
-    }
-
-    fn pace(&self) -> std::sync::MutexGuard<'_, Pace> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    /// Units per second allowed at `now`.
-    fn rate_at(&self, pace: &Pace, now: Instant) -> f64 {
-        let max_rate = self.max_rate();
-        match pace.cut {
-            None => max_rate,
-            Some((rate, at)) => {
-                let regained =
-                    max_rate * now.duration_since(at).as_secs_f64() / QUOTA_RECOVERY.as_secs_f64();
-                (rate + regained).min(max_rate)
-            }
-        }
-    }
-
-    /// Wait for this request's turn to spend `units`.
-    async fn take(&self, units: u32) {
-        let send_at = {
-            let mut pace = self.pace();
-            let now = Instant::now();
-            let rate = self.rate_at(&pace, now);
-            let start = pace.next.max(now);
-            pace.next = start + Duration::from_secs_f64(f64::from(units) / rate);
-            start.checked_sub(QUOTA_BURST).unwrap_or(now)
-        };
-        tokio::time::sleep_until(send_at).await;
-    }
-
-    /// [`Self::take`] for the user's requests: they wait only behind each other, at the full rate
-    /// with 5 s of backlog going at once, and what they spend is booked on the shared schedule.
-    async fn take_first(&self, units: u32) {
-        let send_at = {
-            let mut pace = self.pace();
-            let now = Instant::now();
-            let spend = |rate: f64| Duration::from_secs_f64(f64::from(units) / rate);
-            pace.next = pace.next.max(now) + spend(self.rate_at(&pace, now));
-            let start = pace.first.max(now);
-            pace.first = start + spend(self.max_rate());
-            start.checked_sub(Duration::from_secs(5)).unwrap_or(now)
-        };
-        tokio::time::sleep_until(send_at).await;
-    }
-
-    /// Gmail said slow down: halve the rate (once per burst of rejections) and let the
-    /// window drain before anything else goes.
-    fn rate_limited(&self) {
-        let mut pace = self.pace();
-        let now = Instant::now();
-        if pace
-            .cut
-            .is_some_and(|(_, at)| now.duration_since(at) < QUOTA_BURST)
-        {
-            return;
-        }
-        let rate = (self.rate_at(&pace, now) / 2.0).max(self.max_rate() / 20.0);
-        pace.cut = Some((rate, now));
-        // `take` lets a request go `QUOTA_BURST` ahead of its slot, so push past that too:
-        // otherwise the pause is used up before it starts.
-        pace.next = pace.next.max(now) + 2 * QUOTA_BURST;
-    }
-
-    /// Book nothing for [`RATE_LIMIT_COOLDOWN`], then restart at a quarter of the full rate and
-    /// climb back over [`QUOTA_RECOVERY`] (45 s).
-    fn cool_down(&self) {
-        let until = Instant::now() + RATE_LIMIT_COOLDOWN;
-        let mut pace = self.pace();
-        pace.cut = Some((self.max_rate() / 4.0, until));
-        pace.next = pace.next.max(until + QUOTA_BURST);
-    }
-
-    /// The time left of a [`Self::cool_down`].
-    fn cooling(&self) -> Option<Duration> {
-        let (_, until) = self.pace().cut?;
-        let left = until.saturating_duration_since(Instant::now());
-        (!left.is_zero()).then_some(left)
-    }
-
-    #[cfg(test)]
-    fn rate(&self) -> f64 {
-        self.rate_at(&self.pace(), Instant::now())
-    }
-}
-
 /// Counts a user request as waiting to go out (for a slot, the quota or a retry) until dropped;
 /// meanwhile sync and background requests start nothing new.
 struct UserWaiting<'a>(&'a watch::Sender<usize>);
@@ -285,16 +151,51 @@ impl Drop for UserWaiting<'_> {
     }
 }
 
+/// Who the requests made inside a [`user_action`] or [`background`] scope are for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Scope {
+    User,
+    Background,
+}
+
 tokio::task_local! {
-    static USER_ACTION: ();
+    static SCOPE: Scope;
 }
 
 /// Run `f` as something the user did (a label edit, a queued change or send, a search, a
 /// draft): its sync-priority Gmail requests run at [`Priority::Interactive`], ahead of sync and
 /// the backfill. A task-local, so it reaches every request `f` makes (`buffer_unordered`
 /// included) but not spawned tasks.
+///
+/// Scopes nest and the innermost wins: a `user_action` inside [`background`] is the user's,
+/// and a `background` inside a `user_action` is background work.
 pub async fn user_action<F: Future>(f: F) -> F::Output {
-    USER_ACTION.scope((), f).await
+    SCOPE.scope(Scope::User, f).await
+}
+
+/// Run `f` as work nobody is waiting on (the mailbox backfill, preloading a thread): every Gmail request it makes runs at [`Priority::Background`], whatever it
+/// would run at otherwise. A task-local like [`user_action`], and the innermost of the two
+/// wins: a `user_action` nested inside `background` runs at the user's priority.
+pub async fn background<F: Future>(f: F) -> F::Output {
+    SCOPE.scope(Scope::Background, f).await
+}
+
+/// Whether requests made here run as background work (inside [`background`], with no
+/// [`user_action`] nested inside it).
+pub(crate) fn in_background() -> bool {
+    SCOPE.try_with(|s| *s) == Ok(Scope::Background)
+}
+
+/// The priority a request asking for `requested` runs at, given the innermost scope around it
+/// and whether a reader's [`probe`] is in scope. Background work stays background even when
+/// probed: nobody is waiting on it.
+fn effective_priority(requested: Priority, scope: Option<Scope>, probed: bool) -> Priority {
+    match (requested, scope) {
+        (_, Some(Scope::Background)) => Priority::Background,
+        (Priority::Sync, Some(Scope::User)) => Priority::Interactive,
+        (Priority::Sync, None) if probed => Priority::Interactive,
+        (p, _) => p,
+    }
 }
 
 /// One Gmail API call, rebuilt for every attempt.
@@ -323,8 +224,8 @@ pub(crate) enum Priority {
     Interactive,
     /// Sync and other calls that keep the app current.
     Sync,
-    /// Bulk work nobody is waiting on (the backfill). Gets a few slots and a share of the
-    /// quota, and gives up at Gmail's first rate limit instead of retrying: its caller pauses.
+    /// Bulk work nobody is waiting on (anything in [`background`]: the backfill and preloads). Gets a few slots and a share of the quota, and gives up at Gmail's
+    /// first rate limit instead of retrying: its caller pauses.
     Background,
 }
 
@@ -344,12 +245,6 @@ impl ApiRequest {
 
     pub fn get(segments: &[&str]) -> Self {
         Self::new(Method::GET, segments)
-    }
-
-    /// Bulk work nobody is waiting on; see [`Priority::Background`].
-    pub fn background(mut self) -> Self {
-        self.priority = Priority::Background;
-        self
     }
 
     pub(crate) fn with_priority(mut self, priority: Priority) -> Self {
@@ -571,16 +466,13 @@ impl GmailClient {
     ///
     /// With a [`probe`] in scope (the reader opened a thread), a sync request is the reader's:
     /// it runs at [`Priority::Interactive`], and its waits, retries and failures are reported.
-    /// Inside [`user_action`] it is the user's too.
+    /// Inside [`user_action`] it is the user's too; inside [`background`] every request is
+    /// background work (see [`effective_priority`]).
     async fn execute(&self, req: &ApiRequest) -> Result<Vec<u8>, GmailError> {
         let closed = |_| GmailError::Network("request limiter closed".into());
         let probe = probe::current();
-        let priority = match req.priority {
-            Priority::Sync if probe.is_some() || USER_ACTION.try_with(|_| ()).is_ok() => {
-                Priority::Interactive
-            }
-            p => p,
-        };
+        let priority =
+            effective_priority(req.priority, SCOPE.try_with(|s| *s).ok(), probe.is_some());
         let background = priority == Priority::Background;
         let user = priority == Priority::Interactive;
         let url = self.url_for(req)?;
@@ -636,37 +528,7 @@ impl GmailClient {
                 p.quota_wait(paced.elapsed());
                 p.stage(ProbeStage::Fetching);
             }
-            let mut builder = self
-                .http
-                .request(req.method.clone(), url.clone())
-                .bearer_auth(&token);
-            for (name, value) in &req.headers {
-                builder = builder.header(*name, value);
-            }
-            if !req.query.is_empty() {
-                builder = builder.query(&req.query);
-            }
-            if let Some(body) = &req.body {
-                builder = builder.json(body);
-            }
-            if let Some(upload) = &req.upload {
-                builder = builder
-                    .header(reqwest::header::CONTENT_TYPE, &upload.content_type)
-                    .body(upload.body.clone())
-                    .timeout(UPLOAD_TIMEOUT);
-            }
-
-            // Google's front end answers a bodiless POST/PUT/PATCH with 411 unless it carries
-            // an explicit `Content-Length: 0` (trash, untrash, ...).
-            if req.body.is_none()
-                && req.upload.is_none()
-                && matches!(req.method, Method::POST | Method::PUT | Method::PATCH)
-            {
-                builder = builder
-                    .header(reqwest::header::CONTENT_LENGTH, 0)
-                    .body(Vec::<u8>::new());
-            }
-
+            let builder = build_request(&self.http, req, url.clone(), &token);
             let sent = Instant::now();
             let sent_ms = self.usage.as_ref().map(|u| u.now_ms());
             let response = send_and_read(builder).await;
@@ -716,7 +578,15 @@ impl GmailClient {
                 p.failed(Some(status.as_u16()), reason.as_deref());
             }
 
-            if status == StatusCode::UNAUTHORIZED {
+            let verdict = classify(
+                status,
+                reason.as_deref(),
+                retry_after,
+                background,
+                req.retry_ambiguous,
+                self.retry.max_delay,
+            );
+            if verdict == Verdict::RefreshToken {
                 if refreshed {
                     return Err(GmailError::Auth(format!(
                         "Gmail rejected the refreshed access token: {message}"
@@ -727,12 +597,7 @@ impl GmailClient {
                 continue;
             }
 
-            let rate_limited = status == StatusCode::TOO_MANY_REQUESTS
-                || (status == StatusCode::FORBIDDEN
-                    && matches!(
-                        reason.as_deref(),
-                        Some("rateLimitExceeded" | "userRateLimitExceeded")
-                    ));
+            let rate_limited = verdict.rate_limited();
             if rate_limited {
                 if let Some(usage) = &self.usage {
                     usage.refused();
@@ -741,14 +606,8 @@ impl GmailClient {
                 // Whichever request saw it, background work stays off Gmail for a while.
                 self.bulk_quota.cool_down();
             }
-            let retryable = rate_limited || (status.is_server_error() && req.retry_ambiguous);
-            // A server asking for longer than our cap gets the error back (with `retry_after`)
-            // instead of an early retry; the caller decides when to try again.
-            let wait_too_long = retry_after.is_some_and(|d| d > self.retry.max_delay);
-            // Bulk work doesn't wait out a rate limit holding its slot: the backfill pauses as
-            // a whole, leaving the quota to sync and the reader.
-            let retry_rate_limit = !(rate_limited && background);
-            if retryable && retry_rate_limit && !wait_too_long && attempt < self.retry.max_retries {
+            let retry = matches!(verdict, Verdict::Retry { .. });
+            if retry && attempt < self.retry.max_retries {
                 let delay = retry_after.unwrap_or_else(|| jittered(self.retry.backoff(attempt)));
                 warn!(
                     attempt,
@@ -813,6 +672,95 @@ impl GmailClient {
             }),
             _ => Ok(()),
         }
+    }
+}
+
+/// The HTTP request for one attempt at `req`: the bearer, its headers, query and body.
+fn build_request(
+    http: &reqwest::Client,
+    req: &ApiRequest,
+    url: reqwest::Url,
+    token: &str,
+) -> reqwest::RequestBuilder {
+    let mut builder = http.request(req.method.clone(), url).bearer_auth(token);
+    for (name, value) in &req.headers {
+        builder = builder.header(*name, value);
+    }
+    if !req.query.is_empty() {
+        builder = builder.query(&req.query);
+    }
+    if let Some(body) = &req.body {
+        builder = builder.json(body);
+    }
+    if let Some(upload) = &req.upload {
+        builder = builder
+            .header(reqwest::header::CONTENT_TYPE, &upload.content_type)
+            .body(upload.body.clone())
+            .timeout(UPLOAD_TIMEOUT);
+    }
+
+    // Google's front end answers a bodiless POST/PUT/PATCH with 411 unless it carries
+    // an explicit `Content-Length: 0` (trash, untrash, ...).
+    if req.body.is_none()
+        && req.upload.is_none()
+        && matches!(req.method, Method::POST | Method::PUT | Method::PATCH)
+    {
+        builder = builder
+            .header(reqwest::header::CONTENT_LENGTH, 0)
+            .body(Vec::<u8>::new());
+    }
+    builder
+}
+
+/// What to do about an error response Gmail sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    /// 401: refresh the access token and send again (once).
+    RefreshToken,
+    /// Send again after `Retry-After` or the backoff, while retries are left.
+    Retry { rate_limited: bool },
+    /// Give the error back to the caller.
+    Fail { rate_limited: bool },
+}
+
+impl Verdict {
+    /// Gmail's rate limit: 429, or a 403 whose reason says so.
+    fn rate_limited(self) -> bool {
+        match self {
+            Verdict::RefreshToken => false,
+            Verdict::Retry { rate_limited } | Verdict::Fail { rate_limited } => rate_limited,
+        }
+    }
+}
+
+/// Classify an error response from its `status`, Google's error `reason` and `Retry-After`.
+/// `background` is a request at [`Priority::Background`]; `retry_ambiguous` is
+/// [`ApiRequest::non_idempotent`]'s opposite; `max_delay` is the longest wait a retry may take.
+fn classify(
+    status: StatusCode,
+    reason: Option<&str>,
+    retry_after: Option<Duration>,
+    background: bool,
+    retry_ambiguous: bool,
+    max_delay: Duration,
+) -> Verdict {
+    if status == StatusCode::UNAUTHORIZED {
+        return Verdict::RefreshToken;
+    }
+    let rate_limited = status == StatusCode::TOO_MANY_REQUESTS
+        || (status == StatusCode::FORBIDDEN
+            && matches!(reason, Some("rateLimitExceeded" | "userRateLimitExceeded")));
+    let retryable = rate_limited || (status.is_server_error() && retry_ambiguous);
+    // A server asking for longer than our cap gets the error back (with `retry_after`)
+    // instead of an early retry; the caller decides when to try again.
+    let wait_too_long = retry_after.is_some_and(|d| d > max_delay);
+    // Bulk work doesn't wait out a rate limit holding its slot: the backfill pauses as
+    // a whole, leaving the quota to sync and the reader.
+    let retry_rate_limit = !(rate_limited && background);
+    if retryable && retry_rate_limit && !wait_too_long {
+        Verdict::Retry { rate_limited }
+    } else {
+        Verdict::Fail { rate_limited }
     }
 }
 
@@ -924,3 +872,6 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod request_tests;

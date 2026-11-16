@@ -45,16 +45,6 @@ impl GmailClient {
             .await
     }
 
-    /// [`Self::list_all_messages`] as background work: see [`Priority::Background`].
-    pub async fn backfill_list_messages(
-        &self,
-        page_token: Option<&str>,
-        max_results: u32,
-    ) -> Result<MessageListResponse, GmailError> {
-        self.send_json(all_messages_page(page_token, max_results).background())
-            .await
-    }
-
     /// One page of message ids matching a Gmail search (`q`), e.g. `rfc822msgid:<id@host>`.
     pub async fn search_messages(
         &self,
@@ -96,21 +86,11 @@ impl GmailClient {
         id: &str,
         format: MessageFormat,
     ) -> Result<Message, GmailError> {
-        self.get_message_as(id, format, Priority::Sync).await
-    }
-
-    async fn get_message_as(
-        &self,
-        id: &str,
-        format: MessageFormat,
-        priority: Priority,
-    ) -> Result<Message, GmailError> {
-        let req = ApiRequest::get(&["messages", id])
-            .query("format", format.as_str())
-            .with_priority(priority);
+        let req = ApiRequest::get(&["messages", id]).query("format", format.as_str());
         let mut msg: Message = self.send_json(req).await?;
         if let Some(payload) = msg.payload.as_mut() {
-            self.fill_external_bodies(id, payload, priority).await?;
+            self.fill_external_bodies(id, payload, Priority::Sync)
+                .await?;
         }
         Ok(msg)
     }
@@ -152,11 +132,17 @@ impl GmailClient {
     /// failure does not affect the others.
     ///
     /// Results arrive in completion order, not input order; match on the returned id.
+    ///
+    /// Inside [`super::background`] it fetches as bulk work instead (see
+    /// [`Self::background_get_messages`]).
     pub async fn batch_get_messages(
         &self,
         ids: &[String],
         format: MessageFormat,
     ) -> Vec<(String, Result<Message, GmailError>)> {
+        if super::client::in_background() {
+            return self.background_get_messages(ids, format).await;
+        }
         stream::iter(ids.iter().cloned())
             .map(|id| async move {
                 let result = self.get_message(&id, format).await;
@@ -170,7 +156,7 @@ impl GmailClient {
     /// [`Self::batch_get_messages`] as background work (see [`Priority::Background`]). Once
     /// Gmail rate-limits one request, the ids not yet sent come back rate-limited too without
     /// being sent: the caller pauses, and spending more quota now only takes it from sync.
-    pub async fn backfill_get_messages(
+    async fn background_get_messages(
         &self,
         ids: &[String],
         format: MessageFormat,
@@ -183,7 +169,7 @@ impl GmailClient {
                 if let Some(retry_after) = refusal() {
                     return (id, Err(GmailError::RateLimit { retry_after }));
                 }
-                let result = self.get_message_as(&id, format, Priority::Background).await;
+                let result = self.get_message(&id, format).await;
                 if let Err(GmailError::RateLimit { retry_after }) = &result {
                     refused
                         .lock()
@@ -723,9 +709,9 @@ mod tests {
         let client = client_for(&server).0.with_quota(100_000);
 
         let ids: Vec<String> = (0..40).map(|i| format!("m{i}")).collect();
-        let results = client
-            .backfill_get_messages(&ids, MessageFormat::Metadata)
-            .await;
+        let results =
+            crate::gmail::background(client.batch_get_messages(&ids, MessageFormat::Metadata))
+                .await;
 
         assert_eq!(results.len(), ids.len());
         assert!(results
@@ -741,6 +727,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_attachment_fetched_in_background_is_background_work() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/messages/m1/attachments/a1"))
+            .respond_with(rate_limited())
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+
+        // The reader's download would retry; background work gives up at once and pauses.
+        let err = crate::gmail::background(client.get_attachment("m1", "a1"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, GmailError::RateLimit { .. }), "{err:?}");
+    }
+
+    #[tokio::test]
     async fn backfill_list_does_not_retry_a_rate_limit() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -751,7 +755,9 @@ mod tests {
             .await;
         let (client, _) = client_for(&server);
 
-        let err = client.backfill_list_messages(None, 500).await.unwrap_err();
+        let err = crate::gmail::background(client.list_all_messages(None, 500))
+            .await
+            .unwrap_err();
         assert!(matches!(err, GmailError::RateLimit { .. }), "{err:?}");
     }
 
@@ -788,9 +794,7 @@ mod tests {
             let ids = (0..2 * MAX_CONCURRENT_REQUESTS)
                 .map(|i| format!("old{i}"))
                 .collect::<Vec<_>>();
-            backfill
-                .backfill_get_messages(&ids, MessageFormat::Full)
-                .await
+            crate::gmail::background(backfill.batch_get_messages(&ids, MessageFormat::Full)).await
         });
         tokio::time::timeout(
             Duration::from_secs(3),

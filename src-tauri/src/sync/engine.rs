@@ -12,7 +12,7 @@ use super::outbox;
 use crate::db::threads::{self, RecomputeResult, CATEGORY_LABELS};
 use crate::db::{self, accounts, attachments, labels, messages, settings, sync_state};
 use crate::gmail::types::{HistoryRecord, Message};
-use crate::gmail::{GmailError, MessageFormat};
+use crate::gmail::{background, GmailError, MessageFormat};
 use crate::search;
 use futures::stream::{self, StreamExt};
 use sqlx::{SqliteConnection, SqlitePool};
@@ -871,14 +871,15 @@ impl SyncEngine {
             .await?
             .is_none()
         {
-            Some(self.api.backfill_profile().await?.messages_total)
+            Some(background(self.api.profile()).await?.messages_total)
         } else {
             None
         };
-        let page = self
-            .api
-            .backfill_list_messages(state.backfill_page_token.as_deref(), BACKFILL_PAGE)
-            .await?;
+        let page = background(
+            self.api
+                .list_messages(state.backfill_page_token.as_deref(), BACKFILL_PAGE),
+        )
+        .await?;
         let ids: Vec<String> = page.messages.iter().map(|m| m.id.clone()).collect();
         let mut conn = self.db.acquire().await?;
         let cached = messages::existing_ids(&mut conn, &self.account_id, &ids).await?;
@@ -898,7 +899,7 @@ impl SyncEngine {
         // One failed fetch (usually a rate limit) mustn't throw away the rest of the page:
         // what arrived is saved, the page stays current, and the retry skips cached ids.
         let mut failure = None;
-        for (id, result) in self.api.backfill_get_messages(&wanted, format).await {
+        for (id, result) in background(self.api.batch_get_messages(&wanted, format)).await {
             match result {
                 Ok(msg) => fetched.push(msg),
                 Err(e) if e.is_not_found() => {}
@@ -988,9 +989,7 @@ impl SyncEngine {
         }
         let mut fetched = Vec::new();
         let results = if preload {
-            self.api
-                .backfill_get_messages(&ids, MessageFormat::Full)
-                .await
+            background(self.api.batch_get_messages(&ids, MessageFormat::Full)).await
         } else {
             self.api.batch_get_messages(&ids, MessageFormat::Full).await
         };

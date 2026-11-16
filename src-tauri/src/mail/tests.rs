@@ -583,14 +583,14 @@ async fn preload_missing_body_uses_bulk_and_preserves_labels() {
     row.is_starred = 1;
     messages::upsert_message(&mail.db, &row).await.unwrap();
     events.take();
-    let calls = fake.calls("backfill_get_messages");
+    let calls = fake.background_calls("get_message");
     let detail = mail.preload_thread("a1", "t1").await.unwrap();
     assert_eq!(detail.messages[0].body_text.as_deref(), Some("Body of m1"));
     assert!(detail.thread.unread);
     assert_eq!(detail.body_error, None);
     assert!(events.take().is_empty(), "a preload announces nothing");
     assert!(mail.recent_opens().is_empty());
-    assert_eq!(fake.calls("backfill_get_messages"), calls + 1);
+    assert_eq!(fake.background_calls("get_message"), calls + 1);
     assert!(detail.messages[0].label_ids.contains(&"INBOX".to_owned()));
     assert!(detail.messages[0].starred);
     assert!(detail.messages[0].label_ids.contains(&"STARRED".to_owned()));
@@ -604,14 +604,11 @@ async fn preload_rate_limit_propagates_without_retry() {
         .execute(&mail.db)
         .await
         .unwrap();
-    fake.fail_next(
-        "backfill_get_messages",
-        GmailError::RateLimit { retry_after: None },
-    );
-    let calls = fake.calls("backfill_get_messages");
+    fake.fail_next("get_message", GmailError::RateLimit { retry_after: None });
+    let calls = fake.background_calls("get_message");
     let error = mail.preload_thread("a1", "t1").await.unwrap_err();
     assert_eq!(error.code(), "rate_limit");
-    assert_eq!(fake.calls("backfill_get_messages"), calls + 1);
+    assert_eq!(fake.background_calls("get_message"), calls + 1);
     assert_eq!(fully_fetched(&mail, "m1").await, 0);
 }
 

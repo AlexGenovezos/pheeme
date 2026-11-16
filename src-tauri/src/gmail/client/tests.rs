@@ -464,8 +464,7 @@ async fn background_requests_get_a_smaller_share_of_the_quota() {
     // Background calls are: three go in the burst, the fourth waits ~0.5 s.
     let started = Instant::now();
     for _ in 0..4 {
-        let _: Value = client
-            .send_json(ApiRequest::get(&["messages", "m1"]).background())
+        let _: Value = background(client.send_json(ApiRequest::get(&["messages", "m1"])))
             .await
             .unwrap();
     }
@@ -474,6 +473,31 @@ async fn background_requests_get_a_smaller_share_of_the_quota() {
         elapsed >= Duration::from_millis(450),
         "waited only {elapsed:?}"
     );
+}
+
+#[test]
+fn background_scope_wins_over_a_probe_and_user_action_over_sync() {
+    use Priority::*;
+    let bg = Some(Scope::Background);
+    let user = Some(Scope::User);
+    for requested in [Interactive, Sync, Background] {
+        for probed in [false, true] {
+            assert_eq!(effective_priority(requested, bg, probed), Background);
+        }
+    }
+    assert_eq!(effective_priority(Sync, user, false), Interactive);
+    assert_eq!(effective_priority(Sync, None, true), Interactive);
+    assert_eq!(effective_priority(Sync, None, false), Sync);
+    assert_eq!(effective_priority(Interactive, None, false), Interactive);
+    assert_eq!(effective_priority(Background, user, true), Background);
+}
+
+#[tokio::test]
+async fn the_innermost_scope_wins() {
+    assert!(!in_background());
+    assert!(background(async { in_background() }).await);
+    assert!(!background(user_action(async { in_background() })).await);
+    assert!(user_action(background(async { in_background() })).await);
 }
 
 #[tokio::test]
@@ -490,8 +514,7 @@ async fn background_requests_give_up_on_the_first_rate_limit() {
         .await;
     let (client, _) = client_for(&server);
 
-    let err = client
-        .send_json::<Value>(ApiRequest::get(&["messages", "m1"]).background())
+    let err = background(client.send_json::<Value>(ApiRequest::get(&["messages", "m1"])))
         .await
         .unwrap_err();
     assert!(matches!(err, GmailError::RateLimit { .. }), "{err:?}");
@@ -769,11 +792,10 @@ async fn a_rate_limit_cools_background_down_but_not_the_user() {
 
     // The backfill, its mailbox-size read included, is turned away unsent with the time left.
     for err in [
-        client
-            .send_json::<Value>(ApiRequest::get(&["messages", "m1"]).background())
+        background(client.send_json::<Value>(ApiRequest::get(&["messages", "m1"])))
             .await
             .unwrap_err(),
-        client.backfill_profile().await.unwrap_err(),
+        background(client.get_profile()).await.unwrap_err(),
     ] {
         assert!(
             matches!(err, GmailError::RateLimit { retry_after: Some(left) }
@@ -839,8 +861,7 @@ async fn usage_is_counted_by_source() {
     // Sync: `history` is 2 units.
     get(&["history"]).await.unwrap();
     // The backfill: a message is 5.
-    client
-        .send_json::<Value>(ApiRequest::get(&["messages", "m1"]).background())
+    background(client.send_json::<Value>(ApiRequest::get(&["messages", "m1"])))
         .await
         .unwrap();
     // The user opened a thread: 10.
@@ -862,7 +883,7 @@ async fn usage_is_counted_by_source() {
     // A scope wins over the backfill's priority too.
     usage_source(
         UsageSource::Assistants,
-        client.send_json::<Value>(ApiRequest::get(&["messages", "m2"]).background()),
+        background(client.send_json::<Value>(ApiRequest::get(&["messages", "m2"]))),
     )
     .await
     .unwrap();
@@ -937,8 +958,7 @@ async fn a_refused_background_request_is_counted_once() {
         .mount(&server)
         .await;
     let (client, usage) = metered(&server);
-    client
-        .send_json::<Value>(ApiRequest::get(&["messages", "m1"]).background())
+    background(client.send_json::<Value>(ApiRequest::get(&["messages", "m1"])))
         .await
         .unwrap_err();
     let (units, refused) = hour(&usage);

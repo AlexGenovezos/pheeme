@@ -250,6 +250,8 @@ struct State {
     /// `(successful calls still to allow, then this error)`.
     delayed_failures: HashMap<&'static str, (usize, GmailError)>,
     calls: HashMap<&'static str, usize>,
+    /// The calls made inside `gmail::background`.
+    background_calls: HashMap<&'static str, usize>,
     sent: Vec<String>,
     /// `threadId` passed with each send, in order.
     sent_threads: Vec<Option<String>>,
@@ -384,6 +386,16 @@ impl FakeGmail {
 
     pub fn calls(&self, method: &str) -> usize {
         self.lock().calls.get(method).copied().unwrap_or(0)
+    }
+
+    /// The calls of `method` made inside [`crate::gmail::background`] (counted in
+    /// [`Self::calls`] too).
+    pub fn background_calls(&self, method: &str) -> usize {
+        self.lock()
+            .background_calls
+            .get(method)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// The next call of `method` fails with `error` (queued, in order).
@@ -697,6 +709,9 @@ impl FakeGmail {
     fn enter(&self, method: &'static str) -> Result<(), GmailError> {
         let mut s = self.lock();
         *s.calls.entry(method).or_default() += 1;
+        if crate::gmail::client::in_background() {
+            *s.background_calls.entry(method).or_default() += 1;
+        }
         if let Some((left, _)) = s.delayed_failures.get_mut(method) {
             if *left == 0 {
                 let (_, e) = s.delayed_failures.remove(method).unwrap();
@@ -747,11 +762,6 @@ impl MailApi for FakeGmail {
             messages_total: state.messages.len() as u64,
             threads_total: 0,
         })
-    }
-
-    async fn backfill_profile(&self) -> Result<UserProfile, GmailError> {
-        self.enter("backfill_profile")?;
-        self.profile().await
     }
 
     async fn list_labels(&self) -> Result<Vec<Label>, GmailError> {
@@ -1107,20 +1117,6 @@ impl MailApi for FakeGmail {
             out.push((id.clone(), result));
         }
         out
-    }
-
-    async fn backfill_get_messages(
-        &self,
-        ids: &[String],
-        format: MessageFormat,
-    ) -> Vec<(String, Result<Message, GmailError>)> {
-        if let Err(error) = self.enter("backfill_get_messages") {
-            return ids
-                .first()
-                .map(|id| vec![(id.clone(), Err(error))])
-                .unwrap_or_default();
-        }
-        self.batch_get_messages(ids, format).await
     }
 
     async fn list_history(

@@ -13,6 +13,7 @@ pub mod mime;
 pub mod palette;
 pub mod people;
 pub mod probe;
+mod quota;
 pub mod send_as;
 pub mod tasks;
 pub mod threads;
@@ -21,7 +22,8 @@ pub mod usage;
 pub mod user;
 
 pub use client::{
-    user_action, GmailClient, QuotaSetting, RetryPolicy, TokenProvider, RATE_LIMIT_COOLDOWN,
+    background, user_action, GmailClient, QuotaSetting, RetryPolicy, TokenProvider,
+    RATE_LIMIT_COOLDOWN,
 };
 pub use error::GmailError;
 pub use mime::{ParsedAttachment, ParsedMessage};
