@@ -1,0 +1,1549 @@
+[
+  {
+    "description": "The Gmail accounts connected to Pheeme.",
+    "destructive": false,
+    "example": {},
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_accounts",
+    "permission": null,
+    "readOnly": true,
+    "summary": "accounts",
+    "title": "List accounts"
+  },
+  {
+    "description": "Each account's labels (system and user) with their conversation counts.",
+    "destructive": false,
+    "example": {
+      "account": "me@example.com"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_labels",
+    "permission": null,
+    "readOnly": true,
+    "summary": "labels in me@example.com",
+    "title": "List labels"
+  },
+  {
+    "description": "Conversations in a mailbox, newest first: inbox, primary, social, promotions, updates, forums, starred, important, sent, drafts, spam, trash, all (everything outside Spam and Trash), or a user label's name. Answered from Pheeme's local copy, so it's instant. To count or rank (how many, who sends the most), use count_mail instead of paging through.",
+    "destructive": false,
+    "example": {
+      "limit": 10,
+      "mailbox": "inbox",
+      "unread_only": true
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        },
+        "compact": {
+          "description": "Leave out snippets and labels (default false).",
+          "type": "boolean"
+        },
+        "cursor": {
+          "description": "The cursor from the previous page, to get the next one.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Conversations per page (default 25).",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "mailbox": {
+          "description": "Default inbox.",
+          "type": "string"
+        },
+        "unread_only": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_mailbox",
+    "permission": null,
+    "readOnly": true,
+    "summary": "inbox (unread)",
+    "title": "List a mailbox"
+  },
+  {
+    "description": "Search with Gmail syntax (from:, to:, subject:, label:, is:unread, has:attachment, newer_than:7d, in:trash...). Searches the mail cached on this computer by default, which is instant but may not hold old mail; set gmail to true to ask Gmail's own search, which covers the whole mailbox. Queries only Gmail understands go to Gmail automatically. Like Gmail, it leaves out Trash and Spam unless the query says in:anywhere, in:trash or in:spam.",
+    "destructive": false,
+    "example": {
+      "gmail": true,
+      "query": "from:news@example.com newer_than:30d"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        },
+        "compact": {
+          "description": "Leave out snippets and labels (default false).",
+          "type": "boolean"
+        },
+        "cursor": {
+          "description": "The cursor from the previous page, to get the next one.",
+          "type": "string"
+        },
+        "gmail": {
+          "description": "Use Gmail's search (default false).",
+          "type": "boolean"
+        },
+        "limit": {
+          "description": "Conversations per page (default 25).",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_mail",
+    "permission": null,
+    "readOnly": true,
+    "summary": "\"from:news@example.com newer_than:30d\" on Gmail",
+    "title": "Search mail"
+  },
+  {
+    "description": "How many conversations a mailbox or a search holds, and how many are unread, optionally grouped by sender, domain (the sender's), label, tab (inbox tab) or month, biggest group first. One call answers questions like \"who has the most unread mail in Promotions\" (mailbox: promotions, unread_only: true, group_by: sender) without listing the mail. Counts the mail on this computer (search_mail's local syntax).",
+    "destructive": false,
+    "example": {
+      "group_by": "sender",
+      "limit": 10,
+      "mailbox": "promotions",
+      "unread_only": true
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        },
+        "group_by": {
+          "enum": [
+            "sender",
+            "domain",
+            "label",
+            "tab",
+            "month"
+          ],
+          "type": "string"
+        },
+        "limit": {
+          "description": "Groups shown (default 25).",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "mailbox": {
+          "description": "A mailbox, as list_mailbox takes it (default inbox).",
+          "type": "string"
+        },
+        "query": {
+          "description": "A search, as search_mail takes it. Instead of mailbox.",
+          "type": "string"
+        },
+        "unread_only": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "name": "count_mail",
+    "permission": null,
+    "readOnly": true,
+    "summary": "count promotions (unread) by sender",
+    "title": "Count mail"
+  },
+  {
+    "description": "A conversation's messages as plain text, with senders, recipients, dates, labels and attachment names. Bodies not cached yet are downloaded from Gmail.",
+    "destructive": false,
+    "example": {
+      "account": "me@example.com",
+      "thread_id": "t1"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account the conversation is in (from the list or search result).",
+          "type": "string"
+        },
+        "max_chars_per_message": {
+          "description": "Cut longer bodies (default 8000).",
+          "minimum": 200,
+          "type": "integer"
+        },
+        "thread_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "thread_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_thread",
+    "permission": null,
+    "readOnly": true,
+    "summary": "conversation t1 in me@example.com",
+    "title": "Read a conversation"
+  },
+  {
+    "description": "Every Gmail filter (rule) on the account: what it matches and what it does, in words, with flags for filters that delete mail, skip the inbox or mark it read.",
+    "destructive": false,
+    "example": {},
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_filters",
+    "permission": null,
+    "readOnly": true,
+    "summary": "filters",
+    "title": "List Gmail filters"
+  },
+  {
+    "description": "The senders with the most mail over the last N days (default 90), from Pheeme's local copy: how many messages, how many are unread or sit in Inbox, Trash or Spam, which inbox tab they land in, how often the user has written to them (you_wrote; none suggests a list or notification, not a person), and whether their mail offers unsubscribe (one_click, link, email, none, or unknown). Counts that are 0 are left out. Use it to suggest filters or unsubscribing; for plain counts, count_mail is lighter.",
+    "destructive": false,
+    "example": {
+      "days": 30,
+      "limit": 10
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        },
+        "days": {
+          "maximum": 3650,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "limit": {
+          "description": "Senders (default 25).",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sort_by": {
+          "description": "Default messages.",
+          "enum": [
+            "messages",
+            "unread"
+          ],
+          "type": "string"
+        },
+        "tab": {
+          "description": "Only mail in this inbox tab.",
+          "enum": [
+            "primary",
+            "social",
+            "promotions",
+            "updates",
+            "forums"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "sender_report",
+    "permission": null,
+    "readOnly": true,
+    "summary": "top senders, 30 days",
+    "title": "Who sends the most mail"
+  },
+  {
+    "description": "For each Gmail filter that deletes, archives or marks mail read (or every filter with all: true), the mail it matched over the last N days (default 30), found with Gmail's search: how much (matched, first 50), where it is now (now_in: trash, inbox, archived...) and a sample. For filters that delete, archive or mark read, worth_checking lists matched mail from the last year that looks wanted (starred, in Primary or Updates, or an order, bill, delivery or account subject); read it before trusting the filter. Use it to find filters that catch mail the user wants; fix them with delete_filter and create_filter, and rescue what they trashed or archived with move_to_inbox.",
+    "destructive": false,
+    "example": {
+      "days": 14
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        },
+        "all": {
+          "type": "boolean"
+        },
+        "compact": {
+          "description": "Leave out snippets and labels (default false).",
+          "type": "boolean"
+        },
+        "days": {
+          "maximum": 3650,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sample": {
+          "description": "Conversations per filter and list (default 5).",
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "filter_audit",
+    "permission": null,
+    "readOnly": true,
+    "summary": "filters' catches, 14 days",
+    "title": "What filters caught"
+  },
+  {
+    "description": "Take conversations out of the inbox (they stay in All Mail and their labels).",
+    "destructive": false,
+    "example": {
+      "dry_run": true,
+      "query": "from:deals@example.com is:unread"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "dry_run": {
+          "description": "With query: say how many cached conversations would change, and change nothing.",
+          "type": "boolean"
+        },
+        "query": {
+          "description": "Instead of thread_ids: a search (search_mail syntax, not Spam or Trash). Conversations on this computer that match change whole, at once; on Gmail, matching messages not downloaded yet change too.",
+          "type": "string"
+        },
+        "thread_ids": {
+          "description": "thread_id values from list_mailbox, search_mail or get_thread.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "name": "archive",
+    "permission": "Organize",
+    "readOnly": false,
+    "summary": "every match for \"from:deals@example.com is:unread\" (dry run)",
+    "title": "Archive"
+  },
+  {
+    "description": "Put archived, trashed or spam conversations back in the inbox: this takes them out of Trash (which Gmail empties after 30 days) and Spam (as Gmail's Not spam does).",
+    "destructive": false,
+    "example": {
+      "account": "me@example.com",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "thread_ids": {
+          "description": "thread_id values from list_mailbox, search_mail or get_thread.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "thread_ids"
+      ],
+      "type": "object"
+    },
+    "name": "move_to_inbox",
+    "permission": "Organize",
+    "readOnly": false,
+    "summary": "1 conversation in me@example.com",
+    "title": "Move to inbox"
+  },
+  {
+    "description": "Mark conversations as read.",
+    "destructive": false,
+    "example": {
+      "dry_run": true,
+      "query": "from:deals@example.com is:unread"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "dry_run": {
+          "description": "With query: say how many cached conversations would change, and change nothing.",
+          "type": "boolean"
+        },
+        "query": {
+          "description": "Instead of thread_ids: a search (search_mail syntax, not Spam or Trash). Conversations on this computer that match change whole, at once; on Gmail, matching messages not downloaded yet change too.",
+          "type": "string"
+        },
+        "thread_ids": {
+          "description": "thread_id values from list_mailbox, search_mail or get_thread.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "name": "mark_read",
+    "permission": "Organize",
+    "readOnly": false,
+    "summary": "every match for \"from:deals@example.com is:unread\" (dry run)",
+    "title": "Mark as read"
+  },
+  {
+    "description": "Mark conversations as unread.",
+    "destructive": false,
+    "example": {
+      "dry_run": true,
+      "query": "from:deals@example.com is:unread"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "dry_run": {
+          "description": "With query: say how many cached conversations would change, and change nothing.",
+          "type": "boolean"
+        },
+        "query": {
+          "description": "Instead of thread_ids: a search (search_mail syntax, not Spam or Trash). Conversations on this computer that match change whole, at once; on Gmail, matching messages not downloaded yet change too.",
+          "type": "string"
+        },
+        "thread_ids": {
+          "description": "thread_id values from list_mailbox, search_mail or get_thread.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "name": "mark_unread",
+    "permission": "Organize",
+    "readOnly": false,
+    "summary": "every match for \"from:deals@example.com is:unread\" (dry run)",
+    "title": "Mark as unread"
+  },
+  {
+    "description": "Star conversations.",
+    "destructive": false,
+    "example": {
+      "dry_run": true,
+      "query": "from:deals@example.com is:unread"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "dry_run": {
+          "description": "With query: say how many cached conversations would change, and change nothing.",
+          "type": "boolean"
+        },
+        "query": {
+          "description": "Instead of thread_ids: a search (search_mail syntax, not Spam or Trash). Conversations on this computer that match change whole, at once; on Gmail, matching messages not downloaded yet change too.",
+          "type": "string"
+        },
+        "thread_ids": {
+          "description": "thread_id values from list_mailbox, search_mail or get_thread.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "name": "star",
+    "permission": "Organize",
+    "readOnly": false,
+    "summary": "every match for \"from:deals@example.com is:unread\" (dry run)",
+    "title": "Star"
+  },
+  {
+    "description": "Remove the star from conversations.",
+    "destructive": false,
+    "example": {
+      "dry_run": true,
+      "query": "from:deals@example.com is:unread"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "dry_run": {
+          "description": "With query: say how many cached conversations would change, and change nothing.",
+          "type": "boolean"
+        },
+        "query": {
+          "description": "Instead of thread_ids: a search (search_mail syntax, not Spam or Trash). Conversations on this computer that match change whole, at once; on Gmail, matching messages not downloaded yet change too.",
+          "type": "string"
+        },
+        "thread_ids": {
+          "description": "thread_id values from list_mailbox, search_mail or get_thread.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "name": "unstar",
+    "permission": "Organize",
+    "readOnly": false,
+    "summary": "every match for \"from:deals@example.com is:unread\" (dry run)",
+    "title": "Unstar"
+  },
+  {
+    "description": "Move conversations to Trash (Gmail deletes them for good after 30 days).",
+    "destructive": true,
+    "example": {
+      "account": "me@example.com",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "thread_ids": {
+          "description": "thread_id values from list_mailbox, search_mail or get_thread.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "thread_ids"
+      ],
+      "type": "object"
+    },
+    "name": "trash",
+    "permission": "Organize",
+    "readOnly": false,
+    "summary": "1 conversation in me@example.com",
+    "title": "Move to Trash"
+  },
+  {
+    "description": "Add and remove user labels (by name) on conversations: the thread_ids given, or with query every message that Gmail search finds, including mail not downloaded yet (use query for more than a few hundred; it is far lighter on Gmail's quota). Use archive, trash, star and the other tools for Inbox, Trash, Starred and read state.",
+    "destructive": false,
+    "example": {
+      "add": [
+        "Receipts"
+      ],
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "add": {
+          "description": "Label names to add.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "query": {
+          "description": "Instead of thread_ids: a Gmail search; every message it finds is changed.",
+          "type": "string"
+        },
+        "remove": {
+          "description": "Label names to remove.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "thread_ids": {
+          "description": "thread_id values from list_mailbox, search_mail or get_thread.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "name": "change_labels",
+    "permission": "Organize",
+    "readOnly": false,
+    "summary": "1 conversation: +[Receipts] -[]",
+    "title": "Change labels"
+  },
+  {
+    "description": "Create a user label. Nest it with slashes (Clients/Acme).",
+    "destructive": false,
+    "example": {
+      "name": "Receipts"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "create_label",
+    "permission": "Organize",
+    "readOnly": false,
+    "summary": "label Receipts",
+    "title": "Create a label"
+  },
+  {
+    "description": "Create a Gmail filter (rule) for mail that arrives from now on. Give at least one criterion (from, to, subject, query, negated_query, has_attachment) and one action. Before creating one that trashes or archives mail, check what it would catch with search_mail (gmail: true) using the same criteria.",
+    "destructive": false,
+    "example": {
+      "add_label": "Receipts",
+      "from": "news@example.com",
+      "skip_inbox": true
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "add_label": {
+          "description": "A user label's name (it must exist).",
+          "type": "string"
+        },
+        "category": {
+          "description": "File it under an inbox tab.",
+          "enum": [
+            "primary",
+            "social",
+            "promotions",
+            "updates",
+            "forums"
+          ],
+          "type": "string"
+        },
+        "from": {
+          "description": "Sender address, domain or Gmail from: value.",
+          "type": "string"
+        },
+        "has_attachment": {
+          "type": "boolean"
+        },
+        "important": {
+          "description": "true: always important; false: never.",
+          "type": "boolean"
+        },
+        "mark_read": {
+          "type": "boolean"
+        },
+        "negated_query": {
+          "description": "Doesn't have.",
+          "type": "string"
+        },
+        "never_spam": {
+          "type": "boolean"
+        },
+        "query": {
+          "description": "Has the words (Gmail search syntax).",
+          "type": "string"
+        },
+        "skip_inbox": {
+          "description": "Archive it.",
+          "type": "boolean"
+        },
+        "star": {
+          "type": "boolean"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "trash": {
+          "description": "Delete it.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "name": "create_filter",
+    "permission": "Filters",
+    "readOnly": false,
+    "summary": "filter from:news@example.com",
+    "title": "Create a Gmail filter"
+  },
+  {
+    "description": "Delete a Gmail filter by its id (from list_filters). Mail it already filed stays where it is.",
+    "destructive": true,
+    "example": {
+      "filter_id": "f1"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "filter_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "filter_id"
+      ],
+      "type": "object"
+    },
+    "name": "delete_filter",
+    "permission": "Filters",
+    "readOnly": false,
+    "summary": "filter f1",
+    "title": "Delete a Gmail filter"
+  },
+  {
+    "description": "Unsubscribe from the mailing list a conversation came from, using its List-Unsubscribe header. One-click unsubscribes (RFC 8058) happen at once; otherwise the answer gives the link or address for the user to use themselves. Uses the newest message not sent by the user, or message_id.",
+    "destructive": false,
+    "example": {
+      "thread_id": "t1"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "thread_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "thread_id"
+      ],
+      "type": "object"
+    },
+    "name": "unsubscribe",
+    "permission": "Unsubscribe",
+    "readOnly": false,
+    "summary": "conversation t1",
+    "title": "Unsubscribe"
+  },
+  {
+    "description": "Save a draft in Gmail Drafts for the user to review and send from Pheeme. Assistants can't send mail. For a reply, give reply_to_message_id (a message_id from get_thread): recipients, subject and the quoted original come from it, and to/cc/bcc add more. Pheeme adds the user's signature (as set in Settings › Compose), so don't sign the body.",
+    "destructive": false,
+    "example": {
+      "body": "Hello",
+      "subject": "Hi",
+      "to": [
+        "a@example.com"
+      ]
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "bcc": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "body": {
+          "description": "Plain text.",
+          "type": "string"
+        },
+        "cc": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reply_all": {
+          "description": "With reply_to_message_id: reply to everyone.",
+          "type": "boolean"
+        },
+        "reply_to_message_id": {
+          "type": "string"
+        },
+        "subject": {
+          "description": "Ignored for replies.",
+          "type": "string"
+        },
+        "to": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "type": "object"
+    },
+    "name": "create_draft",
+    "permission": "Drafts",
+    "readOnly": false,
+    "summary": "draft \"Hi\"",
+    "title": "Write a draft"
+  },
+  {
+    "description": "Each account's Google calendars (id, name, primary, whether the user can change them), its Calendar time zone, and whether Pheeme may read its calendar (access: on; otherwise the note says what the user must do).",
+    "destructive": false,
+    "example": {},
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_calendars",
+    "permission": null,
+    "readOnly": true,
+    "summary": "calendars",
+    "title": "List calendars"
+  },
+  {
+    "description": "Events between from and to (default the next 7 days from the start of today), repeating events expanded, from Pheeme's local copy of the calendars the user shows. With query, only events whose title, place, description or guests contain every word. Times are in the user's Calendar time zone unless time_zone says otherwise.",
+    "destructive": false,
+    "example": {
+      "from": "2026-11-16",
+      "query": "standup",
+      "to": "2026-11-20"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        },
+        "calendar_id": {
+          "description": "Only this calendar.",
+          "type": "string"
+        },
+        "from": {
+          "description": "A date or date-time.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Events (default 50).",
+          "maximum": 250,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "query": {
+          "type": "string"
+        },
+        "time_zone": {
+          "description": "An IANA time zone (Europe/Paris) for reading and writing times. Default: the user's Google Calendar time zone.",
+          "type": "string"
+        },
+        "to": {
+          "description": "A date (that whole day counts) or date-time.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_events",
+    "permission": null,
+    "readOnly": true,
+    "summary": "events 2026-11-16 to 2026-11-20 matching \"standup\"",
+    "title": "List events"
+  },
+  {
+    "description": "One event in full: description, organizer, guests and their answers, video call, repeat rule, and what the user may do with it (edit, answer, delete).",
+    "destructive": false,
+    "example": {
+      "calendar_id": "me@example.com",
+      "event_id": "e1"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "calendar_id": {
+          "description": "calendar_id from list_events (default the primary calendar).",
+          "type": "string"
+        },
+        "event_id": {
+          "description": "event_id from list_events.",
+          "type": "string"
+        },
+        "time_zone": {
+          "description": "An IANA time zone (Europe/Paris) for reading and writing times. Default: the user's Google Calendar time zone.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_event",
+    "permission": null,
+    "readOnly": true,
+    "summary": "event e1",
+    "title": "Read an event"
+  },
+  {
+    "description": "Free slots of at least duration_minutes (default 30) between from and to (default now to 7 days on), inside working hours (day_start to day_end, default 09:00 to 17:00, weekdays unless weekends is true). Busy means a timed event the user hasn't declined and that isn't marked free, on any shown calendar of the accounts (all, or account); all-day events don't count.",
+    "destructive": false,
+    "example": {
+      "duration_minutes": 60,
+      "from": "2026-11-16",
+      "to": "2026-11-18"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        },
+        "day_end": {
+          "description": "HH:MM.",
+          "type": "string"
+        },
+        "day_start": {
+          "description": "HH:MM.",
+          "type": "string"
+        },
+        "duration_minutes": {
+          "maximum": 1440,
+          "minimum": 5,
+          "type": "integer"
+        },
+        "from": {
+          "description": "A date or date-time.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Slots (default 20).",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "time_zone": {
+          "description": "An IANA time zone (Europe/Paris) for reading and writing times. Default: the user's Google Calendar time zone.",
+          "type": "string"
+        },
+        "to": {
+          "description": "A date (that whole day counts) or date-time.",
+          "type": "string"
+        },
+        "weekends": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "name": "find_free_time",
+    "permission": null,
+    "readOnly": true,
+    "summary": "free 60 min, 2026-11-16 to 2026-11-18",
+    "title": "Find free time"
+  },
+  {
+    "description": "Create an event on a calendar (default the account's primary). end defaults to an hour after start (the next day for an all-day event). Guests are invited, but only emailed with notify_guests.",
+    "destructive": false,
+    "example": {
+      "guests": [
+        "sam@example.com"
+      ],
+      "start": "2026-11-20T12:30",
+      "title": "Lunch"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "add_meet": {
+          "description": "Add a Google Meet link.",
+          "type": "boolean"
+        },
+        "calendar_id": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "end": {
+          "description": "A date-time (2026-11-20T15:00, read in time_zone, or with an offset) or, for an all-day event, a date (2026-11-20).",
+          "type": "string"
+        },
+        "guests": {
+          "description": "Email addresses.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "location": {
+          "type": "string"
+        },
+        "notify_guests": {
+          "description": "Email the guests about it (default false: the event changes on their calendars without an email). Ask the user before setting it.",
+          "type": "boolean"
+        },
+        "optional_guests": {
+          "description": "Email addresses.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repeat": {
+          "description": "RFC 5545 lines, e.g. RRULE:FREQ=WEEKLY;BYDAY=MO.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "start": {
+          "description": "A date-time (2026-11-20T15:00, read in time_zone, or with an offset) or, for an all-day event, a date (2026-11-20).",
+          "type": "string"
+        },
+        "time_zone": {
+          "description": "An IANA time zone (Europe/Paris) for reading and writing times. Default: the user's Google Calendar time zone.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "start"
+      ],
+      "type": "object"
+    },
+    "name": "create_event",
+    "permission": "Calendar",
+    "readOnly": false,
+    "summary": "event \"Lunch\" at 2026-11-20T12:30, 1 guest",
+    "title": "Create an event"
+  },
+  {
+    "description": "Change an event the user may edit: give only what changes. A new start alone keeps the length. add_guests and remove_guests change the guest list (those already there keep their answers). Empty description or location clears it.",
+    "destructive": false,
+    "example": {
+      "add_guests": [
+        "sam@example.com"
+      ],
+      "event_id": "e1",
+      "start": "2026-11-20T14:00"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "add_guests": {
+          "description": "Email addresses.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "calendar_id": {
+          "description": "calendar_id from list_events (default the primary calendar).",
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "end": {
+          "description": "A date-time (2026-11-20T15:00, read in time_zone, or with an offset) or, for an all-day event, a date (2026-11-20).",
+          "type": "string"
+        },
+        "event_id": {
+          "description": "event_id from list_events.",
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "meet": {
+          "description": "true adds a Google Meet link, false removes it.",
+          "type": "boolean"
+        },
+        "notify_guests": {
+          "description": "Email the guests about it (default false: the event changes on their calendars without an email). Ask the user before setting it.",
+          "type": "boolean"
+        },
+        "remove_guests": {
+          "description": "Email addresses.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repeat": {
+          "description": "New repeat rules; [] stops it repeating.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scope": {
+          "description": "For a repeating event: this (the default: just this occurrence), following (this and later ones) or all.",
+          "enum": [
+            "this",
+            "following",
+            "all"
+          ],
+          "type": "string"
+        },
+        "start": {
+          "description": "A date-time (2026-11-20T15:00, read in time_zone, or with an offset) or, for an all-day event, a date (2026-11-20).",
+          "type": "string"
+        },
+        "time_zone": {
+          "description": "An IANA time zone (Europe/Paris) for reading and writing times. Default: the user's Google Calendar time zone.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id"
+      ],
+      "type": "object"
+    },
+    "name": "update_event",
+    "permission": "Calendar",
+    "readOnly": false,
+    "summary": "event e1, 1 guest",
+    "title": "Change an event"
+  },
+  {
+    "description": "Delete an event (for one the user was only invited to, it leaves their calendar; answer it with respond_to_event instead to tell the organizer).",
+    "destructive": true,
+    "example": {
+      "event_id": "e1",
+      "scope": "this"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "calendar_id": {
+          "description": "calendar_id from list_events (default the primary calendar).",
+          "type": "string"
+        },
+        "event_id": {
+          "description": "event_id from list_events.",
+          "type": "string"
+        },
+        "notify_guests": {
+          "description": "Email the guests about it (default false: the event changes on their calendars without an email). Ask the user before setting it.",
+          "type": "boolean"
+        },
+        "scope": {
+          "description": "For a repeating event: this (the default: just this occurrence), following (this and later ones) or all.",
+          "enum": [
+            "this",
+            "following",
+            "all"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id"
+      ],
+      "type": "object"
+    },
+    "name": "delete_event",
+    "permission": "Calendar",
+    "readOnly": false,
+    "summary": "event e1",
+    "title": "Delete an event"
+  },
+  {
+    "description": "Answer an event the user is invited to: accepted, tentative or declined, with an optional note. Google always tells the organizer.",
+    "destructive": false,
+    "example": {
+      "event_id": "e1",
+      "response": "accepted"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "calendar_id": {
+          "description": "calendar_id from list_events (default the primary calendar).",
+          "type": "string"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "event_id": {
+          "description": "event_id from list_events.",
+          "type": "string"
+        },
+        "response": {
+          "enum": [
+            "accepted",
+            "tentative",
+            "declined"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "description": "For a repeating event: this (default) or all.",
+          "enum": [
+            "this",
+            "all"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "response"
+      ],
+      "type": "object"
+    },
+    "name": "respond_to_event",
+    "permission": "Calendar",
+    "readOnly": false,
+    "summary": "accepted to event e1",
+    "title": "Answer an invitation"
+  },
+  {
+    "description": "Each account's Google Tasks lists, and whether Pheeme may read its tasks (access: on; otherwise the note says what the user must do).",
+    "destructive": false,
+    "example": {},
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_task_lists",
+    "permission": null,
+    "readOnly": true,
+    "summary": "task lists",
+    "title": "List task lists"
+  },
+  {
+    "description": "Tasks in a list (or every list), in the list's order with subtasks after their parent, from Pheeme's local copy. Open tasks only unless include_completed; due_by keeps those due on or before a date (overdue ones too).",
+    "destructive": false,
+    "example": {
+      "due_by": "2026-11-20"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "Email address (or id) of one connected account. Leave out for all accounts.",
+          "type": "string"
+        },
+        "due_by": {
+          "description": "A date, YYYY-MM-DD (Google Tasks keeps no time).",
+          "type": "string"
+        },
+        "include_completed": {
+          "type": "boolean"
+        },
+        "limit": {
+          "description": "Tasks (default 100).",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "list_id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_tasks",
+    "permission": null,
+    "readOnly": true,
+    "summary": "tasks in every list",
+    "title": "List tasks"
+  },
+  {
+    "description": "Add a task at the top of a list (default the account's first list), or under parent as a subtask.",
+    "destructive": false,
+    "example": {
+      "due": "2026-11-20",
+      "title": "Send the invoice"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "due": {
+          "description": "A date, YYYY-MM-DD (Google Tasks keeps no time).",
+          "type": "string"
+        },
+        "list_id": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "parent": {
+          "description": "A task_id in the same list.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "name": "create_task",
+    "permission": "Tasks",
+    "readOnly": false,
+    "summary": "task \"Send the invoice\"",
+    "title": "Add a task"
+  },
+  {
+    "description": "Change a task: give only what changes. completed ticks it off (or back on); empty notes or due clears them; move_to_list_id moves it (and its subtasks) to another list of the same account.",
+    "destructive": false,
+    "example": {
+      "completed": true,
+      "list_id": "L1",
+      "task_id": "t1"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "due": {
+          "description": "A date, YYYY-MM-DD (Google Tasks keeps no time).",
+          "type": "string"
+        },
+        "list_id": {
+          "description": "list_id from list_tasks.",
+          "type": "string"
+        },
+        "move_to_list_id": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "task_id": {
+          "description": "task_id from list_tasks.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "list_id"
+      ],
+      "type": "object"
+    },
+    "name": "update_task",
+    "permission": "Tasks",
+    "readOnly": false,
+    "summary": "task t1 (completed)",
+    "title": "Change a task"
+  },
+  {
+    "description": "Delete a task and its subtasks. To tick it off instead, use update_task with completed: true.",
+    "destructive": true,
+    "example": {
+      "list_id": "L1",
+      "task_id": "t1"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "list_id": {
+          "description": "list_id from list_tasks.",
+          "type": "string"
+        },
+        "task_id": {
+          "description": "task_id from list_tasks.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "list_id"
+      ],
+      "type": "object"
+    },
+    "name": "delete_task",
+    "permission": "Tasks",
+    "readOnly": false,
+    "summary": "task t1",
+    "title": "Delete a task"
+  },
+  {
+    "description": "Create a Google Tasks list.",
+    "destructive": false,
+    "example": {
+      "title": "Errands"
+    },
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "description": "The account (email address or id). Required when more than one is connected.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "name": "create_task_list",
+    "permission": "Tasks",
+    "readOnly": false,
+    "summary": "task list \"Errands\"",
+    "title": "Create a task list"
+  }
+]
