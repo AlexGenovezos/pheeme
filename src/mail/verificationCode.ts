@@ -27,7 +27,16 @@ const MEETING_NEAR = 160;
 /** How far (in characters) a code may sit from that wording. */
 const NEAR = 80;
 /** What comes just before a number that only identifies something: "the phone ending in 1234". */
-const IDENTIFIES = /\b(?:ending|ends) (?:in|with) $|\blast (?:\d|four|4) digits(?: of)?:? $/i;
+const IDENTIFIES =
+  /\b(?:ending|ends) (?:in|with) $|\blast (?:\d|four|4) digits(?: of)?:? $|\bflight(?: (?:no\.?|number))?:? $/i;
+/** An airline's two-character code before a flight number: "AA 0779", "B6 1234". */
+const AIRLINE = /(?<![\w-])(?:[A-Z]{2}|[A-Z]\d|\d[A-Z]) $/;
+/**
+ * A booking reference answering weak code wording ("Confirmation code: GHFIJE"). The wording is then about
+ * the booking, and mustn't vouch for a flight or seat number a few words later. (Strong wording vouches
+ * for letter codes itself.)
+ */
+const ANSWERED = /^(?: ?(?::|is|-))? ?(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5,8}\b/;
 
 /**
  * A code standing on its own: 4–8 digits, digits grouped 3+3 or 4+4, or 5–8 capitals and digits (optionally
@@ -50,7 +59,8 @@ function candidates(text: string): Candidate[] {
     const hasLetter = /[A-Z]/.test(raw);
     const digitsOnly = raw.replace(/[ -]/g, "");
     if (!/\d/.test(raw)) continue;
-    if (IDENTIFIES.test(text.slice(Math.max(0, m.index - 24), m.index))) continue;
+    const before = text.slice(Math.max(0, m.index - 24), m.index);
+    if (IDENTIFIES.test(before) || AIRLINE.test(before)) continue;
     if (hasLetter) {
       if (raw.replace("-", "").length < 5) continue;
     } else {
@@ -81,7 +91,8 @@ export function findCode(text: string): string | null {
     ...[...flat.matchAll(WEAK)].map((m) => ({ m, strong: false })),
   ]
     .map(({ m, strong }) => ({ start: m.index, end: m.index + m[0].length, strong }))
-    .filter((a) => !MEETING.test(flat.slice(Math.max(0, a.start - MEETING_NEAR), a.end)));
+    .filter((a) => !MEETING.test(flat.slice(Math.max(0, a.start - MEETING_NEAR), a.end)))
+    .filter((a) => a.strong || !ANSWERED.test(flat.slice(a.end)));
   if (!anchors.length) return null;
   let best: { code: string; distance: number } | null = null;
   for (const c of candidates(flat)) {

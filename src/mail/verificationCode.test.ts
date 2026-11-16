@@ -78,6 +78,27 @@ describe("findCode", () => {
     ).toBe("908172");
   });
 
+  it("doesn't take a flight number for the code", () => {
+    // American Airlines' check-in email: the confirmation code is the booking reference, and the
+    // flight number sits a few words later.
+    expect(
+      findCode(
+        "It's time to check in Confirmation code: GHFIJE Tuesday, November 17, 2026 EWR Newark 5:26 PM AA 0779 DFW Dallas/Fort Worth 8:40 PM Check in now",
+      ),
+    ).toBeNull();
+    expect(findCode("Your confirmation code is 551204. Flight AA 0779 departs at 5:26 PM.")).toBe(
+      "551204",
+    );
+    expect(findCode("Confirmation code 482913 for flight 1234")).toBe("482913");
+    expect(findCode("Your access code for UA 2231 is ready")).toBeNull();
+    expect(findCode("Your access code for flight 2231 is ready")).toBeNull();
+  });
+
+  it("doesn't let wording answered by a booking reference vouch for a number after it", () => {
+    expect(findCode("Confirmation code: GHFIJE. Seat 4821 is yours.")).toBeNull();
+    expect(findCode("Your confirmation code is QX7RTB, gate 2231")).toBeNull();
+  });
+
   it("reads codes that come before the wording in a subject", () => {
     expect(findCode("123456 is your Facebook confirmation code")).toBe("123456");
   });
