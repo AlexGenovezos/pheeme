@@ -1,6 +1,6 @@
 //! Local search over cached mail (FTS5 `messages_fts`), and recent searches.
 
-use crate::db::threads::{DbThread, ThreadCursor, ThreadPage};
+use crate::db::threads::{page_from_rows, ThreadCursor, ThreadPage, ThreadRow};
 use anyhow::Result;
 use sqlx::SqlitePool;
 
@@ -31,21 +31,8 @@ pub struct ThreadSearch<'a> {
 /// Separates account and label ids in [`ThreadSearch::label_groups`].
 pub const LABEL_KEY_SEP: char = '\u{1f}';
 
-struct Row {
-    id: String,
-    account_id: String,
-    subject: Option<String>,
-    snippet: Option<String>,
-    history_id: Option<String>,
-    last_message_date: Option<i64>,
-    message_count: i64,
-    unread_count: i64,
-    has_attachment: i64,
-    from_name: Option<String>,
-    from_address: Option<String>,
-    is_starred: i64,
-    cursor_date: i64,
-}
+/// A matching thread's row: the same columns the thread listing reads.
+type MatchRow = ThreadRow;
 
 /// Threads with at least one message matching `s`, newest first, keyset-paged like
 /// [`crate::db::threads::list_threads`].
@@ -78,7 +65,7 @@ pub async fn search_threads(pool: &SqlitePool, s: &ThreadSearch<'_>) -> Result<T
     };
     let fetch = s.limit.saturating_add(1);
     let rows = sqlx::query_as!(
-        Row,
+        MatchRow,
         r#"
         SELECT t.id AS "id!", t.account_id AS "account_id!", t.subject, t.snippet,
                t.history_id, t.last_message_date, t.message_count AS "message_count!",
@@ -143,41 +130,12 @@ pub async fn search_threads(pool: &SqlitePool, s: &ThreadSearch<'_>) -> Result<T
     .fetch_all(pool)
     .await?;
 
-    let mut rows = rows;
-    let has_more = rows.len() as i64 > s.limit;
-    rows.truncate(s.limit as usize);
-    let next = if has_more {
-        rows.last().map(|r| ThreadCursor {
-            last_message_date: r.cursor_date,
-            account_id: r.account_id.clone(),
-            thread_id: r.id.clone(),
-        })
-    } else {
-        None
-    };
-    let threads = rows
-        .into_iter()
-        .map(|r| DbThread {
-            id: r.id,
-            account_id: r.account_id,
-            subject: r.subject,
-            snippet: r.snippet,
-            history_id: r.history_id,
-            last_message_date: r.last_message_date,
-            message_count: r.message_count,
-            unread_count: r.unread_count,
-            has_attachment: r.has_attachment,
-            from_name: r.from_name,
-            from_address: r.from_address,
-            is_starred: r.is_starred,
-        })
-        .collect();
-    Ok(ThreadPage { threads, next })
+    Ok(page_from_rows(rows, s.limit as usize))
 }
 
 /// Remember a search (moving it to the top), keeping the newest [`RECENT_LIMIT`].
 pub async fn add_recent(pool: &SqlitePool, query: &str, now_ms: i64) -> Result<()> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     sqlx::query!(
         "INSERT INTO recent_searches (query, used_at) VALUES (?, ?)
          ON CONFLICT(query) DO UPDATE SET used_at = excluded.used_at",

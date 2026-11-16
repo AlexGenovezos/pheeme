@@ -305,20 +305,20 @@ pub struct ThreadPage {
     pub next: Option<ThreadCursor>,
 }
 
-struct ThreadRow {
-    id: String,
-    account_id: String,
-    subject: Option<String>,
-    snippet: Option<String>,
-    history_id: Option<String>,
-    last_message_date: Option<i64>,
-    message_count: i64,
-    unread_count: i64,
-    has_attachment: i64,
-    from_name: Option<String>,
-    from_address: Option<String>,
-    is_starred: i64,
-    cursor_date: i64,
+pub(super) struct ThreadRow {
+    pub(super) id: String,
+    pub(super) account_id: String,
+    pub(super) subject: Option<String>,
+    pub(super) snippet: Option<String>,
+    pub(super) history_id: Option<String>,
+    pub(super) last_message_date: Option<i64>,
+    pub(super) message_count: i64,
+    pub(super) unread_count: i64,
+    pub(super) has_attachment: i64,
+    pub(super) from_name: Option<String>,
+    pub(super) from_address: Option<String>,
+    pub(super) is_starred: i64,
+    pub(super) cursor_date: i64,
 }
 
 /// Lists threads newest first (`last_message_date DESC, account_id DESC,
@@ -732,7 +732,7 @@ pub async fn list_all_mail(
 }
 
 /// Trims the extra look-ahead row off `rows` and turns it into the next cursor.
-fn page_from_rows(mut rows: Vec<ThreadRow>, page_limit: usize) -> ThreadPage {
+pub(super) fn page_from_rows(mut rows: Vec<ThreadRow>, page_limit: usize) -> ThreadPage {
     let has_more = rows.len() > page_limit;
     rows.truncate(page_limit);
 
