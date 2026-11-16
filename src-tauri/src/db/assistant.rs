@@ -1,6 +1,6 @@
 //! AI assistant clients and their activity log (`local_api`).
 use anyhow::Result;
-use sqlx::SqlitePool;
+use sqlx::{SqliteConnection, SqlitePool};
 
 /// How many activity rows are kept.
 pub const ACTIVITY_KEEP: i64 = 1000;
@@ -139,7 +139,10 @@ pub async fn list_activity(pool: &SqlitePool, limit: i64) -> Result<Vec<DbActivi
 /// Delete the activity rows whose summary, arguments, result or error contain any of
 /// `needles` (case-insensitive), e.g. a removed account's id and email. `assistant_activity`
 /// has no account column, so this is the only way to tie a row to an account.
-pub async fn delete_activity_mentioning(pool: &SqlitePool, needles: &[&str]) -> Result<()> {
+pub async fn delete_activity_mentioning(
+    conn: &mut SqliteConnection,
+    needles: &[&str],
+) -> Result<()> {
     for needle in needles.iter().filter(|n| !n.is_empty()) {
         sqlx::query!(
             "DELETE FROM assistant_activity
@@ -149,7 +152,7 @@ pub async fn delete_activity_mentioning(pool: &SqlitePool, needles: &[&str]) -> 
                 OR instr(lower(COALESCE(error, '')), lower(?1)) > 0",
             needle
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
     }
     Ok(())
@@ -264,9 +267,12 @@ mod tests {
             .await
             .unwrap();
         }
-        delete_activity_mentioning(&db.pool, &["acct-1", "me@example.com", ""])
-            .await
-            .unwrap();
+        delete_activity_mentioning(
+            &mut db.pool.acquire().await.unwrap(),
+            &["acct-1", "me@example.com", ""],
+        )
+        .await
+        .unwrap();
         let left: Vec<_> = list_activity(&db.pool, 10)
             .await
             .unwrap()

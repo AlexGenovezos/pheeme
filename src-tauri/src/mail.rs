@@ -80,6 +80,10 @@ pub enum MailError {
     Invalid(String),
     #[error(transparent)]
     Sync(#[from] SyncError),
+    /// A file on this computer couldn't be written or read (a download, an attachment's
+    /// open copy), which is no fault of Pheeme's cache.
+    #[error("Pheeme couldn't save the file: {0}")]
+    File(String),
     /// Gmail made only part of a change (a label cascade stopped part-way); `message` names
     /// what's left, `cause` is why it stopped.
     #[error("{message}")]
@@ -101,6 +105,7 @@ impl MailError {
         match self {
             MailError::NotFound | MailError::LabelNotFound => "not_found",
             MailError::Invalid(_) => "invalid_input",
+            MailError::File(_) => "file",
             MailError::Sync(e) | MailError::Incomplete { cause: e, .. } => e.code(),
         }
     }
@@ -1662,7 +1667,7 @@ async fn clear_old_copies(dir: &Path) {
 }
 
 fn io_error(e: std::io::Error) -> MailError {
-    MailError::Sync(SyncError::Db(anyhow::Error::new(e)))
+    MailError::File(e.to_string())
 }
 
 #[cfg(test)]

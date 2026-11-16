@@ -4,6 +4,7 @@ mod package;
 mod runtime;
 pub mod schema;
 
+use crate::lock::lock;
 use crate::secrets::Keychain;
 use runtime::{Event, Worker};
 use schema::{ensure, validate_blocks, Block, Manifest, Views, MAX_JSON};
@@ -125,10 +126,7 @@ impl ModService {
             open_browser,
         });
         if !safe_mode {
-            let ids: Vec<_> = service
-                .state
-                .lock()
-                .unwrap()
+            let ids: Vec<_> = lock(&service.state)
                 .records
                 .iter()
                 .filter(|(_, record)| record.enabled)
@@ -139,7 +137,7 @@ impl ModService {
                 let _operation = startup.operation.lock().await;
                 for id in ids {
                     let should_start = {
-                        let state = startup.state.lock().unwrap();
+                        let state = lock(&startup.state);
                         state.records.get(&id).is_some_and(|record| record.enabled)
                             && !state.sessions.contains_key(&id)
                     };
@@ -161,7 +159,7 @@ impl ModService {
     }
 
     pub fn snapshot(&self) -> Snapshot {
-        let state = self.state.lock().unwrap();
+        let state = lock(&self.state);
         Snapshot {
             safe_mode: self.safe_mode,
             mods: state
@@ -185,7 +183,7 @@ impl ModService {
     }
 
     pub fn prepare(&self, source: &Path) -> Result<Prepared, String> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = lock(&self.state);
         // One pending consent at a time, and at most one bounded staged package.
         let stale: Vec<_> = state.staged.keys().cloned().collect();
         for ticket in stale {
@@ -215,7 +213,7 @@ impl ModService {
     }
 
     pub fn discard(&self, ticket: &str) -> Result<(), String> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = lock(&self.state);
         if state.staged.remove(ticket).is_some() {
             fs::remove_dir_all(self.root.join("staging").join(ticket))
                 .map_err(|e| e.to_string())?;
@@ -226,7 +224,7 @@ impl ModService {
     pub async fn install(self: &Arc<Self>, ticket: &str) -> Result<(), String> {
         let _operation = self.operation.lock().await;
         let (id, previous, directory) = {
-            let mut state = self.state.lock().unwrap();
+            let mut state = lock(&self.state);
             let manifest = state
                 .staged
                 .remove(ticket)
@@ -271,7 +269,7 @@ impl ModService {
         if !self.safe_mode {
             if let Err(error) = self.start(&id).await {
                 {
-                    let mut state = self.state.lock().unwrap();
+                    let mut state = lock(&self.state);
                     Self::stop_locked(&mut state, &id);
                     if let Some(old) = &previous {
                         state.records.insert(id.clone(), old.clone());
@@ -316,7 +314,7 @@ impl ModService {
             "Mods are disabled for this launch; quit and restart without --disable-mods",
         )?;
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = lock(&self.state);
             let record = state.records.get_mut(id).ok_or("Mod is not installed")?;
             record.enabled = enabled;
             Self::stop_locked(&mut state, id);
@@ -335,7 +333,7 @@ impl ModService {
 
     pub async fn remove(&self, id: &str, keep_preferences: bool) -> Result<(), String> {
         let _operation = self.operation.lock().await;
-        let mut state = self.state.lock().unwrap();
+        let mut state = lock(&self.state);
         let record = state
             .records
             .get(id)
@@ -361,10 +359,7 @@ impl ModService {
     }
 
     async fn start(self: &Arc<Self>, id: &str) -> Result<(), String> {
-        let record = self
-            .state
-            .lock()
-            .unwrap()
+        let record = lock(&self.state)
             .records
             .get(id)
             .cloned()
@@ -383,7 +378,7 @@ impl ModService {
         let (worker, ready) = Worker::start(source, events)?;
         let generation = uuid::Uuid::new_v4().to_string();
         let (cancel, mut cancelled) = watch::channel(false);
-        self.state.lock().unwrap().sessions.insert(
+        lock(&self.state).sessions.insert(
             id.into(),
             Session {
                 generation: generation.clone(),
@@ -433,7 +428,7 @@ impl ModService {
         match tokio::time::timeout(Duration::from_secs(35), ready).await {
             Ok(Ok(true)) => {}
             _ => {
-                Self::stop_locked(&mut self.state.lock().unwrap(), id);
+                Self::stop_locked(&mut lock(&self.state), id);
                 return Err("JavaScript failed or exceeded its execution or memory limit".into());
             }
         }
@@ -441,7 +436,7 @@ impl ModService {
     }
 
     fn fail(&self, id: &str, generation: Option<&str>, reason: &str) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = lock(&self.state);
         if generation.is_some_and(|g| !state.sessions.get(id).is_some_and(|s| s.generation == g)) {
             return;
         }
@@ -466,7 +461,7 @@ impl ModService {
     }
 
     fn send(&self, id: &str, generation: &str, message: Value) {
-        let state = self.state.lock().unwrap();
+        let state = lock(&self.state);
         if let Ok(session) = Self::live(&state, id, generation) {
             if session.worker.sender.try_send(message).is_err() {
                 session.worker.stopped.store(true, Ordering::SeqCst);
@@ -483,7 +478,7 @@ impl ModService {
                     <= 4000,
             "Invalid action",
         )?;
-        let state = self.state.lock().unwrap();
+        let state = lock(&self.state);
         let session = state.sessions.get(id).ok_or("Mod is not running")?;
         Self::live(&state, id, &session.generation)?;
         let record = &state.records[id];
@@ -515,7 +510,7 @@ impl ModService {
         call: runtime::Call,
     ) -> Result<Value, String> {
         {
-            let state = self.state.lock().unwrap();
+            let state = lock(&self.state);
             Self::live(&state, id, generation)?;
         }
         match call.method.as_str() {
@@ -524,7 +519,7 @@ impl ModService {
                 let blocks: Vec<Block> = serde_json::from_value(call.args["blocks"].clone())
                     .map_err(|_| "Invalid controls")?;
                 validate_blocks(&blocks, surface == "compact")?;
-                let mut state = self.state.lock().unwrap();
+                let mut state = lock(&self.state);
                 Self::live(&state, id, generation)?;
                 let views = &mut state.sessions.get_mut(id).unwrap().views;
                 match surface {
@@ -540,7 +535,7 @@ impl ModService {
             "storage.get" | "storage.set" => {
                 let key = call.args["key"].as_str().ok_or("Expected a storage key")?;
                 ensure(schema::valid_id(key), "Invalid storage key")?;
-                let state = self.state.lock().unwrap();
+                let state = lock(&self.state);
                 Self::live(&state, id, generation)?;
                 let path = self.root.join("data").join(format!("{id}.json"));
                 let mut data: BTreeMap<String, Value> = if path.exists() {
@@ -568,7 +563,7 @@ impl ModService {
                 let request: network::Request =
                     serde_json::from_value(call.args).map_err(|_| "Invalid network request")?;
                 let manifest = {
-                    let state = self.state.lock().unwrap();
+                    let state = lock(&self.state);
                     Self::live(&state, id, generation)?;
                     state
                         .records
@@ -589,7 +584,7 @@ impl ModService {
                         .ok_or("Connect this service in Settings first")?;
                     let tokens = if tokens.expires_at <= chrono::Utc::now().timestamp() + 30 {
                         let refreshed = oauth::refresh(connection, tokens).await?;
-                        let state = self.state.lock().unwrap();
+                        let state = lock(&self.state);
                         Self::live(&state, id, generation)?;
                         oauth::commit(self.keychain.as_ref(), id, connection_id, &refreshed)?;
                         refreshed
@@ -601,7 +596,7 @@ impl ModService {
                     None
                 };
                 {
-                    let state = self.state.lock().unwrap();
+                    let state = lock(&self.state);
                     Self::live(&state, id, generation)?;
                 }
                 serde_json::to_value(network::request(url, request, token).await?)
@@ -609,7 +604,7 @@ impl ModService {
             }
             "connection.status" => {
                 let connection = call.args["id"].as_str().ok_or("Expected a connection ID")?;
-                let state = self.state.lock().unwrap();
+                let state = lock(&self.state);
                 Self::live(&state, id, generation)?;
                 ensure(
                     state
@@ -636,7 +631,7 @@ impl ModService {
     }
 
     pub fn connection_status(&self, id: &str, connection: &str) -> Result<bool, String> {
-        let state = self.state.lock().unwrap();
+        let state = lock(&self.state);
         ensure(
             state.records.get(id).is_some_and(|r| {
                 r.manifest
@@ -657,7 +652,7 @@ impl ModService {
         client_id: &str,
     ) -> Result<(), String> {
         let (connection, generation, mut cancelled) = {
-            let state = self.state.lock().unwrap();
+            let state = lock(&self.state);
             let session = state
                 .sessions
                 .get(id)
@@ -683,7 +678,7 @@ impl ModService {
         };
         let _operation = self.operation.lock().await;
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = lock(&self.state);
             Self::live(&state, id, &generation)?;
             oauth::commit(self.keychain.as_ref(), id, connection_id, &tokens)?;
             Self::stop_locked(&mut state, id);
@@ -701,7 +696,7 @@ impl ModService {
         // Restart the session to cancel in-flight refreshes and authenticated requests.
         let _operation = self.operation.lock().await;
         let enabled = {
-            let mut state = self.state.lock().unwrap();
+            let mut state = lock(&self.state);
             let record = state.records.get(id).ok_or("Unknown mod")?;
             ensure(
                 record

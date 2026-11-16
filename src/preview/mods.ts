@@ -37,6 +37,9 @@ export function createModHandlers(params: URLSearchParams) {
   });
   if (params.get("mods") === "1") mods.push(counter());
   let prepared: PreparedMod | null = null;
+  // Connections the user has signed in, as `${modId}\n${connection}`.
+  const connected = new Set<string>();
+  const connectionKey = (args: Args) => `${String(args?.id)}\n${String(args?.connection)}`;
   const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
   return {
     list_mods: () => copy({ safeMode: false, mods }),
@@ -65,6 +68,7 @@ export function createModHandlers(params: URLSearchParams) {
     },
     remove_mod: () => {
       mods.splice(0);
+      connected.clear();
     },
     mod_action: (args: Args) => {
       if (!mods[0]?.running) throw { code: "mod_error", message: "Mod is not running" };
@@ -74,6 +78,18 @@ export function createModHandlers(params: URLSearchParams) {
       if (args?.action === "compact") compact = args?.value === true;
       mods[0] = counter();
     },
-    mod_connection_status: () => false,
+    mod_connection_status: (args: Args) => connected.has(connectionKey(args)),
+    connect_mod: (args: Args) => {
+      if (!mods.some((m) => m.manifest.id === args?.id)) {
+        throw { code: "mod_error", message: "That mod isn't installed" };
+      }
+      if (!String(args?.clientId ?? "").trim()) {
+        throw { code: "mod_error", message: "Enter the connection's client ID" };
+      }
+      connected.add(connectionKey(args));
+    },
+    disconnect_mod: (args: Args) => {
+      connected.delete(connectionKey(args));
+    },
   };
 }

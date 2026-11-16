@@ -166,8 +166,8 @@ pub async fn set_inbox_tabs(pool: &SqlitePool, account_id: &str, hidden: &[Strin
     .await
 }
 
-pub async fn delete_inbox_tabs(pool: &SqlitePool, account_id: &str) -> Result<()> {
-    delete(pool, &inbox_tabs_key(account_id)).await
+pub async fn delete_inbox_tabs<'e>(ex: impl SqliteExecutor<'e>, account_id: &str) -> Result<()> {
+    delete(ex, &inbox_tabs_key(account_id)).await
 }
 
 fn signatures_key(account_id: &str) -> String {
@@ -183,8 +183,8 @@ pub async fn set_signatures(pool: &SqlitePool, account_id: &str, json: &str) -> 
     set(pool, &signatures_key(account_id), json).await
 }
 
-pub async fn delete_signatures(pool: &SqlitePool, account_id: &str) -> Result<()> {
-    delete(pool, &signatures_key(account_id)).await
+pub async fn delete_signatures<'e>(ex: impl SqliteExecutor<'e>, account_id: &str) -> Result<()> {
+    delete(ex, &signatures_key(account_id)).await
 }
 
 fn resync_key(account_id: &str) -> String {

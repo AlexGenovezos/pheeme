@@ -631,7 +631,10 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
             (KIND_SEND, UNCONFIRMED | FAILED) => {}
             (KIND_SEND, CLEANUP) => {
                 if op.next_attempt_at <= now {
-                    match Payload::of(&op)?.draft_id {
+                    let Some(payload) = readable_payload(engine, &op).await? else {
+                        continue;
+                    };
+                    match payload.draft_id {
                         Some(draft) => {
                             delete_source_draft(engine, &op.id, &draft, op.attempts, now).await?
                         }
@@ -645,7 +648,9 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
                 if op.next_attempt_at > now && is_send && op.attempts == 0 {
                     continue;
                 }
-                let payload = Payload::of(&op)?;
+                let Some(payload) = readable_payload(engine, &op).await? else {
+                    continue;
+                };
                 let held = op.next_attempt_at > now
                     || (is_send && send_waiting)
                     || (!is_send && sweep_waiting)
@@ -680,6 +685,31 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
         }
     }
     Ok(progressed)
+}
+
+/// The op's payload, or `None` once an op that can't be read is dropped. One corrupt row
+/// must not stop the queue: `process` runs before every sync, so an error here would keep
+/// the account from ever syncing again.
+async fn readable_payload(engine: &SyncEngine, op: &DbOp) -> Result<Option<Payload>, SyncError> {
+    let error = match Payload::of(op) {
+        Ok(payload) => return Ok(Some(payload)),
+        Err(e) => e,
+    };
+    tracing::error!(account = %engine.account_id, op = %op.id, kind = %op.kind, error = %error, "dropping a queued change that can't be read");
+    if op.kind == KIND_SEND {
+        // Nothing to put back: a send changes no labels.
+        store::delete(&engine.db, &op.id).await?;
+        // A send that hadn't gone out fails like one Gmail refused, so the compose window
+        // waiting on it comes back instead of saying "Sending…" for ever. One already sent
+        // (only its draft left to clean up) has nothing to report.
+        if op.status != CLEANUP {
+            send_status(engine, op, FAILED);
+        }
+    } else {
+        // The same path as a change Gmail refuses for good: labels go back and the app is told.
+        rollback(engine, op, &GmailError::Decode(error.to_string())).await?;
+    }
+    Ok(None)
 }
 
 enum Step {

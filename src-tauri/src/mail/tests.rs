@@ -1210,6 +1210,28 @@ async fn a_header_unsafe_mime_type_is_a_404() {
     assert_eq!(served, InlineResponse::not_found());
 }
 
+#[tokio::test]
+async fn a_download_that_cannot_be_written_is_a_file_error_not_a_cache_error() {
+    let (dir, _fake, mail) = attachment_fixture(
+        FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
+        &[("g1", b"%PDF")],
+    )
+    .await;
+    // A file where the Downloads folder should be.
+    let target = dir.dir().join("Downloads");
+    std::fs::write(&target, b"not a folder").unwrap();
+
+    let error = mail
+        .save_attachment("a1", "m1", "0", &target)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code(), "file");
+    assert!(error
+        .to_string()
+        .starts_with("Pheeme couldn't save the file"));
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn save_attachment_skips_a_dangling_symlink() {
