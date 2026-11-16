@@ -37,9 +37,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Restores the Linux release cache that Release saves (same profile, target and Cargo.lock)
+      # rather than saving a 750 MB copy of it, which put main's caches over the budget
+      # (cache-budget.yml). Only the seed example's dev-dependencies build on top.
       - uses: ./.github/actions/setup-build
         with:
-          cache-key: ubuntu-22.04-release
+          cache-key: release-ubuntu-22.04
+          save-if: "false"
       - name: Use public DNS for apt
         # Ubuntu runners' resolver intermittently fails on every Ubuntu mirror (2026-11-11).
         run: sudo resolvectl dns "$(ip route show default | awk '{print $5; exit}')" 1.1.1.1 8.8.8.8
