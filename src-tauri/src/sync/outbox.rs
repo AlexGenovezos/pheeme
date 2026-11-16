@@ -29,20 +29,102 @@ use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 use std::collections::{BTreeSet, HashMap};
 
-pub const KIND_MODIFY: &str = "modify";
-pub const KIND_TRASH: &str = "trash";
-pub const KIND_SEND: &str = "send";
+/// What a queued op does, stored in `outbox.kind` as [`OpKind::as_str`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpKind {
+    /// Labels added to and removed from whole threads, or every message a search finds.
+    Modify,
+    /// Whole threads moved to Trash.
+    Trash,
+    /// A message to send.
+    Send,
+}
 
-pub const PENDING: &str = "pending";
-/// Sends only: Gmail may have it; confirming via Sent.
-pub const CHECKING: &str = "checking";
-/// Sends only: every scheduled check came back empty; still watched by sync.
-pub const UNCONFIRMED: &str = "unconfirmed";
-/// Sends only: Gmail rejected it.
-pub const FAILED: &str = "failed";
-/// Sends only: Gmail has the message, and the saved draft it came from is still to be deleted.
-/// The op keeps the draft's id and nothing of the message, so it can never be sent again.
-pub const CLEANUP: &str = "cleanup";
+impl OpKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            OpKind::Modify => "modify",
+            OpKind::Trash => "trash",
+            OpKind::Send => "send",
+        }
+    }
+
+    /// `None` for a kind this version doesn't know. Such an op is handled the way an
+    /// unrecognised kind always was: when pending, as a label change.
+    pub fn parse(s: &str) -> Option<Self> {
+        [OpKind::Modify, OpKind::Trash, OpKind::Send]
+            .into_iter()
+            .find(|k| k.as_str() == s)
+    }
+}
+
+/// Where a queued op stands, stored in `outbox.status` as [`OpStatus::as_str`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpStatus {
+    /// Waiting to go to Gmail.
+    Pending,
+    /// Sends only: Gmail may have it; confirming via Sent.
+    Checking,
+    /// Sends only: every scheduled check came back empty; still watched by sync.
+    Unconfirmed,
+    /// Sends only: Gmail rejected it.
+    Failed,
+    /// Sends only: Gmail has the message, and the saved draft it came from is still to be
+    /// deleted. The op keeps the draft's id and nothing of the message, so it can never be
+    /// sent again.
+    Cleanup,
+}
+
+impl OpStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            OpStatus::Pending => "pending",
+            OpStatus::Checking => "checking",
+            OpStatus::Unconfirmed => "unconfirmed",
+            OpStatus::Failed => "failed",
+            OpStatus::Cleanup => "cleanup",
+        }
+    }
+
+    /// `None` for a status this version doesn't know; such an op is left alone.
+    pub fn parse(s: &str) -> Option<Self> {
+        [
+            OpStatus::Pending,
+            OpStatus::Checking,
+            OpStatus::Unconfirmed,
+            OpStatus::Failed,
+            OpStatus::Cleanup,
+        ]
+        .into_iter()
+        .find(|k| k.as_str() == s)
+    }
+}
+
+/// Stored status strings, for tests that set or compare an op's status directly.
+pub const CHECKING: &str = OpStatus::Checking.as_str();
+pub const UNCONFIRMED: &str = OpStatus::Unconfirmed.as_str();
+pub const CLEANUP: &str = OpStatus::Cleanup.as_str();
+
+/// The typed view of a stored op's `kind` and `status`.
+impl DbOp {
+    pub fn op_kind(&self) -> Option<OpKind> {
+        OpKind::parse(&self.kind)
+    }
+
+    pub fn op_status(&self) -> Option<OpStatus> {
+        OpStatus::parse(&self.status)
+    }
+
+    /// A send that didn't go through and is still queued: Gmail refused it, or it never
+    /// showed up in Sent. What [`failed_sends`], [`resend`] and [`move_to_drafts`] act on.
+    pub fn is_unsent_send(&self) -> bool {
+        self.op_kind() == Some(OpKind::Send)
+            && matches!(
+                self.op_status(),
+                Some(OpStatus::Unconfirmed | OpStatus::Failed)
+            )
+    }
+}
 
 /// Delay before each Sent search after an ambiguous send: ≈30 s, 2 min, 10 min.
 pub const CHECK_DELAYS_MS: [i64; 3] = [30_000, 120_000, 600_000];
@@ -50,48 +132,168 @@ pub const CHECK_DELAYS_MS: [i64; 3] = [30_000, 120_000, 600_000];
 const SEARCH_RETRY_MS: i64 = 30_000;
 const BACKOFF_BASE_MS: i64 = 5_000;
 const BACKOFF_MAX_MS: i64 = 5 * 60_000;
+
+/// An op's payload, stored as JSON in `outbox.payload`. Its shape follows the op's kind (the
+/// JSON carries no tag of its own). Queued rows outlive app versions, so each shape must keep
+/// serialising to exactly the JSON it always has: field names, field order and the skipped
+/// empty fields (see the round-trip test).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Payload {
+    Modify(LabelChange),
+    Trash(TrashThreads),
+    Send(SendPayload),
+}
+
+/// A `modify` op: labels to add and remove on whole threads, or on a whole mailbox.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-struct Payload {
+struct LabelChange {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     thread_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     add: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     remove: Vec<String>,
-    /// Sends: base64url RFC 2822 message.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    raw: Option<String>,
-    /// Sends: the conversation a reply belongs in.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    thread_id: Option<String>,
-    /// Sends: the saved Gmail draft this message came from, deleted once it is sent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    draft_id: Option<String>,
-    /// Modify ops that change a whole mailbox (Mark all as read): a Gmail search for its
-    /// mail. The change goes to every message it finds that arrived before the op was
-    /// queued, cached or not, in place of reading each of `thread_ids` back from Gmail.
+    /// A change to a whole mailbox (Mark all as read): a Gmail search for its mail. The
+    /// change goes to every message it finds that arrived before the op was queued, cached
+    /// or not, in place of reading each of `thread_ids` back from Gmail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sweep: Option<String>,
 }
 
+/// A `trash` op: the threads moved to Trash.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct TrashThreads {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    thread_ids: Vec<String>,
+}
+
+/// A `send` op. A `cleanup` one keeps only `draft_id`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct SendPayload {
+    /// Base64url RFC 2822 message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    raw: Option<String>,
+    /// The conversation a reply belongs in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    thread_id: Option<String>,
+    /// The saved Gmail draft this message came from, deleted once it is sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    draft_id: Option<String>,
+}
+
+impl SendPayload {
+    fn of(op: &DbOp) -> Result<Self, SyncError> {
+        parse_payload(op)
+    }
+}
+
+/// What [`Payload::scrub`] did to a label change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Scrubbed {
+    Unchanged,
+    Changed,
+    /// Nothing is left to add or remove.
+    Emptied,
+}
+
+fn parse_payload<T: serde::de::DeserializeOwned>(op: &DbOp) -> Result<T, SyncError> {
+    serde_json::from_str(&op.payload)
+        .map_err(|e| SyncError::Db(anyhow::anyhow!("outbox op {} is corrupt: {e}", op.id)))
+}
+
 impl Payload {
-    /// The conversations the op changes or sends into (none known for a whole-mailbox sweep).
-    fn touched_threads(&self) -> impl Iterator<Item = &String> {
-        self.thread_ids.iter().chain(&self.thread_id)
+    /// The op's payload, read in the shape of its kind (an unknown kind as a label change,
+    /// which is how such an op is processed).
+    fn of(op: &DbOp) -> Result<Self, SyncError> {
+        Ok(match op.op_kind() {
+            Some(OpKind::Trash) => Payload::Trash(parse_payload(op)?),
+            Some(OpKind::Send) => Payload::Send(parse_payload(op)?),
+            Some(OpKind::Modify) | None => Payload::Modify(parse_payload(op)?),
+        })
     }
 
-    fn of(op: &DbOp) -> Result<Self, SyncError> {
-        serde_json::from_str(&op.payload)
-            .map_err(|e| SyncError::Db(anyhow::anyhow!("outbox op {} is corrupt: {e}", op.id)))
+    fn kind(&self) -> OpKind {
+        match self {
+            Payload::Modify(_) => OpKind::Modify,
+            Payload::Trash(_) => OpKind::Trash,
+            Payload::Send(_) => OpKind::Send,
+        }
+    }
+
+    fn to_json(&self) -> anyhow::Result<String> {
+        Ok(match self {
+            Payload::Modify(p) => serde_json::to_string(p)?,
+            Payload::Trash(p) => serde_json::to_string(p)?,
+            Payload::Send(p) => serde_json::to_string(p)?,
+        })
+    }
+
+    /// The threads a label or trash change covers (none for a send).
+    fn thread_ids(&self) -> &[String] {
+        match self {
+            Payload::Modify(p) => &p.thread_ids,
+            Payload::Trash(p) => &p.thread_ids,
+            Payload::Send(_) => &[],
+        }
+    }
+
+    /// The conversations the op changes or sends into (none known for a whole-mailbox sweep).
+    fn touched_threads(&self) -> impl Iterator<Item = &String> {
+        let reply = match self {
+            Payload::Send(p) => p.thread_id.as_ref(),
+            _ => None,
+        };
+        self.thread_ids().iter().chain(reply)
+    }
+
+    /// The Gmail search of a whole-mailbox change.
+    fn sweep(&self) -> Option<&str> {
+        match self {
+            Payload::Modify(p) => p.sweep.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// The labels a change adds and removes (none for a trash or a send).
+    fn label_changes(&self) -> (&[String], &[String]) {
+        match self {
+            Payload::Modify(p) => (&p.add, &p.remove),
+            _ => (&[], &[]),
+        }
+    }
+
+    /// Take threads Gmail now has out of a label or trash change.
+    fn drop_threads(&mut self, done: &[String]) {
+        match self {
+            Payload::Modify(LabelChange { thread_ids, .. })
+            | Payload::Trash(TrashThreads { thread_ids }) => {
+                thread_ids.retain(|t| !done.contains(t))
+            }
+            Payload::Send(_) => {}
+        }
+    }
+
+    /// Take deleted labels out of a label change.
+    fn scrub(&mut self, gone: &[String]) -> Scrubbed {
+        let Payload::Modify(change) = self else {
+            return Scrubbed::Unchanged;
+        };
+        let before = (change.add.len(), change.remove.len());
+        change.add.retain(|l| !gone.contains(l));
+        change.remove.retain(|l| !gone.contains(l));
+        if (change.add.len(), change.remove.len()) == before {
+            Scrubbed::Unchanged
+        } else if change.add.is_empty() && change.remove.is_empty() {
+            Scrubbed::Emptied
+        } else {
+            Scrubbed::Changed
+        }
     }
 
     /// The op's effect on one message's labels.
-    fn apply(&self, kind: &str, labels: &[String]) -> Vec<String> {
+    fn apply(&self, labels: &[String]) -> Vec<String> {
         let mut out: Vec<String> = labels.to_vec();
-        let (add, remove): (&[String], &[String]) = match kind {
-            KIND_TRASH => (&[], &[]),
-            _ => (&self.add, &self.remove),
-        };
+        let (add, remove) = self.label_changes();
         out.retain(|l| !remove.contains(l));
         if add.iter().any(|l| l == "INBOX") {
             // Gmail takes a message out of Trash when it gets INBOX.
@@ -102,7 +304,7 @@ impl Payload {
                 out.push(l.clone());
             }
         }
-        if kind == KIND_TRASH && !out.iter().any(|l| l == "TRASH") {
+        if matches!(self, Payload::Trash(_)) && !out.iter().any(|l| l == "TRASH") {
             out.push("TRASH".into());
         }
         out
@@ -136,18 +338,18 @@ pub async fn enqueue_modify(
     add: &[String],
     remove: &[String],
 ) -> Result<Option<EnqueueResult>, SyncError> {
-    let payload = Payload {
+    let payload = Payload::Modify(LabelChange {
         thread_ids: thread_ids.to_vec(),
         add: add.to_vec(),
         remove: remove.to_vec(),
-        ..Default::default()
-    };
-    enqueue(pool, account_id, KIND_MODIFY, payload).await
+        sweep: None,
+    });
+    enqueue(pool, account_id, payload).await
 }
 
 /// Queue a label change on every message a Gmail search finds: `thread_ids` are cached
 /// threads to change now; Gmail gets the change for every message `sweep` finds (see
-/// [`Payload::sweep`]), so mail not cached yet changes too. Queued even when nothing is cached.
+/// [`LabelChange::sweep`]), so mail not cached yet changes too. Queued even when nothing is cached.
 pub async fn enqueue_sweep(
     pool: &SqlitePool,
     account_id: &str,
@@ -156,14 +358,13 @@ pub async fn enqueue_sweep(
     remove: &[String],
     sweep: &str,
 ) -> Result<Option<EnqueueResult>, SyncError> {
-    let payload = Payload {
+    let payload = Payload::Modify(LabelChange {
         thread_ids: thread_ids.to_vec(),
         add: add.to_vec(),
         remove: remove.to_vec(),
         sweep: Some(sweep.to_owned()),
-        ..Default::default()
-    };
-    enqueue(pool, account_id, KIND_MODIFY, payload).await
+    });
+    enqueue(pool, account_id, payload).await
 }
 
 /// Queue moving whole threads to Trash and apply it to the cache now.
@@ -172,28 +373,28 @@ pub async fn enqueue_trash(
     account_id: &str,
     thread_ids: &[String],
 ) -> Result<Option<EnqueueResult>, SyncError> {
-    let payload = Payload {
+    let payload = Payload::Trash(TrashThreads {
         thread_ids: thread_ids.to_vec(),
-        ..Default::default()
-    };
-    enqueue(pool, account_id, KIND_TRASH, payload).await
+    });
+    enqueue(pool, account_id, payload).await
 }
 
+/// Queue a label or trash change (`payload`) and apply it to the cache now.
 async fn enqueue(
     pool: &SqlitePool,
     account_id: &str,
-    kind: &str,
     payload: Payload,
 ) -> Result<Option<EnqueueResult>, SyncError> {
+    let kind = payload.kind().as_str();
     let mut tx = db::begin_write(pool).await?;
     let op_id = uuid::Uuid::new_v4().to_string();
     let mut targets = Vec::new();
-    for thread_id in &payload.thread_ids {
+    for thread_id in payload.thread_ids() {
         for msg in messages::labels_for_thread(&mut *tx, account_id, thread_id).await? {
             targets.push((msg.id, thread_id.clone(), msg.labels));
         }
     }
-    if targets.is_empty() && payload.sweep.is_none() {
+    if targets.is_empty() && payload.sweep().is_none() {
         return Ok(None);
     }
     let now = now_ms();
@@ -202,8 +403,8 @@ async fn enqueue(
         id: op_id.clone(),
         account_id: account_id.to_owned(),
         kind: kind.to_owned(),
-        payload: serde_json::to_string(&payload).map_err(anyhow::Error::from)?,
-        status: PENDING.into(),
+        payload: payload.to_json()?,
+        status: OpStatus::Pending.as_str().into(),
         attempts: 0,
         next_attempt_at: 0,
         checks_done: 0,
@@ -224,10 +425,10 @@ async fn enqueue(
         .collect();
     store::insert(&mut tx, &op, &rows).await?;
     for (message_id, _, labels) in &targets {
-        let next = payload.apply(kind, labels);
+        let next = payload.apply(labels);
         messages::set_labels(&mut tx, account_id, message_id, &next).await?;
     }
-    let result = threads::recompute_threads(&mut tx, account_id, &payload.thread_ids).await?;
+    let result = threads::recompute_threads(&mut tx, account_id, payload.thread_ids()).await?;
     tx.commit().await?;
     // The record of what the user changed, so "did my move go through?" has an answer: thread
     // ids (no content), matched to `op` again when Gmail applies it or refuses it.
@@ -235,11 +436,11 @@ async fn enqueue(
         account = account_id,
         op = %op_id,
         kind = %kind,
-        threads = %id_sample(&payload.thread_ids),
+        threads = %id_sample(payload.thread_ids()),
         messages = targets.len(),
-        add = ?payload.add,
-        remove = ?payload.remove,
-        whole_mailbox = payload.sweep.is_some(),
+        add = ?payload.label_changes().0,
+        remove = ?payload.label_changes().1,
+        whole_mailbox = payload.sweep().is_some(),
         "change queued"
     );
     Ok(Some(EnqueueResult {
@@ -272,7 +473,7 @@ pub async fn rebase_threads(
             .into_iter()
             .map(|t| t.message_id)
             .collect();
-        for thread_id in payload.thread_ids.iter().filter(|t| wanted.contains(t)) {
+        for thread_id in payload.thread_ids().iter().filter(|t| wanted.contains(t)) {
             for msg in messages::labels_for_thread(&mut *conn, account_id, thread_id).await? {
                 let labels = msg.labels;
                 let target = DbOpMessage {
@@ -291,7 +492,7 @@ pub async fn rebase_threads(
                 } else if restored.contains(&msg.id) {
                     store::set_prior(&mut *conn, &target).await?;
                 }
-                let next = payload.apply(&op.kind, &labels);
+                let next = payload.apply(&labels);
                 if next != labels {
                     messages::set_labels(conn, account_id, &msg.id, &next).await?;
                 }
@@ -337,7 +538,7 @@ async fn source_draft(
     op_id: &str,
 ) -> Result<Option<String>, SyncError> {
     Ok(match store::get(conn, op_id).await? {
-        Some(op) => Payload::of(&op)?.draft_id,
+        Some(op) => SendPayload::of(&op)?.draft_id,
         None => None,
     })
 }
@@ -353,11 +554,11 @@ async fn settle_send<'e>(
     match draft_id {
         None => store::delete(ex, op_id).await?,
         Some(draft) => {
-            let payload = Payload {
+            let payload = Payload::Send(SendPayload {
                 draft_id: Some(draft.to_owned()),
                 ..Default::default()
-            };
-            let json = serde_json::to_string(&payload).map_err(anyhow::Error::from)?;
+            });
+            let json = payload.to_json()?;
             store::to_cleanup(ex, op_id, &json, now).await?;
         }
     }
@@ -397,15 +598,14 @@ pub async fn queue_send(
         seq: 0,
         id: uuid::Uuid::new_v4().to_string(),
         account_id: account_id.to_owned(),
-        kind: KIND_SEND.into(),
-        payload: serde_json::to_string(&Payload {
+        kind: OpKind::Send.as_str().into(),
+        payload: Payload::Send(SendPayload {
             raw: Some(encode_base64url(&raw)),
             thread_id: options.thread_id.clone(),
             draft_id: options.draft_id.clone(),
-            ..Default::default()
         })
-        .map_err(anyhow::Error::from)?,
-        status: PENDING.into(),
+        .to_json()?,
+        status: OpStatus::Pending.as_str().into(),
         attempts: 0,
         next_attempt_at: options.send_at,
         checks_done: 0,
@@ -432,11 +632,11 @@ pub async fn resend(pool: &SqlitePool, op_id: &str) -> Result<bool, SyncError> {
     let Some(op) = store::get(pool, op_id).await? else {
         return Ok(false);
     };
-    if op.kind != KIND_SEND || !(op.status == UNCONFIRMED || op.status == FAILED) {
+    if !op.is_unsent_send() {
         return Ok(false);
     }
     let progress = OpProgress {
-        status: PENDING,
+        status: OpStatus::Pending.as_str(),
         attempts: op.attempts,
         next_attempt_at: 0,
         checks_done: 0,
@@ -451,8 +651,8 @@ pub async fn resend(pool: &SqlitePool, op_id: &str) -> Result<bool, SyncError> {
 #[serde(rename_all = "camelCase")]
 pub struct FailedSend {
     pub op_id: String,
-    /// [`FAILED`]: Gmail refused it, so it was never sent. [`UNCONFIRMED`]: Gmail may have it,
-    /// but it never showed up in Sent.
+    /// [`OpStatus::Failed`]: Gmail refused it, so it was never sent.
+    /// [`OpStatus::Unconfirmed`]: Gmail may have it, but it never showed up in Sent.
     pub status: String,
     pub subject: Option<String>,
     pub to: Vec<EmailAddress>,
@@ -482,10 +682,10 @@ pub async fn failed_sends(
         let Some(op) = store::get(pool, &id).await? else {
             continue;
         };
-        if op.kind != KIND_SEND || !(op.status == UNCONFIRMED || op.status == FAILED) {
+        if !op.is_unsent_send() {
             continue;
         }
-        let payload = Payload::of(&op)?;
+        let payload = SendPayload::of(&op)?;
         let headers = payload.raw.as_deref().and_then(header_block);
         // As written in the message: encoded words are decoded by the two readers below.
         let header = |name: &str| {
@@ -532,15 +732,11 @@ pub async fn move_to_drafts(
     account_id: &str,
     op_id: &str,
 ) -> Result<Option<ReturnedDraft>, SyncError> {
-    let unsent = |op: &DbOp| {
-        op.kind == KIND_SEND
-            && op.account_id == account_id
-            && (op.status == UNCONFIRMED || op.status == FAILED)
-    };
+    let unsent = |op: &DbOp| op.is_unsent_send() && op.account_id == account_id;
     let Some(op) = store::get(pool, op_id).await?.filter(unsent) else {
         return Ok(None);
     };
-    let payload = Payload::of(&op)?;
+    let payload = SendPayload::of(&op)?;
     let Some(raw) = payload.raw.as_deref() else {
         return Ok(None);
     };
@@ -622,28 +818,32 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
     let mut sweep_waiting = false;
     // Sends that can't leave now come without their message (see `store::queue`).
     for op in store::queue(&engine.db, &engine.account_id, now).await? {
-        match (op.kind.as_str(), op.status.as_str()) {
-            (KIND_SEND, CHECKING) => {
+        match (op.op_kind(), op.op_status()) {
+            (Some(OpKind::Send), Some(OpStatus::Checking)) => {
                 if op.next_attempt_at <= now && check_send(engine, &op, now).await? {
                     progressed = true;
                 }
             }
-            (KIND_SEND, UNCONFIRMED | FAILED) => {}
-            (KIND_SEND, CLEANUP) => {
+            (Some(OpKind::Send), Some(OpStatus::Unconfirmed | OpStatus::Failed)) => {}
+            (Some(OpKind::Send), Some(OpStatus::Cleanup)) => {
                 if op.next_attempt_at <= now {
                     let Some(payload) = readable_payload(engine, &op).await? else {
                         continue;
                     };
-                    match payload.draft_id {
+                    let draft = match &payload {
+                        Payload::Send(p) => p.draft_id.as_deref(),
+                        _ => None,
+                    };
+                    match draft {
                         Some(draft) => {
-                            delete_source_draft(engine, &op.id, &draft, op.attempts, now).await?
+                            delete_source_draft(engine, &op.id, draft, op.attempts, now).await?
                         }
                         None => store::delete(&engine.db, &op.id).await?,
                     }
                 }
             }
-            (_, PENDING) => {
-                let is_send = op.kind == KIND_SEND;
+            (kind, Some(OpStatus::Pending)) => {
+                let is_send = kind == Some(OpKind::Send);
                 // A send waiting out its undo window holds nothing else up.
                 if op.next_attempt_at > now && is_send && op.attempts == 0 {
                     continue;
@@ -655,7 +855,7 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
                     || (is_send && send_waiting)
                     || (!is_send && sweep_waiting)
                     || payload.touched_threads().any(|t| waiting.contains(t));
-                let is_sweep = payload.sweep.is_some();
+                let is_sweep = payload.sweep().is_some();
                 if is_sweep && (held || !waiting.is_empty() || send_waiting) {
                     // A whole-mailbox change may touch any conversation: no label or trash
                     // change overtakes it, and it overtakes nothing.
@@ -667,7 +867,7 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
                     send_waiting |= is_send;
                     continue;
                 }
-                let step = if op.kind == KIND_SEND {
+                let step = if is_send {
                     send(engine, &op, now).await?
                 } else {
                     apply_op(engine, &op, now).await?
@@ -696,7 +896,7 @@ async fn readable_payload(engine: &SyncEngine, op: &DbOp) -> Result<Option<Paylo
         Err(e) => e,
     };
     tracing::error!(account = %engine.account_id, op = %op.id, kind = %op.kind, error = %error, "dropping a queued change that can't be read");
-    if op.kind == KIND_SEND {
+    if op.op_kind() == Some(OpKind::Send) {
         // Nothing to put back: a send changes no labels.
         store::delete(&engine.db, &op.id).await?;
         // A send that hadn't gone out fails like one Gmail refused, so the compose window
@@ -725,7 +925,7 @@ async fn defer(
     error: &GmailError,
 ) -> Result<(), SyncError> {
     let progress = OpProgress {
-        status: PENDING,
+        status: OpStatus::Pending.as_str(),
         attempts: op.attempts + 1,
         next_attempt_at: now + backoff(op.attempts),
         checks_done: op.checks_done,
@@ -766,15 +966,16 @@ async fn apply_batch(
     };
     let op = &op;
     let payload = Payload::of(op)?;
-    let batch = &payload.thread_ids[..payload.thread_ids.len().min(OP_BATCH_THREADS)];
-    let more = payload.sweep.is_none() && batch.len() < payload.thread_ids.len();
+    let thread_ids = payload.thread_ids();
+    let batch = &thread_ids[..thread_ids.len().min(OP_BATCH_THREADS)];
+    let more = payload.sweep().is_none() && batch.len() < thread_ids.len();
     let recorded: BTreeSet<String> = store::messages_of(&engine.db, &op.id)
         .await?
         .into_iter()
         .map(|t| t.message_id)
         .collect();
     let ids = async {
-        if let Some(q) = &payload.sweep {
+        if let Some(q) = payload.sweep() {
             // The cached threads' own messages too: an unread message outside the Inbox in an
             // inbox thread doesn't match the search.
             let mut ids = recorded.clone();
@@ -815,13 +1016,12 @@ async fn apply_batch(
             };
             let payload = Payload::of(&current)?;
             sent = Some(current.payload);
-            if op.kind == KIND_TRASH {
-                trash_all(engine, &ids).await
-            } else {
-                engine
-                    .api
-                    .batch_modify(&ids, &payload.add, &payload.remove)
-                    .await
+            match payload {
+                Payload::Trash(_) => trash_all(engine, &ids).await,
+                _ => {
+                    let (add, remove) = payload.label_changes();
+                    engine.api.batch_modify(&ids, add, remove).await
+                }
             }
         }
         Ok(_) => Ok(()),
@@ -882,11 +1082,35 @@ async fn drop_done_threads(
     let mut tx = db::begin_write(&engine.db).await?;
     if let Some(op) = store::get(&mut *tx, op_id).await? {
         let mut payload = Payload::of(&op)?;
-        payload.thread_ids.retain(|t| !done.contains(t));
-        let json = serde_json::to_string(&payload).map_err(anyhow::Error::from)?;
+        payload.drop_threads(done);
+        let json = payload.to_json()?;
         store::drop_threads(&mut tx, op_id, &json, done).await?;
     }
     tx.commit().await?;
+    Ok(())
+}
+
+/// Take deleted labels out of the account's pending label changes, inside the caller's write
+/// transaction. A change left with nothing to add or remove is dropped; one that can't be read
+/// is left for [`process`] to deal with.
+pub async fn scrub_labels(
+    conn: &mut SqliteConnection,
+    account_id: &str,
+    label_ids: &[String],
+) -> anyhow::Result<()> {
+    for queued in store::pending_modify_payloads(&mut *conn, account_id).await? {
+        let Ok(change) = serde_json::from_str::<LabelChange>(&queued.payload) else {
+            continue;
+        };
+        let mut payload = Payload::Modify(change);
+        match payload.scrub(label_ids) {
+            Scrubbed::Unchanged => {}
+            Scrubbed::Emptied => store::delete(&mut *conn, &queued.id).await?,
+            Scrubbed::Changed => {
+                store::set_payload(&mut *conn, &queued.id, &payload.to_json()?).await?
+            }
+        }
+    }
     Ok(())
 }
 
@@ -983,7 +1207,7 @@ fn send_status(engine: &SyncEngine, op: &DbOp, status: &str) {
 }
 
 async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncError> {
-    let payload = Payload::of(op)?;
+    let payload = SendPayload::of(op)?;
     let raw = payload
         .raw
         .as_deref()
@@ -995,7 +1219,7 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
     // Sent on the next run instead of being sent again. Claimed atomically, so a send
     // cancelled (undo) meanwhile never goes out.
     let checking = OpProgress {
-        status: CHECKING,
+        status: OpStatus::Checking.as_str(),
         attempts: op.attempts + 1,
         next_attempt_at: now + CHECK_DELAYS_MS[0],
         checks_done: 0,
@@ -1042,19 +1266,19 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
         }
         Err(e) if is_rejection(&e) => {
             let failed = OpProgress {
-                status: FAILED,
+                status: OpStatus::Failed.as_str(),
                 attempts: op.attempts + 1,
                 next_attempt_at: 0,
                 checks_done: 0,
                 last_error: Some(&e.to_string()),
             };
             store::update_progress(&engine.db, &op.id, &failed, now).await?;
-            send_status(engine, op, FAILED);
+            send_status(engine, op, OpStatus::Failed.as_str());
             Ok(Step::Continue)
         }
         Err(e) => {
             tracing::warn!(op = %op.id, error = %e, "send outcome unknown; confirming via Sent");
-            send_status(engine, op, CHECKING);
+            send_status(engine, op, OpStatus::Checking.as_str());
             Ok(Step::Continue)
         }
     }
@@ -1098,7 +1322,7 @@ async fn delete_source_draft(
                 tracing::warn!(op = %op_id, error = %e, "couldn't delete the sent draft; retrying");
             }
             let retry = OpProgress {
-                status: CLEANUP,
+                status: OpStatus::Cleanup.as_str(),
                 attempts: attempts + 1,
                 next_attempt_at: now + backoff(attempts),
                 checks_done: 0,
@@ -1133,7 +1357,7 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
                 // A failed search isn't a check: retry it without advancing the schedule.
                 tracing::info!(op = %op.id, error = %e, "Sent search failed; retrying");
                 let retry = OpProgress {
-                    status: CHECKING,
+                    status: OpStatus::Checking.as_str(),
                     attempts: op.attempts,
                     next_attempt_at: now + SEARCH_RETRY_MS,
                     checks_done: op.checks_done,
@@ -1154,19 +1378,145 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
     }
     let checks_done = op.checks_done + 1;
     let (status, next) = match CHECK_DELAYS_MS.get(checks_done as usize) {
-        Some(delay) => (CHECKING, now + delay),
-        None => (UNCONFIRMED, 0),
+        Some(delay) => (OpStatus::Checking, now + delay),
+        None => (OpStatus::Unconfirmed, 0),
     };
     let progress = OpProgress {
-        status,
+        status: status.as_str(),
         attempts: op.attempts,
         next_attempt_at: next,
         checks_done,
         last_error: None,
     };
     store::update_progress(&engine.db, &op.id, &progress, now).await?;
-    if status == UNCONFIRMED {
-        send_status(engine, op, UNCONFIRMED);
+    if status == OpStatus::Unconfirmed {
+        send_status(engine, op, status.as_str());
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn op(kind: OpKind, payload: &str) -> DbOp {
+        DbOp {
+            seq: 1,
+            id: "op".into(),
+            account_id: "acct".into(),
+            kind: kind.as_str().into(),
+            payload: payload.into(),
+            status: OpStatus::Pending.as_str().into(),
+            attempts: 0,
+            next_attempt_at: 0,
+            checks_done: 0,
+            rfc822_message_id: None,
+            last_error: None,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    /// Queued rows outlive app versions: the JSON each kind of op wrote before the payload
+    /// shapes were typed, captured from that code, must read back and write out unchanged.
+    #[test]
+    fn payloads_round_trip_the_stored_json() {
+        let stored = [
+            (
+                OpKind::Modify,
+                r#"{"thread_ids":["t1","t2"],"add":["STARRED"],"remove":["INBOX","UNREAD"]}"#,
+            ),
+            (
+                OpKind::Modify,
+                r#"{"thread_ids":["t1"],"remove":["UNREAD"],"sweep":"in:inbox is:unread"}"#,
+            ),
+            (OpKind::Modify, r#"{"remove":["UNREAD"],"sweep":"label:x"}"#),
+            (OpKind::Trash, r#"{"thread_ids":["t1","t3"]}"#),
+            (
+                OpKind::Send,
+                r#"{"raw":"UmF3","thread_id":"t9","draft_id":"r-1"}"#,
+            ),
+            (OpKind::Send, r#"{"raw":"UmF3"}"#),
+            // A `cleanup` op: only the draft still to delete.
+            (OpKind::Send, r#"{"draft_id":"r-1"}"#),
+        ];
+        for (kind, json) in stored {
+            let payload = Payload::of(&op(kind, json)).unwrap();
+            assert_eq!(payload.kind(), kind, "{json}");
+            assert_eq!(payload.to_json().unwrap(), json);
+        }
+    }
+
+    #[test]
+    fn payloads_write_the_stored_json() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let written = [
+            (
+                Payload::Modify(LabelChange {
+                    thread_ids: s(&["t1", "t2"]),
+                    add: s(&["STARRED"]),
+                    remove: s(&["INBOX", "UNREAD"]),
+                    sweep: None,
+                }),
+                r#"{"thread_ids":["t1","t2"],"add":["STARRED"],"remove":["INBOX","UNREAD"]}"#,
+            ),
+            (
+                Payload::Modify(LabelChange {
+                    thread_ids: s(&[]),
+                    add: s(&[]),
+                    remove: s(&["UNREAD"]),
+                    sweep: Some("label:x".into()),
+                }),
+                r#"{"remove":["UNREAD"],"sweep":"label:x"}"#,
+            ),
+            (
+                Payload::Trash(TrashThreads {
+                    thread_ids: s(&["t1", "t3"]),
+                }),
+                r#"{"thread_ids":["t1","t3"]}"#,
+            ),
+            (
+                Payload::Send(SendPayload {
+                    raw: Some("UmF3".into()),
+                    thread_id: Some("t9".into()),
+                    draft_id: Some("r-1".into()),
+                }),
+                r#"{"raw":"UmF3","thread_id":"t9","draft_id":"r-1"}"#,
+            ),
+            (
+                Payload::Send(SendPayload {
+                    draft_id: Some("r-1".into()),
+                    ..Default::default()
+                }),
+                r#"{"draft_id":"r-1"}"#,
+            ),
+        ];
+        for (payload, json) in written {
+            assert_eq!(payload.to_json().unwrap(), json);
+        }
+    }
+
+    #[test]
+    fn kinds_and_statuses_keep_their_stored_strings() {
+        for (kind, s) in [
+            (OpKind::Modify, "modify"),
+            (OpKind::Trash, "trash"),
+            (OpKind::Send, "send"),
+        ] {
+            assert_eq!(kind.as_str(), s);
+            assert_eq!(OpKind::parse(s), Some(kind));
+        }
+        for (status, s) in [
+            (OpStatus::Pending, "pending"),
+            (OpStatus::Checking, "checking"),
+            (OpStatus::Unconfirmed, "unconfirmed"),
+            (OpStatus::Failed, "failed"),
+            (OpStatus::Cleanup, "cleanup"),
+        ] {
+            assert_eq!(status.as_str(), s);
+            assert_eq!(OpStatus::parse(s), Some(status));
+        }
+        assert_eq!(OpKind::parse("archive"), None);
+        assert_eq!(OpStatus::parse("done"), None);
+    }
 }
