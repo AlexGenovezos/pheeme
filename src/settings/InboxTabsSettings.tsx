@@ -4,7 +4,7 @@ import { CATEGORIES } from "../mail/mailboxes";
 import { toCommandError } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useInboxTabs } from "../store/inboxTabsStore";
-import { SettingsRow, SettingsSection } from "./rows";
+import { accountSectionTitle, SettingsRow, SettingsSection } from "./rows";
 
 const NONE: string[] = [];
 
@@ -30,7 +30,10 @@ export function InboxTabsSettings() {
       </p>
       {accounts.length === 0 && <SettingsRow title="Connect an account to choose its tabs" />}
       {accounts.map((account) => (
-        <SettingsSection key={account.id} title={account.email}>
+        <SettingsSection
+          key={account.id}
+          title={accountSectionTitle("Tabs", account.email, accounts.length)}
+        >
           {CATEGORIES.map((tab, index) => (
             <SettingsRow
               key={tab.labelId}

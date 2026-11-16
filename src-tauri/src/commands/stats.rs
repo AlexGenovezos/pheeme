@@ -1,4 +1,4 @@
-//! Settings › Mail stats commands: thin adapters over [`crate::stats`] and
+//! Mail stats commands: thin adapters over [`crate::stats`] and
 //! [`crate::senders::unsubscribe`].
 
 use super::CommandError;

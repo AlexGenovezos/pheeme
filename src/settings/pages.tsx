@@ -1,20 +1,16 @@
 import { NotificationsSettings } from "./NotificationsSettings";
 import { ModsSettings } from "../mods/ModsSettings";
 import {
-  BarChart3,
   Bell,
+  BookOpen,
   Bot,
   CalendarDays,
   Contact,
   Info,
-  Filter,
   Keyboard,
   LayoutList,
-  LifeBuoy,
   Palette,
-  PenLine,
   Puzzle,
-  RefreshCw,
   SquarePen,
   Users,
 } from "lucide-react";
@@ -35,7 +31,7 @@ import {
   type ThemeMode,
   useThemeStore,
 } from "../theme/theme";
-import { AboutSettings } from "./AboutSettings";
+import { AboutSettings, WhatsNew } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
 import { AssistantSettings } from "./AssistantSettings";
 import { ClearDownloadedMail } from "./ClearDownloadedMail";
@@ -292,73 +288,6 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
         ],
       },
       {
-        title: "Reading",
-        settings: [
-          {
-            id: "reading.size",
-            title: "Text size",
-            description: "For plain-text messages and the messages you write.",
-            keywords: ["font", "larger", "accessibility", "compose", "zoom"],
-            Control: ReadingSizeControl,
-          },
-        ],
-      },
-      {
-        title: "Privacy",
-        settings: [
-          {
-            id: "reading.preloadImages",
-            title: "Preload images",
-            description:
-              "Preloading images lets senders see that an email was opened, along with your IP address and approximate location, even for emails you skip. Turning it off keeps text preloading, and loads images only when you open an email.",
-            keywords: ["privacy", "images", "tracking"],
-            Control: PreloadImagesControl,
-          },
-          {
-            id: "privacy.clearDownloaded",
-            title: "Clear downloaded mail",
-            description:
-              "Remove the email text and attachments saved on this computer. Your conversation list and labels stay, and an email downloads again when you open it.",
-            keywords: ["privacy", "cache", "local", "delete", "storage", "disk", "attachments"],
-            Control: ClearDownloadedMail,
-          },
-        ],
-      },
-      {
-        title: "Speed reader",
-        settings: [
-          {
-            id: "speedReader.offer",
-            title: "Offer speed reading",
-            description:
-              "Show a Speed read button on emails that are mostly plain text, to read them one word at a time.",
-            keywords: ["rsvp", "fast", "reader", "words"],
-            Control: OfferControl,
-          },
-          {
-            id: "speedReader.wpm",
-            title: "Speed",
-            description: "Words per minute. You can also change it while reading.",
-            keywords: ["wpm", "words per minute", "fast", "slow", "speed reader"],
-            Control: SpeedControl,
-          },
-          {
-            id: "speedReader.pauses",
-            title: "Pause at punctuation",
-            description: "Linger a moment at commas, the ends of sentences and new paragraphs.",
-            keywords: ["speed reader", "commas", "sentences"],
-            Control: PausesControl,
-          },
-          {
-            id: "speedReader.size",
-            title: "Word size",
-            description: "How big each word shows in the speed reader.",
-            keywords: ["speed reader", "font", "larger"],
-            Control: WordSizeControl,
-          },
-        ],
-      },
-      {
         title: "Layout",
         settings: [
           {
@@ -405,6 +334,68 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     ],
   },
   {
+    id: "reading",
+    title: "Reading",
+    icon: BookOpen,
+    keywords: ["text", "font", "images"],
+    sections: [
+      {
+        title: "Messages",
+        settings: [
+          {
+            id: "reading.size",
+            title: "Text size",
+            description: "For plain-text messages and the messages you write.",
+            keywords: ["font", "larger", "accessibility", "compose", "zoom"],
+            Control: ReadingSizeControl,
+          },
+          {
+            id: "reading.preloadImages",
+            title: "Preload images",
+            description:
+              "Preloading images lets senders see that an email was opened, along with your IP address and approximate location, even for emails you skip. Turning it off keeps text preloading, and loads images only when you open an email.",
+            keywords: ["privacy", "images", "tracking"],
+            Control: PreloadImagesControl,
+          },
+        ],
+      },
+      {
+        title: "Speed reader",
+        settings: [
+          {
+            id: "speedReader.offer",
+            title: "Offer speed reading",
+            description:
+              "Show a Speed read button on emails that are mostly plain text, to read them one word at a time.",
+            keywords: ["rsvp", "fast", "reader", "words"],
+            Control: OfferControl,
+          },
+          {
+            id: "speedReader.wpm",
+            title: "Speed",
+            description: "Words per minute. You can also change it while reading.",
+            keywords: ["wpm", "words per minute", "fast", "slow", "speed reader"],
+            Control: SpeedControl,
+          },
+          {
+            id: "speedReader.pauses",
+            title: "Pause at punctuation",
+            description: "Linger a moment at commas, the ends of sentences and new paragraphs.",
+            keywords: ["speed reader", "commas", "sentences"],
+            Control: PausesControl,
+          },
+          {
+            id: "speedReader.size",
+            title: "Word size",
+            description: "How big each word shows in the speed reader.",
+            keywords: ["speed reader", "font", "larger"],
+            Control: WordSizeControl,
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: "keyboard",
     title: "Keyboard shortcuts",
     icon: Keyboard,
@@ -436,77 +427,66 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       "rate limit",
       "usage",
     ],
-    Component: AccountsSettings,
-    matches: accountsMatch,
-  },
-  {
-    id: "contacts",
-    title: "Contacts",
-    icon: Contact,
-    group: "Mail",
-    keywords: [
-      "autocomplete",
-      "suggestions",
-      "recipients",
-      "to",
-      "google contacts",
-      "people api",
-      "address book",
+    sections: [
+      { id: "accounts", Component: AccountsSettings, matches: accountsMatch },
+      {
+        title: "Sync",
+        settings: [
+          {
+            id: "sync.gmailQuota",
+            title: "Gmail API limit",
+            description:
+              "Units per minute per user, as shown under Google Cloud Console › Gmail API › Quotas. If you raise it there, enter the new limit here. Pheeme uses up to 80% of it and downloads older mail with at most 40%, so new mail and sending stay quick.",
+            keywords: ["throttle", "rate limited", "units per minute", "slow"],
+            Control: GmailQuotaControl,
+          },
+          {
+            id: "privacy.clearDownloaded",
+            title: "Clear downloaded mail",
+            description:
+              "Remove the email text and attachments saved on this computer. Your conversation list and labels stay, and an email downloads again when you open it.",
+            keywords: ["privacy", "cache", "local", "delete", "storage", "disk", "attachments"],
+            Control: ClearDownloadedMail,
+          },
+        ],
+      },
     ],
-    Component: ContactsSettings,
   },
   {
-    id: "inboxTabs",
-    title: "Inbox tabs",
+    id: "inbox",
+    title: "Inbox",
     icon: LayoutList,
     group: "Mail",
-    keywords: ["categories", "tabs", "social", "promotions", "updates", "forums", "primary"],
-    Component: InboxTabsSettings,
-    matches: accountsMatch,
-  },
-  {
-    id: "senderRules",
-    title: "Sender rules",
-    icon: Filter,
-    group: "Mail",
-    keywords: [
-      "filters",
-      "categories",
-      "category",
-      "tabs",
-      "primary",
-      "social",
-      "promotions",
-      "updates",
-      "forums",
-      "future mail",
-      "sender",
+    keywords: ["categories", "tabs", "primary", "social", "promotions", "updates", "forums"],
+    sections: [
+      { id: "inboxTabs", Component: InboxTabsSettings, matches: accountsMatch },
+      {
+        id: "senderRules",
+        Component: SenderRulesSettings,
+        keywords: ["sender rules", "filters", "future mail", "sender"],
+        matches: accountsMatch,
+      },
+      {
+        id: "mailStats",
+        Component: MailStatsLink,
+        keywords: [
+          "mail stats",
+          "statistics",
+          "insights",
+          "how much mail",
+          "per day",
+          "received",
+          "opened",
+          "replied",
+          "starred",
+          "engagement",
+          "senders",
+          "unsubscribe",
+          "newsletters",
+          "labels",
+        ],
+      },
     ],
-    Component: SenderRulesSettings,
-  },
-  {
-    id: "mailStats",
-    title: "Mail stats",
-    icon: BarChart3,
-    group: "Mail",
-    keywords: [
-      "statistics",
-      "insights",
-      "how much mail",
-      "per day",
-      "received",
-      "opened",
-      "read",
-      "replied",
-      "starred",
-      "engagement",
-      "senders",
-      "unsubscribe",
-      "newsletters",
-      "categories",
-      "labels",
-    ],
-    Component: MailStatsLink,
   },
   {
     id: "compose",
@@ -546,37 +526,29 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
           },
         ],
       },
-    ],
-  },
-  {
-    id: "signatures",
-    title: "Signatures",
-    icon: PenLine,
-    group: "Mail",
-    keywords: ["signature", "sign off", "footer", "compose", "reply", "forward", "new message"],
-    Component: SignatureSettings,
-  },
-  {
-    id: "sync",
-    title: "Sync",
-    icon: RefreshCw,
-    group: "Mail",
-    keywords: ["gmail", "api", "quota", "rate limit", "speed", "google cloud"],
-    sections: [
       {
-        title: "Gmail API",
-        settings: [
-          {
-            id: "sync.gmailQuota",
-            title: "Gmail API limit",
-            description:
-              "Units per minute per user, as shown under Google Cloud Console › Gmail API › Quotas. If you raise it there, enter the new limit here. Pheeme uses up to 80% of it and downloads older mail with at most 40%, so new mail and sending stay quick.",
-            keywords: ["throttle", "rate limited", "units per minute", "slow"],
-            Control: GmailQuotaControl,
-          },
-        ],
+        id: "signatures",
+        Component: SignatureSettings,
+        keywords: ["signature", "sign off", "footer", "forward", "new message"],
+        matches: accountsMatch,
       },
     ],
+  },
+  {
+    id: "contacts",
+    title: "Contacts",
+    icon: Contact,
+    group: "Mail",
+    keywords: [
+      "autocomplete",
+      "suggestions",
+      "recipients",
+      "to",
+      "google contacts",
+      "people api",
+      "address book",
+    ],
+    Component: ContactsSettings,
   },
   {
     id: "calendar",
@@ -696,14 +668,6 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     Component: ModsSettings,
   },
   {
-    id: "diagnostics",
-    title: "Diagnostics",
-    icon: LifeBuoy,
-    group: "App",
-    keywords: ["logs", "support", "send", "report", "problem", "slow", "bug", "help"],
-    Component: DiagnosticsSection,
-  },
-  {
     id: "about",
     title: "About",
     icon: Info,
@@ -715,7 +679,19 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       "what's new",
       "changelog",
       "release notes",
+      "diagnostics",
+      "logs",
+      "support",
+      "help",
     ],
-    Component: AboutSettings,
+    sections: [
+      { id: "about", Component: AboutSettings },
+      {
+        id: "diagnostics",
+        Component: DiagnosticsSection,
+        keywords: ["send", "report", "problem", "slow", "bug", "usage stats", "telemetry", "ping"],
+      },
+      { id: "whatsNew", Component: WhatsNew },
+    ],
   },
 ];

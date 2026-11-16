@@ -2,7 +2,7 @@
 //! chip type go to the diagnostics Worker, so the developer can count active installs and
 //! see what they run on. Nothing about the user, their accounts or their mail is sent.
 //!
-//! On by default; Settings › Diagnostics and the welcome screen turn it off, which also
+//! On by default; Settings › About and the welcome screen turn it off, which also
 //! forgets the install ID. Nothing is sent until an account is connected, so someone who
 //! turns it off on the welcome screen is never counted. Debug builds never ping unless
 //! `PHEEME_TELEMETRY_URL` is set.

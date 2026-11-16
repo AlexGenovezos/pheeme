@@ -7,7 +7,7 @@ export const TELEMETRY_DESCRIPTION =
   "Once a day, Pheeme sends a random ID, its version, your operating system and chip type, so the developer knows how many people use it and on what computers. It never includes your email address, your accounts or anything in your mail.";
 
 /**
- * The anonymous usage ping switch, shared by Settings › Diagnostics and the welcome screen. Shows on (the
+ * The anonymous usage ping switch, shared by Settings › About and the welcome screen. Shows on (the
  * default) while loading; disabled until the stored choice is known.
  */
 export function TelemetrySwitch() {

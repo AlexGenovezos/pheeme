@@ -31,7 +31,7 @@
         <li>pheeme is an email client that runs on your computer. Your mail is downloaded to your device and stays there.</li>
         <li>We don't run servers that receive, store, or read your email.</li>
         <li>We don't sell your data, show ads, or use your email to train AI models.</li>
-        <li>Once a day the app sends us an anonymous ping (a random ID, the app version, your operating system and chip type) so we can count how many people use pheeme. You can turn it off on the welcome screen or in Settings › Diagnostics.</li>
+        <li>Once a day the app sends us an anonymous ping (a random ID, the app version, your operating system and chip type) so we can count how many people use pheeme. You can turn it off on the welcome screen or in Settings › About.</li>
         <li>Anything more is sent only if you choose to send diagnostics. Neither ever includes your email.</li>
         <li>You can disconnect your account and delete everything pheeme stored at any time.</li>
       </ul>
@@ -72,7 +72,7 @@
     </ul>
 
     <h2>Anonymous usage stats</h2>
-    <p>So we know roughly how many people use pheeme and on what computers, the app sends one small ping a day once you've connected an account. It is on by default, and you can turn it off on the first welcome screen or at any time in Settings › Diagnostics.</p>
+    <p>So we know roughly how many people use pheeme and on what computers, the app sends one small ping a day once you've connected an account. It is on by default, and you can turn it off on the first welcome screen or at any time in Settings › About.</p>
     <p>Each ping contains only:</p>
     <ul>
       <li><strong>A random install ID</strong> that the app makes up on your device. It isn't derived from your email address, your Google account, your computer, or anything else about you.</li>
@@ -84,7 +84,7 @@
     <p>The ping goes to the same small service as diagnostics (diagnostics.pheeme.email, on Cloudflare). We keep one record per install, the latest ping, which is replaced by the next one and deleted automatically about 30 days after the last. We don't store your IP address with it, though Cloudflare processes it to deliver the request. To stop one address from flooding the service, it counts requests per day using a one-way hash of the IP address and a random salt that is thrown away at the end of that day; the address itself isn't kept. Turning the stats off stops the pings and deletes the install ID from your device, so turning them back on later starts a new, unconnected ID. The app doesn't collect crash reports or any other analytics.</p>
 
     <h2>Sending diagnostics</h2>
-    <p>If something is slow or broken, you can send us diagnostics from Settings › Diagnostics. Nothing is uploaded until you click Send. If you'd rather check first, you can save the same file to your computer and email it to us yourself.</p>
+    <p>If something is slow or broken, you can send us diagnostics from Settings › About. Nothing is uploaded until you click Send. If you'd rather check first, you can save the same file to your computer and email it to us yourself.</p>
     <p>Diagnostics contain:</p>
     <ul>
       <li><strong>The app's recent logs and a short summary</strong>: the app version, your operating system, how far syncing has got, how long emails took to open, and any errors. Before anything leaves your device, the app removes other people's email addresses, search terms, and your computer's user name from the logs. Diagnostics never include the contents of your email, subjects, or contacts.</li>
@@ -102,7 +102,7 @@
     <ul>
       <li><strong>Remove the account in the app.</strong> This deletes the mail, search index, and sign-in tokens pheeme stored on your device for that account.</li>
       <li><strong>Revoke access.</strong> For Google accounts, open <a href="https://myaccount.google.com/permissions">your Google Account's third-party access page</a> and remove pheeme. The app can no longer reach your account after that.</li>
-      <li><strong>Uninstall the app, then remove what it leaves behind.</strong> Uninstalling removes the app, but not reliably its data. On Windows the uninstaller deletes the data only if you tick its "Delete the application data" box. On macOS (deleting pheeme from Applications) and Linux nothing else is deleted, and on every system the saved sign-in item stays in your credential storage. To remove everything yourself, first use Remove on each account in Settings › Accounts (and Clear downloaded mail in Settings › Privacy), so the mail and sign-in tokens go while the app can still do it, then delete these:
+      <li><strong>Uninstall the app, then remove what it leaves behind.</strong> Uninstalling removes the app, but not reliably its data. On Windows the uninstaller deletes the data only if you tick its "Delete the application data" box. On macOS (deleting pheeme from Applications) and Linux nothing else is deleted, and on every system the saved sign-in item stays in your credential storage. To remove everything yourself, first use Remove on each account in Settings › Accounts (and Clear downloaded mail in Settings › Accounts), so the mail and sign-in tokens go while the app can still do it, then delete these:
         <ul>
           <li><strong>macOS:</strong> the folders <code>~/Library/Application Support/app.pheeme.desktop</code>, <code>~/Library/Caches/app.pheeme.desktop</code> and <code>~/Library/Logs/app.pheeme.desktop</code>.</li>
           <li><strong>Linux:</strong> the folders <code>~/.local/share/app.pheeme.desktop</code> (which includes the logs) and <code>~/.cache/app.pheeme.desktop</code>.</li>

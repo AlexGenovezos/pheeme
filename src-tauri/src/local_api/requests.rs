@@ -1056,7 +1056,7 @@ pub fn catalog() -> Vec<ToolDef> {
             description: "Save a draft in Gmail Drafts for the user to review and send from Pheeme. \
                 Assistants can't send mail. For a reply, give reply_to_message_id (a message_id from \
                 get_thread): recipients, subject and the quoted original come from it, and to/cc/bcc add more. \
-                Pheeme adds the user's signature (as set in Settings › Signatures), so don't sign the body.",
+                Pheeme adds the user's signature (as set in Settings › Compose), so don't sign the body.",
             input_schema: json!({
                 "type": "object",
                 "properties": {

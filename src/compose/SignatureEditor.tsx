@@ -1,7 +1,7 @@
 import { EditorBody, EditorToolbar, useComposeEditor } from "./Editor";
 import "./compose.css";
 
-/** The editor for an account's own signature in Settings › Signatures. Lazy-loaded, like the compose editor. */
+/** The editor for an account's own signature in Settings › Compose. Lazy-loaded, like the compose editor. */
 export default function SignatureEditor({
   html,
   label,

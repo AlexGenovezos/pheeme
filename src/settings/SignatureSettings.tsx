@@ -1,4 +1,4 @@
-// Settings › Signatures: for each account, its Gmail signature (fetched when the page opens), its own signature,
+// Settings › Compose › Signature: for each account, its Gmail signature (fetched when the page opens), its own signature,
 // and which of them new messages and replies/forwards start with.
 import { lazy, Suspense, useEffect, useMemo } from "react";
 import { Button } from "../components/ui/Button";
@@ -14,7 +14,7 @@ import {
 } from "../compose/signatures";
 import { ReconnectButton } from "../onboarding/Reconnect";
 import { useAccountStore } from "../store/accountStore";
-import { SettingsRow, SettingsSection } from "./rows";
+import { accountSectionTitle, SettingsRow, SettingsSection } from "./rows";
 
 const SignatureEditor = lazy(() => import("../compose/SignatureEditor"));
 
@@ -62,7 +62,15 @@ function GmailRow({ accountId, gmail }: { accountId: string; gmail: GmailSignatu
   );
 }
 
-function AccountSignatures({ accountId, email }: { accountId: string; email: string }) {
+function AccountSignatures({
+  accountId,
+  email,
+  title,
+}: {
+  accountId: string;
+  email: string;
+  title: string;
+}) {
   const prefs = useSignatures((s) => s.forAccount(accountId));
   const gmail = useSignatures((s) => s.gmail[accountId]);
   const update = (change: Partial<AccountSignatures>) =>
@@ -73,7 +81,7 @@ function AccountSignatures({ accountId, email }: { accountId: string; email: str
   }, [accountId]);
 
   return (
-    <SettingsSection title={email}>
+    <SettingsSection title={title}>
       <GmailRow accountId={accountId} gmail={gmail} />
       <div className="settings-row settings-row--stacked">
         <div className="settings-row__text">
@@ -119,11 +127,21 @@ function AccountSignatures({ accountId, email }: { accountId: string; email: str
 
 export function SignatureSettings() {
   const accounts = useAccountStore((s) => s.accounts);
-  if (accounts.length === 0) return <p className="settings-empty">No accounts connected.</p>;
+  if (accounts.length === 0)
+    return (
+      <SettingsSection title="Signature">
+        <SettingsRow title="Connect an account to choose its signature" />
+      </SettingsSection>
+    );
   return (
     <>
       {accounts.map((a) => (
-        <AccountSignatures key={a.id} accountId={a.id} email={a.email} />
+        <AccountSignatures
+          key={a.id}
+          accountId={a.id}
+          email={a.email}
+          title={accountSectionTitle("Signature", a.email, accounts.length)}
+        />
       ))}
     </>
   );

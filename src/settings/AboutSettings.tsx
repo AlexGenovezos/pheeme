@@ -66,11 +66,16 @@ export function AboutSettings() {
           }
         />
       </SettingsSection>
-      {RELEASES.length > 0 && (
-        <SettingsSection title="What's new" card={false}>
-          <ReleaseNotes releases={RELEASES} current={version} />
-        </SettingsSection>
-      )}
     </>
+  );
+}
+
+/** The release notes bundled with the app, last on the About page. */
+export function WhatsNew() {
+  if (RELEASES.length === 0) return null;
+  return (
+    <SettingsSection title="What's new" card={false}>
+      <ReleaseNotes releases={RELEASES} current={version} />
+    </SettingsSection>
   );
 }

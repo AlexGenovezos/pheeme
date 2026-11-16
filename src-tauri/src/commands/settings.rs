@@ -101,7 +101,7 @@ pub fn gmail_quota_usage(
         .report(&account_id, state.gmail_quota.get()))
 }
 
-/// Whether the daily anonymous usage ping is on (Settings › Diagnostics, the welcome screen).
+/// Whether the daily anonymous usage ping is on (Settings › About, the welcome screen).
 #[tauri::command]
 pub async fn telemetry_enabled(state: State<'_, AppState>) -> Result<bool, CommandError> {
     crate::db::settings::telemetry(&state.db)

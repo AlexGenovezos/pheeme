@@ -12,7 +12,7 @@ function signatureDom(html: unknown): HTMLElement {
 /**
  * The signature in the compose editor: one block (`div.gmail_signature`, as Gmail writes it) that keeps its
  * HTML as it is, logo and table included, rather than being flattened into paragraphs. It can be selected and
- * deleted, not edited in place: Settings › Signatures is where it changes.
+ * deleted, not edited in place: Settings › Compose is where it changes.
  *
  * Only the message's own signature becomes this node. A signature block inside quoted mail (a draft another
  * client saved, something pasted) is someone else's HTML: it falls through to the ordinary rules and is read as

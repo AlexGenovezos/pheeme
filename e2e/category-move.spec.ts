@@ -74,8 +74,11 @@ test("future mail too saves a rule that Settings lists", async ({ page }) => {
   await expect(page.getByText(`Future mail from ${sender} goes there too`)).toBeVisible();
 
   await page.getByRole("button", { name: "Settings" }).click();
-  await page.getByRole("button", { name: "Sender rules" }).click();
-  const rules = page.getByRole("region", { name: "avery@example.com" });
+  await page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("button", { name: "Inbox" })
+    .click();
+  const rules = page.getByRole("region", { name: "Sender rules · avery@example.com" });
   await expect(rules).toContainText(sender);
   await expect(rules).toContainText("Goes to Forums");
 });

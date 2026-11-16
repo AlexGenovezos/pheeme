@@ -2,7 +2,7 @@
 
 Receives the app's daily anonymous usage ping at
 `https://diagnostics.pheeme.email/v1/ping` (see [Usage pings](#usage-pings)),
-and **Settings › Diagnostics › Send diagnostics** uploads from the app at
+and **Settings › About › Send diagnostics** uploads from the app at
 `https://diagnostics.pheeme.email/v1/upload`, stores each zip in the private R2
 bucket `pheeme-diagnostics` (deleted after 30 days), and emails a notification
 from `diagnostics@pheeme.email` to `ajg0360@gmail.com` with the user's note,
@@ -48,7 +48,7 @@ so the objects under `installs/` are the installs active in the last 30 days.
 No IP address or ping history is kept (Workers invocation logs are turned off
 in `wrangler.jsonc` for that reason). The app pings at most once every 20
 hours, only once an account is connected, and never from debug builds (unless
-`PHEEME_TELEMETRY_URL` is set). Settings › Diagnostics and the welcome screen
+`PHEEME_TELEMETRY_URL` is set). Settings › About and the welcome screen
 turn it off; the privacy policy (`site/public/privacy.html`) describes it.
 
 To see the numbers (needs `wrangler login`):

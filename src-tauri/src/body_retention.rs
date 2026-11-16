@@ -39,8 +39,8 @@ pub async fn trim(db: &SqlitePool, now: i64) -> anyhow::Result<u64> {
     }
 }
 
-/// Drop every cached body except drafts' (Clear downloaded mail, in Settings › Appearance ›
-/// Privacy); returns how many messages were cleared.
+/// Drop every cached body except drafts' (Clear downloaded mail, in Settings › Accounts ›
+/// Sync); returns how many messages were cleared.
 pub async fn clear_all(db: &SqlitePool) -> anyhow::Result<u64> {
     let mut total = 0;
     loop {

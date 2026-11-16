@@ -8,7 +8,14 @@ import { ModSettings, modSettingsPages } from "../mods/ModsSettings";
 import { useModStore } from "../mods/store";
 import { SETTINGS_PAGES } from "./pages";
 import { SettingsRow, SettingsSection } from "./rows";
-import { pageMatches, pageTitleMatches, settingMatches, type SettingsPageDef } from "./schema";
+import {
+  isBlock,
+  partMatches,
+  pageMatches,
+  pageTitleMatches,
+  settingMatches,
+  type SettingsPageDef,
+} from "./schema";
 import { useSettingsStore } from "./settingsStore";
 import "./Settings.css";
 
@@ -191,6 +198,10 @@ function PageBody({ page, query }: { page: SettingsPageDef; query: string }) {
   return (
     <>
       {(page.sections ?? []).map((section) => {
+        if (isBlock(section))
+          return all || partMatches(section, query) ? (
+            <section.Component key={section.id} query={query} />
+          ) : null;
         const settings = all
           ? section.settings
           : section.settings.filter((s) => settingMatches(s, query));

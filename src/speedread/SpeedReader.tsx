@@ -376,7 +376,7 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
                   className="speed-reader__more"
                   onClick={() => {
                     onClose();
-                    useSettingsStore.getState().openSettings("appearance");
+                    useSettingsStore.getState().openSettings("reading");
                   }}
                 >
                   All speed reader settings…
