@@ -232,8 +232,11 @@ function Rsvp({ detail }: { detail: EventDetail }) {
               role="radio"
               aria-checked={(pending ?? current) === a.value}
               className="cal-pop__answer"
-              disabled={pending !== null}
-              onClick={() => choose(a.value)}
+              // Not `disabled`: a disabled button drops focus, and the user answered from it.
+              aria-disabled={pending !== null}
+              onClick={() => {
+                if (pending === null) choose(a.value);
+              }}
             >
               {a.label}
             </button>

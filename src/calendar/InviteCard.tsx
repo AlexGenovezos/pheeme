@@ -222,8 +222,11 @@ function AnswerRow({
               role="radio"
               aria-checked={(pending ?? current) === a.value}
               className="cal-pop__answer"
-              disabled={pending !== null}
-              onClick={() => void send(a.value, false)}
+              // Not `disabled`: a disabled button drops focus, and the user answered from it.
+              aria-disabled={pending !== null}
+              onClick={() => {
+                if (pending === null) void send(a.value, false);
+              }}
             >
               {a.label}
             </button>

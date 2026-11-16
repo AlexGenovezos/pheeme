@@ -1162,7 +1162,7 @@
   font-size: var(--font-size-sm);
   cursor: default;
 }
-.cal-pop__answer:hover:not(:disabled) {
+.cal-pop__answer:hover:not([aria-disabled="true"]) {
   background: var(--color-control-hover-bg);
 }
 .cal-pop__answer[aria-checked="true"] {
