@@ -1,10 +1,11 @@
 // Create event from email, the parts with no React in them: the title from the subject, guests from
-// the thread, a description that links back to the conversation, and a time read from the email's
-// words with chrono-node ("Thursday at 3", "Nov 12 2–3pm"), relative to when the email was sent.
+// the thread, a description with the email's new text (not the quoted thread) and a link back to
+// the conversation, and a time read from the email's words with chrono-node ("Thursday at 3",
+// "Nov 12 2–3pm"), relative to when the email was sent.
 import * as chrono from "chrono-node";
 import type { MessageDetail, ThreadDetail } from "../lib/tauri";
 import { addDays, wallClock, zonedMs } from "./dates";
-import { type EventForm, type Guest, newForm, plainText } from "./eventForm";
+import { type EventForm, type Guest, INVISIBLE, newForm, plainText } from "./eventForm";
 import { offsetMinutes } from "./zones";
 
 /** How much of the email is searched for a date, and quoted in the description. */
@@ -44,13 +45,57 @@ export const gmailLink = (email: string, threadId: string) =>
 /** The message's words: its plain text, else its HTML as text, else Gmail's snippet. */
 export function messageText(m: MessageDetail): string {
   const text = m.bodyText?.trim() || (m.bodyHtml ? plainText(m.bodyHtml) : "") || m.snippet || "";
-  return text.replace(/\r\n/g, "\n");
+  return text
+    .replace(INVISIBLE, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t\u00A0]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
-/** The description: a link back to the conversation, then the start of the email. */
+/**
+ * Where a reply's quoted thread (or a signature) begins: Gmail's and Apple Mail's "On … wrote:"
+ * (which can wrap), Outlook's "-----Original Message-----" or "From: …" over "Sent:"/"Date:", a
+ * block of "> " lines, a "-- " signature line. A forwarded message is the point of a forward, so
+ * it stays.
+ */
+const QUOTE_STARTS = [
+  /^On\b[^\n]*(?:\n[^\n]*){0,2}?\bwrote:[ \t]*$/m,
+  /^-{2,}\s*Original Message\s*-{2,}/im,
+  /^From:[^\n]*\n(?:Sent|Date):/im,
+  /^>/m,
+  /^-- ?$/m,
+];
+
+/** Gmail's and Apple Mail's line above a forwarded message, whose own headers aren't a quote. */
+const FORWARDED = /^-+\s*Forwarded message\s*-+|^Begin forwarded message:/im;
+
+/** The new part of a message: without the quoted thread or signature, unless that's all there is. */
+export function replyText(text: string): string {
+  const forward = text.search(FORWARDED);
+  const cut = Math.min(...QUOTE_STARTS.map((re) => text.match(re)?.index ?? text.length));
+  if (forward >= 0 && forward < cut) return text.trim();
+  return text.slice(0, cut).trim() || text.trim();
+}
+
+/** The quoted thread with the lines that only say who wrote when ("On … wrote:", "Sent: …"). */
+const withoutAttributions = (text: string) =>
+  text
+    .replace(new RegExp(QUOTE_STARTS[0].source, "gm"), "")
+    .replace(/^>?\s*(?:From|Sent|Date|To|Cc|Subject):.*$/gim, "");
+
+/** The description: the start of the email's new text, then a link back to the conversation. */
 export function emailDescription(link: string, text: string): string {
-  const quote = text.length > QUOTE_CHARS ? `${text.slice(0, QUOTE_CHARS).trimEnd()}…` : text;
-  return quote ? `${link}\n\n${quote}` : link;
+  const quote = text.length > QUOTE_CHARS ? `${cutBetweenWords(text, QUOTE_CHARS)}…` : text;
+  const back = `Email in Gmail: ${link}`;
+  return quote ? `${quote}\n\n${back}` : back;
+}
+
+/** The first `max` characters, ending at a space when there's one near the end. */
+function cutBetweenWords(text: string, max: number): string {
+  const head = text.slice(0, max);
+  const space = head.search(/\s\S*$/);
+  return (space > max * 0.8 ? head.slice(0, space) : head).trimEnd();
 }
 
 export type FoundTime =
@@ -114,8 +159,14 @@ export function formFromEmail(
   opts: { email: string; accountId: string; calendarId: string; tz: string; now: number },
 ): { form: EventForm; found: boolean } {
   const text = messageText(message);
+  const reply = replyText(text);
   const subject = cleanSubject(message.subject ?? detail.thread.subject);
-  const found = findTime(`${subject}\n${text}`, message.date || opts.now, opts.tz);
+  const sentAt = message.date || opts.now;
+  // The new text first; the quoted thread only when it names no time, and never its "On Mon, Nov 9
+  // at 9:00 AM … wrote:" lines, which say when the earlier email was sent.
+  const found =
+    findTime(`${subject}\n${reply}`, sentAt, opts.tz) ??
+    (reply === text.trim() ? null : findTime(withoutAttributions(text), sentAt, opts.tz));
   const base = {
     accountId: opts.accountId,
     calendarId: opts.calendarId,
@@ -129,7 +180,7 @@ export function formFromEmail(
     form: {
       ...form,
       guests: threadGuests(detail.messages, [opts.email]),
-      description: emailDescription(gmailLink(opts.email, detail.thread.id), text),
+      description: emailDescription(gmailLink(opts.email, detail.thread.id), reply),
     },
     found: found !== null,
   };
