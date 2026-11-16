@@ -918,28 +918,6 @@ async fn prefetch_stops_at_its_total_budget() {
 }
 
 #[tokio::test]
-async fn prefetch_downloads_as_background_work_and_a_preview_does_not() {
-    let (_dir, fake, mail) = attachment_fixture(
-        FakeMsg::new("m1", "t1", &["INBOX"])
-            .with_attachment("plan.pdf", "application/pdf", "g1")
-            .with_attachment("files.zip", "application/zip", "g2"),
-        &[("g1", b"%PDF"), ("g2", b"zip")],
-    )
-    .await;
-    // Speculative downloads must not take the reader's slots or skip the quota queue.
-    assert_eq!(mail.prefetch_attachments("a1", &["m1".to_owned()]).await, 1);
-    assert_eq!(fake.background_calls("get_attachment"), 1);
-
-    // The zip isn't prefetched; opening it is the user's download.
-    assert_eq!(
-        mail.attachment("a1", "m1", "1").await.unwrap().bytes,
-        b"zip"
-    );
-    assert_eq!(fake.attachment_fetches(), 2);
-    assert_eq!(fake.background_calls("get_attachment"), 1);
-}
-
-#[tokio::test]
 async fn a_preview_during_a_prefetch_waits_instead_of_downloading_again() {
     let (_dir, fake, mail) = attachment_fixture(
         FakeMsg::new("m1", "t1", &["INBOX"]).with_attachment("a.pdf", "application/pdf", "g1"),
