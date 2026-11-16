@@ -41,6 +41,8 @@ impl StorageKey {
     }
 
     pub fn database_options(&self, path: &Path) -> SqliteConnectOptions {
+        // Every connection to the database is opened from these options.
+        crate::db::stable_query_plans();
         SqliteConnectOptions::new()
             .filename(path)
             // SQLx executes `key` before every other pragma, on every pooled connection.
