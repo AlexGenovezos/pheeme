@@ -2,13 +2,13 @@
 // where (Join for a meeting link), who and how they answered, Yes / Maybe / No, and a mini day view
 // of the hours around it from every shown calendar, with clashes named. It shows the event as it is
 // now on the calendar when Pheeme has it, and says when the email is out of date or cancelled.
-import { listen } from "@tauri-apps/api/event";
 import { CalendarDays, Clock, ExternalLink, MapPin, Users, Video } from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Skeleton } from "../components/ui/Skeleton";
 import { TextInput } from "../components/ui/TextInput";
 import {
+  listen,
   type Attendee,
   CALENDAR_EVENTS,
   type CalendarEvent,

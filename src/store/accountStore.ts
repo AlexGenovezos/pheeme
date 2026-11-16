@@ -1,19 +1,15 @@
-import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { summarizeQuota } from "../settings/QuotaUsage";
 import { subscribeAll } from "../lib/subscriptions";
 import {
+  listen,
   type AccountInfo,
   type CommandError,
   listAccounts,
   NETWORK_EVENT,
-  type NetworkStatusEvent,
   networkOnline,
   removeAccount,
   SYNC_EVENTS,
-  type SyncAccountEvent,
-  type SyncErrorEvent,
-  type SyncRateLimitedEvent,
   getGmailQuotaUsage,
   toCommandError,
 } from "../lib/tauri";
@@ -101,7 +97,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     const stop = await subscribeAll(
       [
         () =>
-          listen<SyncAccountEvent>(SYNC_EVENTS.completed, ({ payload }) => {
+          listen(SYNC_EVENTS.completed, ({ payload }) => {
             get().markSynced(payload.accountId);
             if (payload.accountId in get().syncErrors) {
               const syncErrors = { ...get().syncErrors };
@@ -110,7 +106,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
             }
           }),
         () =>
-          listen<SyncErrorEvent>(SYNC_EVENTS.error, ({ payload }) => {
+          listen(SYNC_EVENTS.error, ({ payload }) => {
             // The offline note already says why; a network failure isn't this account's problem.
             if (get().offline && payload.code === "network") return;
             set((s) => ({
@@ -120,11 +116,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
               },
             }));
           }),
-        () =>
-          listen<SyncRateLimitedEvent>(SYNC_EVENTS.rateLimited, ({ payload }) =>
-            noteRateLimited(payload.accountId),
-          ),
-        () => listen<NetworkStatusEvent>(NETWORK_EVENT, ({ payload }) => setOnline(payload.online)),
+        () => listen(SYNC_EVENTS.rateLimited, ({ payload }) => noteRateLimited(payload.accountId)),
+        () => listen(NETWORK_EVENT, ({ payload }) => setOnline(payload.online)),
       ],
       signal,
     );

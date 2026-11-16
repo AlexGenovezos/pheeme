@@ -1,7 +1,6 @@
-import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { toast } from "../components/ui/Toast";
-import { stopQuietly } from "../lib/tauri";
+import { listen, stopQuietly } from "../lib/tauri";
 import { openAndMarkRead } from "../mail/actions";
 import { CATEGORIES, categoryMailbox, threadKey } from "../mail/mailboxes";
 import { useModStore } from "../mods/store";
@@ -87,9 +86,10 @@ export function useDesktopEvents(ready: boolean, showMail: () => void) {
       keep(stop);
       void drain(); // Claims a click received before the webview was ready.
     }, console.warn);
-    listen<string>("desktop:error", ({ payload }) =>
-      toast({ title: payload, tone: "danger" }),
-    ).then(keep, console.warn);
+    listen("desktop:error", ({ payload }) => toast({ title: payload, tone: "danger" })).then(
+      keep,
+      console.warn,
+    );
     return () => {
       stopped = true;
       stops.forEach(stopQuietly);

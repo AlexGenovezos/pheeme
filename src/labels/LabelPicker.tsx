@@ -9,10 +9,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { usePopover } from "../components/ui/usePopover";
 import { createSubscriptionScope } from "../lib/subscriptions";
-import { type LabelInfo, SYNC_EVENTS, type SyncAccountEvent } from "../lib/tauri";
+import { listen, type LabelInfo, SYNC_EVENTS } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { applyLabel, labelMembership, moveOrigin, moveTo, shownCategory } from "../mail/actions";
 import { openCategoryMove } from "../mail/CategoryMoveDialog";
@@ -165,7 +164,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     for (const event of [SYNC_EVENTS.outboxRejected, SYNC_EVENTS.messagesUpdated])
       scope
         .add(() =>
-          listen<SyncAccountEvent>(event, ({ payload }) => {
+          listen(event, ({ payload }) => {
             if (payload.accountId === accountId) void reread();
           }),
         )

@@ -1,15 +1,14 @@
-import { emit, listen } from "@tauri-apps/api/event";
+import { emit } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useCommands } from "../keyboard/useCommands";
 import { toast } from "../components/ui/Toast";
 import { createSubscriptionScope } from "../lib/subscriptions";
-import { stopQuietly } from "../lib/tauri";
+import { listen, SAVE_BEFORE_EXIT_EVENT, stopQuietly } from "../lib/tauri";
 import { isTauri } from "../preview/runtime";
 import { useAccountStore } from "../store/accountStore";
 import {
   type ComposeWindow,
-  SAVE_BEFORE_EXIT_EVENT,
   SAVED_BEFORE_EXIT_EVENT,
   SEND_LATER_COMMAND,
   useComposeStore,
