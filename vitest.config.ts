@@ -11,7 +11,8 @@ export default defineConfig({
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/test/**", "src/**/*.test.*", "src/main.tsx", "src/vite-env.d.ts"],
       reporter: ["text-summary", "lcov"],
-      thresholds: { lines: 60 },
+      // About 1.5 points under the measured 85.5% (2026-11-16), so a drop in coverage fails CI.
+      thresholds: { lines: 84 },
     },
   },
 });

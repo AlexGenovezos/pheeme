@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, test } from "vitest";
 import { contrastRatio } from "../styles/themes/color";
 import type { LabelInfo } from "../lib/tauri";
@@ -19,7 +20,7 @@ const info = (over: Partial<LabelInfo>): LabelInfo => ({
   ...over,
 });
 
-test("palette_matches_rust", () => {
+test("the 64 backgrounds are the first 64 allowed colours", () => {
   expect(LABEL_BACKGROUNDS).toHaveLength(64);
   expect(LABEL_BACKGROUNDS[0]).toBe("#000000");
   expect(LABEL_BACKGROUNDS[11]).toBe("#16a766");

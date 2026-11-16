@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, test } from "vitest";
 import type { LabelInfo } from "../lib/tauri";
 import { buildLabelTree, filterSidebarTree, hiddenSidebarTree, visibleInSidebar } from "./tree";

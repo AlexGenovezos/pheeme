@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, test } from "vitest";
 import { wallClock } from "./dates";
 import { parseQuickAdd, type Target } from "./sentence";

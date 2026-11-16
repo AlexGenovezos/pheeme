@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, test } from "vitest";
 import type { Task, TaskListRef, TaskRef, TasksAccess, TasksAccount } from "../lib/tauri";
 import { createTasksHandlers } from "./tasks";

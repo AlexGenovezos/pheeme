@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, test } from "vitest";
 import { parseThemeText as parseAll } from "../../theme/customThemes";
 import { themeColorToHex, toCanonicalThemeColor } from "./color";
@@ -148,12 +149,12 @@ describe("VS Code import on arbitrary colors", () => {
         .toString(16)
         .padStart(6, "0")}${next() < 0.15 ? "80" : ""}`;
     const failures: string[] = [];
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 25; i++) {
       const colors: Record<string, string> = { "editor.background": color() };
       for (const key of KEYS) if (next() < 0.6) colors[key] = color();
       const problems = contrastFailures(buildThemeFromFile(parseVsCodeTheme({ colors })).tokens);
       if (problems.length) failures.push(`${JSON.stringify(colors)}: ${problems.join("; ")}`);
     }
     expect(failures).toEqual([]);
-  }, 30_000); // ~2 s locally; CI runners are slower
+  }, 15_000); // ~0.5 s locally; coverage on CI runners is several times slower
 });

@@ -205,23 +205,25 @@ mod tests {
         use rand::Rng;
         let dir = tempfile::tempdir().unwrap();
         let mut rng = rand::rng();
-        let mut log = String::new();
+        // Random hex barely compresses, so the zip has to drop most of the 1 MiB to fit 100 KiB.
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut log = Vec::with_capacity(1024 * 1024 + 64);
         let mut bytes = [0u8; 50];
-        while log.len() < 10 * 1024 * 1024 {
+        while log.len() < 1024 * 1024 {
             rng.fill_bytes(&mut bytes);
             for b in bytes {
-                log.push_str(&format!("{b:02x}"));
+                log.extend([HEX[usize::from(b >> 4)], HEX[usize::from(b & 15)]]);
             }
-            log.push('\n');
+            log.push(b'\n');
         }
-        log.push_str("the newest line\n");
+        log.extend_from_slice(b"the newest line\n");
         std::fs::write(dir.path().join("pheeme.log"), &log).unwrap();
 
-        let zip = build(&input(dir.path(), 1024 * 1024)).unwrap();
+        let zip = build(&input(dir.path(), 100 * 1024)).unwrap();
 
-        assert!(zip.len() <= 1024 * 1024, "{} bytes", zip.len());
+        assert!(zip.len() <= 100 * 1024, "{} bytes", zip.len());
         let kept = read(&zip, "logs/pheeme.log");
         assert!(kept.ends_with("the newest line\n"));
-        assert!(kept.len() > 256 * 1024, "kept only {} bytes", kept.len());
+        assert!(kept.len() > 25 * 1024, "kept only {} bytes", kept.len());
     }
 }

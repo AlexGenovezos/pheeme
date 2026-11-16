@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { listen } from "@tauri-apps/api/event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { createSubscriptionScope } from "../lib/subscriptions";
