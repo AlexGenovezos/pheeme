@@ -16,6 +16,7 @@ import {
   type SyncMessagesUpdated,
   toCommandError,
 } from "../lib/tauri";
+import { PendingChanges } from "./pendingChanges";
 import { useUiStore } from "./uiStore";
 
 /** Search spans the chosen accounts, independently of the mailbox underneath it. */
@@ -105,16 +106,12 @@ function keptBelow(
   return previous.filter((t) => !have.has(keyOf(t)) && sortsAfter(t, cursor));
 }
 
-/**
- * A change not yet in the cache. `fn: null` removes the row, from results of `query` only (`null`: of any query).
- * Entries for a key apply in the order they were made.
- */
+/** A change not yet in the cache. `fn: null` removes the row, from results of `query` only (`null`: of any query). */
 interface PendingChange {
-  op: number;
   fn: ((thread: ThreadSummary) => ThreadSummary) | null;
   query: MailQuery | null;
 }
-let pending = new Map<ThreadKey, PendingChange[]>();
+const pending = new PendingChanges<ThreadKey, PendingChange>();
 let ops = 0;
 // Rows read during this mailbox visit remain eligible in background queries. The backend
 // still checks mailbox membership, so archiving, deleting or relabelling them removes them.
@@ -133,24 +130,21 @@ const readArgs = (query: ThreadQuery) =>
 /** A fresh id to tag the changes of one action, for `patch`, `remove` and `settle`. */
 export const newOp = () => ++ops;
 
-function register(keys: ThreadKey[], change: PendingChange) {
-  for (const key of keys) pending.set(key, [...(pending.get(key) ?? []), change]);
-}
-
 /** Query results for `query` with the pending changes laid over them. */
 function overlay(threads: ThreadSummary[], query: MailQuery): ThreadSummary[] {
-  if (pending.size === 0) return threads;
+  if (pending.isEmpty) return threads;
   const out: ThreadSummary[] = [];
   for (const thread of threads) {
-    let row: ThreadSummary | null = thread;
-    for (const change of pending.get(keyOf(thread)) ?? []) {
-      if (!change.fn) {
-        if (change.query !== null && !sameQuery(change.query, query)) continue;
-        row = null;
-        break;
-      }
-      row = change.fn(row);
-    }
+    // Once removed, a row stays removed: the changes after the removal don't bring it back.
+    const row = pending.apply<ThreadSummary | null>(keyOf(thread), thread, (row, change) =>
+      row === null
+        ? null
+        : change.fn
+          ? change.fn(row)
+          : change.query !== null && !sameQuery(change.query, query)
+            ? row
+            : null,
+    );
     if (row) out.push(row);
   }
   return out;
@@ -551,7 +545,7 @@ export const useMailStore = create<MailState>((set, get) => {
     },
     retryGmail: () => remotePages(true),
     patch: (keys, fn, op) => {
-      if (op !== undefined) register(keys, { op, fn, query: null });
+      if (op !== undefined) pending.add(keys, op, { fn, query: null });
       const wanted = new Set(keys);
       let newlyKept = false;
       set((s) => ({
@@ -576,7 +570,7 @@ export const useMailStore = create<MailState>((set, get) => {
     remove: (keys, op) => {
       // The rows being removed are in the list on screen, which is the loaded query (else the one asked for).
       if (op !== undefined)
-        register(keys, { op, fn: null, query: get().loadedQuery ?? get().query });
+        pending.add(keys, op, { fn: null, query: get().loadedQuery ?? get().query });
       keys.forEach((key) => {
         keptRead.delete(key);
         unfiltered?.gone.add(key);
@@ -585,25 +579,18 @@ export const useMailStore = create<MailState>((set, get) => {
       set((s) => ({ threads: s.threads.filter((t) => !gone.has(keyOf(t))) }));
     },
     settle: (op, keys, rejected = false) => {
-      const only = keys ? new Set(keys) : null;
-      const next = new Map<ThreadKey, PendingChange[]>();
-      for (const [key, changes] of pending) {
-        if (!rejected && (!only || only.has(key))) {
-          for (const change of changes.filter((c) => c.op === op)) {
-            if (change.fn) {
-              const row = remoteRows.get(key);
-              if (row) remoteRows.set(key, change.fn(row));
-            } else if (sameQuery(change.query, get().query)) {
-              // IPC success only queues the write. Keep the snapshot until sync can confirm
-              // Trash or restore it after Gmail rejects the outbox operation.
-              if (get().query?.search) removedFromSearch.add(key);
-            }
-          }
+      const released = pending.settle(op, keys);
+      if (rejected) return;
+      for (const [key, change] of released) {
+        if (change.fn) {
+          const row = remoteRows.get(key);
+          if (row) remoteRows.set(key, change.fn(row));
+        } else if (sameQuery(change.query, get().query)) {
+          // IPC success only queues the write. Keep the snapshot until sync can confirm
+          // Trash or restore it after Gmail rejects the outbox operation.
+          if (get().query?.search) removedFromSearch.add(key);
         }
-        const rest = only && !only.has(key) ? changes : changes.filter((c) => c.op !== op);
-        if (rest.length > 0) next.set(key, rest);
       }
-      pending = next;
     },
     clear: () => {
       latest++;
@@ -693,7 +680,7 @@ useMailStore.subscribe((s, prev) => {
 /** Test helper. */
 export function __resetMailStoreForTests() {
   latest++;
-  pending = new Map();
+  pending.clear();
   keptRead.clear();
   unfiltered = null;
   useMailStore.setState({ ...EMPTY, query: null });
