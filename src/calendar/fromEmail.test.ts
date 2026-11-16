@@ -8,6 +8,7 @@ import {
   formFromEmail,
   gmailLink,
   nextHalfHour,
+  replyText,
   threadGuests,
 } from "./fromEmail";
 
@@ -140,10 +141,10 @@ describe("formFromEmail", () => {
     expect(form.summary).toBe("Coffee");
     expect(form.guests.map((g) => g.address)).toEqual(["jonas@example.net", "mira@example.net"]);
     expect(form.description).toBe(
-      `${gmailLink("avery@example.com", "t1")}\n\nAre you free Thursday at 3pm?`,
+      `Are you free Thursday at 3pm?\n\nEmail in Gmail: ${gmailLink("avery@example.com", "t1")}`,
     );
     expect(
-      form.description.startsWith(
+      form.description.endsWith(
         "https://mail.google.com/mail/?authuser=avery%40example.com#all/t1",
       ),
     ).toBe(true);
@@ -170,9 +171,59 @@ describe("formFromEmail", () => {
     ]);
   });
 
-  test("the description quotes only the start of a long email", () => {
-    const quoted = emailDescription("L", "x".repeat(800));
-    expect(quoted.length).toBeLessThan(520);
-    expect(quoted.endsWith("…")).toBe(true);
+  test("the description quotes only the start of a long email, cut between words", () => {
+    const quoted = emailDescription("L", "word ".repeat(200));
+    expect(quoted.length).toBeLessThan(540);
+    expect(quoted).toMatch(/word…\n\nEmail in Gmail: L$/);
+  });
+
+  test("a reply leaves out the quoted thread, and its date isn't read as the meeting", () => {
+    const m = message({
+      bodyText:
+        "Sounds good, see you then.\r\n\r\nOn Mon, Nov 9, 2026 at 9:00 AM Jonas Weber <\r\njonas@example.net> wrote:\r\n> Are you free Thursday at 3pm?\r\n> \r\n",
+    });
+    const { form } = formFromEmail(detail([m]), m, opts);
+    expect(form.description).toBe(
+      `Sounds good, see you then.\n\nEmail in Gmail: ${gmailLink("avery@example.com", "t1")}`,
+    );
+    // The time comes from the quoted question, not the "On Mon … at 9:00 AM … wrote:" line.
+    expect([form.startDate, form.startMinutes]).toEqual(["2026-11-12", 15 * 60]);
+  });
+
+  test("a quoted reply's own quoted header isn't read as the meeting either", () => {
+    const m = message({
+      bodyText:
+        "Sounds good.\n\nOn Tue, Nov 10, 2026 at 10:00 AM Jonas Weber <jonas@example.net> wrote:\n> Great.\n>\n> On Mon, Nov 9, 2026 at 9:00 AM Avery <avery@example.com> wrote:\n> > Are you free Thursday at 3pm?\n",
+    });
+    const { form } = formFromEmail(detail([m]), m, opts);
+    expect([form.startDate, form.startMinutes]).toEqual(["2026-11-12", 15 * 60]);
+  });
+
+  test("an HTML email reads as tidy text", () => {
+    const m = message({
+      bodyText: null,
+      bodyHtml: `<html><head><style>.a{color:red}</style></head><body><table><tr><td>
+          <div>Hi Avery,</div>
+          <div><br></div>
+          <div>Lunch   on   Friday?</div>
+          <script>track()</script>
+          <div class="gmail_quote">On Mon, Nov 9, 2026 at 9:00 AM Jonas &lt;jonas@example.net&gt; wrote:
+          <blockquote>Earlier</blockquote></div>
+        </td></tr></table></body></html>`,
+    });
+    const { form } = formFromEmail(detail([m]), m, opts);
+    expect(form.description.split("\n\nEmail in Gmail:")[0]).toBe("Hi Avery,\n\nLunch on Friday?");
+  });
+});
+
+describe("replyText", () => {
+  test("cuts at the quote header or signature, and keeps a message that is all quote", () => {
+    expect(replyText("Yes.\n\n-----Original Message-----\nFrom: x")).toBe("Yes.");
+    expect(replyText("Yes.\n\nFrom: Jonas\nSent: Monday\nTo: me\n\nOld")).toBe("Yes.");
+    expect(replyText("Yes.\n-- \nAvery\n555-0100")).toBe("Yes.");
+    expect(replyText("> only a quote")).toBe("> only a quote");
+    expect(replyText("Fwd below\n\n---------- Forwarded message ---------\nFrom: x\nDate: y")).toBe(
+      "Fwd below\n\n---------- Forwarded message ---------\nFrom: x\nDate: y",
+    );
   });
 });

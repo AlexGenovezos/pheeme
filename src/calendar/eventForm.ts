@@ -97,12 +97,53 @@ export function reminderFrom(method: string, minutes: number): Reminder {
 /** Descriptions are often HTML from Google's editor: the editor shows (and saves) plain text. */
 export function plainText(html: string): string {
   if (!/<[a-z][\s\S]*>/i.test(html)) return html;
-  const doc = new DOMParser().parseFromString(
-    html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li)>/gi, "\n"),
-    "text/html",
-  );
-  return (doc.body.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.body.querySelectorAll("script, style, template, noscript").forEach((e) => e.remove());
+  // Newsletters open with preview text for the inbox list, hidden from the reader.
+  doc.body
+    .querySelectorAll("[hidden], [style]")
+    .forEach(
+      (e) => (e.hasAttribute("hidden") || HIDDEN.test(e.getAttribute("style")!)) && e.remove(),
+    );
+  // Whitespace in HTML source is layout, not text, so it collapses. Lines break where the markup
+  // does, as a browser shows it: a block's edges give one break however many meet, each <br> one
+  // more, except a <br> that ends its block (Gmail's `<div>Hi<br></div>`). The breaks are marked
+  // with private-use characters so the collapsing leaves them alone.
+  doc.body.querySelectorAll("br").forEach((e) => e.replaceWith(BR));
+  doc.body.querySelectorAll(BLOCKS).forEach((e) => {
+    e.prepend(EDGE);
+    e.append(EDGE);
+  });
+  // A no-break space doesn't collapse: `<p>&nbsp;</p>` is Outlook's blank line.
+  return (doc.body.textContent ?? "")
+    .replace(INVISIBLE, "")
+    .replace(/[ \t\n\r\f]+/g, " ")
+    .replace(/ ?([\uE000\uE001]) ?/g, "$1")
+    .replace(/\uE000+/g, EDGE)
+    .replace(/\uE001\uE000/g, "\n")
+    .replace(/[\uE000\uE001]/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
+
+/** Inline styles that hide an element (`max-height:0` is the preview text's Outlook fallback). */
+const HIDDEN =
+  /display\s*:\s*none|visibility\s*:\s*hidden|mso-hide\s*:\s*all|max-height\s*:\s*0(?![.\d])/i;
+
+/**
+ * Characters mail pads its preview text with that show as nothing: zero-width spaces and joiners,
+ * direction marks, soft hyphens, the combining grapheme joiner, BOM, Hangul fillers (the same set
+ * as the local API's snippets).
+ */
+export const INVISIBLE =
+  /\u034F|[\u00AD\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\u2800\u3164\uFEFF\uFFA0]/g;
+
+const EDGE = "\uE000";
+const BR = "\uE001";
+const BLOCKS = "p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote, table, ul, ol, pre";
 
 // ── Repeat rules ─────────────────────────────────────────────────────────────
 

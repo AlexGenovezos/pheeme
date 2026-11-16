@@ -18,6 +18,7 @@ import {
   repeatChoice,
   repeatPresets,
   ruleLine,
+  plainText,
 } from "./eventForm";
 
 const TZ = "America/New_York";
@@ -316,5 +317,40 @@ describe("repeat rules", () => {
     expect(reminderFrom("email", 10080)).toEqual({ method: "email", amount: 1, unit: "weeks" });
     expect(reminderFrom("popup", 90)).toEqual({ method: "popup", amount: 90, unit: "minutes" });
     expect(reminderFrom("popup", 0)).toEqual({ method: "popup", amount: 0, unit: "minutes" });
+  });
+});
+
+describe("plainText", () => {
+  test("lines as a browser shows them, without the source's whitespace or scripts", () => {
+    // Gmail: a div per line, <div><br></div> for a blank one, sometimes a <br> ending a line.
+    expect(
+      plainText(`<div dir="ltr">
+        <div>Hi   Avery,</div>
+        <div><br></div>
+        <div>Lunch on Friday?<br></div><div>Sam</div><script>track()</script>
+      </div>`),
+    ).toBe("Hi Avery,\n\nLunch on Friday?\nSam");
+    // Outlook: a <p> per line, an empty one for a blank line.
+    expect(
+      plainText(
+        `<p class=MsoNormal>Hi,<o:p></o:p></p>\n<p class=MsoNormal>&nbsp;</p>\n<p class=MsoNormal>Thanks<o:p></o:p></p>`,
+      ),
+    ).toBe("Hi,\n\nThanks");
+    expect(plainText("Line one\nLine two")).toBe("Line one\nLine two");
+  });
+
+  test("leaves out a newsletter's hidden preview text and its invisible padding", () => {
+    const padding = "&nbsp;&zwnj;&#847;&#65279;".repeat(120);
+    expect(
+      plainText(`<div style="display:none;max-height:0;overflow:hidden">Esteemed members, an interest in coding appl...</div>
+        <div style="display: none; mso-hide: all">${padding}</div>
+        <span hidden>also hidden</span>
+        <table><tr><td><h1>All Hands</h1></td></tr><tr><td>
+          <p>Esteemed members, an interest in coding applications.&zwnj;</p>
+          <p>We propose November 20th at 6 PM.</p>
+        </td></tr></table>`),
+    ).toBe(
+      "All Hands\nEsteemed members, an interest in coding applications.\nWe propose November 20th at 6 PM.",
+    );
   });
 });

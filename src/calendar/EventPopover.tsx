@@ -21,6 +21,7 @@ import { Button } from "../components/ui/Button";
 import { showPerson } from "../contacts/personStore";
 import { IconButton } from "../components/ui/IconButton";
 import { Menu, type MenuItem } from "../components/ui/Menu";
+import { toastError } from "../components/ui/Toast";
 import { placeBeside } from "../components/ui/placement";
 import { useDismiss } from "../components/ui/usePopover";
 import { describeShortcut } from "../keyboard/format";
@@ -45,6 +46,7 @@ import { noteDismiss } from "./drag";
 import { eventTitle, useCalendarLookup } from "./EventBlock";
 import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
 import { EventWeather } from "../weather/EventWeather";
+import { linkify } from "../mail/linkify";
 import { ANSWERS, type Answer, answerTally, answerWord } from "./rsvp";
 import { type OtherZone, placeName, useZoneSettings } from "./zoneSettings";
 import { dayShift, offsetMinutes, zoneCity } from "./zones";
@@ -431,7 +433,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
             size="sm"
             label="Open in Google Calendar"
             icon={<ExternalLink />}
-            onClick={() => void openExternal(detail.htmlLink!).catch(() => {})}
+            onClick={() => void openExternal(detail.htmlLink!).catch(toastError)}
           />
         )}
         <IconButton
@@ -506,7 +508,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
           </div>
         </div>
       )}
-      {description && <p className="cal-pop__description selectable">{description}</p>}
+      {description && <p className="cal-pop__description selectable">{linkify(description)}</p>}
       <p className="cal-pop__calendar">
         <span className="cal-pop__dot" style={{ background }} aria-hidden="true" />
         {/* One flex item, so the organizer's name sits in the sentence. */}

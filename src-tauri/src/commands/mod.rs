@@ -86,7 +86,15 @@ const EXTERNAL_HOSTS: &[&str] = &[
     "support.google.com",
     "github.com",
     "pheeme.app",
+    // An event's "Open in Google Calendar".
+    "calendar.google.com",
 ];
+
+/// The Calendar API's `htmlLink` is on `www.google.com`, which is otherwise not allowed (its
+/// `/url?q=` redirect would open anything).
+fn is_calendar_link(url: &Url) -> bool {
+    url.host_str() == Some("www.google.com") && url.path().starts_with("/calendar/")
+}
 
 pub fn is_allowed_external_url(url: &str) -> bool {
     Url::parse(url).is_ok_and(|url| {
@@ -94,9 +102,10 @@ pub fn is_allowed_external_url(url: &str) -> bool {
             && url.username().is_empty()
             && url.password().is_none()
             && url.port().is_none()
-            && url
+            && (url
                 .host_str()
                 .is_some_and(|host| EXTERNAL_HOSTS.contains(&host))
+                || is_calendar_link(&url))
     })
 }
 
@@ -192,6 +201,9 @@ mod tests {
             "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
             "https://github.com/AlexGenovezos/pheeme",
             "https://mail.google.com/mail/u/me%40example.com/#drafts",
+            // An event's `htmlLink`, as the Calendar API gives it.
+            "https://www.google.com/calendar/event?eid=abc123",
+            "https://calendar.google.com/calendar/event?eid=abc123",
         ] {
             assert!(is_allowed_external_url(ok), "{ok}");
         }
@@ -201,6 +213,8 @@ mod tests {
             "https://evil.com/?accounts.google.com",
             "https://user@accounts.google.com/",
             "https://accounts.google.com:8443/",
+            "https://www.google.com/url?q=https://evil.com/",
+            "https://www.google.com/calendarx",
             "file:///etc/passwd",
             "javascript:alert(1)",
             "not a url",

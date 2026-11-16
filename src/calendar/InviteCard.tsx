@@ -7,6 +7,7 @@ import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Skeleton } from "../components/ui/Skeleton";
 import { TextInput } from "../components/ui/TextInput";
+import { toastError } from "../components/ui/Toast";
 import {
   listen,
   type Attendee,
@@ -280,7 +281,7 @@ function AnswerRow({
                 size="sm"
                 variant="ghost"
                 icon={<ExternalLink />}
-                onClick={() => void openExternal(invite.live!.htmlLink!).catch(() => {})}
+                onClick={() => void openExternal(invite.live!.htmlLink!).catch(toastError)}
               >
                 Open in Google Calendar
               </Button>
