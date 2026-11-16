@@ -20,7 +20,12 @@ const account = (id: string, email: string): AccountInfo => ({
 function backend(answer: (cmd: string, args: unknown) => unknown = () => undefined) {
   const calls: Array<[string, unknown]> = [];
   mockIPC((cmd, args) => {
-    if (cmd === "send_diagnostics" || cmd === "save_diagnostics" || cmd === "plugin:dialog|save") {
+    if (
+      cmd === "send_diagnostics" ||
+      cmd === "save_diagnostics" ||
+      cmd === "prepare_screenshot" ||
+      cmd === "plugin:dialog|save"
+    ) {
       calls.push([cmd, args]);
       return answer(cmd, args);
     }
@@ -192,4 +197,78 @@ test("the email on screen is sent only when included, with what its images did",
       },
     },
   ]);
+});
+
+/** What `prepare_screenshot` answers: the "cleaned" PNG is the input reversed, so the test can tell them apart. */
+function screenshots(refuse: (data: string) => boolean = () => false) {
+  return backend((cmd, args) => {
+    if (cmd !== "prepare_screenshot") return undefined;
+    const { data } = args as { data: string };
+    if (refuse(data)) {
+      throw { code: "invalid_input", message: "That isn't a screenshot. Add a PNG or JPEG image." };
+    }
+    return { png: [...data].reverse().join(""), width: 1280, height: 800 };
+  });
+}
+const png = (text: string) => new File([text], "shot.png", { type: "image/png" });
+const pick = (...files: File[]) =>
+  fireEvent.change(screen.getByTestId("screenshot-file-input"), { target: { files } });
+const thumbnails = () => screen.queryAllByRole("img", { name: /^Screenshot \d/ });
+
+test("a picked screenshot is checked, shown as cleaned and sent with the report", async () => {
+  setAccounts([account("a1", "me@gmail.com")]);
+  const calls = screenshots();
+  render(<DiagnosticsSection />);
+  pick(png("abc"));
+  const [thumb] = await screen.findAllByRole("img", { name: "Screenshot 1, 1280 × 800" });
+  expect(calls[0]).toEqual(["prepare_screenshot", { data: btoa("abc") }]);
+  expect(thumb).toHaveAttribute(
+    "src",
+    `data:image/png;base64,${[...btoa("abc")].reverse().join("")}`,
+  );
+
+  send();
+  await screen.findByText("Sent. Thanks, Alex will take a look.");
+  expect(calls[1]).toEqual([
+    "send_diagnostics",
+    { note: "", replyTo: "me@gmail.com", screenshots: [[...btoa("abc")].reverse().join("")] },
+  ]);
+});
+
+test("a file that isn't a screenshot is refused with the reason and not added", async () => {
+  setAccounts([account("a1", "me@gmail.com")]);
+  screenshots(() => true);
+  render(<DiagnosticsSection />);
+  pick(new File(["#!/bin/sh"], "evil.png", { type: "image/png" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "That isn't a screenshot. Add a PNG or JPEG image.",
+  );
+  expect(thumbnails()).toHaveLength(0);
+});
+
+test("a pasted image is added, up to three, and each can be removed", async () => {
+  setAccounts([account("a1", "me@gmail.com")]);
+  screenshots();
+  render(<DiagnosticsSection />);
+  const paste = (...files: File[]) =>
+    fireEvent.paste(window, { clipboardData: { files, getData: () => "" } });
+
+  paste(png("1"), png("2"));
+  await waitFor(() => expect(thumbnails()).toHaveLength(2));
+  paste(png("3"), png("4"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Add at most 3 screenshots.");
+  await waitFor(() => expect(thumbnails()).toHaveLength(3));
+  expect(screen.queryByRole("button", { name: "Add screenshot…" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Remove screenshot 2" }));
+  expect(thumbnails()).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "Add screenshot…" })).toBeInTheDocument();
+});
+
+test("pasting text isn't taken for a screenshot", () => {
+  setAccounts([account("a1", "me@gmail.com")]);
+  const calls = screenshots();
+  render(<DiagnosticsSection />);
+  fireEvent.paste(window, { clipboardData: { files: [], getData: () => "hello" } });
+  expect(calls).toHaveLength(0);
 });

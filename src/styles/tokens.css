@@ -284,6 +284,9 @@
   --settings-number-width: 112px;
   /* A dropdown in a settings row, e.g. Appearance › Light theme: one width whatever is chosen. */
   --settings-select-width: 200px;
+  /* A screenshot thumbnail in Settings › About › Diagnostics (16:10). */
+  --settings-shot-width: 128px;
+  --settings-shot-height: 80px;
   /* Attachment preview: a Quick Look-style panel over the blurred app. */
   --preview-max-width: 1100px;
   --preview-margin: 40px;

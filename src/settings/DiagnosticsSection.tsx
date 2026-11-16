@@ -1,11 +1,12 @@
 import { save } from "@tauri-apps/plugin-dialog";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
 import { Switch } from "../components/ui/Switch";
 import { TextInput } from "../components/ui/TextInput";
 import { saveDiagnostics, sendDiagnostics, toCommandError } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
+import { DiagnosticsScreenshots, useDiagnosticScreenshots } from "./DiagnosticsScreenshots";
 import { emailRequest, useEmailOnScreen } from "./emailOnScreen";
 import { SettingsRow, SettingsSection } from "./rows";
 import { TELEMETRY_DESCRIPTION, TELEMETRY_TITLE, TelemetrySwitch } from "./telemetry";
@@ -28,6 +29,8 @@ export function DiagnosticsSection() {
   const [status, setStatus] = useState<Status>(null);
   const onScreen = useEmailOnScreen();
   const [includeEmail, setIncludeEmail] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+  const shots = useDiagnosticScreenshots(form, (text) => setStatus({ kind: "failed", text }));
   // Read when Send is pressed, so the images are reported as they are then.
   const email = () => (includeEmail && onScreen ? emailRequest(onScreen.key) : undefined);
 
@@ -39,7 +42,7 @@ export function DiagnosticsSection() {
     setBusy("send");
     setStatus(null);
     try {
-      await sendDiagnostics(note, replyTo, email());
+      await sendDiagnostics(note, replyTo, email(), shots.ready);
       setStatus({ kind: "done", text: "Sent. Thanks, Alex will take a look." });
     } catch (raw) {
       setStatus({
@@ -61,7 +64,7 @@ export function DiagnosticsSection() {
         filters: [{ name: "Zip archive", extensions: ["zip"] }],
       });
       if (!path) return;
-      await saveDiagnostics(note, replyTo, path, included);
+      await saveDiagnostics(note, replyTo, path, included, shots.ready);
       setStatus({ kind: "done", text: `Saved to ${path}.` });
     } catch (raw) {
       setStatus({ kind: "failed", text: toCommandError(raw).message });
@@ -115,10 +118,14 @@ export function DiagnosticsSection() {
       <SettingsSection title="Diagnostics">
         <SettingsRow
           title="Send diagnostics"
-          description="Sends recent logs to the developer so they can see why something was slow or broken. Logs never include your emails, subjects or contacts. Your note is sent as you type it, and an email only if you include it."
+          description="Sends recent logs to the developer so they can see why something was slow or broken. Logs never include your emails, subjects or contacts. Your note and screenshots are sent as they are, and an email only if you include it."
         />
         <form
+          ref={form}
           className="settings-diagnostics"
+          data-drop-over={shots.dropOver || undefined}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={shots.onDrop}
           onSubmit={(e) => {
             e.preventDefault();
             void send();
@@ -135,6 +142,7 @@ export function DiagnosticsSection() {
               onChange={(e) => setNote(e.target.value)}
             />
           </label>
+          <DiagnosticsScreenshots slots={shots.slots} add={shots.add} remove={shots.remove} />
           {onScreen && (
             <div className="settings-diagnostics__email">
               <Switch
@@ -152,10 +160,19 @@ export function DiagnosticsSection() {
           )}
           {sender}
           <div className="settings-diagnostics__actions">
-            <Button type="submit" variant="primary" size="sm" disabled={busy !== null}>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={busy !== null || shots.pending}
+            >
               {busy === "send" ? "Sending…" : "Send"}
             </Button>
-            <Button size="sm" disabled={busy !== null} onClick={() => void saveCopy()}>
+            <Button
+              size="sm"
+              disabled={busy !== null || shots.pending}
+              onClick={() => void saveCopy()}
+            >
               Save a copy…
             </Button>
           </div>

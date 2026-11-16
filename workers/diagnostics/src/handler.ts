@@ -1,6 +1,7 @@
 // Receives diagnostics uploads from the app. Pure: every binding comes in
 // through `Deps`, so tests run it under plain Node.
 
+import { checkBundle } from "./bundle";
 import { takeQuotaSlot, utcDay } from "./quota";
 import type { Deps, KvStorage, Notification, QuotaResult } from "./types";
 
@@ -71,6 +72,8 @@ export async function handleUpload(request: Request, deps: Deps): Promise<Respon
   if (bundlePart.size > MAX_BUNDLE_BYTES) return status(413, "Upload too large");
   const bundle = await bundlePart.arrayBuffer();
   if (!isZip(bundle)) return status(400, "Bundle is not a zip");
+  const refused = checkBundle(new Uint8Array(bundle));
+  if (refused) return status(400, refused);
 
   const meta = parseMeta(form.get("meta"));
   if (!meta) return status(400, "Malformed meta");

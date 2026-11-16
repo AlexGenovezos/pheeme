@@ -18,6 +18,9 @@ pub struct BundleInput {
     pub own_addresses: Vec<String>,
     /// Added as they are, unscrubbed (the email on screen, when the user chose to include it).
     pub extra_files: Vec<(String, Vec<u8>)>,
+    /// Cleaned screenshots ([`super::screenshot`]), written as `screenshots/1.png` and on,
+    /// uncompressed so the Worker can check each PNG without inflating anything. Never trimmed.
+    pub screenshots: Vec<Vec<u8>>,
     pub max_bytes: usize,
 }
 
@@ -41,7 +44,7 @@ pub fn build(input: &BundleInput) -> Result<Vec<u8>, SupportError> {
         .unwrap_or_default();
     let mut log = scrub(&log, &input.own_addresses, std::env::home_dir().as_deref());
     loop {
-        let zip = write_zip(&summary, &log, &input.extra_files)?;
+        let zip = write_zip(&summary, &log, &input.extra_files, &input.screenshots)?;
         if zip.len() <= input.max_bytes {
             return Ok(zip);
         }
@@ -112,6 +115,7 @@ fn write_zip(
     summary: &[u8],
     log: &str,
     extra_files: &[(String, Vec<u8>)],
+    screenshots: &[Vec<u8>],
 ) -> Result<Vec<u8>, SupportError> {
     let failed = |e: &dyn std::fmt::Display| SupportError::Internal(e.to_string());
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -126,6 +130,12 @@ fn write_zip(
         zip.start_file(path.as_str(), options)
             .map_err(|e| failed(&e))?;
         zip.write_all(bytes).map_err(|e| failed(&e))?;
+    }
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    for (n, png) in screenshots.iter().enumerate() {
+        zip.start_file(format!("screenshots/{}.png", n + 1), stored)
+            .map_err(|e| failed(&e))?;
+        zip.write_all(png).map_err(|e| failed(&e))?;
     }
     Ok(zip.finish().map_err(|e| failed(&e))?.into_inner())
 }
@@ -143,6 +153,7 @@ mod tests {
             log_dir: Some(log_dir.to_path_buf()),
             own_addresses: vec!["me@gmail.com".into()],
             extra_files: vec![],
+            screenshots: vec![],
             max_bytes,
         }
     }
@@ -183,6 +194,25 @@ mod tests {
         input.extra_files = vec![("email/m1/body.txt".into(), b"from bob@x.com".to_vec())];
         let zip = build(&input).unwrap();
         assert_eq!(read(&zip, "email/m1/body.txt"), "from bob@x.com");
+    }
+
+    #[test]
+    fn screenshots_are_stored_uncompressed_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut input = input(dir.path(), 4_500_000);
+        input.screenshots = vec![b"first".to_vec(), b"second".to_vec()];
+        let zip = build(&input).unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip)).unwrap();
+        for (name, bytes) in [
+            ("screenshots/1.png", "first"),
+            ("screenshots/2.png", "second"),
+        ] {
+            let mut file = archive.by_name(name).unwrap();
+            assert_eq!(file.compression(), CompressionMethod::Stored, "{name}");
+            let mut text = String::new();
+            file.read_to_string(&mut text).unwrap();
+            assert_eq!(text, bytes);
+        }
     }
 
     #[test]

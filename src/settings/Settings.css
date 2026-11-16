@@ -731,6 +731,49 @@
   min-width: 0;
 }
 
+/* Screenshots: a thumbnail per one added, each with its remove button, then Add screenshot…. */
+.settings-diagnostics__shots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-diagnostics__shot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--settings-shot-width);
+  height: var(--settings-shot-height);
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-app-bg);
+}
+.settings-diagnostics__shot img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.settings-diagnostics__shot-loading {
+  width: 100%;
+  height: 100%;
+}
+.settings-diagnostics__shot-remove {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  background: var(--color-pane-bg);
+}
+/* A file dragged over the form (DiagnosticsScreenshots.tsx). */
+.settings-diagnostics[data-drop-over] {
+  outline: var(--border-width) dashed var(--color-focus-border);
+  outline-offset: calc(-1 * var(--space-1));
+  border-radius: var(--radius-md);
+}
+
 .settings-diagnostics__reply {
   display: flex;
   flex-wrap: wrap;

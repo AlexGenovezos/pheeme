@@ -4,8 +4,30 @@ import { call } from "./call";
  * Upload a scrubbed diagnostics bundle with the user's note (sent as typed). Rejects with `rate_limited`,
  * `network`, `rejected` or `too_large`.
  */
-export const sendDiagnostics = (note: string, replyTo: string | null, email?: DiagnosticsEmail) =>
-  call("send_diagnostics", { note, replyTo, ...(email ? { email } : {}) });
+export const sendDiagnostics = (
+  note: string,
+  replyTo: string | null,
+  email?: DiagnosticsEmail,
+  screenshots: string[] = [],
+) =>
+  call("send_diagnostics", {
+    note,
+    replyTo,
+    ...(email ? { email } : {}),
+    ...(screenshots.length ? { screenshots } : {}),
+  });
+/** A screenshot checked and re-encoded by Rust: a PNG (base64) written from the file's pixels alone. */
+export interface PreparedScreenshot {
+  png: string;
+  width: number;
+  height: number;
+}
+/**
+ * Check a screenshot for a diagnostics report, from its bytes (base64) or a dropped file's path. A PNG or
+ * JPEG comes back as a clean PNG, scaled to fit; anything else rejects with `invalid_input`.
+ */
+export const prepareScreenshot = (source: { data: string } | { path: string }) =>
+  call("prepare_screenshot", source);
 /** The email on screen, added to a diagnostics bundle when the user chooses (`support::email` in Rust). */
 export interface DiagnosticsEmail {
   accountId: string;
@@ -75,4 +97,12 @@ export const saveDiagnostics = (
   replyTo: string | null,
   path: string,
   email?: DiagnosticsEmail,
-) => call("save_diagnostics", { note, replyTo, path, ...(email ? { email } : {}) });
+  screenshots: string[] = [],
+) =>
+  call("save_diagnostics", {
+    note,
+    replyTo,
+    path,
+    ...(email ? { email } : {}),
+    ...(screenshots.length ? { screenshots } : {}),
+  });
