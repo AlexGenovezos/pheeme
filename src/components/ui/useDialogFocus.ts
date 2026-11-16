@@ -13,7 +13,11 @@ const FOCUSABLE =
  */
 export function trapTab(e: KeyboardEvent, dialog: HTMLElement | null) {
   if (e.key !== "Tab") return;
-  const items = [...(dialog?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
+  // A roving-tabindex button (tabindex="-1") or one inside a hidden or inert part matches FOCUSABLE
+  // but Tab never lands on it, so it can't count as the first or last stop.
+  const items = [...(dialog?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])].filter(
+    (el) => el.tabIndex >= 0 && !el.closest("[hidden], [inert]"),
+  );
   if (!items.length) return;
   const first = items[0];
   const last = items[items.length - 1];

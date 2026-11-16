@@ -98,4 +98,25 @@ describe("trapTab", () => {
     trapTab(tab as never, screen.getByTestId("dialog"));
     expect(tab.defaultPrevented).toBe(false);
   });
+
+  test("skips controls Tab never reaches when finding the ends", () => {
+    render(
+      <div tabIndex={-1} data-testid="dialog">
+        <button>first</button>
+        <button>last</button>
+        <button tabIndex={-1}>roving</button>
+        <button hidden>hidden</button>
+      </div>,
+    );
+    const dialog = screen.getByTestId("dialog");
+    screen.getByText("last").focus();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", cancelable: true });
+    trapTab(tab as never, dialog);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(screen.getByText("first")).toHaveFocus();
+    const back = new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, cancelable: true });
+    trapTab(back as never, dialog);
+    expect(back.defaultPrevented).toBe(true);
+    expect(screen.getByText("last")).toHaveFocus();
+  });
 });
