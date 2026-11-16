@@ -5,12 +5,13 @@
 
 use crate::db::labels;
 use crate::gmail::types::Filter;
-use crate::mail::MailError;
+use crate::mail::{MailError, ThreadSummaryDto};
 use crate::sync::manager::SyncManager;
 use crate::sync::MailApi;
 use serde::Serialize;
+use serde_json::Value;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 /// A filter as a person would describe it (snake_case, like the rest of the local API's output).
@@ -53,6 +54,14 @@ impl FilterService {
         let filters = self.api(account_id).list_filters().await?;
         let names = label_names(&self.db, account_id).await?;
         Ok(filters.iter().map(|f| describe(f, &names)).collect())
+    }
+
+    /// Label id → name for the account's cached labels, as filters are described.
+    pub async fn label_names(
+        &self,
+        account_id: &str,
+    ) -> Result<HashMap<String, String>, MailError> {
+        label_names(&self.db, account_id).await
     }
 
     /// Create a filter in Gmail (not retried when the outcome is unknown, see
@@ -147,10 +156,84 @@ fn category_name(id: &str) -> &str {
     }
 }
 
+/// Gmail search for what a filter's criteria match (Gmail's own criteria field names).
+pub fn criteria_query(criteria: &serde_json::Map<String, Value>) -> Option<String> {
+    let text = |key: &str| {
+        criteria
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+    };
+    let mut parts = Vec::new();
+    for (key, op) in [("from", "from"), ("to", "to"), ("subject", "subject")] {
+        if let Some(v) = text(key) {
+            parts.push(format!("{op}:({v})"));
+        }
+    }
+    if let Some(v) = text("query") {
+        parts.push(format!("({v})"));
+    }
+    if let Some(v) = text("negatedQuery") {
+        parts.push(format!("-({v})"));
+    }
+    if criteria.get("hasAttachment") == Some(&Value::Bool(true)) {
+        parts.push("has:attachment".into());
+    }
+    if let Some(size) = criteria.get("size").and_then(Value::as_i64) {
+        match criteria.get("sizeComparison").and_then(Value::as_str) {
+            Some("larger") => parts.push(format!("larger:{size}")),
+            Some("smaller") => parts.push(format!("smaller:{size}")),
+            _ => {}
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join(" "))
+}
+
+/// How far back filter_audit looks for wanted mail: what a filter misfiles turns up now and
+/// then (an order confirmation, a statement), so a month's sample rarely shows it.
+const WANTED_DAYS: i64 = 365;
+
+/// What makes matched mail look wanted, as Gmail search: starred, in Primary or Updates, or
+/// a subject that order, bill, delivery and account email uses. Marketing mostly sits in
+/// Promotions, so few of its conversations qualify.
+const WANTED_HINTS: &str = "{is:starred category:primary category:updates subject:(receipt OR \
+    invoice OR order OR statement OR payment OR bill OR shipped OR delivered OR delivery OR \
+    verify OR verification OR password OR security OR expire OR expires OR expiring OR renew \
+    OR renewal OR refund OR confirmation OR confirmed OR \"action required\" OR \"action needed\")}";
+
+/// The Gmail search for matched mail that looks wanted (see [`WANTED_HINTS`]).
+pub fn wanted_query(criteria: &str, days: i64) -> String {
+    format!(
+        "{criteria} {WANTED_HINTS} in:anywhere newer_than:{}d",
+        days.max(WANTED_DAYS)
+    )
+}
+
+/// Where each conversation sits now, counted: trash, spam, inbox or archived.
+pub fn now_in(threads: &[ThreadSummaryDto]) -> BTreeMap<&'static str, usize> {
+    let mut counts = BTreeMap::new();
+    for t in threads {
+        let has = |id: &str| t.system_label_ids.iter().any(|l| l == id);
+        let place = if has("TRASH") {
+            "trash"
+        } else if has("SPAM") {
+            "spam"
+        } else if has("INBOX") {
+            "inbox"
+        } else {
+            "archived"
+        };
+        *counts.entry(place).or_default() += 1;
+    }
+    counts
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::gmail::types::{FilterAction, FilterCriteria};
+    use serde_json::json;
 
     #[test]
     fn describes_actions_in_words_with_label_names() {
@@ -187,5 +270,33 @@ mod tests {
                 "forward it to me@else.com",
             ]
         );
+    }
+
+    #[test]
+    fn filter_criteria_become_gmail_queries() {
+        let criteria = json!({
+            "from": "a@x.com OR b@y.com", "subject": "Sale", "query": "deal",
+            "negatedQuery": "invoice", "hasAttachment": true, "size": 1000, "sizeComparison": "larger"
+        });
+        assert_eq!(
+            criteria_query(criteria.as_object().unwrap()).as_deref(),
+            Some("from:(a@x.com OR b@y.com) subject:(Sale) (deal) -(invoice) has:attachment larger:1000")
+        );
+        assert_eq!(
+            criteria_query(json!({ "from": " " }).as_object().unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn wanted_mail_is_looked_for_over_a_year_at_least() {
+        let q = wanted_query("from:(shop.com)", 30);
+        assert!(q.starts_with("from:(shop.com) {is:starred category:primary category:updates subject:(receipt OR invoice"));
+        assert!(
+            q.ends_with("\"action needed\")} in:anywhere newer_than:365d"),
+            "{q}"
+        );
+        assert!(!q.contains("  "), "{q}");
+        assert!(wanted_query("x", 800).ends_with("newer_than:800d"));
     }
 }

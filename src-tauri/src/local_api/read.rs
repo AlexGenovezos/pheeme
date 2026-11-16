@@ -8,7 +8,7 @@ use super::requests::{
 use super::{ApiError, LocalApi, Request};
 use crate::accounts::AccountInfo;
 use crate::compose::build::html_to_text;
-use crate::filters::label_names;
+use crate::filters;
 use crate::mail::{
     MailError, MessageDetailDto, ThreadCursorDto, ThreadSummaryDto, ALL_MAIL, MAX_PAGE,
     OTHER_CATEGORIES,
@@ -17,7 +17,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{Local, SecondsFormat, TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 const DEFAULT_BODY_CHARS: usize = 8000;
 /// Characters of a snippet a list row keeps.
@@ -252,7 +252,7 @@ impl<'a> Rows<'a> {
         account_id: &str,
     ) -> Result<&HashMap<String, String>, ApiError> {
         if !self.names.contains_key(account_id) {
-            let names = label_names(&self.api.db, account_id).await?;
+            let names = self.api.filters.label_names(account_id).await?;
             self.names.insert(account_id.to_owned(), names);
         }
         Ok(&self.names[account_id])
@@ -1038,79 +1038,6 @@ async fn sender_report(api: &LocalApi, args: SenderReport) -> Result<Value, ApiE
     }))
 }
 
-/// Gmail search for what a filter's criteria match (Gmail's own criteria field names).
-fn filter_query(criteria: &serde_json::Map<String, Value>) -> Option<String> {
-    let text = |key: &str| {
-        criteria
-            .get(key)
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-    };
-    let mut parts = Vec::new();
-    for (key, op) in [("from", "from"), ("to", "to"), ("subject", "subject")] {
-        if let Some(v) = text(key) {
-            parts.push(format!("{op}:({v})"));
-        }
-    }
-    if let Some(v) = text("query") {
-        parts.push(format!("({v})"));
-    }
-    if let Some(v) = text("negatedQuery") {
-        parts.push(format!("-({v})"));
-    }
-    if criteria.get("hasAttachment") == Some(&Value::Bool(true)) {
-        parts.push("has:attachment".into());
-    }
-    if let Some(size) = criteria.get("size").and_then(Value::as_i64) {
-        match criteria.get("sizeComparison").and_then(Value::as_str) {
-            Some("larger") => parts.push(format!("larger:{size}")),
-            Some("smaller") => parts.push(format!("smaller:{size}")),
-            _ => {}
-        }
-    }
-    (!parts.is_empty()).then(|| parts.join(" "))
-}
-
-/// How far back filter_audit looks for wanted mail: what a filter misfiles turns up now and
-/// then (an order confirmation, a statement), so a month's sample rarely shows it.
-const WANTED_DAYS: i64 = 365;
-
-/// What makes matched mail look wanted, as Gmail search: starred, in Primary or Updates, or
-/// a subject that order, bill, delivery and account email uses. Marketing mostly sits in
-/// Promotions, so few of its conversations qualify.
-const WANTED_HINTS: &str = "{is:starred category:primary category:updates subject:(receipt OR \
-    invoice OR order OR statement OR payment OR bill OR shipped OR delivered OR delivery OR \
-    verify OR verification OR password OR security OR expire OR expires OR expiring OR renew \
-    OR renewal OR refund OR confirmation OR confirmed OR \"action required\" OR \"action needed\")}";
-
-/// The Gmail search for matched mail that looks wanted (see [`WANTED_HINTS`]).
-fn wanted_query(criteria: &str, days: i64) -> String {
-    format!(
-        "{criteria} {WANTED_HINTS} in:anywhere newer_than:{}d",
-        days.max(WANTED_DAYS)
-    )
-}
-
-/// Where each conversation sits now, counted: trash, spam, inbox or archived.
-fn now_in(threads: &[ThreadSummaryDto]) -> BTreeMap<&'static str, usize> {
-    let mut counts = BTreeMap::new();
-    for t in threads {
-        let has = |id: &str| t.system_label_ids.iter().any(|l| l == id);
-        let place = if has("TRASH") {
-            "trash"
-        } else if has("SPAM") {
-            "spam"
-        } else if has("INBOX") {
-            "inbox"
-        } else {
-            "archived"
-        };
-        *counts.entry(place).or_default() += 1;
-    }
-    counts
-}
-
 async fn filter_audit(api: &LocalApi, args: FilterAudit) -> Result<Value, ApiError> {
     let days = args.days.unwrap_or(AUDIT_DAYS).clamp(1, 3650);
     let sample = args.sample.unwrap_or(5).clamp(1, 50);
@@ -1124,7 +1051,7 @@ async fn filter_audit(api: &LocalApi, args: FilterAudit) -> Result<Value, ApiErr
             if !args.all && !acts {
                 continue;
             }
-            let Some(criteria) = filter_query(&filter.criteria) else {
+            let Some(criteria) = filters::criteria_query(&filter.criteria) else {
                 audited.push(
                     json!({ "filter": filter, "note": "Pheeme can't search for these criteria." }),
                 );
@@ -1133,7 +1060,7 @@ async fn filter_audit(api: &LocalApi, args: FilterAudit) -> Result<Value, ApiErr
             let query = format!("{criteria} in:anywhere newer_than:{days}d");
             let mut entry = match api.mail.search_gmail(accounts, &query, None).await {
                 Ok(page) => {
-                    let now_in = now_in(&page.threads);
+                    let now_in = filters::now_in(&page.threads);
                     let matched = page.threads.len();
                     let caught: Vec<_> = page.threads.into_iter().take(sample).collect();
                     json!({
@@ -1148,7 +1075,7 @@ async fn filter_audit(api: &LocalApi, args: FilterAudit) -> Result<Value, ApiErr
                 Err(e) => json!({ "filter": filter, "gmail_query": query, "error": e.to_string() }),
             };
             if acts {
-                let wanted = wanted_query(&criteria, days);
+                let wanted = filters::wanted_query(&criteria, days);
                 match api.mail.search_gmail(accounts, &wanted, None).await {
                     Ok(page) if page.threads.is_empty() => {}
                     Ok(page) => {
@@ -1175,34 +1102,6 @@ async fn filter_audit(api: &LocalApi, args: FilterAudit) -> Result<Value, ApiErr
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn filter_criteria_become_gmail_queries() {
-        let criteria = json!({
-            "from": "a@x.com OR b@y.com", "subject": "Sale", "query": "deal",
-            "negatedQuery": "invoice", "hasAttachment": true, "size": 1000, "sizeComparison": "larger"
-        });
-        assert_eq!(
-            filter_query(criteria.as_object().unwrap()).as_deref(),
-            Some("from:(a@x.com OR b@y.com) subject:(Sale) (deal) -(invoice) has:attachment larger:1000")
-        );
-        assert_eq!(
-            filter_query(json!({ "from": " " }).as_object().unwrap()),
-            None
-        );
-    }
-
-    #[test]
-    fn wanted_mail_is_looked_for_over_a_year_at_least() {
-        let q = wanted_query("from:(shop.com)", 30);
-        assert!(q.starts_with("from:(shop.com) {is:starred category:primary category:updates subject:(receipt OR invoice"));
-        assert!(
-            q.ends_with("\"action needed\")} in:anywhere newer_than:365d"),
-            "{q}"
-        );
-        assert!(!q.contains("  "), "{q}");
-        assert!(wanted_query("x", 800).ends_with("newer_than:800d"));
-    }
 
     #[test]
     fn only_searches_that_skip_trash_say_so() {

@@ -87,7 +87,7 @@ fn initialize(params: &Value) -> Value {
 
 fn tools_list() -> Value {
     let tools: Vec<Value> = catalog()
-        .into_iter()
+        .iter()
         .map(|t| {
             json!({
                 "name": t.name,

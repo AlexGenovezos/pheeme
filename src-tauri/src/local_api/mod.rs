@@ -11,7 +11,7 @@ mod requests;
 mod tasks;
 mod write;
 
-pub use requests::{catalog, Request, ToolDef};
+pub use requests::{catalog, Domain, Request, ToolDef};
 
 use crate::accounts::{AccountError, AccountService};
 use crate::calendar::error::CalendarError;
@@ -438,15 +438,13 @@ impl LocalApi {
 
     async fn run(&self, request: Request) -> Result<Value, ApiError> {
         // Boxed: the calendar futures are large, and inline they would grow every call's.
-        if request.is_calendar() {
-            return Box::pin(calendar::run(self, request)).await;
-        }
-        if request.is_tasks() {
-            return Box::pin(tasks::run(self, request)).await;
-        }
-        match request.permission() {
-            None => read::run(self, request).await,
-            Some(_) => write::run(self, request).await,
+        match request.domain() {
+            Domain::Calendar => Box::pin(calendar::run(self, request)).await,
+            Domain::Tasks => Box::pin(tasks::run(self, request)).await,
+            Domain::Mail => match request.permission() {
+                None => read::run(self, request).await,
+                Some(_) => write::run(self, request).await,
+            },
         }
     }
 

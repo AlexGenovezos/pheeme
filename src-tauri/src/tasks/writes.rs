@@ -10,9 +10,13 @@ use crate::db::tasks::{DbTask, DbTaskList};
 use crate::gmail::tasks::{ApiTask, TaskPlacement};
 use crate::gmail::GmailError;
 use crate::sync::SyncEvent;
+use crate::tasks::TasksApi;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use std::future::Future;
+use std::sync::Arc;
+use tokio::sync::OwnedMutexGuard;
 
 /// Google's limits on a task's title and notes, and a list's title.
 const MAX_TITLE: usize = 1024;
@@ -173,6 +177,42 @@ impl TasksService {
         }
     }
 
+    /// Holds the account's sync gate for a write, so a running sync can't cache an older
+    /// version of what the write changes.
+    async fn hold(&self, account_id: &str) -> OwnedMutexGuard<()> {
+        self.gate(account_id).lock_owned().await
+    }
+
+    /// Sends one write to the Tasks API and turns Google's answer into the command's
+    /// (see [`Self::settle`]); `missing` is the error for what Google says isn't there.
+    async fn write<T, Fut>(
+        &self,
+        account_id: &str,
+        missing: TasksError,
+        call: impl FnOnce(Arc<dyn TasksApi>) -> Fut,
+    ) -> Result<T, TasksError>
+    where
+        Fut: Future<Output = Result<T, GmailError>>,
+    {
+        let result = call((self.api_for)(account_id)).await;
+        self.settle(account_id, result, missing)
+    }
+
+    /// A write that answers with the task it changed: sends it, then caches Google's version.
+    async fn write_task<Fut>(
+        &self,
+        account_id: &str,
+        list_id: &str,
+        missing: TasksError,
+        call: impl FnOnce(Arc<dyn TasksApi>) -> Fut,
+    ) -> Result<TaskRef, TasksError>
+    where
+        Fut: Future<Output = Result<ApiTask, GmailError>>,
+    {
+        let task = self.write(account_id, missing, call).await?;
+        self.save(account_id, list_id, &task).await
+    }
+
     /// Tells the UI the account's tasks changed and asks for a sync soon.
     fn changed(&self, account_id: &str) {
         self.events.emit(SyncEvent::TasksUpdated {
@@ -208,24 +248,27 @@ impl TasksService {
         parent: Option<String>,
         previous: Option<String>,
     ) -> Result<TaskRef, TasksError> {
-        let gate = self.gate(account_id);
-        let _held = gate.lock().await;
+        let _held = self.hold(account_id).await;
         self.list(account_id, list_id).await?;
         let (parent, previous) = (parent.as_deref(), previous.as_deref());
         self.check_placement(account_id, list_id, None, parent, previous)
             .await?;
         let mut body = body(&edit)?;
         body.retain(|_, v| !v.is_null());
-        let api = (self.api_for)(account_id);
-        let result = api
-            .insert_task(
-                list_id,
-                Value::Object(body),
-                TaskPlacement { parent, previous },
-            )
-            .await;
-        let task = self.settle(account_id, result, TasksError::ListNotFound)?;
-        self.save(account_id, list_id, &task).await
+        self.write_task(
+            account_id,
+            list_id,
+            TasksError::ListNotFound,
+            |api| async move {
+                api.insert_task(
+                    list_id,
+                    Value::Object(body),
+                    TaskPlacement { parent, previous },
+                )
+                .await
+            },
+        )
+        .await
     }
 
     /// Changes a task's title, details or due date.
@@ -236,8 +279,7 @@ impl TasksService {
         task_id: &str,
         edit: TaskEdit,
     ) -> Result<TaskRef, TasksError> {
-        let gate = self.gate(account_id);
-        let _held = gate.lock().await;
+        let _held = self.hold(account_id).await;
         self.stored(account_id, list_id, task_id).await?;
         let body = body(&edit)?;
         self.patch(account_id, list_id, task_id, body).await
@@ -251,8 +293,7 @@ impl TasksService {
         task_id: &str,
         completed: bool,
     ) -> Result<TaskRef, TasksError> {
-        let gate = self.gate(account_id);
-        let _held = gate.lock().await;
+        let _held = self.hold(account_id).await;
         self.stored(account_id, list_id, task_id).await?;
         let body = if completed {
             json!({"status": "completed"})
@@ -279,10 +320,13 @@ impl TasksService {
                 id: task_id.to_owned(),
             });
         }
-        let api = (self.api_for)(account_id);
-        let result = api.patch_task(list_id, task_id, Value::Object(body)).await;
-        let task = self.settle(account_id, result, TasksError::TaskNotFound)?;
-        self.save(account_id, list_id, &task).await
+        self.write_task(
+            account_id,
+            list_id,
+            TasksError::TaskNotFound,
+            |api| async move { api.patch_task(list_id, task_id, Value::Object(body)).await },
+        )
+        .await
     }
 
     /// Deletes a task with its subtasks.
@@ -292,12 +336,12 @@ impl TasksService {
         list_id: &str,
         task_id: &str,
     ) -> Result<(), TasksError> {
-        let gate = self.gate(account_id);
-        let _held = gate.lock().await;
+        let _held = self.hold(account_id).await;
         self.stored(account_id, list_id, task_id).await?;
-        let api = (self.api_for)(account_id);
-        let result = api.delete_task(list_id, task_id).await;
-        self.settle(account_id, result, TasksError::TaskNotFound)?;
+        self.write(account_id, TasksError::TaskNotFound, |api| async move {
+            api.delete_task(list_id, task_id).await
+        })
+        .await?;
         db::tasks::remove_task_with_subtasks(&self.db, account_id, list_id, task_id).await?;
         // Read the list in full next, in case Google kept a subtask after all.
         db::tasks::needs_full_sync(&self.db, account_id, list_id).await?;
@@ -315,18 +359,21 @@ impl TasksService {
         parent: Option<String>,
         previous: Option<String>,
     ) -> Result<TaskRef, TasksError> {
-        let gate = self.gate(account_id);
-        let _held = gate.lock().await;
+        let _held = self.hold(account_id).await;
         self.stored(account_id, list_id, task_id).await?;
         let (parent, previous) = (parent.as_deref(), previous.as_deref());
         self.check_placement(account_id, list_id, Some(task_id), parent, previous)
             .await?;
-        let api = (self.api_for)(account_id);
-        let result = api
-            .move_task(list_id, task_id, TaskPlacement { parent, previous }, None)
-            .await;
-        let task = self.settle(account_id, result, TasksError::TaskNotFound)?;
-        self.save(account_id, list_id, &task).await
+        self.write_task(
+            account_id,
+            list_id,
+            TasksError::TaskNotFound,
+            |api| async move {
+                api.move_task(list_id, task_id, TaskPlacement { parent, previous }, None)
+                    .await
+            },
+        )
+        .await
     }
 
     /// Moves a task (with its subtasks) to the top of another list of the same account.
@@ -337,8 +384,7 @@ impl TasksService {
         task_id: &str,
         destination_list_id: &str,
     ) -> Result<TaskRef, TasksError> {
-        let gate = self.gate(account_id);
-        let _held = gate.lock().await;
+        let _held = self.hold(account_id).await;
         self.stored(account_id, list_id, task_id).await?;
         self.list(account_id, destination_list_id).await?;
         if destination_list_id == list_id {
@@ -346,16 +392,17 @@ impl TasksService {
                 "The task is already in that list.".into(),
             ));
         }
-        let api = (self.api_for)(account_id);
-        let result = api
-            .move_task(
-                list_id,
-                task_id,
-                TaskPlacement::default(),
-                Some(destination_list_id),
-            )
-            .await;
-        let task = self.settle(account_id, result, TasksError::TaskNotFound)?;
+        let task = self
+            .write(account_id, TasksError::TaskNotFound, |api| async move {
+                api.move_task(
+                    list_id,
+                    task_id,
+                    TaskPlacement::default(),
+                    Some(destination_list_id),
+                )
+                .await
+            })
+            .await?;
         db::tasks::remove_task_with_subtasks(&self.db, account_id, list_id, task_id).await?;
         // Both lists are read in full next: the subtasks arrive in the destination.
         for list in [list_id, destination_list_id] {
@@ -371,11 +418,12 @@ impl TasksService {
         title: &str,
     ) -> Result<TaskListRef, TasksError> {
         let title = list_title(title)?;
-        let gate = self.gate(account_id);
-        let _held = gate.lock().await;
-        let api = (self.api_for)(account_id);
-        let result = api.insert_task_list(title).await;
-        let list = self.settle(account_id, result, TasksError::ListNotFound)?;
+        let _held = self.hold(account_id).await;
+        let list = self
+            .write(account_id, TasksError::ListNotFound, |api| async move {
+                api.insert_task_list(title).await
+            })
+            .await?;
         db::tasks::save_task_list(&self.db, account_id, &convert::task_list(&list)).await?;
         self.changed(account_id);
         Ok(TaskListRef {
@@ -391,12 +439,13 @@ impl TasksService {
         title: &str,
     ) -> Result<TaskListRef, TasksError> {
         let title = list_title(title)?;
-        let gate = self.gate(account_id);
-        let _held = gate.lock().await;
+        let _held = self.hold(account_id).await;
         self.list(account_id, list_id).await?;
-        let api = (self.api_for)(account_id);
-        let result = api.patch_task_list(list_id, title).await;
-        let list = self.settle(account_id, result, TasksError::ListNotFound)?;
+        let list = self
+            .write(account_id, TasksError::ListNotFound, |api| async move {
+                api.patch_task_list(list_id, title).await
+            })
+            .await?;
         db::tasks::save_task_list(&self.db, account_id, &convert::task_list(&list)).await?;
         self.changed(account_id);
         Ok(TaskListRef {
@@ -411,12 +460,12 @@ impl TasksService {
         account_id: &str,
         list_id: &str,
     ) -> Result<(), TasksError> {
-        let gate = self.gate(account_id);
-        let _held = gate.lock().await;
+        let _held = self.hold(account_id).await;
         self.list(account_id, list_id).await?;
-        let api = (self.api_for)(account_id);
-        let result = api.delete_task_list(list_id).await;
-        self.settle(account_id, result, TasksError::ListNotFound)?;
+        self.write(account_id, TasksError::ListNotFound, |api| async move {
+            api.delete_task_list(list_id).await
+        })
+        .await?;
         db::tasks::delete_task_list(&self.db, account_id, list_id).await?;
         self.changed(account_id);
         Ok(())
