@@ -102,17 +102,24 @@ function toDetail(t: FixtureThread, labels: PreviewLabel[]): ThreadDetail {
   return { thread: toSummary(t, labels), messages, bodyError: null };
 }
 
+/** The preview's OAuth clients, shaped like Google's: the Cloud project's number first. */
+const PREVIEW_CLIENT = "418203915572-preview8k2m.apps.googleusercontent.com";
+const OTHER_CLIENT = "730561248890-studio4hq7.apps.googleusercontent.com";
+
 /** One stateful backend for both onboarding and the shell in browser preview. */
 export function createPreviewHandlers(search = ""): PreviewHandlers {
   const params = new URLSearchParams(search);
   const accounts: AccountInfo[] =
     params.get("accounts") === "0"
       ? []
-      : fixtureAccounts.slice(0, params.get("accounts") === "1" ? 1 : undefined).map((account) => ({
-          ...account,
-          clientId: "1.apps.googleusercontent.com",
-          synced: true,
-        }));
+      : fixtureAccounts
+          .slice(0, params.get("accounts") === "1" ? 1 : undefined)
+          .map((account, i) => ({
+            ...account,
+            // `?clients=2` signs the second account in through a client of its own.
+            clientId: params.get("clients") === "2" && i > 0 ? OTHER_CLIENT : PREVIEW_CLIENT,
+            synced: true,
+          }));
   const flows = new Map<string, ClientChoice | null>();
   const beginSignIn = (args?: { client: ClientChoice }) => {
     const flowId = crypto.randomUUID();
@@ -455,7 +462,7 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
         id: crypto.randomUUID(),
         email: "you@example.com",
         displayName: "You",
-        clientId: "1.apps.googleusercontent.com",
+        clientId: PREVIEW_CLIENT,
         synced: true,
       };
       if (!accounts.includes(account)) accounts.push(account);
