@@ -82,7 +82,7 @@
         "https://github.com/AlexGenovezos/pheeme/releases/latest/download/latest.json"
       ],
       "windows": {
-        "installMode": "passive"
+        "installMode": "quiet"
       }
     }
   }

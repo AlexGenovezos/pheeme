@@ -62,12 +62,17 @@ Alex picked A.
   restarts wait until the next newer release or the next launch.
 - A newer release found after downloading replaces the downloaded one, as checks already do.
 
-## Builder's calls
+## Builder's calls (as built)
 
-- Where the idle clock lives (frontend `visibilitychange`/`blur` timestamps vs Rust window
-  events), and how "a dialog with typed changes" is detected.
-- Whether to add a Settings › About switch "Install updates automatically" (on by default) so
-  the release-note line is true; recommended, small.
-- Splitting `downloadAndInstall()` into `download()` then `install()` with the plugin's API,
-  and how install-on-quit hooks the existing exit request that saves drafts.
-- Tests: extend `src/lib/updater.test.ts` with fake timers for the idle rules.
+- The idle clock lives in the frontend updater's one-minute tick, reading the window's shown and focused
+  state from Tauri (minimized counts as shown, so it restarts shown). A gap of 10 minutes or more between
+  ticks means the computer slept: an open window's hour starts over from the wake.
+- "Something in progress" is any compose panel, any open dialog (`role="dialog"`/`aria-modal`), or the setup
+  screen. A draft that can't be saved stops the restart without a toast.
+- Settings › About › Install updates automatically, on by default, kept in localStorage
+  (`pheeme.auto-update`). Off, updates still download and the banner offers them.
+- The banner shows once the update has downloaded. A failed download is retried like a failed check
+  (15 minutes).
+- Install on quit runs in the save-before-exit step once every message is saved, with
+  `restartAfterInstall: false` so the Windows installer doesn't reopen the app.
+- Tests: `src/lib/updater.test.ts` (idle rules with fake timers), `db/settings.rs` (start-hidden flag).

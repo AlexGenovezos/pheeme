@@ -1,7 +1,24 @@
 //! Update checks and installs run in the UI (the updater plugin's JS API); this writes
-//! them to the diagnostics log, which the webview console can't reach in release builds.
+//! them to the diagnostics log, which the webview console can't reach in release builds,
+//! and keeps the window hidden across an update's automatic restart from the tray.
 
+use super::CommandError;
+use crate::AppState;
 use serde::Deserialize;
+use tauri::{AppHandle, Manager, Runtime, State};
+
+/// How long a "start hidden" request waits for the restart it was made for.
+const START_HIDDEN_FOR_MS: i64 = 5 * 60 * 1000;
+
+/// Whether this launch is an update's restart from the tray, which keeps the window hidden.
+/// Managed in `setup` once the database is open; absent when startup failed.
+pub struct LaunchHidden(pub bool);
+
+/// True when the window should stay hidden at launch (see [`LaunchHidden`]).
+pub fn launch_is_hidden<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<LaunchHidden>()
+        .is_some_and(|hidden| hidden.0)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -9,6 +26,9 @@ pub enum UpdateEvent {
     Available,
     UpToDate,
     CheckFailed,
+    Downloaded,
+    DownloadFailed,
+    AutoRestart,
     Installing,
     Installed,
     InstallFailed,
@@ -19,7 +39,7 @@ impl UpdateEvent {
     fn is_failure(self) -> bool {
         matches!(
             self,
-            Self::CheckFailed | Self::InstallFailed | Self::ListenerFailed
+            Self::CheckFailed | Self::DownloadFailed | Self::InstallFailed | Self::ListenerFailed
         )
     }
 }
@@ -44,6 +64,25 @@ pub fn log_update(event: UpdateEvent, version: Option<String>, error: Option<Str
     }
 }
 
+/// Keep the window hidden on the next launch, if it comes within a few minutes: called just
+/// before an update restarts Pheeme while it sits in the tray.
+#[tauri::command]
+pub async fn start_hidden_next_launch(state: State<'_, AppState>) -> Result<(), CommandError> {
+    let until = crate::sync::engine::now_ms() + START_HIDDEN_FOR_MS;
+    crate::db::settings::set_start_hidden_until(&state.db, until)
+        .await
+        .map_err(|error| CommandError {
+            code: "start_hidden".into(),
+            message: error.to_string(),
+        })
+}
+
+/// Whether this launch keeps the window hidden: the UI then doesn't show it.
+#[tauri::command]
+pub fn launch_hidden(app: AppHandle) -> bool {
+    launch_is_hidden(&app)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,6 +95,9 @@ mod tests {
             ("available", UpdateEvent::Available),
             ("up_to_date", UpdateEvent::UpToDate),
             ("check_failed", UpdateEvent::CheckFailed),
+            ("downloaded", UpdateEvent::Downloaded),
+            ("download_failed", UpdateEvent::DownloadFailed),
+            ("auto_restart", UpdateEvent::AutoRestart),
             ("installing", UpdateEvent::Installing),
             ("installed", UpdateEvent::Installed),
             ("install_failed", UpdateEvent::InstallFailed),

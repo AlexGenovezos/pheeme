@@ -27,6 +27,9 @@ export type UpdateEvent =
   | "available"
   | "up_to_date"
   | "check_failed"
+  | "downloaded"
+  | "download_failed"
+  | "auto_restart"
   | "installing"
   | "installed"
   | "install_failed"
@@ -34,6 +37,10 @@ export type UpdateEvent =
 /** Log one updater step with the version it concerns and any error, for Send diagnostics. */
 export const logUpdate = (event: UpdateEvent, version: string | null, error: string | null) =>
   call("log_update", { event, version, error });
+/** Keep the window hidden on the next launch: an update is about to restart Pheeme while it sits in the tray. */
+export const startHiddenNextLaunch = () => call("start_hidden_next_launch");
+/** Whether this launch is an update's restart from the tray, which leaves the window hidden. */
+export const launchHidden = () => call("launch_hidden");
 /**
  * What the user waited for after picking a conversation, measured in the window: `get_thread` times only the
  * backend, and a conversation already in memory never calls it. Milliseconds from the pick; no ids or subjects.
