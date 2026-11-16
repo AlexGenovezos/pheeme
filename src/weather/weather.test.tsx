@@ -49,7 +49,7 @@ beforeEach(() => {
     home: SPRINGFIELD,
     unit: "fahrenheit",
   });
-  useHomeForecast.setState({ key: null, days: null, at: 0, reading: null });
+  useHomeForecast.setState({ key: null, days: null, hours: null, at: 0, reading: null });
 });
 
 afterEach(() => {

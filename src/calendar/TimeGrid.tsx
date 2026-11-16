@@ -1,5 +1,6 @@
 // Day and Week: day headers, the all-day band, then 24 hours with a time gutter,
-// staggered overlapping events, and the current-time line on today.
+// staggered overlapping events, the current-time line on today, and (with weather on) the
+// forecast's rain, sun or snow behind the events in the hours it's due.
 import { type CSSProperties, useLayoutEffect, useMemo, useRef } from "react";
 import type { CalendarEvent } from "../lib/tauri";
 import { cx } from "../lib/utils";
@@ -14,6 +15,9 @@ import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
 import { useNow } from "./useNow";
 import { DayWeather, weatherFit } from "../weather/DayWeather";
+import { type HourRun, useHourRuns } from "../weather/hourly";
+import { HourWeather } from "../weather/HourWeather";
+import { useWeatherMotion } from "../weather/motion";
 import { columnLabel, type OtherZone, useZoneSettings } from "./zoneSettings";
 import { formatGutterTime, gutterTimes, zoneShortName } from "./zones";
 
@@ -60,17 +64,24 @@ function DayHeader({
   today,
   single,
   width,
+  runs,
+  onEnter,
 }: {
   date: string;
   today: boolean;
   single: boolean;
   /** The day's width in px (Infinity before it's measured). */
   width: number;
+  /** The day's weather in its hours, for the forecast's words. */
+  runs: HourRun[] | undefined;
+  /** The pointer moved into the header. */
+  onEnter: () => void;
 }) {
   return (
     <div
       className={cx("cal-grid__day-head", today && "cal-grid__day-head--today")}
       role="columnheader"
+      onPointerEnter={onEnter}
     >
       <span className="cal-grid__weekday">{formatDay(date, { weekday: "short" })}</span>
       <button
@@ -83,7 +94,11 @@ function DayHeader({
       >
         {Number(date.slice(8))}
       </button>
-      <DayWeather date={date} fit={weatherFit(width, WEATHER_FULL_PX, WEATHER_HIGH_PX)} />
+      <DayWeather
+        date={date}
+        fit={weatherFit(width, WEATHER_FULL_PX, WEATHER_HIGH_PX)}
+        runs={runs}
+      />
     </div>
   );
 }
@@ -108,6 +123,8 @@ export function TimeGrid({
   const taskBand = useMemo(() => layoutTasks(tasks ?? [], days, band), [tasks, days, band]);
   const bandRows = [...band, ...taskBand].reduce((n, s) => Math.max(n, s.row + 1), 0);
   const columns = useMemo(() => days.map((d) => layoutDay(list, d, tz)), [list, days, tz]);
+  const runs = useHourRuns(tz, now.date);
+  const motion = useWeatherMotion(days);
   // Each day's width, for events too narrow for more than a few letters of their title.
   const bodyRef = useRef<HTMLDivElement>(null);
   const bodyWidth = useWidth(bodyRef);
@@ -179,6 +196,8 @@ export function TimeGrid({
             today={d === now.date}
             single={days.length === 1}
             width={dayWidth}
+            runs={runs[d]}
+            onEnter={() => motion.enter(d)}
           />
         ))}
       </div>
@@ -256,7 +275,9 @@ export function TimeGrid({
                 } as CSSProperties
               }
               onPointerDown={(e) => createInColumn(e, d, tz)}
+              onPointerEnter={() => motion.enter(d)}
             >
+              <HourWeather runs={runs[d]} date={d} playing={motion.playing.has(d)} />
               {columns[i].map((b) => {
                 const shown = Math.max(b.end - b.start, MIN_EVENT_MINUTES);
                 const eventWidth = dayWidth * b.contentWidth;

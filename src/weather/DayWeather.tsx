@@ -1,11 +1,12 @@
 // The forecast at the top of a day: the drawn weather (it moves while pointed at, when animation is on), the high and the
-// low. With weather on, every day keeps the same slot from the first frame, empty for days
+// low; its words add the day's weather by hour where Day and Week draw it. With weather on, every day keeps the same slot from the first frame, empty for days
 // outside the forecast.
 import type { CSSProperties } from "react";
 import { Skeleton } from "../components/ui/Skeleton";
 import { cx } from "../lib/utils";
 import { condition, degrees } from "./codes";
 import { inForecastRange, useHomeForecast } from "./forecast";
+import { describeRuns, type HourRun } from "./hourly";
 import { WeatherArt } from "./WeatherArt";
 import { useWeatherSettings } from "./weatherSettings";
 import "./weather.css";
@@ -22,10 +23,13 @@ export function DayWeather({
   date,
   fit = "full",
   inMonth = false,
+  runs,
   style,
 }: {
   date: string;
   fit?: DayWeatherFit;
+  /** The day's weather by hour, said after the high and low. */
+  runs?: HourRun[];
   /** Sits in a month cell's date row, at its right. */
   inMonth?: boolean;
   style?: CSSProperties;
@@ -50,7 +54,9 @@ export function DayWeather({
     );
   }
   const { label, kind, intensity } = condition(day.code);
-  const words = `${label}, high ${degrees(day.high)}, low ${degrees(day.low)}`;
+  const words =
+    `${label}, high ${degrees(day.high)}, low ${degrees(day.low)}` +
+    (runs?.length ? `. ${describeRuns(runs)}` : "");
   return (
     <span className={className} style={style} title={words} aria-label={words} role="img">
       <WeatherArt

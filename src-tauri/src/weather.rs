@@ -1,4 +1,4 @@
-//! Weather for Calendar mode, off until Settings › Calendar turns it on: daily forecasts and
+//! Weather for Calendar mode, off until Settings › Calendar turns it on: daily and hourly forecasts and
 //! place search from Open-Meteo (free, no key, data under CC BY 4.0). A request carries a place
 //! name or a latitude and longitude, nothing else. Answers are kept in memory: forecasts for an
 //! hour, places found for an event's location for the session.
@@ -67,6 +67,27 @@ pub struct DayForecast {
     pub low: f64,
 }
 
+/// One hour's forecast; `at` is the hour's start as UTC milliseconds.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HourForecast {
+    pub at: i64,
+    /// The WMO weather code.
+    pub code: u8,
+    /// Rain, showers and snow in the hour, in millimetres.
+    pub precipitation: f64,
+    /// Whether the sun is up.
+    pub is_day: bool,
+}
+
+/// A place's forecast: by day, and by hour for the same days.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Forecast {
+    pub days: Vec<DayForecast>,
+    pub hours: Vec<HourForecast>,
+}
+
 /// The forecast for an event's location.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,7 +130,14 @@ struct SearchResponse {
 
 #[derive(Deserialize)]
 struct ForecastResponse {
+    /// The IANA zone the times are in (`timezone=auto` picks the place's).
+    #[serde(default)]
+    timezone: String,
+    /// The zone's offset now, for a zone chrono-tz doesn't know.
+    #[serde(default)]
+    utc_offset_seconds: i32,
     daily: Daily,
+    hourly: Hourly,
 }
 
 #[derive(Deserialize)]
@@ -120,11 +148,21 @@ struct Daily {
     temperature_2m_min: Vec<Option<f64>>,
 }
 
-type Forecast = Arc<Vec<DayForecast>>;
+#[derive(Deserialize)]
+struct Hourly {
+    /// Local wall time, `YYYY-MM-DDTHH:MM`.
+    time: Vec<String>,
+    weather_code: Vec<Option<u8>>,
+    precipitation: Vec<Option<f64>>,
+    is_day: Vec<Option<u8>>,
+}
+
+/// A forecast and when it was read.
+type CachedForecast = (Instant, Arc<Forecast>);
 
 pub struct WeatherService {
     http: reqwest::Client,
-    forecasts: Mutex<HashMap<(String, TemperatureUnit), (Instant, Forecast)>>,
+    forecasts: Mutex<HashMap<(String, TemperatureUnit), CachedForecast>>,
     locations: Mutex<HashMap<String, Option<Place>>>,
 }
 
@@ -195,18 +233,18 @@ impl WeatherService {
         Ok(found.into_iter().map(Place::from).collect())
     }
 
-    /// The daily forecast at a point, from today (in the place's time zone).
+    /// The daily and hourly forecast at a point, from today (in the place's time zone).
     pub async fn forecast(
         &self,
         latitude: f64,
         longitude: f64,
         unit: TemperatureUnit,
-    ) -> Result<Forecast, WeatherError> {
+    ) -> Result<Arc<Forecast>, WeatherError> {
         // About a kilometre: the same town shares one forecast.
         let key = (format!("{latitude:.2},{longitude:.2}"), unit);
-        if let Some((at, days)) = lock(&self.forecasts).get(&key) {
+        if let Some((at, forecast)) = lock(&self.forecasts).get(&key) {
             if at.elapsed() < FORECAST_TTL {
-                return Ok(days.clone());
+                return Ok(forecast.clone());
             }
         }
         let mut query = vec![
@@ -216,6 +254,7 @@ impl WeatherService {
                 "daily",
                 "weather_code,temperature_2m_max,temperature_2m_min".to_owned(),
             ),
+            ("hourly", "weather_code,precipitation,is_day".to_owned()),
             ("timezone", "auto".to_owned()),
             ("forecast_days", FORECAST_DAYS.to_string()),
         ];
@@ -223,9 +262,16 @@ impl WeatherService {
             query.push(("temperature_unit", "fahrenheit".to_owned()));
         }
         let response: ForecastResponse = self.get(FORECAST_URL, &query).await?;
-        let days = Arc::new(days_of(response.daily));
-        lock(&self.forecasts).insert(key, (Instant::now(), days.clone()));
-        Ok(days)
+        let forecast = Arc::new(Forecast {
+            hours: hours_of(
+                response.hourly,
+                &response.timezone,
+                response.utc_offset_seconds,
+            ),
+            days: days_of(response.daily),
+        });
+        lock(&self.forecasts).insert(key, (Instant::now(), forecast.clone()));
+        Ok(forecast)
     }
 
     /// The town an event's location is in, if one can be told from its text.
@@ -254,10 +300,10 @@ impl WeatherService {
         let Some(place) = self.locate(location).await? else {
             return Ok(None);
         };
-        let days = self.forecast(place.latitude, place.longitude, unit).await?;
+        let forecast = self.forecast(place.latitude, place.longitude, unit).await?;
         Ok(Some(LocationForecast {
             place,
-            days: days.as_ref().clone(),
+            days: forecast.days.clone(),
         }))
     }
 }
@@ -280,6 +326,40 @@ fn days_of(daily: Daily) -> Vec<DayForecast> {
                 code: code?,
                 high: high?,
                 low: low?,
+            })
+        })
+        .collect()
+}
+
+/// Hours with a code; their local wall times in `zone` turned into UTC instants. A wall time
+/// that happens twice (clocks going back) takes the first; one that never happens (clocks
+/// going forward) is left out. A zone chrono-tz doesn't know falls back on `offset`.
+fn hours_of(hourly: Hourly, zone: &str, offset: i32) -> Vec<HourForecast> {
+    use chrono::{FixedOffset, NaiveDateTime, TimeZone};
+    let tz: Option<chrono_tz::Tz> = zone.parse().ok();
+    let fixed = FixedOffset::east_opt(offset).unwrap_or(FixedOffset::east_opt(0).unwrap());
+    hourly
+        .time
+        .into_iter()
+        .zip(hourly.weather_code)
+        .zip(hourly.precipitation.into_iter().zip(hourly.is_day))
+        .filter_map(|((time, code), (precipitation, is_day))| {
+            let local = NaiveDateTime::parse_from_str(&time, "%Y-%m-%dT%H:%M").ok()?;
+            let at = match tz {
+                Some(tz) => tz
+                    .from_local_datetime(&local)
+                    .earliest()?
+                    .timestamp_millis(),
+                None => fixed
+                    .from_local_datetime(&local)
+                    .single()?
+                    .timestamp_millis(),
+            };
+            Some(HourForecast {
+                at,
+                code: code?,
+                precipitation: precipitation.unwrap_or(0.0),
+                is_day: is_day.unwrap_or(1) == 1,
             })
         })
         .collect()
@@ -580,6 +660,60 @@ mod tests {
         );
     }
 
+    fn hourly(times: &[&str]) -> Hourly {
+        Hourly {
+            time: times.iter().map(|t| t.to_string()).collect(),
+            weather_code: times.iter().map(|_| Some(61)).collect(),
+            precipitation: times.iter().map(|_| Some(1.2)).collect(),
+            is_day: times.iter().map(|_| Some(1)).collect(),
+        }
+    }
+
+    #[test]
+    fn hours_are_utc_instants_through_a_dst_change() {
+        // New York falls back at 2:00 on 2026-11-01: 1:00 happens twice, then EST (UTC-5).
+        let hours = hours_of(
+            hourly(&["2026-10-31T23:00", "2026-11-01T01:00", "2026-11-01T03:00"]),
+            "America/New_York",
+            -18000,
+        );
+        let at = |s: &str| {
+            chrono::DateTime::parse_from_rfc3339(s)
+                .unwrap()
+                .timestamp_millis()
+        };
+        assert_eq!(
+            hours.iter().map(|h| h.at).collect::<Vec<_>>(),
+            [
+                at("2026-11-01T03:00:00Z"),
+                at("2026-11-01T05:00:00Z"),
+                at("2026-11-01T08:00:00Z")
+            ]
+        );
+        assert_eq!(hours[0].precipitation, 1.2);
+        assert!(hours[0].is_day);
+    }
+
+    #[test]
+    fn hours_skip_missing_codes_and_fall_back_on_the_offset() {
+        let mut data = hourly(&["2026-11-16T10:00", "2026-11-16T11:00"]);
+        data.weather_code[1] = None;
+        data.precipitation[0] = None;
+        data.is_day[0] = Some(0);
+        let hours = hours_of(data, "Nowhere/Unknown", 3600);
+        assert_eq!(
+            hours,
+            [HourForecast {
+                at: chrono::DateTime::parse_from_rfc3339("2026-11-16T09:00:00Z")
+                    .unwrap()
+                    .timestamp_millis(),
+                code: 61,
+                precipitation: 0.0,
+                is_day: false,
+            }]
+        );
+    }
+
     #[test]
     fn a_search_with_no_matches_has_no_results_field() {
         let empty: SearchResponse = serde_json::from_str(r#"{"generationtime_ms":0.07}"#).unwrap();
@@ -601,6 +735,11 @@ mod tests {
             .expect("a town");
         assert_eq!(found.place.name, "New York");
         assert!(found.days.len() >= 7, "{:?}", found.days);
+        let home = weather
+            .forecast(40.71, -74.01, TemperatureUnit::Fahrenheit)
+            .await
+            .unwrap();
+        assert!(home.hours.len() >= 24 * 7, "{} hours", home.hours.len());
         let places = weather.search("Berlin").await.unwrap();
         assert_eq!(places[0].country.as_deref(), Some("Germany"));
     }

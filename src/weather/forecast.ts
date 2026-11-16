@@ -1,9 +1,9 @@
-// The home location's daily forecast, for the day headers. Read when Calendar mode shows with
+// The home location's forecast: by day for the day headers, by hour for the bands in Day and Week. Read when Calendar mode shows with
 // weather on, and again once it's an hour old (the Rust side keeps it for that hour too).
 import { useEffect } from "react";
 import { create } from "zustand";
 import { addDays, dateOf, systemZone } from "../calendar/dates";
-import { type DayForecast, getWeatherForecast } from "../lib/tauri";
+import { type DayForecast, getWeatherForecast, type HourForecast } from "../lib/tauri";
 import { useWeatherSettings } from "./weatherSettings";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -19,6 +19,8 @@ interface HomeForecast {
   key: string | null;
   /** By date; `null` until the first read for `key` has finished (`{}` if it failed). */
   days: Record<string, DayForecast> | null;
+  /** Hour by hour, oldest first; `null` alongside `days`. */
+  hours: HourForecast[] | null;
   at: number;
   /** The key a read is under way for. */
   reading: string | null;
@@ -27,6 +29,7 @@ interface HomeForecast {
 export const useHomeForecast = create<HomeForecast>(() => ({
   key: null,
   days: null,
+  hours: null,
   at: 0,
   reading: null,
 }));
@@ -40,17 +43,18 @@ export function refreshHomeForecast() {
   if (s.key === key && s.days && Date.now() - s.at < HOUR_MS) return;
   if (s.reading === key) return;
   useHomeForecast.setState(
-    s.key === key ? { reading: key } : { key, days: null, at: 0, reading: key },
+    s.key === key ? { reading: key } : { key, days: null, hours: null, at: 0, reading: key },
   );
   const done = () => {
     if (useHomeForecast.getState().reading === key) useHomeForecast.setState({ reading: null });
     return useHomeForecast.getState().key === key;
   };
   getWeatherForecast(home.latitude, home.longitude, unit).then(
-    (days) => {
+    ({ days, hours }) => {
       if (!done()) return;
       useHomeForecast.setState({
         days: Object.fromEntries(days.map((d) => [d.date, d])),
+        hours,
         at: Date.now(),
       });
     },
@@ -59,6 +63,7 @@ export function refreshHomeForecast() {
       // Loaded, with nothing: the headers drop their placeholders; a later check tries again.
       useHomeForecast.setState((st) => ({
         days: st.days ?? {},
+        hours: st.hours ?? [],
         at: Date.now() - HOUR_MS + RETRY_MS,
       }));
     },

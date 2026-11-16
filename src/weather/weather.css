@@ -212,6 +212,179 @@
   }
 }
 
+/*
+ * The weather in the hours (HourWeather.tsx): a band per run behind the day's events, its edges
+ * faded so it never reads as an event. Presses go through to the grid. The textures hold still
+ * unless their day plays (--playing, motion.ts); reduced motion holds them still regardless.
+ */
+.wx-hours-day {
+  position: absolute;
+  z-index: 0;
+  inset: var(--space-0);
+  overflow: hidden;
+  pointer-events: none;
+}
+.wx-hours {
+  position: absolute;
+  right: var(--space-0);
+  left: var(--space-0);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--weather-hours-fade),
+    black calc(100% - var(--weather-hours-fade)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--weather-hours-fade),
+    black calc(100% - var(--weather-hours-fade)),
+    transparent
+  );
+}
+.wx-hours--rain {
+  background: color-mix(in srgb, var(--weather-rain) var(--weather-hours-tint), transparent);
+}
+.wx-hours--rain[data-intensity="3"] {
+  background: color-mix(in srgb, var(--weather-rain) var(--weather-hours-tint-strong), transparent);
+}
+.wx-hours--storm {
+  background: color-mix(
+    in srgb,
+    var(--weather-storm-mid) var(--weather-hours-tint-strong),
+    transparent
+  );
+}
+.wx-hours--snow {
+  background: color-mix(in srgb, var(--weather-snow) var(--weather-hours-tint), transparent);
+}
+.wx-hours--fog {
+  background: color-mix(in srgb, var(--weather-fog) var(--weather-hours-tint), transparent);
+}
+/* Sun: a warm wash, strongest in the run's middle. */
+.wx-hours--sun {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--weather-sun-glow) var(--weather-hours-tint), transparent),
+    transparent
+  );
+}
+
+/* Rain and snow: a texture one tile taller than the band, sliding down one tile and round again. */
+.wx-hours__fall {
+  position: absolute;
+  top: calc(var(--wx-tile) * -1);
+  right: var(--space-0);
+  bottom: var(--space-0);
+  left: var(--space-0);
+  animation: wx-hours-fall var(--weather-hours-rain-duration) linear infinite;
+}
+.wx-hours--snow .wx-hours__fall {
+  animation-duration: var(--weather-hours-snow-duration);
+}
+.wx-hours[data-intensity="3"] .wx-hours__fall {
+  animation-duration: calc(var(--weather-hours-rain-duration) * 0.75);
+}
+.wx-hours--snow[data-intensity="3"] .wx-hours__fall {
+  animation-duration: calc(var(--weather-hours-snow-duration) * 0.75);
+}
+.wx-hours__fall svg {
+  display: block;
+}
+.wx-hours__drop {
+  stroke: color-mix(in srgb, var(--weather-rain) var(--weather-hours-ink), transparent);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.wx-hours__flake {
+  fill: color-mix(in srgb, var(--weather-snow) calc(var(--weather-hours-ink) * 1.6), transparent);
+}
+.wx-hours__glow {
+  position: absolute;
+  inset: var(--space-0);
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    color-mix(in srgb, var(--weather-sun-light) var(--weather-hours-tint), transparent),
+    transparent 70%
+  );
+  animation: wx-hours-glow var(--weather-glow-duration) ease-in-out infinite alternate;
+}
+.wx-hours__mist {
+  position: absolute;
+  top: var(--space-0);
+  right: calc(var(--weather-hours-mist-drift) * -1);
+  bottom: var(--space-0);
+  left: calc(var(--weather-hours-mist-drift) * -1);
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent var(--space-0),
+    color-mix(in srgb, var(--weather-fog) var(--weather-hours-tint-strong), transparent)
+      var(--space-3),
+    transparent var(--space-6),
+    transparent var(--space-8)
+  );
+  animation: wx-hours-mist var(--weather-hours-mist-duration) ease-in-out infinite alternate;
+}
+.wx-hours__flash {
+  position: absolute;
+  inset: var(--space-0);
+  background: color-mix(in srgb, var(--weather-bolt) var(--weather-hours-tint-strong), transparent);
+  opacity: 0;
+  animation: wx-hours-flash var(--weather-flash-duration) steps(1, end) infinite;
+}
+
+/* After the parts: their `animation` shorthand would set it back to running. */
+.wx-hours * {
+  animation-play-state: paused;
+}
+.wx-hours--playing * {
+  animation-play-state: running;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wx-hours * {
+    animation-play-state: paused !important;
+  }
+}
+@keyframes wx-hours-fall {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(var(--wx-tile));
+  }
+}
+@keyframes wx-hours-glow {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes wx-hours-mist {
+  from {
+    transform: translateX(calc(var(--weather-hours-mist-drift) * -1));
+  }
+  to {
+    transform: translateX(var(--weather-hours-mist-drift));
+  }
+}
+@keyframes wx-hours-flash {
+  0%,
+  80%,
+  86%,
+  100% {
+    opacity: 0;
+  }
+  82%,
+  88% {
+    opacity: 1;
+  }
+}
+
 /* Puffs breathe: rise a little and swell. */
 @keyframes wx-bob {
   from {
