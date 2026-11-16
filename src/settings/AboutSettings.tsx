@@ -1,5 +1,6 @@
 import { version } from "../../package.json";
 import { Button } from "../components/ui/Button";
+import { Switch } from "../components/ui/Switch";
 import { checkForUpdatesNow, displayVersion, useUpdateStore } from "../lib/updater";
 import { isTauri } from "../preview/runtime";
 import { useSetupGuide } from "../onboarding/guideStore";
@@ -19,6 +20,8 @@ export function AboutSettings() {
   const applying = useUpdateStore((s) => s.applying);
   const manualCheck = useUpdateStore((s) => s.manualCheck);
   const apply = useUpdateStore((s) => s.apply);
+  const auto = useUpdateStore((s) => s.auto);
+  const setAuto = useUpdateStore((s) => s.setAuto);
   const desktop = isTauri();
   const openGuide = useSetupGuide((s) => s.open);
 
@@ -54,6 +57,15 @@ export function AboutSettings() {
           control={<span className="settings-about__version">{displayVersion(version)}</span>}
         />
         <SettingsRow title="Updates" description={description} control={control} />
+        {desktop && (
+          <SettingsRow
+            title="Install updates automatically"
+            description="Pheeme downloads updates as they come out, then restarts into them when you're not using it or installs them when you quit."
+            control={
+              <Switch label="Install updates automatically" checked={auto} onChange={setAuto} />
+            }
+          />
+        )}
       </SettingsSection>
       <SettingsSection title="Help">
         <SettingsRow

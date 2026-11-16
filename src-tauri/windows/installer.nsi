@@ -5,8 +5,9 @@
 ; (crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi at tag tauri-cli-v2.10.1),
 ; and app-specific changes marked `PHEEME:` so double-clicking the installer is a
 ; one-click install: no wizard pages, a progress bar, then Pheeme opens. It does
-; this by running the passive mode the updater already uses (/P) whenever the
-; installer is started with no mode flags.
+; this by running passive mode (/P) whenever the installer is started with no
+; mode flags. The in-app updater runs it silently (/S /UPDATE /R), so an
+; automatic update shows no window.
 ;
 ; After upgrading @tauri-apps/cli, diff the new upstream template against the
 ; tag above and carry its changes over, keeping the PHEEME: blocks.

@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ThemeDefinition } from "../styles/themes";
 import { themeColorToHex } from "../styles/themes/color";
 import { platform } from "../lib/platform";
+import { launchHidden } from "../lib/tauri";
 import { isTauri } from "../preview/runtime";
 import { systemPrefersDark, type ThemeMode } from "./theme";
 
@@ -38,13 +39,14 @@ let revealed = false;
 /**
  * The window starts hidden (`visible: false` in tauri.conf.json) so launch never shows the native background in the
  * wrong theme or an empty frame. Show it once the first real screen is rendered; the Rust side shows it anyway after
- * a timeout if this never runs.
+ * a timeout if this never runs. After an update's restart from the tray it stays hidden, as it was.
  */
 export function revealWindow() {
   if (revealed) return;
   revealed = true;
   // Called after React commits the first screen. Not via requestAnimationFrame: a hidden window may never get one.
-  getCurrentWindow()
-    .show()
+  launchHidden()
+    .catch(() => false)
+    .then((hidden) => (hidden ? undefined : getCurrentWindow().show()))
     .catch((err: unknown) => console.warn("show failed", err));
 }

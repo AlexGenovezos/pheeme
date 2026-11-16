@@ -11,6 +11,7 @@ const TELEMETRY_INSTALL_ID: &str = "telemetry_install_id";
 const TELEMETRY_LAST_PING: &str = "telemetry_last_ping_ms";
 const ASSISTANT_ENABLED: &str = "assistant_enabled";
 const CALENDAR_REMINDERS: &str = "calendar_reminders";
+const START_HIDDEN_UNTIL: &str = "start_hidden_until_ms";
 
 /// The Gmail per-user limit the user entered (units per minute), if they changed it.
 pub async fn gmail_quota(pool: &SqlitePool) -> Result<Option<u32>> {
@@ -78,6 +79,25 @@ pub async fn telemetry_install_id(pool: &SqlitePool) -> Result<String> {
     let id = uuid::Uuid::new_v4().to_string();
     set(pool, TELEMETRY_INSTALL_ID, &id).await?;
     Ok(id)
+}
+
+/// Ask the next launch to keep the window hidden, if it starts before `until_ms`: an update's
+/// automatic restart from the tray. The deadline keeps a restart that never happened (a failed
+/// install, a crash) from leaving a later launch invisible.
+pub async fn set_start_hidden_until(pool: &SqlitePool, until_ms: i64) -> Result<()> {
+    set(pool, START_HIDDEN_UNTIL, &until_ms.to_string()).await
+}
+
+/// Whether this launch should stay hidden (see [`set_start_hidden_until`]). Read once: the
+/// request is removed either way.
+pub async fn take_start_hidden(pool: &SqlitePool, now_ms: i64) -> Result<bool> {
+    let until = get(pool, START_HIDDEN_UNTIL).await?;
+    if until.is_some() {
+        delete(pool, START_HIDDEN_UNTIL).await?;
+    }
+    Ok(until
+        .and_then(|v| v.parse::<i64>().ok())
+        .is_some_and(|until| now_ms <= until))
 }
 
 /// When the last ping was accepted (ms since the epoch).
@@ -247,6 +267,27 @@ async fn delete<'e>(ex: impl SqliteExecutor<'e>, key: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn start_hidden_is_read_once_and_expires() {
+        let db = crate::db::test_support::TestDb::with_account("a").await;
+        assert!(!take_start_hidden(&db.pool, 1_000).await.unwrap());
+        set_start_hidden_until(&db.pool, 2_000).await.unwrap();
+        assert!(take_start_hidden(&db.pool, 1_000).await.unwrap());
+        assert!(
+            !take_start_hidden(&db.pool, 1_000).await.unwrap(),
+            "read once"
+        );
+        set_start_hidden_until(&db.pool, 2_000).await.unwrap();
+        assert!(
+            !take_start_hidden(&db.pool, 3_000).await.unwrap(),
+            "expired"
+        );
+        assert!(
+            !take_start_hidden(&db.pool, 1_000).await.unwrap(),
+            "removed when expired"
+        );
+    }
 
     #[tokio::test]
     async fn notify_schedule_persists_and_bad_json_reads_as_default() {

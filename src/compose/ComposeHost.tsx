@@ -5,6 +5,7 @@ import { useCommands } from "../keyboard/useCommands";
 import { toast } from "../components/ui/Toast";
 import { createSubscriptionScope } from "../lib/subscriptions";
 import { listen, SAVE_BEFORE_EXIT_EVENT, stopQuietly } from "../lib/tauri";
+import { installBeforeQuit } from "../lib/updater";
 import { isTauri } from "../preview/runtime";
 import { useAccountStore } from "../store/accountStore";
 import {
@@ -116,7 +117,9 @@ export async function saveBeforeExit(): Promise<void> {
     .getState()
     .saveAll()
     .catch(() => false);
-  if (!saved)
+  // With every message saved, a downloaded update installs on the way out.
+  if (saved) await installBeforeQuit();
+  else
     toast({
       title: "Pheeme didn't quit",
       description: "A draft couldn't be saved. Quit again to leave without saving it.",

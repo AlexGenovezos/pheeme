@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { dismissToast, useToastStore } from "../components/ui/Toast";
 import type { ComposeDraft } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
+import { installBeforeQuit } from "../lib/updater";
 import { saveBeforeExit } from "./ComposeHost";
 import { __resetComposeSettingsForTests, useComposeSettings } from "./composeSettings";
 import {
@@ -18,6 +19,8 @@ import {
 } from "./composeStore";
 import { __resetSendAsForTests } from "./sendAs";
 import { __resetSignaturesForTests, useSignatures } from "./signatures";
+
+vi.mock("../lib/updater", () => ({ installBeforeQuit: vi.fn(async () => {}) }));
 
 type Call = { cmd: string; args: Record<string, unknown> };
 let calls: Call[];
@@ -671,6 +674,10 @@ test("a failed autosave is remembered until a save gets through", async () => {
 test("before quitting, every unsaved message is saved and Rust is told how it went", async () => {
   const answers: unknown[] = [];
   const stop = await listen(SAVED_BEFORE_EXIT_EVENT, (e) => answers.push(e.payload));
+  // A downloaded update installs on the way out, once everything is saved and before Rust is answered.
+  vi.mocked(installBeforeQuit).mockImplementation(async () => {
+    answers.push("install");
+  });
   const first = written({ subject: "One" });
   const second = written({ subject: "Two" });
   const untouched = store().compose("a1");
@@ -683,7 +690,7 @@ test("before quitting, every unsaved message is saved and Rust is told how it we
     "Two",
   ]);
   expect(win(second).version).toBe(win(second).savedVersion);
-  expect(answers).toEqual([true]);
+  expect(answers).toEqual(["install", true]);
   expect(titles()).not.toContain("Pheeme didn't quit");
 
   // One can't be saved: the app is told to stay open, and that panel comes up with the reason.
@@ -696,7 +703,7 @@ test("before quitting, every unsaved message is saved and Rust is told how it we
     return { draftId: "d2", messageId: "m9", threadId: "t1" };
   };
   await saveBeforeExit();
-  expect(answers).toEqual([true, false]);
+  expect(answers).toEqual(["install", true, false]);
   expect(titles()).toContain("Pheeme didn't quit");
   expect(win(first)).toMatchObject({ minimized: false, error: "No connection." });
   expect(win(first).version).not.toBe(win(first).savedVersion);

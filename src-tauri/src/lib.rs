@@ -285,6 +285,9 @@ fn reveal_window_fallback(app: tauri::AppHandle) {
     const AFTER: std::time::Duration = std::time::Duration::from_secs(3);
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(AFTER).await;
+        if commands::updater::launch_is_hidden(&app) {
+            return;
+        }
         let Some(window) = app.get_webview_window("main") else {
             return;
         };
@@ -402,6 +405,18 @@ pub fn run() {
             if telemetry::active_in_this_build() {
                 tauri::async_runtime::spawn(telemetry::run(state.db.clone()));
             }
+            let hidden = tauri::async_runtime::block_on(db::settings::take_start_hidden(
+                &state.db,
+                sync::engine::now_ms(),
+            ))
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "couldn't read whether to start hidden");
+                false
+            });
+            if hidden {
+                info!("restarted by an update while hidden; keeping the window hidden");
+            }
+            app.manage(commands::updater::LaunchHidden(hidden));
             app.manage(state);
             desktop::install(app.handle());
             sync.start();
@@ -617,6 +632,8 @@ pub fn run() {
             commands::support::send_diagnostics,
             commands::support::save_diagnostics,
             commands::updater::log_update,
+            commands::updater::start_hidden_next_launch,
+            commands::updater::launch_hidden,
             commands::support::log_thread_shown,
         ])
         .build(tauri::generate_context!())

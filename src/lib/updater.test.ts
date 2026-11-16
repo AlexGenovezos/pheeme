@@ -6,11 +6,15 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { dismissToast, useToastStore } from "../components/ui/Toast";
 import { CHECK_FOR_UPDATES_EVENT } from "./tauri";
 import {
+  AUTO_UPDATE_KEY,
   CHECK_INTERVAL_MS,
+  IDLE_HIDDEN_MS,
+  IDLE_UNFOCUSED_MS,
   RETRY_MS,
   __resetForTests,
   checkForUpdatesNow,
   displayVersion,
+  installBeforeQuit,
   listenForManualChecks,
   startUpdateChecks,
   useUpdateStore,
@@ -345,22 +349,30 @@ test("stop() cancels the interval", async () => {
   expect(deps.check).toHaveBeenCalledTimes(1);
 });
 
-test("default deps adapt the tauri plugins", async () => {
+test("default deps adapt the tauri plugins: download once in the background, then install", async () => {
   const order: string[] = [];
-  const downloadAndInstall = vi.fn(async () => {
+  const download = vi.fn(async () => {
+    order.push("download");
+  });
+  const install = vi.fn(async () => {
     order.push("install");
   });
   vi.mocked(relaunch).mockImplementation(async () => {
     order.push("relaunch");
   });
-  vi.mocked(check).mockResolvedValueOnce({ version: "0.3.0", downloadAndInstall } as never);
+  const update = { version: "0.3.0", download, install, close: vi.fn(async () => {}) };
+  vi.mocked(check)
+    .mockResolvedValueOnce(update as never)
+    .mockResolvedValueOnce(update as never);
   stop = startUpdateChecks();
   await vi.advanceTimersByTimeAsync(0);
   expect(check).toHaveBeenCalledWith({ timeout: 60 * 1000 });
   expect(useUpdateStore.getState().available).toBe("0.3.0");
+  expect(order).toEqual(["download"]);
 
   await useUpdateStore.getState().apply();
-  expect(order).toEqual(["install", "relaunch"]);
+  expect(order).toEqual(["download", "install", "relaunch"]);
+  expect(install).toHaveBeenCalledWith(undefined);
 });
 
 test("default deps write updater steps to the diagnostics log", async () => {
@@ -456,5 +468,263 @@ describe("manual check", () => {
     unlisten();
     await vi.advanceTimersByTimeAsync(0);
     clearMocks();
+  });
+});
+
+describe("automatic updates", () => {
+  interface Win {
+    visible: boolean;
+    focused: boolean;
+  }
+
+  function autoDeps(update: PendingUpdate, win: Win = { visible: false, focused: false }) {
+    const order: string[] = [];
+    const deps = {
+      ...fakeDeps(async () => update),
+      windowState: vi.fn(async () => ({ ...win })),
+      busy: vi.fn(() => false),
+      startHidden: vi.fn(async () => {
+        order.push("startHidden");
+      }),
+      saveDrafts: vi.fn(async () => true),
+    };
+    deps.relaunch.mockImplementation(async () => {
+      order.push("relaunch");
+    });
+    return { deps, order, win };
+  }
+
+  function downloadable(version = "0.2.0", download: () => Promise<void> = async () => {}) {
+    const order: string[] = [];
+    const update = {
+      ...fakeUpdate(async () => {
+        order.push("install");
+      }, version),
+      download: vi.fn(download),
+    };
+    return { update, order };
+  }
+
+  test("downloads in the background and offers the update only once it's downloaded", async () => {
+    let finish!: () => void;
+    const { update } = downloadable("0.2.0", () => new Promise<void>((r) => (finish = r)));
+    const deps = fakeDeps(async () => update);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(update.download).toHaveBeenCalledTimes(1);
+    expect(useUpdateStore.getState().available).toBeNull();
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useUpdateStore.getState().available).toBe("0.2.0");
+    expect(deps.report.mock.calls).toEqual([
+      ["available", "0.2.0"],
+      ["downloaded", "0.2.0"],
+    ]);
+    // A later check finding the same release doesn't download it again.
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+    expect(update.download).toHaveBeenCalledTimes(1);
+  });
+
+  test("a failed download is retried like a failed check", async () => {
+    const { update } = downloadable("0.2.0", async () => {
+      throw new Error("reset");
+    });
+    const deps = fakeDeps(async () => update);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useUpdateStore.getState().available).toBeNull();
+    expect(deps.report).toHaveBeenCalledWith("download_failed", "0.2.0", new Error("reset"));
+    update.download.mockImplementation(async () => {});
+    await vi.advanceTimersByTimeAsync(RETRY_MS);
+    expect(useUpdateStore.getState().available).toBe("0.2.0");
+  });
+
+  test("checks every 30 minutes", () => {
+    expect(CHECK_INTERVAL_MS).toBe(30 * 60 * 1000);
+  });
+
+  test("restarts into the update, hidden, once the window has been hidden for 10 minutes", async () => {
+    const { update, order: installs } = downloadable();
+    const { deps, order } = autoDeps(update);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS - 60 * 1000);
+    expect(update.install).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    expect(update.install).toHaveBeenCalledTimes(1);
+    expect(installs).toEqual(["install"]);
+    expect(order).toEqual(["startHidden", "relaunch"]);
+    expect(deps.saveDrafts).toHaveBeenCalled();
+    expect(deps.report.mock.calls).toEqual([
+      ["available", "0.2.0"],
+      ["downloaded", "0.2.0"],
+      ["auto_restart", "0.2.0"],
+      ["installing", "0.2.0"],
+      ["installed", "0.2.0"],
+    ]);
+  });
+
+  test("restarts, shown, after an hour with the window open behind others", async () => {
+    const { update } = downloadable();
+    const { deps, order } = autoDeps(update, { visible: true, focused: false });
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS);
+    expect(update.install).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(IDLE_UNFOCUSED_MS - IDLE_HIDDEN_MS);
+    expect(update.install).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["relaunch"]);
+  });
+
+  test("never restarts while the window is in front", async () => {
+    const { update } = downloadable();
+    const { deps } = autoDeps(update, { visible: true, focused: true });
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(IDLE_UNFOCUSED_MS * 3);
+    expect(update.install).not.toHaveBeenCalled();
+  });
+
+  test("using the window starts the wait over", async () => {
+    const { update } = downloadable();
+    const { deps, win } = autoDeps(update);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS - 2 * 60 * 1000);
+    Object.assign(win, { visible: true, focused: true });
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    Object.assign(win, { visible: false, focused: false });
+    // Seen hidden again at the next tick; 10 minutes from then.
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS);
+    expect(update.install).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    expect(update.install).toHaveBeenCalledTimes(1);
+  });
+
+  test("time asleep doesn't count for a window left open", async () => {
+    const { update } = downloadable();
+    const { deps } = autoDeps(update, { visible: true, focused: false });
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    sleepFor(IDLE_UNFOCUSED_MS * 8);
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    expect(update.install).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(IDLE_UNFOCUSED_MS);
+    expect(update.install).toHaveBeenCalledTimes(1);
+  });
+
+  test("waits while something is open, then goes ahead", async () => {
+    const { update } = downloadable();
+    const { deps } = autoDeps(update);
+    deps.busy.mockReturnValue(true);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS * 3);
+    expect(update.install).not.toHaveBeenCalled();
+    deps.busy.mockReturnValue(false);
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    expect(update.install).toHaveBeenCalledTimes(1);
+  });
+
+  test("a draft that can't be saved stops the restart quietly", async () => {
+    const { update } = downloadable();
+    const { deps } = autoDeps(update);
+    deps.saveDrafts.mockResolvedValue(false);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS);
+    expect(update.install).not.toHaveBeenCalled();
+    expect(useToastStore.getState().toasts).toEqual([]);
+    expect(useUpdateStore.getState().applying).toBe(false);
+  });
+
+  test("does nothing unasked when automatic updates are off", async () => {
+    const { update } = downloadable();
+    const { deps } = autoDeps(update);
+    useUpdateStore.getState().setAuto(false);
+    expect(localStorage.getItem(AUTO_UPDATE_KEY)).toBe("0");
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS * 3);
+    expect(update.download).toHaveBeenCalled();
+    expect(update.install).not.toHaveBeenCalled();
+    await installBeforeQuit();
+    expect(update.install).not.toHaveBeenCalled();
+    useUpdateStore.getState().setAuto(true);
+    expect(localStorage.getItem(AUTO_UPDATE_KEY)).toBe("1");
+  });
+
+  test("an automatic install that fails isn't retried until a newer release", async () => {
+    const { update } = downloadable();
+    update.install.mockRejectedValue(new Error("disk full"));
+    const { deps } = autoDeps(update);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS);
+    expect(update.install).toHaveBeenCalledTimes(1);
+    expect(deps.report).toHaveBeenCalledWith("install_failed", "0.2.0", new Error("disk full"));
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS * 3);
+    expect(update.install).toHaveBeenCalledTimes(1);
+    expect(useUpdateStore.getState()).toMatchObject({ applying: false, available: "0.2.0" });
+
+    const { update: newer } = downloadable("0.3.0");
+    deps.check.mockImplementation(async () => newer);
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+    expect(newer.install).toHaveBeenCalledTimes(1);
+  });
+
+  test("quitting installs the downloaded update without starting the app again", async () => {
+    const { update } = downloadable();
+    const deps = fakeDeps(async () => update);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(0);
+    await installBeforeQuit();
+    expect(update.install).toHaveBeenCalledWith({ restart: false });
+    expect(deps.relaunch).not.toHaveBeenCalled();
+  });
+
+  test("a visit between ticks starts the wait over", async () => {
+    const { update } = downloadable();
+    const { deps } = autoDeps(update);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS - 60 * 1000 - 1);
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(update.install).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS - 60 * 1000);
+    expect(update.install).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    expect(update.install).toHaveBeenCalledTimes(1);
+  });
+
+  test("a replacement still downloading takes the banner down", async () => {
+    const { update: first } = downloadable("0.2.0");
+    const deps = fakeDeps(async () => first);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useUpdateStore.getState().available).toBe("0.2.0");
+    const { update: newer } = downloadable("0.3.0", async () => {
+      throw new Error("reset");
+    });
+    deps.check.mockImplementation(async () => newer);
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+    expect(useUpdateStore.getState().available).toBeNull();
+  });
+
+  test("an install on quit holds off the idle restart, and isn't retried after failing", async () => {
+    let fail!: (err: Error) => void;
+    const { update } = downloadable();
+    update.install.mockImplementation(() => new Promise<void>((_, reject) => (fail = reject)));
+    const { deps } = autoDeps(update);
+    stop = startUpdateChecks(deps);
+    await vi.advanceTimersByTimeAsync(0);
+    const quitting = installBeforeQuit();
+    await vi.advanceTimersByTimeAsync(IDLE_HIDDEN_MS * 2);
+    expect(update.install).toHaveBeenCalledTimes(1);
+    expect(deps.relaunch).not.toHaveBeenCalled();
+    fail(new Error("disk full"));
+    await quitting;
+    await installBeforeQuit();
+    expect(update.install).toHaveBeenCalledTimes(1);
+  });
+
+  test("quitting installs nothing before the download finishes", async () => {
+    const { update } = downloadable("0.2.0", () => new Promise<void>(() => {}));
+    stop = startUpdateChecks(fakeDeps(async () => update));
+    await vi.advanceTimersByTimeAsync(0);
+    await installBeforeQuit();
+    expect(update.install).not.toHaveBeenCalled();
   });
 });

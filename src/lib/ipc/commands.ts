@@ -318,6 +318,8 @@ export interface Commands {
     void
   >;
   log_update: Command<{ event: UpdateEvent; version: string | null; error: string | null }, void>;
+  start_hidden_next_launch: Command<void, void>;
+  launch_hidden: Command<void, boolean>;
   log_thread_shown: Command<{ timing: ShownTiming }, void>;
   telemetry_enabled: Command<void, boolean>;
   set_telemetry: Command<{ enabled: boolean }, boolean>;
