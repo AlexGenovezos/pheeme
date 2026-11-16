@@ -13,6 +13,7 @@ pub mod mime;
 pub mod palette;
 pub mod people;
 pub mod probe;
+mod quota;
 pub mod send_as;
 pub mod tasks;
 pub mod threads;
