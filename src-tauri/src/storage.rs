@@ -57,7 +57,7 @@ impl StorageKey {
         let nonce: [u8; NONCE_BYTES] = rand::rng().random();
         let cipher = XChaCha20Poly1305::new_from_slice(&self.0[32..]).expect("32-byte key");
         let encrypted = cipher
-            .encrypt(XNonce::from_slice(&nonce), Payload { msg: bytes, aad })
+            .encrypt(&XNonce::from(nonce), Payload { msg: bytes, aad })
             .map_err(|_| invalid_file())?;
         let mut out = Vec::with_capacity(bytes.len() + FILE_OVERHEAD);
         out.extend_from_slice(MAGIC);
@@ -70,10 +70,12 @@ impl StorageKey {
         if bytes.len() < FILE_OVERHEAD || !bytes.starts_with(MAGIC) {
             return Err(invalid_file());
         }
+        let nonce = XNonce::try_from(&bytes[MAGIC.len()..MAGIC.len() + NONCE_BYTES])
+            .map_err(|_| invalid_file())?;
         let cipher = XChaCha20Poly1305::new_from_slice(&self.0[32..]).expect("32-byte key");
         cipher
             .decrypt(
-                XNonce::from_slice(&bytes[MAGIC.len()..MAGIC.len() + NONCE_BYTES]),
+                &nonce,
                 Payload {
                     msg: &bytes[MAGIC.len() + NONCE_BYTES..],
                     aad,
