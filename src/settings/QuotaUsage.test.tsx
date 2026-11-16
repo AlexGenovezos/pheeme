@@ -3,13 +3,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { QuotaMinute, QuotaUsage } from "../lib/tauri";
 import { previewQuotaUsage } from "../preview/quota";
-import {
-  GmailQuotaUsage,
-  QUOTA_REFRESH_MS,
-  QuotaUsageChart,
-  summarizeQuota,
-  useQuotaUsage,
-} from "./QuotaUsage";
+import { QUOTA_REFRESH_MS, QuotaUsageChart, summarizeQuota, useQuotaUsages } from "./QuotaUsage";
 
 const NOW = Date.UTC(2026, 10, 11, 10, 30, 20);
 
@@ -188,7 +182,7 @@ test("hovering a minute shows what it was spent on", () => {
   expect(tooltip).not.toHaveTextContent("Downloading older mail");
 });
 
-test("asks the backend for the account's usage and again every 10 seconds", async () => {
+test("asks the backend for each account's usage and again every 10 seconds", async () => {
   vi.useFakeTimers();
   const asked: unknown[] = [];
   mockIPC((cmd, args) => {
@@ -197,16 +191,21 @@ test("asks the backend for the account's usage and again every 10 seconds", asyn
       return quiet();
     }
   });
-  render(<GmailQuotaUsage accountId="a1" email="me@example.com" />);
+  let seen: Record<string, QuotaUsage> = {};
+  function Probe() {
+    seen = useQuotaUsages(["a1", "a2"]);
+    return null;
+  }
+  render(<Probe />);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  expect(asked).toEqual([{ accountId: "a1" }]);
-  expect(screen.getByText("Gmail refused nothing in the last hour")).toBeInTheDocument();
+  expect(asked).toEqual([{ accountId: "a1" }, { accountId: "a2" }]);
+  expect(Object.keys(seen)).toEqual(["a1", "a2"]);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(QUOTA_REFRESH_MS);
   });
-  expect(asked).toHaveLength(2);
+  expect(asked).toHaveLength(4);
 });
 
 test("a failed refresh keeps the last answer", async () => {
@@ -218,19 +217,19 @@ test("a failed refresh keeps the last answer", async () => {
       return quiet();
     }
   });
-  let seen: QuotaUsage | null = null;
+  let seen: Record<string, QuotaUsage> = {};
   function Probe() {
-    seen = useQuotaUsage("a1");
+    seen = useQuotaUsages(["a1"]);
     return null;
   }
   render(<Probe />);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  expect(seen).not.toBeNull();
+  expect(seen.a1).toBeDefined();
   fail = true;
   await act(async () => {
     await vi.advanceTimersByTimeAsync(QUOTA_REFRESH_MS);
   });
-  expect(seen).not.toBeNull();
+  expect(seen.a1).toBeDefined();
 });

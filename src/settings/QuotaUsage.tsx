@@ -89,29 +89,41 @@ export function summarizeQuota(usage: QuotaUsage): QuotaSummary {
   return { totals, total, peak, refused, somethingElse };
 }
 
-/** The account's usage, asked again every [`QUOTA_REFRESH_MS`] while mounted; never overlapping. */
-export function useQuotaUsage(accountId: string) {
-  const [usage, setUsage] = useState<QuotaUsage | null>(null);
+/**
+ * Each account's usage, asked again every [`QUOTA_REFRESH_MS`] while mounted; never overlapping.
+ * An account is missing until its first answer, and a failed refresh keeps its last one.
+ */
+export function useQuotaUsages(accountIds: string[]): Record<string, QuotaUsage> {
+  const key = accountIds.join("\n");
+  const [usages, setUsages] = useState<Record<string, QuotaUsage>>({});
   useEffect(() => {
-    let stopped = false;
-    const timer: { id?: ReturnType<typeof setTimeout> } = {};
+    const ids = key ? key.split("\n") : [];
+    const run: { stopped: boolean; timer?: ReturnType<typeof setTimeout> } = { stopped: false };
     async function refresh() {
-      try {
-        const value = await getGmailQuotaUsage(accountId);
-        if (!stopped) setUsage(value);
-      } catch {
-        // Keep the last answer; the next refresh tries again.
-      } finally {
-        if (!stopped) timer.id = setTimeout(() => void refresh(), QUOTA_REFRESH_MS);
-      }
+      const answers = await Promise.all(
+        ids.map((id) =>
+          getGmailQuotaUsage(id).then(
+            (usage) => [id, usage] as const,
+            // Keep the last answer; the next refresh tries again.
+            () => null,
+          ),
+        ),
+      );
+      if (run.stopped) return;
+      setUsages((last) => {
+        const next = { ...last };
+        for (const answer of answers) if (answer) next[answer[0]] = answer[1];
+        return next;
+      });
+      run.timer = setTimeout(() => void refresh(), QUOTA_REFRESH_MS);
     }
     void refresh();
     return () => {
-      stopped = true;
-      clearTimeout(timer.id);
+      run.stopped = true;
+      clearTimeout(run.timer);
     };
-  }, [accountId]);
-  return usage;
+  }, [key]);
+  return usages;
 }
 
 const MINUTES = 60;
@@ -124,10 +136,6 @@ const percent = (part: number, whole: number) => {
   const share = (part / whole) * 100;
   return share > 0 && share < 1 ? "<1%" : `${Math.round(share)}%`;
 };
-
-export function GmailQuotaUsage({ accountId, email }: { accountId: string; email: string }) {
-  return <QuotaUsageChart email={email} usage={useQuotaUsage(accountId)} />;
-}
 
 /**
  * "Gmail quota, last hour": per-minute stacked bars by source under the limit line, a legend

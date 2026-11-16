@@ -8,6 +8,7 @@ import { useCalendarStore } from "../calendar/calendarStore";
 import {
   type AccountInfo,
   type CommandError,
+  type QuotaUsage,
   type SyncProgress,
   toCommandError,
 } from "../lib/tauri";
@@ -17,7 +18,8 @@ import { SendCredentials } from "../transfer/SendCredentials";
 import { SettingsRow, SettingsSection } from "./rows";
 import { matchesQuery } from "./schema";
 import { MailSyncProgress, useSyncProgress } from "./MailSyncProgress";
-import { GmailQuotaUsage } from "./QuotaUsage";
+import { type ClientGroup, clientLabel, groupByClient } from "./clientGroups";
+import { QuotaUsageChart, summarizeQuota, useQuotaUsages } from "./QuotaUsage";
 
 /** How the Accounts page starts adding an account (onboarding lives outside the dialog). */
 export const AddAccountContext = createContext<(() => void) | undefined>(undefined);
@@ -55,6 +57,7 @@ export function AccountsSettings() {
     <>
       <SettingsSection
         title="Connected accounts"
+        card={false}
         action={
           onAdd && (
             <Button size="sm" icon={<UserPlus />} onClick={onAdd}>
@@ -63,14 +66,17 @@ export function AccountsSettings() {
           )
         }
       >
-        {accounts.map((account) => (
-          <AccountRow
-            key={account.id}
-            account={account}
-            progress={progress?.find((p) => p.accountId === account.id)}
-            progressUnavailable={unavailable}
-          />
-        ))}
+        <div className="settings-client-groups">
+          {groupByClient(accounts).map((group) => (
+            <ClientGroupCard
+              key={group.clientId}
+              group={group}
+              showClient={accounts.length > 1}
+              progress={progress}
+              progressUnavailable={unavailable}
+            />
+          ))}
+        </div>
       </SettingsSection>
       <SettingsSection title="Other devices">
         <SendCredentials accounts={accounts} />
@@ -79,14 +85,84 @@ export function AccountsSettings() {
   );
 }
 
+/**
+ * One card per Google Cloud OAuth client, so accounts that sign in through the same one sit
+ * together. With more than one account the card opens with the client and, when it's shared, the
+ * quota its accounts used together; each account still has its own chart, since Gmail's limit is
+ * per account, not per client.
+ */
+function ClientGroupCard({
+  group,
+  showClient,
+  progress,
+  progressUnavailable,
+}: {
+  group: ClientGroup;
+  showClient: boolean;
+  progress: SyncProgress[] | null;
+  progressUnavailable: boolean;
+}) {
+  const usages = useQuotaUsages(group.accounts.map((a) => a.id));
+  return (
+    <div className="settings-card">
+      {showClient && <ClientRow group={group} usages={usages} />}
+      {group.accounts.map((account) => (
+        <AccountRow
+          key={account.id}
+          account={account}
+          progress={progress?.find((p) => p.accountId === account.id)}
+          progressUnavailable={progressUnavailable}
+          usage={usages[account.id] ?? null}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ClientRow({ group, usages }: { group: ClientGroup; usages: Record<string, QuotaUsage> }) {
+  const { accounts } = group;
+  const shared = accounts.length > 1;
+  const loaded = accounts.every((a) => usages[a.id]);
+  const together = loaded
+    ? accounts.reduce((sum, a) => sum + summarizeQuota(usages[a.id]!).total, 0)
+    : null;
+  return (
+    <SettingsRow
+      className="settings-client"
+      title="Google Cloud app"
+      description={
+        <>
+          <span>{clientLabel(group.clientId)}</span>
+          {shared ? (
+            <span>
+              Shared by {accounts.length} accounts, which used{" "}
+              {together === null ? (
+                <Skeleton className="settings-client__pending" width="6ch" />
+              ) : (
+                together.toLocaleString()
+              )}{" "}
+              Gmail quota units together in the last hour. Each account has its own limit, so they
+              don&apos;t slow each other down.
+            </span>
+          ) : (
+            <span>Only {accounts[0]!.email} signs in through it.</span>
+          )}
+        </>
+      }
+    />
+  );
+}
+
 function AccountRow({
   account,
   progress,
   progressUnavailable,
+  usage,
 }: {
   account: AccountInfo;
   progress?: SyncProgress;
   progressUnavailable: boolean;
+  usage: QuotaUsage | null;
 }) {
   const remove = useAccountStore((s) => s.remove);
   const syncError = useAccountStore((s) => s.syncErrors[account.id]);
@@ -139,7 +215,7 @@ function AccountRow({
         unavailable={progressUnavailable}
       />
       <CalendarSyncLine accountId={account.id} />
-      <GmailQuotaUsage accountId={account.id} email={account.email} />
+      <QuotaUsageChart email={account.email} usage={usage} />
       {confirming && (
         <div className="settings-account__confirm">
           <span>

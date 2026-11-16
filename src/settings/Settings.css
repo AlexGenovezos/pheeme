@@ -356,6 +356,19 @@
   gap: var(--space-2);
 }
 
+/* One card per Google Cloud OAuth client (`ClientGroupCard`). */
+.settings-client-groups {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* The together total not loaded yet, sized like the number so nothing moves when it arrives. */
+.settings-client .settings-client__pending {
+  display: inline-block;
+  height: var(--font-size-sm);
+  vertical-align: text-bottom;
+}
+
 .settings-account__error {
   color: var(--color-danger);
 }
