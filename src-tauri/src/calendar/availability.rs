@@ -3,10 +3,12 @@
 //! intervals or "unknown" with Google's reason. Asked live and never cached: free/busy changes
 //! on other people's calendars, which sync never sees.
 
-use super::service::CalendarService;
+use super::service::{CalendarEventDto, CalendarService};
 use crate::db;
 use crate::gmail::calendar::FreeBusyCalendar;
 use crate::gmail::GmailError;
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Weekday};
+use chrono_tz::Tz;
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -185,6 +187,83 @@ impl CalendarService {
     }
 }
 
+/// The moment a wall-clock time names in `tz` (the earlier one when clocks go back).
+pub(crate) fn local_ms(tz: Tz, naive: NaiveDateTime) -> Option<i64> {
+    tz.from_local_datetime(&naive)
+        .earliest()
+        .or_else(|| {
+            tz.from_local_datetime(&(naive + Duration::hours(1)))
+                .earliest()
+        })
+        .map(|d| d.timestamp_millis())
+}
+
+pub(crate) fn day_of(tz: Tz, ms: i64) -> NaiveDate {
+    tz.timestamp_millis_opt(ms)
+        .single()
+        .map(|d| d.date_naive())
+        .unwrap_or_default()
+}
+
+/// Merged busy intervals of `events`: timed, not cancelled or declined, not marked free.
+pub(crate) fn busy(events: &[&CalendarEventDto]) -> Vec<(i64, i64)> {
+    let mut spans: Vec<(i64, i64)> = events
+        .iter()
+        .filter(|e| !e.all_day && e.status != "cancelled")
+        .filter(|e| e.self_response.as_deref() != Some("declined"))
+        .filter(|e| e.transparency.as_deref() != Some("transparent"))
+        .filter_map(|e| Some((e.start.ms?, e.end.ms?)))
+        .filter(|(s, e)| e > s)
+        .collect();
+    spans.sort_unstable();
+    let mut merged: Vec<(i64, i64)> = Vec::with_capacity(spans.len());
+    for (s, e) in spans {
+        match merged.last_mut() {
+            Some(last) if s <= last.1 => last.1 = last.1.max(e),
+            _ => merged.push((s, e)),
+        }
+    }
+    merged
+}
+
+/// Free slots of at least `minutes` in `[from, to)`, inside `[start, end)` of each day (in
+/// `tz`), skipping weekends unless `weekends`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn free_slots(
+    busy: &[(i64, i64)],
+    from: i64,
+    to: i64,
+    tz: Tz,
+    start: NaiveTime,
+    end: NaiveTime,
+    weekends: bool,
+    minutes: i64,
+) -> Vec<(i64, i64)> {
+    let need = minutes * 60 * 1000;
+    let mut slots = Vec::new();
+    let mut day = day_of(tz, from);
+    let last = day_of(tz, to);
+    while day <= last {
+        let weekend = matches!(day.weekday(), Weekday::Sat | Weekday::Sun);
+        if weekends || !weekend {
+            let open = local_ms(tz, day.and_time(start)).unwrap_or(0).max(from);
+            let close = local_ms(tz, day.and_time(end)).unwrap_or(0).min(to);
+            let mut cursor = open;
+            for &(s, e) in busy.iter().filter(|(s, e)| *e > open && *s < close) {
+                if s - cursor >= need {
+                    slots.push((cursor, s));
+                }
+                cursor = cursor.max(e);
+            }
+            if close - cursor >= need {
+                slots.push((cursor, close));
+            }
+        }
+        day += Duration::days(1);
+    }
+    slots
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,5 +440,34 @@ mod tests {
             "invalid_input"
         );
         assert!(h.fake("a").free_busy_queries().is_empty());
+    }
+
+    #[test]
+    fn free_slots_skip_busy_time_weekends_and_after_hours() {
+        let tz = chrono_tz::UTC;
+        let nine = NaiveTime::from_hms_opt(9, 0, 0).unwrap();
+        let five = NaiveTime::from_hms_opt(17, 0, 0).unwrap();
+        // Friday 20 Nov 2026 to Monday 23 Nov.
+        let busy = vec![
+            (ms("2026-11-20T10:00:00Z"), ms("2026-11-20T11:00:00Z")),
+            (ms("2026-11-20T11:00:00Z"), ms("2026-11-20T16:40:00Z")),
+        ];
+        let slots = free_slots(
+            &busy,
+            ms("2026-11-20T00:00:00Z"),
+            ms("2026-11-23T12:00:00Z"),
+            tz,
+            nine,
+            five,
+            false,
+            30,
+        );
+        assert_eq!(
+            slots,
+            vec![
+                (ms("2026-11-20T09:00:00Z"), ms("2026-11-20T10:00:00Z")),
+                (ms("2026-11-23T09:00:00Z"), ms("2026-11-23T12:00:00Z")),
+            ]
+        );
     }
 }

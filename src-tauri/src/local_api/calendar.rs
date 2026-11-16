@@ -11,6 +11,7 @@ use super::requests::{
 use super::write::resolve_account;
 use super::{AccessWords, ApiError, LocalApi, Request};
 use crate::accounts::AccountInfo;
+use crate::calendar::availability::{busy, day_of, free_slots, local_ms};
 use crate::calendar::edit::{AttendeeInput, EventEdit, TimeInput};
 use crate::calendar::error::CalendarError;
 use crate::calendar::service::{CalendarAccountDto, CalendarEventDto, EventTimeDto};
@@ -18,8 +19,8 @@ use crate::calendar::writes::{EditScope, EventRef};
 use crate::compose::build::html_to_text;
 use crate::gmail::calendar::SendUpdates;
 use crate::sync::engine::now_ms;
-use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
-use chrono::{TimeZone, Weekday};
+use chrono::TimeZone;
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat};
 use chrono_tz::Tz;
 use serde_json::{json, Value};
 
@@ -182,26 +183,9 @@ fn parse_when(raw: &str, tz: Tz) -> Result<When, ApiError> {
     )))
 }
 
-/// The moment a wall-clock time names in `tz` (the earlier one when clocks go back).
-fn local_ms(tz: Tz, naive: NaiveDateTime) -> Option<i64> {
-    tz.from_local_datetime(&naive)
-        .earliest()
-        .or_else(|| {
-            tz.from_local_datetime(&(naive + Duration::hours(1)))
-                .earliest()
-        })
-        .map(|d| d.timestamp_millis())
-}
-
+/// The first moment of `day` in `tz`.
 fn day_start(tz: Tz, day: NaiveDate) -> i64 {
     local_ms(tz, day.and_time(NaiveTime::MIN)).unwrap_or(0)
-}
-
-fn day_of(tz: Tz, ms: i64) -> NaiveDate {
-    tz.timestamp_millis_opt(ms)
-        .single()
-        .map(|d| d.date_naive())
-        .unwrap_or_default()
 }
 
 fn show_ms(tz: Tz, ms: i64) -> String {
@@ -476,71 +460,12 @@ async fn get_event(api: &LocalApi, args: GetEvent) -> Result<Value, ApiError> {
     Ok(row)
 }
 
-/// Merged busy intervals of `events`: timed, not cancelled or declined, not marked free.
-fn busy(events: &[&CalendarEventDto]) -> Vec<(i64, i64)> {
-    let mut spans: Vec<(i64, i64)> = events
-        .iter()
-        .filter(|e| !e.all_day && e.status != "cancelled")
-        .filter(|e| e.self_response.as_deref() != Some("declined"))
-        .filter(|e| e.transparency.as_deref() != Some("transparent"))
-        .filter_map(|e| Some((e.start.ms?, e.end.ms?)))
-        .filter(|(s, e)| e > s)
-        .collect();
-    spans.sort_unstable();
-    let mut merged: Vec<(i64, i64)> = Vec::with_capacity(spans.len());
-    for (s, e) in spans {
-        match merged.last_mut() {
-            Some(last) if s <= last.1 => last.1 = last.1.max(e),
-            _ => merged.push((s, e)),
-        }
-    }
-    merged
-}
-
 fn hour_minute(raw: Option<&str>, default: NaiveTime, which: &str) -> Result<NaiveTime, ApiError> {
     match raw.map(str::trim).filter(|r| !r.is_empty()) {
         None => Ok(default),
         Some(r) => NaiveTime::parse_from_str(r, "%H:%M")
             .map_err(|_| invalid(format!("{which} \"{r}\" isn't a time like 09:00."))),
     }
-}
-
-/// Free slots of at least `minutes` in `[from, to)`, inside `[start, end)` of each day (in
-/// `tz`), skipping weekends unless `weekends`.
-#[allow(clippy::too_many_arguments)]
-fn free_slots(
-    busy: &[(i64, i64)],
-    from: i64,
-    to: i64,
-    tz: Tz,
-    start: NaiveTime,
-    end: NaiveTime,
-    weekends: bool,
-    minutes: i64,
-) -> Vec<(i64, i64)> {
-    let need = minutes * 60 * 1000;
-    let mut slots = Vec::new();
-    let mut day = day_of(tz, from);
-    let last = day_of(tz, to);
-    while day <= last {
-        let weekend = matches!(day.weekday(), Weekday::Sat | Weekday::Sun);
-        if weekends || !weekend {
-            let open = local_ms(tz, day.and_time(start)).unwrap_or(0).max(from);
-            let close = local_ms(tz, day.and_time(end)).unwrap_or(0).min(to);
-            let mut cursor = open;
-            for &(s, e) in busy.iter().filter(|(s, e)| *e > open && *s < close) {
-                if s - cursor >= need {
-                    slots.push((cursor, s));
-                }
-                cursor = cursor.max(e);
-            }
-            if close - cursor >= need {
-                slots.push((cursor, close));
-            }
-        }
-        day += Duration::days(1);
-    }
-    slots
 }
 
 async fn find_free_time(api: &LocalApi, args: FindFreeTime) -> Result<Value, ApiError> {
@@ -971,35 +896,6 @@ mod tests {
         assert_eq!(to, ms("2026-11-21T05:00:00Z"));
         assert!(range(Some("2026-11-21"), Some("2026-11-20"), tz, 0).is_err());
         assert!(range(Some("2026-01-01"), Some("2027-06-01"), tz, 0).is_err());
-    }
-
-    #[test]
-    fn free_slots_skip_busy_time_weekends_and_after_hours() {
-        let tz = chrono_tz::UTC;
-        let nine = NaiveTime::from_hms_opt(9, 0, 0).unwrap();
-        let five = NaiveTime::from_hms_opt(17, 0, 0).unwrap();
-        // Friday 20 Nov 2026 to Monday 23 Nov.
-        let busy = vec![
-            (ms("2026-11-20T10:00:00Z"), ms("2026-11-20T11:00:00Z")),
-            (ms("2026-11-20T11:00:00Z"), ms("2026-11-20T16:40:00Z")),
-        ];
-        let slots = free_slots(
-            &busy,
-            ms("2026-11-20T00:00:00Z"),
-            ms("2026-11-23T12:00:00Z"),
-            tz,
-            nine,
-            five,
-            false,
-            30,
-        );
-        assert_eq!(
-            slots,
-            vec![
-                (ms("2026-11-20T09:00:00Z"), ms("2026-11-20T10:00:00Z")),
-                (ms("2026-11-23T09:00:00Z"), ms("2026-11-23T12:00:00Z")),
-            ]
-        );
     }
 
     #[test]
