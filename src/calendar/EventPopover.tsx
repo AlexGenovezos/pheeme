@@ -45,17 +45,10 @@ import { noteDismiss } from "./drag";
 import { eventTitle, useCalendarLookup } from "./EventBlock";
 import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
 import { EventWeather } from "../weather/EventWeather";
+import { ANSWERS, type Answer, answerTally, answerWord } from "./rsvp";
 import { type OtherZone, placeName, useZoneSettings } from "./zoneSettings";
 import { dayShift, offsetMinutes, zoneCity } from "./zones";
 import "../components/ui/Surface.css";
-
-type Answer = "accepted" | "tentative" | "declined";
-
-const ANSWERS: { value: Answer; label: string }[] = [
-  { value: "accepted", label: "Yes" },
-  { value: "tentative", label: "Maybe" },
-  { value: "declined", label: "No" },
-];
 
 const SCOPES: { value: EditScope; label: string }[] = [
   { value: "this", label: "This event" },
@@ -143,24 +136,9 @@ function OtherZoneTimes({ event, tz }: { event: CalendarEvent; tz: string }) {
   );
 }
 
-const answerWord: Record<string, string> = {
-  accepted: "Yes",
-  tentative: "Maybe",
-  declined: "No",
-  needsAction: "Awaiting",
-};
-
 function guestSummary(guests: Attendee[]): string {
-  const count = (r: string) => guests.filter((g) => (g.response ?? "needsAction") === r).length;
-  const parts = [
-    [count("accepted"), "yes"],
-    [count("tentative"), "maybe"],
-    [count("declined"), "no"],
-    [count("needsAction"), "awaiting"],
-  ]
-    .filter(([n]) => (n as number) > 0)
-    .map(([n, w]) => `${n} ${w}`);
-  return `${guests.length} ${guests.length === 1 ? "guest" : "guests"}${parts.length ? ` · ${parts.join(", ")}` : ""}`;
+  const tally = answerTally(guests);
+  return `${guests.length} ${guests.length === 1 ? "guest" : "guests"}${tally ? ` · ${tally}` : ""}`;
 }
 
 /** A guest's or organizer's name; anyone but you opens their person card, closing the popover. */
@@ -287,8 +265,8 @@ const close = () => useCalendarStore.getState().openEvent(null);
 function EventTools({ event }: { event: CalendarEvent }) {
   const accounts = useCalendarStore((s) => s.accounts);
   const lookup = useCalendarLookup();
-  const editShortcut = useKeybinding("calendar.edit", "e");
-  const deleteShortcut = useKeybinding("calendar.delete", "delete");
+  const editShortcut = useKeybinding("calendar.edit");
+  const deleteShortcut = useKeybinding("calendar.delete");
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const role = lookup(event)?.accessRole;
   const canDelete = role === "owner" || role === "writer";
@@ -371,7 +349,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
   const accounts = useCalendarStore((s) => s.accounts);
   const tz = displayZone(accounts);
   const lookup = useCalendarLookup();
-  const joinShortcut = useKeybinding("calendar.join", "shift+j");
+  const joinShortcut = useKeybinding("calendar.join");
   const ref = useRef<HTMLDivElement>(null);
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
