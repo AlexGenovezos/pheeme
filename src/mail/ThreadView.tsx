@@ -363,9 +363,9 @@ function usePrefetchAttachments(detail: ThreadDetail, active: boolean) {
 
 /** "J and K move through the list. ⌘K shows every command.", with the user's keys. */
 function EmptyHint() {
-  const next = useKeybinding("list.next", "j");
-  const previous = useKeybinding("list.previous", "k");
-  const palette = useKeybinding("palette.toggle", "mod+k");
+  const next = useKeybinding("list.next");
+  const previous = useKeybinding("list.previous");
+  const palette = useKeybinding("palette.toggle");
   return (
     <p className="pane-empty__hint">
       {next && previous && (

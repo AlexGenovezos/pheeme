@@ -1,6 +1,6 @@
 // Label renames, colour and visibility changes, straight to Gmail but shown at once.
-import { toast } from "../components/ui/Toast";
-import { type LabelEdit, type LabelInfo, toCommandError, updateLabel } from "../lib/tauri";
+import { toastError } from "../components/ui/Toast";
+import { type LabelEdit, type LabelInfo, updateLabel } from "../lib/tauri";
 import { useLabelStore } from "../store/labelStore";
 
 /** `labels` as they'll be once Gmail takes `edit` on `labelId`; a rename carries its sublabels' paths along. */
@@ -47,7 +47,7 @@ export async function editLabel(
     return true;
   } catch (err) {
     useLabelStore.getState().settleLabels(change, null);
-    toast({ title: toCommandError(err).message, tone: "danger" });
+    toastError(err);
     return false;
   }
 }

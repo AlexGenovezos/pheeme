@@ -27,6 +27,7 @@ import { useMailStore } from "../store/mailStore";
 import { sidebarLayout, unreadOnlyFor, useUiStore } from "../store/uiStore";
 import { SearchBar, SEARCH_INPUT_ID } from "../search/SearchBar";
 import { dragRegion } from "./chrome";
+import { DEFAULT_KEYS } from "../keyboard/defaultKeys";
 export { SEARCH_INPUT_ID };
 
 /** Placeholder until the mail UI (Phase 6) wires real actions. */
@@ -53,21 +54,21 @@ export const rowMenu = (t: ThreadSummary) => {
     {
       id: "archive",
       label: ARCHIVE_SLOT_LABEL[currentArchiveSlot()],
-      shortcut: registry.shortcutFor("conversation.archive", "e"),
+      shortcut: registry.shortcutFor("conversation.archive"),
       onSelect: () => void archiveSlotAction(keys),
     },
     {
       id: "read",
       label: t.unread ? "Mark as read" : "Mark as unread",
       shortcut: t.unread
-        ? registry.shortcutFor("conversation.mark-read", "shift+i")
-        : registry.shortcutFor("conversation.mark-unread", "shift+u"),
+        ? registry.shortcutFor("conversation.mark-read")
+        : registry.shortcutFor("conversation.mark-unread"),
       onSelect: () => void setRead(t.unread, keys),
     },
     {
       id: "star",
       label: t.starred ? "Remove star" : "Add star",
-      shortcut: registry.shortcutFor("conversation.star", "s"),
+      shortcut: registry.shortcutFor("conversation.star"),
       onSelect: () => void setStarred(!t.starred, keys),
     },
     { type: "separator" as const },
@@ -85,7 +86,7 @@ export const rowMenu = (t: ThreadSummary) => {
     {
       id: "delete",
       label: "Delete",
-      shortcut: registry.shortcutFor("conversation.delete", "#"),
+      shortcut: registry.shortcutFor("conversation.delete"),
       danger: true,
       onSelect: () => void trash(keys),
     },
@@ -142,15 +143,15 @@ export function ListPane() {
     const counts = s.counts[accountId];
     return counts ? (counts[labelId]?.unread ?? 0) : null;
   });
-  const sidebarKey = useKeybinding("view.toggleSidebar", "mod+b");
-  const composeKey = useKeybinding("compose.new", "c");
+  const sidebarKey = useKeybinding("view.toggleSidebar");
+  const composeKey = useKeybinding("compose.new");
 
   useCommands([
     {
       id: "list.next",
       title: "Next conversation",
       group: "Conversation",
-      shortcut: "j",
+      shortcut: DEFAULT_KEYS["list.next"],
       repeat: true,
       run: () => moveSelection(1),
     },
@@ -158,7 +159,7 @@ export function ListPane() {
       id: "list.previous",
       title: "Previous conversation",
       group: "Conversation",
-      shortcut: "k",
+      shortcut: DEFAULT_KEYS["list.previous"],
       repeat: true,
       run: () => moveSelection(-1),
     },
@@ -166,7 +167,7 @@ export function ListPane() {
       id: "search.focus",
       title: "Search mail",
       group: "Navigation",
-      shortcut: "/",
+      shortcut: DEFAULT_KEYS["search.focus"],
       keywords: ["find"],
       run: () => document.getElementById(SEARCH_INPUT_ID)?.focus(),
     },

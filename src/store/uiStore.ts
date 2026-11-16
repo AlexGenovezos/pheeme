@@ -1,5 +1,6 @@
 // UI state: pane layout and navigation preferences (persisted), current mailbox, open and checked threads.
 import { create } from "zustand";
+import { defaultStorage, readJson, writeJson } from "../lib/storage";
 import { homeMailbox, type MailboxRef, parseThreadKey, type ThreadKey } from "../mail/mailboxes";
 
 /** Pane geometry in CSS px. The shell writes these into CSS variables. */
@@ -79,16 +80,12 @@ export const clampList = (w: number, available = 0) =>
 type Stored = Partial<Record<keyof PaneLayout | keyof NavPrefs | "mailbox", unknown>>;
 
 function readStored(storage: Pick<Storage, "getItem"> | undefined): Stored | null {
-  try {
-    const raw: unknown = JSON.parse(storage?.getItem(LAYOUT_KEY) ?? "null");
-    return raw && typeof raw === "object" ? (raw as Stored) : null;
-  } catch {
-    return null;
-  }
+  const raw = readJson(LAYOUT_KEY, storage);
+  return raw && typeof raw === "object" ? (raw as Stored) : null;
 }
 
 export function readLayout(
-  storage: Pick<Storage, "getItem"> | undefined = safeStorage(),
+  storage: Pick<Storage, "getItem"> | undefined = defaultStorage(),
 ): PaneLayout {
   const raw = readStored(storage);
   if (!raw) return DEFAULT_LAYOUT;
@@ -109,7 +106,7 @@ const strings = (raw: unknown): string[] =>
   Array.isArray(raw) ? raw.filter((s): s is string => typeof s === "string") : [];
 
 export function readNavPrefs(
-  storage: Pick<Storage, "getItem"> | undefined = safeStorage(),
+  storage: Pick<Storage, "getItem"> | undefined = defaultStorage(),
 ): NavPrefs {
   const raw = readStored(storage);
   const folded = raw?.foldedLabels;
@@ -129,7 +126,7 @@ export function readNavPrefs(
 
 /** The mailbox showing when the app last closed, so launch reopens it from the cache; All Inboxes if none or malformed. */
 export function readLastMailbox(
-  storage: Pick<Storage, "getItem"> | undefined = safeStorage(),
+  storage: Pick<Storage, "getItem"> | undefined = defaultStorage(),
 ): MailboxRef {
   const raw = readStored(storage)?.mailbox;
   if (!raw || typeof raw !== "object") return DEFAULT_MAILBOX;
@@ -140,21 +137,8 @@ export function readLastMailbox(
   return category === undefined ? { accountId, labelId } : { accountId, labelId, category };
 }
 
-function writeStored(stored: Persisted) {
-  try {
-    safeStorage()?.setItem(LAYOUT_KEY, JSON.stringify(stored));
-  } catch {
-    // Storage unavailable: layout resets next launch, nothing else breaks.
-  }
-}
-
-function safeStorage(): Storage | undefined {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined;
-  }
-}
+// With storage unavailable the layout resets next launch, nothing else breaks.
+const writeStored = (stored: Persisted) => writeJson(LAYOUT_KEY, stored);
 
 interface UiState extends PaneLayout, NavPrefs {
   mailbox: MailboxRef;

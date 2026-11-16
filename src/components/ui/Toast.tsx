@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 import { create } from "zustand";
+import { toCommandError } from "../../lib/tauri";
 import { cx } from "../../lib/utils";
 import "./Toast.css";
 
@@ -49,6 +50,11 @@ export function toast(options: ToastOptions): number {
       setTimeout(() => dismissToast(id), duration),
     );
   return id;
+}
+
+/** Show a command's failure as a danger toast, in the plain-language message it rejected with. */
+export function toastError(error: unknown): number {
+  return toast({ title: toCommandError(error).message, tone: "danger" });
 }
 
 function ToastViewport({ pinned }: { pinned?: ReactNode }) {

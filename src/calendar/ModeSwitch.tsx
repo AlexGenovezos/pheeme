@@ -7,22 +7,20 @@ import { type AppMode, useCalendarStore } from "./calendarStore";
 const MODES: {
   mode: AppMode;
   label: string;
-  command: string;
-  fallback: string;
+  command: "mode.mail" | "mode.calendar";
   Icon: typeof Mail;
 }[] = [
-  { mode: "mail", label: "Mail", command: "mode.mail", fallback: "mod+1", Icon: Mail },
+  { mode: "mail", label: "Mail", command: "mode.mail", Icon: Mail },
   {
     mode: "calendar",
     label: "Calendar",
     command: "mode.calendar",
-    fallback: "mod+2",
     Icon: CalendarDays,
   },
 ];
 
 function ModeButton({ entry, active }: { entry: (typeof MODES)[number]; active: boolean }) {
-  const shortcut = useKeybinding(entry.command, entry.fallback);
+  const shortcut = useKeybinding(entry.command);
   const { Icon } = entry;
   return (
     <button

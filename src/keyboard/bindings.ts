@@ -1,4 +1,5 @@
 import { platform } from "../lib/platform";
+import { defaultStorage, readJson, writeJson } from "../lib/storage";
 import {
   type Command,
   type CommandRegistry,
@@ -16,31 +17,17 @@ import {
  */
 export const KEYBINDINGS_KEY = "pheeme.keybindings";
 
-type StorageLike = Pick<Storage, "getItem" | "setItem">;
-
-function defaultStorage(): StorageLike | undefined {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined;
-  }
-}
-
 export function readBindings(
-  storage: StorageLike | undefined = defaultStorage(),
+  storage: Pick<Storage, "getItem"> | undefined = defaultStorage(),
 ): Record<string, string | null> {
-  try {
-    const raw: unknown = JSON.parse(storage?.getItem(KEYBINDINGS_KEY) ?? "null");
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-    return Object.fromEntries(
-      Object.entries(raw).filter(
-        (entry): entry is [string, string | null] =>
-          entry[1] === null || (typeof entry[1] === "string" && isValidShortcut(entry[1])),
-      ),
-    );
-  } catch {
-    return {};
-  }
+  const raw = readJson(KEYBINDINGS_KEY, storage);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).filter(
+      (entry): entry is [string, string | null] =>
+        entry[1] === null || (typeof entry[1] === "string" && isValidShortcut(entry[1])),
+    ),
+  );
 }
 
 function isValidShortcut(shortcut: string): boolean {
@@ -52,11 +39,8 @@ function isValidShortcut(shortcut: string): boolean {
 }
 
 function write(overrides: Record<string, string | null>, storage = defaultStorage()) {
-  try {
-    storage?.setItem(KEYBINDINGS_KEY, JSON.stringify(overrides));
-  } catch {
-    // Storage unavailable: the binding lasts until the app closes.
-  }
+  // With storage unavailable the binding lasts until the app closes.
+  writeJson(KEYBINDINGS_KEY, overrides, storage);
 }
 
 /** Apply the stored bindings to the registry. Call once at startup. */

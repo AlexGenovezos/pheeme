@@ -2,7 +2,7 @@
 // until Gmail confirms them, so Undo and a refused send can bring the message back exactly as it was.
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
-import { dismissToast, toast } from "../components/ui/Toast";
+import { dismissToast, toast, toastError } from "../components/ui/Toast";
 import {
   cancelSend,
   type ComposeDraft,
@@ -299,7 +299,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         if (draft) await get().editDraft(accountId, draft.messageId);
         else toast({ title: "That message isn't waiting to be sent any more." });
       } catch (e) {
-        toast({ title: toCommandError(e).message, tone: "danger" });
+        toastError(e);
         // Still in the outbox: offer it again.
         noticed.delete(failed.opId);
         noticeFailedSend(accountId, failed);
@@ -373,7 +373,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     try {
       stopped = await cancelSend(opId);
     } catch (e) {
-      toast({ title: toCommandError(e).message, tone: "danger" });
+      toastError(e);
       return;
     }
     if (!stopped) {
@@ -423,7 +423,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         get().focus(id);
       } catch (e) {
         remove(id);
-        toast({ title: toCommandError(e).message, tone: "danger" });
+        toastError(e);
       }
     },
 
@@ -501,7 +501,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
             : w,
         ),
       }));
-      if (failed) toast({ title: toCommandError(failed.reason).message, tone: "danger" });
+      if (failed) toastError(failed.reason);
     },
 
     removeAttachment(id, attachmentId) {
@@ -749,7 +749,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         try {
           await deleteDraft(win.accountId, draftId);
         } catch (e) {
-          toast({ title: toCommandError(e).message, tone: "danger" });
+          toastError(e);
           return;
         }
       }

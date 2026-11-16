@@ -1,10 +1,10 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
-import { toast } from "../components/ui/Toast";
+import { toastError } from "../components/ui/Toast";
 import { findConflicts } from "../keyboard/bindings";
 import { parseShortcut } from "../keyboard/registry";
 import { useCommandList, useCommands } from "../keyboard/useCommands";
-import { stopQuietly, toCommandError } from "../lib/tauri";
+import { stopQuietly } from "../lib/tauri";
 import { modAction } from "./api";
 import { useModStore } from "./store";
 
@@ -35,7 +35,7 @@ export function useModEvents() {
 }
 
 export function reportModError(error: unknown) {
-  toast({ title: toCommandError(error).message, tone: "danger" });
+  toastError(error);
 }
 
 export function useModCommands() {

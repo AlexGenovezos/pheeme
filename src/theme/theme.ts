@@ -5,6 +5,7 @@ import { makeReadable } from "../styles/themes/contrast";
 import type { ThemeToken } from "../styles/themes/schema";
 import { buildThemeFromFile, type ThemeFile } from "../styles/themes/themeFile";
 import { type ImportedTheme, themeFromSeeds } from "../styles/themes/t3";
+import { defaultStorage, readItem, writeItem } from "../lib/storage";
 import { FOLDER_THEMES_KEY, readCustomThemes, writeCustomThemes } from "./customThemes";
 
 export type ThemeMode = "system" | "light" | "dark";
@@ -27,32 +28,20 @@ export const THEME_BOOT_KEY = "pheeme.theme-boot";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
-type StorageLike = Pick<Storage, "getItem" | "setItem">;
-
-function defaultStorage(): StorageLike | undefined {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined; // storage disabled; fall back to System every launch
-  }
-}
-
 /** The stored value under `key` when it is one of `options`, else `fallback`. */
 function readOption<T extends string>(
   key: string,
   options: readonly T[],
   fallback: T,
-  storage: StorageLike | undefined,
+  storage: Pick<Storage, "getItem"> | undefined,
 ): T {
-  try {
-    const stored = storage?.getItem(key);
-    return options.includes(stored as T) ? (stored as T) : fallback;
-  } catch {
-    return fallback;
-  }
+  const stored = readItem(key, storage);
+  return options.includes(stored as T) ? (stored as T) : fallback;
 }
 
-export function readThemeMode(storage: StorageLike | undefined = defaultStorage()): ThemeMode {
+export function readThemeMode(
+  storage: Pick<Storage, "getItem"> | undefined = defaultStorage(),
+): ThemeMode {
   return readOption(THEME_MODE_KEY, THEME_MODES, "system", storage);
 }
 
@@ -65,40 +54,23 @@ export const SIDEBAR_STYLES: readonly SidebarStyle[] = ["light", "tinted", "ink"
 export const SIDEBAR_STYLE_KEY = "pheeme.sidebar-style";
 
 export function readSidebarStyle(
-  storage: StorageLike | undefined = defaultStorage(),
+  storage: Pick<Storage, "getItem"> | undefined = defaultStorage(),
 ): SidebarStyle {
   return readOption(SIDEBAR_STYLE_KEY, SIDEBAR_STYLES, "light", storage);
 }
 
 export function writeThemeMode(
   mode: ThemeMode,
-  storage: StorageLike | undefined = defaultStorage(),
+  storage: Pick<Storage, "setItem"> | undefined = defaultStorage(),
 ) {
-  try {
-    storage?.setItem(THEME_MODE_KEY, mode);
-  } catch {
-    // Quota or privacy mode: the choice just won't survive a relaunch.
-  }
-}
-
-function writeItem(key: string, value: string, storage = defaultStorage()) {
-  try {
-    storage?.setItem(key, value);
-  } catch {
-    // Quota or privacy mode: the choice just won't survive a relaunch.
-  }
+  writeItem(THEME_MODE_KEY, mode, storage);
 }
 
 export function readThemeChoices(
-  storage: StorageLike | undefined = defaultStorage(),
+  storage: Pick<Storage, "getItem"> | undefined = defaultStorage(),
 ): Record<ResolvedTheme, string> {
-  const read = (kind: ResolvedTheme) => {
-    try {
-      return storage?.getItem(THEME_CHOICE_KEYS[kind]) || builtInThemes[kind].id;
-    } catch {
-      return builtInThemes[kind].id;
-    }
-  };
+  const read = (kind: ResolvedTheme) =>
+    readItem(THEME_CHOICE_KEYS[kind], storage) || builtInThemes[kind].id;
   return { light: read("light"), dark: read("dark") };
 }
 

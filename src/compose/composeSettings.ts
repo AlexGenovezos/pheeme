@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { readItem, writeItem } from "../lib/storage";
 
 /** Seconds a sent message waits so it can be undone; 0 sends at once. */
 export const UNDO_SEND_CHOICES = [0, 5, 10, 20, 30] as const;
@@ -7,16 +8,8 @@ export const DEFAULT_UNDO_SEND: UndoSendSeconds = 5;
 
 const KEY = "pheeme.undo-send-seconds";
 
-function storage(): Pick<Storage, "getItem" | "setItem"> | undefined {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined;
-  }
-}
-
 function read(): UndoSendSeconds {
-  const stored = Number(storage()?.getItem(KEY) ?? NaN);
+  const stored = Number(readItem(KEY) ?? NaN);
   return (UNDO_SEND_CHOICES as readonly number[]).includes(stored)
     ? (stored as UndoSendSeconds)
     : DEFAULT_UNDO_SEND;
@@ -30,19 +23,11 @@ const REPLY_KEY = "pheeme.default-reply";
 const CONFIRM_KEY = "pheeme.confirm-send";
 
 function readReply(): DefaultReply {
-  return storage()?.getItem(REPLY_KEY) === "replyAll" ? "replyAll" : DEFAULT_REPLY;
+  return readItem(REPLY_KEY) === "replyAll" ? "replyAll" : DEFAULT_REPLY;
 }
 
 function readConfirm(): boolean {
-  return storage()?.getItem(CONFIRM_KEY) === "true";
-}
-
-function persist(key: string, value: string) {
-  try {
-    storage()?.setItem(key, value);
-  } catch {
-    // The choice just won't survive a relaunch.
-  }
+  return readItem(CONFIRM_KEY) === "true";
 }
 
 interface ComposeSettings {
@@ -58,17 +43,17 @@ interface ComposeSettings {
 export const useComposeSettings = create<ComposeSettings>((set) => ({
   undoSendSeconds: read(),
   setUndoSendSeconds: (seconds) => {
-    persist(KEY, String(seconds));
+    writeItem(KEY, String(seconds));
     set({ undoSendSeconds: seconds });
   },
   defaultReply: readReply(),
   setDefaultReply: (reply) => {
-    persist(REPLY_KEY, reply);
+    writeItem(REPLY_KEY, reply);
     set({ defaultReply: reply });
   },
   confirmSend: readConfirm(),
   setConfirmSend: (confirm) => {
-    persist(CONFIRM_KEY, String(confirm));
+    writeItem(CONFIRM_KEY, String(confirm));
     set({ confirmSend: confirm });
   },
 }));

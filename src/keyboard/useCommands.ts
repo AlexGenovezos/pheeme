@@ -55,7 +55,8 @@ export function useGlobalShortcuts(reg: CommandRegistry = registry) {
 
 /**
  * The shortcut to label a button or menu item with for command `id`: the user's binding, else the
- * default. `fallback` covers labels drawn while the command isn't registered.
+ * default (`DEFAULT_KEYS` covers labels drawn while the command isn't registered; `fallback` is
+ * for commands it doesn't list).
  */
 export function useKeybinding(
   id: string,

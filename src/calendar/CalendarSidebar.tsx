@@ -267,8 +267,8 @@ function AccountGroup({ account }: { account: CalendarAccount }) {
 export function CalendarSidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   const accounts = useCalendarStore((s) => s.accounts);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
-  const sidebarShortcut = useKeybinding("view.toggleSidebar", "mod+b");
-  const createShortcut = useKeybinding("calendar.create", "c");
+  const sidebarShortcut = useKeybinding("view.toggleSidebar");
+  const createShortcut = useKeybinding("calendar.create");
   return (
     <div className="sidebar cal-sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>

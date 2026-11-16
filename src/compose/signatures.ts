@@ -5,6 +5,7 @@
 // localStorage so a panel opened before they load still has them.
 import DOMPurify from "dompurify";
 import { create } from "zustand";
+import { readJson, writeJson } from "../lib/storage";
 import {
   type CommandError,
   getSignatureSettings,
@@ -43,29 +44,9 @@ export type SignatureUse = "new" | "reply";
 const SETTINGS_KEY = "pheeme.signatures";
 const GMAIL_KEY = "pheeme.gmail-signatures";
 
-function storage(): Pick<Storage, "getItem" | "setItem"> | undefined {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined;
-  }
-}
-
-function readJson<T>(key: string): Record<string, T> {
-  try {
-    const parsed: unknown = JSON.parse(storage()?.getItem(key) ?? "{}");
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, T>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function persist(key: string, value: unknown) {
-  try {
-    storage()?.setItem(key, JSON.stringify(value));
-  } catch {
-    // Kept until the app closes.
-  }
+function readRecord<T>(key: string): Record<string, T> {
+  const parsed = readJson(key);
+  return parsed && typeof parsed === "object" ? (parsed as Record<string, T>) : {};
 }
 
 const CHOICES: readonly SignatureChoice[] = ["gmail", "custom", "none"];
@@ -80,14 +61,14 @@ const parseSettings = (raw: Partial<AccountSignatures> | null | undefined): Acco
 
 function readSettings(): Record<string, AccountSignatures> {
   const out: Record<string, AccountSignatures> = {};
-  for (const [id, raw] of Object.entries(readJson<Partial<AccountSignatures>>(SETTINGS_KEY)))
+  for (const [id, raw] of Object.entries(readRecord<Partial<AccountSignatures>>(SETTINGS_KEY)))
     out[id] = parseSettings(raw);
   return out;
 }
 
 function readGmail(): Record<string, GmailSignature> {
   const out: Record<string, GmailSignature> = {};
-  for (const [id, html] of Object.entries(readJson<unknown>(GMAIL_KEY)))
+  for (const [id, html] of Object.entries(readRecord<unknown>(GMAIL_KEY)))
     if (typeof html === "string" || html === null) out[id] = { html, loading: false };
   return out;
 }
@@ -191,7 +172,7 @@ export const useSignatures = create<SignatureState>((set, get) => ({
       ...get().settings,
       [accountId]: { ...get().forAccount(accountId), ...change },
     };
-    persist(SETTINGS_KEY, settings);
+    writeJson(SETTINGS_KEY, settings);
     set({ settings });
     setSignatureSettings(accountId, settings[accountId]).catch((e: unknown) =>
       console.warn("couldn't save signature settings", e),
@@ -214,7 +195,7 @@ export const useSignatures = create<SignatureState>((set, get) => ({
     );
     const settings = { ...get().settings };
     for (const entry of loaded) if (entry) settings[entry[0]] = entry[1];
-    persist(SETTINGS_KEY, settings);
+    writeJson(SETTINGS_KEY, settings);
     set({ settings });
   },
 
@@ -236,7 +217,7 @@ export const useSignatures = create<SignatureState>((set, get) => ({
         const cached: Record<string, string | null> = {};
         for (const [id, g] of Object.entries(get().gmail))
           if (g.html !== undefined) cached[id] = g.html;
-        persist(GMAIL_KEY, cached);
+        writeJson(GMAIL_KEY, cached);
       },
       (e: unknown) => patch({ loading: false, error: toCommandError(e) }),
     );
