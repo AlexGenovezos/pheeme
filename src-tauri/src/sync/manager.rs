@@ -11,10 +11,11 @@ use super::events::{SyncEvent, SyncEvents};
 use super::outbox;
 use crate::db::accounts;
 use crate::gmail::{usage_source, user_action, GmailError, UsageSource, RATE_LIMIT_COOLDOWN};
+use crate::lock::lock;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 
@@ -93,10 +94,6 @@ fn is_keychain_locked(e: &SyncError) -> bool {
 /// Records whether the keychain could be read; true when that changed, so it's worth saying.
 fn note_keychain(waiting: &AtomicBool, locked: bool) -> bool {
     waiting.swap(locked, Ordering::SeqCst) != locked
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl SyncManager {

@@ -14,6 +14,7 @@ use crate::db;
 use crate::db::calendar::{DbCalendar, DbEvent};
 use crate::db::reminders::ReminderKey;
 use crate::google_access::AccessStatus;
+use crate::lock::lock;
 use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -104,10 +105,6 @@ struct PlanState {
     dirty: bool,
     /// Fired this run, in case recording one in the database failed.
     fired: HashMap<ReminderKey, i64>,
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 pub struct ReminderService {
