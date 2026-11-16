@@ -10,8 +10,10 @@ export function useSidebarFit(
   aside: RefObject<HTMLElement | null>,
   width: number,
   contentMin: number,
+  /** Width shown beside the sidebar's own (the account rail). */
+  extra = 0,
 ): "expanded" | "collapsed" | "overlay" {
-  const sidebarWidth = useUiStore((s) => s.sidebarWidth);
+  const sidebarWidth = useUiStore((s) => s.sidebarWidth) + extra;
   const layout = useUiStore(sidebarLayout);
   const squeezed = width > 0 && width - sidebarWidth < contentMin;
 

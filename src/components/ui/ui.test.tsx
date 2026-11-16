@@ -19,6 +19,7 @@ describe("Avatar", () => {
     expect(initialsFor("notifications@github.com")).toBe("N");
     expect(initialsFor("jonas.weber@posteo.de")).toBe("JW");
     expect(initialsFor("Ánh Lê")).toBe("ÁL");
+    expect(initialsFor("Avery (Studio)")).toBe("AS");
     expect(initialsFor("")).toBe("?");
   });
 

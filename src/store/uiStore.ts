@@ -11,6 +11,8 @@ export const PANE = {
   listDefault: 380,
   listMin: 280,
   viewMin: 400,
+  /** The account rail (Settings › Appearance), added to the sidebar's width when it shows. */
+  rail: 48,
 } as const;
 
 export const LAYOUT_KEY = "pheeme.layout";
