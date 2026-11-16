@@ -14,7 +14,10 @@ function body(overrides: Record<string, unknown> = {}) {
     os: "macos",
     arch: "aarch64",
     accounts: 2,
-    screens: [{ name: "calendar.week", opens: 3, ms: 120000 }],
+    screens: [
+      { name: "calendar.week", opens: 3, ms: 120000 },
+      { name: "mail.inbox", opens: 9, ms: 3_600_000 },
+    ],
     commands: [{ id: "go.inbox", key: 4, palette: 1, button: 0 }],
     rebound: [
       { id: "go.inbox", key: "g h" },

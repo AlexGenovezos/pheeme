@@ -110,3 +110,17 @@ export function createUsageTracker(now: () => number = Date.now) {
     },
   };
 }
+
+const discards = new Set<() => void>();
+
+/** Drop the counts not yet flushed. The usage stats switch calls it whenever it changes, so
+ * nothing counted while the stats were off is sent after they're turned back on. */
+export function discardUsageCounts() {
+  discards.forEach((d) => d());
+}
+
+/** Run `discard` on [`discardUsageCounts`]; returns a function that stops. */
+export function onDiscard(discard: () => void): () => void {
+  discards.add(discard);
+  return () => discards.delete(discard);
+}

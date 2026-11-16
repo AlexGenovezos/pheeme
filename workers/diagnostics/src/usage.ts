@@ -86,7 +86,7 @@ export function parseUsage(
   const outScreens: UsageRecord["screens"] = [];
   for (const s of screens) {
     if (!isObject(s) || !isName(s.name) || !isCount(s.opens)) return null;
-    if (!isCount(s.ms) || (s.ms as number) > DAY_MS) return null;
+    if (!Number.isInteger(s.ms) || (s.ms as number) < 0 || (s.ms as number) > DAY_MS) return null;
     outScreens.push({ name: s.name as string, opens: s.opens as number, ms: s.ms as number });
   }
   const outCommands: UsageRecord["commands"] = [];

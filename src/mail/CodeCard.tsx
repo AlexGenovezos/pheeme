@@ -50,7 +50,13 @@ export function CodeCard({ code }: { code: string }) {
           )}
         </span>
       </div>
-      <Button variant="primary" size="sm" icon={<Copy />} onClick={() => void copyCode(code)}>
+      <Button
+        variant="primary"
+        size="sm"
+        icon={<Copy />}
+        data-command={COPY_CODE_COMMAND}
+        onClick={() => void copyCode(code)}
+      >
         Copy code
         {shortcut && <Kbd shortcut={shortcut} className="code-card__kbd" />}
       </Button>

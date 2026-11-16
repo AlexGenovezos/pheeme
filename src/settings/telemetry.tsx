@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Switch } from "../components/ui/Switch";
 import { setTelemetry, telemetryEnabled } from "../lib/tauri";
+import { discardUsageCounts } from "../usage/tracker";
 
 export const TELEMETRY_TITLE = "Share anonymous usage stats";
 export const TELEMETRY_DESCRIPTION =
@@ -27,6 +28,7 @@ export function TelemetrySwitch() {
   async function change(next: boolean) {
     setBusy(true);
     setEnabled(next);
+    discardUsageCounts();
     try {
       setEnabled(await setTelemetry(next));
     } catch {

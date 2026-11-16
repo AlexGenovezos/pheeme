@@ -19,7 +19,7 @@ import { useUiStore } from "../store/uiStore";
 import { useTasksStore } from "../tasks/tasksStore";
 import { useThemeEditorStore } from "../theme/editor/editorStore";
 import { currentScreens, type ScreenState } from "./screens";
-import { commandName, createUsageTracker } from "./tracker";
+import { commandName, createUsageTracker, onDiscard } from "./tracker";
 
 export const FLUSH_MS = 5 * 60 * 1000;
 
@@ -125,6 +125,7 @@ export function useUsageTracking(reg: CommandRegistry = defaultRegistry) {
 
     const timer = setInterval(flush, FLUSH_MS);
     cleanups.push(() => clearInterval(timer));
+    cleanups.push(onDiscard(() => void tracker.take()));
 
     return () => {
       cleanups.forEach((c) => c());
