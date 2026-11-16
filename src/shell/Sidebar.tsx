@@ -40,6 +40,8 @@ import { LabelsSection } from "./sidebar/Labels";
 import { Section } from "./sidebar/Section";
 import { NO_COUNTS, sameMailbox } from "./sidebar/shared";
 import { SidebarFooter } from "./SidebarFooter";
+import { useAccountIndicators, useRailShown } from "./accountIndicators";
+import { AccountRail } from "./sidebar/AccountRail";
 import { Button } from "../components/ui/Button";
 import { describeShortcut } from "../keyboard/format";
 
@@ -165,10 +167,13 @@ function AccountSection({
   account,
   accounts,
   error,
+  glowing,
 }: {
   account: AccountInfo;
   accounts: AccountInfo[];
   error?: SyncFailure;
+  /** Settings › Appearance › Glow: this is the account you're in. */
+  glowing: boolean;
 }) {
   const collapsed = useUiStore((s) => s.collapsedAccounts.includes(account.id));
   const inboxUnread = useLabelStore((s) => s.categoryCounts[account.id]?.INBOX ?? 0);
@@ -176,7 +181,13 @@ function AccountSection({
   const color = accountColorIndex(account.id, accounts);
   const collapsedCount = collapsed ? formatCount(inboxUnread) : "";
   return (
-    <div className="sidebar__group" role="group" aria-label={account.email}>
+    <div
+      className="sidebar__group"
+      role="group"
+      aria-label={account.email}
+      data-current={glowing || undefined}
+      style={{ "--account-color": `var(--color-account-${color})` } as CSSProperties}
+    >
       <button
         type="button"
         className="sidebar__account-header"
@@ -186,11 +197,7 @@ function AccountSection({
         title={error ? `${account.email}\nSync failed: ${error.message}` : account.email}
         onClick={() => useUiStore.getState().toggleAccountCollapsed(account.id)}
       >
-        <span
-          className="sidebar__account-dot"
-          style={{ background: `var(--color-account-${color})` }}
-          aria-hidden="true"
-        />
+        <span className="sidebar__account-dot" aria-hidden="true" />
         <span className="sidebar__account-email">{account.email}</span>
         {error && <TriangleAlert className="sidebar__account-warning" aria-hidden="true" />}
         {collapsedCount && <span className="sidebar__account-count">{collapsedCount}</span>}
@@ -294,11 +301,19 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   const allInboxUnread = useLabelStore((s) => s.allInboxUnread);
   const errors = useAccountStore((s) => s.syncErrors);
   const sidebarShortcut = useKeybinding("view.toggleSidebar");
+  const glow = useAccountIndicators((s) => s.glow);
+  const rail = useRailShown();
+  // The account whose mailbox is open; null in All Inboxes, which is every account.
+  const current = useUiStore((s) => s.mailbox.accountId);
   const composeShortcut = useKeybinding("compose.new");
 
   const activeId = resolveActiveAccount(storedActive, accounts);
   const active = accounts.find((a) => a.id === activeId);
   const single = accounts.length === 1 ? accounts[0] : null;
+  // With the rail, the sidebar shows the account picked there alone, the way it shows a single account.
+  const shown = single ?? (rail ? (accounts.find((a) => a.id === current) ?? null) : null);
+  // The account whose Favorites and labels show.
+  const folders = rail ? shown : active;
 
   // With one account there is no All Inboxes row, so its Primary stands in for it.
   useEffect(() => {
@@ -324,7 +339,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
     },
   ]);
 
-  return (
+  const sidebar = (
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
         <span className="toolbar__spacer" {...dragRegion} />
@@ -335,6 +350,27 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
           onClick={toggleSidebar}
         />
       </div>
+
+      {rail && (
+        <div
+          className="sidebar__current-account"
+          title={shown?.email ?? "All Inboxes"}
+          style={
+            shown
+              ? ({
+                  "--account-color": `var(--color-account-${accountColorIndex(shown.id, accounts)})`,
+                } as CSSProperties)
+              : undefined
+          }
+        >
+          {shown ? (
+            <span className="sidebar__account-dot" aria-hidden="true" />
+          ) : (
+            <Mails aria-hidden="true" />
+          )}
+          <span className="sidebar__account-email">{shown?.email ?? "All Inboxes"}</span>
+        </div>
+      )}
 
       <div className="sidebar__compose">
         <Button
@@ -354,10 +390,10 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
         <Section title="Inboxes">
           <OfflineNote />
           <SlowSyncNote />
-          {single ? (
+          {shown ? (
             <>
-              <SyncErrorNote accountId={single.id} error={errors[single.id]} detailed />
-              <CategoryRows accountId={single.id} />
+              <SyncErrorNote accountId={shown.id} error={errors[shown.id]} detailed />
+              <CategoryRows accountId={shown.id} />
             </>
           ) : (
             <>
@@ -370,18 +406,32 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
                 target={ALL_INBOXES}
               />
               {accounts.map((a) => (
-                <AccountSection key={a.id} account={a} accounts={accounts} error={errors[a.id]} />
+                <AccountSection
+                  key={a.id}
+                  account={a}
+                  accounts={accounts}
+                  error={errors[a.id]}
+                  glowing={glow && a.id === current}
+                />
               ))}
             </>
           )}
         </Section>
-        {active && <Favorites accountId={active.id} />}
-        {active && <LabelsSection accountId={active.id} />}
+        {/* With the rail, the shown account's; none in All Inboxes (pick an account on the rail). */}
+        {folders && <Favorites accountId={folders.id} />}
+        {folders && <LabelsSection accountId={folders.id} />}
       </nav>
 
       <ModSidebar />
       <NotificationOffer />
       <SidebarFooter onAddAccount={onAddAccount} />
+    </div>
+  );
+  if (!rail) return sidebar;
+  return (
+    <div className="sidebar-frame">
+      <AccountRail accounts={accounts} />
+      {sidebar}
     </div>
   );
 }

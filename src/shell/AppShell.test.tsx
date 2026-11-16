@@ -9,6 +9,8 @@ import {
   readLayout,
   useUiStore,
 } from "../store/uiStore";
+import { useAccountStore } from "../store/accountStore";
+import { DEFAULT_ACCOUNT_INDICATORS, useAccountIndicators } from "./accountIndicators";
 import { AppShell } from "./AppShell";
 
 // jsdom has no PointerEvent; a MouseEvent subclass carries clientX the same way.
@@ -184,5 +186,46 @@ describe("reading pane off", () => {
     expect(screen.getByRole("region", { name: "Conversations" })).toBeInTheDocument();
     expect(screen.getByRole("main", { name: "Reading pane" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Back to list" })).not.toBeInTheDocument();
+  });
+});
+
+describe("current account", () => {
+  const accounts = ["a1", "a2"].map((id) => ({
+    id,
+    email: `${id}@test`,
+    displayName: null,
+    clientId: "c",
+    synced: true,
+  }));
+  beforeEach(() => {
+    useAccountStore.setState({ accounts, loaded: true });
+    useAccountIndicators.setState(DEFAULT_ACCOUNT_INDICATORS);
+  });
+
+  test("Account color across the window marks the shell in the open account's color", () => {
+    const { container } = render(<AppShell />);
+    act(() => useAccountIndicators.getState().set("windowColor", true));
+    // All Inboxes is every account: no color.
+    expect(shell(container)).not.toHaveAttribute("data-account-color");
+
+    act(() => useUiStore.getState().setMailbox({ accountId: "a2", labelId: "STARRED" }));
+    expect(shell(container)).toHaveAttribute("data-account-color");
+    expect(shell(container).style.getPropertyValue("--shell-account-color")).toBe(
+      "var(--color-account-2)",
+    );
+
+    act(() => useAccountIndicators.getState().set("windowColor", false));
+    expect(shell(container)).not.toHaveAttribute("data-account-color");
+  });
+
+  test("the account rail widens the sidebar by its own width", () => {
+    const { container } = render(<AppShell />);
+    expect(shell(container).style.getPropertyValue("--shell-sidebar-w")).toBe(
+      `${PANE.sidebarDefault}px`,
+    );
+    act(() => useAccountIndicators.getState().set("rail", true));
+    expect(shell(container).style.getPropertyValue("--shell-sidebar-w")).toBe(
+      `${PANE.sidebarDefault + PANE.rail}px`,
+    );
   });
 });

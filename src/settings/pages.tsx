@@ -31,6 +31,7 @@ import {
   type ThemeMode,
   useThemeStore,
 } from "../theme/theme";
+import { type AccountIndicators, useAccountIndicators } from "../shell/accountIndicators";
 import { AboutSettings, WhatsNew } from "./AboutSettings";
 import { AccountsSettings, accountsMatch } from "./AccountsSettings";
 import { AssistantSettings } from "./AssistantSettings";
@@ -109,6 +110,25 @@ function SidebarControl() {
   const setCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   return <Switch label="Show sidebar" checked={shown} onChange={(next) => setCollapsed(!next)} />;
 }
+
+function AccountIndicatorControl({
+  setting,
+  label,
+}: {
+  setting: keyof AccountIndicators;
+  label: string;
+}) {
+  const on = useAccountIndicators((s) => s[setting]);
+  const set = useAccountIndicators((s) => s.set);
+  return <Switch label={label} checked={on} onChange={(next) => set(setting, next)} />;
+}
+const GlowControl = () => (
+  <AccountIndicatorControl setting="glow" label="Glow around the account you're in" />
+);
+const WindowColorControl = () => (
+  <AccountIndicatorControl setting="windowColor" label="Account color across the window" />
+);
+const RailControl = () => <AccountIndicatorControl setting="rail" label="Account rail" />;
 
 function ReadingPaneControl() {
   const shown = useUiStore((s) => s.readingPane);
@@ -328,6 +348,43 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
               "categories",
             ],
             Control: UnreadOnlyScopeControl,
+          },
+        ],
+      },
+      {
+        title: "Current account",
+        settings: [
+          {
+            id: "account.glow",
+            title: "Glow around the account you're in",
+            description:
+              "With more than one account, the account whose mail is open glows in its color in the sidebar.",
+            keywords: ["accounts", "multiple accounts", "highlight", "which account", "sidebar"],
+            Control: GlowControl,
+          },
+          {
+            id: "account.windowColor",
+            title: "Account color across the window",
+            description:
+              "A stripe of the account's color along the top of the window, and a tint behind the list's title.",
+            keywords: ["accounts", "multiple accounts", "color", "stripe", "which account", "tint"],
+            Control: WindowColorControl,
+          },
+          {
+            id: "account.rail",
+            title: "Account rail",
+            description:
+              "Your accounts as icons beside the sidebar, each with its unread count. The sidebar shows the account you pick there.",
+            keywords: [
+              "accounts",
+              "multiple accounts",
+              "switcher",
+              "switch account",
+              "icons",
+              "which account",
+              "sidebar",
+            ],
+            Control: RailControl,
           },
         ],
       },

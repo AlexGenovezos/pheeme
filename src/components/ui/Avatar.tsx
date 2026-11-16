@@ -3,14 +3,17 @@ import { AVATAR_COLOR_COUNT } from "../../styles/themes";
 import { cx } from "../../lib/utils";
 import "./Avatar.css";
 
-/** "Mira Okafor" → "MO"; "notifications@github.com" → "N". */
+/** "Mira Okafor" → "MO"; "notifications@github.com" → "N"; "Avery (Studio)" → "AS". */
 export function initialsFor(name: string): string {
   const base = name.includes("@") && !name.includes(" ") ? name.split("@")[0] : name;
-  const words = base.split(/[\s._-]+/).filter((w) => /\p{L}|\p{N}/u.test(w));
-  if (!words.length) return "?";
-  const first = [...words[0]][0];
-  const last = words.length > 1 ? [...words[words.length - 1]][0] : "";
-  return (first + last).toUpperCase();
+  // Each word's first letter or digit, so "(Studio)" gives "S" rather than "(".
+  const letters = base
+    .split(/[\s._-]+/)
+    .map((w) => w.match(/[\p{L}\p{N}]/u)?.[0])
+    .filter((c): c is string => c !== undefined);
+  if (!letters.length) return "?";
+  const last = letters.length > 1 ? letters[letters.length - 1] : "";
+  return (letters[0] + last).toUpperCase();
 }
 
 /** Stable color slot 1..AVATAR_COLOR_COUNT for a sender, so a person keeps their color. */
