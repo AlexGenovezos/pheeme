@@ -508,6 +508,7 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
       return telemetry;
     },
     send_diagnostics: () => undefined,
+    record_usage: () => undefined,
     save_diagnostics: () => undefined,
     // The browser can't re-encode like Rust does: a pasted image comes back as it is, a dropped path as a grey tile.
     prepare_screenshot: (args) => ({

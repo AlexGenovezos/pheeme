@@ -1,7 +1,8 @@
 # Diagnostics Worker
 
 Receives the app's daily anonymous usage ping at
-`https://diagnostics.pheeme.email/v1/ping` (see [Usage pings](#usage-pings)),
+`https://diagnostics.pheeme.email/v1/ping` (see [Usage pings](#usage-pings)), its
+daily usage report at `/v1/usage` (see [Usage reports](#usage-reports)),
 and **Settings › About › Send diagnostics** uploads from the app at
 `https://diagnostics.pheeme.email/v1/upload`, stores each zip in the private R2
 bucket `pheeme-diagnostics` (deleted after 30 days), and emails a notification
@@ -11,6 +12,7 @@ attached to the email.
 
 - `src/handler.ts` — upload handling, pure and tested (`handler.test.ts`).
 - `src/ping.ts` — usage ping handling, pure and tested (`ping.test.ts`).
+- `src/usage.ts` — usage report handling, pure and tested (`usage.test.ts`).
 - `src/mime.ts` — builds the notification email (`mime.test.ts`).
 - `src/index.ts` — wires the real bindings and defines the `DailyCap` Durable Object.
 - `src/types.ts`, `src/cloudflare.d.ts` — the minimal runtime types used; no npm dependencies.
@@ -56,6 +58,36 @@ To see the numbers (needs `wrangler login`):
 ```bash
 node scripts/installs.mjs          # active installs, by OS, OS version, chip and app version
 node scripts/installs.mjs --json
+```
+
+## Usage reports
+
+`POST /v1/usage`, `application/json`, at most 64 KB: one install's anonymous
+usage on one local day, sent the day after (`telemetry.rs`):
+
+```json
+{ "installId", "day": "YYYY-MM-DD", "version", "os", "arch", "accounts": 2,
+  "screens":  [{ "name": "calendar.week", "opens": 3, "ms": 120000 }],
+  "commands": [{ "id": "conversation.archive", "key": 12, "palette": 0, "button": 2 }],
+  "rebound":  [{ "id": "go.inbox", "key": "g h" }, { "id": "calendar.today", "key": null }] }
+```
+
+Screen names and command ids must look like the app's own (letters, digits,
+`.`, `_`, `-`, at most 80 characters), so no free text gets in; counts are
+whole numbers up to a million, `ms` at most a day; at most 500 screens or
+commands and 300 rebound shortcuts; `day` from 20 days ago to tomorrow.
+Responses: `204` stored; `400` malformed; `403` an install ID the Worker
+doesn't know (only installs that pinged may report, so reports never create
+installs and need no daily quota); `405`; `413`; `429` over the ping's per-IP
+limit (shared). Each report is one object, `usage/<day>/<installId>.json`
+(the fields above minus `installId`, plus `receivedAt`), which the bucket's
+30-day rule deletes.
+
+To read them (needs `wrangler login`):
+
+```bash
+node scripts/usage.mjs             # screens, commands by shortcut/palette/button, rebound keys
+node scripts/usage.mjs --days 7 --json
 ```
 
 ## One-time setup

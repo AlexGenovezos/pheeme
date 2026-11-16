@@ -283,6 +283,7 @@ function EventTools({ event }: { event: CalendarEvent }) {
         <IconButton
           size="sm"
           label="Edit event"
+          data-command="calendar.edit"
           shortcut={editShortcut}
           icon={<Pencil />}
           onClick={() => void editEvent(event)}
@@ -292,6 +293,7 @@ function EventTools({ event }: { event: CalendarEvent }) {
         <IconButton
           size="sm"
           label="Delete event"
+          data-command="calendar.delete"
           shortcut={deleteShortcut}
           icon={<Trash2 />}
           onClick={() => void deleteEvent(event)}
@@ -466,6 +468,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
           <Button
             size="sm"
             variant="primary"
+            data-command="calendar.join"
             title={joinShortcut ? `Join (${describeShortcut(joinShortcut)})` : undefined}
             onClick={() => joinMeeting(meeting)}
           >

@@ -91,6 +91,15 @@ export const logThreadShown = (timing: ShownTiming) => call("log_thread_shown", 
 export const telemetryEnabled = () => call("telemetry_enabled");
 /** Turn the anonymous usage ping on or off; off also forgets the install ID. Returns the stored choice. */
 export const setTelemetry = (enabled: boolean) => call("set_telemetry", { enabled });
+/** Counts for the anonymous usage report (`src/usage/`): screens opened and their time on screen,
+ * commands run by how, and the user's rebound shortcuts (`key: null` = removed). */
+export interface UsageBatch {
+  screens: Array<{ name: string; opens: number; ms: number }>;
+  commands: Array<{ id: string; source: "key" | "palette" | "button"; count: number }>;
+  rebound?: Array<{ id: string; key: string | null }>;
+}
+/** Add counts to today's anonymous usage report; a no-op while usage stats are off. */
+export const recordUsage = (batch: UsageBatch) => call("record_usage", { batch });
 /** Write the same bundle to `path` (chosen in a save dialog). */
 export const saveDiagnostics = (
   note: string,

@@ -219,12 +219,14 @@ export function ListPane() {
             <IconButton
               label="Show sidebar"
               data-sidebar-toggle=""
+              data-command="view.toggleSidebar"
               shortcut={sidebarKey}
               icon={<PanelLeftOpen />}
               onClick={toggleSidebar}
             />
             <IconButton
               label="New message"
+              data-command="compose.new"
               shortcut={composeKey}
               icon={<SquarePen />}
               onClick={composeNew}

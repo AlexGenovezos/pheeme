@@ -4,7 +4,7 @@ import { setTelemetry, telemetryEnabled } from "../lib/tauri";
 
 export const TELEMETRY_TITLE = "Share anonymous usage stats";
 export const TELEMETRY_DESCRIPTION =
-  "Once a day, Pheeme sends a random ID, its version, your operating system and chip type, so the developer knows how many people use it and on what computers. It never includes your email address, your accounts or anything in your mail.";
+  "Once a day, Pheeme sends a random ID, its version, your operating system and chip type, and counts of which screens you opened, for how long, and which commands you used (by shortcut, menu or button), so the developer knows what to improve. It never includes your email address, label names, searches or anything in your mail.";
 
 /**
  * The anonymous usage ping switch, shared by Settings › About and the welcome screen. Shows on (the

@@ -126,6 +126,21 @@ pub async fn set_telemetry(
     Ok(enabled)
 }
 
+/// Add the app's latest screen and command counts to today's anonymous usage report. Does
+/// nothing while usage stats are off, or in builds that don't report.
+#[tauri::command]
+pub async fn record_usage(
+    state: State<'_, AppState>,
+    batch: crate::telemetry::UsageBatch,
+) -> Result<(), CommandError> {
+    if !crate::telemetry::active_in_this_build() {
+        return Ok(());
+    }
+    crate::telemetry::record(&state.db, &batch, crate::sync::engine::now_ms())
+        .await
+        .map_err(settings_error)
+}
+
 fn settings_error(e: anyhow::Error) -> CommandError {
     CommandError {
         code: "settings".into(),

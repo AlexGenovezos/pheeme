@@ -36,6 +36,7 @@ import { useThreadStore } from "./store/threadStore";
 import { startPreloading } from "./mail/preload";
 import { SpeedReaderHost } from "./speedread/SpeedReader";
 import { TasksPanelHost } from "./tasks/TasksPanel";
+import { useUsageTracking } from "./usage/useUsageTracking";
 
 /** Hide the webview's own menu (Reload, Inspect…) outside text; dev builds keep it for devtools. */
 function useNativeContextMenuOnly() {
@@ -93,6 +94,7 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
   useSyncEvents();
   useLabelsAndCounts();
   useNotificationPrompt();
+  useUsageTracking();
 
   const mode = useCalendarStore((s) => s.mode);
 

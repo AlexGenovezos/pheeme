@@ -8,6 +8,7 @@ import type { DrivePage, DriveFile } from "../../drive/api";
 import type { ModSnapshot, PreparedMod } from "../../mods/api";
 import type { LocalNetworkAccess, TransferOffer, TransferStatus } from "../../transfer/api";
 import type { AccountInfo, ClientChoice, QuotaUsage, SignInStart } from "./accounts";
+import type { UsageBatch } from "./support";
 import type {
   AssistantActivity,
   AssistantPermission,
@@ -330,4 +331,5 @@ export interface Commands {
   log_thread_shown: Command<{ timing: ShownTiming }, void>;
   telemetry_enabled: Command<void, boolean>;
   set_telemetry: Command<{ enabled: boolean }, boolean>;
+  record_usage: Command<{ batch: UsageBatch }, void>;
 }

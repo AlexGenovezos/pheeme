@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO usage_counts (day, kind, name, count, ms) VALUES (?, ?, ?, ?, ?)\n             ON CONFLICT(day, kind, name) DO UPDATE SET\n               count = count + excluded.count,\n               ms = ms + excluded.ms",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "fb2833d0712e78c22e8d7f8e30cf59fe4f33aa2228d2cca925a8b6ad08520888"
+}

@@ -9,6 +9,7 @@ const NOTIFY_SCHEDULE: &str = "notify_schedule";
 const TELEMETRY: &str = "telemetry";
 const TELEMETRY_INSTALL_ID: &str = "telemetry_install_id";
 const TELEMETRY_LAST_PING: &str = "telemetry_last_ping_ms";
+const USAGE_REBOUND: &str = "usage_rebound";
 const ASSISTANT_ENABLED: &str = "assistant_enabled";
 const CALENDAR_REMINDERS: &str = "calendar_reminders";
 const START_HIDDEN_UNTIL: &str = "start_hidden_until_ms";
@@ -60,15 +61,27 @@ pub async fn telemetry(pool: &SqlitePool) -> Result<bool> {
     Ok(get(pool, TELEMETRY).await?.as_deref() != Some("0"))
 }
 
-/// Turning the ping off forgets the install ID and when it last pinged, so turning it back
-/// on later starts a new, unrelated ID.
+/// Turning the ping off forgets the install ID, when it last pinged and the usage counts not
+/// yet sent, so turning it back on later starts a new, unrelated ID.
 pub async fn set_telemetry(pool: &SqlitePool, enabled: bool) -> Result<()> {
     set(pool, TELEMETRY, if enabled { "1" } else { "0" }).await?;
     if !enabled {
         delete(pool, TELEMETRY_INSTALL_ID).await?;
         delete(pool, TELEMETRY_LAST_PING).await?;
+        delete(pool, USAGE_REBOUND).await?;
+        super::usage::clear(pool).await?;
     }
     Ok(())
+}
+
+/// The user's rebound shortcuts as the app last reported them (JSON `[{ id, key }]`), sent
+/// with each day's usage report.
+pub async fn usage_rebound(pool: &SqlitePool) -> Result<Option<String>> {
+    get(pool, USAGE_REBOUND).await
+}
+
+pub async fn set_usage_rebound(pool: &SqlitePool, json: &str) -> Result<()> {
+    set(pool, USAGE_REBOUND, json).await
 }
 
 /// The random install ID the ping carries, created on first use.

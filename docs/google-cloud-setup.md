@@ -13,7 +13,8 @@ This is what keeps Pheeme free and private:
   Nobody in between, not even us.
 
 The welcome screen also has a switch for anonymous usage stats (once a day, a
-random ID, the app version, your operating system and chip type; see the
+random ID, the app version, your operating system and chip type, and counts of
+which screens and commands you used; see the
 [privacy policy](https://pheeme.app/privacy)). It's on by default, and you can
 change it later in Settings › About.
 

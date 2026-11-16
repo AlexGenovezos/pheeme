@@ -76,7 +76,8 @@ export function wranglerConfigPath(
   return join(env.XDG_CONFIG_HOME ?? join(home, ".config"), ".wrangler/config/default.toml");
 }
 
-function token() {
+/** Wrangler's OAuth token, refreshed first. */
+export function token() {
   // Wrangler's OAuth token lasts an hour; any authenticated wrangler call refreshes it.
   execFileSync("wrangler", ["r2", "bucket", "info", BUCKET], {
     env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT },
@@ -128,19 +129,28 @@ export async function readAll(keys, read, concurrency = 20) {
   return { records, failures, expired };
 }
 
-async function loadRecords(tok) {
+/** Every object key in the bucket under `prefix`. */
+export async function listKeys(prefix, tok) {
   const keys = [];
   let cursor = null;
   do {
-    const q = new URLSearchParams({ prefix: PREFIX, per_page: "1000" });
+    const q = new URLSearchParams({ prefix, per_page: "1000" });
     if (cursor) q.set("cursor", cursor);
     const page = await (await api(`/objects?${q}`, tok)).json();
     keys.push(...page.result.map((o) => o.key));
     cursor = page.result_info?.is_truncated ? page.result_info.cursor : null;
   } while (cursor);
-  return readAll(keys, async (key) =>
-    (await api(`/objects/${encodeURIComponent(key)}`, tok)).json(),
-  );
+  return keys;
+}
+
+/** One object's JSON. */
+export async function readJson(key, tok) {
+  return (await api(`/objects/${encodeURIComponent(key)}`, tok)).json();
+}
+
+async function loadRecords(tok) {
+  const keys = await listKeys(PREFIX, tok);
+  return readAll(keys, (key) => readJson(key, tok));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

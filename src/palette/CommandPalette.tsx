@@ -82,6 +82,7 @@ function PaletteDialog({ reg, onClose }: { reg: CommandRegistry; onClose(): void
     // Focus goes back first so commands that move focus (e.g. "/" search) keep it.
     close();
     command.run();
+    reg.noteRun(command.id, "palette");
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

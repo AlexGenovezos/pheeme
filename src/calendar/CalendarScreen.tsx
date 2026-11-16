@@ -96,6 +96,7 @@ function Toolbar({
           <IconButton
             label="Show sidebar"
             data-sidebar-toggle=""
+            data-command="view.toggleSidebar"
             shortcut={sidebarShortcut}
             icon={<PanelLeftOpen />}
             onClick={() => useUiStore.getState().toggleSidebar()}
@@ -110,6 +111,7 @@ function Toolbar({
         )}
         <Button
           size="sm"
+          data-command="calendar.today"
           title={todayShortcut ? `${today} (${describeShortcut(todayShortcut)})` : today}
           onClick={() => store().today()}
         >
@@ -117,12 +119,14 @@ function Toolbar({
         </Button>
         <IconButton
           label={`Previous ${unit}`}
+          data-command="calendar.previous"
           shortcut={prevShortcut}
           icon={<ChevronLeft />}
           onClick={() => store().step(-1)}
         />
         <IconButton
           label={`Next ${unit}`}
+          data-command="calendar.next"
           shortcut={nextShortcut}
           icon={<ChevronRight />}
           onClick={() => store().step(1)}
@@ -140,6 +144,7 @@ function Toolbar({
       <div className="cal-toolbar__end" {...dragRegion}>
         <IconButton
           label="Search events"
+          data-command="calendar.search"
           shortcut={searchShortcut}
           icon={<Search />}
           onClick={() => useEditStore.setState({ search: "" })}
