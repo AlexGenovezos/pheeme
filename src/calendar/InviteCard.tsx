@@ -46,18 +46,11 @@ import {
   startDay,
 } from "./invite";
 import { layoutDay, MIN_EVENT_MINUTES } from "./layout";
+import { ANSWERS, type Answer, answerTally } from "./rsvp";
 import { openInCalendar } from "./mailActions";
 import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
 import "./calendar.css";
 import "./invite.css";
-
-type Answer = "accepted" | "tentative" | "declined";
-
-const ANSWERS: { value: Answer; label: string }[] = [
-  { value: "accepted", label: "Yes" },
-  { value: "tentative", label: "Maybe" },
-  { value: "declined", label: "No" },
-];
 
 type Load =
   | { kind: "loading" }
@@ -101,16 +94,7 @@ function useInvite(accountId: string, messageId: string): { load: Load; changes:
 /** "Morgan Lee (organizer) · 4 guests: 2 yes, 1 maybe, 1 awaiting". */
 function whoLine(organizer: Invite["organizer"], guests: Attendee[]): string {
   const people = guests.filter((g) => !g.resource);
-  const count = (r: string) => people.filter((g) => (g.response ?? "needsAction") === r).length;
-  const answers = [
-    [count("accepted"), "yes"],
-    [count("tentative"), "maybe"],
-    [count("declined"), "no"],
-    [count("needsAction"), "awaiting"],
-  ]
-    .filter(([n]) => (n as number) > 0)
-    .map(([n, w]) => `${n} ${w}`)
-    .join(", ");
+  const answers = answerTally(people);
   const by = organizer
     ? `${organizer.isSelf ? "You" : organizer.name || organizer.email} (organizer)`
     : null;
