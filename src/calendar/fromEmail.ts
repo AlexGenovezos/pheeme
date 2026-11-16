@@ -78,11 +78,15 @@ export function replyText(text: string): string {
   return text.slice(0, cut).trim() || text.trim();
 }
 
-/** The quoted thread with the lines that only say who wrote when ("On … wrote:", "Sent: …"). */
+/**
+ * The quoted thread without its "> " marks (however deep) and the lines that only say who wrote
+ * when ("On … wrote:", "Sent: …").
+ */
 const withoutAttributions = (text: string) =>
   text
+    .replace(/^(?:>[ \t]?)+/gm, "")
     .replace(new RegExp(QUOTE_STARTS[0].source, "gm"), "")
-    .replace(/^>?\s*(?:From|Sent|Date|To|Cc|Subject):.*$/gim, "");
+    .replace(/^\s*(?:From|Sent|Date|To|Cc|Subject):.*$/gim, "");
 
 /** The description: the start of the email's new text, then a link back to the conversation. */
 export function emailDescription(link: string, text: string): string {

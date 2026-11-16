@@ -190,6 +190,15 @@ describe("formFromEmail", () => {
     expect([form.startDate, form.startMinutes]).toEqual(["2026-11-12", 15 * 60]);
   });
 
+  test("a quoted reply's own quoted header isn't read as the meeting either", () => {
+    const m = message({
+      bodyText:
+        "Sounds good.\n\nOn Tue, Nov 10, 2026 at 10:00 AM Jonas Weber <jonas@example.net> wrote:\n> Great.\n>\n> On Mon, Nov 9, 2026 at 9:00 AM Avery <avery@example.com> wrote:\n> > Are you free Thursday at 3pm?\n",
+    });
+    const { form } = formFromEmail(detail([m]), m, opts);
+    expect([form.startDate, form.startMinutes]).toEqual(["2026-11-12", 15 * 60]);
+  });
+
   test("an HTML email reads as tidy text", () => {
     const m = message({
       bodyText: null,
