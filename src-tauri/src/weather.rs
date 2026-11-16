@@ -3,6 +3,7 @@
 //! name or a latitude and longitude, nothing else. Answers are kept in memory: forecasts for an
 //! hour, places found for an event's location for the session.
 
+use crate::lock::lock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -203,7 +204,7 @@ impl WeatherService {
     ) -> Result<Forecast, WeatherError> {
         // About a kilometre: the same town shares one forecast.
         let key = (format!("{latitude:.2},{longitude:.2}"), unit);
-        if let Some((at, days)) = self.forecasts.lock().unwrap().get(&key) {
+        if let Some((at, days)) = lock(&self.forecasts).get(&key) {
             if at.elapsed() < FORECAST_TTL {
                 return Ok(days.clone());
             }
@@ -223,17 +224,14 @@ impl WeatherService {
         }
         let response: ForecastResponse = self.get(FORECAST_URL, &query).await?;
         let days = Arc::new(days_of(response.daily));
-        self.forecasts
-            .lock()
-            .unwrap()
-            .insert(key, (Instant::now(), days.clone()));
+        lock(&self.forecasts).insert(key, (Instant::now(), days.clone()));
         Ok(days)
     }
 
     /// The town an event's location is in, if one can be told from its text.
     async fn locate(&self, location: &str) -> Result<Option<Place>, WeatherError> {
         let key = location.trim().to_lowercase();
-        if let Some(place) = self.locations.lock().unwrap().get(&key) {
+        if let Some(place) = lock(&self.locations).get(&key) {
             return Ok(place.clone());
         }
         let mut found = Vec::new();
@@ -243,7 +241,7 @@ impl WeatherService {
             }
         }
         let place = pick(location, found).map(Place::from);
-        self.locations.lock().unwrap().insert(key, place.clone());
+        lock(&self.locations).insert(key, place.clone());
         Ok(place)
     }
 

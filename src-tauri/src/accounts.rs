@@ -526,12 +526,15 @@ impl AccountService {
         }
         let id = account_id.to_owned();
         self.keychain(move |store| store.delete(&id)).await?;
-        db_accounts::delete_account(&self.db, account_id).await?;
-        crate::db::settings::delete_inbox_tabs(&self.db, account_id).await?;
-        crate::db::settings::delete_signatures(&self.db, account_id).await?;
-        crate::db::settings::clear_resync(&self.db, account_id).await?;
-        crate::db::assistant::delete_activity_mentioning(&self.db, &[account_id, &account.email])
+        // One transaction, so a failure partway never leaves a half-removed account.
+        let mut tx = crate::db::begin_write(&self.db).await?;
+        db_accounts::delete_account(&mut *tx, account_id).await?;
+        crate::db::settings::delete_inbox_tabs(&mut *tx, account_id).await?;
+        crate::db::settings::delete_signatures(&mut *tx, account_id).await?;
+        crate::db::settings::clear_resync(&mut *tx, account_id).await?;
+        crate::db::assistant::delete_activity_mentioning(&mut tx, &[account_id, &account.email])
             .await?;
+        tx.commit().await.map_err(anyhow::Error::new)?;
         lock(&self.tokens).remove(account_id);
         Ok(())
     }
@@ -1061,6 +1064,49 @@ mod tests {
         let left = crate::db::assistant::list_activity(pool, 10).await.unwrap();
         assert_eq!(left.len(), 1);
         assert!(left[0].arguments.contains("keep@example.com"));
+    }
+
+    #[tokio::test]
+    async fn remove_account_deletes_nothing_when_one_delete_fails() {
+        let (h, account) = removable_account().await;
+        let pool = &h.db.pool;
+        crate::db::settings::set_resync_position(pool, &account.id, "m1")
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TRIGGER block_activity_delete BEFORE DELETE ON assistant_activity
+             BEGIN SELECT RAISE(ABORT, 'blocked'); END",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        crate::db::assistant::add_activity(
+            pool,
+            &crate::db::assistant::NewActivity {
+                client_id: "c",
+                client_name: "Claude",
+                tool: "search_mail",
+                summary: "",
+                arguments: r#"{"account":"me@example.com"}"#,
+                result: None,
+                error: None,
+                at: 1,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(h.service.remove_account(&account.id).await.is_err());
+        assert!(
+            h.service.list_accounts().await.unwrap().len() == 1,
+            "the account row is still there"
+        );
+        assert_eq!(
+            crate::db::settings::resync_position(pool, &account.id)
+                .await
+                .unwrap(),
+            Some("m1".to_owned())
+        );
     }
 
     #[tokio::test]

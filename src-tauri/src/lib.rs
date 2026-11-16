@@ -20,6 +20,7 @@ pub mod http;
 pub mod identity;
 pub mod labels;
 pub mod local_api;
+mod lock;
 pub mod mail;
 pub mod mcp;
 pub mod mods;

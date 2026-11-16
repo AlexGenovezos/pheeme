@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{SqliteExecutor, SqlitePool};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct DbAccount {
@@ -120,9 +120,9 @@ pub async fn update_profile(
     Ok(())
 }
 
-pub async fn delete_account(pool: &SqlitePool, account_id: &str) -> Result<()> {
+pub async fn delete_account<'e>(ex: impl SqliteExecutor<'e>, account_id: &str) -> Result<()> {
     sqlx::query!("DELETE FROM accounts WHERE id = ?", account_id)
-        .execute(pool)
+        .execute(ex)
         .await?;
     Ok(())
 }

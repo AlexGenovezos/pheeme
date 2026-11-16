@@ -149,6 +149,21 @@ describe("InviteCard", () => {
     expect(screen.getByText("Nothing else at this time.")).toBeInTheDocument();
   });
 
+  test("a day that can't be read says so instead of claiming it is empty", async () => {
+    const handlers = backend(null);
+    const original = handlers.calendar_events;
+    handlers.calendar_events = () => {
+      throw new Error("offline");
+    };
+    render(<InviteCard pinned={PINNED} />);
+    await flush();
+    await flush();
+    await flush();
+    expect(screen.getByText("Couldn't load your calendar for this day.")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing else at this time.")).not.toBeInTheDocument();
+    handlers.calendar_events = original;
+  });
+
   test("More options sends a note with the answer", async () => {
     backend(null);
     render(<InviteCard pinned={PINNED} />);

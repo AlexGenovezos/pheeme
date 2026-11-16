@@ -318,7 +318,8 @@ function MiniDay({ event, changes }: { event: CalendarEvent | null; changes: num
   const accounts = useCalendarStore((s) => s.accounts);
   const lookup = useCalendarLookup();
   const tz = displayZone(accounts);
-  const [events, setEvents] = useState<CalendarEvent[] | null>(null);
+  // `null` is not read yet, `"failed"` is a read that errored (not the same as a day with nothing).
+  const [events, setEvents] = useState<CalendarEvent[] | null | "failed">(null);
   const day = event ? startDay(event, tz) : null;
   const anyOn = accounts?.some((a) => a.access.status === "on") ?? false;
 
@@ -330,13 +331,14 @@ function MiniDay({ event, changes }: { event: CalendarEvent | null; changes: num
     const to = zonedMs(addDays(day, 1), 0, tz);
     getCalendarEvents(from, to, tz).then(
       (list) => !stale.signal.aborted && setEvents(list),
-      () => !stale.signal.aborted && setEvents([]),
+      () => !stale.signal.aborted && setEvents("failed"),
     );
     return () => stale.abort();
   }, [day, tz, anyOn, changes]);
 
   const others = useMemo(
-    () => (event ? (events ?? []).filter((e) => !isSameEvent(e, event)) : []),
+    () =>
+      event ? (Array.isArray(events) ? events : []).filter((e) => !isSameEvent(e, event)) : [],
     [events, event],
   );
   const clash = event ? clashes(others, event) : [];
@@ -367,6 +369,7 @@ function MiniDay({ event, changes }: { event: CalendarEvent | null; changes: num
   let caption: string;
   if (!event || (anyOn && events === null)) caption = "";
   else if (!anyOn) caption = "Allow calendar access to see your day here.";
+  else if (events === "failed") caption = "Couldn't load your calendar for this day.";
   else if (event.allDay)
     caption = allDay.length
       ? `Also that day: ${allDay.map(eventTitle).join(", ")}`

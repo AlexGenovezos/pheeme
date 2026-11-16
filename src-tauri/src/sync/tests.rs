@@ -979,6 +979,40 @@ async fn enqueue_archive_applies_locally_and_persists_op() {
 }
 
 #[tokio::test]
+async fn an_unreadable_queued_change_is_dropped_and_the_rest_still_go() {
+    let h = harness().await;
+    synced_inbox(
+        &h,
+        vec![
+            FakeMsg::new("m1", "t1", &["INBOX"]),
+            FakeMsg::new("m2", "t2", &["INBOX"]),
+        ],
+    )
+    .await;
+    let corrupt = archive(&h, "t1").await;
+    star(&h, "t2").await;
+    sqlx::query("UPDATE outbox SET payload = 'not json' WHERE id = ?")
+        .bind(&corrupt)
+        .execute(&h.pool)
+        .await
+        .unwrap();
+
+    assert!(outbox::process(&h.engine, now_ms()).await.unwrap());
+    h.engine.run_incremental_sync().await.unwrap();
+
+    assert!(
+        ops(&h).await.is_empty(),
+        "the corrupt op is gone, not stuck"
+    );
+    assert_eq!(server_labels(&h, "m2"), s(&["INBOX", "STARRED"]));
+    assert_eq!(
+        cached_labels(&h.pool, "m1").await,
+        Some(s(&["INBOX"])),
+        "the dropped change is undone locally"
+    );
+}
+
+#[tokio::test]
 async fn moving_trashed_mail_to_the_inbox_takes_it_out_of_trash() {
     let h = harness().await;
     synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"])]).await;
