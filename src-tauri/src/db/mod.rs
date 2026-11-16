@@ -27,6 +27,40 @@ use sqlx::{
 use std::path::Path;
 use tracing::info;
 
+/// Turns on SQLite's query planner stability guarantee (QPSG) for every connection this
+/// process opens from now on. Without it, SQLite 3.47 and later plan a statement for the
+/// values bound to its `LIMIT ?` and so prepare it again on every run: each list page paid
+/// a full recompile, about 40% more work. The queries here pin their plans (`INDEXED BY`, no
+/// `ANALYZE` statistics), so plans that depend on bound values buy nothing.
+pub(crate) fn stable_query_plans() {
+    static REGISTER: std::sync::Once = std::sync::Once::new();
+    REGISTER.call_once(|| {
+        // SAFETY: `enable_qpsg` has the signature SQLite calls extension entry points with.
+        let rc = unsafe { libsqlite3_sys::sqlite3_auto_extension(Some(enable_qpsg)) };
+        if rc != libsqlite3_sys::SQLITE_OK {
+            tracing::warn!(rc, "couldn't pin SQLite query plans");
+        }
+    });
+}
+
+/// Runs inside `sqlite3_open` for each new connection (see [`stable_query_plans`]).
+unsafe extern "C" fn enable_qpsg(
+    db: *mut libsqlite3_sys::sqlite3,
+    _error: *mut *mut std::ffi::c_char,
+    _api: *const libsqlite3_sys::sqlite3_api_routines,
+) -> std::ffi::c_int {
+    // SAFETY: `db` is the connection SQLite is opening; a null out-pointer is allowed.
+    unsafe {
+        libsqlite3_sys::sqlite3_db_config(
+            db,
+            libsqlite3_sys::SQLITE_DBCONFIG_ENABLE_QPSG,
+            1 as std::ffi::c_int,
+            std::ptr::null_mut::<std::ffi::c_int>(),
+        );
+    }
+    libsqlite3_sys::SQLITE_OK
+}
+
 /// How long a write waits for another connection's write to finish before it fails with
 /// "database is locked". SQLite has one writer at a time, and sync commits whole batches of
 /// mail in one transaction: sqlx's default of 5 s made the user's own click fail behind one.

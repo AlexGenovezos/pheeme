@@ -52,6 +52,9 @@ use sync::{SyncEvent, SyncEvents};
 use tauri::Manager;
 use tracing::info;
 
+/// How long quitting waits for queries in flight before the database closes.
+const DB_CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
 pub struct AppState {
     pub db: SqlitePool,
     pub accounts: Arc<accounts::AccountService>,
@@ -655,6 +658,18 @@ pub fn run() {
                 if let Some(state) = app.try_state::<AppState>() {
                     if let Err(error) = storage::clear_opened(&state.cache_dir) {
                         tracing::warn!(%error, "couldn't remove opened attachment copies");
+                    }
+                    // SQLCipher (4.7 and later) frees its locks and memory in an exit hook; a
+                    // connection still closing on its own thread then crashes the process. So
+                    // close them all first, letting a query in flight finish for a moment.
+                    let db = state.db.clone();
+                    let closed = tauri::async_runtime::block_on(async move {
+                        tokio::time::timeout(DB_CLOSE_WAIT, db.close())
+                            .await
+                            .is_ok()
+                    });
+                    if !closed {
+                        tracing::warn!("database still busy at exit");
                     }
                 }
                 if let Some(logs) = app.try_state::<diagnostics::LogGuard>() {

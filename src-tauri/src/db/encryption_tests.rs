@@ -187,3 +187,28 @@ async fn failed_verification_leaves_original_readable_and_retryable() {
     assert!(!crate::storage::is_plaintext_database(&path).unwrap());
     pool.close().await;
 }
+
+/// Without the planner stability guarantee, SQLite 3.47+ prepares a statement again on every
+/// run when it binds `LIMIT ?` (each list page paid a full recompile).
+#[tokio::test]
+async fn every_connection_pins_its_query_plans() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = init_db(dir.path(), &test_key()).await.unwrap();
+    let mut first = pool.acquire().await.unwrap();
+    let mut second = pool.acquire().await.unwrap();
+    for connection in [&mut *first, &mut *second] {
+        let mut handle = connection.lock_handle().await.unwrap();
+        let mut on: std::ffi::c_int = -1;
+        // SAFETY: a live connection handle; -1 reads the setting into `on`.
+        let rc = unsafe {
+            libsqlite3_sys::sqlite3_db_config(
+                handle.as_raw_handle().as_ptr(),
+                libsqlite3_sys::SQLITE_DBCONFIG_ENABLE_QPSG,
+                -1 as std::ffi::c_int,
+                &mut on as *mut std::ffi::c_int,
+            )
+        };
+        assert_eq!(rc, libsqlite3_sys::SQLITE_OK);
+        assert_eq!(on, 1);
+    }
+}

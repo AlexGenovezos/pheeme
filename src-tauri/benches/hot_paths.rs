@@ -209,6 +209,14 @@ struct Ctx {
     _dir: Option<tempfile::TempDir>,
 }
 
+/// Closes the connections before the benchmark process exits: SQLCipher frees its state in an
+/// exit hook, and a connection still closing on its worker thread then crashes the process.
+impl Drop for Ctx {
+    fn drop(&mut self) {
+        self.rt.block_on(self.pool.close());
+    }
+}
+
 /// The seeded mailbox, opened in place (read-only benchmarks).
 fn open_fixture() -> Ctx {
     let rt = runtime();
