@@ -1013,6 +1013,30 @@ async fn an_unreadable_queued_change_is_dropped_and_the_rest_still_go() {
 }
 
 #[tokio::test]
+async fn an_unreadable_send_fails_so_its_window_comes_back() {
+    let h = harness().await;
+    let op = send_op(&h).await;
+    sqlx::query("UPDATE outbox SET payload = 'not json', next_attempt_at = 0 WHERE id = ?")
+        .bind(&op.id)
+        .execute(&h.pool)
+        .await
+        .unwrap();
+    h.events.take();
+
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+
+    assert!(
+        op_status(&h, &op.id).await.is_none(),
+        "the corrupt send is gone"
+    );
+    assert!(h.fake.sent().is_empty());
+    assert!(h.events.take().iter().any(|e| matches!(
+        e,
+        SyncEvent::SendStatus { op_id, status, .. } if op_id == &op.id && status == "failed"
+    )));
+}
+
+#[tokio::test]
 async fn moving_trashed_mail_to_the_inbox_takes_it_out_of_trash() {
     let h = harness().await;
     synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"])]).await;

@@ -699,6 +699,12 @@ async fn readable_payload(engine: &SyncEngine, op: &DbOp) -> Result<Option<Paylo
     if op.kind == KIND_SEND {
         // Nothing to put back: a send changes no labels.
         store::delete(&engine.db, &op.id).await?;
+        // A send that hadn't gone out fails like one Gmail refused, so the compose window
+        // waiting on it comes back instead of saying "Sending…" for ever. One already sent
+        // (only its draft left to clean up) has nothing to report.
+        if op.status != CLEANUP {
+            send_status(engine, op, FAILED);
+        }
     } else {
         // The same path as a change Gmail refuses for good: labels go back and the app is told.
         rollback(engine, op, &GmailError::Decode(error.to_string())).await?;
