@@ -6,7 +6,7 @@ use super::edit::OriginalStart;
 use crate::db::calendar::DbEvent;
 use chrono::{DateTime, Days, NaiveDate, TimeZone, Utc};
 use rrule::RRuleSet;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Most occurrences one call returns, so a malformed or huge range can't flood the UI.
 pub const MAX_OCCURRENCES: usize = 1000;
@@ -335,6 +335,88 @@ pub fn expand(
         }
     }
     out
+}
+
+/// What a stored event shows in a range: the stored row itself (a single event, or a changed
+/// occurrence), or one generated occurrence of the series the row holds.
+#[derive(Debug)]
+pub struct Instance<'a> {
+    /// The stored row: the event itself, or the series `occ` was generated from.
+    pub row: &'a DbEvent,
+    /// `None` when `row` is the event itself.
+    pub occ: Option<Occurrence>,
+}
+
+/// The changed and cancelled occurrences among some rows, by the series they belong to
+/// (account, calendar, series id).
+pub struct Overrides<'a>(HashMap<(&'a str, &'a str, &'a str), Vec<&'a DbEvent>>);
+
+impl<'a> Overrides<'a> {
+    pub fn of(rows: &'a [DbEvent]) -> Self {
+        let mut by_series: HashMap<_, Vec<&DbEvent>> = HashMap::new();
+        for e in rows {
+            if let Some(master) = &e.recurring_event_id {
+                by_series
+                    .entry((
+                        e.account_id.as_str(),
+                        e.calendar_id.as_str(),
+                        master.as_str(),
+                    ))
+                    .or_default()
+                    .push(e);
+            }
+        }
+        Self(by_series)
+    }
+
+    fn of_series<'s>(&'s self, series: &'s DbEvent) -> &'s [&'a DbEvent] {
+        self.0
+            .get(&(
+                series.account_id.as_str(),
+                series.calendar_id.as_str(),
+                series.id.as_str(),
+            ))
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+}
+
+/// What `row` shows in `[from_ms, to_ms)`: for a series, its occurrences not replaced by one
+/// of `overrides`; any other row, itself unless cancelled. A single event is not checked
+/// against the range (that depends on the caller's reading of all-day dates).
+pub fn instances_of<'a>(
+    row: &'a DbEvent,
+    overrides: &Overrides<'_>,
+    from_ms: i64,
+    to_ms: i64,
+    display_tz: chrono_tz::Tz,
+) -> Vec<Instance<'a>> {
+    if row.recurrence.is_some() {
+        expand(row, overrides.of_series(row), from_ms, to_ms, display_tz)
+            .into_iter()
+            .map(|occ| Instance {
+                row,
+                occ: Some(occ),
+            })
+            .collect()
+    } else if row.status != "cancelled" {
+        vec![Instance { row, occ: None }]
+    } else {
+        Vec::new()
+    }
+}
+
+/// [`instances_of`] for every row, in row order, each in the zone `zone` names for it.
+pub fn instances<'a>(
+    rows: &'a [DbEvent],
+    from_ms: i64,
+    to_ms: i64,
+    zone: impl Fn(&DbEvent) -> chrono_tz::Tz,
+) -> Vec<Instance<'a>> {
+    let overrides = Overrides::of(rows);
+    rows.iter()
+        .flat_map(|row| instances_of(row, &overrides, from_ms, to_ms, zone(row)))
+        .collect()
 }
 
 /// When a bounded series (every RRULE has COUNT or UNTIL) ends: the last occurrence's end.
@@ -777,5 +859,71 @@ mod tests {
         assert_eq!(got.len(), 7);
         let got = expand(&master, &[], 0, i64::MAX / 2, chrono_tz::UTC);
         assert_eq!(got.len(), MAX_OCCURRENCES);
+    }
+
+    fn single(id: &str, status: &str) -> DbEvent {
+        let mut e = series(
+            "2026-11-03T10:00:00-05:00",
+            "2026-11-03T11:00:00-05:00",
+            &[],
+        );
+        e.id = id.into();
+        e.recurrence = None;
+        e.status = status.into();
+        e
+    }
+
+    fn shown(rows: &[DbEvent]) -> Vec<(&str, Option<String>)> {
+        instances(
+            rows,
+            ms("2026-10-26T00:00:00Z"),
+            ms("2026-11-17T00:00:00Z"),
+            |_| chrono_tz::UTC,
+        )
+        .into_iter()
+        .map(|i| (i.row.id.as_str(), i.occ.map(|o| o.event_id)))
+        .collect()
+    }
+
+    #[test]
+    fn instances_of_a_series_leave_out_moved_and_cancelled_occurrences() {
+        let master = weekly_monday_standup();
+        // Nov 2 moved (the changed occurrence is its own row), Nov 9 cancelled. Results
+        // follow row order: the series' occurrences, then the changed occurrence.
+        let mut moved = override_of(&master, "2026-11-02T14:00:00Z", "confirmed");
+        moved.start_ms = Some(ms("2026-11-02T18:00:00Z"));
+        let cancelled = override_of(&master, "2026-11-09T14:00:00Z", "cancelled");
+        let rows = [master, moved, cancelled];
+        assert_eq!(
+            shown(&rows),
+            vec![
+                ("abc", Some("abc_20261026T130000Z".into())),
+                ("abc", Some("abc_20261116T140000Z".into())),
+                ("abc_2026-11-02T14:00:00Z", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_single_event_is_itself_unless_cancelled() {
+        let rows = [single("one", "confirmed"), single("two", "cancelled")];
+        assert_eq!(shown(&rows), vec![("one", None)]);
+    }
+
+    #[test]
+    fn an_override_whose_series_is_outside_the_rows_stands_alone() {
+        let master = weekly_monday_standup();
+        let orphan = override_of(&master, "2026-11-02T14:00:00Z", "confirmed");
+        let rows = [orphan];
+        assert_eq!(shown(&rows), vec![("abc_2026-11-02T14:00:00Z", None)]);
+    }
+
+    #[test]
+    fn overrides_only_replace_occurrences_of_their_own_calendar() {
+        let master = weekly_monday_standup();
+        let mut other = override_of(&master, "2026-11-02T14:00:00Z", "cancelled");
+        other.calendar_id = "other".into();
+        let rows = [master, other];
+        assert_eq!(shown(&rows).len(), 4);
     }
 }

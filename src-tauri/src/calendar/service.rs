@@ -5,7 +5,7 @@
 use super::edit::OriginalStart;
 use super::error::CalendarError;
 use super::meeting::{self, MeetingLink};
-use super::recurrence::{self, Occurrence};
+use super::recurrence::{self, Instance, Occurrence};
 use super::sync::{sync_account, SyncError};
 use super::writes::{can_edit, can_write, Target};
 use super::{CalendarApi, CalendarFactory};
@@ -245,7 +245,10 @@ impl CalendarService {
         display_tz: &str,
     ) -> Result<Vec<CalendarEventDto>, MailError> {
         let rows = db::calendar::events_overlapping(&self.db, from_ms, to_ms).await?;
-        self.expand_rows(&rows, from_ms, to_ms, display_tz).await
+        let shown = self
+            .expand_rows(&rows, from_ms, to_ms, display_tz, |_| true)
+            .await?;
+        Ok(shown.into_iter().map(|(_, dto)| dto).collect())
     }
 
     /// Events of shown calendars in `[from_ms, to_ms)` whose title, location, description or
@@ -263,30 +266,14 @@ impl CalendarService {
             return Ok(Vec::new());
         }
         let rows = db::calendar::events_overlapping(&self.db, from_ms, to_ms).await?;
-        let key = |a: &str, c: &str, id: &str| (a.to_owned(), c.to_owned(), id.to_owned());
-        let stored: HashSet<_> = rows
-            .iter()
-            .map(|e| key(&e.account_id, &e.calendar_id, &e.id))
-            .collect();
-        let matching: HashSet<_> = rows
-            .iter()
-            .filter(|e| matches_words(e, &words))
-            .map(|e| key(&e.account_id, &e.calendar_id, &e.id))
-            .collect();
+        // A changed occurrence matches by its own text; any other by its series'.
         let mut found: Vec<CalendarEventDto> = self
-            .expand_rows(&rows, from_ms, to_ms, display_tz)
+            .expand_rows(&rows, from_ms, to_ms, display_tz, |e| {
+                matches_words(e, &words)
+            })
             .await?
             .into_iter()
-            .filter(|e| {
-                let own = key(&e.account_id, &e.calendar_id, &e.id);
-                // A changed occurrence matches by its own text; any other by its series'.
-                if stored.contains(&own) {
-                    return matching.contains(&own);
-                }
-                e.master_id
-                    .as_deref()
-                    .is_some_and(|m| matching.contains(&key(&e.account_id, &e.calendar_id, m)))
-            })
+            .map(|(_, dto)| dto)
             .collect();
         found.truncate(limit);
         Ok(found)
@@ -309,10 +296,6 @@ impl CalendarService {
             .into_iter()
             .filter(|e| e.account_id == account_id)
             .collect();
-        let by_id: HashMap<_, _> = rows
-            .iter()
-            .map(|e| ((e.calendar_id.as_str(), e.id.as_str()), e))
-            .collect();
         let participates = |e: &DbEvent| {
             e.organizer_email
                 .as_deref()
@@ -327,37 +310,18 @@ impl CalendarService {
                             && a.response_status.as_deref() != Some("declined")
                     })
         };
-        let mut found: Vec<_> = self
-            .expand_rows(&rows, from_ms, to_ms, display_tz)
-            .await?
-            .into_iter()
-            .filter(|e| {
-                if e.self_response.as_deref() == Some("declined") {
-                    return false;
-                }
-                let row = by_id
-                    .get(&(e.calendar_id.as_str(), e.id.as_str()))
-                    .or_else(|| {
-                        e.master_id
-                            .as_deref()
-                            .and_then(|m| by_id.get(&(e.calendar_id.as_str(), m)))
-                    });
-                row.is_some_and(|r| participates(r))
+        let mut found = self
+            .expand_rows(&rows, from_ms, to_ms, display_tz, |e| {
+                e.self_response.as_deref() != Some("declined") && participates(e)
             })
-            .collect();
+            .await?;
         // The same meeting may be present on several calendars. Keep its first visible copy.
         let mut seen = HashSet::new();
-        found.retain(|e| {
-            let row = by_id
-                .get(&(e.calendar_id.as_str(), e.id.as_str()))
-                .or_else(|| {
-                    e.master_id
-                        .as_deref()
-                        .and_then(|m| by_id.get(&(e.calendar_id.as_str(), m)))
-                });
-            let uid = row.and_then(|r| r.ical_uid.as_deref()).unwrap_or(&e.id);
+        found.retain(|(row, e)| {
+            let uid = row.ical_uid.as_deref().unwrap_or(&e.id);
             seen.insert((uid.to_owned(), e.start.ms, e.start.date.clone()))
         });
+        let mut found: Vec<_> = found.into_iter().map(|(_, dto)| dto).collect();
         if latest {
             found.reverse();
         }
@@ -365,13 +329,16 @@ impl CalendarService {
         Ok(found)
     }
 
-    async fn expand_rows(
+    /// The events of `rows` in the range as DTOs, each with the stored row it comes from
+    /// (a series for its occurrences), sorted by start. Only those whose row `keep` accepts.
+    async fn expand_rows<'a>(
         &self,
-        rows: &[DbEvent],
+        rows: &'a [DbEvent],
         from_ms: i64,
         to_ms: i64,
         display_tz: &str,
-    ) -> Result<Vec<CalendarEventDto>, MailError> {
+        keep: impl Fn(&DbEvent) -> bool,
+    ) -> Result<Vec<(&'a DbEvent, CalendarEventDto)>, MailError> {
         let tz: chrono_tz::Tz = display_tz.parse().unwrap_or(chrono_tz::UTC);
         let calendars: HashMap<(String, String), db::calendar::DbCalendar> =
             db::calendar::calendars(&self.db, None)
@@ -379,44 +346,37 @@ impl CalendarService {
                 .into_iter()
                 .map(|c| ((c.account_id.clone(), c.id.clone()), c))
                 .collect();
-        let key = |e: &DbEvent| (e.account_id.clone(), e.calendar_id.clone());
         let editable = |e: &DbEvent| {
             calendars
-                .get(&key(e))
+                .get(&(e.account_id.clone(), e.calendar_id.clone()))
                 .is_some_and(|c| can_edit(c, &serde_json::from_str(&e.raw).unwrap_or_default()))
         };
-        let mut overrides: HashMap<(String, String, String), Vec<&DbEvent>> = HashMap::new();
-        for e in rows.iter() {
-            if let Some(master) = &e.recurring_event_id {
-                let (a, c) = key(e);
-                overrides.entry((a, c, master.clone())).or_default().push(e);
-            }
-        }
         let mut out = Vec::new();
-        for e in rows {
-            if e.recurrence.is_some() {
-                let (a, c) = key(e);
-                let replaced = overrides
-                    .get(&(a, c, e.id.clone()))
-                    .map(Vec::as_slice)
-                    .unwrap_or_default();
-                let can = editable(e);
-                let mut call = None;
-                for occ in recurrence::expand(e, replaced, from_ms, to_ms, tz) {
-                    // The series' call, read once for all its occurrences.
-                    let call = call.get_or_insert_with(|| meeting::of_event(e));
-                    out.push(CalendarEventDto {
-                        can_edit: can,
+        // The series' call, read once for all its occurrences, which come one after another.
+        let mut call: Option<(&DbEvent, Option<meeting::MeetingLink>)> = None;
+        for Instance { row: e, occ } in recurrence::instances(rows, from_ms, to_ms, |_| tz) {
+            if !keep(e) {
+                continue;
+            }
+            let dto = match &occ {
+                Some(occ) => {
+                    let call = match &call {
+                        Some((series, call)) if std::ptr::eq(*series, e) => call,
+                        _ => &call.insert((e, meeting::of_event(e))).1,
+                    };
+                    CalendarEventDto {
+                        can_edit: editable(e),
                         meeting: call.clone(),
-                        ..base_dto(e, Some(&occ))
-                    });
+                        ..base_dto(e, Some(occ))
+                    }
                 }
-            } else if e.status != "cancelled" && overlaps(e, from_ms, to_ms, tz) {
-                out.push(CalendarEventDto {
+                None if overlaps(e, from_ms, to_ms, tz) => CalendarEventDto {
                     can_edit: editable(e),
                     ..dto(e, None)
-                });
-            }
+                },
+                None => continue,
+            };
+            out.push((e, dto));
         }
         let start_key = |e: &CalendarEventDto| {
             e.start.ms.unwrap_or_else(|| {
@@ -431,7 +391,7 @@ impl CalendarService {
                     .map_or(0, |d| d.timestamp_millis())
             })
         };
-        out.sort_by_key(|e| (start_key(e), !e.all_day, e.id.clone()));
+        out.sort_by_key(|(_, e)| (start_key(e), !e.all_day, e.id.clone()));
         Ok(out)
     }
 
