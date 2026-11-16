@@ -111,6 +111,28 @@ impl std::fmt::Display for PoolLoad {
     }
 }
 
+/// Times one read the UI waits on, so a slow one can be logged with how busy the database
+/// pool was when it started.
+pub struct ReadTimer {
+    start: Instant,
+    pool: PoolLoad,
+}
+
+impl ReadTimer {
+    pub fn start(db: &sqlx::SqlitePool) -> Self {
+        Self {
+            start: Instant::now(),
+            pool: PoolLoad::of(db),
+        }
+    }
+
+    /// The milliseconds the read took and the pool load it started under, when it took at
+    /// least [`SLOW_READ`]; log them (with the read's arguments) as `elapsed_ms` and `%pool`.
+    pub fn slow(&self) -> Option<(u64, PoolLoad)> {
+        (self.start.elapsed() >= SLOW_READ).then(|| (ms_since(self.start), self.pool))
+    }
+}
+
 /// Milliseconds since `start`, for log fields.
 pub fn ms_since(start: Instant) -> u64 {
     start.elapsed().as_millis() as u64

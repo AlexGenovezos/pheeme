@@ -1,10 +1,9 @@
 //! Thread commands: thin adapters over [`crate::mail::MailService`].
 
 use super::CommandError;
-use crate::diagnostics::{ms_since, PoolLoad, SLOW_READ};
+use crate::diagnostics::ReadTimer;
 use crate::mail::{ThreadCursorDto, ThreadDetailDto, ThreadPageDto};
 use crate::AppState;
-use std::time::Instant;
 use tauri::State;
 
 // Keep the IPC arguments flat, matching the other thread commands.
@@ -20,8 +19,7 @@ pub async fn list_threads(
     unread_only: Option<bool>,
     keep_read: Option<Vec<(String, String)>>,
 ) -> Result<ThreadPageDto, CommandError> {
-    let start = Instant::now();
-    let pool = PoolLoad::of(&state.db);
+    let timer = ReadTimer::start(&state.db);
     let paged = before.is_some();
     let unread_only = unread_only.unwrap_or(false);
     let result = state
@@ -35,9 +33,9 @@ pub async fn list_threads(
             unread_only.then_some(keep_read.as_deref().unwrap_or_default()),
         )
         .await;
-    if start.elapsed() >= SLOW_READ {
+    if let Some((elapsed_ms, pool)) = timer.slow() {
         tracing::info!(
-            elapsed_ms = ms_since(start),
+            elapsed_ms,
             label = %label_id,
             also_label = ?also_label_id,
             accounts = account_ids.len(),
