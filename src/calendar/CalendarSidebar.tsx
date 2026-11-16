@@ -275,6 +275,7 @@ export function CalendarSidebar({ onAddAccount }: { onAddAccount?: () => void })
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton
           label="Hide sidebar"
+          data-command="view.toggleSidebar"
           shortcut={sidebarShortcut}
           icon={<PanelLeftClose />}
           onClick={toggleSidebar}
@@ -285,6 +286,7 @@ export function CalendarSidebar({ onAddAccount }: { onAddAccount?: () => void })
           variant="primary"
           size="lg"
           icon={<Plus aria-hidden="true" />}
+          data-command="calendar.create"
           title={createShortcut ? `Create event (${describeShortcut(createShortcut)})` : undefined}
           onClick={openQuickAdd}
         >

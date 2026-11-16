@@ -131,7 +131,12 @@ function isShortField(value: unknown): value is string {
   );
 }
 
-function status(code: number, message: string, headers: Record<string, string> = {}): Response {
+/** A plain-text answer. */
+export function status(
+  code: number,
+  message: string,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(message, {
     status: code,
     headers: { "content-type": "text/plain; charset=utf-8", ...headers },

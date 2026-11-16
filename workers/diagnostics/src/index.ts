@@ -6,6 +6,7 @@ import { DurableObject } from "cloudflare:workers";
 import { handleUpload, takeDailySlot } from "./handler";
 import { buildMime } from "./mime";
 import { handlePing, takeInstallSlot } from "./ping";
+import { handleUsage } from "./usage";
 import type { Env, QuotaResult } from "./types";
 
 const FROM = "diagnostics@pheeme.email";
@@ -14,7 +15,15 @@ const TO = "ajg0360@gmail.com";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    if (new URL(request.url).pathname === "/v1/ping") {
+    const { pathname } = new URL(request.url);
+    if (pathname === "/v1/usage") {
+      return handleUsage(request, {
+        bucket: env.BUNDLES,
+        perIp: env.PING_PER_IP,
+        now: () => new Date(),
+      });
+    }
+    if (pathname === "/v1/ping") {
       return handlePing(request, {
         bucket: env.BUNDLES,
         perIp: env.PING_PER_IP,

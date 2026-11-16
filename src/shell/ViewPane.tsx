@@ -164,6 +164,7 @@ export function ViewPane() {
           <>
             <IconButton
               label="Back to list"
+              data-command="conversation.close"
               shortcut={keys.back}
               icon={<ArrowLeft />}
               onClick={closeConversation}
@@ -173,6 +174,7 @@ export function ViewPane() {
         )}
         <IconButton
           label={ARCHIVE_SLOT_LABEL[slot]}
+          data-command="conversation.archive"
           shortcut={keys.archive}
           icon={archiveSlotIcon(slot)}
           disabled={stale}
@@ -180,6 +182,7 @@ export function ViewPane() {
         />
         <IconButton
           label="Delete"
+          data-command="conversation.delete"
           shortcut={keys.delete}
           icon={<Trash2 />}
           disabled={stale}
@@ -187,6 +190,7 @@ export function ViewPane() {
         />
         <IconButton
           label={anyUnread ? "Mark as read" : "Mark as unread"}
+          data-command={anyUnread ? "conversation.mark-read" : "conversation.mark-unread"}
           shortcut={anyUnread ? keys.read : keys.unread}
           icon={anyUnread ? <MailOpen /> : <Mail />}
           disabled={stale}
@@ -194,6 +198,7 @@ export function ViewPane() {
         />
         <IconButton
           label={starred ? "Remove star" : "Star"}
+          data-command="conversation.star"
           shortcut={keys.star}
           icon={<Star />}
           disabled={stale}
@@ -204,6 +209,7 @@ export function ViewPane() {
           <>
             <ReplyButton
               label="Reply all"
+              data-command="conversation.reply-all"
               shortcut={keys.replyAll}
               icon={<ReplyAll />}
               compact={compact}
@@ -213,6 +219,7 @@ export function ViewPane() {
             />
             <ReplyButton
               label="Reply"
+              data-command="conversation.reply"
               shortcut={keys.reply}
               icon={<Reply />}
               compact={compact}
@@ -224,6 +231,7 @@ export function ViewPane() {
           <>
             <ReplyButton
               label="Reply"
+              data-command="conversation.reply"
               shortcut={keys.reply}
               icon={<Reply />}
               compact={compact}
@@ -233,6 +241,7 @@ export function ViewPane() {
             />
             <ReplyButton
               label="Reply all"
+              data-command="conversation.reply-all"
               shortcut={keys.replyAll}
               icon={<ReplyAll />}
               compact={compact}
@@ -243,6 +252,7 @@ export function ViewPane() {
         )}
         <ReplyButton
           label="Forward"
+          data-command="conversation.forward"
           shortcut={keys.forward}
           icon={<Forward />}
           compact={compact}
@@ -252,6 +262,7 @@ export function ViewPane() {
         {offerSpeedRead && readable && (
           <ReplyButton
             label="Speed read"
+            data-command="conversation.speed-read"
             shortcut={keys.speedRead}
             icon={<Zap />}
             compact={compact}
@@ -262,6 +273,7 @@ export function ViewPane() {
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton
           label="Create event from email"
+          data-command={CREATE_EVENT_COMMAND}
           shortcut={keys.createEvent}
           icon={<CalendarPlus />}
           disabled={off}

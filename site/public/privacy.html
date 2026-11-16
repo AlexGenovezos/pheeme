@@ -23,7 +23,7 @@
 
   <main class="wrap legal" id="main">
     <h1>Privacy Policy</h1>
-    <p class="updated">Effective November 7, 2026</p>
+    <p class="updated">Effective November 16, 2026</p>
 
     <div class="summary">
       <strong>The short version</strong>
@@ -31,8 +31,8 @@
         <li>pheeme is an email client that runs on your computer. Your mail is downloaded to your device and stays there.</li>
         <li>We don't run servers that receive, store, or read your email.</li>
         <li>We don't sell your data, show ads, or use your email to train AI models.</li>
-        <li>Once a day the app sends us an anonymous ping (a random ID, the app version, your operating system and chip type) so we can count how many people use pheeme. You can turn it off on the welcome screen or in Settings › About.</li>
-        <li>Anything more is sent only if you choose to send diagnostics. The ping never includes your email, and diagnostics include it only if you add the email or a screenshot of it.</li>
+        <li>Once a day the app sends us anonymous usage stats (a random ID, the app version, your operating system and chip type, and counts of which screens and commands you used) so we can count how many people use pheeme and see what to improve. You can turn them off on the welcome screen or in Settings › About.</li>
+        <li>Anything more is sent only if you choose to send diagnostics. The usage stats never include your email, and diagnostics include it only if you add the email or a screenshot of it.</li>
         <li>You can disconnect your account and delete everything pheeme stored at any time.</li>
       </ul>
     </div>
@@ -72,7 +72,7 @@
     </ul>
 
     <h2>Anonymous usage stats</h2>
-    <p>So we know roughly how many people use pheeme and on what computers, the app sends one small ping a day once you've connected an account. It is on by default, and you can turn it off on the first welcome screen or at any time in Settings › About.</p>
+    <p>So we know roughly how many people use pheeme, on what computers, and which parts of the app they use, the app sends one small ping and one small usage report a day once you've connected an account. Both are on by default, and you can turn them off on the first welcome screen or at any time in Settings › About.</p>
     <p>Each ping contains only:</p>
     <ul>
       <li><strong>A random install ID</strong> that the app makes up on your device. It isn't derived from your email address, your Google account, your computer, or anything else about you.</li>
@@ -80,8 +80,15 @@
       <li><strong>Your operating system and its version</strong>, for example macOS 15.1 or Windows 11.</li>
       <li><strong>Your computer's chip type</strong>, for example Apple Silicon (aarch64) or Intel/AMD (x86_64).</li>
     </ul>
-    <p>It never includes your email address, your accounts, how many there are, your mail or anything about it, or how you use the app.</p>
-    <p>The ping goes to the same small service as diagnostics (diagnostics.pheeme.email, on Cloudflare). We keep one record per install, the latest ping, which is replaced by the next one and deleted automatically about 30 days after the last. We don't store your IP address with it, though Cloudflare processes it to deliver the request. To stop one address from flooding the service, it counts requests per day using a one-way hash of the IP address and a random salt that is thrown away at the end of that day; the address itself isn't kept. Turning the stats off stops the pings and deletes the install ID from your device, so turning them back on later starts a new, unconnected ID. The app doesn't collect crash reports or any other analytics.</p>
+    <p>The daily usage report carries the same install ID, app version, operating system and chip type, plus, for the day before:</p>
+    <ul>
+      <li><strong>Which screens you opened</strong>, how many times, and how long each was on screen while you were using the app (for example "Calendar week view: 3 times, 40 minutes" or "Settings › Keyboard: once"). A mailbox is named only by its kind (Inbox, Sent, a label, a search), never by a label's name or what you searched for.</li>
+      <li><strong>Which commands you used and how</strong>: how many times each ran by keyboard shortcut, from the command palette, or by clicking its button (for example "Archive: 12 by shortcut, 2 by button"). Commands added by mods are counted together as "mod", without their names.</li>
+      <li><strong>The keyboard shortcuts you changed</strong>, and what you changed them to.</li>
+      <li><strong>How many accounts you have connected</strong>, as a number.</li>
+    </ul>
+    <p>The report holds totals for the day, not a record of what you did when or in what order. Neither the ping nor the report ever includes your email address, your accounts' names or addresses, your mail or anything about it (senders, subjects, label names, searches, events), or anything you type.</p>
+    <p>The ping and the report go to the same small service as diagnostics (diagnostics.pheeme.email, on Cloudflare). We keep one record per install, the latest ping, which is replaced by the next one and deleted automatically about 30 days after the last, and each day's usage report, which is deleted automatically about 30 days after it arrives. We don't store your IP address with them, though Cloudflare processes it to deliver the requests. To stop one address from flooding the service, it counts requests per day using a one-way hash of the IP address and a random salt that is thrown away at the end of that day; the address itself isn't kept. Turning the stats off stops the pings and reports and deletes the install ID from your device, along with any usage counts not yet sent, so turning them back on later starts a new, unconnected ID. The app doesn't collect crash reports or any other analytics.</p>
 
     <h2>Sending diagnostics</h2>
     <p>If something is slow or broken, you can send us diagnostics from Settings › About. Nothing is uploaded until you click Send. If you'd rather check first, you can save the same file to your computer and email it to us yourself.</p>

@@ -501,6 +501,7 @@ pub fn run() {
             commands::settings::set_notification_schedule,
             commands::settings::telemetry_enabled,
             commands::settings::set_telemetry,
+            commands::settings::record_usage,
             commands::settings::take_notification_target,
             commands::settings::set_calendar_reminders,
             commands::settings::gmail_quota,

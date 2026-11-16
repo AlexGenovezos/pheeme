@@ -30,6 +30,9 @@ export interface Command {
   run(): void;
 }
 
+/** How a command was run, for the anonymous usage counts. */
+export type RunSource = "key" | "palette" | "button";
+
 interface Step {
   key: string;
   mod: boolean;
@@ -144,6 +147,7 @@ export function createRegistry({
 }: RegistryOptions = {}) {
   const entries = new Map<string, Entry>();
   const listeners = new Set<() => void>();
+  const runListeners = new Set<(id: string, source: RunSource) => void>();
   let snapshot: Command[] = [];
   /** User rebindings by command id; `null` means the user removed the shortcut. */
   let overrides: Readonly<Record<string, string | null>> = {};
@@ -259,6 +263,17 @@ export function createRegistry({
       };
     },
 
+    /** Hear each command the user runs and how (shortcut, palette or button). */
+    onRun(listener: (id: string, source: RunSource) => void): () => void {
+      runListeners.add(listener);
+      return () => runListeners.delete(listener);
+    },
+
+    /** Say the user ran command `id` from `source` (the palette and buttons call this). */
+    noteRun(id: string, source: RunSource) {
+      runListeners.forEach((l) => l(id, source));
+    },
+
     run(id: string): boolean {
       const command = entries.get(id)?.command;
       command?.run();
@@ -309,6 +324,7 @@ export function createRegistry({
           setPending([]);
           e.preventDefault();
           done.command.run();
+          runListeners.forEach((l) => l(done.command.id, "key"));
           return true;
         }
         if (next.length) {
@@ -332,12 +348,14 @@ export function createRegistry({
       // A held key: swallowed, so it neither repeats the command nor falls through to the page.
       if (e.repeat && !single.command.repeat) return true;
       single.command.run();
+      if (!e.repeat) runListeners.forEach((l) => l(single.command.id, "key"));
       return true;
     },
 
     /** Test helper: drop all commands and chord state. */
     clear() {
       entries.clear();
+      runListeners.clear();
       overrides = {};
       suspended = 0;
       setPending([]);

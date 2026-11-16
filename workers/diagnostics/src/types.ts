@@ -76,6 +76,32 @@ export interface InstallRecord {
   arch: string;
 }
 
+/** Everything `handleUsage` touches outside the request. */
+export interface UsageDeps {
+  bucket: Bucket;
+  perIp: RateLimiter;
+  now(): Date;
+}
+
+/** What `usage/<day>/<installId>.json` holds: one install's usage on one local day. */
+export interface UsageRecord {
+  /** The install's local day, `YYYY-MM-DD`. */
+  day: string;
+  version: string;
+  os: string;
+  arch: string;
+  /** Connected accounts. */
+  accounts: number;
+  /** Each screen: times opened, and milliseconds on screen while someone was there. */
+  screens: Array<{ name: string; opens: number; ms: number }>;
+  /** Each command: times run by shortcut, from the palette, and by its button. */
+  commands: Array<{ id: string; key: number; palette: number; button: number }>;
+  /** Shortcuts the user changed: the new key, or null if removed. */
+  rebound: Array<{ id: string; key: string | null }>;
+  /** ISO time the Worker stored it. */
+  receivedAt: string;
+}
+
 /** Durable Object key-value storage (`ctx.storage`), async API subset. */
 export interface KvStorage {
   get<T>(key: string): Promise<T | undefined>;

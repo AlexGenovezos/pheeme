@@ -345,6 +345,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
         <span className="toolbar__spacer" {...dragRegion} />
         <IconButton
           label="Hide sidebar"
+          data-command="view.toggleSidebar"
           shortcut={sidebarShortcut}
           icon={<PanelLeftClose />}
           onClick={toggleSidebar}
@@ -377,6 +378,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
           variant="primary"
           size="lg"
           icon={<SquarePen aria-hidden="true" />}
+          data-command="compose.new"
           title={
             composeShortcut ? `New message (${describeShortcut(composeShortcut)})` : "New message"
           }

@@ -28,6 +28,7 @@ function ModeButton({ entry, active }: { entry: (typeof MODES)[number]; active: 
       role="radio"
       aria-checked={active}
       aria-label={entry.label}
+      data-command={entry.command}
       title={shortcut ? `${entry.label} (${describeShortcut(shortcut)})` : entry.label}
       tabIndex={active ? 0 : -1}
       className="mode-switch__option"

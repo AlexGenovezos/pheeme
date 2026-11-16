@@ -265,3 +265,19 @@ test("a global command rebound to a plain key doesn't fire while typing", () => 
   expect(reg.handleKeyDown(press("q"))).toBe(true);
   expect(run).toHaveBeenCalledTimes(1);
 });
+
+describe("run listeners", () => {
+  test("hear shortcuts (single and chords, not held repeats) and noted runs", () => {
+    const heard: string[] = [];
+    reg.onRun((id, source) => heard.push(`${source} ${id}`));
+    reg.register({ id: "archive", title: "Archive", shortcut: "e", run: vi.fn() });
+    reg.register({ id: "go.inbox", title: "Inbox", shortcut: "g i", run: vi.fn() });
+    reg.handleKeyDown(press("e"));
+    reg.handleKeyDown(press("e", { repeat: true }));
+    reg.handleKeyDown(press("g"));
+    reg.handleKeyDown(press("i"));
+    reg.noteRun("archive", "button");
+    reg.run("archive"); // the app moving focus, not the user
+    expect(heard).toEqual(["key archive", "key go.inbox", "button archive"]);
+  });
+});

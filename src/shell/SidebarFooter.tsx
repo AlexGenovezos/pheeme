@@ -19,12 +19,14 @@ export function SidebarFooter({ onAddAccount }: { onAddAccount?: () => void }) {
       <div className="sidebar__footer-row">
         <IconButton
           label="Settings"
+          data-command="settings.open"
           shortcut={settingsShortcut}
           icon={<Settings />}
           onClick={() => useSettingsStore.getState().openSettings()}
         />
         <IconButton
           label="Mail stats"
+          data-command="stats.open"
           shortcut={statsShortcut}
           icon={<BarChart3 />}
           onClick={() => useStatsStore.getState().openStats()}

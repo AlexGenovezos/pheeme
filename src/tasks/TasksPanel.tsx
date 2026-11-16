@@ -114,6 +114,7 @@ export function TasksPanelHost() {
       <div className="tasks-rail" {...dragRegion}>
         <IconButton
           label={open ? "Hide tasks" : "Show tasks"}
+          data-command={TOGGLE_TASKS_COMMAND}
           shortcut={shortcut}
           aria-pressed={open}
           aria-controls={open ? "tasks-panel" : undefined}
