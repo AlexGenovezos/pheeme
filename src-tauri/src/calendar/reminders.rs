@@ -13,6 +13,7 @@ use super::recurrence;
 use crate::db;
 use crate::db::calendar::{DbCalendar, DbEvent};
 use crate::db::reminders::ReminderKey;
+use crate::google_access::AccessStatus;
 use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -186,7 +187,7 @@ impl ReminderService {
             let Some((status, account_zone)) = access.get(&e.account_id) else {
                 continue;
             };
-            if matches!(status.as_str(), "unknown" | "missing_scope") {
+            if !AccessStatus::from_stored(status, None).is_granted() {
                 continue;
             }
             let Some(calendar) = calendars.get(&(e.account_id.clone(), e.calendar_id.clone()))

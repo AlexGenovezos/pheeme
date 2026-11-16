@@ -6,6 +6,7 @@
 use crate::db::{self, contacts::ContactRow};
 use crate::gmail::people::{ContactList, PeoplePage};
 use crate::gmail::{GmailClient, GmailError};
+use crate::google_access::{AccessStatus, Adapter, Intervals, Poller, SyncFailure};
 use crate::mail::MailError;
 use crate::sync::engine::now_ms;
 use serde::Serialize;
@@ -23,10 +24,14 @@ pub const DEFAULT_LIMIT: usize = 8;
 /// How long an account's loaded contacts answer suggestions before they're read again, so a
 /// burst of keystrokes reads the table once and mail synced meanwhile shows up soon after.
 const CACHE_TTL: Duration = Duration::from_secs(30);
-/// How often Google Contacts are downloaded again while the app runs.
-const REFRESH_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
-/// The first download waits for launch and the first sync to settle.
-const FIRST_REFRESH_DELAY: Duration = Duration::from_secs(30);
+/// Google Contacts are downloaded again every 6 hours while the app runs, the first time once
+/// launch and the first sync have settled. Nothing shows them in front, so there is no faster
+/// foreground pace.
+const INTERVALS: Intervals = Intervals {
+    first: Duration::from_secs(30),
+    background: Duration::from_secs(6 * 60 * 60),
+    foreground: Duration::from_secs(6 * 60 * 60),
+};
 /// Pages of 1,000 per list, so a broken page token can't loop forever.
 const MAX_PAGES: usize = 200;
 const DAY_MS: f64 = 24.0 * 60.0 * 60.0 * 1000.0;
@@ -75,7 +80,7 @@ pub struct SuggestionDto {
 pub struct GoogleContactsDto {
     /// `unknown` (never checked), `on`, `missing_scope` (sign in again and allow contacts),
     /// `api_disabled` (turn on the People API) or `error`.
-    pub status: String,
+    pub status: AccessStatus,
     /// What failed, for `error`.
     pub message: Option<String>,
     /// The People API page for the user's project, for `api_disabled`.
@@ -102,8 +107,8 @@ pub struct ContactService {
     db: SqlitePool,
     people_for: PeopleFactory,
     loaded: Mutex<HashMap<String, Loaded>>,
-    /// One download per account at a time.
-    refreshing: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// Downloads one account at a time and every few hours.
+    poller: Poller,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -116,7 +121,7 @@ impl ContactService {
             db,
             people_for,
             loaded: Mutex::new(HashMap::new()),
-            refreshing: Mutex::new(HashMap::new()),
+            poller: Poller::new(INTERVALS),
         })
     }
 
@@ -192,26 +197,16 @@ impl ContactService {
     pub async fn google_status(&self, account_id: &str) -> Result<GoogleContactsDto, MailError> {
         let sync = db::contacts::google_sync(&self.db, account_id).await?;
         let count = db::contacts::google_count(&self.db, account_id).await?;
-        let Some(sync) = sync else {
-            return Ok(GoogleContactsDto {
-                status: "unknown".into(),
-                message: None,
-                enable_url: None,
-                count,
-                synced_at: None,
-            });
-        };
-        let enable_url = (sync.status == "api_disabled").then(|| match &sync.detail {
-            Some(project) => format!("{PEOPLE_API_URL}?project={project}"),
-            None => PEOPLE_API_URL.to_owned(),
+        let status = sync.as_ref().map_or(AccessStatus::Unknown, |s| {
+            AccessStatus::from_stored(&s.status, s.detail.as_deref())
         });
-        let message = (sync.status == "error").then_some(sync.detail).flatten();
+        let access = status.dto(PEOPLE_API_URL, sync.and_then(|s| s.synced_at));
         Ok(GoogleContactsDto {
-            status: sync.status,
-            message,
-            enable_url,
+            status: access.status,
+            message: access.message,
+            enable_url: access.enable_url,
             count,
-            synced_at: sync.synced_at,
+            synced_at: access.synced_at,
         })
     }
 
@@ -220,11 +215,6 @@ impl ContactService {
     /// pass by itself (offline, rate limit, Google having trouble) doesn't change the status
     /// once there is one.
     pub async fn refresh_google(&self, account_id: &str) -> Result<GoogleContactsDto, MailError> {
-        let guard = lock(&self.refreshing)
-            .entry(account_id.to_owned())
-            .or_default()
-            .clone();
-        let _one_at_a_time = guard.lock().await;
         if db::accounts::get_account(&self.db, account_id)
             .await?
             .is_none()
@@ -233,74 +223,92 @@ impl ContactService {
                 "That account isn't connected any more.".into(),
             ));
         }
-        let api = (self.people_for)(account_id);
-        let saved = download(api.as_ref(), ContactList::Saved).await;
-        let other = download(api.as_ref(), ContactList::Other).await;
-
-        let mut tx = db::begin_write(&self.db).await?;
-        for (list, result) in [(true, &saved), (false, &other)] {
-            if let Ok(people) = result {
-                db::contacts::replace_google(&mut tx, account_id, list, people).await?;
-            }
-        }
-        let error = saved.as_ref().err().or(other.as_ref().err());
-        let previous = db::contacts::google_sync(&mut *tx, account_id).await?;
-        let now = now_ms();
-        match error {
-            None => {
-                db::contacts::set_google_sync(&mut *tx, account_id, "on", None, now, true).await?
-            }
-            Some(e) if is_transient(e) && previous.is_some() => {
-                warn!(error = %e, "couldn't download Google Contacts; keeping the last copy");
-            }
-            Some(e) => {
-                let (status, detail) = if e.is_api_disabled() {
-                    ("api_disabled", e.disabled_api_project())
-                } else if e.is_missing_scope() {
-                    ("missing_scope", None)
-                } else {
-                    ("error", Some(e.to_string()))
-                };
-                warn!(status, error = %e, "couldn't download Google Contacts");
-                db::contacts::set_google_sync(
-                    &mut *tx,
-                    account_id,
-                    status,
-                    detail.as_deref(),
-                    now,
-                    false,
-                )
-                .await?;
-            }
-        }
-        tx.commit().await.map_err(anyhow::Error::from)?;
-        if let (Ok(s), Ok(o)) = (&saved, &other) {
-            info!(
-                saved = s.len(),
-                other = o.len(),
-                "Google Contacts downloaded"
-            );
-        }
-        self.forget(account_id);
+        self.poller.sync_now(self, account_id, now_ms()).await?;
         self.google_status(account_id).await
     }
 
     /// Download every account's Google Contacts soon after launch, then every few hours.
     pub async fn run(self: Arc<Self>) {
-        tokio::time::sleep(FIRST_REFRESH_DELAY).await;
-        loop {
-            match db::accounts::list_accounts(&self.db).await {
-                Ok(accounts) => {
-                    for account in accounts {
-                        if let Err(e) = self.refresh_google(&account.id).await {
-                            warn!(error = %e, "Google Contacts refresh failed");
-                        }
-                    }
+        self.poller.run(&*self).await;
+    }
+}
+
+#[async_trait::async_trait]
+impl Adapter for ContactService {
+    const NAME: &'static str = "Google Contacts";
+
+    fn pool(&self) -> &SqlitePool {
+        &self.db
+    }
+
+    async fn access(&self, account_id: &str) -> anyhow::Result<AccessStatus> {
+        Ok(db::contacts::google_sync(&self.db, account_id)
+            .await?
+            .map_or(AccessStatus::Unknown, |s| {
+                AccessStatus::from_stored(&s.status, s.detail.as_deref())
+            }))
+    }
+
+    /// Every account, whatever its status: a download asks for nothing the user must allow.
+    async fn due(&self, _account_id: &str, _status: &AccessStatus) -> anyhow::Result<bool> {
+        Ok(true)
+    }
+
+    async fn sync(&self, account_id: &str, _now: i64, _asked: bool) -> Result<(), SyncFailure> {
+        let api = (self.people_for)(account_id);
+        let saved = download(api.as_ref(), ContactList::Saved).await;
+        let other = download(api.as_ref(), ContactList::Other).await;
+
+        let replaced = async {
+            let mut tx = db::begin_write(&self.db).await?;
+            for (list, result) in [(true, &saved), (false, &other)] {
+                if let Ok(people) = result {
+                    db::contacts::replace_google(&mut tx, account_id, list, people).await?;
                 }
-                Err(e) => warn!(error = %e, "couldn't list accounts for Google Contacts"),
             }
-            tokio::time::sleep(REFRESH_INTERVAL).await;
+            tx.commit().await.map_err(anyhow::Error::from)
+        };
+        replaced.await.map_err(SyncFailure::Cache)?;
+        self.forget(account_id);
+        match (saved, other) {
+            (Ok(s), Ok(o)) => {
+                info!(
+                    saved = s.len(),
+                    other = o.len(),
+                    "Google Contacts downloaded"
+                );
+                Ok(())
+            }
+            (Err(e), _) | (_, Err(e)) => {
+                warn!(error = %e, "couldn't download Google Contacts");
+                Err(SyncFailure::Google(e))
+            }
         }
+    }
+
+    async fn record(
+        &self,
+        account_id: &str,
+        status: &AccessStatus,
+        now: i64,
+    ) -> anyhow::Result<()> {
+        db::contacts::set_google_sync(
+            &self.db,
+            account_id,
+            status.as_str(),
+            status.detail(),
+            now,
+            status.is_on(),
+        )
+        .await
+    }
+
+    /// Settings reads the status when it opens; nothing listens for changes.
+    fn access_changed(&self, _account_id: &str, _status: &AccessStatus) {}
+
+    /// With no status yet, even a passing failure is shown, so Settings says why.
+    fn records_passing_failure(&self, before: &AccessStatus) -> bool {
+        before.is_unknown()
     }
 }
 
@@ -333,20 +341,6 @@ async fn download(
         }
     }
     Ok(out)
-}
-
-/// A failure that may pass by itself.
-fn is_transient(e: &GmailError) -> bool {
-    match e {
-        GmailError::Network(_)
-        | GmailError::Offline(_)
-        | GmailError::RateLimit { .. }
-        | GmailError::Auth(_)
-        | GmailError::KeychainLocked(_)
-        | GmailError::SignedOut(_) => true,
-        GmailError::Api { status, .. } => *status >= 500,
-        GmailError::Decode(_) => false,
-    }
 }
 
 /// Automated senders nobody writes to, unless the user has.

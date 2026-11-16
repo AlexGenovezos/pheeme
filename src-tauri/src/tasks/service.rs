@@ -2,48 +2,35 @@
 //! the cache, plus the background loop that keeps the cache current. Runs apart from mail and
 //! calendar sync, so a Tasks problem never holds either up.
 
-use super::sync::{classify, sync_account, SyncError, SyncReport};
+use super::sync::{sync_account, SyncError, SyncReport};
 use super::{TasksApi, TasksFactory};
 use crate::db;
 use crate::db::tasks::{DbTask, DbTasksAccess};
-use crate::gmail::GmailError;
+use crate::google_access::{AccessDto, AccessStatus, Adapter, Intervals, Poller, SyncFailure};
 use crate::mail::MailError;
 use crate::sync::engine::now_ms;
 use crate::sync::{SyncEvent, SyncEvents};
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Notify;
-use tracing::warn;
 
 /// The Google Tasks API page in the user's Google Cloud project.
 pub const TASKS_API_URL: &str =
     "https://console.cloud.google.com/apis/library/tasks.googleapis.com";
 
-/// How often tasks are checked while the app runs.
-const INTERVAL: Duration = Duration::from_secs(60);
-/// How often while Calendar mode is in front.
-const FOREGROUND_INTERVAL: Duration = Duration::from_secs(15);
-/// The first check waits for launch and mail's first sync to settle.
-const FIRST_DELAY: Duration = Duration::from_secs(5);
+/// Tasks are checked every minute while the app runs, every 15 s while Calendar mode is in
+/// front, the first time once launch and mail's first sync have settled.
+const INTERVALS: Intervals = Intervals {
+    first: Duration::from_secs(5),
+    background: Duration::from_secs(60),
+    foreground: Duration::from_secs(15),
+};
 
-/// Statuses that need the user (allow access, turn the API on); not polled until then.
-const HELD: [&str; 2] = ["missing_scope", "api_disabled"];
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TasksAccessDto {
-    /// `unknown` (never checked), `on`, `missing_scope`, `api_disabled` or `error`.
-    pub status: String,
-    /// What failed, for `error`.
-    pub message: Option<String>,
-    /// The Tasks API page for the user's project, for `api_disabled`.
-    pub enable_url: Option<String>,
-    pub synced_at: Option<i64>,
-}
+/// Whether the account's tasks can be read (`unknown` until first checked), apart from its
+/// calendar access.
+pub type TasksAccessDto = AccessDto;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,24 +96,14 @@ impl From<&DbTask> for TaskDto {
     }
 }
 
+fn status_of(access: Option<&DbTasksAccess>) -> AccessStatus {
+    access.map_or(AccessStatus::Unknown, |a| {
+        AccessStatus::from_stored(&a.status, a.detail.as_deref())
+    })
+}
+
 pub(super) fn access_dto(access: Option<&DbTasksAccess>) -> TasksAccessDto {
-    let Some(a) = access else {
-        return TasksAccessDto {
-            status: "unknown".into(),
-            message: None,
-            enable_url: None,
-            synced_at: None,
-        };
-    };
-    TasksAccessDto {
-        status: a.status.clone(),
-        message: (a.status == "error").then(|| a.detail.clone()).flatten(),
-        enable_url: (a.status == "api_disabled").then(|| match &a.detail {
-            Some(project) => format!("{TASKS_API_URL}?project={project}"),
-            None => TASKS_API_URL.to_owned(),
-        }),
-        synced_at: a.synced_at,
-    }
+    status_of(access).dto(TASKS_API_URL, access.and_then(|a| a.synced_at))
 }
 
 /// Tasks in the order the list shows them: top-level tasks by position, each followed by its
@@ -155,37 +132,22 @@ pub fn outline(rows: &[DbTask]) -> Vec<&DbTask> {
     out
 }
 
-fn sync_error(e: SyncError) -> MailError {
-    MailError::Sync(match e {
-        SyncError::Api(e) => crate::sync::engine::SyncError::Gmail(e),
-        SyncError::Db(e) => crate::sync::engine::SyncError::Db(e),
-    })
-}
-
-/// A failure that may pass by itself, which doesn't change the account's status.
-fn is_transient(e: &GmailError) -> bool {
-    match e {
-        GmailError::Network(_) | GmailError::Offline(_) | GmailError::RateLimit { .. } => true,
-        GmailError::Api { status, .. } => *status >= 500,
-        _ => false,
+impl From<SyncError> for SyncFailure {
+    fn from(e: SyncError) -> Self {
+        match e {
+            SyncError::Api(e) => SyncFailure::Google(e),
+            SyncError::Db(e) => SyncFailure::Cache(e),
+        }
     }
-}
-
-pub(super) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 pub struct TasksService {
     pub(super) db: SqlitePool,
     pub(super) api_for: TasksFactory,
     pub(super) events: Arc<dyn SyncEvents>,
-    foreground: AtomicBool,
-    wake: Notify,
-    /// Accounts to sync on the next tick whatever their status (just signed in, or written).
-    forced: Mutex<HashSet<String>>,
-    /// One sync or write per account at a time, so a sync never caches a version older than
-    /// a write that landed while it ran.
-    running: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// Its gate also holds writes, so a sync never caches a version older than a write that
+    /// landed while it ran.
+    poller: Poller,
 }
 
 impl TasksService {
@@ -194,19 +156,13 @@ impl TasksService {
             db,
             api_for,
             events,
-            foreground: AtomicBool::new(false),
-            wake: Notify::new(),
-            forced: Mutex::new(HashSet::new()),
-            running: Mutex::new(HashMap::new()),
+            poller: Poller::new(INTERVALS),
         })
     }
 
     /// The account's sync-and-write gate.
     pub(super) fn gate(&self, account_id: &str) -> Arc<tokio::sync::Mutex<()>> {
-        lock(&self.running)
-            .entry(account_id.to_owned())
-            .or_default()
-            .clone()
+        self.poller.gate(account_id)
     }
 
     /// Every account with its tasks access and task lists.
@@ -267,81 +223,66 @@ impl TasksService {
     /// Sync the account now, whatever its status (after turning the Tasks API on, or "Check
     /// again"); returns where its access stands.
     pub async fn sync_now(&self, account_id: &str) -> Result<TasksAccessDto, MailError> {
-        lock(&self.forced).remove(account_id);
-        self.sync_one(account_id, now_ms()).await?;
+        self.poller.sync_now(self, account_id, now_ms()).await?;
         let access = db::tasks::access(&self.db, account_id).await?;
         Ok(access_dto(access.as_ref()))
     }
 
     /// Calendar mode is (or stopped being) in front: check every 15 s instead of 60 s.
     pub fn set_foreground(&self, on: bool) {
-        let was = self.foreground.swap(on, Ordering::Relaxed);
-        if on && !was {
-            self.wake.notify_one();
-        }
+        self.poller.set_foreground(on);
     }
 
     /// Check `account_id` (or every account) soon; an account named here is checked even if
     /// its tasks were never checked, so allowing calendar access finds out at once.
     pub fn trigger(&self, account_id: Option<String>) {
-        if let Some(id) = account_id {
-            lock(&self.forced).insert(id);
-        }
-        self.wake.notify_one();
+        self.poller.trigger(account_id);
     }
 
     #[cfg(test)]
     pub(super) fn is_forced(&self, account_id: &str) -> bool {
-        lock(&self.forced).contains(account_id)
-    }
-
-    /// Whether the account's tasks are polled: they work (or failed in passing), or were
-    /// never checked but the account allowed calendar access, which includes tasks.
-    async fn polled(&self, account_id: &str) -> anyhow::Result<bool> {
-        Ok(match db::tasks::access(&self.db, account_id).await? {
-            Some(a) => !HELD.contains(&a.status.as_str()),
-            None => db::calendar::access(&self.db, account_id)
-                .await?
-                .is_some_and(|a| a.status == "on"),
-        })
+        self.poller.is_forced(account_id)
     }
 
     /// One pass: every account whose tasks are polled, plus any triggered account.
     pub async fn tick(&self, now: i64) {
-        let accounts = match db::accounts::list_accounts(&self.db).await {
-            Ok(a) => a,
-            Err(e) => {
-                warn!(error = %e, "couldn't list accounts for tasks sync");
-                return;
-            }
-        };
-        let forced: HashSet<String> = std::mem::take(&mut *lock(&self.forced));
-        for account in accounts {
-            let due = forced.contains(&account.id)
-                || match self.polled(&account.id).await {
-                    Ok(polled) => polled,
-                    Err(e) => {
-                        warn!(error = %e, "couldn't read tasks access");
-                        continue;
-                    }
-                };
-            if !due {
-                continue;
-            }
-            if let Err(e) = self.sync_one(&account.id, now).await {
-                warn!(error = %e, "tasks sync failed");
-            }
-        }
+        self.poller.tick(self, now).await;
     }
 
-    /// Sync one account and record how it went. Errors are recorded (and emitted) here; the
-    /// returned error is only a cache failure.
-    async fn sync_one(&self, account_id: &str, now: i64) -> Result<(), MailError> {
-        let gate = self.gate(account_id);
-        let _held = gate.lock().await;
-        let before = db::tasks::access(&self.db, account_id)
-            .await?
-            .map(|a| a.status);
+    /// Check tasks soon after launch, then every minute (15 s while Calendar mode is in
+    /// front) on the shared clock, or sooner when triggered.
+    pub async fn run(self: Arc<Self>) {
+        self.poller.run(&*self).await;
+    }
+}
+
+#[async_trait::async_trait]
+impl Adapter for TasksService {
+    const NAME: &'static str = "tasks";
+
+    fn pool(&self) -> &SqlitePool {
+        &self.db
+    }
+
+    /// Nothing is stored until the first check.
+    async fn access(&self, account_id: &str) -> anyhow::Result<AccessStatus> {
+        Ok(status_of(
+            db::tasks::access(&self.db, account_id).await?.as_ref(),
+        ))
+    }
+
+    /// Whether the account's tasks are polled: they work (or failed in passing), or were
+    /// never checked but the account allowed calendar access, which includes tasks.
+    async fn due(&self, account_id: &str, status: &AccessStatus) -> anyhow::Result<bool> {
+        Ok(match status {
+            AccessStatus::Unknown => db::calendar::access(&self.db, account_id)
+                .await?
+                .is_some_and(|a| AccessStatus::from_stored(&a.status, None).is_on()),
+            status => !status.is_held(),
+        })
+    }
+
+    async fn sync(&self, account_id: &str, now: i64, _asked: bool) -> Result<(), SyncFailure> {
         let api: Arc<dyn TasksApi> = (self.api_for)(account_id);
         let mut report = SyncReport::default();
         let result = sync_account(&self.db, api.as_ref(), account_id, now, &mut report).await;
@@ -351,47 +292,23 @@ impl TasksService {
                 account_id: account_id.to_owned(),
             });
         }
-        let (status, detail) = match result {
-            Ok(()) => ("on", None),
-            Err(SyncError::Api(e)) if is_transient(&e) => {
-                warn!(error = %e, "tasks sync will retry");
-                // An account the regular ticks skip was asked for: keep asking until Google
-                // answers.
-                if !self.polled(account_id).await.unwrap_or(false) {
-                    lock(&self.forced).insert(account_id.to_owned());
-                }
-                return Ok(());
-            }
-            Err(SyncError::Api(e)) => classify(&e),
-            Err(e) => return Err(sync_error(e)),
-        };
-        db::tasks::set_access(&self.db, account_id, status, detail.as_deref(), now).await?;
-        if before.as_deref() != Some(status) {
-            self.events.emit(SyncEvent::TasksAccess {
-                account_id: account_id.to_owned(),
-                status: status.to_owned(),
-            });
-        }
-        Ok(())
+        Ok(result?)
     }
 
-    /// Check tasks soon after launch, then every minute (15 s while Calendar mode is in
-    /// front) on the shared clock, so this check wakes the computer together with the others,
-    /// or sooner when triggered.
-    pub async fn run(self: Arc<Self>) {
-        tokio::time::sleep(FIRST_DELAY).await;
-        loop {
-            self.tick(now_ms()).await;
-            let wait = if self.foreground.load(Ordering::Relaxed) {
-                FOREGROUND_INTERVAL
-            } else {
-                INTERVAL
-            };
-            tokio::select! {
-                () = crate::cadence::sleep_until_next(wait) => {}
-                () = self.wake.notified() => {}
-            }
-        }
+    async fn record(
+        &self,
+        account_id: &str,
+        status: &AccessStatus,
+        now: i64,
+    ) -> anyhow::Result<()> {
+        db::tasks::set_access(&self.db, account_id, status.as_str(), status.detail(), now).await
+    }
+
+    fn access_changed(&self, account_id: &str, status: &AccessStatus) {
+        self.events.emit(SyncEvent::TasksAccess {
+            account_id: account_id.to_owned(),
+            status: status.as_str().to_owned(),
+        });
     }
 }
 
@@ -400,6 +317,7 @@ pub(super) mod tests {
     use super::*;
     use crate::db::accounts::{insert_account, DbAccount};
     use crate::db::test_support::TestDb;
+    use crate::gmail::GmailError;
     use crate::sync::events::RecordingEvents;
     use crate::tasks::fake::{task, FakeTasks};
     use serde_json::json;

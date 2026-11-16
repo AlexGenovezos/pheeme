@@ -1,6 +1,7 @@
 //! What a Tasks write can fail with, as the command boundary reports it.
 
 use crate::gmail::GmailError;
+use crate::google_access::AccessStatus;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TasksError {
@@ -17,17 +18,10 @@ pub enum TasksError {
         "Pheeme couldn't confirm the change reached Google. Your tasks will show what Google has in a moment."
     )]
     Unconfirmed,
-    #[error("Google Tasks refused the change: {}", google_message(.0))]
+    #[error("Google Tasks refused the change: {}", .0.google_message())]
     Google(GmailError),
     #[error("Pheeme couldn't save that: {0}")]
     Db(anyhow::Error),
-}
-
-fn google_message(e: &GmailError) -> String {
-    match e {
-        GmailError::Api { message, .. } => message.clone(),
-        other => other.to_string(),
-    }
 }
 
 impl TasksError {
@@ -37,7 +31,7 @@ impl TasksError {
             TasksError::Invalid(_) => "invalid_input",
             TasksError::Offline => "network",
             TasksError::Unconfirmed => "unconfirmed",
-            TasksError::Google(e) if e.is_api_disabled() => "api_disabled",
+            TasksError::Google(e) if e.is_api_disabled() => AccessStatus::API_DISABLED,
             TasksError::Google(e) => e.code(),
             TasksError::Db(_) => "internal",
         }
@@ -70,14 +64,7 @@ impl From<sqlx::Error> for TasksError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn api(status: u16, reason: Option<&str>, message: &str) -> GmailError {
-        GmailError::Api {
-            status,
-            reason: reason.map(str::to_owned),
-            message: message.to_owned(),
-        }
-    }
+    use crate::gmail::error::tests::api;
 
     #[test]
     fn gmail_errors_map_to_tasks_codes() {

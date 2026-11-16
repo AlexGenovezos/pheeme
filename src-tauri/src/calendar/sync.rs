@@ -34,18 +34,6 @@ impl From<GmailError> for SyncError {
     }
 }
 
-/// The access status an error means: `missing_scope` (allow calendar access again),
-/// `api_disabled` (with the Google Cloud project number when Google gave it) or `error`.
-pub fn classify(e: &GmailError) -> (&'static str, Option<String>) {
-    if e.is_missing_scope() {
-        ("missing_scope", None)
-    } else if e.is_api_disabled() {
-        ("api_disabled", e.disabled_api_project())
-    } else {
-        ("error", Some(e.to_string()))
-    }
-}
-
 /// An error that stops the whole account's sync (rather than one calendar's).
 fn is_account_wide(e: &GmailError) -> bool {
     e.is_missing_scope()
@@ -224,6 +212,7 @@ mod tests {
     use crate::db::calendar as cache;
     use crate::db::test_support::TestDb;
     use crate::gmail::calendar::CalendarSettings;
+    use crate::google_access::AccessStatus;
     use serde_json::json;
 
     fn ms(s: &str) -> i64 {
@@ -512,31 +501,10 @@ mod tests {
         let SyncError::Api(error) = error else {
             panic!("expected an API error");
         };
-        assert_eq!(classify(&error), ("missing_scope", None));
-    }
-
-    #[test]
-    fn classify_maps_permission_errors() {
-        let scope = GmailError::Api {
-            status: 403,
-            reason: Some("insufficientPermissions".into()),
-            message: "Request had insufficient authentication scopes.".into(),
-        };
-        assert_eq!(classify(&scope), ("missing_scope", None));
-        let disabled = GmailError::Api {
-            status: 403,
-            reason: Some("accessNotConfigured".into()),
-            message:
-                "Google Calendar API has not been used in project 1234 before or it is disabled."
-                    .into(),
-        };
-        assert_eq!(classify(&disabled), ("api_disabled", Some("1234".into())));
-        let other = GmailError::Api {
-            status: 500,
-            reason: None,
-            message: "Backend Error".into(),
-        };
-        assert_eq!(classify(&other).0, "error");
+        assert_eq!(
+            AccessStatus::from_failure(&error),
+            Some(AccessStatus::MissingScope)
+        );
     }
 
     #[tokio::test]

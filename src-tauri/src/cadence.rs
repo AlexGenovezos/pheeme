@@ -1,5 +1,5 @@
-//! One clock for the background checks (mail, calendar, tasks), so they wake the computer
-//! together rather than each on its own schedule. Every check sleeps until the next whole
+//! One clock for the background checks (mail, calendar, tasks, Google Contacts), so they wake
+//! the computer together rather than each on its own schedule. Every check sleeps until the next whole
 //! multiple of its period after a shared starting point, so their turns meet wherever the
 //! periods' multiples do: every calendar and tasks check in the background (60 s) lands on a
 //! mail check (10 s), and with Calendar mode in front (15 s) every other one does. A check

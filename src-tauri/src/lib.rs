@@ -15,6 +15,7 @@ mod diagnostics;
 pub mod drive;
 pub mod filters;
 pub mod gmail;
+pub mod google_access;
 pub mod http;
 pub mod identity;
 pub mod labels;

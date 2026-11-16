@@ -26,17 +26,10 @@ pub enum CalendarError {
     /// Part of a change landed; the text names what is left.
     #[error("{0}")]
     Incomplete(String),
-    #[error("Google Calendar refused the change: {}", google_message(.0))]
+    #[error("Google Calendar refused the change: {}", .0.google_message())]
     Google(GmailError),
     #[error("Pheeme couldn't save that: {0}")]
     Db(anyhow::Error),
-}
-
-fn google_message(e: &GmailError) -> String {
-    match e {
-        GmailError::Api { message, .. } => message.clone(),
-        other => other.to_string(),
-    }
 }
 
 impl CalendarError {

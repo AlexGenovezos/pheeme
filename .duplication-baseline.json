@@ -1,11 +1,5 @@
 {
   "exact": {
-    "src-tauri/src/calendar/error.rs <> src-tauri/src/tasks/error.rs": {
-      "tokens": 74,
-      "texts": [
-        ",google_message(.0))]Google(GmailError),#[error(\"Pheemecouldn'tsavethat:{0}\")]Db(anyhow::Error),}fngoogle_message(e:&GmailError)->String{matche{GmailError::Api{message,..}=>message.clone(),other=>other.to_string(),}}impl"
-      ]
-    },
     "src-tauri/src/calendar/fake.rs <> src-tauri/src/tasks/fake.rs": {
       "tokens": 76,
       "texts": [
@@ -34,18 +28,7 @@
     "src-tauri/src/calendar/service.rs <> src-tauri/src/tasks/service.rs": {
       "tokens": 605,
       "texts": [
-        ")asyncfnharness(accounts:&[&str])->Harness{letdb=TestDb::new().await;letmutfakes=HashMap::new();foridinaccounts{insert_account(&db.pool,&DbAccount{id:(*id).into(),email:format!(\"{id}@example.com\"),display_name:None,profile_photo_url:None,client_id:\"c\".into(),history_id:None,created_at:0,updated_at:0,},).await.unwrap();letfake=Arc::new(",
-        ",events:Arc<dynSyncEvents>)->Arc<Self>{Arc::new(Self{db,api_for,events,foreground:AtomicBool::new(false),wake:Notify::new(),forced:Mutex::new(HashSet::new()),running:Mutex::new(HashMap::new()),})}",
-        "///front)onthesharedclock,sothischeckwakesthecomputertogetherwiththeothers,///orsoonerwhentriggered.pubasyncfnrun(self:Arc<Self>){tokio::time::sleep(FIRST_DELAY).await;loop{self.tick(now_ms()).await;letwait=ifself.foreground.load(Ordering::Relaxed){FOREGROUND_INTERVAL}else{INTERVAL};tokio::select!{()=crate::cadence::sleep_until_next(wait)=>{}()=self.wake.notified()=>{}}}}}",
-        "::access(&self.db,account_id).await?;Ok(access_dto(access.as_ref()))}///Calendarmodeis(orstoppedbeing)infront:checkevery15sinsteadof60s.pubfnset_foreground(&self,on:bool){letwas=self.foreground.swap(on,Ordering::Relaxed);ifon&&!was{self.wake.notify_one();}}///Check`account_id`(oreveryaccount)soon;anaccountnamedhereischeckedevenif",
-        "};useserde::Serialize;usesqlx::SqlitePool;usestd::collections::{HashMap,HashSet};usestd::sync::atomic::{AtomicBool,Ordering};usestd::sync::{Arc,Mutex};usestd::time::Duration;usetokio::sync::Notify;usetracing::warn;",
-        "}fnsync_error(e:SyncError)->MailError{MailError::Sync(matche{SyncError::Api(e)=>crate::sync::engine::SyncError::Gmail(e),SyncError::Db(e)=>crate::sync::engine::SyncError::Db(e),})}///Afailurethatmaypassbyitself,whichdoesn'tchangetheaccount'sstatus.fnis_transient(e:&GmailError)->bool{matche{GmailError::Network(_)|GmailError::Offline(_)|GmailError::RateLimit{..}=>true,GmailError::Api{status,..}=>*status>=500,_=>false,}}"
-      ]
-    },
-    "src-tauri/src/calendar/sync.rs <> src-tauri/src/tasks/sync.rs": {
-      "tokens": 106,
-      "texts": [
-        ")]Db(#[from]anyhow::Error),}implFrom<GmailError>forSyncError{fnfrom(e:GmailError)->Self{SyncError::Api(e)}}///Theaccessstatusanerrormeans:`missing_scope`(allowcalendaraccessagain),///`api_disabled`(withtheGoogleCloudprojectnumberwhenGooglegaveit)or`error`.pubfnclassify(e:&GmailError)->(&'staticstr,Option<String>){ife.is_missing_scope(){(\"missing_scope\",None)}elseife.is_api_disabled(){(\"api_disabled\",e.disabled_api_project())}else{(\"error\",Some(e.to_string()))}}"
+        ")asyncfnharness(accounts:&[&str])->Harness{letdb=TestDb::new().await;letmutfakes=HashMap::new();foridinaccounts{insert_account(&db.pool,&DbAccount{id:(*id).into(),email:format!(\"{id}@example.com\"),display_name:None,profile_photo_url:None,client_id:\"c\".into(),history_id:None,created_at:0,updated_at:0,},).await.unwrap();letfake=Arc::new("
       ]
     },
     "src-tauri/src/db/calendar.rs <> src-tauri/src/db/calendar.rs": {
@@ -116,12 +99,6 @@
       "tokens": 70,
       "texts": [
         ";usetokio::sync::Semaphore;letserver=MockServer::start().await;letstarted=Arc::new(Semaphore::new(0));letarrivals=started.clone();Mock::given(method(\"GET\")).and(wiremock::matchers::path_regex(r"
-      ]
-    },
-    "src-tauri/src/gmail/error.rs <> src-tauri/src/tasks/error.rs": {
-      "tokens": 76,
-      "texts": [
-        "}}#[cfg(test)]modtests{usesuper::*;fnapi(status:u16,reason:Option<&str>,message:&str)->GmailError{GmailError::Api{status,reason:reason.map(str::to_owned),message:message.to_owned(),}}#[test]fn"
       ]
     },
     "src-tauri/src/gmail/messages.rs <> src-tauri/src/gmail/messages.rs": {
@@ -472,14 +449,6 @@
     }
   },
   "similar": {
-    "src-tauri/src/calendar/service.rs <> src-tauri/src/tasks/service.rs": {
-      "tokens": 191,
-      "texts": [
-        "fnaccess_dto(access:Option<&DbCalendarAccess>)->CalendarAccessDto{letSome(a)=accesselse{returnCalendarAccessDto{status:\"unknown\".into(),message:None,enable_url:None,synced_at:None,};};CalendarAccessDto{status:a.status.clone(),message:(a.status==\"error\").then(||a.detail.clone()).flatten(),enable_url:(a.status==\"api_disabled\").then(||match&a.detail{Some(project)=>format!(\"{CALENDAR_API_URL}?project={project}\"),None=>CALENDAR_API_URL.to_owned(),}),synced_at:a.synced_at,}}",
-        "pub(super)fnaccess_dto(access:Option<&DbTasksAccess>)->TasksAccessDto{letSome(a)=accesselse{returnTasksAccessDto{status:\"unknown\".into(),message:None,enable_url:None,synced_at:None,};};TasksAccessDto{status:a.status.clone(),message:(a.status==\"error\").then(||a.detail.clone()).flatten(),enable_url:(a.status==\"api_disabled\").then(||match&a.detail{Some(project)=>format!(\"{TASKS_API_URL}?project={project}\"),None=>TASKS_API_URL.to_owned(),}),synced_at:a.synced_at,}}",
-        "pubfntrigger(&self,account_id:Option<String>){ifletSome(id)=account_id{lock(&self.forced).insert(id);}self.wake.notify_one();}"
-      ]
-    },
     "src-tauri/src/commands/calendar.rs <> src-tauri/src/commands/tasks.rs": {
       "tokens": 43,
       "texts": [

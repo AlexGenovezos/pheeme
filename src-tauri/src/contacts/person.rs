@@ -138,10 +138,7 @@ impl ContactService {
         if name.is_some_and(|n| n.len() > 500) {
             return Err(MailError::Invalid("That contact name is too long.".into()));
         }
-        let gate = lock(&self.refreshing)
-            .entry(account_id.to_owned())
-            .or_default()
-            .clone();
+        let gate = self.poller.gate(account_id);
         let _guard = gate.lock().await;
         if db::accounts::get_account(&self.db, account_id)
             .await?

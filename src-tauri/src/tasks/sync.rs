@@ -40,18 +40,6 @@ impl From<GmailError> for SyncError {
     }
 }
 
-/// The access status an error means: `missing_scope` (allow calendar access again),
-/// `api_disabled` (with the Google Cloud project number when Google gave it) or `error`.
-pub fn classify(e: &GmailError) -> (&'static str, Option<String>) {
-    if e.is_missing_scope() {
-        ("missing_scope", None)
-    } else if e.is_api_disabled() {
-        ("api_disabled", e.disabled_api_project())
-    } else {
-        ("error", Some(e.to_string()))
-    }
-}
-
 /// An error that stops the whole account's sync (rather than one list's).
 fn is_account_wide(e: &GmailError) -> bool {
     e.is_missing_scope() || e.is_api_disabled() || !e.is_not_found()
@@ -154,6 +142,7 @@ async fn sync_list(
 mod tests {
     use super::*;
     use crate::db::test_support::TestDb;
+    use crate::google_access::AccessStatus;
     use crate::tasks::fake::{task, FakeTasks};
     use serde_json::json;
 
@@ -362,7 +351,12 @@ mod tests {
         let Err(SyncError::Api(e)) = sync(&db.pool, &fake, "a", HOUR).await else {
             panic!("expected an API error");
         };
-        assert_eq!(classify(&e), ("api_disabled", Some("42".into())));
+        assert_eq!(
+            AccessStatus::from_failure(&e),
+            Some(AccessStatus::ApiDisabled {
+                project: Some("42".into())
+            })
+        );
         fake.succeed();
 
         // A list deleted between listing lists and reading its tasks.

@@ -74,6 +74,15 @@ impl GmailError {
         }
     }
 
+    /// What Google said, for a refusal shown to the user ("Google Calendar refused the change:
+    /// …"): an API answer's own message, else the error's description.
+    pub fn google_message(&self) -> String {
+        match self {
+            GmailError::Api { message, .. } => message.clone(),
+            other => other.to_string(),
+        }
+    }
+
     /// The API answered 404 (the message, thread, label or draft does not exist).
     pub fn is_not_found(&self) -> bool {
         matches!(self, GmailError::Api { status: 404, .. })
@@ -167,10 +176,11 @@ impl GmailError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn api(status: u16, reason: Option<&str>, message: &str) -> GmailError {
+    /// A refusal from the API, for tests.
+    pub(crate) fn api(status: u16, reason: Option<&str>, message: &str) -> GmailError {
         GmailError::Api {
             status,
             reason: reason.map(str::to_owned),
