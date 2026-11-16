@@ -94,6 +94,12 @@ pub enum MailError {
     },
 }
 
+impl From<GmailError> for MailError {
+    fn from(e: GmailError) -> Self {
+        MailError::Sync(e.into())
+    }
+}
+
 impl From<anyhow::Error> for MailError {
     fn from(e: anyhow::Error) -> Self {
         MailError::Sync(SyncError::Db(e))

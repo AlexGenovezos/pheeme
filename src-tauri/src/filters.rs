@@ -5,7 +5,6 @@
 
 use crate::db::labels;
 use crate::gmail::types::Filter;
-use crate::gmail::GmailError;
 use crate::mail::MailError;
 use crate::sync::manager::SyncManager;
 use crate::sync::MailApi;
@@ -51,7 +50,7 @@ impl FilterService {
 
     /// Every filter on the account, in Gmail's order.
     pub async fn list(&self, account_id: &str) -> Result<Vec<FilterDto>, MailError> {
-        let filters = self.api(account_id).list_filters().await.map_err(gmail)?;
+        let filters = self.api(account_id).list_filters().await?;
         let names = label_names(&self.db, account_id).await?;
         Ok(filters.iter().map(|f| describe(f, &names)).collect())
     }
@@ -59,11 +58,7 @@ impl FilterService {
     /// Create a filter in Gmail (not retried when the outcome is unknown, see
     /// [`crate::gmail::GmailClient::create_filter`]). It applies to mail that arrives from now on.
     pub async fn create(&self, account_id: &str, filter: &Filter) -> Result<FilterDto, MailError> {
-        let created = self
-            .api(account_id)
-            .create_filter(filter)
-            .await
-            .map_err(gmail)?;
+        let created = self.api(account_id).create_filter(filter).await?;
         let names = label_names(&self.db, account_id).await?;
         Ok(describe(&created, &names))
     }
@@ -71,13 +66,13 @@ impl FilterService {
     /// Delete a filter; one that isn't there is an error, so a mistyped id isn't taken as done.
     pub async fn delete(&self, account_id: &str, filter_id: &str) -> Result<(), MailError> {
         let api = self.api(account_id);
-        let filters = api.list_filters().await.map_err(gmail)?;
+        let filters = api.list_filters().await?;
         if !filters.iter().any(|f| f.id.as_deref() == Some(filter_id)) {
             return Err(MailError::Invalid(format!(
                 "There's no filter {filter_id} on this account."
             )));
         }
-        api.delete_filter(filter_id).await.map_err(gmail)
+        api.delete_filter(filter_id).await.map_err(MailError::from)
     }
 }
 
@@ -91,10 +86,6 @@ pub async fn label_names(
         .into_iter()
         .map(|l| (l.id, l.name))
         .collect())
-}
-
-fn gmail(e: GmailError) -> MailError {
-    MailError::Sync(e.into())
 }
 
 pub fn describe(filter: &Filter, names: &HashMap<String, String>) -> FilterDto {

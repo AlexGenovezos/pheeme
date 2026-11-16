@@ -4,6 +4,7 @@ use super::*;
 use crate::db::accounts::DbAccount;
 use crate::db::outbox as store;
 use crate::gmail::mime::decode_base64url;
+use crate::gmail::GmailError;
 use crate::sync::events::RecordingEvents;
 use crate::sync::fake::{FakeGmail, FakeMsg};
 use mailparse::MailHeaderMap;

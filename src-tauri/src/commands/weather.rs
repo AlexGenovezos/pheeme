@@ -1,19 +1,8 @@
 //! Weather commands for Calendar mode: thin adapters over [`crate::weather::WeatherService`].
 
 use super::CommandError;
-use crate::weather::{
-    DayForecast, LocationForecast, Place, TemperatureUnit, WeatherError, WeatherService,
-};
+use crate::weather::{DayForecast, LocationForecast, Place, TemperatureUnit, WeatherService};
 use tauri::State;
-
-impl From<WeatherError> for CommandError {
-    fn from(error: WeatherError) -> Self {
-        Self {
-            code: error.code().to_owned(),
-            message: error.to_string(),
-        }
-    }
-}
 
 /// Towns and cities matching what the user typed (Settings › Calendar › Home location).
 #[tauri::command]

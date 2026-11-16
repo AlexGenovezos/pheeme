@@ -13,9 +13,9 @@ pub mod template;
 use crate::db::{accounts, attachments, messages};
 use crate::gmail::mime::{self, EmailAddress};
 use crate::gmail::types::SendAs;
-use crate::gmail::GmailError;
+use crate::lock::lock;
 use crate::mail::{MailError, MailService};
-use crate::sync::engine::{now_ms, SyncError};
+use crate::sync::engine::now_ms;
 use crate::sync::manager::SyncManager;
 use crate::sync::outbox::{self, FailedSend, ReturnedDraft, SendOptions};
 use crate::sync::MailApi;
@@ -141,10 +141,6 @@ pub struct ComposeService {
     send_as_failed: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
-fn gmail(e: GmailError) -> MailError {
-    MailError::Sync(SyncError::from(e))
-}
-
 impl ComposeService {
     /// Encrypted staged attachments live under `cache_dir/compose-v1`.
     pub fn new(
@@ -186,29 +182,19 @@ impl ComposeService {
     /// Gmail's whole `sendAs` list for the account; the sendable part is kept for later.
     async fn fetch_send_as(&self, account_id: &str) -> Result<Vec<SendAs>, MailError> {
         let me = self.sender(account_id).await?;
-        let list = self.api(account_id).list_send_as().await.map_err(gmail)?;
+        let list = self.api(account_id).list_send_as().await?;
         let sendable = list
             .iter()
             .filter(|s| s.sendable() || same_address(&s.send_as_email, &me.address))
             .cloned()
             .collect();
-        self.send_as
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(account_id.to_owned(), sendable);
-        self.send_as_failed
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(account_id);
+        lock(&self.send_as).insert(account_id.to_owned(), sendable);
+        lock(&self.send_as_failed).remove(account_id);
         Ok(list)
     }
 
     fn cached_send_as(&self, account_id: &str) -> Option<Vec<SendAs>> {
-        self.send_as
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(account_id)
-            .cloned()
+        lock(&self.send_as).get(account_id).cloned()
     }
 
     /// The account's sendable addresses: from this session's fetch, else fetched now.
@@ -224,10 +210,7 @@ impl ComposeService {
         if !self.sync.online() {
             return None;
         }
-        let failed_recently = self
-            .send_as_failed
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        let failed_recently = lock(&self.send_as_failed)
             .get(account_id)
             .is_some_and(|at| at.elapsed() < SEND_AS_RETRY);
         if failed_recently {
@@ -238,10 +221,7 @@ impl ComposeService {
             Ok(Err(e)) => tracing::info!(error = %e, "send-as addresses unavailable"),
             Err(_) => tracing::info!("send-as addresses took too long; going on without them"),
         }
-        self.send_as_failed
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(account_id.to_owned(), Instant::now());
+        lock(&self.send_as_failed).insert(account_id.to_owned(), Instant::now());
         None
     }
 
@@ -520,8 +500,7 @@ impl ComposeService {
                 other => other,
             },
             None => api.create_draft(&raw, thread).await,
-        }
-        .map_err(gmail)?;
+        }?;
         self.sync.trigger(Some(account_id.to_owned()));
         let message = saved.message.unwrap_or_default();
         Ok(SavedDraft {
@@ -538,7 +517,7 @@ impl ComposeService {
         let mut out = Vec::new();
         let mut token: Option<String> = None;
         loop {
-            let page = api.list_drafts(token.as_deref()).await.map_err(gmail)?;
+            let page = api.list_drafts(token.as_deref()).await?;
             out.extend(page.drafts);
             match page.next_page_token {
                 Some(t) => token = Some(t),
@@ -585,9 +564,9 @@ impl ComposeService {
             .find(|d| d.message.as_ref().is_some_and(|m| m.id == message_id))
             .map(|d| d.id)
             .ok_or(MailError::NotFound)?;
-        let draft = api.get_draft(&draft_id).await.map_err(gmail)?;
+        let draft = api.get_draft(&draft_id).await?;
         let message = draft.message.ok_or(MailError::NotFound)?;
-        let parsed = message.parse().map_err(gmail)?;
+        let parsed = message.parse()?;
         let header = |name: &str| {
             parsed
                 .headers
@@ -600,7 +579,7 @@ impl ComposeService {
             let staged = async {
                 let bytes = match (&att.data, att.attachment_id.as_deref()) {
                     (Some(data), _) => data.clone(),
-                    (None, Some(id)) => api.get_attachment(&message.id, id).await.map_err(gmail)?,
+                    (None, Some(id)) => api.get_attachment(&message.id, id).await?,
                     (None, None) => return Ok(None),
                 };
                 self.staging
@@ -657,7 +636,7 @@ impl ComposeService {
         match self.api(account_id).delete_draft(draft_id).await {
             Ok(()) => {}
             Err(e) if e.is_not_found() => {}
-            Err(e) => return Err(gmail(e)),
+            Err(e) => return Err(e.into()),
         }
         self.sync.trigger(Some(account_id.to_owned()));
         Ok(())
