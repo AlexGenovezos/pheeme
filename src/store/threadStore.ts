@@ -16,17 +16,15 @@ import {
 } from "../lib/tauri";
 import { useUiStore } from "./uiStore";
 import { useMailStore } from "./mailStore";
+import { PendingChanges } from "./pendingChanges";
 
 // 20 active rows + six 20-row Inbox/category windows, with room for the open detail and recent rows.
 export const DETAIL_CACHE_SIZE = 160;
 
 /** Optimistic detail changes the cache hasn't caught up with, per thread, in the order they were made. */
-let pendingDetails = new Map<
-  ThreadKey,
-  Array<{ op: number; fn: (detail: ThreadDetail) => ThreadDetail }>
->();
+const pendingDetails = new PendingChanges<ThreadKey, (detail: ThreadDetail) => ThreadDetail>();
 const withPending = (key: ThreadKey, detail: ThreadDetail) =>
-  (pendingDetails.get(key) ?? []).reduce((d, change) => change.fn(d), detail);
+  pendingDetails.apply(key, detail, (d, fn) => fn(d));
 
 /** Every message has its body. An incomplete detail (fetched offline) is asked for again rather than served. */
 export const isComplete = (detail: ThreadDetail) => detail.messages.every((m) => m.bodyAvailable);
@@ -215,15 +213,10 @@ export const useThreadStore = create<ThreadState>((set, get) => {
       pump();
     },
     settleDetails: (op, keys) => {
-      for (const key of keys) {
-        const rest = (pendingDetails.get(key) ?? []).filter((c) => c.op !== op);
-        if (rest.length > 0) pendingDetails.set(key, rest);
-        else pendingDetails.delete(key);
-      }
+      pendingDetails.settle(op, keys);
     },
     patchDetail: (key, fn, op) => {
-      if (op !== undefined)
-        pendingDetails.set(key, [...(pendingDetails.get(key) ?? []), { op, fn }]);
+      if (op !== undefined) pendingDetails.add([key], op, fn);
       set((s) => {
         const current = s.details.get(key);
         if (!current) return {};
@@ -298,6 +291,6 @@ export function __resetThreadStoreForTests() {
   rateLimited = false;
   preloading = 0;
   inflight.clear();
-  pendingDetails = new Map();
+  pendingDetails.clear();
   useThreadStore.setState({ details: new Map(), errors: {}, loading: {} });
 }

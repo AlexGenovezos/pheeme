@@ -22,7 +22,7 @@ import {
 } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { type UnreadCountChange, useLabelStore } from "../store/labelStore";
-import { newOp, sortsAfter, useMailStore } from "../store/mailStore";
+import { sortsAfter, useMailStore } from "../store/mailStore";
 import { useThreadStore } from "../store/threadStore";
 import { focusedThread, readingPaneShown, useUiStore } from "../store/uiStore";
 import {
@@ -36,6 +36,7 @@ import { rowId } from "./ThreadRow";
 import { similarSender, type SimilarBy, similarQuery } from "./similar";
 import { setTravelDirection } from "./preload";
 import { currentArchiveSlot } from "./archiveSlot";
+import { OptimisticOp } from "./optimistic";
 
 /** The message a Reply, Reply all or Forward answers: the conversation's latest that isn't a draft. */
 export function replyTarget(detail: ThreadDetail | undefined): string | null {
@@ -159,7 +160,7 @@ function refreshDetails(groups: Map<string, string[]>) {
 async function send(
   groups: Map<string, string[]>,
   change: Change,
-  op: number,
+  op: OptimisticOp,
 ): Promise<Map<string, string[]>> {
   const done = new Map<string, string[]>();
   await Promise.all(
@@ -171,9 +172,10 @@ async function send(
       } catch (reason) {
         failure = { reason };
       }
-      const keys = ids.map((id) => threadKey(accountId, id));
-      mail().settle(op, keys, failure !== null);
-      useThreadStore.getState().settleDetails(op, keys);
+      op.settle(
+        ids.map((id) => threadKey(accountId, id)),
+        failure !== null,
+      );
       if (failure) {
         toast({ title: toCommandError(failure.reason).message, tone: "danger" });
         if (change.detail) refreshDetails(new Map([[accountId, ids]]));
@@ -181,7 +183,6 @@ async function send(
       }
     }),
   );
-  useLabelStore.getState().settleUnread(op);
   return done;
 }
 
@@ -222,13 +223,10 @@ function unreadCountChange(thread: ThreadSummary, read: boolean): UnreadCountCha
   };
 }
 
-function patchUnread(op: number, rows: ThreadSummary[], change: Change) {
+function patchUnread(op: OptimisticOp, rows: ThreadSummary[], change: Change) {
   const { read } = change;
   if (read === undefined) return;
-  useLabelStore.getState().patchUnread(
-    op,
-    rows.filter((t) => t.unread === read).map((t) => unreadCountChange(t, read)),
-  );
+  op.unread(rows.filter((t) => t.unread === read).map((t) => unreadCountChange(t, read)));
 }
 
 /** Where `open` (the open thread or the highlight) goes when `removed` leave the list: the next row, else the one above, else nothing. `undefined` if it stays. */
@@ -283,7 +281,7 @@ function applyChange(
   if (rowKeys.length === 0) return Promise.resolve(false);
   if (cancelsAutoRead) rowKeys.forEach((k) => autoReads.delete(k));
   const groups = byAccount(rowKeys);
-  const op = newOp();
+  const op = new OptimisticOp(rowKeys);
 
   // Everything up to the command runs before the first await, so the list answers at once.
   // A change can do both: the flag change follows the conversation into other mailboxes, the removal is scoped to this one.
@@ -292,12 +290,12 @@ function applyChange(
     rows.map((r) => r.thread),
     change,
   );
-  if (change.patch) mail().patch(rowKeys, change.patch, op);
+  if (change.patch) op.rows(change.patch);
   if (change.leavesList) {
     const removed = new Set(rowKeys);
     const next = nextAfter(ui().openThread, removed);
     const nextCursor = nextAfter(ui().cursor, removed);
-    mail().remove(rowKeys, op);
+    op.remove();
     // Rows that leave are unchecked; a change that keeps them in the list keeps the selection, so the same
     // conversations can be acted on again (mark read, then archive).
     ui().uncheck(rowKeys);
@@ -305,15 +303,11 @@ function applyChange(
     else if (next !== undefined) openAndMarkRead(next);
     if (nextCursor !== undefined) ui().setCursor(nextCursor);
   }
-  const patchDetail = change.detail;
-  if (patchDetail)
-    for (const key of rowKeys) useThreadStore.getState().patchDetail(key, patchDetail, op);
+  if (change.detail) op.detail(change.detail);
 
   const go = () => send(groups, change, op);
   const drop = () => {
-    mail().settle(op, rowKeys, true);
-    useThreadStore.getState().settleDetails(op, rowKeys);
-    useLabelStore.getState().settleUnread(op);
+    op.settle(rowKeys, true);
     void mail().reload(true); // the patched rows go back to what the cache says
     return new Map<string, string[]>();
   };
@@ -335,15 +329,15 @@ function applyChange(
 }
 
 async function revert(done: Map<string, string[]>, original: Change, inverse: Change) {
-  const op = newOp();
   const keys = keysOf(done);
+  const op = new OptimisticOp(keys);
   patchUnread(
     op,
     present(keys).map((r) => r.thread),
     inverse,
   );
-  if (inverse.patch) mail().patch(keys, inverse.patch, op);
-  if (inverse.leavesList) mail().remove(keys, op);
+  if (inverse.patch) op.rows(inverse.patch);
+  if (inverse.leavesList) op.remove();
   await send(done, inverse, op);
   // Rows the change had taken out of the list can only come back from the cache.
   if (original.leavesList) await mail().reload(true);
@@ -641,6 +635,50 @@ const withLabels =
       add.reduce((d, id) => withLabel(id, true)(d), detail),
     );
 
+/** What one conversation's Undo adds and removes. */
+interface LabelUndo {
+  add: string[];
+  remove: string[];
+}
+
+/**
+ * The Undo of a move, which puts back what each conversation had, so it differs per conversation: `undoOf` gives it,
+ * `patchRow` shows it on a row, and `then` runs for each account after its labels are back. Conversations with the
+ * same Undo share one command; those with nothing to undo send none.
+ */
+function perKeyInverse(
+  undoOf: (key: ThreadKey) => LabelUndo,
+  patchRow: (t: ThreadSummary, add: string[], remove: string[]) => ThreadSummary,
+  then?: (accountId: string) => Promise<void>,
+): Change {
+  return {
+    leavesList: false,
+    patch: (t) => {
+      const undo = undoOf(keyOf(t));
+      return patchRow(t, undo.add, undo.remove);
+    },
+    detail: (d) => {
+      const undo = undoOf(keyOf(d.thread));
+      return withLabels(undo.add, undo.remove)(d);
+    },
+    send: async (account, ids) => {
+      const groups = new Map<string, LabelUndo & { ids: string[] }>();
+      for (const id of ids) {
+        const undo = undoOf(threadKey(account, id));
+        if (undo.add.length + undo.remove.length === 0) continue;
+        const signature = JSON.stringify(undo);
+        const group = groups.get(signature) ?? { ...undo, ids: [] };
+        group.ids.push(id);
+        groups.set(signature, group);
+      }
+      await Promise.all(
+        [...groups.values()].map((g) => modifyThreads(account, g.ids, g.add, g.remove)),
+      );
+      if (then) await then(account);
+    },
+  };
+}
+
 /**
  * Moves the targets of `accountId` to `target` (a user label, `INBOX` or `TRASH`): adds it and takes them out of
  * where they are (see `moveSource`). Trash is the existing delete. Undo puts back only what each conversation had.
@@ -660,31 +698,7 @@ export async function moveTo(accountId: string, keys: ThreadKey[], target: strin
     add: remove.filter((id) => had(key, id)),
     remove: had(key, target) ? [] : [target],
   });
-  const inverse: Change = {
-    leavesList: false,
-    patch: (t) => {
-      const undo = undoOf(keyOf(t));
-      return rowMoveIds(t, undo.add, undo.remove);
-    },
-    detail: (d) => {
-      const undo = undoOf(keyOf(d.thread));
-      return withLabels(undo.add, undo.remove)(d);
-    },
-    send: async (account, ids) => {
-      const groups = new Map<string, { add: string[]; remove: string[]; ids: string[] }>();
-      for (const id of ids) {
-        const undo = undoOf(threadKey(account, id));
-        if (undo.add.length + undo.remove.length === 0) continue;
-        const signature = JSON.stringify(undo);
-        const group = groups.get(signature) ?? { ...undo, ids: [] };
-        group.ids.push(id);
-        groups.set(signature, group);
-      }
-      await Promise.all(
-        [...groups.values()].map((g) => modifyThreads(account, g.ids, g.add, g.remove)),
-      );
-    },
-  };
+  const inverse = perKeyInverse(undoOf, rowMoveIds);
   const name = target === "INBOX" ? "Inbox" : useLabelStore.getState().labelName(accountId, target);
   await apply(
     rowKeys,
@@ -756,34 +770,11 @@ export async function moveToCategory(
       ],
     };
   };
-  const inverse: Change = {
-    leavesList: false,
-    patch: (t) => {
-      const undo = undoOf(keyOf(t));
-      return withSystemLabels(t, undo.add, undo.remove);
-    },
-    detail: (d) => {
-      const undo = undoOf(keyOf(d.thread));
-      return withLabels(undo.add, undo.remove)(d);
-    },
-    send: async (account, ids) => {
-      const groups = new Map<string, { add: string[]; remove: string[]; ids: string[] }>();
-      for (const id of ids) {
-        const undo = undoOf(threadKey(account, id));
-        if (undo.add.length + undo.remove.length === 0) continue;
-        const signature = JSON.stringify(undo);
-        const group = groups.get(signature) ?? { ...undo, ids: [] };
-        group.ids.push(id);
-        groups.set(signature, group);
-      }
-      await Promise.all(
-        [...groups.values()].map((g) => modifyThreads(account, g.ids, g.add, g.remove)),
-      );
-      const saved = await rules;
-      if (saved && saved.created.length + saved.replaced.length > 0)
-        await undoSenderRules(account, saved);
-    },
-  };
+  const inverse = perKeyInverse(undoOf, withSystemLabels, async (account) => {
+    const saved = await rules;
+    if (saved && saved.created.length + saved.replaced.length > 0)
+      await undoSenderRules(account, saved);
+  });
   const name = CATEGORIES.find((c) => c.labelId === category)?.name ?? "Inbox";
   return applyChange(
     [...prior.keys()],
