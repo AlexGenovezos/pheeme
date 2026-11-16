@@ -7,11 +7,12 @@
 
 use crate::db::accounts::{self as db_accounts, DbAccount};
 use crate::gmail::auth::{self, ClientCredentials, Endpoints, Loopback, OAuthError, Pkce};
+use crate::lock::lock;
 use crate::secrets::{AccountSecrets, SecretStore, SecretsError};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::task::{AbortHandle, JoinHandle};
 
@@ -145,10 +146,6 @@ pub struct AccountService {
     /// Lets `cancel_sign_in` stop the callback wait even after `complete_sign_in` took it.
     active: Mutex<Option<(String, AbortHandle)>>,
     tokens: Mutex<HashMap<String, (String, Instant)>>,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn now() -> i64 {

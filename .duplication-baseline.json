@@ -48,12 +48,10 @@
       ]
     },
     "src-tauri/src/db/search.rs <> src-tauri/src/db/threads.rs": {
-      "tokens": 474,
+      "tokens": 252,
       "texts": [
-        ");letnext=ifhas_more{rows.last().map(|r|ThreadCursor{last_message_date:r.cursor_date,account_id:r.account_id.clone(),thread_id:r.id.clone(),})}else{None};letthreads=rows.into_iter().map(|r|DbThread{id:r.id,account_id:r.account_id,subject:r.subject,snippet:r.snippet,history_id:r.history_id,last_message_date:r.last_message_date,message_count:r.message_count,unread_count:r.unread_count,has_attachment:r.has_attachment,from_name:r.from_name,from_address:r.from_address,is_starred:r.is_starred,}).collect();",
         ",r#\"SELECTt.idAS\"id!\",t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBY",
-        "t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBYidx_threads_all_dateWHEREt.account_idIN(SELECTvalueFROMjson_each(?1))AND",
-        "{id:String,account_id:String,subject:Option<String>,snippet:Option<String>,history_id:Option<String>,last_message_date:Option<i64>,message_count:i64,unread_count:i64,has_attachment:i64,from_name:Option<String>,from_address:Option<String>,is_starred:i64,cursor_date:i64,}"
+        "t.account_idAS\"account_id!\",t.subject,t.snippet,t.history_id,t.last_message_date,t.message_countAS\"message_count!\",t.unread_countAS\"unread_count!\",t.has_attachmentAS\"has_attachment!\",t.from_name,t.from_address,t.is_starredAS\"is_starred!\",COALESCE(t.last_message_date,0)AS\"cursor_date!:i64\"FROMthreadstINDEXEDBYidx_threads_all_dateWHEREt.account_idIN(SELECTvalueFROMjson_each(?1))AND"
       ]
     },
     "src-tauri/src/db/threads.rs <> src-tauri/src/db/threads.rs": {

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -16,6 +16,7 @@ use tokio::task::AbortHandle;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::gmail::auth::ClientCredentials;
+use crate::lock::lock;
 
 pub mod local_network;
 
@@ -83,10 +84,6 @@ struct Transfers {
     session: Option<Session>,
     /// IPC cancellation can arrive before its asynchronous receive command starts.
     cancelled: VecDeque<String>,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 pub fn is_lan(ip: Ipv4Addr) -> bool {

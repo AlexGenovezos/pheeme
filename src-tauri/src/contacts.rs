@@ -7,6 +7,7 @@ use crate::db::{self, contacts::ContactRow};
 use crate::gmail::people::{ContactList, PeoplePage};
 use crate::gmail::{GmailClient, GmailError};
 use crate::google_access::{AccessStatus, Adapter, Intervals, Poller, SyncFailure};
+use crate::lock::lock;
 use crate::mail::MailError;
 use crate::sync::engine::now_ms;
 use serde::Serialize;
@@ -109,10 +110,6 @@ pub struct ContactService {
     loaded: Mutex<HashMap<String, Loaded>>,
     /// Downloads one account at a time and every few hours.
     poller: Poller,
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 impl ContactService {

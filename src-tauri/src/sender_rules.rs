@@ -67,7 +67,7 @@ impl SenderRuleService {
 
     /// The account's sender rules, in Gmail's order.
     pub async fn list_rules(&self, account_id: &str) -> Result<Vec<SenderRuleDto>, MailError> {
-        let filters = self.api(account_id).list_filters().await.map_err(gmail)?;
+        let filters = self.api(account_id).list_filters().await?;
         Ok(filters.iter().filter_map(rule_of).collect())
     }
 
@@ -113,8 +113,7 @@ impl SenderRuleService {
         let api = self.api(account_id);
         let rules: Vec<SenderRuleDto> = api
             .list_filters()
-            .await
-            .map_err(gmail)?
+            .await?
             .iter()
             .filter_map(rule_of)
             .collect();
@@ -122,7 +121,7 @@ impl SenderRuleService {
             if let Err(e) = save_one(api.as_ref(), &rules, sender, category, &mut saved).await {
                 tracing::warn!(account = account_id, ?senders, category, error = %e, "couldn't save sender rules; putting back what changed");
                 undo(api.as_ref(), &saved).await;
-                return Err(gmail(e));
+                return Err(e.into());
             }
         }
         // Rules aren't cached, so this is the only local record that a sender's mail was sent
@@ -147,12 +146,10 @@ impl SenderRuleService {
     ) -> Result<(), MailError> {
         let api = self.api(account_id);
         for id in &saved.created {
-            delete(api.as_ref(), id).await.map_err(gmail)?;
+            delete(api.as_ref(), id).await?;
         }
         for rule in &saved.replaced {
-            create(api.as_ref(), &rule.sender, &rule.category)
-                .await
-                .map_err(gmail)?;
+            create(api.as_ref(), &rule.sender, &rule.category).await?;
         }
         tracing::info!(
             account = account_id,
@@ -166,14 +163,14 @@ impl SenderRuleService {
     /// Delete a sender rule; one that's already gone is fine.
     pub async fn delete_rule(&self, account_id: &str, rule_id: &str) -> Result<(), MailError> {
         let api = self.api(account_id);
-        let filters = api.list_filters().await.map_err(gmail)?;
+        let filters = api.list_filters().await?;
         match filters.iter().find(|f| f.id.as_deref() == Some(rule_id)) {
             None => Ok(()),
             Some(f) if rule_of(f).is_none() => Err(MailError::Invalid(
                 "That filter isn't a sender rule, so Pheeme leaves it alone.".into(),
             )),
             Some(f) => {
-                delete(api.as_ref(), rule_id).await.map_err(gmail)?;
+                delete(api.as_ref(), rule_id).await?;
                 let rule = rule_of(f);
                 tracing::info!(
                     account = account_id,
@@ -369,10 +366,6 @@ async fn own_address(db: &SqlitePool, account_id: &str) -> Result<String, MailEr
         .await?
         .map(|a| a.email)
         .ok_or_else(|| MailError::Invalid("That account isn't connected any more.".into()))
-}
-
-fn gmail(e: GmailError) -> MailError {
-    MailError::Sync(e.into())
 }
 
 #[cfg(test)]

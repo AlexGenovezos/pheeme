@@ -36,8 +36,14 @@ pub struct CommandError {
     pub message: String,
 }
 
-impl From<AccountError> for CommandError {
-    fn from(error: AccountError) -> Self {
+/// An error type with a stable `code` the frontend branches on; its `Display` is the
+/// plain-language message. Every such type converts into a [`CommandError`] the same way.
+trait ErrorCode {
+    fn code(&self) -> &str;
+}
+
+impl<E: ErrorCode + std::fmt::Display> From<E> for CommandError {
+    fn from(error: E) -> Self {
         Self {
             code: error.code().to_owned(),
             message: error.to_string(),
@@ -45,68 +51,28 @@ impl From<AccountError> for CommandError {
     }
 }
 
-impl From<MailError> for CommandError {
-    fn from(error: MailError) -> Self {
-        Self {
-            code: error.code().to_owned(),
-            message: error.to_string(),
-        }
-    }
+/// Registers each error type's own `code` method as its [`ErrorCode`].
+macro_rules! error_codes {
+    ($($error:ty),+ $(,)?) => {
+        $(impl ErrorCode for $error {
+            fn code(&self) -> &str {
+                <$error>::code(self)
+            }
+        })+
+    };
 }
 
-impl From<crate::drive::DriveError> for CommandError {
-    fn from(error: crate::drive::DriveError) -> Self {
-        Self {
-            code: error.code().to_owned(),
-            message: error.to_string(),
-        }
-    }
-}
-
-impl From<CalendarError> for CommandError {
-    fn from(error: CalendarError) -> Self {
-        Self {
-            code: error.code().to_owned(),
-            message: error.to_string(),
-        }
-    }
-}
-
-impl From<crate::calendar::availability::AvailabilityError> for CommandError {
-    fn from(error: crate::calendar::availability::AvailabilityError) -> Self {
-        Self {
-            code: error.code().to_owned(),
-            message: error.to_string(),
-        }
-    }
-}
-
-impl From<crate::tasks::error::TasksError> for CommandError {
-    fn from(error: crate::tasks::error::TasksError) -> Self {
-        Self {
-            code: error.code().to_owned(),
-            message: error.to_string(),
-        }
-    }
-}
-
-impl From<crate::local_api::ApiError> for CommandError {
-    fn from(error: crate::local_api::ApiError) -> Self {
-        Self {
-            code: error.code().to_owned(),
-            message: error.to_string(),
-        }
-    }
-}
-
-impl From<SupportError> for CommandError {
-    fn from(error: SupportError) -> Self {
-        Self {
-            code: error.code().to_owned(),
-            message: error.to_string(),
-        }
-    }
-}
+error_codes!(
+    AccountError,
+    MailError,
+    crate::drive::DriveError,
+    CalendarError,
+    crate::calendar::availability::AvailabilityError,
+    crate::tasks::error::TasksError,
+    crate::local_api::ApiError,
+    SupportError,
+    crate::weather::WeatherError,
+);
 
 /// Hosts the app may open in the user's browser: Google sign-in, the Cloud
 /// Console pages the setup guide links to, and the project's own pages.

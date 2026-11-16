@@ -5,6 +5,7 @@
 
 use crate::db;
 use crate::gmail::GmailError;
+use crate::lock::lock;
 use serde::{Serialize, Serializer};
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
@@ -208,10 +209,6 @@ pub struct Intervals {
     pub background: Duration,
     /// While the app shows this API's data in front (Calendar mode).
     pub foreground: Duration,
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The background loop and per-account bookkeeping one [`Adapter`] is synced with.
