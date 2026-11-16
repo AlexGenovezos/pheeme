@@ -24,6 +24,23 @@ export interface DayForecast {
   low: number;
 }
 
+/** One hour's forecast; `at` is the hour's start, UTC ms. */
+export interface HourForecast {
+  at: number;
+  /** WMO weather code. */
+  code: number;
+  /** Rain, showers and snow in the hour, mm. */
+  precipitation: number;
+  /** Whether the sun is up. */
+  isDay: boolean;
+}
+
+/** A place's forecast by day, and by hour over the same days. */
+export interface Forecast {
+  days: DayForecast[];
+  hours: HourForecast[];
+}
+
 export interface LocationForecast {
   place: WeatherPlace;
   days: DayForecast[];

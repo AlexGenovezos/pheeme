@@ -34,7 +34,14 @@ test("the days and an event's place show the forecast", async ({ page }, testInf
   await expect(heads).toHaveCount(7);
   // Monday's forecast (the preview's first day is clear); Sunday the 8th is before it.
   const monday = heads.filter({ hasText: "9" }).first();
-  await expect(monday.getByRole("img")).toHaveAccessibleName(/^Clear, high \d+°, low \d+°$/);
+  // Its words add the hours the sun is out, which the grid draws as a band that holds still
+  // once the opening burst is over.
+  await expect(monday.getByRole("img")).toHaveAccessibleName(
+    /^Clear, high \d+°, low \d+°\. Sun \d+ AM–\d+ PM$/,
+  );
+  const sun = page.locator('.cal-grid__column[data-date="2026-11-09"] .wx-hours--sun');
+  await expect(sun).toBeVisible();
+  await expect(sun).not.toHaveClass(/wx-hours--playing/, { timeout: 6000 });
   // Each header holds weekday, date and forecast on one line.
   const fits = await heads.evaluateAll((els) =>
     els.every((el) => el.scrollWidth <= el.clientWidth && el.clientHeight < 48),

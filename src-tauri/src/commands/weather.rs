@@ -1,7 +1,7 @@
 //! Weather commands for Calendar mode: thin adapters over [`crate::weather::WeatherService`].
 
 use super::CommandError;
-use crate::weather::{DayForecast, LocationForecast, Place, TemperatureUnit, WeatherService};
+use crate::weather::{Forecast, LocationForecast, Place, TemperatureUnit, WeatherService};
 use tauri::State;
 
 /// Towns and cities matching what the user typed (Settings › Calendar › Home location).
@@ -13,15 +13,19 @@ pub async fn weather_search_places(
     Ok(weather.search(&query).await?)
 }
 
-/// The daily forecast at a point, from today in that place.
+/// The daily and hourly forecast at a point, from today in that place.
 #[tauri::command]
 pub async fn weather_forecast(
     weather: State<'_, WeatherService>,
     latitude: f64,
     longitude: f64,
     unit: TemperatureUnit,
-) -> Result<Vec<DayForecast>, CommandError> {
-    Ok(weather.forecast(latitude, longitude, unit).await?.to_vec())
+) -> Result<Forecast, CommandError> {
+    Ok(weather
+        .forecast(latitude, longitude, unit)
+        .await?
+        .as_ref()
+        .clone())
 }
 
 /// The forecast for an event's location, or `null` when no town can be told from it.

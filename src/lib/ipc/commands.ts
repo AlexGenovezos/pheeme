@@ -55,7 +55,7 @@ import type { ClearedDownloads, ThemeFolderFile } from "./settings";
 import type { MailStats, Unsubscribed } from "./stats";
 import type { DiagnosticsEmail, ShownTiming, UpdateEvent } from "./support";
 import type { Task, TaskEdit, TaskListRef, TaskRef, TasksAccess, TasksAccount } from "./tasks";
-import type { DayForecast, LocationForecast, TemperatureUnit, WeatherPlace } from "./weather";
+import type { Forecast, LocationForecast, TemperatureUnit, WeatherPlace } from "./weather";
 
 /** One command: `args` is `void` when it takes none. */
 interface Command<Args, Result> {
@@ -231,7 +231,7 @@ export interface Commands {
   weather_search_places: Command<{ query: string }, WeatherPlace[]>;
   weather_forecast: Command<
     { latitude: number; longitude: number; unit: TemperatureUnit },
-    DayForecast[]
+    Forecast
   >;
   weather_for_location: Command<
     { location: string; unit: TemperatureUnit },

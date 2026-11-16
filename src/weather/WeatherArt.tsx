@@ -8,7 +8,7 @@ import { cx } from "../lib/utils";
 import type { Intensity, WeatherKind } from "./codes";
 
 /** A seeded random number generator (FNV-1a hash into mulberry32): the same seed, the same sky. */
-function random(seed: string): () => number {
+export function random(seed: string): () => number {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
   return () => {
