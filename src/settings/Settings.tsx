@@ -2,7 +2,8 @@ import { Search, X } from "lucide-react";
 import { Fragment, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
-import { isEditableTarget, registry } from "../keyboard/registry";
+import { trapTab, useDialogFocus } from "../components/ui/useDialogFocus";
+import { isEditableTarget } from "../keyboard/registry";
 import { AddAccountContext } from "./AccountsSettings";
 import { ModSettings, modSettingsPages } from "../mods/ModsSettings";
 import { useModStore } from "../mods/store";
@@ -18,9 +19,7 @@ import {
 } from "./schema";
 import { useSettingsStore } from "./settingsStore";
 import "./Settings.css";
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import "../components/ui/Surface.css";
 
 /** The settings dialog over the blurred app. Mount once, inside the mail screen. */
 export function Settings({
@@ -45,20 +44,16 @@ function SettingsDialog({ pages }: { pages: SettingsPageDef[] }) {
   const setPage = useSettingsStore((s) => s.setPage);
   const close = useSettingsStore((s) => s.close);
   const [query, setQuery] = useState("");
-  const [returnFocus] = useState(() => document.activeElement as HTMLElement | null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const visible = pages.filter((p) => pageMatches(p, query));
   const page = visible.find((p) => p.id === pageId) ?? visible[0];
 
-  // While the dialog is open, keys belong to it: mail shortcuts would act on the app behind.
-  useEffect(() => registry.suspend(), []);
-
-  useEffect(() => {
-    dialogRef.current?.focus();
-    return () => returnFocus?.focus?.();
-  }, [returnFocus]);
+  // While the dialog is open, keys belong to it: mail shortcuts would act on the app behind. It isn't
+  // a Modal: Escape and "/" are handled on the window below, and it focuses itself, not a
+  // [data-autofocus] control (a page may have one).
+  useDialogFocus(dialogRef, { autofocus: false });
 
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
@@ -81,21 +76,9 @@ function SettingsDialog({ pages }: { pages: SettingsPageDef[] }) {
   }, [close]);
 
   // Keep Tab inside the dialog.
-  const trapTab = (e: KeyboardEvent<HTMLDivElement>) => {
+  const trap = (e: KeyboardEvent<HTMLDivElement>) => {
     // A dialog opened over Settings keeps Tab in itself.
-    if (e.key !== "Tab" || e.defaultPrevented) return;
-    const items = [...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
-    if (!items.length) return;
-    const first = items[0];
-    const last = items[items.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || active === dialogRef.current)) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
-    }
+    if (!e.defaultPrevented) trapTab(e, dialogRef.current);
   };
 
   const onSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -112,15 +95,18 @@ function SettingsDialog({ pages }: { pages: SettingsPageDef[] }) {
   const groups = [...new Set(visible.map((p) => p.group))];
 
   return (
-    <div className="settings-scrim" onPointerDown={(e) => e.target === e.currentTarget && close()}>
+    <div
+      className="settings-scrim dialog-scrim"
+      onPointerDown={(e) => e.target === e.currentTarget && close()}
+    >
       <div
         ref={dialogRef}
-        className="settings"
+        className="settings dialog-surface"
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
         tabIndex={-1}
-        onKeyDown={trapTab}
+        onKeyDown={trap}
       >
         <div className="settings__nav">
           <label className="settings__search">

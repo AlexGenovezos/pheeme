@@ -20,6 +20,7 @@ import { editLabel } from "./edit";
 import { LabelChip } from "./LabelChip";
 import { labelColor } from "./palette";
 import "./labels.css";
+import "../components/ui/Surface.css";
 
 const NO_LABELS: LabelInfo[] = [];
 
@@ -53,8 +54,8 @@ function nameProblem(name: string): string | null {
 const Modal = (props: Omit<ModalProps, "className" | "scrimClassName" | "titleClassName">) => (
   <BaseModal
     {...props}
-    scrimClassName="label-dialog-scrim"
-    className="label-dialog"
+    scrimClassName="label-dialog-scrim dialog-scrim"
+    className="label-dialog dialog-surface"
     titleClassName="label-dialog__title"
   />
 );

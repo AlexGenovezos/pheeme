@@ -15,7 +15,7 @@ import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Switch } from "../components/ui/Switch";
-import { registry } from "../keyboard/registry";
+import { trapTab, useDialogFocus } from "../components/ui/useDialogFocus";
 import { useSettingsStore } from "../settings/settingsStore";
 import { type SpeedReadSession, useSpeedReader } from "./open";
 import { savedPosition, savePosition } from "./positions";
@@ -31,8 +31,8 @@ import {
   WPM_STEP,
 } from "./words";
 import "./speedread.css";
+import "../components/ui/Surface.css";
 
-const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 export const SPEED_PRESETS = [
   { wpm: 200, label: "Beginner" },
   { wpm: 250, label: "Average" },
@@ -231,19 +231,12 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
   // Reading stops by itself on the last word, which stays up.
   const finished = index >= last;
   const playing = play && !finished;
-  const [returnFocus] = useState(() => document.activeElement as HTMLElement | null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsButton = useRef<HTMLButtonElement>(null);
   const options = useRef<HTMLDivElement>(null);
 
   // While the reader is open, keys belong to it.
-  useEffect(() => registry.suspend(), []);
-  useEffect(() => {
-    ref.current?.focus();
-    return () => {
-      if (returnFocus?.isConnected) returnFocus.focus();
-    };
-  }, [returnFocus]);
+  useDialogFocus(ref);
 
   // Remember the place whenever reading stops: a pause, a step, or closing the reader mid-way. Not where it
   // reopened: saving the rewound spot would back up further each time it's opened and closed unread.
@@ -290,18 +283,7 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
     else if (arrows && e.key === "ArrowDown") update({ wpm: wpm - WPM_STEP });
     else if (e.key === "Tab") {
       handled = false;
-      const items = [...(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
-      if (!items.length) return;
-      const first = items[0];
-      const end = items[items.length - 1];
-      const active = document.activeElement;
-      if (e.shiftKey && (active === first || active === ref.current)) {
-        e.preventDefault();
-        end.focus();
-      } else if (!e.shiftKey && active === end) {
-        e.preventDefault();
-        first.focus();
-      }
+      trapTab(e, ref.current);
     } else handled = false;
     if (handled) {
       e.preventDefault();
@@ -314,12 +296,12 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
 
   return (
     <div
-      className="speed-reader-scrim"
+      className="speed-reader-scrim dialog-scrim"
       onPointerDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
         ref={ref}
-        className="speed-reader"
+        className="speed-reader dialog-surface"
         role="dialog"
         aria-modal="true"
         aria-label={`Speed read: ${session.title}`}
@@ -359,7 +341,7 @@ export function SpeedReader({ session, onClose }: { session: SpeedReadSession; o
             {optionsOpen && (
               <div
                 ref={options}
-                className="speed-reader__popover"
+                className="speed-reader__popover popover-surface"
                 role="group"
                 aria-label="Reading options"
               >

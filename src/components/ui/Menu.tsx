@@ -1,8 +1,10 @@
 import { Check } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { cx } from "../../lib/utils";
 import { Kbd } from "./Kbd";
 import "./Menu.css";
+import "./Surface.css";
+import { usePopover } from "./usePopover";
 
 export type MenuItem =
   | {
@@ -37,33 +39,8 @@ const isActionable = (item: MenuItem) => item.type !== "separator" && !item.disa
 export function Menu({ items, x, y, onClose, ...aria }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(() => items.findIndex(isActionable));
-  const [pos, setPos] = useState({ x, y });
-
-  // Keep the menu inside the viewport once its size is known.
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    const nx = Math.max(0, Math.min(x, window.innerWidth - width));
-    const ny = Math.max(0, Math.min(y, window.innerHeight - height));
-    if (nx !== x || ny !== y) setPos({ x: nx, y: ny });
-  }, [x, y]);
-
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    ref.current?.focus();
-    const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onBlur = () => onClose();
-    document.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("blur", onBlur);
-      previous?.focus?.();
-    };
-  }, [onClose]);
+  // Kept inside the viewport once its size is known; a press outside or the window blurring closes it.
+  const { pos } = usePopover({ ref, at: { x, y }, onClose });
 
   const choose = (index: number) => {
     const item = items[index];
@@ -114,7 +91,7 @@ export function Menu({ items, x, y, onClose, ...aria }: MenuProps) {
       ref={ref}
       role="menu"
       tabIndex={-1}
-      className="ui-menu"
+      className="ui-menu popover-surface"
       style={{ left: pos.x, top: pos.y }}
       aria-activedescendant={active >= 0 ? `ui-menu-item-${active}` : undefined}
       onKeyDown={onKeyDown}

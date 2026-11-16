@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { IconButton } from "./IconButton";
 import { Modal } from "./Modal";
 import "./DetailDialog.css";
+import "./Surface.css";
 
 /** A bounded detail window for contextual files and people, with the app's modal key handling. */
 export function DetailDialog({
@@ -21,7 +22,7 @@ export function DetailDialog({
       title={title}
       titleId={titleId}
       onClose={onClose}
-      className="detail-dialog"
+      className="detail-dialog dialog-surface"
       scrimClassName="detail-dialog-scrim"
       titleClassName="detail-dialog__title"
       titleActions={<IconButton label="Close" icon={<X />} onClick={onClose} />}

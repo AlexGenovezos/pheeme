@@ -5,12 +5,12 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { usePopover } from "../components/ui/usePopover";
 import { createSubscriptionScope } from "../lib/subscriptions";
 import { type LabelInfo, SYNC_EVENTS, type SyncAccountEvent } from "../lib/tauri";
 import { cx } from "../lib/utils";
@@ -25,6 +25,7 @@ import { type Membership, type PickerSpec, usePickerStore } from "./pickerStore"
 import { revealLabels } from "./reveal";
 import { buildLabelTree, type LabelNode } from "./tree";
 import "./labels.css";
+import "../components/ui/Surface.css";
 
 interface LabelOption {
   kind: "label";
@@ -112,11 +113,10 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   // Ticks started so far, and per label the count when its latest began: a re-read that started earlier is stale for it.
   const ticks = useRef({ count: 0, last: new Map<string, number>() });
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
-  const [pos, setPos] = useState(at);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  // What had focus before the picker opened; the dialog it hands over to gives focus back there.
-  const openerRef = useRef<HTMLElement | null>(null);
+  // `opener` is what had focus before the picker opened; the dialog it hands over to gives focus back there.
+  const { pos, opener } = usePopover({ ref, at, onClose, focusIn: () => inputRef.current });
   const listRef = useRef<HTMLDivElement>(null);
 
   const options = useMemo((): Option[] => {
@@ -142,33 +142,6 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
     list.push({ kind: "manage" });
     return list;
   }, [all, createOnly, hiddenTabs, mode, origin, query, shown, tree]);
-
-  // Keep the popover inside the viewport once its size is known.
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    const x = Math.max(0, Math.min(at.x, window.innerWidth - width));
-    const y = Math.max(0, Math.min(at.y, window.innerHeight - height));
-    if (x !== at.x || y !== at.y) setPos({ x, y });
-  }, [at]);
-
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    openerRef.current = previous;
-    inputRef.current?.focus();
-    const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onBlur = () => onClose();
-    document.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("blur", onBlur);
-      previous?.focus?.();
-    };
-  }, [onClose]);
 
   // Gmail can refuse a tick after its command resolved: the backend undoes it and says so. Re-read the ticks then.
   useEffect(() => {
@@ -240,7 +213,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
       mode: "create",
       accountId,
       name,
-      returnFocus: openerRef.current,
+      returnFocus: opener.current,
       applyTo: createOnly ? undefined : keys,
       move: mode === "move",
     });
@@ -357,7 +330,7 @@ export function LabelPicker({ spec, onClose }: { spec: PickerSpec; onClose(): vo
   return (
     <div
       ref={ref}
-      className="label-picker"
+      className="label-picker popover-surface"
       role="dialog"
       aria-label={title}
       data-owns-keys=""

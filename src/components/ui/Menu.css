@@ -4,11 +4,6 @@
   min-width: var(--menu-min-width);
   max-width: var(--menu-max-width);
   padding: var(--space-1);
-  border: var(--border-width) solid var(--color-menu-border);
-  border-radius: var(--radius-md);
-  background: var(--color-menu-bg);
-  color: var(--color-menu-foreground);
-  box-shadow: var(--shadow-popover);
   animation: ui-menu-in var(--duration-fast) var(--ease-out);
   transform-origin: top left;
 }

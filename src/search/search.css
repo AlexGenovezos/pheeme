@@ -29,11 +29,6 @@
   max-height: var(--palette-list-max-height);
   overflow-y: auto;
   padding: var(--space-1);
-  border: var(--border-width) solid var(--color-menu-border);
-  border-radius: var(--radius-md);
-  background: var(--color-menu-bg);
-  color: var(--color-menu-foreground);
-  box-shadow: var(--shadow-popover);
 }
 .mail-search__heading {
   padding: var(--space-1) var(--space-2);

@@ -46,6 +46,7 @@ import {
 } from "./eventForm";
 import { addDays, formatDay, weekday } from "./dates";
 import "../compose/compose.css";
+import "../components/ui/Surface.css";
 
 /** Google's names for the event colours. */
 const COLOR_NAMES: Record<string, string> = {
@@ -160,8 +161,8 @@ function EditorBody({ spec }: { spec: EditorSpec }) {
       title={editing ? "Edit event" : "New event"}
       titleId={titleId}
       onClose={() => void close()}
-      scrimClassName="cal-dialog-scrim"
-      className="cal-editor"
+      scrimClassName="cal-dialog-scrim dialog-scrim"
+      className="cal-editor dialog-surface"
       titleClassName="cal-editor__title"
       titleActions={
         <IconButton size="sm" label="Close" icon={<X />} onClick={() => void close()} />

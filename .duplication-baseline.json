@@ -176,12 +176,6 @@
         ">Going?</span><divrole=\"radiogroup\"aria-label=\"Youranswer\"className=\"cal-pop__answers\">{ANSWERS.map((a)=>(<buttonkey={a.value}type=\"button\"role=\"radio\"aria-checked={(pending??current)===a.value}className=\"cal-pop__answer\"disabled={pending!==null}onClick={()=>"
       ]
     },
-    "src/calendar/EventPopover.tsx <> src/calendar/QuickCreate.tsx": {
-      "tokens": 136,
-      "texts": [
-        ";constgap=8;letleft=window.innerWidth/2-box.width/2;lettop=window.innerHeight/3-box.height/3;if(at){left=at.right+gap;if(left+box.width>window.innerWidth-gap)left=at.left-gap-box.width;top=at.top;}left=Math.max(gap,Math.min(left,window.innerWidth-box.width-gap));top=Math.max(gap,Math.min(top,window.innerHeight-box.height-gap));setPos("
-      ]
-    },
     "src/calendar/editing.css <> src/components/ui/Picker.css": {
       "tokens": 82,
       "texts": [
@@ -194,43 +188,11 @@
         "var(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;font-size:var(--font-size-sm);}."
       ]
     },
-    "src/calendar/editing.css <> src/labels/labels.css": {
-      "tokens": 228,
-      "texts": [
-        ");max-width:100%;padding:var(--space-4);border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:label-picker-invar(--duration-slow)var(--ease-out);}.",
-        "-dialog-scrim{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;align-items:center;justify-content:center;padding:var(--space-4);background:var(--color-scrim);-webkit-backdrop-filter:blur(var(--settings-backdrop-blur));backdrop-filter:blur(var(--settings-backdrop-blur));}."
-      ]
-    },
-    "src/calendar/editing.css <> src/mail/preview/preview.css": {
-      "tokens": 73,
-      "texts": [
-        ";border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:"
-      ]
-    },
     "src/calendar/editing.css <> src/palette/CommandPalette.css": {
       "tokens": 146,
       "texts": [
         ";border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-palette-bg);color:var(--color-palette-foreground);box-shadow:var(--shadow-overlay);",
         "{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;justify-content:center;align-items:flex-start;padding-top:var(--palette-offset-top);background:var(--color-scrim);"
-      ]
-    },
-    "src/calendar/editing.css <> src/settings/Settings.css": {
-      "tokens": 72,
-      "texts": [
-        "border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:"
-      ]
-    },
-    "src/calendar/editing.css <> src/speedread/speedread.css": {
-      "tokens": 184,
-      "texts": [
-        ");border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:",
-        "-scrim{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;align-items:center;justify-content:center;padding:var(--space-4);background:var(--color-scrim);-webkit-backdrop-filter:blur(var(--settings-backdrop-blur));backdrop-filter:blur(var(--settings-backdrop-blur));}."
-      ]
-    },
-    "src/calendar/editing.css <> src/stats/Stats.css": {
-      "tokens": 73,
-      "texts": [
-        ";border:var(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:"
       ]
     },
     "src/calendar/editing.css <> src/tasks/tasks.css": {
@@ -258,50 +220,12 @@
         "{display:flex;align-items:center;gap:var(--space-1-5);height:var(--control-height-sm);padding:var(--space-0)var(--space-2)var(--space-0)var(--space-1);border-radius:var(--radius-sm);"
       ]
     },
-    "src/components/ui/Menu.css <> src/compose/compose.css": {
-      "tokens": 87,
-      "texts": [
-        ");padding:var(--space-1);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
-      ]
-    },
     "src/components/ui/Menu.css <> src/labels/labels.css": {
       "tokens": 246,
       "texts": [
         ");border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);animation:",
         ";border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);animation:",
         "{display:flex;align-items:center;gap:var(--space-1-5);height:var(--control-height-sm);padding:var(--space-0)var(--space-2)var(--space-0)var(--space-1);border-radius:var(--radius-sm);cursor:default;}."
-      ]
-    },
-    "src/components/ui/Menu.css <> src/mail/mail.css": {
-      "tokens": 76,
-      "texts": [
-        ");border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
-      ]
-    },
-    "src/components/ui/Menu.css <> src/search/search.css": {
-      "tokens": 86,
-      "texts": [
-        ";padding:var(--space-1);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
-      ]
-    },
-    "src/components/ui/Menu.css <> src/settings/KeyboardMap.css": {
-      "tokens": 76,
-      "texts": [
-        ");border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);"
-      ]
-    },
-    "src/components/ui/Menu.tsx <> src/labels/ColorPopover.tsx": {
-      "tokens": 89,
-      "texts": [
-        ");constonPointerDown=(e:PointerEvent)=>{if(!ref.current?.contains(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);"
-      ]
-    },
-    "src/components/ui/Menu.tsx <> src/labels/LabelPicker.tsx": {
-      "tokens": 195,
-      "texts": [
-        "(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);previous?.focus?.();};},[onClose]);//Gmailcanrefuseatickafteritscommandresolved:thebackendundoesitandsaysso.Re-readtheticksthen.useEffect",
-        "(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);previous?.focus?.();};},[onClose]);const",
-        ".current?.focus();constonPointerDown=(e:PointerEvent)=>{if(!ref.current?.contains(e.targetasNode))onClose();};constonBlur=()=>onClose();document.addEventListener(\"pointerdown\",onPointerDown,true);window.addEventListener(\"blur\",onBlur);return()=>{document.removeEventListener(\"pointerdown\",onPointerDown,true);window.removeEventListener(\"blur\",onBlur);previous?.focus?.();};},[onClose]);"
       ]
     },
     "src/components/ui/Picker.css <> src/components/ui/TextInput.css": {
@@ -314,18 +238,6 @@
       "tokens": 101,
       "texts": [
         ");padding:var(--space-0)var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font:inherit;font-size:var(--font-size-sm);"
-      ]
-    },
-    "src/components/ui/Picker.css <> src/mail/mail.css": {
-      "tokens": 84,
-      "texts": [
-        "-border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-md);"
-      ]
-    },
-    "src/components/ui/Picker.css <> src/settings/KeyboardMap.css": {
-      "tokens": 81,
-      "texts": [
-        "-border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-"
       ]
     },
     "src/components/ui/Picker.css <> src/settings/Settings.css": {
@@ -341,68 +253,10 @@
         ");height:var(--control-height-md);padding:var(--space-0)var(--space-2);border:var(--border-width)solidvar(--color-input-border);border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-"
       ]
     },
-    "src/labels/ColorPopover.tsx <> src/labels/LabelPicker.tsx": {
-      "tokens": 121,
-      "texts": [
-        ");//Keepthepopoverinsidetheviewportonceitssizeisknown.useLayoutEffect(()=>{constel=ref.current;if(!el)return;const{width,height}=el.getBoundingClientRect();constx=Math.max(0,Math.min(at.x,window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{"
-      ]
-    },
-    "src/labels/LabelPicker.tsx <> src/mail/CategoryMoveDialog.tsx": {
-      "tokens": 213,
-      "texts": [
-        "]);//Keepthepopoverinsidetheviewportonceitssizeisknown.useLayoutEffect(()=>{constel=ref.current;if(!el)return;const{width,height}=el.getBoundingClientRect();constx=Math.max(0,Math.min(at.x,window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{constprevious=document.activeElementasHTMLElement|null;",
-        "window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{constprevious=document.activeElementasHTMLElement|null;firstRef",
-        "window.innerWidth-width));consty=Math.max(0,Math.min(at.y,window.innerHeight-height));if(x!==at.x||y!==at.y)setPos({x,y});},[at]);useEffect(()=>{constprevious=document.activeElementasHTMLElement|null;openerRef"
-      ]
-    },
-    "src/labels/labels.css <> src/labels/labels.css": {
-      "tokens": 102,
-      "texts": [
-        "-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);animation:label-picker-invar(--duration-fast)var(--ease-out);transform-origin:topleft;}.label-"
-      ]
-    },
-    "src/mail/mail.css <> src/shell/shell.css": {
-      "tokens": 95,
-      "texts": [
-        "var(--space-3);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-"
-      ]
-    },
-    "src/mail/mail.css <> src/speedread/speedread.css": {
-      "tokens": 99,
-      "texts": [
-        ");padding:var(--space-3);border:var(--border-width)solidvar(--color-menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-"
-      ]
-    },
-    "src/mail/preview/AttachmentPreview.tsx <> src/settings/Settings.tsx": {
-      "tokens": 91,
-      "texts": [
-        "]);//KeepTabinsidethedialog.consttrapTab=(e:KeyboardEvent<HTMLDivElement>)=>{if(e.key!==\"Tab\")return;constitems=[...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE)??[])];if(!items.length)return;constfirst=items[0];constlast=items[items.length-1];constactive=document.activeElement;if(e.shiftKey&&",
-        "]);//KeepTabinsidethepanel.consttrapTab=(e:KeyboardEvent<HTMLDivElement>)=>{if(e.key!==\"Tab\")return;constitems=[...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE)??[])];if(!items.length)return;constfirst=items[0];constlast=items[items.length-1];constactive=document.activeElement;if(e.shiftKey&&"
-      ]
-    },
-    "src/settings/KeyboardMap.css <> src/shell/shell.css": {
-      "tokens": 72,
-      "texts": [
-        "menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-sm);"
-      ]
-    },
-    "src/settings/KeyboardMap.css <> src/speedread/speedread.css": {
-      "tokens": 72,
-      "texts": [
-        "menu-border);border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-sm);"
-      ]
-    },
     "src/settings/Settings.css <> src/settings/Settings.css": {
       "tokens": 71,
       "texts": [
         ");border-radius:var(--radius-sm);background:var(--color-input-bg);color:var(--color-input-foreground);font-family:var(--font-family-mono);font-size:var(--font-size-sm);"
-      ]
-    },
-    "src/settings/Settings.css <> src/stats/Stats.css": {
-      "tokens": 222,
-      "texts": [
-        "(--border-width)solidvar(--color-border);border-radius:var(--radius-lg);background:var(--color-pane-bg);color:var(--color-foreground);box-shadow:var(--shadow-overlay);animation:settings-invar(--duration-slow)var(--ease-out);}.",
-        "-scrim{position:fixed;inset:var(--space-0);z-index:var(--z-overlay);display:flex;align-items:center;justify-content:center;padding:var(--settings-margin);background:var(--color-scrim);-webkit-backdrop-filter:blur(var(--settings-backdrop-blur));backdrop-filter:blur(var(--settings-backdrop-blur));animation:settings-fadevar(--duration-base)var(--ease-standard);}"
       ]
     },
     "src/settings/Settings.css <> src/theme/editor/ThemeEditor.css": {
@@ -415,12 +269,6 @@
       "tokens": 110,
       "texts": [
         "{display:flex;align-items:center;gap:var(--space-1-5);width:100%;height:var(--row-height-compact);padding:var(--space-0)var(--space-2);border:none;border-radius:var(--radius-sm);background:transparent;color:var(--color-foreground-muted);font-size:var(--font-size-sm);"
-      ]
-    },
-    "src/shell/shell.css <> src/speedread/speedread.css": {
-      "tokens": 71,
-      "texts": [
-        ");border-radius:var(--radius-md);background:var(--color-menu-bg);color:var(--color-menu-foreground);box-shadow:var(--shadow-popover);font-size:var(--font-size-sm);animation:"
       ]
     },
     "src/speedread/speedread.css <> src/speedread/speedread.css": {

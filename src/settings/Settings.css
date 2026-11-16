@@ -1,14 +1,5 @@
 .settings-scrim {
-  position: fixed;
-  inset: var(--space-0);
-  z-index: var(--z-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: var(--settings-margin);
-  background: var(--color-scrim);
-  -webkit-backdrop-filter: blur(var(--settings-backdrop-blur));
-  backdrop-filter: blur(var(--settings-backdrop-blur));
   animation: settings-fade var(--duration-base) var(--ease-standard);
 }
 
@@ -20,11 +11,6 @@
   max-height: 100%;
   /* Nothing clips here: the body and the page list scroll inside their own corners, so a row
      half scrolled past the bottom is cut by its scroller, not by the dialog's frame. */
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-pane-bg);
-  color: var(--color-foreground);
-  box-shadow: var(--shadow-overlay);
   animation: settings-in var(--duration-slow) var(--ease-out);
 }
 .settings:focus-visible {

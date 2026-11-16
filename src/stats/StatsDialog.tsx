@@ -19,6 +19,7 @@ import {
 } from "./MailStats";
 import { useStatsStore } from "./statsStore";
 import "./Stats.css";
+import "../components/ui/Surface.css";
 
 /** Mount once, inside the mail screen; it renders only while open. */
 export function Stats() {
@@ -66,8 +67,8 @@ function StatsDialog() {
       title="Stats"
       titleId="stats-title"
       onClose={close}
-      className="stats"
-      scrimClassName="stats-scrim"
+      className="stats dialog-surface"
+      scrimClassName="stats-scrim dialog-scrim"
       titleClassName="stats__title"
       titleActions={actions}
     >

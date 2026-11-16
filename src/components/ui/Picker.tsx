@@ -18,7 +18,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { cx } from "../../lib/utils";
+import { placeByField } from "./placement";
 import "./Picker.css";
+import "./Surface.css";
+import { useDismiss } from "./usePopover";
 
 /** Gap between the field and its popover, and from the window's edges. */
 const GAP = 4;
@@ -64,59 +67,49 @@ export function PickerPopover({
     const el = ref.current;
     const at = anchor.current?.getBoundingClientRect();
     if (!el || !at) return;
-    const width = Math.max(el.offsetWidth, matchWidth ? at.width : 0);
     // A list is capped by its CSS (--picker-list-max-height); placing it must not lift the cap.
     const cap = el.classList.contains("ui-picker--list")
       ? parseFloat(
           getComputedStyle(document.documentElement).getPropertyValue("--picker-list-max-height"),
         )
       : Infinity;
-    const height = Math.min(el.scrollHeight, cap);
-    const below = window.innerHeight - at.bottom - 2 * GAP;
-    const above = at.top - 2 * GAP;
-    const down = below >= height || below >= above;
-    const room = Math.max(0, down ? below : above);
-    const shown = Math.min(height, room);
-    const left = Math.max(GAP, Math.min(at.left, window.innerWidth - width - GAP));
-    const top = down ? at.bottom + GAP : at.top - GAP - shown;
-    setStyle({
-      left,
-      top,
-      minWidth: matchWidth ? at.width : undefined,
-      maxHeight: Math.min(room, cap) < el.scrollHeight ? Math.min(room, cap) : undefined,
-    });
+    setStyle(
+      placeByField(
+        at,
+        { width: el.offsetWidth, scrollHeight: el.scrollHeight },
+        { width: window.innerWidth, height: window.innerHeight },
+        { gap: GAP, cap, matchWidth },
+      ),
+    );
   }, [anchor, matchWidth]);
 
   useLayoutEffect(place, [place]);
 
+  // A press on the field isn't outside: the field handles it.
+  useDismiss(ref, {
+    onOutside: onClose,
+    onBlur: onClose,
+    ignore: (target) => anchor.current?.contains(target) ?? false,
+  });
+
   useEffect(() => {
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      if (ref.current?.contains(target) || anchor.current?.contains(target)) return;
-      onClose();
-    };
     // The page or a dialog scrolled: follow the field (the popover's own scrolling doesn't count).
     const onScroll = (e: Event) => {
       if (!ref.current?.contains(e.target as Node)) place();
     };
-    const onBlur = () => onClose();
-    document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", place);
-    window.addEventListener("blur", onBlur);
     return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", place);
-      window.removeEventListener("blur", onBlur);
     };
-  }, [anchor, onClose, place]);
+  }, [place]);
 
   return createPortal(
     <div
       ref={ref}
       id={id}
-      className={cx("ui-picker", className)}
+      className={cx("ui-picker popover-surface", className)}
       style={style}
       data-picker=""
       // Clicks inside keep focus on the field.

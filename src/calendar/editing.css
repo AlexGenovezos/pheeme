@@ -99,16 +99,7 @@
 /* ---- Dialogs: editor and prompts ------------------------------------------ */
 
 .cal-dialog-scrim {
-  position: fixed;
-  inset: var(--space-0);
-  z-index: var(--z-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: var(--space-4);
-  background: var(--color-scrim);
-  -webkit-backdrop-filter: blur(var(--settings-backdrop-blur));
-  backdrop-filter: blur(var(--settings-backdrop-blur));
 }
 .cal-editor,
 .cal-prompt {
@@ -117,11 +108,6 @@
   gap: var(--space-3);
   max-width: 100%;
   padding: var(--space-4);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-pane-bg);
-  color: var(--color-foreground);
-  box-shadow: var(--shadow-overlay);
   animation: label-picker-in var(--duration-slow) var(--ease-out);
 }
 .cal-editor:focus-visible,

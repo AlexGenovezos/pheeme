@@ -1,9 +1,10 @@
 // The choice a move to an inbox category asks (from Move to… or a drop on the sidebar): just these conversations,
 // or also the sender's future mail, which saves a Gmail filter (a sender rule).
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { Button } from "../components/ui/Button";
 import { toast } from "../components/ui/Toast";
+import { usePopover } from "../components/ui/usePopover";
 import {
   inboxThreadsFrom,
   listSenderRules,
@@ -17,6 +18,7 @@ import { useAccountStore } from "../store/accountStore";
 import { moveToCategory } from "./actions";
 import { CATEGORIES, parseThreadKey, type ThreadKey } from "./mailboxes";
 import "./mail.css";
+import "../components/ui/Surface.css";
 
 export interface CategoryMoveSpec {
   accountId: string;
@@ -97,10 +99,17 @@ export function CategoryMoveDialog({ spec, onClose }: { spec: CategoryMoveSpec; 
   const [rule, setRule] = useState<RuleState>({ kind: "checking" });
   const [future, setFuture] = useState(false);
   const [alsoExisting, setAlsoExisting] = useState(true);
-  const [pos, setPos] = useState(at);
   const ref = useRef<HTMLDivElement>(null);
   const firstRef = useRef<HTMLInputElement>(null);
   const name = categoryName(category);
+  // Unlike the other popovers, the window losing focus doesn't close this one.
+  const { pos } = usePopover({
+    ref,
+    at,
+    onClose,
+    closeOnBlur: false,
+    focusIn: () => firstRef.current,
+  });
 
   useEffect(() => {
     let live = true;
@@ -122,29 +131,6 @@ export function CategoryMoveDialog({ spec, onClose }: { spec: CategoryMoveSpec; 
       live = false;
     };
   }, [accountId, keys]);
-
-  // Keep the popover inside the viewport once its size is known.
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    const x = Math.max(0, Math.min(at.x, window.innerWidth - width));
-    const y = Math.max(0, Math.min(at.y, window.innerHeight - height));
-    if (x !== at.x || y !== at.y) setPos({ x, y });
-  }, [at]);
-
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    firstRef.current?.focus();
-    const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener("pointerdown", onPointerDown, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      previous?.focus?.();
-    };
-  }, [onClose]);
 
   const confirm = () => {
     onClose();
@@ -170,7 +156,7 @@ export function CategoryMoveDialog({ spec, onClose }: { spec: CategoryMoveSpec; 
   return (
     <div
       ref={ref}
-      className="category-move"
+      className="category-move popover-surface"
       role="dialog"
       aria-label={`Move to ${name}`}
       data-owns-keys=""

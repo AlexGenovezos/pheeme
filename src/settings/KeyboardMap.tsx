@@ -16,6 +16,7 @@ import {
 import type { Command } from "../keyboard/registry";
 import { platform as currentPlatform, type Platform } from "../lib/platform";
 import "./KeyboardMap.css";
+import "../components/ui/Surface.css";
 
 /** Group swatches reuse the avatar palette. */
 const GROUP_COLORS = 6;
@@ -226,7 +227,7 @@ export function KeyboardMap({
         ))}
         {tip && tipBodyNow && (
           <div
-            className="kbmap__tip"
+            className="kbmap__tip popover-surface"
             data-placement={tip.placement}
             data-align={tip.align}
             style={tip.style}

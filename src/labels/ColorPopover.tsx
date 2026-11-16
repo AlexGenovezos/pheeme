@@ -1,14 +1,16 @@
 // "Label colour…": Gmail's 64-colour grid for one label, plus Remove colour. Opened from a sidebar label's menu,
 // which can't hold the grid itself (native menus have no swatches).
 import { Check } from "lucide-react";
-import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { Button } from "../components/ui/Button";
+import { usePopover } from "../components/ui/usePopover";
 import { cx } from "../lib/utils";
 import { useLabelStore } from "../store/labelStore";
 import { editLabel } from "./edit";
 import { LABEL_BACKGROUNDS, labelColor } from "./palette";
 import "./labels.css";
+import "../components/ui/Surface.css";
 
 export interface ColorPopoverSpec {
   accountId: string;
@@ -125,42 +127,17 @@ export function ColorGrid({
   );
 }
 
-/** Focuses the grid's tab stop: the ticked swatch, else the first. */
-const focusGrid = (el: HTMLElement | null) =>
-  el?.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
+/** The grid's tab stop: the ticked swatch, else the first. */
+const gridStop = (el: HTMLElement | null) => el?.querySelector<HTMLElement>('[tabindex="0"]');
+const focusGrid = (el: HTMLElement | null) => gridStop(el)?.focus();
 
 export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClose(): void }) {
   const { accountId, labelId, at, returnFocus } = spec;
   const label = useLabelStore((s) => s.labels[accountId]?.find((l) => l.id === labelId));
   const current = label?.colorBackground?.toLowerCase() ?? null;
-  const [pos, setPos] = useState(at);
   const ref = useRef<HTMLDivElement>(null);
   const removeRef = useRef<HTMLButtonElement>(null);
-
-  // Keep the popover inside the viewport once its size is known.
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    const x = Math.max(0, Math.min(at.x, window.innerWidth - width));
-    const y = Math.max(0, Math.min(at.y, window.innerHeight - height));
-    if (x !== at.x || y !== at.y) setPos({ x, y });
-  }, [at]);
-
-  useEffect(() => {
-    focusGrid(ref.current);
-    const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onBlur = () => onClose();
-    document.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("blur", onBlur);
-      returnFocus?.focus?.();
-    };
-  }, [onClose, returnFocus]);
+  const { pos } = usePopover({ ref, at, onClose, focusIn: gridStop, returnFocus });
 
   // The label was deleted (here or in Gmail) while the popover was open.
   useEffect(() => {
@@ -193,7 +170,7 @@ export function ColorPopover({ spec, onClose }: { spec: ColorPopoverSpec; onClos
   return (
     <div
       ref={ref}
-      className="label-color"
+      className="label-color popover-surface"
       role="dialog"
       aria-label="Label colour"
       data-owns-keys=""

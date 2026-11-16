@@ -19,6 +19,7 @@ import { canOpenExternally, previewKind, type PreviewKind } from "./kinds";
 import { type PreviewSession, usePreviewStore } from "./previewStore";
 import { PreviewMessage } from "./PreviewMessage";
 import "./preview.css";
+import "../../components/ui/Surface.css";
 
 // The heavy readers load the first time a file of their kind is opened.
 const PdfView = lazy(() => import("./PdfView"));
@@ -161,7 +162,7 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
     >
       <div
         ref={dialogRef}
-        className="file-preview"
+        className="file-preview dialog-surface"
         role="dialog"
         aria-modal="true"
         aria-label={`Preview: ${name}`}

@@ -17,6 +17,7 @@ import {
   parseRecipients,
   recipientLabel,
 } from "./recipients";
+import "../components/ui/Surface.css";
 
 interface RecipientFieldProps {
   label: string;
@@ -206,7 +207,7 @@ export const RecipientField = forwardRef<HTMLInputElement, RecipientFieldProps>(
             id={listId}
             role="listbox"
             aria-label={`Suggested ${label} recipients`}
-            className="compose-suggestions"
+            className="compose-suggestions popover-surface"
           >
             {shown.map((s, i) => (
               <li
