@@ -28,6 +28,7 @@ import { type SignInState, useSignIn } from "./useSignIn";
 import { TELEMETRY_TITLE, TelemetrySwitch } from "../settings/telemetry";
 import { ReceiveCredentials } from "../transfer/ReceiveCredentials";
 import "./onboarding.css";
+import "../components/ui/Surface.css";
 
 type View = StepId | "intro" | "choose" | "error" | "done" | "receive" | "receiving";
 
@@ -278,7 +279,7 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect, tutorial
       titleId="onboarding-dialog-title"
       onClose={connected ? () => onConnected(connected) : onClose}
       className="onboarding-dialog"
-      scrimClassName="settings-scrim"
+      scrimClassName="settings-scrim dialog-scrim"
       titleClassName="onboarding-dialog__title"
     >
       {page}

@@ -1,15 +1,6 @@
 /* Speed reader: a modal over the blurred app, like Settings. */
 .speed-reader-scrim {
-  position: fixed;
-  inset: var(--space-0);
-  z-index: var(--z-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: var(--space-4);
-  background: var(--color-scrim);
-  -webkit-backdrop-filter: blur(var(--settings-backdrop-blur));
-  backdrop-filter: blur(var(--settings-backdrop-blur));
 }
 
 .speed-reader {
@@ -21,11 +12,6 @@
   max-height: 100%;
   overflow: auto;
   padding: var(--space-5);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-pane-bg);
-  color: var(--color-foreground);
-  box-shadow: var(--shadow-overlay);
   animation: speed-reader-in var(--duration-slow) var(--ease-out);
 }
 .speed-reader:focus-visible {
@@ -207,11 +193,6 @@
   gap: var(--space-3);
   width: var(--speed-reader-popover-width);
   padding: var(--space-3);
-  border: var(--border-width) solid var(--color-menu-border);
-  border-radius: var(--radius-md);
-  background: var(--color-menu-bg);
-  color: var(--color-menu-foreground);
-  box-shadow: var(--shadow-popover);
   font-size: var(--font-size-sm);
   animation: speed-reader-in var(--duration-fast) var(--ease-out);
 }

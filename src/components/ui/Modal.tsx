@@ -1,10 +1,7 @@
 // A modal dialog shell: scrim, focus trap, Esc closes, keys belong to it while it's open, and
 // focus goes back to whatever opened it. Callers give it their look with class names.
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
-import { registry } from "../../keyboard/registry";
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { type KeyboardEvent, type ReactNode, useRef } from "react";
+import { trapTab, useDialogFocus } from "./useDialogFocus";
 
 export interface ModalProps {
   title: string;
@@ -32,21 +29,7 @@ export function Modal({
   titleActions,
 }: ModalProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [returnFocus] = useState(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    // A closing picker's own field is about to unmount: prefer what it saved, if it's still on the page.
-    return returnTo?.isConnected ? returnTo : opener?.isConnected ? opener : null;
-  });
-
-  // While the dialog is open, keys belong to it.
-  useEffect(() => registry.suspend(), []);
-  useEffect(() => {
-    const first = ref.current?.querySelector<HTMLElement>("[data-autofocus]");
-    (first ?? ref.current)?.focus();
-    return () => {
-      if (returnFocus?.isConnected) returnFocus.focus();
-    };
-  }, [returnFocus]);
+  useDialogFocus(ref, { returnTo });
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     // Portals still bubble through their React parents (including compose's Send shortcut).
@@ -57,19 +40,7 @@ export function Modal({
       onClose();
       return;
     }
-    if (e.key !== "Tab") return;
-    const items = [...(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
-    if (!items.length) return;
-    const first = items[0];
-    const last = items[items.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || active === ref.current)) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
-    }
+    trapTab(e, ref.current);
   };
 
   const heading = (

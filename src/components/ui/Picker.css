@@ -6,11 +6,6 @@
   max-width: var(--menu-max-width);
   padding: var(--space-1);
   overflow-y: auto;
-  border: var(--border-width) solid var(--color-menu-border);
-  border-radius: var(--radius-md);
-  background: var(--color-menu-bg);
-  color: var(--color-menu-foreground);
-  box-shadow: var(--shadow-popover);
   font-size: var(--font-size-md);
   animation: ui-picker-in var(--duration-fast) var(--ease-out);
 }

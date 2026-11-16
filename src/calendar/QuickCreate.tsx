@@ -1,15 +1,18 @@
 // The quick-create popover: a new event's title, time and calendar, beside the slot picked on the
 // grid (or in the middle, from `c` and Create). Enter saves; More options opens the editor.
 import { X } from "lucide-react";
-import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type FormEvent, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { placeBeside } from "../components/ui/placement";
 import { inPicker } from "../components/ui/Picker";
 import { TextInput } from "../components/ui/TextInput";
+import { useDismiss } from "../components/ui/usePopover";
 import { cancelDraft, openDraftInEditor, saveDraft, updateDraft } from "./actions";
 import { noteDismiss } from "./drag";
 import { DRAFT_ID, useEditStore } from "./editStore";
 import { CalendarSelect, TimeFields } from "./EventFields";
+import "../components/ui/Surface.css";
 
 /** The draft's block on the grid, if it's drawn. */
 function draftBlock(): HTMLElement | null {
@@ -36,32 +39,23 @@ function QuickCreateBody() {
     const el = ref.current;
     if (!el) return;
     const box = el.getBoundingClientRect();
-    const at = draftBlock()?.getBoundingClientRect();
-    const gap = 8;
-    let left = window.innerWidth / 2 - box.width / 2;
-    let top = window.innerHeight / 3 - box.height / 3;
-    if (at) {
-      left = at.right + gap;
-      if (left + box.width > window.innerWidth - gap) left = at.left - gap - box.width;
-      top = at.top;
-    }
-    left = Math.max(gap, Math.min(left, window.innerWidth - box.width - gap));
-    top = Math.max(gap, Math.min(top, window.innerHeight - box.height - gap));
+    const at = draftBlock()?.getBoundingClientRect() ?? null;
+    const { left, top } = placeBeside(at, box, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
     setPos((p) => (p && p.left === left && p.top === top ? p : { left, top }));
   }, [form]);
 
-  useEffect(() => {
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Element;
-      // Its own date, time and calendar pickers open outside it.
-      if (ref.current?.contains(target) || target.closest?.('[role="dialog"]') || inPicker(target))
-        return;
+  useDismiss(ref, {
+    onOutside: (e) => {
       noteDismiss(e);
       cancelDraft();
-    };
-    document.addEventListener("pointerdown", onPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
-  }, []);
+    },
+    // Its own date, time and calendar pickers open outside it.
+    ignore: (target) =>
+      (target as Element).closest?.('[role="dialog"]') != null || inPicker(target),
+  });
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -74,7 +68,7 @@ function QuickCreateBody() {
   return (
     <form
       ref={ref}
-      className="cal-pop cal-quick"
+      className="cal-pop cal-quick popover-surface"
       role="dialog"
       aria-label="New event"
       data-owns-keys=""

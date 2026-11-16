@@ -1003,12 +1003,8 @@
   max-height: var(--calendar-popover-max-height);
   padding: var(--space-3);
   overflow-y: auto;
-  border: var(--border-width) solid var(--color-menu-border);
   border-radius: var(--radius-lg);
-  background: var(--color-menu-bg);
-  color: var(--color-menu-foreground);
   font-size: var(--font-size-md);
-  box-shadow: var(--shadow-popover);
   animation: label-picker-in var(--duration-fast) var(--ease-out);
 }
 .cal-pop svg {

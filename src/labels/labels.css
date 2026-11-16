@@ -68,11 +68,6 @@
   width: var(--label-picker-width);
   max-width: calc(100% - var(--space-4));
   overflow: hidden;
-  border: var(--border-width) solid var(--color-menu-border);
-  border-radius: var(--radius-md);
-  background: var(--color-menu-bg);
-  color: var(--color-menu-foreground);
-  box-shadow: var(--shadow-popover);
   animation: label-picker-in var(--duration-fast) var(--ease-out);
   transform-origin: top left;
 }
@@ -211,11 +206,6 @@
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-2);
-  border: var(--border-width) solid var(--color-menu-border);
-  border-radius: var(--radius-md);
-  background: var(--color-menu-bg);
-  color: var(--color-menu-foreground);
-  box-shadow: var(--shadow-popover);
   animation: label-picker-in var(--duration-fast) var(--ease-out);
   transform-origin: top left;
 }
@@ -274,16 +264,7 @@
 
 /* Create / edit / delete label dialogs: a small modal over the blurred app. */
 .label-dialog-scrim {
-  position: fixed;
-  inset: var(--space-0);
-  z-index: var(--z-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: var(--space-4);
-  background: var(--color-scrim);
-  -webkit-backdrop-filter: blur(var(--settings-backdrop-blur));
-  backdrop-filter: blur(var(--settings-backdrop-blur));
 }
 .label-dialog {
   display: flex;
@@ -292,11 +273,6 @@
   width: var(--label-dialog-width);
   max-width: 100%;
   padding: var(--space-4);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-pane-bg);
-  color: var(--color-foreground);
-  box-shadow: var(--shadow-overlay);
   animation: label-picker-in var(--duration-slow) var(--ease-out);
 }
 .label-dialog:focus-visible {

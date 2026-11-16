@@ -21,6 +21,8 @@ import { Button } from "../components/ui/Button";
 import { showPerson } from "../contacts/personStore";
 import { IconButton } from "../components/ui/IconButton";
 import { Menu, type MenuItem } from "../components/ui/Menu";
+import { placeBeside } from "../components/ui/placement";
+import { useDismiss } from "../components/ui/usePopover";
 import { describeShortcut } from "../keyboard/format";
 import { useKeybinding } from "../keyboard/useCommands";
 import {
@@ -45,6 +47,7 @@ import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
 import { EventWeather } from "../weather/EventWeather";
 import { type OtherZone, placeName, useZoneSettings } from "./zoneSettings";
 import { dayShift, offsetMinutes, zoneCity } from "./zones";
+import "../components/ui/Surface.css";
 
 type Answer = "accepted" | "tentative" | "declined";
 
@@ -393,17 +396,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
     if (!el || !ready) return;
     const box = el.getBoundingClientRect();
     const at = open.anchor?.isConnected ? open.anchor.getBoundingClientRect() : null;
-    const gap = 8;
-    let left = window.innerWidth / 2 - box.width / 2;
-    let top = window.innerHeight / 3 - box.height / 3;
-    if (at) {
-      left = at.right + gap;
-      if (left + box.width > window.innerWidth - gap) left = at.left - gap - box.width;
-      top = at.top;
-    }
-    left = Math.max(gap, Math.min(left, window.innerWidth - box.width - gap));
-    top = Math.max(gap, Math.min(top, window.innerHeight - box.height - gap));
-    setPos({ left, top });
+    setPos(placeBeside(at, box, { width: window.innerWidth, height: window.innerHeight }));
   }, [open, ready, load]);
 
   // Focus moves in when it opens and back to the event when it closes. Only on opening (another
@@ -421,15 +414,12 @@ function PopoverBody({ open }: { open: OpenEvent }) {
     };
   }, [anchor]);
 
-  useEffect(() => {
-    const onPointerDown = (e: PointerEvent) => {
-      if (ref.current?.contains(e.target as Node)) return;
+  useDismiss(ref, {
+    onOutside: (e) => {
       noteDismiss(e);
       close();
-    };
-    document.addEventListener("pointerdown", onPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
-  }, []);
+    },
+  });
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
@@ -450,7 +440,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
   return (
     <div
       ref={ref}
-      className="cal-pop"
+      className="cal-pop popover-surface"
       role="dialog"
       aria-label={eventTitle(event)}
       style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden" }}

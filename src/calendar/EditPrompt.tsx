@@ -4,6 +4,7 @@ import { type FormEvent, useId, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Modal } from "../components/ui/Modal";
 import { type PromptSpec, useEditStore } from "./editStore";
+import "../components/ui/Surface.css";
 
 export function EditPrompt() {
   const prompt = useEditStore((s) => s.prompt);
@@ -23,8 +24,8 @@ function PromptBody({ prompt }: { prompt: PromptSpec }) {
       title={prompt.title}
       titleId={titleId}
       onClose={cancel}
-      scrimClassName="cal-dialog-scrim"
-      className="cal-prompt"
+      scrimClassName="cal-dialog-scrim dialog-scrim"
+      className="cal-prompt dialog-surface"
       titleClassName="cal-prompt__title"
     >
       {prompt.message && <p className="cal-prompt__message">{prompt.message}</p>}

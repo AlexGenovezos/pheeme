@@ -1,15 +1,6 @@
 /* The Stats window (StatsDialog.tsx): a dialog over the blurred app, the size of Settings. */
 .stats-scrim {
-  position: fixed;
-  inset: var(--space-0);
-  z-index: var(--z-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: var(--settings-margin);
-  background: var(--color-scrim);
-  -webkit-backdrop-filter: blur(var(--settings-backdrop-blur));
-  backdrop-filter: blur(var(--settings-backdrop-blur));
   animation: settings-fade var(--duration-base) var(--ease-standard);
 }
 
@@ -21,11 +12,6 @@
   max-width: 100%;
   height: var(--settings-height);
   max-height: 100%;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-pane-bg);
-  color: var(--color-foreground);
-  box-shadow: var(--shadow-overlay);
   animation: settings-in var(--duration-slow) var(--ease-out);
 }
 .stats:focus-visible {

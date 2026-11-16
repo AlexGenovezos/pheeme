@@ -1,0 +1,37 @@
+/*
+ * The two looks every floating panel shares. A component adds the class and keeps only its own
+ * layout and animation; where it differs (a smaller radius, say) its own rule overrides.
+ * :where() gives these no specificity, so a component's rule wins whatever order the stylesheets load in.
+ *
+ * popover-surface: menus, pickers, suggestion lists and other small panels that open beside what
+ * they belong to.
+ * dialog-surface: dialogs over the blurred app.
+ */
+:where(.popover-surface) {
+  border: var(--border-width) solid var(--color-menu-border);
+  border-radius: var(--radius-md);
+  background: var(--color-menu-bg);
+  color: var(--color-menu-foreground);
+  box-shadow: var(--shadow-popover);
+}
+
+:where(.dialog-surface) {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-pane-bg);
+  color: var(--color-foreground);
+  box-shadow: var(--shadow-overlay);
+}
+
+/* The dimmed, blurred backdrop a dialog sits on, centred; each dialog sets its own padding. */
+:where(.dialog-scrim) {
+  position: fixed;
+  inset: var(--space-0);
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-scrim);
+  -webkit-backdrop-filter: blur(var(--settings-backdrop-blur));
+  backdrop-filter: blur(var(--settings-backdrop-blur));
+}

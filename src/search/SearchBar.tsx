@@ -11,6 +11,7 @@ import { useAccountStore } from "../store/accountStore";
 import { useMailStore } from "../store/mailStore";
 import { useUiStore } from "../store/uiStore";
 import "./search.css";
+import "../components/ui/Surface.css";
 
 export const SEARCH_INPUT_ID = "mail-search";
 
@@ -128,7 +129,7 @@ export function SearchBar() {
       />
       {focused && (suggestions.length > 0 || historyError) && (
         <div
-          className="mail-search__recent"
+          className="mail-search__recent popover-surface"
           ref={history}
           role="region"
           aria-label="Recent searches"
