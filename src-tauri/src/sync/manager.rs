@@ -236,6 +236,11 @@ impl SyncManager {
         .with_color_sync(a.colors.clone())
     }
 
+    /// The account's Gmail client, for callers that only talk to Gmail (no cache write).
+    pub fn api(&self, account_id: &str) -> Arc<dyn MailApi> {
+        self.account(account_id).api.clone()
+    }
+
     pub fn emit(&self, event: SyncEvent) {
         self.events.emit(event);
     }

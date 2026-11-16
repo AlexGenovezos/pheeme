@@ -193,6 +193,46 @@ pub async fn messages_of<'e>(ex: impl SqliteExecutor<'e>, op_id: &str) -> Result
     .await?)
 }
 
+/// A queued op's id and payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpPayload {
+    pub id: String,
+    pub payload: String,
+}
+
+/// The account's pending label changes (`modify` ops waiting for Gmail), with their payloads.
+pub async fn pending_modify_payloads(
+    conn: &mut SqliteConnection,
+    account_id: &str,
+) -> Result<Vec<OpPayload>> {
+    let ops = sqlx::query!(
+        r#"SELECT id, payload FROM outbox
+           WHERE account_id = ? AND status = 'pending' AND kind = 'modify'"#,
+        account_id
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+    Ok(ops
+        .into_iter()
+        .map(|op| OpPayload {
+            id: op.id,
+            payload: op.payload,
+        })
+        .collect())
+}
+
+/// Replace an op's payload.
+pub async fn set_payload<'e>(
+    ex: impl SqliteExecutor<'e>,
+    op_id: &str,
+    payload: &str,
+) -> Result<()> {
+    sqlx::query!("UPDATE outbox SET payload = ? WHERE id = ?", payload, op_id)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
 /// Give a label/trash op the `payload` left once Gmail has `done_threads`, and drop their targets.
 pub async fn drop_threads(
     conn: &mut SqliteConnection,
@@ -201,9 +241,7 @@ pub async fn drop_threads(
     done_threads: &[String],
 ) -> Result<()> {
     let done = serde_json::to_string(done_threads)?;
-    sqlx::query!("UPDATE outbox SET payload = ? WHERE id = ?", payload, op_id)
-        .execute(&mut *conn)
-        .await?;
+    set_payload(&mut *conn, op_id, payload).await?;
     sqlx::query!(
         "DELETE FROM outbox_messages WHERE op_id = ? AND thread_id IN (SELECT value FROM json_each(?))",
         op_id,

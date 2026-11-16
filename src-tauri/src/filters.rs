@@ -46,7 +46,7 @@ impl FilterService {
     }
 
     fn api(&self, account_id: &str) -> Arc<dyn MailApi> {
-        self.sync.engine(account_id).api.clone()
+        self.sync.api(account_id)
     }
 
     /// Every filter on the account, in Gmail's order.

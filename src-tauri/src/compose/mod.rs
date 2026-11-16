@@ -17,7 +17,7 @@ use crate::gmail::GmailError;
 use crate::mail::{MailError, MailService};
 use crate::sync::engine::{now_ms, SyncError};
 use crate::sync::manager::SyncManager;
-use crate::sync::outbox::{self, SendOptions};
+use crate::sync::outbox::{self, FailedSend, ReturnedDraft, SendOptions};
 use crate::sync::MailApi;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -170,7 +170,7 @@ impl ComposeService {
     }
 
     fn api(&self, account_id: &str) -> Arc<dyn MailApi> {
-        self.sync.engine(account_id).api
+        self.sync.api(account_id)
     }
 
     async fn sender(&self, account_id: &str) -> Result<EmailAddress, MailError> {
@@ -708,6 +708,27 @@ impl ComposeService {
     /// Undo send. False when it already left (or may have).
     pub async fn cancel_send(&self, op_id: &str) -> Result<bool, MailError> {
         Ok(outbox::cancel_send(&self.db, op_id).await?)
+    }
+
+    /// The account's sends that Gmail refused or never confirmed and are still in the outbox,
+    /// oldest first.
+    pub async fn failed_sends(&self, account_id: &str) -> Result<Vec<FailedSend>, MailError> {
+        Ok(outbox::failed_sends(&self.db, account_id).await?)
+    }
+
+    /// Put a failed or unconfirmed send back in the account's Drafts, out of the outbox, and
+    /// sync so Drafts shows it. `None` when it went meanwhile.
+    pub async fn reopen_failed_send(
+        &self,
+        account_id: &str,
+        op_id: &str,
+    ) -> Result<Option<ReturnedDraft>, MailError> {
+        let api = self.api(account_id);
+        let returned = outbox::move_to_drafts(&self.db, api.as_ref(), account_id, op_id).await?;
+        if returned.is_some() {
+            self.sync.trigger(Some(account_id.to_owned()));
+        }
+        Ok(returned)
     }
 }
 

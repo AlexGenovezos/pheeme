@@ -62,7 +62,7 @@ impl SenderRuleService {
     }
 
     fn api(&self, account_id: &str) -> Arc<dyn MailApi> {
-        self.sync.engine(account_id).api.clone()
+        self.sync.api(account_id)
     }
 
     /// The account's sender rules, in Gmail's order.

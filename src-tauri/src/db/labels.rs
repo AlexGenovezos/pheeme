@@ -1,4 +1,4 @@
-use crate::db::{messages, outbox};
+use crate::db::messages;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqliteExecutor, SqlitePool};
@@ -122,43 +122,8 @@ pub async fn purge_labels(
         thread_ids.insert(row.thread_id);
     }
 
-    let ops = sqlx::query!(
-        r#"SELECT id, payload FROM outbox
-           WHERE account_id = ? AND status = 'pending' AND kind = 'modify'"#,
-        account_id
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    for op in ops {
-        let Ok(mut payload) = serde_json::from_str::<serde_json::Value>(&op.payload) else {
-            continue;
-        };
-        let mut changed = false;
-        for key in ["add", "remove"] {
-            if let Some(list) = payload.get_mut(key).and_then(|v| v.as_array_mut()) {
-                let before = list.len();
-                list.retain(|v| v.as_str().is_none_or(|s| !label_ids.iter().any(|l| l == s)));
-                changed |= list.len() != before;
-            }
-        }
-        if !changed {
-            continue;
-        }
-        let empty = |key: &str| {
-            payload
-                .get(key)
-                .and_then(|v| v.as_array())
-                .is_none_or(|a| a.is_empty())
-        };
-        if empty("add") && empty("remove") {
-            outbox::delete(&mut *conn, &op.id).await?;
-        } else {
-            let json = serde_json::to_string(&payload)?;
-            sqlx::query!("UPDATE outbox SET payload = ? WHERE id = ?", json, op.id)
-                .execute(&mut *conn)
-                .await?;
-        }
-    }
+    // The queued changes' payload is the outbox's own format, so it rewrites them itself.
+    crate::sync::outbox::scrub_labels(conn, account_id, label_ids).await?;
 
     sqlx::query!(
         r#"UPDATE outbox_messages
@@ -298,7 +263,7 @@ pub async fn get_label<'e>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::outbox::{DbOp, DbOpMessage};
+    use crate::db::outbox::{self, DbOp, DbOpMessage};
     use crate::db::test_support::TestDb;
     use crate::db::threads;
 

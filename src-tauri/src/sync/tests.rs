@@ -900,11 +900,11 @@ async fn backfill_skips_messages_deleted_by_sync() {
     h.fake.seed(FakeMsg::new("m1", "t1", &["SENT"]));
     h.engine.run_initial_sync().await.unwrap();
     // Sync deleted m1 after backfill fetched its page (tombstone recorded under the lock).
-    h.engine.write_lock.lock().await.insert("m1".into());
+    h.engine.write_lock().lock().await.insert("m1".into());
     while h.engine.backfill_step().await.unwrap() == BackfillProgress::More {}
     assert!(cached_labels(&h.pool, "m1").await.is_none());
     assert!(
-        h.engine.write_lock.lock().await.is_empty(),
+        h.engine.write_lock().lock().await.is_empty(),
         "cleared when backfill completes"
     );
 }
@@ -919,7 +919,7 @@ async fn sync_keeps_no_tombstones_once_backfill_is_done() {
     h.engine.run_incremental_sync().await.unwrap();
     assert!(cached_labels(&h.pool, "m1").await.is_none());
     assert!(
-        h.engine.write_lock.lock().await.is_empty(),
+        h.engine.write_lock().lock().await.is_empty(),
         "no backfill left to resurrect it, so nothing to remember"
     );
 }
@@ -2337,9 +2337,10 @@ async fn system_gets(h: &H) -> usize {
 fn clocked_harness_engine(h: &mut H) -> Arc<std::sync::Mutex<std::time::Instant>> {
     let clock = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
     let c = clock.clone();
-    h.engine.colors = Arc::new(super::engine::ColorSync::with_clock(move || {
-        *c.lock().unwrap()
-    }));
+    h.engine
+        .set_color_sync(Arc::new(super::engine::ColorSync::with_clock(move || {
+            *c.lock().unwrap()
+        })));
     clock
 }
 
