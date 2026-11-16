@@ -83,7 +83,7 @@ chrono-tz = "0.10"
 socket2 = { version = "0.6", features = ["all"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-zbus = { version = "5", default-features = false, features = ["tokio"] }
+zbus = { version = "6", default-features = false, features = ["tokio"] }
 gungraun = { version = "0.20.0", features = ["act"], optional = true }
 # Turns on spell checking in the webview (already in the tree via wry).
 webkit2gtk = "2.0"
