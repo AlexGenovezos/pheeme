@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, test, vi } from "vitest";
 import { SWIPE_DISTANCE, SWIPE_GAP_MS, swipeStepper } from "./swipe";
 

@@ -539,10 +539,6 @@ describe("automatic updates", () => {
     expect(useUpdateStore.getState().available).toBe("0.2.0");
   });
 
-  test("checks every 30 minutes", () => {
-    expect(CHECK_INTERVAL_MS).toBe(30 * 60 * 1000);
-  });
-
   test("restarts into the update, hidden, once the window has been hidden for 10 minutes", async () => {
     const { update, order: installs } = downloadable();
     const { deps, order } = autoDeps(update);

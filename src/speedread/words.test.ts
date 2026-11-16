@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, test } from "vitest";
 import { beats, clampWpm, focusIndex, resumeIndex, timeLeft, toWords, wordDuration } from "./words";
 

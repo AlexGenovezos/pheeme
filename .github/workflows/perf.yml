@@ -127,6 +127,11 @@ jobs:
 
   frontend-memory:
     name: Frontend memory
+    needs: changes
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'pull_request' || needs.changes.result != 'success' ||
+      needs.changes.outputs.app == 'true' || needs.changes.outputs.memory == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -163,6 +168,7 @@ jobs:
     outputs:
       app: ${{ steps.files.outputs.app }}
       rust: ${{ steps.files.outputs.rust }}
+      memory: ${{ steps.files.outputs.memory }}
     steps:
       - name: List the changed files
         id: files
@@ -173,10 +179,15 @@ jobs:
         run: |
           # Anything that goes into the release build, or the harness that measures it. Tests,
           # benchmarks, docs and the website don't. If the list can't be read, run it.
-          if ! files=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'); then
-            echo "app=true" >> "$GITHUB_OUTPUT"
-            echo "rust=true" >> "$GITHUB_OUTPUT"
+          if ! files=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/files?per_page=100" --jq '.[] | .filename, (.previous_filename // empty)'); then
+            printf 'app=true\nrust=true\nmemory=true\n' >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          # The JS heap check's own harness (it also runs whenever the app changes).
+          if grep -qE '^(e2e/memory\.spec\.ts|playwright\.config\.ts)$|^e2e/fixtures/' <<<"$files"; then
+            echo "memory=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "memory=false" >> "$GITHUB_OUTPUT"
           fi
           # The Rust benchmarks and heap soak: the crate, its build settings, or this workflow.
           if grep -qE '^(src-tauri/|\.cargo/|\.github/actions/setup-build/)|^(rust-toolchain\.toml|\.github/workflows/perf\.yml)$' <<<"$files"; then
@@ -198,8 +209,11 @@ jobs:
   app:
     name: Real app
     needs: changes
-    # workflow_dispatch skips `changes` and always runs it.
+    # workflow_dispatch skips `changes` and always runs it. Dependabot PRs skip it: a dependency
+    # bump rarely moves startup or memory, and the nightly run (nightly-perf.yml) still measures it.
     if: >-
       !cancelled() &&
-      (github.event_name == 'workflow_dispatch' || needs.changes.outputs.app == 'true')
+      (github.event_name == 'workflow_dispatch' ||
+      ((needs.changes.result == 'failure' || needs.changes.outputs.app == 'true') &&
+      github.event.pull_request.user.login != 'dependabot[bot]'))
     uses: ./.github/workflows/app-perf.yml

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, test } from "vitest";
 import type { Attendee } from "../lib/tauri";
 import { answerTally } from "./rsvp";

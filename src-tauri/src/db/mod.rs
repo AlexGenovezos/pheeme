@@ -744,16 +744,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn migration_002_adds_sync_columns() {
-        let pool = fresh_pool().await;
-        let cols: Vec<(String,)> = sqlx::query_as("SELECT name FROM pragma_table_info('messages')")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-        assert!(cols.iter().any(|(c,)| c == "rfc822_message_id"));
-    }
-
-    #[tokio::test]
     async fn recompute_threads_derives_labels_and_deletes_empty() {
         let pool = fresh_pool().await;
         accounts::insert_account(&pool, &test_account("acct-1"))

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, test } from "vitest";
 import type { CalendarEvent } from "../lib/tauri";
 import { zoneLines } from "./EventPopover";

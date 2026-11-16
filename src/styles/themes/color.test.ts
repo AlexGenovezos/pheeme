@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, test } from "vitest";
 import { lightTheme } from ".";
 import { buildTheme, DERIVED_TOKENS, type ThemeSource } from "./build";

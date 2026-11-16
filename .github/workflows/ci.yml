@@ -19,15 +19,52 @@ env:
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
-  # The frontend and Rust halves run as separate jobs so neither waits for the other: in one
-  # job, vitest (~1.5 min) and the Rust tests (~3-4.5 min) ran back to back.
+  # Which halves a pull request touches. main runs everything (this job is skipped there), and
+  # if the file list can't be read, or this job fails, everything runs too.
+  changes:
+    name: What does this PR change?
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.files.outputs.rust }}
+      bundle: ${{ steps.files.outputs.bundle }}
+    steps:
+      - name: List the changed files
+        id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if ! files=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/files?per_page=100" --jq '.[] | .filename, (.previous_filename // empty)'); then
+            printf 'rust=true\nbundle=true\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The crate, its build settings, the example mods its tests read, or this workflow.
+          if grep -qE '^(src-tauri/|\.cargo/|examples/mods/|\.github/actions/setup-build/)|^(rust-toolchain\.toml|\.github/workflows/ci\.yml)$' <<<"$files"; then
+            printf 'rust=true\nbundle=true\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "rust=false" >> "$GITHUB_OUTPUT"
+          echo "No Rust change: skipping the Rust checks, SQLx cache and Rust coverage."
+          # The Tauri CLI, the Node version and the Vite output folder (Tauri's frontendDist) the
+          # bundles are built with. The frontend itself is built and tested by the web job.
+          if grep -qE '^(package(-lock)?\.json|\.nvmrc|vite\.config\.ts)$' <<<"$files"; then
+            echo "bundle=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bundle=false" >> "$GITHUB_OUTPUT"
+            echo "No Rust or build-tool change: skipping the bundles."
+          fi
+
+  # The frontend and Rust halves run as separate jobs so neither waits for the other. Linux only:
+  # typecheck, lint, vitest (jsdom) and the Vite build don't depend on the OS, and the bundle
+  # jobs still build the frontend on macOS and Windows.
   web:
-    name: Web checks (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-22.04]
+    name: Web checks
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,33 +77,37 @@ jobs:
       - run: npm run version:check
       - run: npm run typecheck
       - run: npm run lint
-      # Platform-independent, so Linux only. knip.json says which files are entry points;
-      # .duplication-baseline.json holds the copies that were already there.
+      # knip.json says which files are entry points; .duplication-baseline.json holds the copies
+      # that were already there.
       - name: Dead code
-        if: matrix.os == 'ubuntu-22.04'
         run: npm run deadcode
       - name: Duplicated code
-        if: matrix.os == 'ubuntu-22.04'
         run: npm run dupes
       - run: npm run format:check
-      - run: npm run test:ci
+      # The one vitest run, with coverage (thresholds in vitest.config.ts).
+      - name: Frontend tests and coverage
+        shell: bash
+        run: |
+          set +e
+          npm run test:coverage | tee frontend-coverage.txt
+          status=${PIPESTATUS[0]}
+          { echo '### Frontend coverage'; echo '```'; sed -n '/Coverage summary/,$p' frontend-coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
       - name: Use public DNS for apt
         # Ubuntu runners' resolver intermittently fails on every Ubuntu mirror
         # (2026-11-11), which breaks `playwright install --with-deps`.
-        if: matrix.os == 'ubuntu-22.04'
         run: sudo resolvectl dns "$(ip route show default | awk '{print $5; exit}')" 1.1.1.1 8.8.8.8
       - name: Install browser for mod UI proof
-        if: matrix.os == 'ubuntu-22.04'
         run: npx playwright install --with-deps chromium
       - name: Browser interaction flows
-        if: matrix.os == 'ubuntu-22.04'
         # Every spec in e2e/ except the memory one (perf.yml runs it as test:memory), so a new
-        # spec can't be silently skipped.
+        # spec can't be silently skipped. Its web server runs `vite build` first, which is this
+        # job's production build check.
         run: |
           shopt -s extglob
           npx playwright test e2e/!(memory).spec.ts --reporter=list,html
       - name: Mod UI evidence
-        if: always() && matrix.os == 'ubuntu-22.04'
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mod-ui-evidence
@@ -75,10 +116,11 @@ jobs:
             playwright-report/
           retention-days: 7
       - run: node --test .github/scripts/labels.test.cjs
-      - run: npx vite build
 
   rust:
     name: Rust checks (${{ matrix.os }})
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -115,8 +157,8 @@ jobs:
 
   # The ruleset on main requires "Checks (<os>)", the job before it was split in two. Each one
   # passes only when every gating job did: it always runs, because a skipped required check
-  # counts as passed. A job skipped by its own `if` (bundle runs on pull requests only) counts as
-  # a pass; failed or cancelled is a failure.
+  # counts as passed. A job skipped by its own `if` (bundle runs on pull requests only, the Rust
+  # jobs when `changes` finds no Rust change) counts as a pass; failed or cancelled is a failure.
   checks:
     name: Checks (${{ matrix.os }})
     needs: [web, rust, sqlx-cache, coverage, bundle]
@@ -135,6 +177,8 @@ jobs:
 
   sqlx-cache:
     name: SQLx offline cache
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -170,7 +214,12 @@ jobs:
   bundle:
     name: Bundle (${{ matrix.os }})
     # Runs alongside the checks rather than after them: waiting cost ~4 min per PR.
-    if: github.event_name == 'pull_request'
+    needs: changes
+    # The ruleset requires "Bundle (<os>)" itself, and a job skipped by its `if` never expands its
+    # matrix, so those checks would never report. A PR that needs no bundle skips the steps.
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    env:
+      BUILD: ${{ needs.changes.result != 'success' || needs.changes.outputs.bundle == 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -180,24 +229,29 @@ jobs:
           - os: ubuntu-22.04
             cache-key: ubuntu-22.04-dev
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.BUILD != 'true'
+        run: echo "No Rust or build-tool change, so no bundle is needed."
+      - if: env.BUILD == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-build
+      - if: env.BUILD == 'true'
+        uses: ./.github/actions/setup-build
         with:
           cache-key: ${{ matrix.cache-key || format('{0}-debug', matrix.os) }}
-      - run: npm ci
+      - if: env.BUILD == 'true'
+        run: npm ci
       - name: Bundle (deb)
-        if: matrix.os == 'ubuntu-22.04'
+        if: env.BUILD == 'true' && matrix.os == 'ubuntu-22.04'
         run: npx tauri build --debug --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
       - name: Bundle (nsis)
-        if: matrix.os == 'windows-latest'
+        if: env.BUILD == 'true' && matrix.os == 'windows-latest'
         run: npx tauri build --debug --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
       # Runs the installer the way a user does (no flags). Our template
       # (src-tauri/windows/installer.nsi) makes that a one-click install, so it
       # must finish with no input and open Pheeme; a wizard page would wait forever.
       - name: Install (one-click)
-        if: matrix.os == 'windows-latest'
+        if: env.BUILD == 'true' && matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
@@ -223,10 +277,10 @@ jobs:
           if (-not (Get-Process pheeme -ErrorAction SilentlyContinue)) { throw 'Pheeme did not open after installing.' }
           Stop-Process -Name pheeme -Force
       - name: Bundle (dmg)
-        if: matrix.os == 'macos-latest'
+        if: env.BUILD == 'true' && matrix.os == 'macos-latest'
         run: npx tauri build --debug --bundles dmg --config '{"bundle":{"createUpdaterArtifacts":false}}' -- --locked
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.BUILD == 'true' }}
         with:
           name: pheeme-${{ matrix.os }}
           path: |
@@ -237,8 +291,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Rust only: the web job's vitest run measures frontend coverage.
   coverage:
     name: Coverage
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -246,6 +303,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-build
         with:
+          node: "false"
           rust-components: llvm-tools-preview
           cache-key: ubuntu-22.04-coverage
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
@@ -256,16 +314,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo llvm-cov --locked --summary-only --fail-under-lines 75 | tee rust-coverage.txt
+          cargo llvm-cov --locked --summary-only --fail-under-lines 88 | tee rust-coverage.txt
           status=${PIPESTATUS[0]}
           { echo '### Rust coverage'; echo '```'; grep -E "^(Filename|TOTAL)" rust-coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          exit "$status"
-      - run: npm ci
-      - name: Frontend coverage
-        shell: bash
-        run: |
-          set +e
-          npm run test:coverage | tee frontend-coverage.txt
-          status=${PIPESTATUS[0]}
-          { echo '### Frontend coverage'; echo '```'; sed -n '/Coverage summary/,$p' frontend-coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"

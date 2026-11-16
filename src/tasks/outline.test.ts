@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, test } from "vitest";
 import type { Task } from "../lib/tauri";
 import { layoutTasks } from "./gridLayout";

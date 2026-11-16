@@ -79,7 +79,7 @@ SOAK=long cargo test --profile soak --features test-support --test soak -- --noc
 If a change legitimately needs more memory, measure the new peak and raise the budget in
 `soak.rs` to about 20% above it.
 
-## Frontend memory (every PR)
+## Frontend memory (PRs that change the app; main)
 
 [`e2e/memory.spec.ts`](../e2e/memory.spec.ts) drives the preview build (mocked IPC and
 fixtures, `?threads=10000` for ten thousand more Inbox conversations) in Chromium with
@@ -165,11 +165,12 @@ the job summary shows the comparison.
 
 It runs in two places:
 
-- **Every PR that changes the app** (the `Real app` job of the `Performance` workflow, about
+- **Every PR that changes the app**, except Dependabot's (the `Real app` job of the `Performance` workflow, about
   20 to 25 minutes beside CI), so a slowdown fails the PR that causes it rather than the next
   night. A PR changes the app when it touches `src/`, `src-tauri/`, `public/`, the npm or
   Cargo manifests and lockfiles, the Vite or TypeScript config, the toolchain, or this harness;
-  tests, benchmarks, docs and the website don't count. A PR fails on the budgets only: its
+  tests, benchmarks, docs and the website don't count. Dependency bumps are left to the
+  nightly run. A PR fails on the budgets only: its
   summary compares it with the previous night, but doesn't fail on that comparison, because a
   PR's base may be a day of other changes past it.
 - **Every night on main** (`Nightly performance`), where it also fails on the 20% comparison and

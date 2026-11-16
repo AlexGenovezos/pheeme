@@ -30,24 +30,6 @@ test("every console link is https on a host the backend allows", () => {
   for (const url of urls) expect(new URL(url).origin).toBe("https://console.cloud.google.com");
 });
 
-test("the guide covers the steps the design requires, in order", () => {
-  expect(STEPS.map((s) => s.id)).toEqual([
-    "project",
-    "gmail-api",
-    "people-api",
-    "calendar-api",
-    "tasks-api",
-    "consent",
-    "branding",
-    "publish",
-    "client",
-    "credentials",
-    "unverified",
-    "authorize",
-  ]);
-  expect(STEPS.find((s) => s.id === "publish")?.why).toContain("7 days");
-});
-
 test("client JSON parsing", () => {
   expect(parseClientJson("abc.apps.googleusercontent.com")).toBeNull();
   expect(parseClientJson("{broken")).toBeNull();

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, expect, test } from "vitest";
 import type { AttachmentInfo } from "../../lib/tauri";
 import { usePreviewStore } from "./previewStore";

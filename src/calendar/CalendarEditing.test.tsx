@@ -24,6 +24,16 @@ const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 const settle = async () => {
   for (let i = 0; i < 4; i++) await flush();
 };
+/** Runs `change` with timers faked, then lets the 150 ms typing pause pass without waiting for it. */
+async function typePaused(change: () => unknown) {
+  vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"], now: Date.now() });
+  try {
+    change();
+    await act(() => vi.advanceTimersByTimeAsync(200));
+  } finally {
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
+  }
+}
 const key = (k: string) =>
   act(() => void registry.handleKeyDown(new KeyboardEvent("keydown", { key: k })));
 
@@ -205,8 +215,7 @@ describe("quick add", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Create/ }));
     await flush();
 
-    type("Lunch with Grace tomorrow at 1 at Joe's /team");
-    await act(() => new Promise((r) => setTimeout(r, 200)));
+    await typePaused(() => type("Lunch with Grace tomorrow at 1 at Joe's /team"));
     await settle();
     const quick = dialog("Quick add");
     expect(quick.querySelector(".cal-qa__mark--time")).toHaveTextContent("tomorrow at 1");
@@ -518,8 +527,7 @@ describe("search", () => {
     key("/");
     await flush();
     const input = screen.getByRole("combobox", { name: "Search events" });
-    fireEvent.change(input, { target: { value: "lunch tartine" } });
-    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    await typePaused(() => fireEvent.change(input, { target: { value: "lunch tartine" } }));
     await flush();
 
     const results = screen.getByRole("listbox", { name: "Matching events" });
@@ -547,10 +555,8 @@ describe("search", () => {
     key("/");
     await flush();
     const input = screen.getByRole("combobox", { name: "Search events" });
-    fireEvent.change(input, { target: { value: "lunch" } });
-    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-    fireEvent.change(input, { target: { value: "planning" } });
-    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    await typePaused(() => fireEvent.change(input, { target: { value: "lunch" } }));
+    await typePaused(() => fireEvent.change(input, { target: { value: "planning" } }));
     await flush();
     release();
     await settle();

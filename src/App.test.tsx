@@ -69,10 +69,10 @@ beforeEach(() => {
 
 afterEach(() => restoreLayout());
 
-test("renders nothing until accounts load", () => {
+test("renders only the toast area until accounts load", () => {
   mockIPC(() => new Promise(() => {}));
   const { container } = render(<App />);
-  expect(container.querySelector(".onboarding")).toBeNull();
+  expect([...container.children].map((c) => c.className)).toEqual(["ui-toast-viewport"]);
 });
 
 test("first run with no accounts opens the intro, then the setup guide", async () => {
