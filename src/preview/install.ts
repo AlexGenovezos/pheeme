@@ -41,6 +41,10 @@ import { previewMailStats, previewUnsubscribe } from "./stats";
 import { createDriveHandlers } from "./drive";
 import { byName, type PreviewHandlers } from "./handlers";
 
+/** A grey 16 × 10 PNG standing in for a screenshot dropped in the browser preview. */
+const PREVIEW_SCREENSHOT =
+  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAKCAIAAAAy3EnLAAAAFElEQVR42mM4ceIsSYhhVMPQ1AAA9JF6MAsQG6oAAAAASUVORK5CYII=";
+
 type Args = Record<string, unknown> | undefined;
 /** Browser-test hook installed before startup, so speculative reads see the same fixtures as opens. */
 export type PreviewInvoke = (cmd: string, args: Args, next: typeof handlePreviewCommand) => unknown;
@@ -505,6 +509,12 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     },
     send_diagnostics: () => undefined,
     save_diagnostics: () => undefined,
+    // The browser can't re-encode like Rust does: a pasted image comes back as it is, a dropped path as a grey tile.
+    prepare_screenshot: (args) => ({
+      png: "data" in args ? args.data : PREVIEW_SCREENSHOT,
+      width: 1280,
+      height: 800,
+    }),
     log_update: () => undefined,
     start_hidden_next_launch: () => undefined,
     launch_hidden: () => false,

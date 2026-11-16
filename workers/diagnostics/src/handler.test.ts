@@ -8,15 +8,15 @@ import {
   secondsUntilUtcMidnight,
   takeDailySlot,
 } from "./handler";
+import { APP_BUNDLE_BASE64, fromBase64, goodPng, zipOf } from "./testdata";
 import type { Deps, KvStorage, Notification, QuotaResult, QuotaState } from "./types";
 
 const NOW = new Date("2026-11-06T15:30:00Z");
-const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 
-function zip(size = 64): Uint8Array<ArrayBuffer> {
-  const bytes = new Uint8Array(size);
-  bytes.set(ZIP_MAGIC);
-  return bytes;
+/** A real zip of about `size` bytes: a padded `summary.json`. */
+function zip(size = 128): Uint8Array<ArrayBuffer> {
+  const overhead = zipOf([{ name: "summary.json", data: new Uint8Array() }]).length;
+  return zipOf([{ name: "summary.json", data: new Uint8Array(Math.max(0, size - overhead)) }]);
 }
 
 function meta(overrides: Record<string, unknown> = {}) {
@@ -153,6 +153,30 @@ describe("handleUpload", () => {
 
     expect(res.status).toBe(413);
     expect(put).not.toHaveBeenCalled();
+  });
+
+  it("stores a bundle the app wrote with screenshots", async () => {
+    const { d, put } = deps();
+    const res = await handleUpload(upload({ bundle: fromBase64(APP_BUNDLE_BASE64) }), d);
+
+    expect(res.status).toBe(204);
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a screenshot that isn't a clean PNG with 400, storing nothing", async () => {
+    const { d, put, take, notify } = deps();
+    const png = goodPng();
+    const tampered = new Uint8Array(png.length + 4);
+    tampered.set(png);
+    tampered.set([0x4d, 0x5a, 0x90, 0], png.length);
+    const bundle = zipOf([{ name: "screenshots/1.png", data: tampered }]);
+    const res = await handleUpload(upload({ bundle }), d);
+
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe("screenshots/1.png: has data after the image");
+    expect(put).not.toHaveBeenCalled();
+    expect(take).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it("rejects a bundle that is not a zip with 400", async () => {

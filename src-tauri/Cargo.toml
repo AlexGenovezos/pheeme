@@ -74,6 +74,8 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 # Diagnostics bundles: deflate only (flate2's Rust backend, as file-rotate already uses).
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+# Screenshots added to a diagnostics report: decoded and re-encoded as a clean PNG.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rrule = "0.14"
 chrono-tz = "0.10"
 
@@ -103,6 +105,8 @@ windows-version = "0.100"
 [dev-dependencies]
 dhat = "0.3.3"
 tempfile = "3"
+# Writes PNGs with metadata chunks for the screenshot tests (already in the tree via image).
+png = "0.18"
 tokio = { version = "1", features = ["test-util"] }
 wiremock = "0.6"
 

@@ -53,7 +53,7 @@ import type { GmailSearchPage, SearchPage } from "./search";
 import type { InboxThread, SavedRules, SenderRule } from "./senderRules";
 import type { ClearedDownloads, ThemeFolderFile } from "./settings";
 import type { MailStats, Unsubscribed } from "./stats";
-import type { DiagnosticsEmail, ShownTiming, UpdateEvent } from "./support";
+import type { DiagnosticsEmail, PreparedScreenshot, ShownTiming, UpdateEvent } from "./support";
 import type { Task, TaskEdit, TaskListRef, TaskRef, TasksAccess, TasksAccount } from "./tasks";
 import type { Forecast, LocationForecast, TemperatureUnit, WeatherPlace } from "./weather";
 
@@ -310,13 +310,20 @@ export interface Commands {
   open_theme_folder: Command<void, void>;
   clear_downloaded_mail: Command<void, ClearedDownloads>;
   send_diagnostics: Command<
-    { note: string; replyTo: string | null; email?: DiagnosticsEmail },
+    { note: string; replyTo: string | null; email?: DiagnosticsEmail; screenshots?: string[] },
     void
   >;
   save_diagnostics: Command<
-    { note: string; replyTo: string | null; path: string; email?: DiagnosticsEmail },
+    {
+      note: string;
+      replyTo: string | null;
+      path: string;
+      email?: DiagnosticsEmail;
+      screenshots?: string[];
+    },
     void
   >;
+  prepare_screenshot: Command<{ data: string } | { path: string }, PreparedScreenshot>;
   log_update: Command<{ event: UpdateEvent; version: string | null; error: string | null }, void>;
   start_hidden_next_launch: Command<void, void>;
   launch_hidden: Command<void, boolean>;

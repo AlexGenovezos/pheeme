@@ -633,6 +633,7 @@ pub fn run() {
             commands::compose::failed_sends,
             commands::compose::reopen_failed_send,
             commands::support::send_diagnostics,
+            commands::support::prepare_screenshot,
             commands::support::save_diagnostics,
             commands::updater::log_update,
             commands::updater::start_hidden_next_launch,

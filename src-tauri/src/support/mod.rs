@@ -4,6 +4,7 @@
 
 pub mod bundle;
 pub mod email;
+pub mod screenshot;
 pub mod scrub;
 pub mod upload;
 
@@ -216,6 +217,20 @@ fn open_highlights(opens: &[OpenTiming]) -> Vec<String> {
         .collect()
 }
 
+/// The notification email's line for the screenshots, e.g. `2 screenshots: 2560×1600, 1280×800`.
+fn screenshot_highlight(shots: &[screenshot::Screenshot]) -> String {
+    let sizes: Vec<String> = shots
+        .iter()
+        .map(|s| format!("{}×{}", s.width, s.height))
+        .collect();
+    let noun = if shots.len() == 1 {
+        "screenshot"
+    } else {
+        "screenshots"
+    };
+    format!("{} {noun}: {}", shots.len(), sizes.join(", "))
+}
+
 /// What the user typed, ready to send: the note clipped to [`MAX_NOTE_CHARS`], an empty
 /// reply address dropped, and anything that isn't an address refused.
 fn clean_input(
@@ -272,6 +287,8 @@ pub struct Sources<'a> {
     pub log_dir: Option<PathBuf>,
     /// The email on screen, when the user chose to include it.
     pub email: Option<email::EmailRequest>,
+    /// Screenshots the user added, as the window holds them (cleaned again here).
+    pub screenshots: Vec<Vec<u8>>,
 }
 
 /// The upload's metadata and the zip. Scrubbing and zipping run off the async runtime.
@@ -281,6 +298,12 @@ pub async fn prepare(
     reply_to: Option<&str>,
 ) -> Result<(UploadMeta, Vec<u8>), SupportError> {
     let (note, reply_to) = clean_input(note, reply_to)?;
+    // The window sends back what `prepare_screenshot` gave it, but it is cleaned again: only
+    // a PNG written here ever goes in the zip.
+    let shots = sources.screenshots;
+    let screenshots = tokio::task::spawn_blocking(move || screenshot::clean_all(&shots))
+        .await
+        .map_err(|e| SupportError::Internal(e.to_string()))??;
     let summaries = account_summaries(sources.db, sources.accounts).await?;
     let mut own_addresses: Vec<String> = sources.accounts.iter().map(|a| a.email.clone()).collect();
     own_addresses.extend(reply_to.clone());
@@ -293,6 +316,9 @@ pub async fn prepare(
     if let Some(email) = email {
         highlights.push(email.highlight);
         extra_files = email.files;
+    }
+    if !screenshots.is_empty() {
+        highlights.push(screenshot_highlight(&screenshots));
     }
     let meta = UploadMeta {
         version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -314,6 +340,7 @@ pub async fn prepare(
         log_dir: sources.log_dir,
         own_addresses,
         extra_files,
+        screenshots: screenshots.into_iter().map(|s| s.png).collect(),
         max_bytes: MAX_ZIP_BYTES,
     };
     let zip = tokio::task::spawn_blocking(move || bundle::build(&input))
@@ -532,6 +559,7 @@ mod tests {
                 shown: vec![],
                 log_dir: Some(logs.path().to_path_buf()),
                 email: None,
+                screenshots: vec![],
             },
             " it hangs ",
             None,
@@ -566,5 +594,42 @@ mod tests {
             .read_to_string(&mut log)
             .unwrap();
         assert_eq!(log, "signed in as me@example.com, mail from <email>\n");
+    }
+
+    #[tokio::test]
+    async fn prepare_cleans_screenshots_into_the_zip_and_names_them_in_the_email() {
+        use image::{DynamicImage, RgbImage};
+        let db = TestDb::with_account("a1").await;
+        let mut jpeg = std::io::Cursor::new(Vec::new());
+        DynamicImage::ImageRgb8(RgbImage::new(40, 25))
+            .write_to(&mut jpeg, image::ImageFormat::Jpeg)
+            .unwrap();
+        let sources = |screenshots| Sources {
+            db: &db.pool,
+            accounts: &[],
+            quota_per_minute: 6000,
+            opens: vec![],
+            shown: vec![],
+            log_dir: None,
+            email: None,
+            screenshots,
+        };
+
+        let (meta, zip) = prepare(sources(vec![jpeg.into_inner()]), "", None)
+            .await
+            .unwrap();
+
+        assert_eq!(meta.highlights, ["1 screenshot: 40×25"]);
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip)).unwrap();
+        let mut png = Vec::new();
+        archive
+            .by_name("screenshots/1.png")
+            .unwrap()
+            .read_to_end(&mut png)
+            .unwrap();
+        assert!(png.starts_with(b"\x89PNG"));
+
+        let refused = prepare(sources(vec![b"MZ\x90\x00".to_vec()]), "", None).await;
+        assert_eq!(refused.unwrap_err().code(), "invalid_input");
     }
 }

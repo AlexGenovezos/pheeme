@@ -32,7 +32,7 @@
         <li>We don't run servers that receive, store, or read your email.</li>
         <li>We don't sell your data, show ads, or use your email to train AI models.</li>
         <li>Once a day the app sends us an anonymous ping (a random ID, the app version, your operating system and chip type) so we can count how many people use pheeme. You can turn it off on the welcome screen or in Settings › About.</li>
-        <li>Anything more is sent only if you choose to send diagnostics. Neither ever includes your email.</li>
+        <li>Anything more is sent only if you choose to send diagnostics. The ping never includes your email, and diagnostics include it only if you add the email or a screenshot of it.</li>
         <li>You can disconnect your account and delete everything pheeme stored at any time.</li>
       </ul>
     </div>
@@ -87,12 +87,13 @@
     <p>If something is slow or broken, you can send us diagnostics from Settings › About. Nothing is uploaded until you click Send. If you'd rather check first, you can save the same file to your computer and email it to us yourself.</p>
     <p>Diagnostics contain:</p>
     <ul>
-      <li><strong>The app's recent logs and a short summary</strong>: the app version, your operating system, how far syncing has got, how long emails took to open, and any errors. Before anything leaves your device, the app removes other people's email addresses, search terms, and your computer's user name from the logs. Diagnostics never include the contents of your email, subjects, or contacts.</li>
+      <li><strong>The app's recent logs and a short summary</strong>: the app version, your operating system, how far syncing has got, how long emails took to open, and any errors. Before anything leaves your device, the app removes other people's email addresses, search terms, and your computer's user name from the logs. The logs never include the contents of your email, subjects, or contacts.</li>
       <li><strong>Your reply address</strong>, the email address you choose so we can write back.</li>
       <li><strong>Your note</strong>, exactly as you typed it.</li>
+      <li><strong>Screenshots</strong>, only if you add them. They're sent as they look, so anything they show (an email on screen, say) is sent too. Before sending, the app redraws each one as a plain image, which leaves out hidden details such as where it was taken.</li>
     </ul>
     <p>The upload goes to a small service we run on Cloudflare at diagnostics.pheeme.email. It keeps the file in private storage for about 30 days and then deletes it automatically. Cloudflare processes standard request information such as your IP address to deliver the upload and protect the service from abuse.</p>
-    <p>When an upload arrives, we get a notification email with your note, your reply address, and the summary, but not the logs. That email stays in our inbox like any other support email you send us. We use diagnostics only to find and fix problems in pheeme.</p>
+    <p>When an upload arrives, we get a notification email with your note, your reply address, and the summary, but not the logs or screenshots. That email stays in our inbox like any other support email you send us. We use diagnostics only to find and fix problems in pheeme.</p>
 
     <h2>The website</h2>
     <p>pheeme.app is a static site. It doesn't use cookies, analytics, or tracking scripts, and it has no sign-up forms. The Download and Changelog pages do contact one other server: when you open them, your browser asks GitHub's public API (api.github.com) for the latest release and the release notes, so GitHub sees your IP address and browser details for those requests. The site is hosted on Cloudflare, which processes standard request information such as IP addresses to deliver pages and protect the site from abuse. See the <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare Privacy Policy</a>.</p>
