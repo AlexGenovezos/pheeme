@@ -9,7 +9,7 @@
 //! notification is behind [`ReminderAlerts`].
 
 use super::meeting;
-use super::recurrence;
+use super::recurrence::{self, Instance};
 use crate::db;
 use crate::db::calendar::{DbCalendar, DbEvent};
 use crate::db::reminders::ReminderKey;
@@ -170,15 +170,7 @@ impl ReminderService {
         let rows =
             db::calendar::events_overlapping(&self.db, from, until + MAX_LEAD_MINUTES * MINUTE_MS)
                 .await?;
-        let mut overrides: HashMap<(&str, &str, &str), Vec<&DbEvent>> = HashMap::new();
-        for e in &rows {
-            if let Some(master) = &e.recurring_event_id {
-                overrides
-                    .entry((&e.account_id, &e.calendar_id, master))
-                    .or_default()
-                    .push(e);
-            }
-        }
+        let overrides = recurrence::Overrides::of(&rows);
         let mut out: Vec<Reminder> = Vec::new();
         // The same event on two accounts' calendars (iCalUID, start, lead) reminds once.
         let mut seen: HashMap<(String, i64, i64), usize> = HashMap::new();
@@ -206,33 +198,19 @@ impl ReminderService {
                 .or(calendar.time_zone.as_deref())
                 .and_then(|z| z.parse().ok())
                 .unwrap_or(chrono_tz::UTC);
-            // (event id, start ms, first day if all-day)
-            let mut starts: Vec<(String, i64, Option<String>)> = Vec::new();
-            if e.recurrence.is_some() {
-                let replaced = overrides
-                    .get(&(e.account_id.as_str(), e.calendar_id.as_str(), e.id.as_str()))
-                    .map(Vec::as_slice)
-                    .unwrap_or_default();
-                let to = until + MAX_LEAD_MINUTES * MINUTE_MS;
-                for occ in recurrence::expand(e, replaced, from, to, zone) {
-                    let start = match &occ.start_date {
-                        Some(day) => midnight(day, zone),
-                        None => occ.start_ms,
-                    };
-                    if let Some(start) = start {
-                        starts.push((occ.event_id, start, occ.start_date));
-                    }
-                }
-            } else if e.status != "cancelled" {
-                let start = match &e.start_date {
-                    Some(day) => midnight(day, zone),
-                    None => e.start_ms,
+            let to = until + MAX_LEAD_MINUTES * MINUTE_MS;
+            let instances = recurrence::instances_of(e, &overrides, from, to, zone);
+            for Instance { occ, .. } in instances {
+                // (event id, first day if all-day, start ms)
+                let (event_id, start_date, start) = match occ {
+                    Some(o) => (o.event_id, o.start_date, o.start_ms),
+                    None => (e.id.clone(), e.start_date.clone(), e.start_ms),
                 };
-                if let Some(start) = start {
-                    starts.push((e.id.clone(), start, e.start_date.clone()));
-                }
-            }
-            for (event_id, start_ms, start_date) in starts {
+                let start = match &start_date {
+                    Some(day) => midnight(day, zone),
+                    None => start,
+                };
+                let Some(start_ms) = start else { continue };
                 for &minutes in &leads {
                     let fire_at_ms = start_ms - minutes * MINUTE_MS;
                     if fire_at_ms < from || fire_at_ms > until {
