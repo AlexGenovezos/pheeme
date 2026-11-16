@@ -741,13 +741,19 @@ describe("list density", () => {
       "node:fs" as string
     );
     const style = document.createElement("style");
-    style.textContent = fs.readFileSync("src/mail/mail.css", "utf8");
+    style.textContent = ["src/styles/tokens.css", "src/mail/mail.css"]
+      .map((path) => fs.readFileSync(path, "utf8"))
+      .join("\n");
     document.head.append(style);
     try {
       useUiStore.setState({ listDensity: "compact" });
       const { container } = load();
       const row = container.querySelector<HTMLElement>(".thread-row")!;
-      expect(getComputedStyle(row).height).toBe("var(--row-height-thread-compact)");
+      const token = getComputedStyle(document.documentElement)
+        .getPropertyValue("--row-height-thread-compact")
+        .trim();
+      expect(token).toMatch(/^\d+px$/);
+      expect(getComputedStyle(row).height).toBe(token);
     } finally {
       style.remove();
     }
