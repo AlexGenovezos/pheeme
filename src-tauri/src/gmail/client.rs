@@ -173,8 +173,7 @@ pub async fn user_action<F: Future>(f: F) -> F::Output {
     SCOPE.scope(Scope::User, f).await
 }
 
-/// Run `f` as work nobody is waiting on (the mailbox backfill, preloading a thread, prefetching
-/// attachments): every Gmail request it makes runs at [`Priority::Background`], whatever it
+/// Run `f` as work nobody is waiting on (the mailbox backfill, preloading a thread): every Gmail request it makes runs at [`Priority::Background`], whatever it
 /// would run at otherwise. A task-local like [`user_action`], and the innermost of the two
 /// wins: a `user_action` nested inside `background` runs at the user's priority.
 pub async fn background<F: Future>(f: F) -> F::Output {
@@ -225,8 +224,7 @@ pub(crate) enum Priority {
     Interactive,
     /// Sync and other calls that keep the app current.
     Sync,
-    /// Bulk work nobody is waiting on (anything in [`background`]: the backfill, preloads,
-    /// attachment prefetch). Gets a few slots and a share of the quota, and gives up at Gmail's
+    /// Bulk work nobody is waiting on (anything in [`background`]: the backfill and preloads). Gets a few slots and a share of the quota, and gives up at Gmail's
     /// first rate limit instead of retrying: its caller pauses.
     Background,
 }
