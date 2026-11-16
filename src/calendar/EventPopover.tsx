@@ -47,7 +47,8 @@ import { eventTitle, useCalendarLookup } from "./EventBlock";
 import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
 import { EventWeather } from "../weather/EventWeather";
 import { linkify } from "../mail/linkify";
-import { ANSWERS, type Answer, answerTally, answerWord } from "./rsvp";
+import { AnswerRadios } from "./AnswerRadios";
+import { type Answer, answerTally, answerWord } from "./rsvp";
 import { type OtherZone, placeName, useZoneSettings } from "./zoneSettings";
 import { dayShift, offsetMinutes, zoneCity } from "./zones";
 import "../components/ui/Surface.css";
@@ -224,21 +225,7 @@ function Rsvp({ detail }: { detail: EventDetail }) {
     <div className="cal-pop__rsvp">
       <div className="cal-pop__rsvp-row">
         <span className="cal-pop__rsvp-label">Going?</span>
-        <div role="radiogroup" aria-label="Your answer" className="cal-pop__answers">
-          {ANSWERS.map((a) => (
-            <button
-              key={a.value}
-              type="button"
-              role="radio"
-              aria-checked={(pending ?? current) === a.value}
-              className="cal-pop__answer"
-              disabled={pending !== null}
-              onClick={() => choose(a.value)}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
+        <AnswerRadios shown={pending ?? current} pending={pending !== null} onChoose={choose} />
       </div>
       {asking && (
         <div className="cal-pop__scope" role="group" aria-label="Answer for">

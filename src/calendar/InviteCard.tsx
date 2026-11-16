@@ -47,6 +47,7 @@ import {
   startDay,
 } from "./invite";
 import { layoutDay, MIN_EVENT_MINUTES } from "./layout";
+import { AnswerRadios } from "./AnswerRadios";
 import { ANSWERS, type Answer, answerTally } from "./rsvp";
 import { openInCalendar } from "./mailActions";
 import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
@@ -214,21 +215,11 @@ function AnswerRow({
     body = (
       <>
         <span className="invite-card__going">Going?</span>
-        <div role="radiogroup" aria-label="Your answer" className="cal-pop__answers">
-          {ANSWERS.map((a) => (
-            <button
-              key={a.value}
-              type="button"
-              role="radio"
-              aria-checked={(pending ?? current) === a.value}
-              className="cal-pop__answer"
-              disabled={pending !== null}
-              onClick={() => void send(a.value, false)}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
+        <AnswerRadios
+          shown={pending ?? current}
+          pending={pending !== null}
+          onChoose={(answer) => void send(answer, false)}
+        />
         <Button size="sm" variant="ghost" aria-expanded={more} onClick={() => setMore(!more)}>
           More options
         </Button>
