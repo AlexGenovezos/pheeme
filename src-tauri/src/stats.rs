@@ -1,4 +1,4 @@
-//! Settings › Mail stats: how much mail arrives, where it lands and how much of it the user
+//! Mail stats (the Stats window): how much mail arrives, where it lands and how much of it the user
 //! engages with (opens, replies to or stars), worked out from the cache through `db::messages`.
 //! No Gmail calls. Tauri-free.
 

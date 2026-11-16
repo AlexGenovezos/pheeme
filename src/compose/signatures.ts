@@ -1,6 +1,6 @@
 // Signatures: each account's choice for new messages and for replies/forwards (its Gmail signature, one of its
 // own, or none), and the Gmail signatures themselves, kept from the last fetch so a compose panel opens with one
-// at once, offline too. Settings › Signatures edits them; the compose store puts the chosen one in the body.
+// at once, offline too. Settings › Compose edits them; the compose store puts the chosen one in the body.
 // The choices live in the app's database (so AI assistants' drafts are signed the same way), mirrored in
 // localStorage so a panel opened before they load still has them.
 import DOMPurify from "dompurify";

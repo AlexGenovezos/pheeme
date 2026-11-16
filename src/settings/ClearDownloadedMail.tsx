@@ -13,7 +13,7 @@ export function clearedMessage({ messages, bytes }: ClearedDownloads): string {
   return `Cleared ${plural(messages, "email", "emails")} and ${size} of attachments`;
 }
 
-/** Settings › Appearance › Privacy: drops downloaded email text and attachments, after asking. */
+/** Settings › Accounts › Sync: drops downloaded email text and attachments, after asking. */
 export function ClearDownloadedMail() {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);

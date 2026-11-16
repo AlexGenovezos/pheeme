@@ -29,13 +29,13 @@ afterEach(() => clearMocks());
 test("shows each account's Gmail signature, and asks old accounts to sign in again", async () => {
   render(<SignatureSettings />);
   await flush();
-  const one = screen.getByRole("region", { name: "one@example.com" });
+  const one = screen.getByRole("region", { name: "Signature · one@example.com" });
   expect(one.querySelector(".signature-preview b")?.textContent).toBe("One");
   expect(one.querySelector(".signature-preview img")?.hasAttribute("onerror")).toBe(false);
-  expect(screen.getByRole("region", { name: "two@example.com" })).toHaveTextContent(
+  expect(screen.getByRole("region", { name: "Signature · two@example.com" })).toHaveTextContent(
     "None set in Gmail",
   );
-  const old = screen.getByRole("region", { name: "old@example.com" });
+  const old = screen.getByRole("region", { name: "Signature · old@example.com" });
   expect(old).toHaveTextContent("can't see this account's Gmail settings");
   expect(within(old).getByRole("button", { name: "Sign in again" })).toBeInTheDocument();
 });
@@ -43,7 +43,7 @@ test("shows each account's Gmail signature, and asks old accounts to sign in aga
 test("separate choices for new messages and for replies, and an own signature", async () => {
   render(<SignatureSettings />);
   await flush();
-  const one = screen.getByRole("region", { name: "one@example.com" });
+  const one = screen.getByRole("region", { name: "Signature · one@example.com" });
   const replies = within(one).getByRole("radiogroup", {
     name: "Signature for replies and forwards from one@example.com",
   });

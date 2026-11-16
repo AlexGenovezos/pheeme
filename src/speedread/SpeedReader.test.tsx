@@ -156,7 +156,7 @@ describe("SpeedReader", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reading options" }));
     fireEvent.click(screen.getByRole("button", { name: "All speed reader settings…" }));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(useSettingsStore.getState()).toMatchObject({ open: true, page: "appearance" });
+    expect(useSettingsStore.getState()).toMatchObject({ open: true, page: "reading" });
   });
 
   test("Escape closes it, and app shortcuts are paused while it's open", () => {

@@ -174,7 +174,7 @@ fn signatures_key(account_id: &str) -> String {
     format!("signatures.{account_id}")
 }
 
-/// The account's signature choices as Settings › Signatures saved them (JSON), if ever.
+/// The account's signature choices as Settings › Compose saved them (JSON), if ever.
 pub async fn signatures(pool: &SqlitePool, account_id: &str) -> Result<Option<String>> {
     get(pool, &signatures_key(account_id)).await
 }

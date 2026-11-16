@@ -21,6 +21,20 @@ export interface SettingsSectionDef {
   settings: SettingDef[];
 }
 
+/** A part of a row page that draws itself (Signatures inside Compose, say), between its sections. */
+export interface SettingsBlockDef {
+  id: string;
+  Component: ComponentType<{ query: string }>;
+  /** Extra words search matches on. */
+  keywords?: string[];
+  /** Whether the query finds anything in the block beyond its keywords. */
+  matches?(query: string): boolean;
+}
+
+export type SettingsPagePart = SettingsSectionDef | SettingsBlockDef;
+
+export const isBlock = (part: SettingsPagePart): part is SettingsBlockDef => "Component" in part;
+
 export interface SettingsPageDef {
   /** An installed mod rendered through the public declarative controls. */
   modId?: string;
@@ -30,8 +44,8 @@ export interface SettingsPageDef {
   /** Sidebar heading the page sits under; pages without one go at the top. */
   group?: string;
   keywords?: string[];
-  /** A page made of setting rows. */
-  sections?: SettingsSectionDef[];
+  /** A page made of setting rows, and blocks that draw themselves. */
+  sections?: SettingsPagePart[];
   /** A page that draws itself (Accounts, Keyboard). Gets the search query to filter by. */
   Component?: ComponentType<{ query: string }>;
   /** For `Component` pages: whether the query finds anything on the page. */
@@ -58,9 +72,20 @@ export function pageTitleMatches(page: SettingsPageDef, query: string): boolean 
   return matchesQuery(words(page.title, page.keywords), query);
 }
 
+export function blockMatches(block: SettingsBlockDef, query: string): boolean {
+  return matchesQuery(words(block.keywords), query) || !!block.matches?.(query);
+}
+
+/** Whether a search for `query` finds anything in one part of a page. */
+export function partMatches(part: SettingsPagePart, query: string): boolean {
+  return isBlock(part)
+    ? blockMatches(part, query)
+    : part.settings.some((x) => settingMatches(x, query));
+}
+
 /** Whether a search for `query` should list the page. */
 export function pageMatches(page: SettingsPageDef, query: string): boolean {
   if (!query.trim() || pageTitleMatches(page, query)) return true;
   if (page.matches?.(query)) return true;
-  return (page.sections ?? []).some((s) => s.settings.some((x) => settingMatches(x, query)));
+  return (page.sections ?? []).some((part) => partMatches(part, query));
 }

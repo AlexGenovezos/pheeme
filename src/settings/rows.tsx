@@ -2,6 +2,14 @@ import type { ReactNode } from "react";
 import { Skeleton } from "../components/ui/Skeleton";
 import { cx } from "../lib/utils";
 
+/**
+ * The title of one account's part of a page that shows several kinds of thing per account: just
+ * `label` with one account, `label · email` with more.
+ */
+export function accountSectionTitle(label: string, email: string, accounts: number): string {
+  return accounts > 1 ? `${label} · ${email}` : label;
+}
+
 /** A titled card of rows, the building block of every settings page. `card={false}` leaves the children to draw their own cards. */
 export function SettingsSection({
   title,

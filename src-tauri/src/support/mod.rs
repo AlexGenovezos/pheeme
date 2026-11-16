@@ -1,5 +1,5 @@
 //! Send diagnostics: a scrubbed bundle of recent logs and sync state that the user uploads to
-//! the developer (or saves to a file) from Settings › Diagnostics. Nothing is sent unless they ask.
+//! the developer (or saves to a file) from Settings › About. Nothing is sent unless they ask.
 //! Tauri-free; the commands in `commands/support.rs` are thin adapters.
 
 pub mod bundle;

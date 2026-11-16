@@ -1,4 +1,4 @@
-// Settings › Sender rules: each account's Gmail filters that file a sender's mail in an inbox category, made with
+// Settings › Inbox › Sender rules: each account's Gmail filters that file a sender's mail in an inbox category, made with
 // "This and future mail from…" when moving mail. Fetched when the page opens; they aren't synced.
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
@@ -7,7 +7,7 @@ import { categoryName } from "../mail/CategoryMoveDialog";
 import { ReconnectButton } from "../onboarding/Reconnect";
 import { useAccountStore } from "../store/accountStore";
 import { Skeleton } from "../components/ui/Skeleton";
-import { PendingButton, SettingsRow, SettingsSection } from "./rows";
+import { accountSectionTitle, PendingButton, SettingsRow, SettingsSection } from "./rows";
 
 type Rules =
   | { kind: "loading" }
@@ -15,7 +15,7 @@ type Rules =
   | { kind: "missing-scope" }
   | { kind: "error"; message: string };
 
-function AccountRules({ accountId, email }: { accountId: string; email: string }) {
+function AccountRules({ accountId, title }: { accountId: string; title: string }) {
   const [state, setState] = useState<Rules>({ kind: "loading" });
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -66,7 +66,7 @@ function AccountRules({ accountId, email }: { accountId: string; email: string }
   };
 
   return (
-    <SettingsSection title={email}>
+    <SettingsSection title={title}>
       {state.kind === "loading" && (
         // One row shaped like a rule's, so the first rule arrives in its place.
         <SettingsRow
@@ -124,11 +124,16 @@ function AccountRules({ accountId, email }: { accountId: string; email: string }
 
 export function SenderRulesSettings() {
   const accounts = useAccountStore((s) => s.accounts);
-  if (accounts.length === 0) return <p className="settings-empty">No accounts connected.</p>;
+  // With no account, the inbox tabs above already say to connect one.
+  if (accounts.length === 0) return null;
   return (
     <>
       {accounts.map((a) => (
-        <AccountRules key={a.id} accountId={a.id} email={a.email} />
+        <AccountRules
+          key={a.id}
+          accountId={a.id}
+          title={accountSectionTitle("Sender rules", a.email, accounts.length)}
+        />
       ))}
     </>
   );

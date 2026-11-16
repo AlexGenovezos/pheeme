@@ -39,13 +39,13 @@ afterEach(() => clearMocks());
 test("lists each account's rules, deletes one, and asks old accounts to sign in again", async () => {
   render(<SenderRulesSettings />);
   await flush();
-  const one = screen.getByRole("region", { name: "one@example.com" });
+  const one = screen.getByRole("region", { name: "Sender rules · one@example.com" });
   expect(one).toHaveTextContent("news@x.com");
   expect(one).toHaveTextContent("Goes to Updates");
-  expect(screen.getByRole("region", { name: "two@example.com" })).toHaveTextContent(
+  expect(screen.getByRole("region", { name: "Sender rules · two@example.com" })).toHaveTextContent(
     "No sender rules",
   );
-  const old = screen.getByRole("region", { name: "old@example.com" });
+  const old = screen.getByRole("region", { name: "Sender rules · old@example.com" });
   expect(old).toHaveTextContent("can't see this account's Gmail filters");
   expect(screen.getByRole("button", { name: "Sign in again" })).toBeInTheDocument();
 
@@ -59,7 +59,7 @@ test("while rules load, the section shows a placeholder shaped like a rule, not 
   useAccountStore.setState({ accounts: [{ id: "a1", email: "one@example.com" } as never] });
   mockIPC((cmd) => (cmd === "list_sender_rules" ? new Promise(() => {}) : undefined));
   render(<SenderRulesSettings />);
-  const one = screen.getByRole("region", { name: "one@example.com" });
+  const one = screen.getByRole("region", { name: "Sender rules" });
   expect(one).not.toHaveTextContent(/loading/i);
   expect(one.querySelectorAll(".settings-row")).toHaveLength(1);
   expect(one.querySelectorAll(".ui-skeleton").length).toBeGreaterThan(0);

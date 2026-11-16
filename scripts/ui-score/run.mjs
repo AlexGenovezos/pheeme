@@ -353,6 +353,13 @@ const PARTS = [
     root: ".settings",
   },
   {
+    id: "settings-reading",
+    name: "Settings: Reading",
+    base: true,
+    go: (p) => openSettings(p, "Reading"),
+    root: ".settings",
+  },
+  {
     id: "settings-keyboard",
     name: "Settings: Keyboard shortcuts",
     base: true,
@@ -374,24 +381,17 @@ const PARTS = [
     root: ".settings",
   },
   {
+    id: "settings-inbox",
+    name: "Settings: Inbox",
+    base: true,
+    go: (p) => openSettings(p, "Inbox"),
+    root: ".settings",
+  },
+  {
     id: "settings-compose",
     name: "Settings: Compose",
     base: true,
     go: (p) => openSettings(p, "Compose"),
-    root: ".settings",
-  },
-  {
-    id: "settings-signatures",
-    name: "Settings: Signatures",
-    base: true,
-    go: (p) => openSettings(p, "Signatures"),
-    root: ".settings",
-  },
-  {
-    id: "settings-sync",
-    name: "Settings: Sync",
-    base: true,
-    go: (p) => openSettings(p, "Sync"),
     root: ".settings",
   },
   {
@@ -413,13 +413,6 @@ const PARTS = [
     name: "Settings: Mods",
     base: true,
     go: (p) => openSettings(p, "Mods"),
-    root: ".settings",
-  },
-  {
-    id: "settings-diagnostics",
-    name: "Settings: Diagnostics",
-    base: true,
-    go: (p) => openSettings(p, "Diagnostics"),
     root: ".settings",
   },
   {

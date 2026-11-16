@@ -1,4 +1,4 @@
-//! Each account's signature choices (Settings › Signatures): Gmail's signature, the
+//! Each account's signature choices (Settings › Compose): Gmail's signature, the
 //! account's own, or none, for new messages and for replies and forwards. Kept in
 //! `app_settings` so anything that writes mail for the user, the compose panel and AI
 //! assistants' drafts alike, signs it the same way.
@@ -18,7 +18,7 @@ pub enum SignatureChoice {
     None,
 }
 
-/// What Settings › Signatures saved for an account (the frontend's `AccountSignatures`).
+/// What Settings › Compose saved for an account (the frontend's `AccountSignatures`).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SignatureSettings {

@@ -198,9 +198,9 @@ test("Appearance opens the theme editor over the app, and Settings comes back wh
   expect(useSettingsStore.getState()).toMatchObject({ open: true, page: "appearance" });
 });
 
-test("Appearance changes and persists the reading size", () => {
+test("Reading changes and persists the reading size", () => {
   render(<Harness />);
-  open("appearance");
+  open("reading");
   const size = within(within(dialog()).getByRole("radiogroup", { name: "Reading text size" }));
   fireEvent.click(size.getByRole("radio", { name: "Large" }));
   expect(document.documentElement.dataset.readingSize).toBe("large");
@@ -208,10 +208,10 @@ test("Appearance changes and persists the reading size", () => {
   expect(size.getByRole("radio", { name: "Large" })).toHaveAttribute("aria-checked", "true");
 });
 
-test("Appearance sets up the speed reader", () => {
+test("Reading sets up the speed reader", () => {
   useSpeedReaderSettings.setState({ ...DEFAULT_PREFS });
   render(<Harness />);
-  open("appearance");
+  open("reading");
   const speed = within(dialog()).getByRole("slider", { name: "Reading speed" });
   fireEvent.change(speed, { target: { value: "450" } });
   expect(useSpeedReaderSettings.getState().wpm).toBe(450);
@@ -267,16 +267,38 @@ describe("search", () => {
     expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["Notifications"]);
   });
 
-  test("finds Send diagnostics on its own page", () => {
+  test("finds Send diagnostics under About", () => {
     render(<Harness />);
     open();
     const search = screen.getByRole("searchbox", { name: "Search settings" });
     const nav = within(screen.getByRole("navigation", { name: "Settings sections" }));
     fireEvent.change(search, { target: { value: "diagnostics" } });
-    expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["Diagnostics"]);
+    expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["About"]);
     expect(
       within(dialog()).getByText("Send diagnostics", { selector: ".settings-row__title" }),
     ).toBeVisible();
+  });
+
+  test("a search that finds one part of a combined page shows only that part", () => {
+    render(<Harness />);
+    open();
+    const search = screen.getByRole("searchbox", { name: "Search settings" });
+    const nav = within(screen.getByRole("navigation", { name: "Settings sections" }));
+    fireEvent.change(search, { target: { value: "gmail api limit" } });
+    expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["Accounts"]);
+    expect(within(dialog()).getByRole("region", { name: "Sync" })).toBeVisible();
+    expect(within(dialog()).queryByRole("region", { name: "Connected accounts" })).toBeNull();
+
+    for (const value of ["signature", "signatures"]) {
+      fireEvent.change(search, { target: { value } });
+      expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["Compose"]);
+      expect(within(dialog()).queryByRole("region", { name: "Sending" })).toBeNull();
+    }
+
+    fireEvent.change(search, { target: { value: "send diagnostics" } });
+    expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["About"]);
+    expect(within(dialog()).getByRole("region", { name: "Diagnostics" })).toBeVisible();
+    expect(within(dialog()).queryByRole("region", { name: "Pheeme" })).toBeNull();
   });
 
   test("/ focuses the search", () => {
@@ -425,7 +447,7 @@ test("Accounts can remove an account after confirming", async () => {
 
 test("Reading exposes the exact image-preloading privacy description", () => {
   render(<Harness />);
-  open("appearance");
+  open("reading");
   expect(screen.getByRole("switch", { name: "Preload images" })).toBeChecked();
   expect(
     screen.getByText(

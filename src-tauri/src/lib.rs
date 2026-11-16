@@ -66,7 +66,7 @@ pub struct AppState {
     /// The MCP server AI assistants connect to, over [`local_api::LocalApi`]; runs only while
     /// Settings › MCP allows it.
     pub assistants: Arc<mcp::McpServer>,
-    /// The Gmail per-user limit every account's client paces itself by (Settings › Sync).
+    /// The Gmail per-user limit every account's client paces itself by (Settings › Accounts).
     pub gmail_quota: gmail::QuotaSetting,
     /// What each account's Gmail client spent in the last hour, by source (Settings › Accounts).
     pub gmail_usage: gmail::QuotaUsage,

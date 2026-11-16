@@ -3,7 +3,7 @@ import { useStatsStore } from "../stats/statsStore";
 import { SettingsRow, SettingsSection } from "./rows";
 import { useSettingsStore } from "./settingsStore";
 
-/** Settings › Mail stats: the stats have their own window; this page points to it. */
+/** Settings › Inbox › Mail stats: the stats have their own window; this row points to it. */
 export function MailStatsLink() {
   const open = () => {
     useSettingsStore.getState().close();

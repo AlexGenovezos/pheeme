@@ -73,7 +73,7 @@ export interface QuotaMinute {
 }
 
 export interface QuotaUsage {
-  /** The user's Gmail limit (Settings › Sync). */
+  /** The user's Gmail limit (Settings › Accounts). */
   limitPerMinute: number;
   /** The last 60 minutes, oldest first, the current minute last. */
   minutes: QuotaMinute[];
@@ -277,7 +277,7 @@ export interface InboxThread {
   categories: string[];
 }
 /** The account's sender rules. Rejects with `missing_scope` when the account hasn't granted filters access. */
-/** Received mail counted one way (Settings › Mail stats). Engaged: opened, replied to or starred. */
+/** Received mail counted one way (the Stats window). Engaged: opened, replied to or starred. */
 export interface MailCounts {
   received: number;
   opened: number;
@@ -750,7 +750,7 @@ export const composeTemplate = (accountId: string, messageId: string, mode: Comp
 /** The account's signature as set in Gmail (HTML), or `null` when it has none. */
 export const gmailSignature = (accountId: string) =>
   invoke<string | null>("gmail_signature", { accountId });
-/** An account's choices in Settings › Signatures, as Pheeme keeps them for every compose path (AI drafts too). */
+/** An account's choices in Settings › Compose, as Pheeme keeps them for every compose path (AI drafts too). */
 export interface SignatureSettings {
   newMessages: "gmail" | "custom" | "none";
   replies: "gmail" | "custom" | "none";

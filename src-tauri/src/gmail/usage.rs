@@ -231,7 +231,7 @@ impl QuotaUsage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageReport {
-    /// The user's Gmail limit (Settings › Sync).
+    /// The user's Gmail limit (Settings › Accounts).
     pub limit_per_minute: u32,
     /// Exactly [`MINUTES`] minutes, oldest first, the current minute last.
     pub minutes: Vec<MinuteUsage>,

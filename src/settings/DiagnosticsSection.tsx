@@ -16,7 +16,7 @@ export const NOTE_MAX_LENGTH = 2000;
 type Status = { kind: "done" | "failed"; text: string } | null;
 
 /**
- * Settings › Diagnostics: the anonymous usage ping switch, and sending a scrubbed log bundle to the developer (or
+ * Settings › About › Diagnostics: the anonymous usage ping switch, and sending a scrubbed log bundle to the developer (or
  * saving it to a file).
  */
 export function DiagnosticsSection() {

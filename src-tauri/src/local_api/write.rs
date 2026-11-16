@@ -453,7 +453,7 @@ async fn create_draft(api: &LocalApi, args: CreateDraft) -> Result<Value, ApiErr
             ..Default::default()
         },
     };
-    // Signed as the user signs mail they write in Pheeme (Settings › Signatures). A Gmail
+    // Signed as the user signs mail they write in Pheeme (Settings › Compose). A Gmail
     // signature that can't be read now (offline, Gmail settings not allowed) is left out.
     let reply = args
         .reply_to_message_id

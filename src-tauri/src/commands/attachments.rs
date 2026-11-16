@@ -123,7 +123,7 @@ pub struct ClearedDto {
 }
 
 /// Drops every downloaded email body (except drafts) and cached attachment for all
-/// accounts (Settings › Appearance › Privacy); see [`crate::mail::MailService::clear_downloaded`].
+/// accounts (Settings › Accounts › Sync); see [`crate::mail::MailService::clear_downloaded`].
 #[tauri::command]
 pub async fn clear_downloaded_mail(state: State<'_, AppState>) -> Result<ClearedDto, CommandError> {
     let (messages, bytes) = state.mail.clear_downloaded().await?;
