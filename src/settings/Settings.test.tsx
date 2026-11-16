@@ -289,9 +289,16 @@ describe("search", () => {
     expect(within(dialog()).getByRole("region", { name: "Sync" })).toBeVisible();
     expect(within(dialog()).queryByRole("region", { name: "Connected accounts" })).toBeNull();
 
-    fireEvent.change(search, { target: { value: "signature" } });
-    expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["Compose"]);
-    expect(within(dialog()).queryByRole("region", { name: "Sending" })).toBeNull();
+    for (const value of ["signature", "signatures"]) {
+      fireEvent.change(search, { target: { value } });
+      expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["Compose"]);
+      expect(within(dialog()).queryByRole("region", { name: "Sending" })).toBeNull();
+    }
+
+    fireEvent.change(search, { target: { value: "send diagnostics" } });
+    expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual(["About"]);
+    expect(within(dialog()).getByRole("region", { name: "Diagnostics" })).toBeVisible();
+    expect(within(dialog()).queryByRole("region", { name: "Pheeme" })).toBeNull();
   });
 
   test("/ focuses the search", () => {

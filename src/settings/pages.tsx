@@ -529,7 +529,7 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       {
         id: "signatures",
         Component: SignatureSettings,
-        keywords: ["signature", "sign off", "footer", "forward", "new message"],
+        keywords: ["signatures", "sign off", "footer", "forward", "new message"],
         matches: accountsMatch,
       },
     ],
@@ -689,7 +689,16 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       {
         id: "diagnostics",
         Component: DiagnosticsSection,
-        keywords: ["send", "report", "problem", "slow", "bug", "usage stats", "telemetry", "ping"],
+        keywords: [
+          "send diagnostics",
+          "report",
+          "problem",
+          "slow",
+          "bug",
+          "usage stats",
+          "telemetry",
+          "ping",
+        ],
       },
       { id: "whatsNew", Component: WhatsNew },
     ],
