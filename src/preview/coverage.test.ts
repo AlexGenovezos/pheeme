@@ -10,11 +10,11 @@ const SOURCES = import.meta.glob<string>(
   { query: "?raw", import: "default", eager: true },
 );
 
-/** Every command name passed to `invoke("…")` or `invoke<…>("…")`. */
+/** Every command name passed to `call("…")` (or a raw `invoke("…")`). */
 function invokedCommands(): Set<string> {
   const found = new Set<string>();
   for (const source of Object.values(SOURCES)) {
-    for (const match of source.matchAll(/\binvoke(?:<[^(]*>)?\(\s*"([^"]+)"/g)) {
+    for (const match of source.matchAll(/(?<![.\w])(?:call|invoke)(?:<[^(]*>)?\(\s*"([^"]+)"/g)) {
       found.add(match[1]);
     }
   }
