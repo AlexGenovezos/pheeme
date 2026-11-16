@@ -2,8 +2,7 @@
 
 import type { InboxThread, SavedRules, SenderRule } from "../lib/tauri";
 import type { FixtureThread } from "./fixtures";
-
-type Args = Record<string, unknown> | undefined;
+import type { PartialHandlers } from "./handlers";
 
 const CATEGORIES = [
   "CATEGORY_PERSONAL",
@@ -48,15 +47,15 @@ export function createSenderRuleHandlers(
     return c;
   };
   return {
-    list_sender_rules: (args: Args): SenderRule[] => {
+    list_sender_rules: (args): SenderRule[] => {
       gmail();
-      return [...of(args?.accountId)];
+      return [...of(args.accountId)];
     },
-    rule_senders: (args: Args): string[] => {
-      const own = emailOf(String(args?.accountId))?.toLowerCase();
+    rule_senders: (args): string[] => {
+      const own = emailOf(String(args.accountId))?.toLowerCase();
       const out: string[] = [];
-      for (const id of strings(args?.threadIds)) {
-        const t = threads.find((f) => f.id === id && f.accountId === args?.accountId);
+      for (const id of strings(args.threadIds)) {
+        const t = threads.find((f) => f.id === id && f.accountId === args.accountId);
         const latest = t?.messages
           .filter((m) => m.fromAddress.toLowerCase() !== own)
           .sort((a, b) => b.date - a.date)[0];
@@ -65,12 +64,12 @@ export function createSenderRuleHandlers(
       }
       return out;
     },
-    save_sender_rules: (args: Args): SavedRules => {
-      const target = category(args?.category);
+    save_sender_rules: (args): SavedRules => {
+      const target = category(args.category);
       gmail();
-      const list = of(args?.accountId);
+      const list = of(args.accountId);
       const saved: SavedRules = { created: [], replaced: [] };
-      for (const sender of clean(args?.senders)) {
+      for (const sender of clean(args.senders)) {
         const theirs = list.filter((r) => r.sender === sender);
         if (!theirs.some((r) => r.category === target)) {
           const id = `filter_${++next}`;
@@ -84,29 +83,29 @@ export function createSenderRuleHandlers(
       }
       return saved;
     },
-    undo_sender_rules: (args: Args) => {
+    undo_sender_rules: (args) => {
       gmail();
-      const list = of(args?.accountId);
-      const saved = args?.saved as SavedRules;
+      const list = of(args.accountId);
+      const saved = args.saved as SavedRules;
       for (const id of saved.created) {
         const at = list.findIndex((r) => r.id === id);
         if (at !== -1) list.splice(at, 1);
       }
       for (const rule of saved.replaced) list.push({ ...rule, id: `filter_${++next}` });
     },
-    delete_sender_rule: (args: Args) => {
+    delete_sender_rule: (args) => {
       gmail();
-      const list = of(args?.accountId);
-      const at = list.findIndex((r) => r.id === args?.ruleId);
+      const list = of(args.accountId);
+      const at = list.findIndex((r) => r.id === args.ruleId);
       if (at !== -1) list.splice(at, 1);
     },
-    inbox_threads_from: (args: Args): InboxThread[] => {
-      const target = category(args?.category);
-      const senders = clean(args?.senders);
+    inbox_threads_from: (args): InboxThread[] => {
+      const target = category(args.category);
+      const senders = clean(args.senders);
       return threads
         .filter(
           (t) =>
-            t.accountId === args?.accountId &&
+            t.accountId === args.accountId &&
             t.labelIds.includes("INBOX") &&
             t.messages.some((m) => senders.includes(m.fromAddress.toLowerCase())),
         )
@@ -120,5 +119,5 @@ export function createSenderRuleHandlers(
             : !categories.includes(target),
         );
     },
-  };
+  } satisfies PartialHandlers;
 }

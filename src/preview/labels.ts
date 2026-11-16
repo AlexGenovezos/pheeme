@@ -4,8 +4,7 @@ import { emit } from "@tauri-apps/api/event";
 import { isAllowedColor } from "../labels/palette";
 import { type LabelInfo, SYNC_EVENTS, type SyncMessagesUpdated } from "../lib/tauri";
 import { fixtureUserLabels, type FixtureThread, SYSTEM_LABELS } from "./fixtures";
-
-type Args = Record<string, unknown> | undefined;
+import type { PartialHandlers } from "./handlers";
 
 /** A user label as the preview keeps it; mutable, one set per preview backend. */
 export interface PreviewLabel {
@@ -96,10 +95,7 @@ const notify = (event: string, payload: unknown) =>
   // Fire and forget: the IPC mock isn't there when a test calls a handler directly.
   void emit(event, payload).catch(() => {});
 
-export function createLabelHandlers(
-  labels: PreviewLabel[],
-  threads: FixtureThread[],
-): Record<string, (args: Args) => unknown> {
+export function createLabelHandlers(labels: PreviewLabel[], threads: FixtureThread[]) {
   let nextId = 100;
   const isTaken = (accountId: string, name: string, except: string[]) =>
     labelsFor(labels, accountId).some(
@@ -109,11 +105,11 @@ export function createLabelHandlers(
     labels
       .filter((l) => l.accountId === label.accountId && l.name.startsWith(`${label.name}/`))
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const userLabel = (args: Args): PreviewLabel => {
-    const accountId = String(args?.accountId);
-    const label = labels.find((l) => l.accountId === accountId && l.id === args?.labelId);
+  const userLabel = (args: { accountId: string; labelId: string }): PreviewLabel => {
+    const accountId = String(args.accountId);
+    const label = labels.find((l) => l.accountId === accountId && l.id === args.labelId);
     if (label) return label;
-    if (SYSTEM_LABELS.some((l) => l.id === args?.labelId))
+    if (SYSTEM_LABELS.some((l) => l.id === args.labelId))
       throw invalid("Gmail's own labels can't be changed.");
     throw { code: "not_found", message: "That label isn't available any more." };
   };
@@ -121,9 +117,9 @@ export function createLabelHandlers(
 
   return {
     create_label: (args) => {
-      const accountId = String(args?.accountId);
-      const name = cleanName(args?.name);
-      const colour = colourOf(args?.color);
+      const accountId = String(args.accountId);
+      const name = cleanName(args.name);
+      const colour = colourOf(args.color);
       if (isTaken(accountId, name, [])) throw duplicate(name);
       while (labels.some((l) => l.id === `Label_${nextId}`)) nextId += 1;
       const label: PreviewLabel = {
@@ -141,7 +137,7 @@ export function createLabelHandlers(
     },
     update_label: (args) => {
       const label = userLabel(args);
-      const edit = (args?.edit ?? {}) as Record<string, unknown>;
+      const edit = (args.edit ?? {}) as Record<string, unknown>;
       const labelList = checkVisibility(edit.labelListVisibility, LABEL_LIST);
       const messageList = checkVisibility(edit.messageListVisibility, MESSAGE_LIST);
       if (edit.clearColor === true && edit.color != null)
@@ -206,5 +202,5 @@ export function createLabelHandlers(
         sublabels: sublabelsOf(label).map((l) => l.name),
       };
     },
-  };
+  } satisfies PartialHandlers;
 }

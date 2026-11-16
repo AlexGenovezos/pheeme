@@ -8,6 +8,7 @@ import { useModCommands } from "./lifecycle";
 import { ModsSettings } from "./ModsSettings";
 import { ModPanel, ModSidebar } from "./ModSurfaces";
 import { useModStore } from "./store";
+import { byName } from "../preview/handlers";
 
 beforeEach(() => {
   registry.clear();
@@ -17,9 +18,9 @@ beforeEach(() => {
 function installFixtures(seeded = false, safeMode = false) {
   const handlers = createModHandlers(new URLSearchParams(seeded ? "mods=1" : ""));
   const invoke = vi.fn((command: string, args?: unknown) => {
-    const handler = handlers[command as keyof typeof handlers];
+    const handler = byName(handlers)[command];
     if (command === "list_mods") return { ...handlers.list_mods(), safeMode };
-    if (handler) return handler(args as Record<string, unknown>);
+    if (handler) return handler(args);
     throw new Error(`Unexpected command: ${command}`);
   });
   mockIPC(invoke);

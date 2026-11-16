@@ -5,6 +5,7 @@ import { createCalendarHandlers } from "../preview/calendar";
 import { useAccountStore } from "../store/accountStore";
 import { useCalendarStore } from "./calendarStore";
 import { SidebarAgenda } from "./SidebarAgenda";
+import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
   { id: "acc-personal", email: "avery@example.com" },
@@ -21,10 +22,7 @@ beforeEach(() => {
   localStorage.clear();
   useAccountStore.setState({ accounts: ACCOUNTS as never });
   useCalendarStore.setState({ mode: "calendar", view: "week", anchor: "2026-11-01", open: null });
-  const handlers = createCalendarHandlers(ACCOUNTS, null, NOW) as Record<
-    string,
-    (args?: Record<string, unknown>) => unknown
-  >;
+  const handlers = byName(createCalendarHandlers(ACCOUNTS, null, NOW));
   mockIPC((cmd, args) => handlers[cmd]?.((args ?? {}) as Record<string, unknown>), {
     shouldMockEvents: true,
   });

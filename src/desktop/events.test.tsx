@@ -11,6 +11,7 @@ import { dateOf } from "../calendar/dates";
 import { createCalendarHandlers } from "../preview/calendar";
 import { openNotificationTarget, useDesktopEvents } from "./events";
 import type { NotifyTarget } from "./api";
+import { byName } from "../preview/handlers";
 
 beforeEach(() => {
   __resetUiStoreForTests();
@@ -94,16 +95,14 @@ test("a reminder opens Calendar mode on the event's day with its popover open", 
   ];
   useAccountStore.setState({ accounts: accounts as never });
   useCalendarStore.setState({ mode: "mail", accounts: null, events: null, open: null });
-  const handlers = createCalendarHandlers(accounts, null, Date.now()) as Record<
-    string,
-    (args?: Record<string, unknown>) => unknown
-  >;
+  const handlers = createCalendarHandlers(accounts, null, Date.now());
+  const lookup = byName(handlers);
   let accountReads = 0;
   mockIPC((command, args) => {
     // Calendar's mount reads accounts too; that later read answers last.
     if (command === "calendar_accounts" && ++accountReads === 2)
-      return new Promise((resolve) => setTimeout(() => resolve(handlers[command]()), 50));
-    return handlers[command]?.((args ?? {}) as Record<string, unknown>);
+      return new Promise((resolve) => setTimeout(() => resolve(handlers.calendar_accounts()), 50));
+    return lookup[command]?.(args ?? {});
   });
   try {
     expect(

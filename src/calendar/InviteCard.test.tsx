@@ -10,6 +10,7 @@ import { useCalendarStore } from "./calendarStore";
 import { useEditStore } from "./editStore";
 import { InviteCard } from "./InviteCard";
 import { backToMail, createEventFromEmail } from "./mailActions";
+import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
   { id: "acc-personal", email: "avery@example.com" },
@@ -23,18 +24,14 @@ const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
 
-function backend(
-  access: string | null,
-): Record<string, (args?: Record<string, unknown>) => unknown> {
-  const handlers = createCalendarHandlers(ACCOUNTS, access, NOW) as Record<
-    string,
-    (args?: Record<string, unknown>) => unknown
-  >;
+function backend(access: string | null) {
+  const handlers = createCalendarHandlers(ACCOUNTS, access, NOW);
+  const lookup = byName(handlers);
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
       calls.push({ cmd, args: a });
-      return handlers[cmd]?.(a);
+      return lookup[cmd]?.(a);
     },
     { shouldMockEvents: true },
   );
@@ -126,6 +123,7 @@ describe("InviteCard", () => {
         eventId: "design-review",
         scope: "all",
         response: "declined",
+        comment: null,
       });
     });
     await flush();
@@ -142,6 +140,7 @@ describe("InviteCard", () => {
         calendarId: "avery@example.org",
         eventId: "one-on-one",
         scope: "this",
+        sendUpdates: "none",
       });
     });
     await flush();

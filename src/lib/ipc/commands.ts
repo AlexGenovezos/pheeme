@@ -168,8 +168,6 @@ export interface Commands {
     Account & { opId: string },
     { draftId: string; messageId: string } | null
   >;
-  // Rust has it and the preview fakes it, but no wrapper calls it yet.
-  get_drafts: Command<Account, DraftSummary[]>;
 
   // Contacts
   suggest_contacts: Command<Account & { query: string; limit?: number }, ContactSuggestion[]>;
@@ -301,6 +299,11 @@ export interface Commands {
   mod_connection_status: Command<{ id: string; connection: string }, boolean>;
   connect_mod: Command<{ id: string; connection: string; clientId: string }, void>;
   disconnect_mod: Command<{ id: string; connection: string }, void>;
+
+  // Rust has these and the preview fakes them, but no wrapper calls them today.
+  get_drafts: Command<Account, DraftSummary[]>;
+  /** Sync one account now, or every account when `accountId` is omitted. */
+  sync_now: Command<{ accountId?: string | null }, void>;
 
   // Settings and support
   list_theme_folder: Command<void, { path: string; files: ThemeFolderFile[] }>;

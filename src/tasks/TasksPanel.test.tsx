@@ -8,6 +8,7 @@ import { useAccountStore } from "../store/accountStore";
 import { ContextMenuHost } from "../shell/ContextMenuHost";
 import { TasksPanelHost } from "./TasksPanel";
 import { readPanelOpen, TASKS_PREFS_KEY, useTasksStore } from "./tasksStore";
+import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
   { id: "acc-personal", email: "avery@example.com" },
@@ -28,10 +29,7 @@ let hold: Set<string>;
 let held: Array<() => void>;
 
 function backend(access: string | null = null) {
-  const handlers = createTasksHandlers(ACCOUNTS, access, NOW) as Record<
-    string,
-    (args?: Record<string, unknown>) => unknown
-  >;
+  const handlers = byName(createTasksHandlers(ACCOUNTS, access, NOW));
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;

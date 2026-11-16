@@ -1,7 +1,6 @@
 import type { ModInfo, PreparedMod } from "../mods/api";
 import counterManifest from "../../examples/mods/counter/manifest.json";
-
-type Args = Record<string, unknown> | undefined;
+import type { PartialHandlers } from "./handlers";
 
 // Preview data only: untrusted mod code is never evaluated in the browser.
 export function createModHandlers(params: URLSearchParams) {
@@ -39,7 +38,8 @@ export function createModHandlers(params: URLSearchParams) {
   let prepared: PreparedMod | null = null;
   // Connections the user has signed in, as `${modId}\n${connection}`.
   const connected = new Set<string>();
-  const connectionKey = (args: Args) => `${String(args?.id)}\n${String(args?.connection)}`;
+  const connectionKey = (args: { id: string; connection: string }) =>
+    `${String(args.id)}\n${String(args.connection)}`;
   const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
   return {
     list_mods: () => copy({ safeMode: false, mods }),
@@ -59,10 +59,10 @@ export function createModHandlers(params: URLSearchParams) {
       mods.splice(0, mods.length, counter());
       prepared = null;
     },
-    set_mod_enabled: (args: Args) => {
-      const mod = mods.find((m) => m.manifest.id === args?.id);
+    set_mod_enabled: (args) => {
+      const mod = mods.find((m) => m.manifest.id === args.id);
       if (mod) {
-        mod.enabled = args?.enabled === true;
+        mod.enabled = args.enabled === true;
         mod.running = mod.enabled;
       }
     },
@@ -70,26 +70,26 @@ export function createModHandlers(params: URLSearchParams) {
       mods.splice(0);
       connected.clear();
     },
-    mod_action: (args: Args) => {
+    mod_action: (args) => {
       if (!mods[0]?.running) throw { code: "mod_error", message: "Mod is not running" };
-      if (args?.action === "increment") count++;
-      if (args?.action === "reset") count = 0;
-      if (args?.action === "title") title = String(args?.value);
-      if (args?.action === "compact") compact = args?.value === true;
+      if (args.action === "increment") count++;
+      if (args.action === "reset") count = 0;
+      if (args.action === "title") title = String(args.value);
+      if (args.action === "compact") compact = args.value === true;
       mods[0] = counter();
     },
-    mod_connection_status: (args: Args) => connected.has(connectionKey(args)),
-    connect_mod: (args: Args) => {
-      if (!mods.some((m) => m.manifest.id === args?.id)) {
+    mod_connection_status: (args) => connected.has(connectionKey(args)),
+    connect_mod: (args) => {
+      if (!mods.some((m) => m.manifest.id === args.id)) {
         throw { code: "mod_error", message: "That mod isn't installed" };
       }
-      if (!String(args?.clientId ?? "").trim()) {
+      if (!String(args.clientId ?? "").trim()) {
         throw { code: "mod_error", message: "Enter the connection's client ID" };
       }
       connected.add(connectionKey(args));
     },
-    disconnect_mod: (args: Args) => {
+    disconnect_mod: (args) => {
       connected.delete(connectionKey(args));
     },
-  };
+  } satisfies PartialHandlers;
 }

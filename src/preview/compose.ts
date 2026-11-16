@@ -16,8 +16,7 @@ import type {
 } from "../lib/tauri";
 import { SYNC_EVENTS } from "../lib/tauri";
 import type { FixtureThread } from "./fixtures";
-
-type Args = Record<string, unknown> | undefined;
+import type { PartialHandlers } from "./handlers";
 
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -34,7 +33,7 @@ const htmlToText = (html: string) =>
 export function createComposeHandlers(
   threads: FixtureThread[],
   accounts: () => { id: string; email: string; displayName?: string | null }[],
-): Record<string, (args: Args) => unknown> {
+) {
   const drafts = new Map<string, { accountId: string; messageId: string; draft: ComposeDraft }>();
   const sends = new Map<string, ReturnType<typeof setTimeout>>();
   const signatureSettings = new Map<string, SignatureSettings>();
@@ -117,21 +116,21 @@ export function createComposeHandlers(
   return {
     /** Each fixture account's Gmail signature: its name, and a line about where it was sent from. */
     gmail_signature: (args) => {
-      const from = me(String(args?.accountId));
+      const from = me(String(args.accountId));
       return `<div><b>${escapeHtml(from.name ?? from.address)}</b><br><span style="color:#5f6368">Sent while previewing Pheeme</span></div>`;
     },
-    send_as_addresses: (args) => sendAs(String(args?.accountId)),
-    signature_settings: (args) => signatureSettings.get(String(args?.accountId)) ?? null,
+    send_as_addresses: (args) => sendAs(String(args.accountId)),
+    signature_settings: (args) => signatureSettings.get(String(args.accountId)) ?? null,
     set_signature_settings: (args) => {
-      signatureSettings.set(String(args?.accountId), args?.settings as SignatureSettings);
+      signatureSettings.set(String(args.accountId), args.settings as SignatureSettings);
     },
     compose_template: (args) => {
-      const accountId = String(args?.accountId);
-      const mode = args?.mode as ComposeMode;
+      const accountId = String(args.accountId);
+      const mode = args.mode as ComposeMode;
       const thread = threads.find(
-        (t) => t.accountId === accountId && t.messages.some((m) => m.id === args?.messageId),
+        (t) => t.accountId === accountId && t.messages.some((m) => m.id === args.messageId),
       );
-      const original = thread?.messages.find((m) => m.id === args?.messageId);
+      const original = thread?.messages.find((m) => m.id === args.messageId);
       if (!thread || !original) throw { code: "not_found", message: "That message isn't here." };
       const sender = { name: original.fromName, address: original.fromAddress };
       const mine = me(accountId).address.toLowerCase();
@@ -178,7 +177,7 @@ export function createComposeHandlers(
       return draft;
     },
     stage_attachment: (args): StagedAttachment => {
-      const path = String(args?.path);
+      const path = String(args.path);
       const filename = path.split(/[\\/]/).pop() || "file";
       return {
         id: `staged-${++seq}`,
@@ -189,10 +188,9 @@ export function createComposeHandlers(
       };
     },
     discard_attachments: () => undefined,
-    "plugin:dialog|open": () => ["/Users/you/Documents/Quarterly report.pdf"],
     save_draft: (args): SavedDraft => {
-      const accountId = String(args?.accountId);
-      const message = args?.message as ComposeDraft;
+      const accountId = String(args.accountId);
+      const message = args.message as ComposeDraft;
       const draftId =
         message.draftId && drafts.has(message.draftId) ? message.draftId : `draft-${++seq}`;
       const messageId = `draft-msg-${++seq}`;
@@ -201,7 +199,7 @@ export function createComposeHandlers(
     },
     get_drafts: (args): DraftSummary[] =>
       [...drafts]
-        .filter(([, d]) => d.accountId === args?.accountId)
+        .filter(([, d]) => d.accountId === args.accountId)
         .map(([draftId, d]) => ({
           draftId,
           messageId: d.messageId,
@@ -213,20 +211,20 @@ export function createComposeHandlers(
         })),
     open_draft: (args) => {
       const found = [...drafts.values()].find(
-        (d) => d.accountId === args?.accountId && d.messageId === args?.messageId,
+        (d) => d.accountId === args.accountId && d.messageId === args.messageId,
       );
       if (!found) throw { code: "not_found", message: "That draft isn't in Gmail any more." };
       return { ...found.draft };
     },
     delete_draft: (args) => {
-      drafts.delete(String(args?.draftId));
+      drafts.delete(String(args.draftId));
     },
     send_email: (args): QueuedSend => {
-      const accountId = String(args?.accountId);
-      const message = args?.message as ComposeDraft;
+      const accountId = String(args.accountId);
+      const message = args.message as ComposeDraft;
       if (message.to.length + message.cc.length + message.bcc.length === 0)
         throw { code: "invalid", message: "Add at least one recipient." };
-      const undoMs = Math.min(Number(args?.undoMs ?? 0), 60_000);
+      const undoMs = Math.min(Number(args.undoMs ?? 0), 60_000);
       const opId = `op-${++seq}`;
       sends.set(
         opId,
@@ -241,14 +239,14 @@ export function createComposeHandlers(
       return { opId, sendAt: Date.now() + undoMs };
     },
     cancel_send: (args) => {
-      const timer = sends.get(String(args?.opId));
+      const timer = sends.get(String(args.opId));
       if (!timer) return false;
       clearTimeout(timer);
-      sends.delete(String(args?.opId));
+      sends.delete(String(args.opId));
       return true;
     },
     // Preview sends always go through, so nothing is ever left failed in the outbox.
     failed_sends: () => [],
     reopen_failed_send: () => null,
-  };
+  } satisfies PartialHandlers;
 }

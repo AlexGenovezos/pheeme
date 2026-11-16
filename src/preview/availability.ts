@@ -1,8 +1,7 @@
 /** Guests' free/busy for browser preview (`calendar/availability.rs` in the app). */
 
 import type { AvailabilityResult, BusyInterval, CalendarEvent } from "../lib/tauri";
-
-type Args = Record<string, unknown> | undefined;
+import type { Handler } from "./handlers";
 
 /** Guests whose availability Google won't show (another domain that doesn't share it). */
 const NOT_SHARED = new Set(["priya@example.org"]);
@@ -52,10 +51,10 @@ export function createAvailabilityHandlers(
     allow(accountId: string) {
       allowed.add(accountId);
     },
-    calendar_availability: (args: Args): AvailabilityResult => {
-      const accountId = String(args?.accountId);
-      const fromMs = Number(args?.fromMs);
-      const toMs = Number(args?.toMs);
+    calendar_availability: ((args): AvailabilityResult => {
+      const accountId = String(args.accountId);
+      const fromMs = Number(args.fromMs);
+      const toMs = Number(args.toMs);
       const account = accounts.find((a) => a.id === accountId);
       if (!account)
         throw { code: "invalid_input", message: "That account isn't connected any more." };
@@ -76,7 +75,7 @@ export function createAvailabilityHandlers(
         )
         .map((e) => ({ startMs: e.start.ms!, endMs: e.end.ms! }))
         .sort((a, b) => a.startMs - b.startMs);
-      const emails = (args?.emails as string[] | undefined) ?? [];
+      const emails = (args.emails as string[] | undefined) ?? [];
       const seen = new Set<string>();
       return {
         you: { email: account.email, status: "known", busy: own },
@@ -88,6 +87,6 @@ export function createAvailabilityHandlers(
               : { email, status: "known", busy: guestBusy(email.toLowerCase(), fromMs, toMs) },
           ),
       };
-    },
+    }) satisfies Handler<"calendar_availability">,
   };
 }

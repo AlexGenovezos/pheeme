@@ -4,6 +4,7 @@ import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import {
   type AccountInfo,
+  type ClientChoice,
   type LabelCount,
   type MailboxCount,
   type MessageDetail,
@@ -13,6 +14,7 @@ import {
   type ThreadPage,
   type ThreadSummary,
 } from "../lib/tauri";
+import type { DesktopSettings, NotifySchedule, NotifyTarget } from "../desktop/api";
 import {
   CATEGORY_IDS,
   createFixtureThreads,
@@ -37,14 +39,11 @@ import { createTransferHandlers } from "./transfer";
 import { previewQuotaUsage } from "./quota";
 import { previewMailStats, previewUnsubscribe } from "./stats";
 import { createDriveHandlers } from "./drive";
+import { byName, type PreviewHandlers } from "./handlers";
 
 type Args = Record<string, unknown> | undefined;
 /** Browser-test hook installed before startup, so speculative reads see the same fixtures as opens. */
 export type PreviewInvoke = (cmd: string, args: Args, next: typeof handlePreviewCommand) => unknown;
-
-const accountIdsOf = (args: Args): string[] =>
-  Array.isArray(args?.accountIds) ? args.accountIds.map(String) : [];
-const stringsOf = (value: unknown): string[] => (Array.isArray(value) ? value.map(String) : []);
 
 /** The thread's user labels, sorted by name like the backend's rows. */
 function userLabelIds(t: FixtureThread, labels: PreviewLabel[]): string[] {
@@ -104,7 +103,7 @@ function toDetail(t: FixtureThread, labels: PreviewLabel[]): ThreadDetail {
 }
 
 /** One stateful backend for both onboarding and the shell in browser preview. */
-export function createPreviewHandlers(search = ""): Record<string, (args: Args) => unknown> {
+export function createPreviewHandlers(search = ""): PreviewHandlers {
   const params = new URLSearchParams(search);
   const accounts: AccountInfo[] =
     params.get("accounts") === "0"
@@ -114,10 +113,10 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
           clientId: "1.apps.googleusercontent.com",
           synced: true,
         }));
-  const flows = new Map<string, { kind?: string; accountId?: string }>();
-  const beginSignIn = (args?: Args) => {
+  const flows = new Map<string, ClientChoice | null>();
+  const beginSignIn = (args?: { client: ClientChoice }) => {
     const flowId = crypto.randomUUID();
-    flows.set(flowId, (args?.client ?? {}) as { kind?: string; accountId?: string });
+    flows.set(flowId, args?.client ?? null);
     return { flowId, authUrl: "https://accounts.google.com/o/oauth2/v2/auth?mock=1" };
   };
   const threads = [
@@ -126,20 +125,22 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   ];
   const labels = createPreviewLabels();
   const drive = createDriveHandlers(accounts, threads, params.get("drive"));
+  const calendarZone =
+    params.get("calendarZone") || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const calendar = createCalendarHandlers(
     accounts,
     params.get("calendar"),
     undefined,
-    params.get("calendarZone"),
+    calendarZone,
   );
   const availability = createAvailabilityHandlers(
     accounts,
-    (fromMs, toMs) => calendar.calendar_events({ fromMs, toMs }),
+    (fromMs, toMs) => calendar.calendar_events({ fromMs, toMs, timeZone: calendarZone }),
     params.get("freebusy"),
   );
   const meetingsWith: MeetingsWith = (accountId, address, fromMs, toMs) =>
     calendar
-      .calendar_events({ fromMs, toMs })
+      .calendar_events({ fromMs, toMs, timeZone: calendarZone })
       .filter((e) => e.accountId === accountId && e.selfResponse !== "declined")
       .filter((e) => {
         const detail = calendar.calendar_event_detail({
@@ -155,10 +156,13 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   const summary = (t: FixtureThread) => toSummary(t, labels);
 
   /** Apply `change` to the named threads, then tell the stores, as the backend does after a cache write. */
-  const changeThreads = (args: Args, change: (t: FixtureThread) => void): void => {
-    const accountId = String(args?.accountId);
+  const changeThreads = (
+    args: { accountId: string; threadIds: string[] },
+    change: (t: FixtureThread) => void,
+  ): void => {
+    const { accountId } = args;
     const changed = threads.filter(
-      (t) => t.accountId === accountId && stringsOf(args?.threadIds).includes(t.id),
+      (t) => t.accountId === accountId && args.threadIds.includes(t.id),
     );
     changed.forEach(change);
     const payload: SyncMessagesUpdated = {
@@ -172,14 +176,14 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   };
 
   /** The search's matches: every word in the subject, sender or snippet (`from:`/`subject:` read as words). */
-  const searchHits = (args: Args): FixtureThread[] => {
-    const words = String(args?.query ?? "")
+  const searchHits = (args: { accountIds: string[]; query: string }): FixtureThread[] => {
+    const words = args.query
       .toLowerCase()
       .replace(/\b(from|subject):/g, "")
       .replace(/"/g, " ")
       .split(/\s+/)
       .filter(Boolean);
-    const ids = accountIdsOf(args);
+    const ids = args.accountIds;
     return threads.filter((t) => {
       if (ids.length && !ids.includes(t.accountId)) return false;
       const row = summary(t);
@@ -194,20 +198,25 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
   const notificationChoices = new Map<string, boolean>();
   let gmailQuota = 6000;
   let trayIcon = true;
-  let notifySchedule = { mode: "always", startHour: 9, endHour: 17, weekdaysOnly: true };
+  let notifySchedule: NotifySchedule = {
+    mode: "always",
+    startHour: 9,
+    endHour: 17,
+    weekdaysOnly: true,
+  };
   let telemetry = true;
   let calendarReminders = true;
-  let notificationTarget: unknown = null;
+  let notificationTarget: NotifyTarget | null = null;
   // Preview only: `__pheemeNotificationClick({ kind: "event", ... })` acts as a clicked notification.
   (
     globalThis as { __pheemeNotificationClick?: (target: unknown) => void }
   ).__pheemeNotificationClick = (target) => {
-    notificationTarget = target;
+    notificationTarget = target as NotifyTarget;
     void emit("desktop:open-thread").catch(() => {});
   };
   const inboxTabs = new Map<string, string[]>();
   const hiddenTabs = (accountId: string) => inboxTabs.get(accountId) ?? [];
-  const desktopSettings = () => ({
+  const desktopSettings = (): DesktopSettings => ({
     accounts: accounts.map((a) => ({
       accountId: a.id,
       email: a.email,
@@ -221,7 +230,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     calendarReminders,
   });
   return {
-    greet: (args) => `Hello, ${String(args?.name ?? "world")}! (preview)`,
+    greet: (args) => `Hello, ${String(args.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
     get_sync_progress: () =>
       accounts.map((account) => {
@@ -238,20 +247,20 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       }),
     desktop_settings: desktopSettings,
     set_account_notifications: (args) => {
-      notificationChoices.set(String(args?.accountId), args?.enabled === true);
+      notificationChoices.set(args.accountId, args.enabled === true);
       return desktopSettings();
     },
     answer_notification_prompt: (args) => {
       for (const a of accounts)
-        if (!notificationChoices.has(a.id)) notificationChoices.set(a.id, args?.enable === true);
+        if (!notificationChoices.has(a.id)) notificationChoices.set(a.id, args.enable === true);
       return desktopSettings();
     },
     set_tray_icon: (args) => {
-      trayIcon = args?.shown === true;
+      trayIcon = args.shown === true;
       return desktopSettings();
     },
     set_notification_schedule: (args) => {
-      notifySchedule = { ...notifySchedule, ...(args?.schedule as typeof notifySchedule) };
+      notifySchedule = { ...notifySchedule, ...(args.schedule as typeof notifySchedule) };
       return desktopSettings();
     },
     take_notification_target: () => {
@@ -260,28 +269,24 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       return target;
     },
     set_calendar_reminders: (args) => {
-      calendarReminders = args?.enabled === true;
+      calendarReminders = args.enabled === true;
       return desktopSettings();
     },
     gmail_quota: () => gmailQuota,
-    gmail_quota_usage: (args) => previewQuotaUsage(String(args?.accountId), gmailQuota),
-    mail_stats: (args) =>
-      previewMailStats(
-        typeof args?.accountId === "string" ? args.accountId : null,
-        Number(args?.sinceMs),
-      ),
-    unsubscribe_sender: (args) => previewUnsubscribe(String(args?.threadId)),
+    gmail_quota_usage: (args) => previewQuotaUsage(args.accountId, gmailQuota),
+    mail_stats: (args) => previewMailStats(args.accountId, args.sinceMs),
+    unsubscribe_sender: (args) => previewUnsubscribe(args.threadId),
     set_gmail_quota: (args) => {
-      gmailQuota = Math.min(1_200_000, Math.max(600, Number(args?.perMinute) || 6000));
+      gmailQuota = Math.min(1_200_000, Math.max(600, args.perMinute || 6000));
       return gmailQuota;
     },
-    list_labels: (args) => labelsFor(labels, String(args?.accountId)),
-    inbox_tabs: (args) => [...(inboxTabs.get(String(args?.accountId)) ?? [])],
+    list_labels: (args) => labelsFor(labels, args.accountId),
+    inbox_tabs: (args) => [...(inboxTabs.get(args.accountId) ?? [])],
     // Like the backend: keeps only the four hideable tabs, then tells the stores to reload.
     set_inbox_tabs: (args) => {
-      const accountId = String(args?.accountId);
+      const accountId = args.accountId;
       const hidden = CATEGORY_IDS.filter(
-        (c) => c !== "CATEGORY_PERSONAL" && stringsOf(args?.hidden).includes(c),
+        (c) => c !== "CATEGORY_PERSONAL" && args.hidden.includes(c),
       );
       inboxTabs.set(accountId, hidden);
       void emit(SYNC_EVENTS.labelsUpdated, { accountId }).catch(() => {});
@@ -307,31 +312,28 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     list_threads: (args): ThreadPage => ({
       threads: threadsIn(
         threads,
-        String(args?.labelId ?? "INBOX"),
-        args?.alsoLabelId ? String(args.alsoLabelId) : null,
-        accountIdsOf(args),
+        args.labelId,
+        args.alsoLabelId ?? null,
+        args.accountIds,
         hiddenTabs,
       )
         .filter(
           (t) =>
-            !args?.unreadOnly ||
+            !args.unreadOnly ||
             hasLabel(t, "UNREAD") ||
-            (Array.isArray(args?.keepRead) &&
-              args.keepRead.some(
-                (pair) => Array.isArray(pair) && pair[0] === t.accountId && pair[1] === t.id,
-              )),
+            args.keepRead?.some(([accountId, id]) => accountId === t.accountId && id === t.id),
         )
         .map(summary),
       next: null,
     }),
     get_thread: (args) => {
-      const t = threads.find((f) => f.id === args?.threadId && f.accountId === args?.accountId);
+      const t = threads.find((f) => f.id === args.threadId && f.accountId === args.accountId);
       if (!t) throw { code: "not_found", message: "That conversation isn't on this device." };
       return toDetail(t, labels);
     },
     // Unread inbox conversations, overall and per category, for the accounts asked about.
     mailbox_counts: (args): MailboxCount[] => {
-      const ids = accountIdsOf(args);
+      const ids = args.accountIds;
       const unread = (category: string | null) =>
         threadsIn(threads, "INBOX", category, ids, hiddenTabs).filter((t) => hasLabel(t, "UNREAD"))
           .length;
@@ -342,7 +344,7 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     },
     // Like the backend: counts thread-label rows (so no ALL, and Primary has no row of its own).
     label_counts: (args): LabelCount[] => {
-      const mine = threads.filter((t) => t.accountId === args?.accountId);
+      const mine = threads.filter((t) => t.accountId === args.accountId);
       // UNREAD is a row of its own in the backend; here it follows the messages.
       const labelIds = new Set([
         ...mine.flatMap((t) => t.labelIds),
@@ -372,17 +374,17 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     search_gmail: () => ({ threads: [], next: {}, failed: [] }),
     recent_searches: () => [...recent],
     add_recent_search: (args) => {
-      const q = String(args?.query ?? "").trim();
+      const q = args.query.trim();
       if (q) recent = [q, ...recent.filter((r) => r !== q)].slice(0, 20);
     },
     remove_recent_search: (args) => {
-      recent = args?.query == null ? [] : recent.filter((r) => r !== args.query);
+      recent = args.query == null ? [] : recent.filter((r) => r !== args.query);
     },
     sync_now: () => undefined,
     network_online: () => !params.has("offline"),
     modify_threads: (args) => {
-      const add = stringsOf(args?.add);
-      const remove = stringsOf(args?.remove);
+      const add = args.add;
+      const remove = args.remove;
       // Like the backend: Spam can only be left for the inbox (Not spam), and getting INBOX leaves Trash.
       const toInbox = add.includes("INBOX");
       if (
@@ -405,8 +407,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       });
     },
     mark_inbox_tab_read: (args) => {
-      const accountId = String(args?.accountId);
-      const category = String(args?.category);
+      const accountId = args.accountId;
+      const category = args.category;
       const ids = threadsIn(threads, "INBOX", category, [accountId], hiddenTabs)
         .filter((t) => hasLabel(t, "UNREAD"))
         .map((t) => t.id);
@@ -415,8 +417,8 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       );
     },
     mark_search_read: (args) => {
-      for (const accountId of accountIdsOf(args)) {
-        const ids = searchHits({ accountIds: [accountId], query: args?.query })
+      for (const accountId of args.accountIds) {
+        const ids = searchHits({ accountIds: [accountId], query: args.query })
           .filter((t) => hasLabel(t, "UNREAD"))
           .map((t) => t.id);
         changeThreads({ accountId, threadIds: ids }, (t) =>
@@ -431,16 +433,17 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     begin_oauth: beginSignIn,
     ...createTransferHandlers(beginSignIn),
     complete_oauth: async (args) => {
-      const flowId = String(args?.flowId);
+      const flowId = args.flowId;
       await new Promise((resolve) => setTimeout(resolve, Number(params.get("delay") ?? 2500)));
+      if (!flows.has(flowId)) throw { code: "cancelled", message: "Sign-in cancelled." };
       const choice = flows.get(flowId);
-      if (!choice) throw { code: "cancelled", message: "Sign-in cancelled." };
       flows.delete(flowId);
       const fail = params.get("fail");
       if (fail) throw { code: fail, message: `Mock failure: ${fail}.` };
       if (
-        choice.accountId &&
-        ["drive", "contacts", "calendar", "availability", "reconnect"].includes(choice.kind ?? "")
+        choice &&
+        "accountId" in choice &&
+        ["drive", "contacts", "calendar", "availability", "reconnect"].includes(choice.kind)
       ) {
         const existing = accounts.find((a) => a.id === choice.accountId);
         if (!existing) throw { code: "not_found", message: "That account isn't connected." };
@@ -459,10 +462,10 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
       return account;
     },
     cancel_oauth: (args) => {
-      flows.delete(String(args?.flowId));
+      flows.delete(args.flowId);
     },
     remove_account: (args) => {
-      const index = accounts.findIndex((a) => a.id === args?.accountId);
+      const index = accounts.findIndex((a) => a.id === args.accountId);
       if (index !== -1) accounts.splice(index, 1);
     },
     open_external: () => undefined,
@@ -472,10 +475,10 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     // Every attachment of a kind reads as the matching sample file.
     read_attachment: (args) => {
       const att = threads
-        .filter((t) => t.accountId === args?.accountId)
+        .filter((t) => t.accountId === args.accountId)
         .flatMap((t) => t.messages)
-        .find((m) => m.id === args?.messageId)
-        ?.attachments.find((a) => a.id === args?.attachmentId);
+        .find((m) => m.id === args.messageId)
+        ?.attachments.find((a) => a.id === args.attachmentId);
       if (!att) throw { code: "not_found", message: "That attachment isn't on this device." };
       return sampleAttachment(att.filename, att.mimeType);
     },
@@ -490,13 +493,14 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
     // Diagnostics: nothing leaves the browser; both just succeed.
     telemetry_enabled: () => telemetry,
     set_telemetry: (args) => {
-      telemetry = args?.enabled === true;
+      telemetry = args.enabled === true;
       return telemetry;
     },
     send_diagnostics: () => undefined,
     save_diagnostics: () => undefined,
     log_update: () => undefined,
     log_thread_shown: () => undefined,
+    "plugin:dialog|open": () => ["/Users/you/Documents/Quarterly report.pdf"],
     "plugin:dialog|save": () => "/Users/you/Downloads/pheeme-diagnostics.zip",
     reveal_download: () => undefined,
     list_theme_folder: () => ({
@@ -514,8 +518,9 @@ export function createPreviewHandlers(search = ""): Record<string, (args: Args) 
 export let previewHandlers = createPreviewHandlers();
 
 export function handlePreviewCommand(cmd: string, args?: unknown): unknown {
-  const handler = previewHandlers[cmd];
-  if (handler) return handler(args as Args);
+  // Commands arrive by name from the IPC mock, so this is the one place the typed map is looked up loosely.
+  const handler = byName(previewHandlers)[cmd];
+  if (handler) return handler(args);
   console.warn(`[preview] no fixture for "${cmd}"; returning null`);
   return null;
 }

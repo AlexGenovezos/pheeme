@@ -8,6 +8,7 @@ import { createTasksHandlers } from "../preview/tasks";
 import { useAccountStore } from "../store/accountStore";
 import { TasksPanelHost } from "./TasksPanel";
 import { useTasksStore } from "./tasksStore";
+import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
   { id: "acc-personal", email: "avery@example.com" },
@@ -35,10 +36,10 @@ function hold(cmd: string): () => void {
 }
 
 function renderCalendar() {
-  const handlers = {
+  const handlers = byName({
     ...createCalendarHandlers(ACCOUNTS, null, NOW),
     ...createTasksHandlers(ACCOUNTS, null, NOW),
-  } as Record<string, (args?: Record<string, unknown>) => unknown>;
+  });
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;

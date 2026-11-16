@@ -10,6 +10,7 @@ import { EventWeather, mayNameAPlace } from "./EventWeather";
 import { refreshHomeForecast, useHomeForecast } from "./forecast";
 import { ShowWeatherControl, placeFromZone } from "./WeatherControls";
 import { localUnit, placeLabel, useWeatherSettings, WEATHER_KEY } from "./weatherSettings";
+import { byName } from "../preview/handlers";
 
 // Wednesday 2026-11-11, noon local time.
 const NOW = new Date(2026, 10, 11, 12).getTime();
@@ -35,10 +36,7 @@ beforeEach(() => {
   localStorage.clear();
   calls = [];
   held = [];
-  const handlers = createWeatherHandlers(NOW) as Record<
-    string,
-    (args?: Record<string, unknown>) => unknown
-  >;
+  const handlers = byName(createWeatherHandlers(NOW));
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: a });
@@ -117,7 +115,7 @@ describe("settings", () => {
       calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       if (cmd === "calendar_accounts")
         return [{ access: { status: "on" }, timeZone: "Europe/London", weekStart: 1 }];
-      return createWeatherHandlers(NOW).weather_search_places(args as Record<string, unknown>);
+      return createWeatherHandlers(NOW).weather_search_places(args as { query: string });
     });
     render(<ShowWeatherControl />);
     fireEvent.click(screen.getByRole("switch", { name: "Show weather" }));
