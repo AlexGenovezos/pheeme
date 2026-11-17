@@ -54,20 +54,21 @@ export function PlanTodayHost() {
     },
   ]);
 
-  // At launch, once the due tasks are read and again after the first tasks sync (the cache may
+  // At launch, once the due tasks are read and again after each account's first tasks sync (the cache may
   // have been empty or a day behind); then whenever the window comes back (past midnight, that's a
   // new day to plan). Not on every change: a task synced in mid-day doesn't pop it up.
   useEffect(() => {
     if (loaded) autoOpen();
   }, [loaded]);
   useEffect(() => {
-    let synced = false;
+    // Each account syncs on its own: check after the first sync of each.
+    const synced = new Set<string>();
     const scope = createSubscriptionScope();
     scope
       .add(() =>
-        listen(TASKS_EVENTS.updated, () => {
-          if (synced) return;
-          synced = true;
+        listen(TASKS_EVENTS.updated, ({ payload }) => {
+          if (synced.has(payload.accountId)) return;
+          synced.add(payload.accountId);
           void tasksStore().loadDue().then(autoOpen);
         }),
       )

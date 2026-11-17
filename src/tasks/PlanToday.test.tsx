@@ -127,6 +127,10 @@ describe("Plan today", () => {
     answers.set("tasks_due_through", []);
     await start();
     expect(screen.queryByRole("dialog", { name: "Plan today" })).toBeNull();
+    // One account syncs with nothing due; the other brings the overdue tasks.
+    await act(() => emit("tasks:updated", { accountId: "acc-personal" }));
+    await settle();
+    expect(screen.queryByRole("dialog", { name: "Plan today" })).toBeNull();
     answers.delete("tasks_due_through");
     await act(() => emit("tasks:updated", { accountId: "acc-work" }));
     await settle();
