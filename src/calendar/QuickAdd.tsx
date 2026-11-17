@@ -190,15 +190,7 @@ function QuickAddDialog() {
     end: fallbackStart + (parsed.length ?? 60 * 60_000),
   };
   // A template's length unless the sentence gave one; "gym friday" at 9 AM, not all day.
-  const times = template
-    ? templateTimes(
-        template.fields,
-        when ?? (parsed.length !== null ? said : null),
-        parsed.lengthSaid,
-        fallbackStart,
-        tz,
-      )
-    : said;
+  const times = template ? templateTimes(template.fields, when, parsed, fallbackStart, tz) : said;
   const base: EventForm = {
     ...(times.allDay
       ? newForm({

@@ -46,15 +46,16 @@ export function templateFields(f: EventForm): TemplateFields {
 }
 
 /**
- * When a new event from template `t` is. `when` is what the sentence said (null: nothing),
- * `lengthSaid` whether it gave a length or an end of its own, and `fallbackStart` the time a new
- * event gets when nothing says (`defaultTimes`). A timed template given only a day starts at
- * 9 AM that day; an all-day template given a time becomes a timed event at it.
+ * When a new event from template `t` is. `when` is what the sentence said (null: nothing), `said`
+ * whether it gave a length or an end of its own and the length "for …" gave (ms), and
+ * `fallbackStart` the time a new event gets when nothing says (`defaultTimes`). A timed template
+ * given only a day starts at 9 AM that day; an all-day template given a time or a length becomes
+ * a timed event.
  */
 export function templateTimes(
   t: TemplateFields,
   when: FoundTime | null,
-  lengthSaid: boolean,
+  said: { lengthSaid: boolean; length: number | null },
   fallbackStart: number,
   tz: string,
 ): FoundTime {
@@ -64,12 +65,14 @@ export function templateTimes(
         ? when
         : { ...when, lastDate: addDays(when.date, t.length - 1) };
     if (when) return when;
+    if (said.length !== null)
+      return { allDay: false, start: fallbackStart, end: fallbackStart + said.length };
     const date = wallClock(fallbackStart, tz).date;
     return { allDay: true, date, lastDate: addDays(date, t.length - 1) };
   }
   const start = !when ? fallbackStart : when.allDay ? zonedMs(when.date, 9 * 60, tz) : when.start;
-  if (when && !when.allDay && lengthSaid) return when;
-  return { allDay: false, start, end: start + t.length * MINUTE };
+  if (when && !when.allDay && said.lengthSaid) return when;
+  return { allDay: false, start, end: start + (said.length ?? t.length * MINUTE) };
 }
 
 /**

@@ -370,7 +370,13 @@ export function newEventFromTemplate(t: TemplateFields) {
   const target = defaultCalendar();
   if (!target) return noCalendarToast();
   const zone = displayZone(calendars().accounts);
-  const times = templateTimes(t, null, false, defaultTimes().start, zone);
+  const times = templateTimes(
+    t,
+    null,
+    { lengthSaid: false, length: null },
+    defaultTimes().start,
+    zone,
+  );
   const base = newForm({
     ...(times.allDay
       ? { allDay: true, startDate: times.date, endDate: times.lastDate }

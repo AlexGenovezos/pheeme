@@ -16,9 +16,6 @@ pub const MAX_NAME: usize = 80;
 /// Google's limits on reminders: five of them, at most four weeks ahead.
 const MAX_REMINDERS: usize = 5;
 const MAX_REMINDER_MINUTES: u32 = 4 * 7 * 24 * 60;
-/// A timed template is at most four weeks long, an all-day one at most a year.
-const MAX_TIMED_MINUTES: u32 = 4 * 7 * 24 * 60;
-const MAX_ALL_DAY_DAYS: u32 = 366;
 const MAX_GUESTS: usize = 200;
 const MAX_TEXT: usize = 64 * 1024;
 
@@ -174,12 +171,7 @@ fn invalid(message: &str) -> TemplateError {
 
 /// Why these fields can't be saved, if they can't.
 fn check(fields: &TemplateFields) -> Result<()> {
-    let longest = if fields.all_day {
-        MAX_ALL_DAY_DAYS
-    } else {
-        MAX_TIMED_MINUTES
-    };
-    if fields.length == 0 || fields.length > longest {
+    if fields.length == 0 {
         return Err(invalid(
             "The template's length isn't one an event can have.",
         ));

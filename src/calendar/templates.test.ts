@@ -72,10 +72,11 @@ describe("templateFields", () => {
 
 describe("templateTimes", () => {
   const fallback = at("2026-11-11", 12, 30);
+  const unsaid = { lengthSaid: false, length: null };
 
   test("the template's length from the sentence's start", () => {
     const when = { allDay: false as const, start: at("2026-11-13", 7), end: at("2026-11-13", 8) };
-    expect(templateTimes(gym, when, false, fallback, tz)).toEqual({
+    expect(templateTimes(gym, when, unsaid, fallback, tz)).toEqual({
       allDay: false,
       start: at("2026-11-13", 7),
       end: at("2026-11-13", 7, 45),
@@ -84,17 +85,24 @@ describe("templateTimes", () => {
 
   test("a length or end the sentence gives wins", () => {
     const when = { allDay: false as const, start: at("2026-11-13", 7), end: at("2026-11-13", 9) };
-    expect(templateTimes(gym, when, true, fallback, tz)).toBe(when);
+    expect(templateTimes(gym, when, { lengthSaid: true, length: null }, fallback, tz)).toBe(when);
+  });
+
+  test("“gym friday for 30 min”: the day at 9 AM, for the length said", () => {
+    const friday = { allDay: true as const, date: "2026-11-13", lastDate: "2026-11-13" };
+    expect(
+      templateTimes(gym, friday, { lengthSaid: true, length: 30 * 60_000 }, fallback, tz),
+    ).toEqual({ allDay: false, start: at("2026-11-13", 9), end: at("2026-11-13", 9, 30) });
   });
 
   test("a day alone starts a timed template at 9 AM; nothing said, the usual new-event time", () => {
     const friday = { allDay: true as const, date: "2026-11-13", lastDate: "2026-11-13" };
-    expect(templateTimes(gym, friday, false, fallback, tz)).toEqual({
+    expect(templateTimes(gym, friday, unsaid, fallback, tz)).toEqual({
       allDay: false,
       start: at("2026-11-13", 9),
       end: at("2026-11-13", 9, 45),
     });
-    expect(templateTimes(gym, null, false, fallback, tz)).toEqual({
+    expect(templateTimes(gym, null, unsaid, fallback, tz)).toEqual({
       allDay: false,
       start: fallback,
       end: fallback + 45 * 60_000,
@@ -104,12 +112,12 @@ describe("templateTimes", () => {
   test("an all-day template spans its days from the day said", () => {
     const trip = { ...gym, allDay: true, length: 3 };
     const friday = { allDay: true as const, date: "2026-11-13", lastDate: "2026-11-13" };
-    expect(templateTimes(trip, friday, false, fallback, tz)).toEqual({
+    expect(templateTimes(trip, friday, unsaid, fallback, tz)).toEqual({
       allDay: true,
       date: "2026-11-13",
       lastDate: "2026-11-15",
     });
-    expect(templateTimes(trip, null, false, fallback, tz)).toEqual({
+    expect(templateTimes(trip, null, unsaid, fallback, tz)).toEqual({
       allDay: true,
       date: "2026-11-11",
       lastDate: "2026-11-13",
