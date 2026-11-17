@@ -8,6 +8,7 @@ import { useAccountStore } from "../store/accountStore";
 import { ContextMenuHost } from "../shell/ContextMenuHost";
 import { TasksPanelHost } from "./TasksPanel";
 import { readPanelOpen, TASKS_PREFS_KEY, useTasksStore } from "./tasksStore";
+import { PLANNED_KEY } from "./plan";
 import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
@@ -73,6 +74,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   localStorage.clear();
+  // Planned already: the plan doesn't open over the panel (PlanToday.test.tsx covers it).
+  localStorage.setItem(PLANNED_KEY, "2026-11-11");
   calls = [];
   fail = new Set();
   hold = new Set();
@@ -557,5 +560,24 @@ describe("Tasks panel", () => {
     });
     await settle();
     expect(within(list("Today")).queryByRole("form")).toBeNull();
+  });
+
+  test("Book a time in a task's menu moves it to today and opens Google Calendar there", async () => {
+    await openPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Task options: Renew passport" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Book a time" }));
+    await settle();
+    expect(writes().filter((c) => c.cmd === "update_task")).toEqual([
+      expect.objectContaining({
+        cmd: "update_task",
+        args: expect.objectContaining({ edit: { due: "2026-11-11" } }),
+      }),
+    ]);
+    expect(calls.find((c) => c.cmd === "open_external")?.args).toEqual({
+      url: "https://calendar.google.com/calendar/u/0/r/day/2026/11/11?authuser=avery%40example.com",
+    });
+    expect(last(useToastStore.getState().toasts)).toMatchObject({
+      title: "Book it in Google Calendar",
+    });
   });
 });

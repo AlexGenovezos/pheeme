@@ -33,6 +33,12 @@ export const DEFAULT_KEYS = {
   "calendar.delete": "delete",
   "calendar.join": "shift+j",
   "calendar.search": "/",
+  "plan.today": "t",
+  "plan.tomorrow": "m",
+  "plan.pickDay": "p",
+  "plan.book": "b",
+  "plan.done": "d",
+  "plan.drop": "x",
 } as const;
 
 /** The default key for `id`, when it has one. */

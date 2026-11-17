@@ -21,6 +21,7 @@ import {
   taskKey,
   taskTitle,
 } from "./outline";
+import { bookTask } from "./planStore";
 import { useTasksStore } from "./tasksStore";
 
 const store = useTasksStore.getState;
@@ -63,6 +64,13 @@ export function TaskRow({
           { id: "outdent", label: "Outdent", disabled: !outdent, onSelect: () => move(outdent) },
           { id: "up", label: "Move up", disabled: !up, onSelect: () => move(up) },
           { id: "down", label: "Move down", disabled: !down, onSelect: () => move(down) },
+          { type: "separator" },
+          {
+            id: "book",
+            label: "Book a time",
+            // On its day if that's still ahead, else today.
+            onSelect: () => void bookTask(task, task.due && task.due > now ? task.due : now),
+          },
         ] satisfies ContextMenuItem[])),
     ...(otherLists.length > 0 && !task.parent
       ? ([

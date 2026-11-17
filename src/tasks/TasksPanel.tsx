@@ -37,6 +37,7 @@ import { TaskEditor } from "./TaskEditor";
 import { TaskRow } from "./TaskRow";
 import { TOGGLE_TASKS_COMMAND, TOGGLE_TASKS_SHORTCUT, useTasksStore } from "./tasksStore";
 import { TodaySection } from "./TodaySection";
+import { PlanTodayHost } from "./PlanToday";
 import "./tasks.css";
 
 const store = useTasksStore.getState;
@@ -112,6 +113,7 @@ export function TasksPanelHost() {
   }, [open, accounts, lists, listErrors, accountsError]);
   return (
     <>
+      <PlanTodayHost />
       {open && <TasksPanel />}
       <div className="tasks-rail" {...dragRegion}>
         <IconButton

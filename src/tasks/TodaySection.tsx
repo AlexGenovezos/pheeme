@@ -4,17 +4,15 @@
 import { useMemo } from "react";
 import { Button } from "../components/ui/Button";
 import { Skeleton } from "../components/ui/Skeleton";
-import { registry } from "../keyboard/registry";
 import { useKeybinding } from "../keyboard/useCommands";
 import type { Task } from "../lib/tauri";
 import { describeShortcut } from "../keyboard/format";
 import { listKey, splitCompleted, taskKey } from "./outline";
 import { planQueue } from "./plan";
+import { PLAN_TODAY_COMMAND, usePlanStore } from "./planStore";
 import { TaskEditor } from "./TaskEditor";
 import { TaskRow } from "./TaskRow";
 import { todayDate, useTasksStore } from "./tasksStore";
-
-export const PLAN_TODAY_COMMAND = "tasks.planToday";
 
 /** The `editing` key of a task opened from Today, so its editor shows here, not in its list. */
 const todayKey = (task: Task) => `today\n${taskKey(task)}`;
@@ -39,7 +37,7 @@ export function TodaySection() {
           variant="ghost"
           data-command={PLAN_TODAY_COMMAND}
           title={shortcut ? `Plan today (${describeShortcut(shortcut)})` : undefined}
-          onClick={() => registry.run(PLAN_TODAY_COMMAND)}
+          onClick={() => void usePlanStore.getState().openPlan()}
         >
           Plan today
         </Button>

@@ -8,6 +8,7 @@ import { createTasksHandlers } from "../preview/tasks";
 import { useAccountStore } from "../store/accountStore";
 import { TasksPanelHost } from "./TasksPanel";
 import { useTasksStore } from "./tasksStore";
+import { PLANNED_KEY } from "./plan";
 import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
@@ -64,6 +65,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   localStorage.clear();
+  // Planned already: the plan doesn't open over the panel (PlanToday.test.tsx covers it).
+  localStorage.setItem(PLANNED_KEY, "2026-11-11");
   calls = [];
   held = new Map();
   useAccountStore.setState({ accounts: ACCOUNTS as never });
