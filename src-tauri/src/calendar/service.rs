@@ -7,6 +7,7 @@ use super::error::CalendarError;
 use super::meeting::{self, MeetingLink};
 use super::recurrence::{self, Instance, Occurrence};
 use super::sync::{sync_account, SyncError};
+use super::task_block;
 use super::writes::{can_edit, can_write, Target};
 use super::{CalendarApi, CalendarFactory};
 use crate::db;
@@ -69,8 +70,12 @@ pub struct CalendarEventDto {
     pub color_id: Option<String>,
     pub transparency: Option<String>,
     pub recurring: bool,
-    /// The account may change its details (move, resize, edit): see [`can_edit`].
+    /// The account may change its details (move, resize, edit): see [`can_edit`]. Never for
+    /// a task block.
     pub can_edit: bool,
+    /// Google's task block for this task (`https://tasks.google.com/task/<code>`): see
+    /// [`task_block::task_link`]. Not editable here.
+    pub task_link: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -346,10 +351,12 @@ impl CalendarService {
                 .into_iter()
                 .map(|c| ((c.account_id.clone(), c.id.clone()), c))
                 .collect();
-        let editable = |e: &DbEvent| {
-            calendars
-                .get(&(e.account_id.clone(), e.calendar_id.clone()))
-                .is_some_and(|c| can_edit(c, &serde_json::from_str(&e.raw).unwrap_or_default()))
+        // A task block is edited in Google Tasks, never here.
+        let editable = |e: &DbEvent, dto: &CalendarEventDto| {
+            dto.task_link.is_none()
+                && calendars
+                    .get(&(e.account_id.clone(), e.calendar_id.clone()))
+                    .is_some_and(|c| can_edit(c, &serde_json::from_str(&e.raw).unwrap_or_default()))
         };
         let mut out = Vec::new();
         // The series' call, read once for all its occurrences, which come one after another.
@@ -364,16 +371,20 @@ impl CalendarService {
                         Some((series, call)) if std::ptr::eq(*series, e) => call,
                         _ => &call.insert((e, meeting::of_event(e))).1,
                     };
+                    let base = base_dto(e, Some(occ));
                     CalendarEventDto {
-                        can_edit: editable(e),
+                        can_edit: editable(e, &base),
                         meeting: call.clone(),
-                        ..base_dto(e, Some(occ))
+                        ..base
                     }
                 }
-                None if overlaps(e, from_ms, to_ms, tz) => CalendarEventDto {
-                    can_edit: editable(e),
-                    ..dto(e, None)
-                },
+                None if overlaps(e, from_ms, to_ms, tz) => {
+                    let dto = dto(e, None);
+                    CalendarEventDto {
+                        can_edit: editable(e, &dto),
+                        ..dto
+                    }
+                }
                 None => continue,
             };
             out.push((e, dto));
@@ -492,10 +503,13 @@ impl CalendarService {
                 .unwrap_or_default(),
         };
         let can_rsvp = attendees.iter().any(|a| a.is_self && !a.organizer);
+        let event = dto(&row, occurrence.as_ref());
+        // A task block is edited in Google Tasks, never here.
+        let editable = event.task_link.is_none() && can_edit(&calendar, &raw_flags);
         Ok(EventDetailDto {
             event: CalendarEventDto {
-                can_edit: can_edit(&calendar, &raw_flags),
-                ..dto(&row, occurrence.as_ref())
+                can_edit: editable,
+                ..event
             },
             description: row.description.clone(),
             organizer: organizer.as_ref().map(|o| PersonDto {
@@ -526,7 +540,7 @@ impl CalendarService {
             guests_can_modify,
             guests_can_invite_others: flag("guestsCanInviteOthers", true),
             guests_can_see_other_guests: flag("guestsCanSeeOtherGuests", true),
-            can_edit: can_edit(&calendar, &raw_flags),
+            can_edit: editable,
             can_rsvp,
             can_delete: writable,
         })
@@ -777,6 +791,7 @@ fn base_dto(e: &DbEvent, occ: Option<&Occurrence>) -> CalendarEventDto {
         color_id: e.color_id.clone(),
         transparency: e.transparency.clone(),
         can_edit: false,
+        task_link: task_block::task_link(&e.raw, e.description.as_deref()),
     }
 }
 
@@ -1523,6 +1538,59 @@ pub(super) mod tests {
         assert_eq!(call("lunch"), None);
         let json = serde_json::to_value(&got[0]).unwrap();
         assert_eq!(json["meeting"]["provider"], "Zoom");
+    }
+
+    #[tokio::test]
+    async fn task_blocks_carry_their_task_link_and_cannot_be_edited() {
+        let h = harness(&["a"]).await;
+        let mut block = timed(
+            "block",
+            "Write report",
+            "2026-11-10T15:00:00-05:00",
+            "2026-11-10T16:00:00-05:00",
+        );
+        block["eventType"] = json!("focusTime");
+        block["description"] = json!(
+            "Changes made to the title, description, or attachments will not be saved. \
+             To make edits, please go to: https://tasks.google.com/task/m6D4f5_SATtUpxoQ"
+        );
+        h.fake("a").put("a@example.com", block);
+        h.fake("a").put(
+            "a@example.com",
+            timed(
+                "lunch",
+                "Lunch",
+                "2026-11-12T12:00:00-05:00",
+                "2026-11-12T13:00:00-05:00",
+            ),
+        );
+        h.grant("a").await;
+
+        let got = h
+            .service
+            .events(
+                ms("2026-11-08T00:00:00Z"),
+                ms("2026-11-15T00:00:00Z"),
+                "UTC",
+            )
+            .await
+            .unwrap();
+        let event = |id: &str| got.iter().find(|e| e.id == id).unwrap();
+        let link = "https://tasks.google.com/task/m6D4f5_SATtUpxoQ";
+        assert_eq!(event("block").task_link.as_deref(), Some(link));
+        assert!(!event("block").can_edit, "a task block is edited in Tasks");
+        assert_eq!(event("lunch").task_link, None);
+        assert!(event("lunch").can_edit);
+        let json = serde_json::to_value(event("block")).unwrap();
+        assert_eq!(json["taskLink"], link);
+
+        let detail = h
+            .service
+            .event_detail("a", "a@example.com", "block")
+            .await
+            .unwrap();
+        assert_eq!(detail.event.task_link.as_deref(), Some(link));
+        assert!(!detail.event.can_edit && !detail.can_edit);
     }
 
     #[tokio::test]

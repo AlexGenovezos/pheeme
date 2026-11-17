@@ -17,6 +17,7 @@ mod rsvp;
 pub mod series;
 pub mod service;
 pub mod sync;
+pub mod task_block;
 pub mod templates;
 pub mod writes;
 
