@@ -28,7 +28,7 @@ So, by Pheeme's "one-to-one with Google or not at all" rule: **booking hands off
    - Can be opened any time: the `tasks.planToday` command (palette, "Plan today") and a **Plan today** button in the Tasks panel's Today section.
    - Covers every account's not-completed tasks due today or earlier, in lists that aren't hidden, for accounts whose tasks are readable. **Overdue tasks first, oldest first**, then today's.
    - **One task at a time**: title, list name and account (when there's more than one), the start of its notes, and how late it is ("Due 12 days ago", "Due yesterday", "Due today"), worked out from the due date.
-   - **The decisions**, each a button with a single key (rebindable through the command registry, active only while the dialog is open):
+   - **The decisions**, each a button with a single key, shown on the button and active only while the dialog is open:
      - **Today** (`t`): due date becomes today; for a task due today it's "keep".
      - **Tomorrow** (`m`).
      - **Pick a day** (`p`): a date field; Enter confirms.

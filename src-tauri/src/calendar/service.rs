@@ -504,8 +504,9 @@ impl CalendarService {
         };
         let can_rsvp = attendees.iter().any(|a| a.is_self && !a.organizer);
         let event = dto(&row, occurrence.as_ref());
-        // A task block is edited in Google Tasks, never here.
-        let editable = event.task_link.is_none() && can_edit(&calendar, &raw_flags);
+        // A task block is edited and deleted in Google Tasks, never here.
+        let task_block = event.task_link.is_some();
+        let editable = !task_block && can_edit(&calendar, &raw_flags);
         Ok(EventDetailDto {
             event: CalendarEventDto {
                 can_edit: editable,
@@ -542,7 +543,7 @@ impl CalendarService {
             guests_can_see_other_guests: flag("guestsCanSeeOtherGuests", true),
             can_edit: editable,
             can_rsvp,
-            can_delete: writable,
+            can_delete: writable && !task_block,
         })
     }
 
@@ -1590,7 +1591,7 @@ pub(super) mod tests {
             .await
             .unwrap();
         assert_eq!(detail.event.task_link.as_deref(), Some(link));
-        assert!(!detail.event.can_edit && !detail.can_edit);
+        assert!(!detail.event.can_edit && !detail.can_edit && !detail.can_delete);
     }
 
     #[tokio::test]

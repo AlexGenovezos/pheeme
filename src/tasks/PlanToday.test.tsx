@@ -1,3 +1,4 @@
+import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -120,6 +121,16 @@ describe("Plan today", () => {
     await start();
     expect(screen.queryByRole("dialog", { name: "Plan today" })).toBeNull();
     expect(localStorage.getItem(PLANNED_KEY)).toBeNull();
+  });
+
+  test("opens after the first sync when the cache had nothing due yet", async () => {
+    answers.set("tasks_due_through", []);
+    await start();
+    expect(screen.queryByRole("dialog", { name: "Plan today" })).toBeNull();
+    answers.delete("tasks_due_through");
+    await act(() => emit("tasks:updated", { accountId: "acc-work" }));
+    await settle();
+    expect(plan()).toBeTruthy();
   });
 
   test("Today moves the task to today and goes on to the next", async () => {

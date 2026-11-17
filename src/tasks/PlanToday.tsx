@@ -14,7 +14,8 @@ import { trapTab, useDialogFocus } from "../components/ui/useDialogFocus";
 import { sameShortcut, stepFromEvent } from "../keyboard/bindings";
 import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
-import type { Task } from "../lib/tauri";
+import { createSubscriptionScope } from "../lib/subscriptions";
+import { listen, type Task, TASKS_EVENTS } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { taskTitle } from "./outline";
 import { lateness, planQueue, readPlanned, shouldAutoOpen, taskForBlock } from "./plan";
@@ -53,11 +54,26 @@ export function PlanTodayHost() {
     },
   ]);
 
-  // At launch, once the due tasks are read; then whenever the window comes back (past midnight,
-  // that's a new day to plan). Not on every change: a task synced in mid-day doesn't pop it up.
+  // At launch, once the due tasks are read and again after the first tasks sync (the cache may
+  // have been empty or a day behind); then whenever the window comes back (past midnight, that's a
+  // new day to plan). Not on every change: a task synced in mid-day doesn't pop it up.
   useEffect(() => {
     if (loaded) autoOpen();
   }, [loaded]);
+  useEffect(() => {
+    let synced = false;
+    const scope = createSubscriptionScope();
+    scope
+      .add(() =>
+        listen(TASKS_EVENTS.updated, () => {
+          if (synced) return;
+          synced = true;
+          void tasksStore().loadDue().then(autoOpen);
+        }),
+      )
+      .catch((err: unknown) => console.warn("plan today listener failed", err));
+    return scope.dispose;
+  }, []);
   useEffect(() => {
     const onFocus = () => {
       if (readPlanned() === todayDate()) return;
