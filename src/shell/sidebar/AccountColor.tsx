@@ -1,11 +1,12 @@
 // An account's colour: its dot in the sidebar opens twelve swatches, and the one picked recolours the account
 // everywhere it shows (the dot, the rail, the All Inboxes stripe). Saved with the account, on this computer.
-import { type KeyboardEvent, useRef } from "react";
+import { type KeyboardEvent, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePopover } from "../../components/ui/usePopover";
 import { toastError } from "../../components/ui/Toast";
 import { type Swatch, SwatchGrid } from "../../labels/ColorPopover";
 import { useAccountStore } from "../../store/accountStore";
+import { below } from "./keys";
 import "../../labels/labels.css";
 import "../../components/ui/Surface.css";
 
@@ -36,7 +37,7 @@ const SWATCHES: Swatch[] = ACCOUNT_COLOR_NAMES.map((name, i) => ({
 /** The grid's tab stop: the ticked swatch, else the first. */
 const gridStop = (el: HTMLElement | null) => el?.querySelector<HTMLElement>('[tabindex="0"]');
 
-export function AccountColorPopover({
+function AccountColorPopover({
   accountId,
   color,
   at,
@@ -80,5 +81,45 @@ export function AccountColorPopover({
       <SwatchGrid swatches={SWATCHES} value={String(color)} onChoose={choose} columns={6} />
     </div>,
     document.body,
+  );
+}
+
+/** The account's dot as a button that opens its colours. `id` lets a menu item open them too. */
+export function AccountColorButton({
+  id,
+  accountId,
+  color,
+}: {
+  id?: string;
+  accountId: string;
+  color: number;
+}) {
+  const [open, setOpen] = useState<{ at: { x: number; y: number }; from: HTMLElement } | null>(
+    null,
+  );
+  return (
+    <>
+      <button
+        id={id}
+        type="button"
+        className="sidebar__account-dot-button"
+        aria-label="Account colour"
+        aria-haspopup="dialog"
+        aria-expanded={open !== null}
+        title="Change colour"
+        onClick={(e) => setOpen({ at: below(e.currentTarget), from: e.currentTarget })}
+      >
+        <span className="sidebar__account-dot" aria-hidden="true" />
+      </button>
+      {open && (
+        <AccountColorPopover
+          accountId={accountId}
+          color={color}
+          at={open.at}
+          returnFocus={open.from}
+          onClose={() => setOpen(null)}
+        />
+      )}
+    </>
   );
 }

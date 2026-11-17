@@ -599,6 +599,16 @@ describe("current account", () => {
     expect(accountGroup(TWO.email)).not.toHaveAttribute("data-current");
   });
 
+  test("with the rail, the shown account's dot opens its colours too", () => {
+    seed([ONE, TWO]);
+    act(() => useAccountIndicators.getState().set("rail", true));
+    useUiStore.getState().setMailbox({ accountId: "a2", labelId: "STARRED" });
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "Account colour" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Pink" }));
+    expect(useAccountStore.getState().accounts.find((a) => a.id === "a2")?.color).toBe(8);
+  });
+
   test("the rail lists All Inboxes and each account, and shows the picked one alone", () => {
     seed([ONE, TWO]);
     act(() => useAccountIndicators.getState().set("rail", true));

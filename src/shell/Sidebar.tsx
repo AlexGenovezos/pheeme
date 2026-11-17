@@ -10,7 +10,7 @@ import {
   TriangleAlert,
   WifiOff,
 } from "lucide-react";
-import { type CSSProperties, type KeyboardEvent, memo, useEffect, useId, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, memo, useEffect, useId } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { ListRow } from "../components/ui/ListRow";
 import { type ContextMenuItem, isContextMenuKey, showContextMenu } from "../lib/contextMenu";
@@ -37,7 +37,7 @@ import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
 import { focusOpenMailbox, onMailboxKeyDown, activateOnKey, below } from "./sidebar/keys";
 import { LabelsSection } from "./sidebar/Labels";
-import { AccountColorPopover } from "./sidebar/AccountColor";
+import { AccountColorButton } from "./sidebar/AccountColor";
 import {
   ACCOUNT_GROUP,
   moveAccount,
@@ -189,19 +189,12 @@ function AccountSection({
   const color = accountColorIndex(account.id, accounts);
   const collapsedCount = collapsed ? formatCount(inboxUnread) : "";
   const dotId = useId();
-  const [colorAt, setColorAt] = useState<{
-    at: { x: number; y: number };
-    from: HTMLElement;
-  } | null>(null);
-  const openColor = (from: HTMLElement | null) => {
-    if (from) setColorAt({ at: below(from), from });
-  };
   const index = accounts.findIndex((a) => a.id === account.id);
   const menu = (): ContextMenuItem[] => [
     {
       id: "account-color",
       label: "Change colour…",
-      onSelect: () => openColor(document.getElementById(dotId)),
+      onSelect: () => document.getElementById(dotId)?.click(),
     },
     {
       id: "move-up",
@@ -235,18 +228,7 @@ function AccountSection({
           void showContextMenu(menu(), { x: e.clientX, y: e.clientY });
         }}
       >
-        <button
-          id={dotId}
-          type="button"
-          className="sidebar__account-dot-button"
-          aria-label="Account colour"
-          aria-haspopup="dialog"
-          aria-expanded={colorAt !== null}
-          title="Change colour"
-          onClick={(e) => openColor(e.currentTarget)}
-        >
-          <span className="sidebar__account-dot" aria-hidden="true" />
-        </button>
+        <AccountColorButton id={dotId} accountId={account.id} color={color} />
         <button
           type="button"
           className="sidebar__account-toggle"
@@ -267,15 +249,6 @@ function AccountSection({
           <ChevronRight className="sidebar__chevron" aria-hidden="true" />
         </button>
       </div>
-      {colorAt && (
-        <AccountColorPopover
-          accountId={account.id}
-          color={color}
-          at={colorAt.at}
-          returnFocus={colorAt.from}
-          onClose={() => setColorAt(null)}
-        />
-      )}
       <SyncErrorNote accountId={account.id} error={error} />
       <div id={rowsId} className="sidebar__group-rows" hidden={collapsed}>
         {!collapsed && <CategoryRows accountId={account.id} />}
@@ -458,7 +431,10 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
           }
         >
           {shown ? (
-            <span className="sidebar__account-dot" aria-hidden="true" />
+            <AccountColorButton
+              accountId={shown.id}
+              color={accountColorIndex(shown.id, accounts)}
+            />
           ) : (
             <Mails aria-hidden="true" />
           )}

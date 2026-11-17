@@ -297,4 +297,20 @@ describe("colour and order", () => {
     await expect(useAccountStore.getState().reorder(["a", "b"])).rejects.toBeTruthy();
     expect(useAccountStore.getState().accounts.map((a) => a.id)).toEqual(["b", "a"]);
   });
+
+  test("an order that fails to save goes back without losing a change made meanwhile", async () => {
+    let fail!: (e: unknown) => void;
+    mockIPC((cmd) => {
+      if (cmd === "reorder_accounts") return new Promise((_, reject) => (fail = reject));
+    });
+    const reordering = useAccountStore.getState().reorder(["b", "a"]);
+    useAccountStore.getState().markSynced("a");
+    fail({ code: "internal", message: "No" });
+    await expect(reordering).rejects.toBeTruthy();
+    const accounts = useAccountStore.getState().accounts;
+    expect(accounts.map((a) => [a.id, a.synced])).toEqual([
+      ["a", true],
+      ["b", false],
+    ]);
+  });
 });

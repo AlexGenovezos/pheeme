@@ -116,7 +116,15 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     try {
       await reorderAccounts(ordered.map((a) => a.id));
     } catch (error) {
-      if (get().accounts === ordered) set({ accounts: before });
+      // Unless something moved them meanwhile; other changes to the accounts (a colour, a first sync) stay.
+      const now = get().accounts;
+      if (now.every((a, i) => a.id === ordered[i]?.id))
+        set({
+          accounts: inOrder(
+            now,
+            before.map((a) => a.id),
+          ),
+        });
       throw error;
     }
   },
