@@ -1,12 +1,13 @@
 // Dated tasks on the calendar: a hook that reads the tasks due on the days shown, and the chip each
 // one draws as in the all-day band and month cells. The circle ticks it off (crossed out in place);
-// the title opens it in the Tasks panel.
+// the title opens it in the Tasks panel. Google's task blocks show as their task with the same tick.
 import { Check } from "lucide-react";
 import { type CSSProperties, useEffect } from "react";
 import { addDays } from "../calendar/dates";
-import type { Task } from "../lib/tauri";
+import type { CalendarEvent, Task } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { taskTitle } from "./outline";
+import { taskForBlock } from "./plan";
 import { useTasksStore } from "./tasksStore";
 import "./tasks.css";
 
@@ -26,26 +27,50 @@ export function useDatedTasks(days: string[]): Task[] | null {
   return useTasksStore((s) => s.dated);
 }
 
+/** The task Google's task block `event` is for, among the dated tasks; none for other events. */
+export function useBlockTask(event: CalendarEvent): Task | undefined {
+  return useTasksStore((s) =>
+    event.taskLink && s.dated ? taskForBlock(event.taskLink, s.dated) : undefined,
+  );
+}
+
+/** The small round tick that completes (or reopens) `task`, on a chip or a task block. */
+export function TaskTick({
+  task,
+  className,
+  style,
+}: {
+  task: Task;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  const title = taskTitle(task);
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={task.completed}
+      aria-label={task.completed ? `Mark not done: ${title}` : `Mark done: ${title}`}
+      className={cx("task-check task-check--sm", className)}
+      style={style}
+      onClick={(e) => {
+        e.stopPropagation();
+        void useTasksStore.getState().setCompleted(task, !task.completed);
+      }}
+    >
+      <span className="task-check__ring">
+        <Check aria-hidden="true" />
+      </span>
+    </button>
+  );
+}
+
 export function TaskChip({ task, style }: { task: Task; style: CSSProperties }) {
   const title = taskTitle(task);
   const store = useTasksStore.getState;
   return (
     <div className={cx("task-chip", task.completed && "task-chip--done")} style={style}>
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={task.completed}
-        aria-label={task.completed ? `Mark not done: ${title}` : `Mark done: ${title}`}
-        className="task-check task-check--sm"
-        onClick={(e) => {
-          e.stopPropagation();
-          void store().setCompleted(task, !task.completed);
-        }}
-      >
-        <span className="task-check__ring">
-          <Check aria-hidden="true" />
-        </span>
-      </button>
+      <TaskTick task={task} />
       <button
         type="button"
         className="task-chip__title"

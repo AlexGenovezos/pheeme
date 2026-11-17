@@ -21,6 +21,7 @@ import { useNow } from "./useNow";
 import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
 import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
+import { withoutBooked } from "../tasks/plan";
 import { DayWeather, type DayWeatherFit, weatherFit } from "../weather/DayWeather";
 
 /** One event line in a cell, in px. */
@@ -213,7 +214,8 @@ export function MonthGrid({
   const month = anchor.slice(0, 7);
   const list = useMemo(() => events ?? [], [events]);
   const dated = useDatedTasks(days);
-  const tasks = useMemo(() => dated ?? [], [dated]);
+  // A task booked on a day shows as its block there, not as a chip too.
+  const tasks = useMemo(() => withoutBooked(dated ?? [], list, tz), [dated, list, tz]);
 
   // Roving focus: one date button is in the tab order, the last one focused, else today, else the 1st.
   const gridRef = useRef<HTMLDivElement>(null);

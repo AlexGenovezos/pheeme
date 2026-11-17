@@ -840,6 +840,42 @@
   text-overflow: ellipsis;
 }
 
+/* Google's task block for a task Pheeme has: the task's tick over the block's corner, before its
+   title (beside the block's button rather than in it: buttons don't nest). */
+.task-check.cal-event-tick {
+  width: var(--task-check-size-sm);
+  height: var(--task-check-size-sm);
+}
+.cal-event-tick .task-check__ring {
+  border-color: var(--color-accent);
+  background: var(--color-pane-bg);
+}
+.task-check.cal-event-tick--timed {
+  position: absolute;
+  z-index: calc(var(--cal-day-layers) + 2);
+  margin-top: calc(
+    var(--space-0-5) +
+      (var(--font-size-xs) * var(--line-height-tight) - var(--task-check-size-sm)) / 2
+  );
+  margin-left: calc(var(--calendar-event-stripe) + var(--space-1));
+}
+.cal-event--timed.cal-event--task .cal-event__title {
+  padding-left: calc(var(--task-check-size-sm) + var(--space-1));
+}
+.task-check.cal-event-tick--dot {
+  align-self: center;
+  justify-self: start;
+  margin-left: calc(var(--space-0-5) + var(--space-1));
+}
+.cal-event--dot.cal-event--task .cal-event__dot {
+  visibility: hidden;
+  width: var(--task-check-size-sm);
+  height: var(--task-check-size-sm);
+}
+.cal-event--task-done .cal-event__title {
+  text-decoration: line-through;
+}
+
 /* Unanswered invites: a dashed outline in the calendar's colour, on the pane. */
 .cal-event--invite:not(.cal-event--dot) {
   border: var(--border-width) dashed var(--cal-event-bg);

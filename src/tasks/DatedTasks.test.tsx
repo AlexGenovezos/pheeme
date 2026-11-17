@@ -102,7 +102,7 @@ describe("dated tasks on the calendar", () => {
 
     const band = screen.getByRole("row", { name: "All-day events" });
     // Sunday-start week Nov 8–14: the fixture's tasks are due Mon 9 (done), Tue 10, Wed 11 (one
-    // done), Thu 12 and Fri 13.
+    // done; one booked at 3 PM shows as its block instead), Thu 12 and Fri 13.
     expect(
       within(band)
         .getAllByRole("button", { name: /^Task: / })
@@ -111,7 +111,6 @@ describe("dated tasks on the calendar", () => {
       "Pay the electricity bill",
       "Pick up dry cleaning",
       "Send the lease back",
-      "Draft the newsletter",
       "Book the team offsite",
       "Review the Q4 roadmap",
       "Plan the Lisbon trip",
@@ -134,14 +133,14 @@ describe("dated tasks on the calendar", () => {
     renderCalendar();
     await settle();
     const heading = screen.getByRole("heading", { level: 1 });
-    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(7);
+    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(6);
 
     const release = hold("calendar_events");
     act(() => void useCalendarStore.getState().goTo("2027-06-10"));
     await settle();
     // The tasks there have been read; the events haven't, so the week stays as it was.
     expect(heading).toHaveTextContent("Nov 8 – 14, 2026");
-    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(7);
+    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(6);
 
     release();
     await settle();
@@ -228,6 +227,85 @@ describe("dated tasks on the calendar", () => {
     expect(within(panel).getByRole("button", { name: "Completed (2)" })).toHaveAttribute(
       "aria-expanded",
       "true",
+    );
+  });
+
+  test("Google's task block shows as its task: a tick before its title that completes it", async () => {
+    renderCalendar();
+    await settle();
+    const block = screen.getByRole("button", { name: /^Draft the newsletter, 3:00/ });
+    expect(block).toHaveClass("cal-event--task");
+    const tick = screen.getByRole("checkbox", { name: "Mark done: Draft the newsletter" });
+    expect(tick.closest(".cal-grid__column")).toBe(block.closest(".cal-grid__column"));
+
+    fireEvent.click(tick);
+    expect(block).toHaveClass("cal-event--task-done");
+    // Ticking doesn't open the event.
+    expect(screen.queryByRole("dialog", { name: "Draft the newsletter" })).toBeNull();
+    await settle();
+    expect(calls.find((c) => c.cmd === "set_task_completed")?.args).toMatchObject({
+      accountId: "acc-work",
+      listId: "work",
+      completed: true,
+    });
+    expect(
+      screen.getByRole("checkbox", { name: "Mark not done: Draft the newsletter" }),
+    ).toBeInTheDocument();
+  });
+
+  test("a task block's popover opens the task in Google Tasks instead of Google's boilerplate", async () => {
+    renderCalendar();
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: /^Draft the newsletter, 3:00/ }));
+    await settle();
+    const pop = screen.getByRole("dialog", { name: "Draft the newsletter" });
+    expect(pop).not.toHaveTextContent("Changes made to the title");
+    expect(within(pop).queryByRole("button", { name: "Edit event" })).toBeNull();
+    expect(within(pop).queryByRole("button", { name: "Delete event" })).toBeNull();
+
+    fireEvent.click(within(pop).getByRole("button", { name: "Open in Google Tasks" }));
+    await settle();
+    expect(calls.find((c) => c.cmd === "open_external")?.args).toEqual({
+      url: "https://tasks.google.com/task/preview-newsletter",
+    });
+    fireEvent.click(within(pop).getByRole("button", { name: "Mark completed" }));
+    await settle();
+    expect(calls.find((c) => c.cmd === "set_task_completed")?.args).toMatchObject({
+      listId: "work",
+      completed: true,
+    });
+    expect(within(pop).getByRole("button", { name: "Mark not done" })).toBeInTheDocument();
+  });
+
+  test("a task block whose task isn't shown draws as a plain event, and the chip stays away", async () => {
+    renderCalendar();
+    await settle();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tasks: Work" }));
+    await settle();
+    const block = screen.getByRole("button", { name: /^Draft the newsletter, 3:00/ });
+    expect(block).not.toHaveClass("cal-event--task");
+    expect(screen.queryByRole("checkbox", { name: /Draft the newsletter/ })).toBeNull();
+
+    fireEvent.click(block);
+    await settle();
+    const pop = screen.getByRole("dialog", { name: "Draft the newsletter" });
+    expect(within(pop).queryByRole("button", { name: "Open in Google Tasks" })).toBeNull();
+  });
+
+  test("month cells show the block as its task too, without the chip", async () => {
+    useCalendarStore.setState({ view: "month" });
+    renderCalendar();
+    await settle();
+    // Room in Wednesday's cell (three rows here) for the block.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Team" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tasks: My Tasks" }));
+    await settle();
+    expect(
+      screen.getByRole("checkbox", { name: "Mark done: Draft the newsletter" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Task: Draft the newsletter/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Draft the newsletter, 3:00/ })).toHaveClass(
+      "cal-event--task",
     );
   });
 });
