@@ -96,6 +96,25 @@
   font-size: var(--font-size-sm);
 }
 
+/* ---- Today: every account's tasks due today or earlier ---- */
+
+.tasks-today {
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-width) solid var(--color-border-subtle);
+}
+.tasks-today__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+}
+.tasks-today__count {
+  display: inline-flex;
+  color: var(--color-foreground-subtle);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+}
+
 /* Row-shaped buttons: Add a task, Create new list, Completed (N). */
 .tasks-add,
 .tasks-new-list,

@@ -32,6 +32,7 @@ export function TaskRow({
   otherLists,
   onAddSubtask,
   onGripPointerDown,
+  editKey = taskKey(task),
 }: {
   task: Task;
   /** The list's open tasks, for indenting and moving. */
@@ -40,6 +41,8 @@ export function TaskRow({
   onAddSubtask?: () => void;
   /** Starts dragging the task into another place. */
   onGripPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
+  /** What `editing` becomes to open its editor (the task's key; Today has its own). */
+  editKey?: string;
 }) {
   const title = taskTitle(task);
   const now = today();
@@ -123,7 +126,7 @@ export function TaskRow({
         type="button"
         className="task-row__main"
         aria-label={`Edit task: ${title}`}
-        onClick={() => store().setEditing(taskKey(task))}
+        onClick={() => store().setEditing(editKey)}
       >
         <span className="task-row__title">{title}</span>
         {task.notes && <span className="task-row__notes">{task.notes}</span>}

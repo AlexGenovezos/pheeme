@@ -36,6 +36,7 @@ import {
 import { TaskEditor } from "./TaskEditor";
 import { TaskRow } from "./TaskRow";
 import { TOGGLE_TASKS_COMMAND, TOGGLE_TASKS_SHORTCUT, useTasksStore } from "./tasksStore";
+import { TodaySection } from "./TodaySection";
 import "./tasks.css";
 
 const store = useTasksStore.getState;
@@ -45,6 +46,7 @@ function useTasksData() {
   const accountIds = useAccountStore((s) => s.accounts.map((a) => a.id).join("\n"));
   useEffect(() => {
     void store().loadAccounts();
+    void store().loadDue();
   }, [accountIds]);
   useEffect(() => {
     const scope = createSubscriptionScope();
@@ -143,6 +145,7 @@ function TasksPanel() {
         <IconButton label="Hide tasks" icon={<X />} onClick={() => store().setPanelOpen(false)} />
       </div>
       <div className="tasks-panel__scroll">
+        <TodaySection />
         {accounts === null ? (
           accountsError ? (
             <LoadError message={accountsError} onRetry={() => void store().loadAccounts()} />

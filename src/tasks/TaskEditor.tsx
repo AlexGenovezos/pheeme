@@ -21,11 +21,14 @@ export function TaskEditor({
   listId,
   task,
   placement,
+  editKey,
 }: {
   accountId: string;
   listId: string;
   task?: Task;
   placement?: Placement;
+  /** The `editing` key that opened it, when not the task's own (Today). */
+  editKey?: string;
 }) {
   const [title, setTitle] = useState(task?.title ?? "");
   const [notes, setNotes] = useState(task?.notes ?? "");
@@ -66,9 +69,11 @@ export function TaskEditor({
       );
     else close();
   };
-  const current = task
-    ? taskKey(task)
-    : newTaskKey(accountId, listId, placement ?? { parent: null, previous: null });
+  const current =
+    editKey ??
+    (task
+      ? taskKey(task)
+      : newTaskKey(accountId, listId, placement ?? { parent: null, previous: null }));
 
   const onBlur = (e: FocusEvent<HTMLFormElement>) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) void save(false);

@@ -3,6 +3,7 @@
 // panel is open (remembered across launches). Changes show at once and go straight to the Tasks
 // API; one Google refuses snaps back and says why.
 import { create } from "zustand";
+import { dateOf, systemZone } from "../calendar/dates";
 import { toast } from "../components/ui/Toast";
 import { subscribeAll } from "../lib/subscriptions";
 import {
@@ -13,6 +14,7 @@ import {
   deleteTaskList,
   getDatedTasks,
   getTasksAccounts,
+  getTasksDueThrough,
   getTasksInList,
   moveTask,
   moveTaskToList,
@@ -77,6 +79,10 @@ interface TasksState {
   listErrors: Record<string, string>;
   /** Why the last read of the dated tasks failed; `null` when it worked. */
   datedError: string | null;
+  /** Every account's open tasks due today or earlier (Today, the plan); `null` until the first load. */
+  due: Task[] | null;
+  /** Why the last read of the due tasks failed; `null` when it worked. */
+  dueError: string | null;
   /** The task whose details are open in the panel (`taskKey`), or the list a new task is being added to (`listKey`). */
   editing: string | null;
 
@@ -89,6 +95,8 @@ interface TasksState {
   loadList(accountId: string, listId: string): Promise<void>;
   /** Read the tasks due on `[from, to)` (the days on screen). */
   loadDated(from: string, to: string): Promise<void>;
+  /** Read every account's open tasks due today or earlier. */
+  loadDue(): Promise<void>;
   /** Show `dated` as the tasks due in `[from, to)`: read by the calendar along with its events. */
   setDated(from: string, to: string, dated: Task[]): void;
   /** Ask Google for every account's latest tasks (the panel opened). */
@@ -116,6 +124,7 @@ interface TasksState {
 
 let accountsTicket = 0;
 let datedTicket = 0;
+let dueTicket = 0;
 const listTickets = new Map<string, number>();
 
 /**
@@ -128,11 +137,21 @@ interface PendingChange {
   lists: string[];
   list(key: string, tasks: Task[]): Task[];
   dated(tasks: Task[]): Task[];
+  due(tasks: Task[]): Task[];
 }
 const pending = new Set<PendingChange>();
 const overList = (key: string, tasks: Task[]) =>
   [...pending].reduce((acc, p) => (p.lists.includes(key) ? p.list(key, acc) : acc), tasks);
 const overDated = (tasks: Task[]) => [...pending].reduce((acc, p) => p.dated(acc), tasks);
+
+/** Today in the computer's time zone, as the panel shows due dates. */
+export const todayDate = () => dateOf(Date.now(), systemZone());
+/** Still open and due by today: a change that completes or postpones a task takes it out. */
+const stillDue = (tasks: Task[]) => {
+  const today = todayDate();
+  return tasks.filter((t) => !t.completed && t.due !== null && t.due <= today);
+};
+const overDue = (tasks: Task[]) => stillDue([...pending].reduce((acc, p) => p.due(acc), tasks));
 
 /** A write Google refused: say why (it has been undone). */
 function failed(title: string, e: unknown) {
@@ -153,7 +172,11 @@ export const useTasksStore = create<TasksState>((set, get) => {
     set((s) => {
       const lists = { ...s.lists };
       for (const key of change.lists) if (lists[key]) lists[key] = change.list(key, lists[key]);
-      return { lists, dated: s.dated ? change.dated(s.dated) : null };
+      return {
+        lists,
+        dated: s.dated ? change.dated(s.dated) : null,
+        due: s.due ? stillDue(change.due(s.due)) : null,
+      };
     });
     pending.add(change);
     try {
@@ -171,13 +194,18 @@ export const useTasksStore = create<TasksState>((set, get) => {
       lists: [listKey(task.accountId, task.listId)],
       list: (_, tasks) => tasks.map(apply),
       dated: (tasks) => tasks.map(apply),
+      due: (tasks) => tasks.map(apply),
     };
   };
   const setList = (accountId: string, listId: string, tasks: Task[]) =>
     set((s) => ({ lists: { ...s.lists, [listKey(accountId, listId)]: tasks } }));
   /** Read again what a write touched (the cache now has what Google confirmed, or the old state). */
   const reload = async (accountId: string, ...listIds: string[]) => {
-    await Promise.all([...listIds.map((id) => get().loadList(accountId, id)), reloadDated()]);
+    await Promise.all([
+      ...listIds.map((id) => get().loadList(accountId, id)),
+      reloadDated(),
+      get().loadDue(),
+    ]);
   };
   const reloadDated = () => {
     const range = get().datedFor;
@@ -195,6 +223,8 @@ export const useTasksStore = create<TasksState>((set, get) => {
     accountsError: null,
     listErrors: {},
     datedError: null,
+    due: null,
+    dueError: null,
     editing: null,
 
     setPanelOpen: (open) => {
@@ -272,6 +302,17 @@ export const useTasksStore = create<TasksState>((set, get) => {
       }
     },
 
+    loadDue: async () => {
+      const ticket = ++dueTicket;
+      try {
+        const due = (await getTasksDueThrough(todayDate())) ?? [];
+        if (ticket === dueTicket) set({ due: overDue(due), dueError: null });
+      } catch (e) {
+        console.warn("couldn't read due tasks", e);
+        if (ticket === dueTicket) set({ dueError: toCommandError(e).message });
+      }
+    },
+
     setDated: (from, to, dated) => {
       // Anything still reading the old days is out of date now.
       ++datedTicket;
@@ -304,7 +345,7 @@ export const useTasksStore = create<TasksState>((set, get) => {
         failed("Couldn't change which tasks show", e);
         return;
       }
-      await reloadDated();
+      await Promise.all([reloadDated(), get().loadDue()]);
     },
 
     addTask: async (accountId, listId, edit, placement) => {
@@ -370,6 +411,7 @@ export const useTasksStore = create<TasksState>((set, get) => {
           lists: [listKey(task.accountId, task.listId)],
           list: (_, tasks) => tasks.filter((t) => !gone(t)),
           dated: (tasks) => tasks.filter((t) => !gone(t)),
+          due: (tasks) => tasks.filter((t) => !gone(t)),
         },
         async () => {
           try {
@@ -389,6 +431,7 @@ export const useTasksStore = create<TasksState>((set, get) => {
           lists: [listKey(task.accountId, task.listId)],
           list: (_, tasks) => applyMove(tasks, task, placement),
           dated: (tasks) => tasks,
+          due: (tasks) => tasks,
         },
         async () => {
           try {
@@ -428,6 +471,7 @@ export const useTasksStore = create<TasksState>((set, get) => {
               : // Once Google has it, the cache already does: don't show it twice.
                 [...moved, ...tasks.filter((t) => !ids.has(t.id))],
           dated: (tasks) => tasks,
+          due: (tasks) => tasks,
         },
         async () => {
           try {
@@ -472,7 +516,7 @@ export const useTasksStore = create<TasksState>((set, get) => {
         failed("Couldn't delete the list", e);
       } finally {
         await get().loadAccounts();
-        await reloadDated();
+        await Promise.all([reloadDated(), get().loadDue()]);
       }
     },
 
@@ -483,11 +527,13 @@ export const useTasksStore = create<TasksState>((set, get) => {
             listen(TASKS_EVENTS.updated, () => {
               void get().loadAccounts();
               void reloadDated();
+              void get().loadDue();
             }),
           () =>
             listen(TASKS_EVENTS.access, () => {
               void get().loadAccounts();
               void reloadDated();
+              void get().loadDue();
             }),
         ],
         signal,
