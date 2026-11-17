@@ -4,6 +4,10 @@
 
 A fast, open-source desktop client for Gmail and Google Calendar, for macOS, Windows and Linux.
 
+[![The Pheeme tour at 3× speed: keyboard-first mail, inbox tabs, the speed reader, Google Calendar, Mail stats and the MCP server](https://pheeme.app/video/pheeme-tour-loop.webp)](https://pheeme.app/video/pheeme-tour.mp4)
+
+*The two-minute tour at 3× speed. Click to watch it at full speed.*
+
 - **Gmail-native:** uses the Gmail API, with real labels and category tabs (Primary, Social, Promotions, Updates, Forums).
 - **Instant:** reads come from a local cache and actions apply immediately, with Gmail syncing in the background.
 - **Free to run:** you bring your own Google Cloud OAuth client, so there's no subscription and no server between you and your mail.

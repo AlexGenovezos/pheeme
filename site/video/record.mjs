@@ -9,7 +9,8 @@
 //
 //   npm run build:site && npm run video:site
 //
-// Writes site/dist/video/pheeme-tour.{mp4,jpg,vtt}, or to --out <dir>.
+// Writes site/dist/video/pheeme-tour.{mp4,jpg,vtt} and the README's
+// pheeme-tour-loop.webp, or to --out <dir>.
 //
 //   npm run video:site -- --scene settings[,end]
 //
@@ -60,6 +61,11 @@ const FRAME_MS = 1000 / FPS;
 // x264 quality settings to try, best first; the first that fits Cloudflare's
 // asset limit is kept. At 2:18, CRF 21 came to 26.3 MiB and 23 to about 21 MiB.
 const CRFS = [23, 25, 27, 29];
+// The README on GitHub shows the whole tour as a silent looping WebP at 3×
+// speed (GitHub can't play a video hosted elsewhere). GitHub's image proxy
+// refuses an image over 5 MiB, so quality steps down until it fits; at 2:09,
+// 800 px and 10 fps, quality 40 came to 4.1 MiB.
+const LOOP = { speed: 3, fps: 10, width: 800, qualities: [40, 30, 20], maxBytes: 5 * 1024 * 1024 };
 const TIMEZONE = "America/New_York";
 
 const TYPES = {
@@ -274,6 +280,28 @@ try {
     });
     await writeFile(join(opts.out, "pheeme-tour.vtt"), `WEBVTT\n\n${cues.join("\n\n")}\n`);
     console.log(`${mp4}: ${length} s, ${shots} frames, ${mib(size)} at CRF ${crf}`);
+
+    // The README's looping preview (README.md links it to the full video).
+    const loop = join(opts.out, "pheeme-tour-loop.webp");
+    let loopSize = Infinity;
+    let quality;
+    for (quality of LOOP.qualities) {
+      await run("ffmpeg", [
+        "-y", "-loglevel", "error", "-i", mp4,
+        "-vf", `setpts=PTS/${LOOP.speed},fps=${LOOP.fps},scale=${LOOP.width}:-2:flags=lanczos`,
+        "-c:v", "libwebp", "-q:v", String(quality), "-compression_level", "6", "-loop", "0", "-an",
+        loop,
+      ]);
+      loopSize = (await stat(loop)).size;
+      if (loopSize <= LOOP.maxBytes) break;
+      console.log(`At quality ${quality} the README loop is ${mib(loopSize)}, over ${mib(LOOP.maxBytes)}.`);
+    }
+    if (loopSize > LOOP.maxBytes) {
+      throw new Error(
+        `${loop} is ${mib(loopSize)} even at quality ${LOOP.qualities.at(-1)}, over GitHub's ${mib(LOOP.maxBytes)} image limit. Lower LOOP.fps or LOOP.width.`,
+      );
+    }
+    console.log(`${loop}: ${mib(loopSize)} at quality ${quality}`);
   }
 } finally {
   await browser.close();
