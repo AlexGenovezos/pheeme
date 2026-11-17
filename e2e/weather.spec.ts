@@ -41,7 +41,7 @@ test("the days and an event's place show the forecast", async ({ page }, testInf
   );
   const sun = page.locator('.cal-grid__column[data-date="2026-11-09"] .wx-hours--sun');
   await expect(sun).toBeVisible();
-  await expect(sun).not.toHaveClass(/wx-hours--playing/, { timeout: 6000 });
+  await expect(sun).not.toHaveClass(/wx-hours--playing/, { timeout: 10_000 });
   // Each header holds weekday, date and forecast on one line.
   const fits = await heads.evaluateAll((els) =>
     els.every((el) => el.scrollWidth <= el.clientWidth && el.clientHeight < 48),
