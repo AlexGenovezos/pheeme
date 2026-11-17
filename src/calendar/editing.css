@@ -337,6 +337,14 @@
   gap: var(--space-4);
 }
 
+/* Save as template: room for a two-line refusal from the first frame. */
+.cal-template__error {
+  min-height: var(--space-10);
+  margin: calc(var(--space-2) * -1) var(--space-0) var(--space-0);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
 /* ---- Search --------------------------------------------------------------- */
 
 .cal-search {
@@ -505,13 +513,48 @@
   --qa-mark: var(--color-info);
 }
 .cal-qa__mark--calendar,
-.cal-qa__mark--task {
+.cal-qa__mark--task,
+.cal-qa__mark--template {
   --qa-mark: var(--color-warning);
 }
 @supports (background: color-mix(in srgb, red 50%, transparent)) {
   .cal-qa__mark {
     background: color-mix(in srgb, var(--qa-mark) 24%, transparent);
   }
+}
+
+/* Saved templates under the field: one row, the ones that don't fit cut off. */
+.cal-qa__templates {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-2) var(--space-4) var(--space-0);
+  overflow: hidden;
+  color: var(--color-foreground-subtle);
+  white-space: nowrap;
+}
+.cal-qa__template {
+  flex: none;
+  height: var(--control-height-sm);
+  padding: var(--space-0) var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-palette-foreground);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+.cal-qa__template:hover {
+  background: var(--color-control-hover-bg);
+}
+.cal-qa__template[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-control-active-bg);
+}
+.cal-qa__template:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .cal-qa__preview {

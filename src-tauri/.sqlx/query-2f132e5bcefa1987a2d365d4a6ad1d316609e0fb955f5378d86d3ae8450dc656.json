@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE event_templates SET name = ?, fields = ?, updated_ms = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "2f132e5bcefa1987a2d365d4a6ad1d316609e0fb955f5378d86d3ae8450dc656"
+}

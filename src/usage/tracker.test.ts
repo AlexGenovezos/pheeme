@@ -42,18 +42,20 @@ describe("usage tracker", () => {
     expect(month).toEqual({ name: "calendar.month", opens: 1, ms: 1000 + IDLE_MS + 2000 });
   });
 
-  it("counts commands by how they ran, never a mod's own ids", () => {
+  it("counts commands by how they ran, never a mod's or a template's own ids", () => {
     const tracker = createUsageTracker(() => 0);
     tracker.command("go.inbox", "key");
     tracker.command("go.inbox", "key");
     tracker.command("go.inbox", "palette");
     tracker.command("mod:weather:refresh", "key");
+    tracker.command("calendar.template:0b7c4f1e-2a", "palette");
     tracker.command("label with spaces", "button");
 
     expect(tracker.take().commands).toEqual([
       { id: "go.inbox", source: "key", count: 2 },
       { id: "go.inbox", source: "palette", count: 1 },
       { id: "mod", source: "key", count: 1 },
+      { id: "calendar.template", source: "palette", count: 1 },
     ]);
   });
 

@@ -26,8 +26,10 @@ import type {
   EventDetail,
   EventEdit,
   EventRef,
+  EventTemplate,
   Invite,
   SendUpdates,
+  TemplateFields,
 } from "./calendarEvents";
 import type {
   ComposeDraft,
@@ -227,6 +229,13 @@ export interface Commands {
     EventRef
   >;
   message_invite: Command<Account & { messageId: string }, Invite | null>;
+  event_templates: Command<void, EventTemplate[]>;
+  save_event_template: Command<
+    { name: string; fields: TemplateFields; replace: boolean },
+    EventTemplate
+  >;
+  rename_event_template: Command<{ id: string; name: string }, EventTemplate>;
+  delete_event_template: Command<{ id: string }, void>;
 
   // Weather
   weather_search_places: Command<{ query: string }, WeatherPlace[]>;

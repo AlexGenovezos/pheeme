@@ -206,3 +206,41 @@ describe("parseQuickAdd", () => {
     ]);
   });
 });
+
+describe("templates in quick add", () => {
+  const templates: Target[] = [
+    { key: "gym", name: "Gym" },
+    { key: "gym-legs", name: "Gym legs" },
+    { key: "sam", name: "1:1 with Sam" },
+  ];
+  const withTemplates = (text: string) =>
+    parseQuickAdd(text, { now: NOW, tz: NY, targets, taskTargets: lists, templates });
+
+  test("a template's name starting the sentence is read as it, the rest as usual", () => {
+    const r = withTemplates("gym tomorrow at 7 for 30 min");
+    expect(r.template).toBe("gym");
+    expect(r.title).toBe("");
+    expect(r.lengthSaid).toBe(true);
+    expect(r.spans[0]).toEqual({ kind: "template", start: 0, end: 3 });
+  });
+
+  test("the longest name wins, and its own words aren't read as people or times", () => {
+    expect(withTemplates("Gym legs friday").template).toBe("gym-legs");
+    const sam = withTemplates("1:1 with Sam monday at 3");
+    expect(sam.template).toBe("sam");
+    expect(sam.people).toEqual([]);
+    expect(sam.lengthSaid).toBe(false);
+  });
+
+  test("only whole words at the start count, and never for a task", () => {
+    expect(withTemplates("Gymnastics friday").template).toBeNull();
+    expect(withTemplates("Lunch then gym").template).toBeNull();
+    expect(withTemplates("todo gym bag").template).toBeNull();
+    expect(withTemplates("  gym, friday").template).toBe("gym");
+  });
+
+  test("an end time counts as the sentence's own length", () => {
+    expect(withTemplates("gym 2-3pm").lengthSaid).toBe(true);
+    expect(withTemplates("gym at 2pm").lengthSaid).toBe(false);
+  });
+});

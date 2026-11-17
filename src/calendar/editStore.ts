@@ -54,6 +54,8 @@ interface EditState {
   search: string | null;
   /** Quick add (a sentence becomes the event) is open. */
   quickAdd: boolean;
+  /** Save as template is open, for this event's form. */
+  templateFrom: EventForm | null;
 }
 
 export const useEditStore = create<EditState>(() => ({
@@ -64,6 +66,7 @@ export const useEditStore = create<EditState>(() => ({
   removed: [],
   search: null,
   quickAdd: false,
+  templateFrom: null,
 }));
 
 /**
