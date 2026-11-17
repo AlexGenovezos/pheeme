@@ -96,7 +96,19 @@ test("mailbox titles", () => {
   expect(mailboxTitle({ accountId: "a1", labelId: "Label_9" }, labels)).toBe("Mail");
 });
 
-test("account colors follow list order, cycling through six", () => {
+test("an account is drawn in the colour it was given, wherever it sits in the list", () => {
+  const accounts = [
+    { id: "a", color: 9 },
+    { id: "b", color: 12 },
+    { id: "c", color: 0 },
+  ];
+  expect(accountColorIndex("a", accounts)).toBe(9);
+  expect(accountColorIndex("b", accounts)).toBe(12);
+  // Not a colour the themes have: its position's.
+  expect(accountColorIndex("c", accounts)).toBe(3);
+});
+
+test("account colors without one given follow list order, cycling through six", () => {
   const accounts = Array.from({ length: 8 }, (_, i) => ({ id: `a${i}` }));
   expect(accountColorIndex("a0", accounts)).toBe(1);
   expect(accountColorIndex("a5", accounts)).toBe(6);

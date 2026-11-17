@@ -469,6 +469,7 @@ mod tests {
                 history_id: None,
                 created_at: 0,
                 updated_at: 0,
+                color: 1,
             },
         )
         .await

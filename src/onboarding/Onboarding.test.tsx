@@ -13,6 +13,7 @@ const account: AccountInfo = {
   displayName: null,
   clientId: CLIENT_ID,
   synced: true,
+  color: 1,
 };
 
 type Handler = (args: Record<string, unknown>) => unknown;

@@ -291,7 +291,14 @@ describe("after a click", () => {
     const labels = useLabelStore.getState().labels.a1;
     useAccountStore.setState({
       accounts: [
-        { id: "a1", email: "a@example.com", displayName: null, clientId: "c", synced: true },
+        {
+          id: "a1",
+          email: "a@example.com",
+          displayName: null,
+          clientId: "c",
+          synced: true,
+          color: 1,
+        },
       ],
     });
     mockIPC(
@@ -327,7 +334,14 @@ describe("after a click", () => {
     const labels = useLabelStore.getState().labels.a1;
     useAccountStore.setState({
       accounts: [
-        { id: "a1", email: "a@example.com", displayName: null, clientId: "c", synced: true },
+        {
+          id: "a1",
+          email: "a@example.com",
+          displayName: null,
+          clientId: "c",
+          synced: true,
+          color: 1,
+        },
       ],
     });
     let refuse = true;

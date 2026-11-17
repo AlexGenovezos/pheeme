@@ -124,6 +124,7 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
             // `?clients=2` signs the second account in through a client of its own.
             clientId: params.get("clients") === "2" && i > 0 ? OTHER_CLIENT : PREVIEW_CLIENT,
             synced: true,
+            color: (i % 6) + 1,
           }));
   const flows = new Map<string, ClientChoice | null>();
   const beginSignIn = (args?: { client: ClientChoice }) => {
@@ -470,6 +471,7 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
         displayName: "You",
         clientId: PREVIEW_CLIENT,
         synced: true,
+        color: 1,
       };
       if (!accounts.includes(account)) accounts.push(account);
       return account;
@@ -480,6 +482,18 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     remove_account: (args) => {
       const index = accounts.findIndex((a) => a.id === args.accountId);
       if (index !== -1) accounts.splice(index, 1);
+    },
+    set_account_color: (args) => {
+      const account = accounts.find((a) => a.id === args.accountId);
+      if (!account) throw { code: "not_found", message: "That account isn't connected any more." };
+      account.color = args.color;
+    },
+    reorder_accounts: (args) => {
+      const rank = (a: AccountInfo) => {
+        const i = args.accountIds.indexOf(a.id);
+        return i === -1 ? args.accountIds.length : i;
+      };
+      accounts.sort((a, b) => rank(a) - rank(b));
     },
     open_external: () => undefined,
     open_mail_link: () => undefined,

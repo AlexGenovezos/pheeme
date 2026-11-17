@@ -81,6 +81,8 @@ export interface Commands {
   cancel_oauth: Command<{ flowId: string }, void>;
   list_accounts: Command<void, AccountInfo[]>;
   remove_account: Command<Account, void>;
+  set_account_color: Command<Account & { color: number }, void>;
+  reorder_accounts: Command<{ accountIds: string[] }, void>;
   open_external: Command<{ url: string }, void>;
   gmail_quota: Command<void, number>;
   set_gmail_quota: Command<{ perMinute: number }, number>;

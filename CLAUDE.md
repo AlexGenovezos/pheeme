@@ -128,7 +128,7 @@ The speed reader (`src/speedread/`) flashes one word at a time from emails that 
 ### Database Schema Summary
 
 Twenty-seven tables, plus the `messages_fts` full-text index.
-- `accounts` — Account identity and Gmail history_id for sync (no tokens; those are in the keychain)
+- `accounts` — Account identity and Gmail history_id for sync (no tokens; those are in the keychain), plus the user's order (`position`, dragged in the sidebar) and colour (`color`, 1–12: `--color-account-N`, picked from the account's dot)
 - `labels` — Gmail labels with message/thread unread/total counters
 - `threads` — Conversation rows, derived from their messages by `threads::recompute_threads` (never written directly by sync)
 - `thread_labels` — Thread/label membership; label listing uses keyset-paged `list_threads`

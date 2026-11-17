@@ -21,7 +21,7 @@ const pairs = (min: number, table: [ThemeToken, ThemeToken[]][]): Pair[] =>
   table.flatMap(([fg, bgs]) => bgs.map((bg) => ({ fg, bg, min })));
 
 const AVATARS = [1, 2, 3, 4, 5, 6].map((i) => `--color-avatar-${i}` as ThemeToken);
-const ACCOUNTS = [1, 2, 3, 4, 5, 6].map((i) => `--color-account-${i}` as ThemeToken);
+const ACCOUNTS = Array.from({ length: 12 }, (_, i) => `--color-account-${i + 1}` as ThemeToken);
 export const MAILBOX_TOKENS = (Object.keys(THEME_TOKENS) as ThemeToken[]).filter((k) =>
   k.startsWith("--color-mailbox-"),
 );

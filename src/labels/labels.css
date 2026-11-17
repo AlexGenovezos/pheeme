@@ -212,12 +212,12 @@
 
 .label-color__grid {
   display: grid;
-  grid-template-columns: repeat(8, var(--label-swatch-size));
+  grid-template-columns: repeat(var(--swatch-columns), var(--label-swatch-size));
   gap: var(--space-1);
 }
 
 .label-color__grid--wide {
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--swatch-columns), minmax(0, 1fr));
   gap: var(--space-1-5);
 }
 

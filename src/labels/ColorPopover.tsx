@@ -1,7 +1,7 @@
 // "Label colour…": Gmail's 64-colour grid for one label, plus Remove colour. Opened from a sidebar label's menu,
 // which can't hold the grid itself (native menus have no swatches).
 import { Check } from "lucide-react";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { Button } from "../components/ui/Button";
 import { usePopover } from "../components/ui/usePopover";
@@ -37,6 +37,17 @@ const closeColorPopover = () => useColorPopoverStore.setState({ spec: null });
 /** Swatches per row, as in Gmail's grid. */
 const COLUMNS = 8;
 
+/** One colour of a `SwatchGrid`. */
+export interface Swatch {
+  /** What choosing it reports. */
+  value: string;
+  /** Its name, for screen readers and the tooltip. */
+  name: string;
+  /** Its fill, and the colour of the tick drawn on it: any CSS colour. */
+  background: string;
+  foreground: string;
+}
+
 /**
  * Gmail's 64-colour grid as one radio group (one tab stop, arrow keys between swatches), ticking `value`. Shared by
  * the colour popover and the new-label dialog.
@@ -52,18 +63,54 @@ export function ColorGrid({
   /** Stretches the swatches across the container's width instead of fixed squares. */
   wide?: boolean;
 }) {
-  const checked = value ? LABEL_BACKGROUNDS.indexOf(value.toLowerCase()) : -1;
+  return (
+    <SwatchGrid
+      swatches={GMAIL_SWATCHES}
+      value={value?.toLowerCase() ?? null}
+      onChoose={onChoose}
+      wide={wide}
+    />
+  );
+}
+
+const GMAIL_SWATCHES: Swatch[] = LABEL_BACKGROUNDS.map((background) => ({
+  value: background,
+  name: background,
+  background,
+  foreground: labelColor(background).text,
+}));
+
+/**
+ * Colour swatches as one radio group (one tab stop, arrow keys between swatches), `columns` to a row, ticking
+ * `value`. Arrow keys stay inside it.
+ */
+export function SwatchGrid({
+  swatches: colors,
+  value,
+  onChoose,
+  columns = COLUMNS,
+  wide = false,
+}: {
+  swatches: Swatch[];
+  /** The ticked swatch's value, or null for none. */
+  value: string | null;
+  onChoose(value: string): void;
+  columns?: number;
+  /** Stretches the swatches across the container's width instead of fixed squares. */
+  wide?: boolean;
+}) {
+  const checked = value ? colors.findIndex((c) => c.value === value) : -1;
   const [focused, setFocused] = useState(Math.max(checked, 0));
   const swatches = useRef<Array<HTMLButtonElement | null>>([]);
 
   const moveTo = (index: number) => {
-    const next = Math.max(0, Math.min(LABEL_BACKGROUNDS.length - 1, index));
+    const next = Math.max(0, Math.min(colors.length - 1, index));
     setFocused(next);
     swatches.current[next]?.focus();
   };
 
   const onGridKey = (e: KeyboardEvent) => {
-    const row = focused - (focused % COLUMNS);
+    const row = focused - (focused % columns);
     switch (e.key) {
       case "ArrowRight":
         moveTo(focused + 1);
@@ -72,16 +119,16 @@ export function ColorGrid({
         moveTo(focused - 1);
         break;
       case "ArrowDown":
-        moveTo(focused + COLUMNS);
+        moveTo(focused + columns);
         break;
       case "ArrowUp":
-        moveTo(focused - COLUMNS);
+        moveTo(focused - columns);
         break;
       case "Home":
         moveTo(row);
         break;
       case "End":
-        moveTo(row + COLUMNS - 1);
+        moveTo(row + columns - 1);
         break;
       default:
         return;
@@ -95,28 +142,29 @@ export function ColorGrid({
       className={cx("label-color__grid", wide && "label-color__grid--wide")}
       role="radiogroup"
       aria-label="Colour"
+      style={{ "--swatch-columns": columns } as CSSProperties}
       onKeyDown={onGridKey}
     >
-      {LABEL_BACKGROUNDS.map((background, i) => {
+      {colors.map(({ value: color, name, background, foreground }, i) => {
         const on = i === checked;
         return (
           <button
-            key={background}
+            key={color}
             ref={(el) => {
               swatches.current[i] = el;
             }}
             type="button"
             role="radio"
             aria-checked={on}
-            aria-label={background}
-            title={background}
+            aria-label={name}
+            title={name}
             tabIndex={i === focused ? 0 : -1}
             className={cx("label-color__swatch", on && "label-color__swatch--on")}
-            style={{ background, color: labelColor(background).text }}
+            style={{ background, color: foreground }}
             onFocus={() => setFocused(i)}
             onClick={() => {
               setFocused(i);
-              onChoose(background);
+              onChoose(color);
             }}
           >
             {on && <Check aria-hidden="true" />}

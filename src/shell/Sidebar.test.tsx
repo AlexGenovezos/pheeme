@@ -21,12 +21,13 @@ import { ContextMenuHost } from "./ContextMenuHost";
 import { DEFAULT_ACCOUNT_INDICATORS, useAccountIndicators } from "./accountIndicators";
 import { Sidebar } from "./Sidebar";
 
-const account = (id: string, email: string): AccountInfo => ({
+const account = (id: string, email: string, color = 1): AccountInfo => ({
   id,
   email,
   displayName: null,
   clientId: "c",
   synced: true,
+  color,
 });
 
 const label = (
@@ -50,7 +51,7 @@ const label = (
 });
 
 const ONE = account("a1", "me@home.test");
-const TWO = account("a2", "me@work.test");
+const TWO = account("a2", "me@work.test", 2);
 
 function seed(accounts: AccountInfo[]) {
   useAccountStore.setState({
@@ -102,8 +103,9 @@ const rowName = (row: HTMLElement) => row.querySelector(".ui-row__title")?.textC
 const count = (row: HTMLElement) => row.querySelector(".ui-row__meta")?.textContent ?? "";
 const accountGroup = (email: string) =>
   screen.getByRole("group", { name: new RegExp(email.replace(".", "\\.")) });
+/** The account's fold toggle, which carries its address. */
 const accountHeader = (email: string) =>
-  screen.getByRole("button", { name: new RegExp(email.replace(".", "\\.")) });
+  within(accountGroup(email)).getByRole("button", { name: new RegExp(email.replace(".", "\\.")) });
 const region = (name: string) => screen.getByRole("region", { name });
 
 beforeEach(() => {
@@ -318,10 +320,96 @@ describe("stacked layout", () => {
   test("account headers carry their account color dot", () => {
     seed([ONE, TWO]);
     render(<Sidebar />);
-    expect(accountHeader(TWO.email).querySelector(".sidebar__account-dot")).not.toBeNull();
+    expect(accountGroup(TWO.email).querySelector(".sidebar__account-dot")).not.toBeNull();
     expect(accountGroup(TWO.email).style.getPropertyValue("--account-color")).toBe(
       "var(--color-account-2)",
     );
+  });
+
+  test("the dot opens twelve colours, and the one picked recolours the account", async () => {
+    seed([ONE, TWO]);
+    const saved: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "set_account_color") saved.push(args);
+    });
+    render(<Sidebar />);
+    const dot = within(accountGroup(TWO.email)).getByRole("button", { name: "Account colour" });
+    fireEvent.click(dot);
+    const picker = screen.getByRole("dialog", { name: "Account colour" });
+    const swatches = within(picker).getAllByRole("radio");
+    expect(swatches).toHaveLength(12);
+    expect(within(picker).getByRole("radio", { name: "Green" })).toBeChecked();
+
+    // Pressing a swatch and moving a little doesn't drag the account.
+    const teal = within(picker).getByRole("radio", { name: "Teal" });
+    fireEvent.pointerDown(teal, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 30 });
+    expect(accountGroup(TWO.email)).not.toHaveAttribute("data-drop");
+    fireEvent.pointerUp(window, { clientX: 10, clientY: 30 });
+    fireEvent.click(teal);
+    expect(screen.queryByRole("dialog", { name: "Account colour" })).not.toBeInTheDocument();
+    expect(accountGroup(TWO.email).style.getPropertyValue("--account-color")).toBe(
+      "var(--color-account-7)",
+    );
+    await waitFor(() => expect(saved).toEqual([{ accountId: "a2", color: 7 }]));
+    // The dot opens the colours without folding the account.
+    expect(accountHeader(TWO.email)).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("an account's menu moves it up or down", async () => {
+    const THREE = account("a3", "me@club.test", 3);
+    seed([ONE, TWO, THREE]);
+    const saved: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "reorder_accounts") saved.push(args);
+    });
+    render(
+      <>
+        <Sidebar />
+        <ContextMenuHost />
+      </>,
+    );
+    const order = () =>
+      Array.from(document.querySelectorAll("[data-account-group]")).map((g) =>
+        g.getAttribute("data-account-group"),
+      );
+    fireEvent.contextMenu(accountHeader(ONE.email), { clientX: 10, clientY: 20 });
+    expect(await screen.findByRole("menuitem", { name: "Move up" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move down" }));
+    await waitFor(() => expect(order()).toEqual(["a2", "a1", "a3"]));
+    expect(saved).toEqual([{ accountIds: ["a2", "a1", "a3"] }]);
+
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+    fireEvent.keyDown(accountHeader(THREE.email), { key: "ContextMenu" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Move up" }));
+    await waitFor(() => expect(order()).toEqual(["a2", "a3", "a1"]));
+  });
+
+  test("dragging an account's header puts it where it's let go, and doesn't fold it", async () => {
+    seed([ONE, TWO]);
+    const saved: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "reorder_accounts") saved.push(args);
+    });
+    render(<Sidebar />);
+    // jsdom has no layout: give each group a place on screen.
+    const groups = Array.from(document.querySelectorAll<HTMLElement>("[data-account-group]"));
+    groups.forEach((g, i) => {
+      g.getBoundingClientRect = () => ({ top: i * 100, height: 100 }) as DOMRect;
+    });
+    const header = accountHeader(TWO.email);
+    fireEvent.pointerDown(header, { button: 0, clientX: 10, clientY: 150 });
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 20 });
+    expect(accountGroup(TWO.email)).toHaveAttribute("data-drop", "dragging");
+    expect(accountGroup(ONE.email)).toHaveAttribute("data-drop", "before");
+    fireEvent.pointerUp(window, { clientX: 10, clientY: 20 });
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "true");
+    expect(accountGroup(ONE.email)).not.toHaveAttribute("data-drop");
+    await waitFor(() => expect(saved).toEqual([{ accountIds: ["a2", "a1"] }]));
   });
 
   test("sync error on an account shows a warning on its header", async () => {
@@ -515,6 +603,16 @@ describe("current account", () => {
 
     act(() => useAccountIndicators.getState().set("glow", false));
     expect(accountGroup(TWO.email)).not.toHaveAttribute("data-current");
+  });
+
+  test("with the rail, the shown account's dot opens its colours too", () => {
+    seed([ONE, TWO]);
+    act(() => useAccountIndicators.getState().set("rail", true));
+    useUiStore.getState().setMailbox({ accountId: "a2", labelId: "STARRED" });
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "Account colour" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Pink" }));
+    expect(useAccountStore.getState().accounts.find((a) => a.id === "a2")?.color).toBe(8);
   });
 
   test("the rail lists All Inboxes and each account, and shows the picked one alone", () => {

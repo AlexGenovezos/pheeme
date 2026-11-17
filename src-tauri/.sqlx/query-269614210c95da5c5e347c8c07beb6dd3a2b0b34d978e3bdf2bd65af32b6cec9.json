@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT id, email, display_name, profile_photo_url, client_id,\n               history_id, created_at, updated_at\n        FROM accounts ORDER BY created_at ASC\n        ",
+  "query": "\n        SELECT id, email, display_name, profile_photo_url, client_id,\n               history_id, created_at, updated_at, color\n        FROM accounts WHERE id = ?\n        ",
   "describe": {
     "columns": [
       {
@@ -90,10 +90,21 @@
             "name": "updated_at"
           }
         }
+      },
+      {
+        "name": "color",
+        "ordinal": 8,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "color"
+          }
+        }
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       false,
@@ -103,8 +114,9 @@
       false,
       true,
       false,
+      false,
       false
     ]
   },
-  "hash": "13f24860ca8d70bb4bef63d07196cba842db740bed635ee6e2215cfcbb09d09b"
+  "hash": "269614210c95da5c5e347c8c07beb6dd3a2b0b34d978e3bdf2bd65af32b6cec9"
 }

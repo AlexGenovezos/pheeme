@@ -113,6 +113,13 @@ export const THEME_TOKENS = {
   "--color-account-4": "charts.purple",
   "--color-account-5": "charts.red",
   "--color-account-6": "charts.yellow",
+  // The six more an account can be given (VS Code has no key for indigo, brown or grey).
+  "--color-account-7": "terminal.ansiCyan",
+  "--color-account-8": "terminal.ansiMagenta",
+  "--color-account-9": null,
+  "--color-account-10": "terminal.ansiBrightGreen",
+  "--color-account-11": null,
+  "--color-account-12": null,
 
   // Sidebar mailbox rows: icon color, and the tint and label color when selected.
   // Used as text on the selected row, so each needs 4.5:1 on the tinted sidebar.

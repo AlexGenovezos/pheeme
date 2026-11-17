@@ -14,6 +14,7 @@ const account: AccountInfo = {
   email: "me@example.com",
   displayName: null,
   synced: true,
+  color: 1,
 };
 const invitation = "pheeme-transfer-v1:192.168.1.2:1234/PRIVATE-PAIRING-KEY";
 const offer: TransferOffer = { transferId: "transfer-1", invitation, expiresInSeconds: 300 };
