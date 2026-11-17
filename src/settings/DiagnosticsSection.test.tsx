@@ -14,6 +14,7 @@ const account = (id: string, email: string): AccountInfo => ({
   displayName: null,
   clientId: "c",
   synced: true,
+  color: 1,
 });
 
 /** Records every diagnostics command; `answer` decides how each one ends. */

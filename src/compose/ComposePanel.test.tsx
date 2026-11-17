@@ -21,8 +21,22 @@ beforeEach(() => {
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
   useAccountStore.setState({
     accounts: [
-      { id: "a1", email: "me@example.com", displayName: null, clientId: "c", synced: true },
-      { id: "a2", email: "me@example.org", displayName: null, clientId: "c", synced: true },
+      {
+        id: "a1",
+        email: "me@example.com",
+        displayName: null,
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
+      {
+        id: "a2",
+        email: "me@example.org",
+        displayName: null,
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
     ],
   });
   calls = [];
@@ -433,7 +447,14 @@ test("the From picker offers each sendable address and swaps in its signature", 
 test("with one address and one account, From is plain text", async () => {
   useAccountStore.setState({
     accounts: [
-      { id: "a1", email: "me@example.com", displayName: null, clientId: "c", synced: true },
+      {
+        id: "a1",
+        email: "me@example.com",
+        displayName: null,
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
     ],
   });
   const panel = await openNew();

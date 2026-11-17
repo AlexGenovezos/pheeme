@@ -14,6 +14,7 @@ const account = (id: string, clientId: string): AccountInfo => ({
   displayName: null,
   clientId,
   synced: true,
+  color: 1,
 });
 
 /** An hour where the account spent `units` in its last minute. */

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT color FROM accounts",
+  "describe": {
+    "columns": [
+      {
+        "name": "color",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "color"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "137e5af51dfefc094d6d544d95b30dfa091358b6456633ec13abb2d21805229c"
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { ALL_INBOXES, categoryMailbox } from "../../mail/mailboxes";
-import { mailboxInAccount } from "./rail";
+import { mailboxInAccount, nextInbox } from "./rail";
 
 const TABS = ["CATEGORY_PERSONAL", "CATEGORY_UPDATES"];
 
@@ -40,4 +40,17 @@ describe("mailboxInAccount", () => {
     const here = { accountId: "b", labelId: "Label_1" };
     expect(mailboxInAccount(here, "b", TABS)).toBe(here);
   });
+});
+
+test("Ctrl+Tab goes from All Inboxes through each account in order, and round again", () => {
+  const ids = ["a", "b", "c"];
+  expect(nextInbox(null, ids, 1)).toBe("a");
+  expect(nextInbox("a", ids, 1)).toBe("b");
+  expect(nextInbox("c", ids, 1)).toBeNull();
+  expect(nextInbox(null, ids, -1)).toBe("c");
+  expect(nextInbox("a", ids, -1)).toBeNull();
+  // An account that's gone counts as All Inboxes.
+  expect(nextInbox("gone", ids, 1)).toBe("a");
+  // One account: nowhere else to go.
+  expect(nextInbox("a", ["a"], 1)).toBe("a");
 });

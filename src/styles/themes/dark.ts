@@ -82,6 +82,12 @@ export const darkSource: ThemeSource = {
     "--color-account-4": "#b88ff0",
     "--color-account-5": "#ee7b74",
     "--color-account-6": "#e3c050",
+    "--color-account-7": "#4fc7cf",
+    "--color-account-8": "#f07bb5",
+    "--color-account-9": "#949dff",
+    "--color-account-10": "#a6d65a",
+    "--color-account-11": "#c99a76",
+    "--color-account-12": "#a3acb5",
 
     "--color-mailbox-primary": "#7fb2f5",
     "--color-mailbox-social": "#5fcfdd",

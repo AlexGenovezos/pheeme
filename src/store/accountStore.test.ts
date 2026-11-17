@@ -11,6 +11,7 @@ const account = (id: string, synced: boolean): AccountInfo => ({
   displayName: null,
   clientId: "c.apps.googleusercontent.com",
   synced,
+  color: 1,
 });
 
 beforeEach(() =>
@@ -254,5 +255,46 @@ describe("removing an account reconciles navigation", () => {
     await expect(useAccountStore.getState().remove("a")).rejects.toBeDefined();
     expect(useUiStore.getState().mailbox.accountId).toBe("a");
     expect(useUiStore.getState().openThread).toBe("a:t1");
+  });
+});
+
+describe("colour and order", () => {
+  test("setColor shows the colour at once and saves it", async () => {
+    const calls: unknown[] = [];
+    mockIPC((cmd, args) => {
+      calls.push([cmd, args]);
+    });
+    await useAccountStore.getState().setColor("b", 9);
+    expect(useAccountStore.getState().accounts.map((a) => a.color)).toEqual([1, 9]);
+    expect(calls).toEqual([["set_account_color", { accountId: "b", color: 9 }]]);
+  });
+
+  test("a colour Pheeme couldn't save goes back", async () => {
+    mockIPC(() => {
+      throw { code: "internal", message: "No" };
+    });
+    await expect(useAccountStore.getState().setColor("a", 4)).rejects.toMatchObject({
+      code: "internal",
+    });
+    expect(useAccountStore.getState().accounts[0].color).toBe(1);
+  });
+
+  test("reorder shows the order at once and saves it; an order Pheeme couldn't save goes back", async () => {
+    const calls: unknown[] = [];
+    mockIPC((cmd, args) => {
+      calls.push([cmd, args]);
+    });
+    await useAccountStore.getState().reorder(["b", "a"]);
+    expect(useAccountStore.getState().accounts.map((a) => a.id)).toEqual(["b", "a"]);
+    expect(calls).toEqual([["reorder_accounts", { accountIds: ["b", "a"] }]]);
+    // The same order again: nothing to save.
+    await useAccountStore.getState().reorder(["b", "a"]);
+    expect(calls).toHaveLength(1);
+
+    mockIPC(() => {
+      throw { code: "internal", message: "No" };
+    });
+    await expect(useAccountStore.getState().reorder(["a", "b"])).rejects.toBeTruthy();
+    expect(useAccountStore.getState().accounts.map((a) => a.id)).toEqual(["b", "a"]);
   });
 });

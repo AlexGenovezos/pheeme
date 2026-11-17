@@ -9,6 +9,7 @@ const account = (id: string, clientId: string): AccountInfo => ({
   displayName: null,
   clientId,
   synced: true,
+  color: 1,
 });
 
 test("accounts on the same OAuth client share a group, in the order groups first appear", () => {

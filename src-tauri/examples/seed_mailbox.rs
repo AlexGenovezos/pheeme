@@ -65,6 +65,7 @@ async fn main() -> anyhow::Result<()> {
             history_id: Some("1".into()),
             created_at: now / 1000,
             updated_at: now / 1000,
+            color: 1,
         },
     )
     .await?;

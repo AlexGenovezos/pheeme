@@ -16,7 +16,9 @@ import { byName } from "../preview/handlers";
 beforeEach(() => {
   __resetUiStoreForTests();
   useAccountStore.setState({
-    accounts: [{ id: "a", email: "a@example.com", displayName: null, synced: true, clientId: "c" }],
+    accounts: [
+      { id: "a", email: "a@example.com", displayName: null, synced: true, clientId: "c", color: 1 },
+    ],
   });
 });
 

@@ -91,6 +91,7 @@ async fn migration_recovers_plaintext_wal_preserves_drafts_settings_and_search_r
             history_id: None,
             created_at: 0,
             updated_at: 0,
+            color: 1,
         },
     )
     .await

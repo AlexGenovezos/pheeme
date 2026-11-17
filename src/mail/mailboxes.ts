@@ -150,9 +150,21 @@ export function mailboxTitle(ref: MailboxRef, labels: { id: string; name: string
   return labels.find((l) => l.id === ref.labelId)?.name ?? "Mail";
 }
 
-/** 1..6: the account's position in list order, cycling through the six `--color-account-N` tokens. */
-export function accountColorIndex(accountId: string, accounts: { id: string }[]): number {
+/** How many account colours the themes define (`--color-account-1` to `-12`). */
+export const ACCOUNT_COLOR_COUNT = 12;
+
+/**
+ * 1..12: the `--color-account-N` token the account is drawn in, the colour it was given (the account's dot). Without
+ * one, its position in list order picks from the first six.
+ */
+export function accountColorIndex(
+  accountId: string,
+  accounts: { id: string; color?: number }[],
+): number {
   const index = accounts.findIndex((a) => a.id === accountId);
+  const color = accounts[index]?.color;
+  if (color !== undefined && Number.isInteger(color) && color >= 1 && color <= ACCOUNT_COLOR_COUNT)
+    return color;
   return (Math.max(index, 0) % 6) + 1;
 }
 
