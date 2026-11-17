@@ -207,15 +207,18 @@
   --weather-drift: 1px;
   --weather-fall: 10px;
   /* The weather in the hours of Day and Week (src/weather/HourWeather.tsx): how strongly a band
-     tints the hours, how far its edges fade, and how fast its texture moves while it plays. */
+     tints the hours and how far its edges fade. */
   --weather-hours-tint: 7%;
   --weather-hours-tint-strong: 12%;
-  --weather-hours-ink: 38%;
   --weather-hours-fade: 10px;
-  --weather-hours-rain-duration: 0.5s;
-  --weather-hours-snow-duration: 2.8s;
-  --weather-hours-mist-duration: 9s;
-  --weather-hours-mist-drift: 24px;
+  /* The window pane each band is seen through (src/weather/pane/): the light water and glass
+     catch, the shade water casts, how much the hours blur behind wet or misted glass, and the
+     glass's faint sheen. */
+  --weather-glass-shine: #ffffff;
+  --weather-glass-shade: #1d3557;
+  --weather-glass-blur: 1.2px;
+  --weather-glass-blur-fog: 2.5px;
+  --weather-glass-sheen: 5%;
   /* Settings › Calendar: the home location field, wide enough for "Town, Region, Country". */
   --weather-home-width: 280px;
   /* Settings › Calendar › Other time zones: the list and each zone's short label field. */
@@ -429,7 +432,8 @@
   --weather-fog: #7c8796;
   --weather-hours-tint: 8%;
   --weather-hours-tint-strong: 13%;
-  --weather-hours-ink: 34%;
+  --weather-glass-shade: #000;
+  --weather-glass-sheen: 3%;
 }
 
 :root[data-reading-size="large"] {

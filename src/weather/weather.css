@@ -272,117 +272,37 @@
     transparent
   );
 }
-
-/* Rain and snow: a texture one tile taller than the band, sliding down one tile and round again. */
-.wx-hours__fall {
-  position: absolute;
-  top: calc(var(--wx-tile) * -1);
-  right: var(--space-0);
-  bottom: var(--space-0);
-  left: var(--space-0);
-  animation: wx-hours-fall var(--weather-hours-rain-duration) linear infinite;
+/* Rain, storm and fog are seen through wet or misted glass: the hours behind blur a little. */
+.wx-hours--rain,
+.wx-hours--storm {
+  -webkit-backdrop-filter: blur(var(--weather-glass-blur));
+  backdrop-filter: blur(var(--weather-glass-blur));
 }
-.wx-hours--snow .wx-hours__fall {
-  animation-duration: var(--weather-hours-snow-duration);
+.wx-hours--fog {
+  -webkit-backdrop-filter: blur(var(--weather-glass-blur-fog));
+  backdrop-filter: blur(var(--weather-glass-blur-fog));
 }
-.wx-hours[data-intensity="3"] .wx-hours__fall {
-  animation-duration: calc(var(--weather-hours-rain-duration) * 0.75);
-}
-.wx-hours--snow[data-intensity="3"] .wx-hours__fall {
-  animation-duration: calc(var(--weather-hours-snow-duration) * 0.75);
-}
-.wx-hours__fall svg {
-  display: block;
-}
-.wx-hours__drop {
-  stroke: color-mix(in srgb, var(--weather-rain) var(--weather-hours-ink), transparent);
-  stroke-width: 1.2;
-  stroke-linecap: round;
-}
-.wx-hours__flake {
-  fill: color-mix(in srgb, var(--weather-snow) calc(var(--weather-hours-ink) * 1.6), transparent);
-}
-.wx-hours__glow {
+/* The glass itself: a faint sheen of light across every band. */
+.wx-hours__sheen {
   position: absolute;
   inset: var(--space-0);
-  background: radial-gradient(
-    ellipse at 50% 50%,
-    color-mix(in srgb, var(--weather-sun-light) var(--weather-hours-tint), transparent),
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    color-mix(in srgb, var(--weather-glass-shine) var(--weather-glass-sheen), transparent) 38%,
+    transparent 46%,
+    transparent 58%,
+    color-mix(in srgb, var(--weather-glass-shine) var(--weather-glass-sheen), transparent) 64%,
     transparent 70%
   );
-  animation: wx-hours-glow var(--weather-glow-duration) ease-in-out infinite alternate;
 }
-.wx-hours__mist {
-  position: absolute;
-  top: var(--space-0);
-  right: calc(var(--weather-hours-mist-drift) * -1);
-  bottom: var(--space-0);
-  left: calc(var(--weather-hours-mist-drift) * -1);
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent var(--space-0),
-    color-mix(in srgb, var(--weather-fog) var(--weather-hours-tint-strong), transparent)
-      var(--space-3),
-    transparent var(--space-6),
-    transparent var(--space-8)
-  );
-  animation: wx-hours-mist var(--weather-hours-mist-duration) ease-in-out infinite alternate;
-}
-.wx-hours__flash {
+/* The weather on and behind the glass, drawn by pane/Pane.tsx in the colours of the tokens. */
+.wx-hours__pane {
   position: absolute;
   inset: var(--space-0);
-  background: color-mix(in srgb, var(--weather-bolt) var(--weather-hours-tint-strong), transparent);
-  opacity: 0;
-  animation: wx-hours-flash var(--weather-flash-duration) steps(1, end) infinite;
-}
-
-/* After the parts: their `animation` shorthand would set it back to running. */
-.wx-hours * {
-  animation-play-state: paused;
-}
-.wx-hours--playing * {
-  animation-play-state: running;
-}
-@media (prefers-reduced-motion: reduce) {
-  .wx-hours * {
-    animation-play-state: paused !important;
-  }
-}
-@keyframes wx-hours-fall {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(var(--wx-tile));
-  }
-}
-@keyframes wx-hours-glow {
-  from {
-    opacity: 0.55;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes wx-hours-mist {
-  from {
-    transform: translateX(calc(var(--weather-hours-mist-drift) * -1));
-  }
-  to {
-    transform: translateX(var(--weather-hours-mist-drift));
-  }
-}
-@keyframes wx-hours-flash {
-  0%,
-  80%,
-  86%,
-  100% {
-    opacity: 0;
-  }
-  82%,
-  88% {
-    opacity: 1;
-  }
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* Puffs breathe: rise a little and swell. */
