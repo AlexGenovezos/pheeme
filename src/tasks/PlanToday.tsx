@@ -15,6 +15,7 @@ import { sameShortcut, stepFromEvent } from "../keyboard/bindings";
 import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import { createSubscriptionScope } from "../lib/subscriptions";
+import { isPreview } from "../preview/runtime";
 import { listen, type Task, TASKS_EVENTS } from "../lib/tauri";
 import { cx } from "../lib/utils";
 import { taskTitle } from "./outline";
@@ -88,6 +89,8 @@ export function PlanTodayHost() {
 }
 
 function autoOpen() {
+  // Browser preview (and the website's demo of it) always has overdue fixtures: open on request only.
+  if (isPreview()) return;
   const { due } = tasksStore();
   const today = todayDate();
   if (due && !plan().open && shouldAutoOpen(readPlanned(), today, planQueue(due, today)))

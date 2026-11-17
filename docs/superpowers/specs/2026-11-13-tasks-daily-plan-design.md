@@ -24,7 +24,7 @@ So, by Pheeme's "one-to-one with Google or not at all" rule: **booking hands off
 ## 3. Goals
 
 1. **Daily plan** (a dialog over the app):
-   - Opens on its own the **first time the app is used each local day**, but **only if something is overdue or due today**. With nothing to decide, it never appears. Never in Browser preview's first load of the day either unless there's something to plan (fixtures decide).
+   - Opens on its own the **first time the app is used each local day**, but **only if something is overdue or due today**. With nothing to decide, it never appears. Never on its own in Browser preview (or the website's embedded demo of it), whose fixtures always have something due; there it opens only on request.
    - Can be opened any time: the `tasks.planToday` command (palette, "Plan today") and a **Plan today** button in the Tasks panel's Today section.
    - Covers every account's not-completed tasks due today or earlier, in lists that aren't hidden, for accounts whose tasks are readable. **Overdue tasks first, oldest first**, then today's.
    - **One task at a time**: title, list name and account (when there's more than one), the start of its notes, and how late it is ("Due 12 days ago", "Due yesterday", "Due today"), worked out from the due date.

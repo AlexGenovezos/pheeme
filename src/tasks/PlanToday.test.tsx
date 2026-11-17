@@ -11,6 +11,12 @@ import { usePlanStore } from "./planStore";
 import { TasksPanelHost } from "./TasksPanel";
 import { useTasksStore } from "./tasksStore";
 
+let preview = false;
+vi.mock("../preview/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../preview/runtime")>()),
+  isPreview: () => preview,
+}));
+
 const ACCOUNTS = [
   { id: "acc-personal", email: "avery@example.com" },
   { id: "acc-work", email: "avery@example.org" },
@@ -114,6 +120,16 @@ describe("Plan today", () => {
     localStorage.setItem(PLANNED_KEY, "2026-11-11");
     await start();
     expect(screen.queryByRole("dialog", { name: "Plan today" })).toBeNull();
+  });
+
+  test("doesn't open on its own in Browser preview, where fixtures are always due", async () => {
+    preview = true;
+    try {
+      await start();
+      expect(screen.queryByRole("dialog", { name: "Plan today" })).toBeNull();
+    } finally {
+      preview = false;
+    }
   });
 
   test("doesn't open on its own with nothing due", async () => {
