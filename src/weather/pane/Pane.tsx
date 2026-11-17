@@ -4,6 +4,7 @@
 import { useEffect, useRef } from "react";
 import type { Intensity } from "../codes";
 import type { RunKind } from "../hourly";
+import { mayMove } from "../motion";
 import { type Ink, readInk } from "./ink";
 import { createScene, type Scene } from "./scene";
 
@@ -41,7 +42,12 @@ export function Pane({
     };
     const tick = (now: number) => {
       frame = 0;
-      if (!scene) return;
+      // Animation turned off, reduced motion, or the window left: hold still at once, with no
+      // winding down (that is for a day's play ending).
+      if (!scene || !mayMove()) {
+        last = 0;
+        return;
+      }
       const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
       last = now;
       scene.step(dt, playingRef.current);
@@ -50,7 +56,7 @@ export function Pane({
       else last = 0;
     };
     wake.current = () => {
-      if (!frame && scene && (playingRef.current || !scene.still)) {
+      if (!frame && scene && mayMove() && (playingRef.current || !scene.still)) {
         last = 0;
         frame = requestAnimationFrame(tick);
       }

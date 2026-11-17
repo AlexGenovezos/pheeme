@@ -11,7 +11,8 @@ import { useWeatherSettings } from "./weatherSettings";
 /** How long a day's weather plays. */
 export const PLAY_MS = 8000;
 
-function mayMove(): boolean {
+/** Whether anything may move now: Animate weather on, no reduced motion, the window in front. */
+export function mayMove(): boolean {
   return (
     useWeatherSettings.getState().animate &&
     document.visibilityState !== "hidden" &&
