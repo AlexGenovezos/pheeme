@@ -23,6 +23,8 @@ describe("findCode", () => {
     ["Your confirmation code is 551204", "551204"],
     ["Your OTP: 908172", "908172"],
     ["Your code is 3391", "3391"],
+    ["YOUR VERIFICATION CODE IS 123456", "123456"],
+    ["YOUR OTP IS 482913", "482913"],
   ])("finds the code in %j", (text, code) => {
     expect(findCode(text)).toBe(code);
   });

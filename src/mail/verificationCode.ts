@@ -29,8 +29,11 @@ const NEAR = 80;
 /** What comes just before a number that only identifies something: "the phone ending in 1234". */
 const IDENTIFIES =
   /\b(?:ending|ends) (?:in|with) $|\blast (?:\d|four|4) digits(?: of)?:? $|\bflight(?: (?:no\.?|number))?:? $/i;
-/** An airline's two-character code before a flight number: "AA 0779", "B6 1234". */
-const AIRLINE = /(?<![\w-])(?:[A-Z]{2}|[A-Z]\d|\d[A-Z]) $/;
+/**
+ * An airline's two-character code before a flight number: "AA 0779", "B6 1234". Not a short word in an
+ * email written in capitals ("YOUR CODE IS 123456").
+ */
+const AIRLINE = /(?<![\w-])(?!(?:IS|TO|OF|IN|ON|AT|OR|IT|BY|BE) $)(?:[A-Z]{2}|[A-Z]\d|\d[A-Z]) $/;
 /**
  * A booking reference answering weak code wording ("Confirmation code: GHFIJE"). The wording is then about
  * the booking, and mustn't vouch for a flight or seat number a few words later. (Strong wording vouches
