@@ -101,7 +101,7 @@ describe("hour runs", () => {
 });
 
 describe("bands", () => {
-  test("each run is a band in its hours, with drops for rain and nothing for a day without runs", () => {
+  test("each run is a band in its hours, each drawn on its pane, and nothing for a day without runs", () => {
     const { container, rerender } = render(
       <HourWeather
         date="2026-11-17"
@@ -116,7 +116,7 @@ describe("bands", () => {
     expect(bands).toHaveLength(2);
     expect(bands[1].style.top).toBe("calc(var(--cal-hour-h) * 14)");
     expect(bands[1].style.height).toBe("calc(var(--cal-hour-h) * 3)");
-    expect(bands[1].querySelectorAll(".wx-hours__drop")).toHaveLength(8);
+    for (const band of bands) expect(band.querySelector("canvas.wx-hours__pane")).not.toBeNull();
     expect(container.querySelector(".wx-hours--playing")).toBeNull();
     rerender(<HourWeather date="2026-11-17" playing={false} runs={undefined} />);
     expect(container.querySelector(".wx-hours")).toBeNull();
