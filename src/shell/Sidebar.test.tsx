@@ -340,7 +340,13 @@ describe("stacked layout", () => {
     expect(swatches).toHaveLength(12);
     expect(within(picker).getByRole("radio", { name: "Green" })).toBeChecked();
 
-    fireEvent.click(within(picker).getByRole("radio", { name: "Teal" }));
+    // Pressing a swatch and moving a little doesn't drag the account.
+    const teal = within(picker).getByRole("radio", { name: "Teal" });
+    fireEvent.pointerDown(teal, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 30 });
+    expect(accountGroup(TWO.email)).not.toHaveAttribute("data-drop");
+    fireEvent.pointerUp(window, { clientX: 10, clientY: 30 });
+    fireEvent.click(teal);
     expect(screen.queryByRole("dialog", { name: "Account colour" })).not.toBeInTheDocument();
     expect(accountGroup(TWO.email).style.getPropertyValue("--account-color")).toBe(
       "var(--color-account-7)",

@@ -76,7 +76,13 @@ function AccountColorPopover({
       data-owns-keys=""
       style={{ left: pos.x, top: pos.y }}
       onKeyDown={onKeyDown}
-      onContextMenu={(e) => e.preventDefault()}
+      // Portalled, but React still bubbles its events to the account's header: a press must not start dragging
+      // the account, nor a right-click open its menu.
+      onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
     >
       <SwatchGrid swatches={SWATCHES} value={String(color)} onChoose={choose} columns={6} />
     </div>,
