@@ -76,6 +76,7 @@ function event(location: string | null, start = NOW + 2 * 86_400_000): CalendarE
     transparency: null,
     recurring: false,
     canEdit: true,
+    taskLink: null,
   };
 }
 

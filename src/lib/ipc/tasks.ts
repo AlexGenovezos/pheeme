@@ -73,6 +73,9 @@ export const getTasksInList = (accountId: string, listId: string) =>
 /** Every account's tasks due on `[fromDate, toDate)` (`YYYY-MM-DD`) in shown lists, by date (local). */
 export const getDatedTasks = (fromDate: string, toDate: string) =>
   call("dated_tasks", { fromDate, toDate });
+/** Every account's open tasks due on or before `throughDate` (`YYYY-MM-DD`) in shown lists, by date (local). */
+export const getTasksDueThrough = (throughDate: string) =>
+  call("tasks_due_through", { throughDate });
 /** Show or hide a list's dated tasks on the calendar (local). */
 export const setTaskListHidden = (accountId: string, listId: string, hidden: boolean) =>
   call("set_task_list_hidden", { accountId, listId, hidden });

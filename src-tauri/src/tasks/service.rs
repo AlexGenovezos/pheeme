@@ -10,6 +10,7 @@ use crate::google_access::{AccessDto, AccessStatus, Adapter, Intervals, Poller, 
 use crate::mail::MailError;
 use crate::sync::engine::now_ms;
 use crate::sync::{SyncEvent, SyncEvents};
+use chrono::NaiveDate;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
@@ -204,6 +205,24 @@ impl TasksService {
     ) -> Result<Vec<TaskDto>, MailError> {
         let rows = db::tasks::dated_tasks(&self.db, from_date, to_date).await?;
         Ok(rows.iter().map(TaskDto::from).collect())
+    }
+
+    /// Every account's not-completed tasks due on or before `through_date` (`YYYY-MM-DD`) in
+    /// shown lists, oldest due date first.
+    pub async fn due_through(&self, through_date: &str) -> Result<Vec<TaskDto>, MailError> {
+        // Every due date is a `YYYY-MM-DD` after "", and before the day after `through_date`.
+        let day_after = NaiveDate::parse_from_str(through_date, "%Y-%m-%d")
+            .ok()
+            .and_then(|d| d.succ_opt())
+            .ok_or_else(|| MailError::Invalid(format!("not a date: {through_date}")))?
+            .format("%Y-%m-%d")
+            .to_string();
+        let rows = db::tasks::dated_tasks(&self.db, "", &day_after).await?;
+        Ok(rows
+            .iter()
+            .filter(|t| t.status != "completed" && !t.hidden)
+            .map(TaskDto::from)
+            .collect())
     }
 
     /// Show or hide a list's dated tasks on the calendar (local only).
@@ -455,6 +474,36 @@ pub(super) mod tests {
             .unwrap();
         assert_eq!(week.len(), 1);
         assert!(h.service.accounts().await.unwrap()[1].lists[0].hidden);
+    }
+
+    #[tokio::test]
+    async fn due_through_keeps_open_tasks_due_by_the_date() {
+        let h = harness(&["a", "b"]).await;
+        let due = |id: &str, date: &str| json!({"id": id, "title": id, "due": format!("{date}T00:00:00.000Z")});
+        h.fake("a").put("L", due("today", "2026-11-16"));
+        h.fake("a").put("L", due("late", "2026-11-10"));
+        h.fake("a").put("L", due("tomorrow", "2026-11-17"));
+        h.fake("a").put("L", task("undated", "undated"));
+        h.fake("a").put(
+            "L",
+            json!({"id": "done", "title": "done", "due": "2026-11-16T00:00:00.000Z",
+                   "status": "completed", "completed": "2026-11-16T09:00:00.000Z"}),
+        );
+        h.fake("b").put("L", due("hidden_list", "2026-11-12"));
+        h.grant("a").await;
+        h.grant("b").await;
+        h.service.set_list_hidden("b", "L", true).await.unwrap();
+
+        let got: Vec<String> = h
+            .service
+            .due_through("2026-11-16")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(got, vec!["late", "today"]);
+        assert!(h.service.due_through("soon").await.is_err());
     }
 
     #[tokio::test]

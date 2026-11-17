@@ -42,6 +42,7 @@ function detail(over: Partial<EventDetail> = {}): EventDetail {
     transparency: null,
     recurring: false,
     canEdit: true,
+    taskLink: null,
     description: "<p>Agenda</p><p>Goals<br>Hiring</p>",
     organizer: { email: "a@example.com", name: null, isSelf: true },
     attendees: [

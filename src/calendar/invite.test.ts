@@ -70,6 +70,7 @@ function event(id: string, start: number, end: number, over: Partial<CalendarEve
     transparency: null,
     recurring: false,
     canEdit: true,
+    taskLink: null,
     ...over,
   } satisfies CalendarEvent;
 }

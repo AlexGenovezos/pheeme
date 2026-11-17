@@ -1,5 +1,6 @@
 // The event popover: what, when, where, Join (any video call), guests and their answers (each opens
-// their person card), and Yes / Maybe / No.
+// their person card), and Yes / Maybe / No. Google's task block for a task Pheeme has shows as the
+// task: Mark completed and Open in Google Tasks, where it's changed, instead of Google's note.
 // It opens beside the event clicked and reads the full event from the local cache.
 import {
   Check,
@@ -8,6 +9,7 @@ import {
   EllipsisVertical,
   ExternalLink,
   Globe,
+  ListChecks,
   MapPin,
   Pencil,
   Repeat,
@@ -54,6 +56,8 @@ import { eventTitle, useCalendarLookup } from "./EventBlock";
 import { joinLabel, joinMeeting, locationIsCall } from "./meeting";
 import { EventWeather } from "../weather/EventWeather";
 import { linkify } from "../mail/linkify";
+import { useBlockTask } from "../tasks/DatedTasks";
+import { useTasksStore } from "../tasks/tasksStore";
 import { AnswerRadios } from "./AnswerRadios";
 import { type Answer, answerTally, answerWord } from "./rsvp";
 import { type OtherZone, placeName, useZoneSettings } from "./zoneSettings";
@@ -357,6 +361,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const event = open.event;
+  const task = useBlockTask(event);
 
   // Read the detail again whenever the event (or the cache behind it) changes.
   useEffect(() => {
@@ -413,7 +418,8 @@ function PopoverBody({ open }: { open: OpenEvent }) {
   const detail = load.kind === "ready" ? load.detail : null;
   const { background } = eventColors(event, calendar);
   const guests = detail?.attendees.filter((a) => !a.resource) ?? [];
-  const description = detail?.description ? plainText(detail.description) : "";
+  // A task block's description is Google's "changes … go to: <link>": the task's buttons say it.
+  const description = detail?.description && !task ? plainText(detail.description) : "";
   // From the listed event, so Join is there from the first frame.
   const meeting = event.meeting;
 
@@ -428,7 +434,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
       onKeyDown={onKeyDown}
     >
       <div className="cal-pop__tools">
-        <EventTools event={event} />
+        {!task && <EventTools event={event} />}
         {detail?.htmlLink && (
           <IconButton
             size="sm"
@@ -450,7 +456,7 @@ function PopoverBody({ open }: { open: OpenEvent }) {
         <h2
           className={cx(
             "cal-pop__title",
-            event.selfResponse === "declined" && "cal-pop__title--declined",
+            (event.selfResponse === "declined" || task?.completed) && "cal-pop__title--declined",
           )}
         >
           {eventTitle(event)}
@@ -469,6 +475,21 @@ function PopoverBody({ open }: { open: OpenEvent }) {
         </span>
       </div>
       <OtherZoneTimes event={event} tz={tz} />
+      {task && event.taskLink && (
+        <div className="cal-pop__row">
+          <ListChecks aria-hidden="true" />
+          <Button
+            size="sm"
+            variant={task.completed ? "secondary" : "primary"}
+            onClick={() => void useTasksStore.getState().setCompleted(task, !task.completed)}
+          >
+            {task.completed ? "Mark not done" : "Mark completed"}
+          </Button>
+          <Button size="sm" onClick={() => void openExternal(event.taskLink!).catch(toastError)}>
+            Open in Google Tasks
+          </Button>
+        </div>
+      )}
       {load.kind === "failed" && (
         <p className="cal-pop__error" role="alert">
           {load.message}

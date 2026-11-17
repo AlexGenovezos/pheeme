@@ -8,6 +8,7 @@ import { useAccountStore } from "../store/accountStore";
 import { ContextMenuHost } from "../shell/ContextMenuHost";
 import { TasksPanelHost } from "./TasksPanel";
 import { readPanelOpen, TASKS_PREFS_KEY, useTasksStore } from "./tasksStore";
+import { PLANNED_KEY } from "./plan";
 import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
@@ -27,6 +28,8 @@ let fail: Set<string>;
 /** Commands whose answer waits until the test releases it. */
 let hold: Set<string>;
 let held: Array<() => void>;
+/** Answers that replace the fixtures', by command. */
+let answers: Map<string, unknown>;
 
 function backend(access: string | null = null) {
   const handlers = byName(createTasksHandlers(ACCOUNTS, access, NOW));
@@ -35,9 +38,9 @@ function backend(access: string | null = null) {
       const a = (args ?? {}) as Record<string, unknown>;
       calls.push({ cmd, args: a });
       if (fail.has(cmd)) throw { code: "gmail_api", message: "Google said no." };
-      if (hold.has(cmd))
-        return new Promise((resolve) => held.push(() => resolve(handlers[cmd]?.(a))));
-      return handlers[cmd]?.(a);
+      const answer = () => (answers.has(cmd) ? answers.get(cmd) : handlers[cmd]?.(a));
+      if (hold.has(cmd)) return new Promise((resolve) => held.push(() => resolve(answer())));
+      return answer();
     },
     { shouldMockEvents: true },
   );
@@ -45,7 +48,9 @@ function backend(access: string | null = null) {
 
 const last = <T,>(items: T[]) => items[items.length - 1];
 const writes = () =>
-  calls.filter((c) => !["tasks_accounts", "tasks_in_list", "dated_tasks"].includes(c.cmd));
+  calls.filter(
+    (c) => !["tasks_accounts", "tasks_in_list", "dated_tasks", "tasks_due_through"].includes(c.cmd),
+  );
 const list = (name: string) => screen.getByRole("region", { name });
 const rows = (name: string) =>
   within(screen.getByRole("list", { name: `${name} tasks` }))
@@ -69,10 +74,13 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   localStorage.clear();
+  // Planned already: the plan doesn't open over the panel (PlanToday.test.tsx covers it).
+  localStorage.setItem(PLANNED_KEY, "2026-11-11");
   calls = [];
   fail = new Set();
   hold = new Set();
   held = [];
+  answers = new Map();
   useAccountStore.setState({ accounts: ACCOUNTS as never });
   useToastStore.setState({ toasts: [] });
   useTasksStore.setState({
@@ -84,6 +92,8 @@ beforeEach(() => {
     accountsError: null,
     listErrors: {},
     datedError: null,
+    due: null,
+    dueError: null,
     editing: null,
   });
 });
@@ -138,7 +148,9 @@ describe("Tasks panel", () => {
     await openPanel();
     hold.add("set_task_completed");
     fireEvent.click(screen.getByRole("checkbox", { name: "Mark done: Renew passport" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Mark done: Send the lease back" }));
+    fireEvent.click(
+      within(list("My Tasks")).getByRole("checkbox", { name: "Mark done: Send the lease back" }),
+    );
     await settle();
     expect(held).toHaveLength(2);
     // The first write lands and its reload reads a cache where the second is still open.
@@ -235,7 +247,7 @@ describe("Tasks panel", () => {
     ]);
 
     // Drag "Send the lease back" by its grip below "Book flights" (jsdom rects are 0: the lower half).
-    const from = screen
+    const from = within(list("My Tasks"))
       .getByRole("button", { name: "Edit task: Send the lease back" })
       .closest("li")!;
     const onto = screen.getByRole("button", { name: "Edit task: Book flights" }).closest("li")!;
@@ -254,7 +266,9 @@ describe("Tasks panel", () => {
       "Send the lease back",
     ]);
     expect(
-      screen.getByRole("button", { name: "Edit task: Send the lease back" }).closest("li"),
+      within(list("My Tasks"))
+        .getByRole("button", { name: "Edit task: Send the lease back" })
+        .closest("li"),
     ).toHaveClass("task-row--sub");
   });
 
@@ -475,5 +489,95 @@ describe("Tasks panel", () => {
     fail.delete("dated_tasks");
     await act(() => useTasksStore.getState().loadDated("2026-11-08", "2026-11-15"));
     expect(useTasksStore.getState().datedError).toBeNull();
+  });
+
+  test("Today lists every account's overdue tasks first, then today's", async () => {
+    await openPanel();
+    const today = list("Today");
+    expect(rows("Today")).toEqual([
+      "Send the Acme invoice",
+      "Pick up dry cleaning",
+      "Send the lease back",
+      "Draft the newsletter",
+    ]);
+    expect(today).toHaveTextContent("4");
+    const overdue = within(today)
+      .getByRole("button", { name: "Edit task: Pick up dry cleaning" })
+      .querySelector(".task-row__due");
+    expect(overdue).toHaveClass("task-row__due--overdue");
+    expect(
+      within(today)
+        .getByRole("button", { name: "Edit task: Send the lease back" })
+        .querySelector(".task-row__due"),
+    ).not.toHaveClass("task-row__due--overdue");
+    expect(within(today).getByRole("button", { name: "Plan today" })).toHaveAttribute(
+      "data-command",
+      "tasks.planToday",
+    );
+  });
+
+  test("Today keeps its shape while loading, and says Nothing due today only once it's empty", async () => {
+    hold.add("tasks_due_through");
+    answers.set("tasks_due_through", []);
+    await openPanel();
+    const today = list("Today");
+    expect(today.querySelectorAll('.task-row[aria-hidden="true"]')).toHaveLength(2);
+    expect(within(today).getByRole("button", { name: "Plan today" })).toBeInTheDocument();
+    expect(today).not.toHaveTextContent("Nothing due today");
+
+    for (const release of held.splice(0)) release();
+    await settle();
+    expect(today.querySelectorAll(".task-row")).toHaveLength(0);
+    expect(today).toHaveTextContent("Nothing due today");
+  });
+
+  test("ticking a task off in Today completes it and takes it out of Today", async () => {
+    await openPanel();
+    fireEvent.click(
+      within(list("Today")).getByRole("checkbox", { name: "Mark done: Pick up dry cleaning" }),
+    );
+    expect(rows("Today")).not.toContain("Pick up dry cleaning");
+    await settle();
+    expect(last(writes())).toMatchObject({
+      cmd: "set_task_completed",
+      args: { listId: "errands", completed: true },
+    });
+    expect(rows("Today")).not.toContain("Pick up dry cleaning");
+    expect(rows("Today")).toContain("Send the lease back");
+  });
+
+  test("a task edited from Today opens its editor there", async () => {
+    await openPanel();
+    fireEvent.click(
+      within(list("Today")).getByRole("button", { name: "Edit task: Send the lease back" }),
+    );
+    expect(
+      within(list("Today")).getByRole("form", { name: "Edit task: Send the lease back" }),
+    ).toBeInTheDocument();
+    expect(within(list("My Tasks")).queryByRole("form")).toBeNull();
+    fireEvent.keyDown(within(list("Today")).getByRole("textbox", { name: "Title" }), {
+      key: "Escape",
+    });
+    await settle();
+    expect(within(list("Today")).queryByRole("form")).toBeNull();
+  });
+
+  test("Book a time in a task's menu moves it to today and opens Google Calendar there", async () => {
+    await openPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Task options: Renew passport" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Book a time" }));
+    await settle();
+    expect(writes().filter((c) => c.cmd === "update_task")).toEqual([
+      expect.objectContaining({
+        cmd: "update_task",
+        args: expect.objectContaining({ edit: { due: "2026-11-11" } }),
+      }),
+    ]);
+    expect(calls.find((c) => c.cmd === "open_external")?.args).toEqual({
+      url: "https://calendar.google.com/calendar/u/0/r/day/2026/11/11?authuser=avery%40example.com",
+    });
+    expect(last(useToastStore.getState().toasts)).toMatchObject({
+      title: "Book it in Google Calendar",
+    });
   });
 });

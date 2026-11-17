@@ -312,6 +312,7 @@ function draftEvent(form: EventForm): CalendarEvent {
     transparency: form.transparency,
     recurring: false,
     canEdit: false,
+    taskLink: null,
   };
 }
 

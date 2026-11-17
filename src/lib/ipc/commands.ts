@@ -254,6 +254,7 @@ export interface Commands {
   tasks_accounts: Command<void, TasksAccount[]>;
   tasks_in_list: Command<TaskList, Task[]>;
   dated_tasks: Command<{ fromDate: string; toDate: string }, Task[]>;
+  tasks_due_through: Command<{ throughDate: string }, Task[]>;
   set_task_list_hidden: Command<TaskList & { hidden: boolean }, void>;
   tasks_sync_now: Command<Account, TasksAccess>;
   create_task: Command<

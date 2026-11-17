@@ -35,6 +35,15 @@ pub async fn dated_tasks(
     Ok(state.tasks.dated_tasks(&from_date, &to_date).await?)
 }
 
+/// Every account's not-completed tasks due on or before `through_date` in shown lists (local).
+#[tauri::command]
+pub async fn tasks_due_through(
+    state: State<'_, AppState>,
+    through_date: String,
+) -> Result<Vec<TaskDto>, CommandError> {
+    Ok(state.tasks.due_through(&through_date).await?)
+}
+
 /// Show or hide a list's dated tasks on the calendar (local).
 #[tauri::command]
 pub async fn set_task_list_hidden(

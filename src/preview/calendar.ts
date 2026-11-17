@@ -16,6 +16,7 @@ import {
   type MeetingLink,
 } from "../lib/tauri";
 import type { PartialHandlers } from "./handlers";
+import { PREVIEW_BLOCK_LINK } from "./tasks";
 
 // Video calls the fixtures join (as `calendar/meeting.rs` would find them).
 const MEET: MeetingLink = { url: "https://meet.google.com/abc-defg-hij", provider: "Google Meet" };
@@ -77,6 +78,7 @@ export function createCalendarHandlers(
     d.setHours(hour, minute, 0, 0);
     return d.getTime();
   };
+  const todayOffset = (today.getDay() + 6) % 7;
   const dateAt = (dayOffset: number) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + dayOffset);
@@ -106,6 +108,7 @@ export function createCalendarHandlers(
     transparency: null,
     recurring: false,
     canEdit: false,
+    taskLink: null,
   });
   const timed = (
     account: { id: string; email: string },
@@ -197,6 +200,19 @@ export function createCalendarHandlers(
         selfResponse: "accepted",
       }),
       allDay(second, primary, "summit", "Design Summit", 2, 3),
+      // A task block Google Calendar made for one of today's tasks (`preview/tasks.ts`).
+      timed(
+        second,
+        primary,
+        "task-block",
+        "Draft the newsletter",
+        at(todayOffset, 15),
+        at(todayOffset, 16),
+        {
+          taskLink: PREVIEW_BLOCK_LINK,
+          transparency: "opaque",
+        },
+      ),
     );
   }
 
@@ -204,6 +220,10 @@ export function createCalendarHandlers(
   const organizers = new Map<string, string>([["design-review", "morgan@example.org"]]);
   const descriptions = new Map<string, string>([
     ["planning", "Agenda: Q1 goals, hiring, the offsite."],
+    [
+      "task-block",
+      `Changes made to the title, description, or attachments will not be saved. To make edits, please go to: ${PREVIEW_BLOCK_LINK}`,
+    ],
   ]);
   /** What the editor sets beyond the listed fields, by event id. */
   type Extra = Pick<
@@ -317,7 +337,8 @@ export function createCalendarHandlers(
   /** As the app lists it: with whether this account may change it. */
   const listed = (e: CalendarEvent): CalendarEvent => ({
     ...e,
-    canEdit: isOrganizer(e) && writable(e),
+    // A task block is changed in Google Tasks, never here.
+    canEdit: isOrganizer(e) && writable(e) && !e.taskLink,
   });
   const ref = (e: CalendarEvent): EventRef => ({
     accountId: e.accountId,

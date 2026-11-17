@@ -33,6 +33,7 @@ export function shownEvent(invite: Invite, accountId: string): CalendarEvent {
     transparency: null,
     recurring: invite.recurrence.length > 0,
     canEdit: false,
+    taskLink: null,
   };
 }
 

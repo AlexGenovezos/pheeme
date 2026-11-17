@@ -26,6 +26,7 @@ function timed(start: number, end: number, extra: Partial<CalendarEvent> = {}): 
     transparency: null,
     recurring: false,
     canEdit: false,
+    taskLink: null,
     ...extra,
   };
 }

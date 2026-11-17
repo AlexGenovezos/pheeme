@@ -13,6 +13,7 @@ import { useWidth } from "../lib/useWidth";
 import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
 import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
+import { withoutBooked } from "../tasks/plan";
 import { useNow } from "./useNow";
 import { DayWeather, weatherFit } from "../weather/DayWeather";
 import { type HourRun, useHourRuns } from "../weather/hourly";
@@ -120,7 +121,11 @@ export function TimeGrid({
 
   const band = useMemo(() => layoutBand(list, days, tz), [list, days, tz]);
   const tasks = useDatedTasks(days);
-  const taskBand = useMemo(() => layoutTasks(tasks ?? [], days, band), [tasks, days, band]);
+  // A task booked on a day shows as its block there, not as a chip too.
+  const taskBand = useMemo(
+    () => layoutTasks(withoutBooked(tasks ?? [], list, tz), days, band),
+    [tasks, list, tz, days, band],
+  );
   const bandRows = [...band, ...taskBand].reduce((n, s) => Math.max(n, s.row + 1), 0);
   const columns = useMemo(() => days.map((d) => layoutDay(list, d, tz)), [list, days, tz]);
   const runs = useHourRuns(tz, now.date);

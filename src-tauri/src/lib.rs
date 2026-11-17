@@ -613,6 +613,7 @@ pub fn run() {
             commands::tasks::tasks_accounts,
             commands::tasks::tasks_in_list,
             commands::tasks::dated_tasks,
+            commands::tasks::tasks_due_through,
             commands::tasks::set_task_list_hidden,
             commands::tasks::tasks_sync_now,
             commands::tasks::create_task,
