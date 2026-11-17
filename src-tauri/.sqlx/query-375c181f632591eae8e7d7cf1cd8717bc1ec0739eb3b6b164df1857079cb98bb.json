@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!\", name, fields, created_ms, updated_ms\n           FROM event_templates WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "event_templates",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "event_templates",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "fields",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "event_templates",
+            "name": "fields"
+          }
+        }
+      },
+      {
+        "name": "created_ms",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "event_templates",
+            "name": "created_ms"
+          }
+        }
+      },
+      {
+        "name": "updated_ms",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "event_templates",
+            "name": "updated_ms"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "375c181f632591eae8e7d7cf1cd8717bc1ec0739eb3b6b164df1857079cb98bb"
+}

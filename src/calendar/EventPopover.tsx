@@ -37,7 +37,14 @@ import {
   toCommandError,
 } from "../lib/tauri";
 import { cx } from "../lib/utils";
-import { copyEvent, deleteEvent, duplicateEvent, editEvent, writableCalendars } from "./actions";
+import {
+  copyEvent,
+  deleteEvent,
+  duplicateEvent,
+  editEvent,
+  saveEventAsTemplate,
+  writableCalendars,
+} from "./actions";
 import { displayZone, type OpenEvent, useCalendarStore } from "./calendarStore";
 import { eventColors } from "./colors";
 import { addDays, dateOf, formatDay, formatTime, isValidZone } from "./dates";
@@ -250,7 +257,7 @@ function Rsvp({ detail }: { detail: EventDetail }) {
 
 const close = () => useCalendarStore.getState().openEvent(null);
 
-/** Edit, delete, and Options (duplicate, copy to another calendar), where this account may. */
+/** Edit, delete, and Options (duplicate, save as template, copy to another calendar), where this account may. */
 function EventTools({ event }: { event: CalendarEvent }) {
   const accounts = useCalendarStore((s) => s.accounts);
   const lookup = useCalendarLookup();
@@ -266,6 +273,11 @@ function EventTools({ event }: { event: CalendarEvent }) {
       label: "Duplicate",
       disabled: targets.length === 0,
       onSelect: () => void duplicateEvent(event),
+    },
+    {
+      id: "save-template",
+      label: "Save as template…",
+      onSelect: () => void saveEventAsTemplate(event),
     },
     ...targets
       .filter(

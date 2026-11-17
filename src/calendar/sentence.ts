@@ -9,7 +9,7 @@ import { type RepeatRule, WEEKDAYS } from "./eventForm";
 import type { FoundTime } from "./fromEmail";
 import { offsetMinutes } from "./zones";
 
-export type SpanKind = "task" | "time" | "repeat" | "place" | "guest" | "calendar";
+export type SpanKind = "task" | "template" | "time" | "repeat" | "place" | "guest" | "calendar";
 /** A part of the sentence that was read as something: `[start, end)` in the text. */
 export interface Span {
   kind: SpanKind;
@@ -48,6 +48,10 @@ export interface QuickAdd {
   target: string | null;
   /** The length "for 30 min" asked for (ms), also when the time is left to the caller. */
   length: number | null;
+  /** Whether the sentence gave the event's length: "for 30 min", or an end ("2-3pm"). */
+  lengthSaid: boolean;
+  /** The `Target` key of the template whose name starts the sentence ("gym tomorrow at 7"). */
+  template: string | null;
 }
 
 const HOUR = 60 * 60_000;
@@ -234,6 +238,8 @@ export function parseQuickAdd(
     taskTargets?: Target[];
     /** Whether a person's `full` name is someone; when it is, that's the person. */
     fullNames?: (full: string) => boolean;
+    /** Event templates, by name: one whose name starts the sentence fills in the event. */
+    templates?: Target[];
   },
 ): QuickAdd {
   const { now, tz } = opts;
@@ -243,6 +249,13 @@ export function parseQuickAdd(
   const task = TASK_RE.exec(text);
   const kind = task && task[0].trim() ? "task" : "event";
   if (kind === "task") spans.push({ kind: "task", start: 0, end: task![0].length });
+
+  let template: string | null = null;
+  const named = kind === "event" ? matchTemplate(text, opts.templates ?? []) : null;
+  if (named) {
+    template = named.key;
+    spans.push({ kind: "template", start: named.start, end: named.end });
+  }
 
   let target: string | null = null;
   const t = TARGET_RE.exec(text);
@@ -259,9 +272,11 @@ export function parseQuickAdd(
   if (repeat) spans.push(...repeat.spans);
 
   let length: number | null = null;
+  let lengthSaid = false;
   const d = kind === "event" ? DURATION_RE.exec(mask(text, spans)) : null;
   if (d) {
     length = durationMs(d);
+    lengthSaid = true;
     spans.push({ kind: "time", start: d.index, end: d.index + d[0].length });
   }
 
@@ -312,7 +327,10 @@ export function parseQuickAdd(
       }
       // "11pm to 1am": past midnight, the next day.
       if (at <= start && !e.isCertain("day")) at = instant(e, addDays(endDate, 1), endMinutes, tz);
-      if (at > start) end = at;
+      if (at > start) {
+        end = at;
+        lengthSaid = true;
+      }
     }
     when = { allDay: false, start, end };
   } else if (dated) {
@@ -383,7 +401,31 @@ export function parseQuickAdd(
     people,
     target,
     length,
+    lengthSaid,
+    template,
   };
+}
+
+/**
+ * The template whose name starts the sentence, ignoring capitals: whole words only ("gym" starts
+ * "Gym tomorrow" but not "Gymnastics"), the longest name when several fit.
+ */
+export function matchTemplate(
+  text: string,
+  templates: Target[],
+): { key: string; start: number; end: number } | null {
+  const start = text.length - text.trimStart().length;
+  const rest = text.slice(start).toLowerCase();
+  let best: { key: string; start: number; end: number } | null = null;
+  for (const t of templates) {
+    const name = t.name.trim().toLowerCase();
+    if (!name || !rest.startsWith(name)) continue;
+    const after = rest.charAt(name.length);
+    if (after && !/[\s,.;:!?]/.test(after)) continue;
+    if (!best || name.length > best.end - best.start)
+      best = { key: t.key, start, end: start + name.length };
+  }
+  return best;
 }
 
 /** The runs of text no rule has read yet (people's names aside). */

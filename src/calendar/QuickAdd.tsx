@@ -2,7 +2,16 @@
 // it. The words read as the time, repeat, place, people and calendar are highlighted as you type;
 // each "with" name offers the matching contacts, and only a picked one is invited. "todo …" adds a
 // Google Task instead. Rules and chrono-node only (`sentence.ts`), no AI.
-import { CalendarDays, CheckSquare, Clock, MapPin, Repeat, Users, X } from "lucide-react";
+import {
+  CalendarDays,
+  CheckSquare,
+  Clock,
+  LayoutTemplate,
+  MapPin,
+  Repeat,
+  Users,
+  X,
+} from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
@@ -21,10 +30,13 @@ import {
 } from "./actions";
 import { displayZone, useCalendarStore } from "./calendarStore";
 import { dateOf, formatDay, formatTime, weekday } from "./dates";
+import type { EventTemplate } from "../lib/tauri";
 import { useEditStore } from "./editStore";
 import { CalendarSelect } from "./EventFields";
 import { describeRule, type EventForm, type Guest, newForm, WEEKDAYS } from "./eventForm";
 import { parseQuickAdd, type Person, type Span, type Target } from "./sentence";
+import { templateTimes, withTemplate } from "./templates";
+import { useTemplates } from "./templatesStore";
 
 export function QuickAdd() {
   const open = useEditStore((s) => s.quickAdd);
@@ -115,17 +127,32 @@ function QuickAddDialog() {
     () => lists.map((l) => ({ key: key(l.account.accountId, l.list.id), name: l.list.title })),
     [lists],
   );
+  const templates = useTemplates();
+  const templateTargets: Target[] = useMemo(
+    () => (templates ?? []).map((t) => ({ key: t.id, name: t.name })),
+    [templates],
+  );
   /** Read without knowing contacts: which calendar, and the names to look up. */
   const first = useMemo(
-    () => parseQuickAdd(text, { now, tz, targets, taskTargets }),
-    [text, now, tz, targets, taskTargets],
+    () => parseQuickAdd(text, { now, tz, targets, taskTargets, templates: templateTargets }),
+    [text, now, tz, targets, taskTargets, templateTargets],
   );
   const isTask = first.kind === "task";
+  const template = (first.template && templates?.find((t) => t.id === first.template)) || null;
+  const templateCalendar =
+    template?.fields.accountId && template.fields.calendarId
+      ? key(template.fields.accountId, template.fields.calendarId)
+      : null;
 
   const fallback = defaultCalendar();
+  // `/name` in the sentence, then the menu, then the template's calendar (if it can still take
+  // events), then the default.
   const calendarKey =
     (!isTask && first.target) ||
     picked ||
+    (templateCalendar && targets.some((t) => t.key === templateCalendar)
+      ? templateCalendar
+      : null) ||
     (fallback ? key(fallback.account.accountId, fallback.calendar.id) : "");
   const [accountId, calendarId] = calendarKey.split("\n");
   const matchesFor = useMatches(accountId ?? "", isTask ? [] : first.people);
@@ -142,11 +169,12 @@ function QuickAddDialog() {
       tz,
       targets,
       taskTargets,
+      templates: templateTargets,
       fullNames: (full) => known.has(lower(full)),
     });
-  }, [first, knownFull, text, now, tz, targets, taskTargets]);
+  }, [first, knownFull, text, now, tz, targets, taskTargets, templateTargets]);
 
-  const guests: Guest[] = [];
+  const guests: Guest[] = template ? template.fields.guests.map((g) => ({ ...g })) : [];
   for (const p of parsed.people) {
     const chosen = who[lower(p.text)] ?? p.address ?? "";
     if (!chosen || guests.some((g) => lower(g.address) === lower(chosen))) continue;
@@ -156,12 +184,14 @@ function QuickAddDialog() {
 
   const when = parsed.when;
   const fallbackStart = defaultTimes().start;
-  const times = when ?? {
+  const said = when ?? {
     allDay: false as const,
     start: fallbackStart,
     end: fallbackStart + (parsed.length ?? 60 * 60_000),
   };
-  const form: EventForm = {
+  // A template's length unless the sentence gave one; "gym friday" at 9 AM, not all day.
+  const times = template ? templateTimes(template.fields, when, parsed, fallbackStart, tz) : said;
+  const base: EventForm = {
     ...(times.allDay
       ? newForm({
           accountId,
@@ -184,6 +214,16 @@ function QuickAddDialog() {
     guests,
     repeat: { kind: "none" },
   };
+  // The template's details; the calendar chosen above, the sentence's place and people, and its
+  // other words after the template's title ("gym legs" → "Gym legs").
+  const form: EventForm = template
+    ? {
+        ...withTemplate(base, template.fields, () => false),
+        summary: [template.fields.summary, asTyped(parsed.title, text)].filter(Boolean).join(" "),
+        location: parsed.place || template.fields.location,
+        guests,
+      }
+    : base;
   if (parsed.repeat) {
     const rule = parsed.repeat;
     // "weekly" with no day said: the day it starts on.
@@ -199,6 +239,19 @@ function QuickAddDialog() {
     pickedList ||
     (lists[0] ? key(lists[0].account.accountId, lists[0].list.id) : "");
   const due = when ? (when.allDay ? when.date : dateOf(when.start, tz)) : null;
+
+  /** Start the sentence with this template's name, in place of the one it starts with. */
+  const pickTemplate = (t: EventTemplate) => {
+    const named = first.spans.find((s) => s.kind === "template");
+    const rest = (named ? text.slice(named.end) : text).trimStart();
+    const next = `${t.name} ${rest}`;
+    setText(next);
+    const input = inputRef.current;
+    if (input) {
+      input.focus();
+      requestAnimationFrame(() => input.setSelectionRange(next.length, next.length));
+    }
+  };
 
   const syncScroll = () => {
     if (marksRef.current && inputRef.current)
@@ -254,12 +307,19 @@ function QuickAddDialog() {
             onSelect={syncScroll}
           />
         </div>
+        {templates && templates.length > 0 && (
+          <TemplateChoices
+            templates={templates}
+            current={isTask ? null : (template?.id ?? null)}
+            onPick={pickTemplate}
+          />
+        )}
 
         <div className="cal-qa__preview" aria-live="polite">
           <div className="cal-qa__title">
             {isTask ? <CheckSquare aria-hidden="true" /> : <CalendarDays aria-hidden="true" />}
             <span className={parsed.title ? undefined : "cal-qa__empty"}>
-              {parsed.title || (isTask ? "New task" : "New event")}
+              {(isTask ? parsed.title : form.summary) || (isTask ? "New task" : "New event")}
             </span>
           </div>
           <Row icon={<Clock />} label={isTask ? "Due" : "When"}>
@@ -288,13 +348,18 @@ function QuickAddDialog() {
                 )}
               </Row>
               <Row icon={<MapPin />} label="Place">
-                {parsed.place || <span className="cal-qa__empty">Add a place with “at …”</span>}
+                {form.location || <span className="cal-qa__empty">Add a place with “at …”</span>}
               </Row>
               <Row icon={<Users />} label="Guests">
-                {parsed.people.length === 0 ? (
+                {parsed.people.length === 0 && !template?.fields.guests.length ? (
                   <span className="cal-qa__empty">Invite people with “with …”</span>
                 ) : (
                   <div className="cal-qa__people">
+                    {template && template.fields.guests.length > 0 && (
+                      <span>
+                        {template.fields.guests.map((g) => g.name || g.address).join(", ")}
+                      </span>
+                    )}
                     {parsed.people.map((p) => (
                       <PersonPick
                         key={lower(p.text)}
@@ -356,6 +421,13 @@ function QuickAddDialog() {
   );
 }
 
+/** The title's words as typed: the parser capitalises a title, but after a template's they go on it. */
+function asTyped(title: string, text: string): string {
+  if (!title || text.includes(title)) return title;
+  const lower = title.charAt(0).toLowerCase() + title.slice(1);
+  return text.includes(lower) ? lower : title;
+}
+
 function Row({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
   return (
     <div className="cal-qa__row">
@@ -415,6 +487,34 @@ function PersonPick({
           })),
         ]}
       />
+    </div>
+  );
+}
+
+/** The saved templates under the field: picking one starts the sentence with its name. */
+function TemplateChoices({
+  templates,
+  current,
+  onPick,
+}: {
+  templates: EventTemplate[];
+  current: string | null;
+  onPick(t: EventTemplate): void;
+}) {
+  return (
+    <div className="cal-qa__templates" role="group" aria-label="Templates">
+      <LayoutTemplate aria-hidden="true" />
+      {templates.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          className="cal-qa__template"
+          aria-pressed={t.id === current}
+          onClick={() => onPick(t)}
+        >
+          {t.name}
+        </button>
+      ))}
     </div>
   );
 }

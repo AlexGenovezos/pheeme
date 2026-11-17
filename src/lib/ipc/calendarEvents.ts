@@ -205,3 +205,48 @@ export interface Invite {
 /** The calendar invitation in a message, or null when it has none. May download it from Gmail. */
 export const getMessageInvite = (accountId: string, messageId: string) =>
   call("message_invite", { accountId, messageId });
+
+// ── Event templates (local: saved in Pheeme's database, never sent to Google) ──
+
+export interface TemplateGuest {
+  name: string | null;
+  address: string;
+  optional: boolean;
+}
+/** What a template fills in: the event's details apart from when it is. */
+export interface TemplateFields {
+  summary: string;
+  allDay: boolean;
+  /** Timed: minutes. All-day: days. */
+  length: number;
+  accountId: string | null;
+  calendarId: string | null;
+  guests: TemplateGuest[];
+  guestsCanModify: boolean;
+  guestsCanInviteOthers: boolean;
+  guestsCanSeeOtherGuests: boolean;
+  /** A new Google Meet link for each event made from it. */
+  meet: boolean;
+  location: string;
+  description: string;
+  /** `""`: the calendar's colour. */
+  colorId: string;
+  remindersDefault: boolean;
+  reminders: { method: "popup" | "email"; minutes: number }[];
+  transparency: "opaque" | "transparent";
+  visibility: "default" | "public" | "private" | "confidential";
+}
+export interface EventTemplate {
+  id: string;
+  name: string;
+  fields: TemplateFields;
+  updatedMs: number;
+}
+
+export const listEventTemplates = () => call("event_templates");
+/** Rejects with `exists` when the name is taken, unless `replace`. */
+export const saveEventTemplate = (name: string, fields: TemplateFields, replace: boolean) =>
+  call("save_event_template", { name, fields, replace });
+export const renameEventTemplate = (id: string, name: string) =>
+  call("rename_event_template", { id, name });
+export const deleteEventTemplate = (id: string) => call("delete_event_template", { id });

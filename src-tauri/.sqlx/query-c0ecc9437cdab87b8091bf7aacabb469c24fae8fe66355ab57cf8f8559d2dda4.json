@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO event_templates (id, name, fields, created_ms, updated_ms)\n         VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "c0ecc9437cdab87b8091bf7aacabb469c24fae8fe66355ab57cf8f8559d2dda4"
+}

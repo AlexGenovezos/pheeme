@@ -5,11 +5,13 @@ import { useToastStore } from "../components/ui/Toast";
 import { registry } from "../keyboard/registry";
 import { createCalendarHandlers } from "../preview/calendar";
 import { createTasksHandlers } from "../preview/tasks";
+import { createTemplateHandlers } from "../preview/templates";
 import { useAccountStore } from "../store/accountStore";
 import { CalendarScreen } from "./CalendarScreen";
 import { useCalendarStore } from "./calendarStore";
 import { systemZone, zonedMs } from "./dates";
 import { useEditStore } from "./editStore";
+import { useTemplatesStore } from "./templatesStore";
 import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
@@ -47,6 +49,7 @@ function backend(
   const handlers = byName({
     ...createCalendarHandlers(ACCOUNTS, null, NOW),
     ...createTasksHandlers(ACCOUNTS, null, NOW),
+    ...createTemplateHandlers(ACCOUNTS, "none"),
     suggest_contacts: (a: { query: string }) =>
       "grace hopper".startsWith(a.query.toLowerCase())
         ? [{ name: "Grace Hopper", address: "grace@example.net" }]
@@ -97,7 +100,9 @@ beforeEach(() => {
     removed: [],
     search: null,
     quickAdd: false,
+    templateFrom: null,
   });
+  useTemplatesStore.setState({ templates: null });
   useToastStore.setState({ toasts: [] });
 });
 afterEach(() => {
@@ -516,6 +521,94 @@ describe("changing events", () => {
       },
     ]);
     expect(screen.getAllByRole("button", { name: /^Lunch with Dana,/ })).toHaveLength(2);
+  });
+});
+
+describe("templates", () => {
+  /** Lunch with Dana's Options menu › Save as template…, named `name`. */
+  async function saveLunchAs(name: string) {
+    fireEvent.click(screen.getByRole("button", { name: /^Lunch with Dana,/ }));
+    await flush();
+    fireEvent.click(within(dialog("Lunch with Dana")).getByRole("button", { name: "Options" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Save as template…" }));
+    await settle();
+    const save = dialog("Save as template");
+    const field = within(save).getByRole("textbox", { name: "Template name" });
+    expect(field).toHaveValue("Lunch with Dana");
+    fireEvent.change(field, { target: { value: name } });
+    fireEvent.submit(save.querySelector("form")!);
+    await settle();
+  }
+
+  test("save an event as a template; a taken name asks to replace it", async () => {
+    backend();
+    await open();
+    await saveLunchAs("Lunch");
+
+    expect(sent("save_event_template")).toEqual([
+      {
+        name: "Lunch",
+        replace: false,
+        fields: expect.objectContaining({
+          summary: "Lunch with Dana",
+          allDay: false,
+          length: 60,
+          accountId: "acc-personal",
+          calendarId: "avery@example.com",
+          location: "Tartine, 600 Guerrero St, San Francisco, CA 94110",
+        }),
+      },
+    ]);
+    expect(screen.queryByRole("dialog", { name: "Save as template" })).toBeNull();
+    expect(useToastStore.getState().toasts.slice(-1)[0]?.title).toBe("Saved template “Lunch”");
+
+    await saveLunchAs("lunch");
+    const save = dialog("Save as template");
+    expect(within(save).getByRole("alert")).toHaveTextContent(
+      "There's already a template called “Lunch”.",
+    );
+    fireEvent.click(within(save).getByRole("button", { name: "Replace" }));
+    await settle();
+    expect(sent("save_event_template").slice(-1)[0]).toMatchObject({
+      name: "lunch",
+      replace: true,
+    });
+    expect(useTemplatesStore.getState().templates?.map((t) => t.name)).toEqual(["lunch"]);
+  });
+
+  test("quick add starts from a template typed or picked, with the sentence's time", async () => {
+    backend();
+    await open();
+    await saveLunchAs("Lunch");
+
+    key("c");
+    await flush();
+    const quick = dialog("Quick add");
+    fireEvent.click(within(quick).getByRole("button", { name: "Lunch" }));
+    const field = within(quick).getByRole("textbox", { name: "Event, in words" });
+    expect(field).toHaveValue("Lunch ");
+    fireEvent.change(field, { target: { value: "Lunch friday at 12:30 to go /team" } });
+    expect(quick.querySelector(".cal-qa__mark--template")).toHaveTextContent("Lunch");
+    expect(within(quick).getByRole("button", { name: "Lunch" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(within(quick).getByText("Lunch with Dana to go")).toBeInTheDocument();
+
+    fireEvent.submit(quick.querySelector("form")!);
+    await settle();
+    expect(sent("create_calendar_event")).toEqual([
+      expect.objectContaining({
+        accountId: "acc-personal",
+        calendarId: "team",
+        edit: expect.objectContaining({
+          summary: "Lunch with Dana to go",
+          location: "Tartine, 600 Guerrero St, San Francisco, CA 94110",
+          start: { ms: zonedMs("2026-11-13", 12 * 60 + 30, tz), timeZone: tz },
+          end: { ms: zonedMs("2026-11-13", 13 * 60 + 30, tz), timeZone: tz },
+        }),
+      }),
+    ]);
   });
 });
 

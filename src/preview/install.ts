@@ -33,6 +33,7 @@ import { createSenderRuleHandlers } from "./senderRules";
 import { createCalendarHandlers } from "./calendar";
 import { createAvailabilityHandlers } from "./availability";
 import { createTasksHandlers } from "./tasks";
+import { createTemplateHandlers } from "./templates";
 import { createWeatherHandlers } from "./weather";
 import { createContactHandlers, type MeetingsWith } from "./contacts";
 import { createTransferHandlers } from "./transfer";
@@ -318,6 +319,7 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     ...calendar,
     calendar_availability: availability.calendar_availability,
     ...createTasksHandlers(accounts, params.get("tasks")),
+    ...createTemplateHandlers(accounts, params.get("templates")),
     ...createWeatherHandlers(),
     ...drive.handlers,
     list_threads: (args): ThreadPage => ({

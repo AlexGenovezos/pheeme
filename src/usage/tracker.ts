@@ -13,6 +13,8 @@ import type { RunSource } from "../keyboard/registry";
 export const IDLE_MS = 2 * 60 * 1000;
 
 const NAME_RE = /^[a-z0-9][a-z0-9._-]{0,79}$/i;
+/** The prefix of each template's palette command, followed by the template's id. */
+export const TEMPLATE_COMMAND = "calendar.template:";
 
 export interface ScreenCount {
   name: string;
@@ -31,9 +33,13 @@ export interface UsageCounts {
   commands: CommandCount[];
 }
 
-/** The name a command is counted under: a mod's commands all count as `mod`, never their own ids. */
+/**
+ * The name a command is counted under: a mod's commands all count as `mod`, and every "New event
+ * from template" as `calendar.template`, never their own ids.
+ */
 export function commandName(id: string): string | null {
   if (id.startsWith("mod:")) return "mod";
+  if (id.startsWith(TEMPLATE_COMMAND)) return "calendar.template";
   return NAME_RE.test(id) ? id : null;
 }
 

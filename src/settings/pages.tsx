@@ -65,6 +65,7 @@ import {
   TemperatureUnitControl,
 } from "../weather/WeatherControls";
 import { OtherZonesControl } from "../calendar/OtherZonesControl";
+import { TemplateSettings, templatesMatch } from "../calendar/TemplateSettings";
 
 const MODE_LABELS: Record<ThemeMode, string> = { system: "System", light: "Light", dark: "Dark" };
 
@@ -612,7 +613,7 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     title: "Calendar",
     icon: CalendarDays,
     group: "Calendar",
-    keywords: ["weather", "forecast", "temperature", "time zones"],
+    keywords: ["weather", "forecast", "temperature", "time zones", "templates"],
     sections: [
       {
         title: "Time zones",
@@ -634,6 +635,12 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
             Control: OtherZonesControl,
           },
         ],
+      },
+      {
+        id: "eventTemplates",
+        Component: TemplateSettings,
+        keywords: ["templates", "event templates", "reuse", "presets", "quick add"],
+        matches: templatesMatch,
       },
       {
         title: "Weather",
