@@ -40,7 +40,7 @@ jobs:
       - name: Keep the current video
         run: |
           mkdir -p site/dist/video
-          for f in pheeme-tour.mp4 pheeme-tour.jpg pheeme-tour.vtt; do
+          for f in pheeme-tour.mp4 pheeme-tour.jpg pheeme-tour.vtt pheeme-tour-loop.webp; do
             curl -fsSL --retry 3 -o "site/dist/video/$f" "https://pheeme.app/video/$f" \
               || echo "::warning::Couldn't fetch $f from pheeme.app; the site has no video until the video job deploys."
           done
