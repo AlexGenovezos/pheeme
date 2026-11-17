@@ -1416,6 +1416,7 @@ describe("find similar", () => {
     displayName: null,
     clientId: "c",
     synced: true,
+    color: 1,
   });
   beforeEach(() =>
     useAccountStore.setState({

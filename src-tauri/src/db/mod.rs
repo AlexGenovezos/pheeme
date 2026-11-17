@@ -12,6 +12,7 @@ pub mod search;
 pub mod settings;
 pub mod sync_state;
 pub mod tasks;
+pub mod templates;
 pub mod threads;
 pub mod usage;
 
@@ -329,6 +330,7 @@ mod tests {
             history_id: None,
             created_at: 0,
             updated_at: 0,
+            color: 1,
         }
     }
 

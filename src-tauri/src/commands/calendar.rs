@@ -7,9 +7,11 @@ use crate::calendar::invite::InviteDto;
 use crate::calendar::service::{
     CalendarAccessDto, CalendarAccountDto, CalendarEventDto, EventDetailDto,
 };
+use crate::calendar::templates::{self, EventTemplate, TemplateFields};
 use crate::calendar::writes::{EditScope, EventRef};
 use crate::gmail::calendar::SendUpdates;
 use crate::gmail::user_action;
+use crate::sync::engine::now_ms;
 use crate::AppState;
 use tauri::State;
 
@@ -282,4 +284,43 @@ pub fn open_meeting_link(url: String) -> Result<(), CommandError> {
         code: "open_failed".into(),
         message: format!("Couldn't open your browser ({error}). Copy the link instead."),
     })
+}
+
+// ── Event templates (local, never Google) ───────────────────────────────────
+
+/// Every saved event template, by name.
+#[tauri::command]
+pub async fn event_templates(
+    state: State<'_, AppState>,
+) -> Result<Vec<EventTemplate>, CommandError> {
+    Ok(templates::list(&state.db).await?)
+}
+
+/// Save an event's details as template `name`. A name in use rejects with `exists`, unless
+/// `replace` (the user agreed to save over it).
+#[tauri::command]
+pub async fn save_event_template(
+    state: State<'_, AppState>,
+    name: String,
+    fields: TemplateFields,
+    replace: bool,
+) -> Result<EventTemplate, CommandError> {
+    Ok(templates::save(&state.db, &name, fields, replace, now_ms()).await?)
+}
+
+#[tauri::command]
+pub async fn rename_event_template(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+) -> Result<EventTemplate, CommandError> {
+    Ok(templates::rename(&state.db, &id, &name, now_ms()).await?)
+}
+
+#[tauri::command]
+pub async fn delete_event_template(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), CommandError> {
+    Ok(templates::delete(&state.db, &id).await?)
 }

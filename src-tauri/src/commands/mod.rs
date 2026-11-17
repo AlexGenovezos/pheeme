@@ -69,6 +69,7 @@ error_codes!(
     crate::drive::DriveError,
     CalendarError,
     crate::calendar::availability::AvailabilityError,
+    crate::calendar::templates::TemplateError,
     crate::tasks::error::TasksError,
     crate::local_api::ApiError,
     SupportError,

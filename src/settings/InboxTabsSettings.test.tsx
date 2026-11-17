@@ -8,7 +8,9 @@ import { InboxTabsSettings } from "./InboxTabsSettings";
 beforeEach(() => {
   useInboxTabs.setState({ hidden: {} });
   useAccountStore.setState({
-    accounts: [{ id: "a", email: "a@example.com", displayName: null, clientId: "c", synced: true }],
+    accounts: [
+      { id: "a", email: "a@example.com", displayName: null, clientId: "c", synced: true, color: 1 },
+    ],
     loaded: true,
   });
 });

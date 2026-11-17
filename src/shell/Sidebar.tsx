@@ -37,6 +37,13 @@ import { useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
 import { focusOpenMailbox, onMailboxKeyDown, activateOnKey, below } from "./sidebar/keys";
 import { LabelsSection } from "./sidebar/Labels";
+import { AccountColorButton } from "./sidebar/AccountColor";
+import {
+  ACCOUNT_GROUP,
+  moveAccount,
+  startAccountDrag,
+  useAccountDrag,
+} from "./sidebar/accountOrder";
 import { Section } from "./sidebar/Section";
 import { NO_COUNTS, sameMailbox } from "./sidebar/shared";
 import { SidebarFooter } from "./SidebarFooter";
@@ -177,38 +184,97 @@ function AccountSection({
 }) {
   const collapsed = useUiStore((s) => s.collapsedAccounts.includes(account.id));
   const inboxUnread = useLabelStore((s) => s.categoryCounts[account.id]?.INBOX ?? 0);
+  const drop = useAccountDrag((s) => dropMark(s.dragging, s.order, accounts, account.id));
   const rowsId = useId();
   const color = accountColorIndex(account.id, accounts);
   const collapsedCount = collapsed ? formatCount(inboxUnread) : "";
+  const dotId = useId();
+  const index = accounts.findIndex((a) => a.id === account.id);
+  const menu = (): ContextMenuItem[] => [
+    {
+      id: "account-color",
+      label: "Change colour…",
+      onSelect: () => document.getElementById(dotId)?.click(),
+    },
+    {
+      id: "move-up",
+      label: "Move up",
+      disabled: index === 0,
+      onSelect: () => moveAccount(account.id, -1),
+    },
+    {
+      id: "move-down",
+      label: "Move down",
+      disabled: index === accounts.length - 1,
+      onSelect: () => moveAccount(account.id, 1),
+    },
+  ];
   return (
     <div
       className="sidebar__group"
       role="group"
       aria-label={account.email}
       data-current={glowing || undefined}
+      data-drop={drop}
+      {...{ [ACCOUNT_GROUP]: account.id }}
       style={{ "--account-color": `var(--color-account-${color})` } as CSSProperties}
     >
-      <button
-        type="button"
+      <div
         className="sidebar__account-header"
-        aria-expanded={!collapsed}
-        aria-controls={rowsId}
-        aria-description={error ? `Sync failed: ${error.message}` : undefined}
-        title={error ? `${account.email}\nSync failed: ${error.message}` : account.email}
-        onClick={() => useUiStore.getState().toggleAccountCollapsed(account.id)}
+        onPointerDown={(e) => startAccountDrag(e, account.id)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void showContextMenu(menu(), { x: e.clientX, y: e.clientY });
+        }}
       >
-        <span className="sidebar__account-dot" aria-hidden="true" />
-        <span className="sidebar__account-email">{account.email}</span>
-        {error && <TriangleAlert className="sidebar__account-warning" aria-hidden="true" />}
-        {collapsedCount && <span className="sidebar__account-count">{collapsedCount}</span>}
-        <ChevronRight className="sidebar__chevron" aria-hidden="true" />
-      </button>
+        <AccountColorButton id={dotId} accountId={account.id} color={color} />
+        <button
+          type="button"
+          className="sidebar__account-toggle"
+          aria-expanded={!collapsed}
+          aria-controls={rowsId}
+          aria-description={error ? `Sync failed: ${error.message}` : undefined}
+          title={error ? `${account.email}\nSync failed: ${error.message}` : account.email}
+          onClick={() => useUiStore.getState().toggleAccountCollapsed(account.id)}
+          onKeyDown={(e) => {
+            if (!isContextMenuKey(e)) return;
+            e.preventDefault();
+            void showContextMenu(menu(), below(e.currentTarget));
+          }}
+        >
+          <span className="sidebar__account-email">{account.email}</span>
+          {error && <TriangleAlert className="sidebar__account-warning" aria-hidden="true" />}
+          {collapsedCount && <span className="sidebar__account-count">{collapsedCount}</span>}
+          <ChevronRight className="sidebar__chevron" aria-hidden="true" />
+        </button>
+      </div>
       <SyncErrorNote accountId={account.id} error={error} />
       <div id={rowsId} className="sidebar__group-rows" hidden={collapsed}>
         {!collapsed && <CategoryRows accountId={account.id} />}
       </div>
     </div>
   );
+}
+
+/**
+ * Where a drag of `dragging` would put it, marked on the account groups: "before" on the account it would land above,
+ * "after" on the last when it would land at the end, "dragging" on the one being dragged. Nothing while the drop
+ * would leave the order as it is.
+ */
+function dropMark(
+  dragging: string | null,
+  order: string[] | null,
+  accounts: AccountInfo[],
+  id: string,
+): "before" | "after" | "dragging" | undefined {
+  if (!dragging || !order) return undefined;
+  if (id === dragging) return "dragging";
+  if (order.every((other, i) => other === accounts[i]?.id)) return undefined;
+  const at = order.indexOf(dragging);
+  const next = order[at + 1];
+  if (next !== undefined) return next === id ? "before" : undefined;
+  return order[at - 1] === id ? "after" : undefined;
 }
 
 /**
@@ -365,7 +431,10 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
           }
         >
           {shown ? (
-            <span className="sidebar__account-dot" aria-hidden="true" />
+            <AccountColorButton
+              accountId={shown.id}
+              color={accountColorIndex(shown.id, accounts)}
+            />
           ) : (
             <Mails aria-hidden="true" />
           )}

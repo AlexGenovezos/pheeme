@@ -25,7 +25,13 @@ import {
   openApiPage,
   TASKS_API_URL,
 } from "./AccessControls";
-import { deleteEvent, editEvent, openEventNow, openQuickAdd } from "./actions";
+import {
+  deleteEvent,
+  editEvent,
+  newEventFromTemplate,
+  openEventNow,
+  openQuickAdd,
+} from "./actions";
 import { CalendarSearch } from "./CalendarSearch";
 import { CalendarSidebar } from "./CalendarSidebar";
 import { displayZone, screenDays, useCalendarStore, weekStartOf } from "./calendarStore";
@@ -39,6 +45,8 @@ import { type EventForm, formTimes } from "./eventForm";
 import { EventPopover } from "./EventPopover";
 import { QuickAdd } from "./QuickAdd";
 import { QuickCreate } from "./QuickCreate";
+import { SaveTemplate } from "./SaveTemplate";
+import { useTemplates } from "./templatesStore";
 import { useSlideIn } from "./slide";
 import { useSwipeStep } from "./swipe";
 import { MonthGrid } from "./MonthGrid";
@@ -51,6 +59,7 @@ import "./editing.css";
 import "./invite.css";
 import { useWeatherRefresh } from "../weather/forecast";
 import { DEFAULT_KEYS } from "../keyboard/defaultKeys";
+import { TEMPLATE_COMMAND } from "../usage/tracker";
 
 const VIEW_OPTIONS = [
   { value: "day", label: "Day" },
@@ -329,6 +338,7 @@ function useCalendarCommands() {
   // Edit and Delete act on the open event: listed in the palette only while one is open.
   const noEventOpen = useCalendarStore((s) => s.open === null);
   const openCall = useCalendarStore((s) => s.open?.event.meeting ?? null);
+  const templates = useTemplates();
   const syncAll = () => {
     for (const a of store().accounts ?? [])
       if (a.access.status === "on") void calendarSyncNow(a.accountId).catch(() => {});
@@ -483,6 +493,14 @@ function useCalendarCommands() {
       keywords: ["sync", "refresh"],
       run: syncAll,
     },
+    // One per template: "New event from template: Gym" opens the editor with it.
+    ...(templates ?? []).map((t) => ({
+      id: `${TEMPLATE_COMMAND}${t.id}`,
+      title: `New event from template: ${t.name}`,
+      group: "Calendar",
+      keywords: ["template", "create", "add"],
+      run: () => newEventFromTemplate(t.fields),
+    })),
   ]);
 }
 
@@ -626,6 +644,7 @@ export function CalendarScreen({ onAddAccount }: { onAddAccount?: () => void } =
       <QuickAdd />
       <EventEditor />
       <EditPrompt />
+      <SaveTemplate />
       <GoToDate />
     </div>
   );

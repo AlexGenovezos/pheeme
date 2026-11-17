@@ -454,7 +454,14 @@ test("send-as aliases: a new message starts from Gmail's default; a reply from a
 test("Send later saves the draft, closes the panel and opens it in Gmail on the right account", async () => {
   useAccountStore.setState({
     accounts: [
-      { id: "a1", email: "me+x@example.com", displayName: null, clientId: "c", synced: true },
+      {
+        id: "a1",
+        email: "me+x@example.com",
+        displayName: null,
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
     ],
   });
   handlers.open_external = () => undefined;
@@ -476,7 +483,14 @@ test("Send later saves the draft, closes the panel and opens it in Gmail on the 
 test("Send later keeps the panel when the message isn't ready or the save fails", async () => {
   useAccountStore.setState({
     accounts: [
-      { id: "a1", email: "me@example.com", displayName: null, clientId: "c", synced: true },
+      {
+        id: "a1",
+        email: "me@example.com",
+        displayName: null,
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
     ],
   });
   const blank = store().compose("a1");
@@ -496,8 +510,22 @@ test("Send later keeps the panel when the message isn't ready or the save fails"
 test("Send later opens the draft in the account it was saved in, and waits for files still attaching", async () => {
   useAccountStore.setState({
     accounts: [
-      { id: "a1", email: "one@example.com", displayName: null, clientId: "c", synced: true },
-      { id: "a2", email: "two@example.com", displayName: null, clientId: "c", synced: true },
+      {
+        id: "a1",
+        email: "one@example.com",
+        displayName: null,
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
+      {
+        id: "a2",
+        email: "two@example.com",
+        displayName: null,
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
     ],
   });
   handlers.open_external = () => undefined;

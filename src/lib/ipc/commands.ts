@@ -26,8 +26,10 @@ import type {
   EventDetail,
   EventEdit,
   EventRef,
+  EventTemplate,
   Invite,
   SendUpdates,
+  TemplateFields,
 } from "./calendarEvents";
 import type {
   ComposeDraft,
@@ -79,6 +81,8 @@ export interface Commands {
   cancel_oauth: Command<{ flowId: string }, void>;
   list_accounts: Command<void, AccountInfo[]>;
   remove_account: Command<Account, void>;
+  set_account_color: Command<Account & { color: number }, void>;
+  reorder_accounts: Command<{ accountIds: string[] }, void>;
   open_external: Command<{ url: string }, void>;
   gmail_quota: Command<void, number>;
   set_gmail_quota: Command<{ perMinute: number }, number>;
@@ -227,6 +231,13 @@ export interface Commands {
     EventRef
   >;
   message_invite: Command<Account & { messageId: string }, Invite | null>;
+  event_templates: Command<void, EventTemplate[]>;
+  save_event_template: Command<
+    { name: string; fields: TemplateFields; replace: boolean },
+    EventTemplate
+  >;
+  rename_event_template: Command<{ id: string; name: string }, EventTemplate>;
+  delete_event_template: Command<{ id: string }, void>;
 
   // Weather
   weather_search_places: Command<{ query: string }, WeatherPlace[]>;

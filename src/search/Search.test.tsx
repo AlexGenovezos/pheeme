@@ -16,6 +16,7 @@ const accounts: AccountInfo[] = ["a", "b"].map((id) => ({
   displayName: id,
   clientId: "client",
   synced: true,
+  color: 1,
 }));
 const row = (id: string, accountId = "a"): ThreadSummary => ({
   id,

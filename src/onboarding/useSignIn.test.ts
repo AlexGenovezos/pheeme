@@ -10,6 +10,7 @@ const account: AccountInfo = {
   displayName: null,
   clientId: "test.apps.googleusercontent.com",
   synced: true,
+  color: 1,
 };
 const client = { kind: "sameAs", accountId: "a1" } as const;
 const started = (flowId: string): SignInStart => ({

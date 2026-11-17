@@ -21,6 +21,7 @@ const account = (id: string, synced = true): AccountInfo => ({
   displayName: null,
   clientId: "1.apps.googleusercontent.com",
   synced,
+  color: 1,
 });
 
 const thread = (n: number, accountId = "a1"): ThreadSummary => ({

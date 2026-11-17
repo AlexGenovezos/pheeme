@@ -130,6 +130,7 @@ fn heap_levels_off_over_a_long_session() {
                 history_id: None,
                 created_at: 0,
                 updated_at: 0,
+                color: 1,
             },
         )
         .await

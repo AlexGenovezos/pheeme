@@ -20,6 +20,7 @@ import {
   getCalendarEventDetail,
   moveCalendarEvent,
   type SendUpdates,
+  type TemplateFields,
   toCommandError,
   updateCalendarEvent,
 } from "../lib/tauri";
@@ -28,6 +29,7 @@ import { useTasksStore } from "../tasks/tasksStore";
 import { dateOf, formatDay, wallClock, zonedMs } from "./dates";
 import { ask, type EditorSpec, setMoving, useEditStore } from "./editStore";
 import { eventKey, eventTitle } from "./EventBlock";
+import { templateTimes, withTemplate } from "./templates";
 import {
   type EventForm,
   formEdit,
@@ -342,6 +344,54 @@ export async function duplicateEvent(event: CalendarEvent) {
 }
 
 export const closeEditor = () => useEditStore.setState({ editor: null });
+
+// ── Templates ────────────────────────────────────────────────────────────────
+
+/** Save as template: the event's details in the save dialog. Reading is all it needs. */
+export async function saveEventAsTemplate(event: CalendarEvent) {
+  const detail = await loadDetail(event);
+  if (!detail) return;
+  const form = formFromDetail(detail, displayZone(calendars().accounts));
+  calendars().openEvent(null);
+  useEditStore.setState({ templateFrom: form });
+}
+
+export const closeSaveTemplate = () => useEditStore.setState({ templateFrom: null });
+
+/** Whether new events can go on this calendar now. */
+export function canWriteTo(accountId: string, calendarId: string): boolean {
+  return writableCalendars(calendars().accounts).some(
+    (w) => w.account.accountId === accountId && w.calendar.id === calendarId,
+  );
+}
+
+/** A new event from a template in the full editor, at the time a new event gets (`defaultTimes`). */
+export function newEventFromTemplate(t: TemplateFields) {
+  const target = defaultCalendar();
+  if (!target) return noCalendarToast();
+  const zone = displayZone(calendars().accounts);
+  const times = templateTimes(
+    t,
+    null,
+    { lengthSaid: false, length: null },
+    defaultTimes().start,
+    zone,
+  );
+  const base = newForm({
+    ...(times.allDay
+      ? { allDay: true, startDate: times.date, endDate: times.lastDate }
+      : { allDay: false, start: times.start, end: times.end }),
+    zone,
+    accountId: target.account.accountId,
+    calendarId: target.calendar.id,
+  });
+  calendars().openEvent(null);
+  useEditStore.setState({
+    draft: null,
+    quickAdd: false,
+    editor: { form: withTemplate(base, t, canWriteTo), initial: null, event: null, detail: null },
+  });
+}
 
 const SCOPE_OPTIONS = [
   { value: "this", label: "This event" },

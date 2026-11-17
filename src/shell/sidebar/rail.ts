@@ -14,3 +14,14 @@ export function mailboxInAccount(ref: MailboxRef, accountId: string, tabs: strin
   }
   return categoryMailbox(accountId, tabs[0] ?? "CATEGORY_PERSONAL");
 }
+
+/**
+ * Ctrl+Tab's next stop from `current` (an account id, or null for All Inboxes): All Inboxes, then each account in
+ * order, wrapping; `by` −1 goes back. With one account there is no All Inboxes, so it stays put.
+ */
+export function nextInbox(current: string | null, accountIds: string[], by: 1 | -1): string | null {
+  if (accountIds.length < 2) return current;
+  const stops: Array<string | null> = [null, ...accountIds];
+  const at = Math.max(stops.indexOf(current), 0);
+  return stops[(at + by + stops.length) % stops.length] ?? null;
+}
