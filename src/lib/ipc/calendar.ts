@@ -74,6 +74,8 @@ export interface CalendarEvent {
   recurring: boolean;
   /** The account may change it (move, resize, edit): a writable calendar, and yours or open to guests. */
   canEdit: boolean;
+  /** Google's task block for this task (`https://tasks.google.com/task/<code>`); not editable here. */
+  taskLink: string | null;
 }
 
 /** Every account with its calendar access, settings and calendars (local). */

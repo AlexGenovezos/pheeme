@@ -52,7 +52,7 @@ describe("tasks preview", () => {
     expect(work.access.enableUrl).toContain("tasks.googleapis.com");
     expect(work.lists).toEqual([]);
     expect((h.tasks_sync_now({ accountId: "acc-work" }) as TasksAccess).status).toBe("on");
-    expect(list(h, "work", "acc-work").length).toBe(2);
+    expect(list(h, "work", "acc-work").length).toBe(5);
   });
 
   test("adds, edits, completes, reorders, indents and deletes tasks", () => {
@@ -147,5 +147,24 @@ describe("tasks preview", () => {
       "Food",
     ]);
     expect(list(h, "errands")).toEqual([]);
+  });
+
+  test("tasks due through a date are the open ones due by then, overdue first", () => {
+    const h = createTasksHandlers(ACCOUNTS, null, NOW);
+    const due = h.tasks_due_through({ throughDate: "2026-11-11" }) as Task[];
+    expect(due.length).toBeGreaterThan(0);
+    expect(due.every((t) => !t.completed && t.due !== null && t.due <= "2026-11-11")).toBe(true);
+    expect(due.map((t) => t.due)).toEqual([...due.map((t) => t.due)].sort());
+    // The fixtures have something overdue and something due today, besides one done today.
+    expect(due.some((t) => t.due! < "2026-11-11")).toBe(true);
+    expect(due.some((t) => t.due === "2026-11-11")).toBe(true);
+    const today = h.dated_tasks({ fromDate: "2026-11-11", toDate: "2026-11-12" }) as Task[];
+    expect(today.some((t) => t.completed)).toBe(true);
+    // One of today's is booked on the calendar (`preview/calendar.ts`).
+    expect(due.some((t) => t.webViewLink?.startsWith("https://tasks.google.com/task/"))).toBe(true);
+
+    h.set_task_list_hidden({ accountId: "acc-work", listId: "work", hidden: true });
+    const shown = h.tasks_due_through({ throughDate: "2026-11-11" }) as Task[];
+    expect(shown.some((t) => t.listId === "work")).toBe(false);
   });
 });

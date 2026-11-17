@@ -13,6 +13,9 @@ import {
 } from "../lib/tauri";
 import type { PartialHandlers } from "./handlers";
 
+/** The task Google has booked a time for today: `preview/calendar.ts` draws its task block. */
+export const PREVIEW_BLOCK_LINK = "https://tasks.google.com/task/preview-newsletter";
+
 /** A fixture task: the DTO plus its place among its siblings. */
 type Row = Task & { order: number };
 
@@ -48,6 +51,12 @@ export function createTasksHandlers(
   const dueOn = (dayOffset: number) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + dayOffset);
+    return isoDate(d);
+  };
+  /** `days` from today, for the plan: something overdue, due today, and done today. */
+  const dueIn = (days: number) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + days);
     return isoDate(d);
   };
 
@@ -102,6 +111,16 @@ export function createTasksHandlers(
   if (second) {
     add(second, "work", "Review the Q4 roadmap", { due: dueOn(3) });
     add(second, "work", "Write up the design review notes");
+    add(second, "work", "Send the Acme invoice", { due: dueIn(-12), notes: "Net 30, PO 4471" });
+    add(second, "work", "Draft the newsletter", {
+      due: dueIn(0),
+      webViewLink: `${PREVIEW_BLOCK_LINK}?sa=6`,
+    });
+    add(second, "work", "Book the team offsite", {
+      due: dueIn(0),
+      completed: true,
+      completedAt: now - 3 * 60 * 60_000,
+    });
   }
 
   const missingTask = () => ({ code: "not_found", message: "That task isn't available any more." });
@@ -203,6 +222,19 @@ export function createTasksHandlers(
     return t;
   };
 
+  /** Every shown list's tasks whose due date (and row) pass `keep`, by date. */
+  const byDue = (keep: (due: string, r: Row) => boolean): Task[] =>
+    rows
+      .filter(
+        (r) =>
+          statuses.get(r.accountId) === "on" &&
+          r.due !== null &&
+          keep(r.due, r) &&
+          !listOf(r.accountId, r.listId)?.hidden,
+      )
+      .sort((a, b) => a.due!.localeCompare(b.due!) || a.accountId.localeCompare(b.accountId))
+      .map(dto);
+
   return {
     tasks_accounts: (): TasksAccount[] =>
       accounts.map((a) => ({
@@ -218,17 +250,11 @@ export function createTasksHandlers(
     dated_tasks: (args): Task[] => {
       const from = String(args.fromDate);
       const to = String(args.toDate);
-      return rows
-        .filter(
-          (r) =>
-            statuses.get(r.accountId) === "on" &&
-            r.due !== null &&
-            r.due >= from &&
-            r.due < to &&
-            !listOf(r.accountId, r.listId)?.hidden,
-        )
-        .sort((a, b) => a.due!.localeCompare(b.due!) || a.accountId.localeCompare(b.accountId))
-        .map(dto);
+      return byDue((due) => due >= from && due < to);
+    },
+    tasks_due_through: (args): Task[] => {
+      const through = String(args.throughDate);
+      return byDue((due, r) => due <= through && !r.completed && !r.hidden);
     },
     set_task_list_hidden: (args) => {
       const list = requireList(args);

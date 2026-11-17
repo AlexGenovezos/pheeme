@@ -98,8 +98,8 @@ describe("dated tasks on the calendar", () => {
     await settle();
 
     const band = screen.getByRole("row", { name: "All-day events" });
-    // Sunday-start week Nov 8–14: the fixture's tasks are due Mon 9 (done), Tue 10, Wed 11,
-    // Thu 12 and Fri 13.
+    // Sunday-start week Nov 8–14: the fixture's tasks are due Mon 9 (done), Tue 10, Wed 11 (one
+    // done), Thu 12 and Fri 13.
     expect(
       within(band)
         .getAllByRole("button", { name: /^Task: / })
@@ -108,6 +108,8 @@ describe("dated tasks on the calendar", () => {
       "Pay the electricity bill",
       "Pick up dry cleaning",
       "Send the lease back",
+      "Draft the newsletter",
+      "Book the team offsite",
       "Review the Q4 roadmap",
       "Plan the Lisbon trip",
     ]);
@@ -129,14 +131,14 @@ describe("dated tasks on the calendar", () => {
     renderCalendar();
     await settle();
     const heading = screen.getByRole("heading", { level: 1 });
-    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(5);
+    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(7);
 
     const release = hold("calendar_events");
     act(() => void useCalendarStore.getState().goTo("2027-06-10"));
     await settle();
     // The tasks there have been read; the events haven't, so the week stays as it was.
     expect(heading).toHaveTextContent("Nov 8 – 14, 2026");
-    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(5);
+    expect(screen.getAllByRole("button", { name: /^Task: / })).toHaveLength(7);
 
     release();
     await settle();
