@@ -10,6 +10,7 @@ import { describeShortcut } from "../keyboard/format";
 import { listKey, splitCompleted, taskKey } from "./outline";
 import { planQueue } from "./plan";
 import { PLAN_TODAY_COMMAND, usePlanStore } from "./planStore";
+import { LoadError, SkeletonRows } from "./LoadStates";
 import { TaskEditor } from "./TaskEditor";
 import { TaskRow } from "./TaskRow";
 import { todayDate, useTasksStore } from "./tasksStore";
@@ -43,21 +44,10 @@ export function TodaySection() {
         </Button>
       </div>
       {dueError && (
-        <div className="tasks-access">
-          <p role="alert">Couldn't read tasks: {dueError}</p>
-          <Button size="sm" onClick={() => void useTasksStore.getState().loadDue()}>
-            Try again
-          </Button>
-        </div>
+        <LoadError message={dueError} onRetry={() => void useTasksStore.getState().loadDue()} />
       )}
       {tasks === null ? (
-        !dueError &&
-        [0, 1].map((i) => (
-          <div key={i} className="task-row" aria-hidden="true">
-            <Skeleton shape="circle" className="task-row__skeleton-check" />
-            <Skeleton width={`${60 - i * 20}%`} />
-          </div>
-        ))
+        !dueError && <SkeletonRows />
       ) : (
         <ul className="tasks-list__items" aria-label="Today tasks">
           {tasks.map((t) => (

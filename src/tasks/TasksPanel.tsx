@@ -37,6 +37,7 @@ import { TaskEditor } from "./TaskEditor";
 import { TaskRow } from "./TaskRow";
 import { TOGGLE_TASKS_COMMAND, TOGGLE_TASKS_SHORTCUT, useTasksStore } from "./tasksStore";
 import { TodaySection } from "./TodaySection";
+import { LoadError, SkeletonRows } from "./LoadStates";
 import { PlanTodayHost } from "./PlanToday";
 import "./tasks.css";
 
@@ -166,18 +167,6 @@ function TasksPanel() {
         )}
       </div>
     </aside>
-  );
-}
-
-/** A read that failed: why, and a way to run it again, above whatever the last good read left. */
-function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="tasks-access">
-      <p role="alert">Couldn't read tasks: {message}</p>
-      <Button size="sm" onClick={onRetry}>
-        Try again
-      </Button>
-    </div>
   );
 }
 
@@ -482,13 +471,7 @@ function ListSection({ account, list }: { account: TasksAccount; list: TaskListI
         <LoadError message={listError} onRetry={() => void store().loadList(accountId, list.id)} />
       )}
       {tasks === undefined ? (
-        !listError &&
-        [0, 1].map((i) => (
-          <div key={i} className="task-row" aria-hidden="true">
-            <Skeleton shape="circle" className="task-row__skeleton-check" />
-            <Skeleton width={`${60 - i * 20}%`} />
-          </div>
-        ))
+        !listError && <SkeletonRows />
       ) : (
         <ul className="tasks-list__items" aria-label={`${list.title} tasks`}>
           {rows.map((row) =>
