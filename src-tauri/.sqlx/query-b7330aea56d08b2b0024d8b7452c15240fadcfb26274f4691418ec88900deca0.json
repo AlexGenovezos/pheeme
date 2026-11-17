@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO accounts (\n            id, email, display_name, profile_photo_url, client_id,\n            history_id, created_at, updated_at, color, position\n        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,\n            (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "b7330aea56d08b2b0024d8b7452c15240fadcfb26274f4691418ec88900deca0"
+}

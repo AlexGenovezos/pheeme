@@ -84,6 +84,12 @@ export const lightSource: ThemeSource = {
     "--color-account-4": "#8050c8",
     "--color-account-5": "#c8403a",
     "--color-account-6": "#9a7a08",
+    "--color-account-7": "#0f7a80",
+    "--color-account-8": "#bd3f7c",
+    "--color-account-9": "#4b55c9",
+    "--color-account-10": "#5c8212",
+    "--color-account-11": "#8a5a3c",
+    "--color-account-12": "#646d77",
 
     "--color-mailbox-primary": "#1a5bbf",
     "--color-mailbox-social": "#076a77",

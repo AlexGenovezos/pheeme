@@ -38,7 +38,14 @@ beforeEach(() => {
   useSettingsStore.setState({ open: false, page: "appearance" });
   useAccountStore.setState({
     accounts: [
-      { id: "a1", email: "me@example.com", displayName: "Me", clientId: "c", synced: true },
+      {
+        id: "a1",
+        email: "me@example.com",
+        displayName: "Me",
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
     ],
     syncErrors: {},
     reconnecting: null,

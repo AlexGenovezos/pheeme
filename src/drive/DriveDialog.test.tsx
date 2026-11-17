@@ -19,7 +19,14 @@ beforeEach(() => {
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
   useAccountStore.setState({
     accounts: [
-      { id: "a", email: "me@example.com", displayName: null, clientId: "c", synced: true },
+      {
+        id: "a",
+        email: "me@example.com",
+        displayName: null,
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
     ],
   });
 });

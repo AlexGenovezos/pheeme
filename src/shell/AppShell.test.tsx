@@ -190,12 +190,13 @@ describe("reading pane off", () => {
 });
 
 describe("current account", () => {
-  const accounts = ["a1", "a2"].map((id) => ({
+  const accounts = ["a1", "a2"].map((id, i) => ({
     id,
     email: `${id}@test`,
     displayName: null,
     clientId: "c",
     synced: true,
+    color: i + 1,
   }));
   beforeEach(() => {
     useAccountStore.setState({ accounts, loaded: true });

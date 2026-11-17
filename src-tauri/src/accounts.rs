@@ -111,6 +111,8 @@ pub struct AccountInfo {
     pub client_id: String,
     /// The first sync has finished (Gmail's history id is known), so the cache is usable.
     pub synced: bool,
+    /// 1..=12: the `--color-account-N` theme token the account is drawn in.
+    pub color: i64,
 }
 
 impl From<DbAccount> for AccountInfo {
@@ -121,6 +123,7 @@ impl From<DbAccount> for AccountInfo {
             email: account.email,
             display_name: account.display_name,
             client_id: account.client_id,
+            color: account.color,
         }
     }
 }
@@ -488,6 +491,7 @@ impl AccountService {
                         history_id: None,
                         created_at: timestamp,
                         updated_at: timestamp,
+                        color: db_accounts::free_color(&db_accounts::used_colors(&self.db).await?),
                     },
                 )
                 .await;
@@ -509,6 +513,29 @@ impl AccountService {
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    /// Draws the account in colour `color` (1..=12).
+    pub async fn set_account_color(
+        &self,
+        account_id: &str,
+        color: i64,
+    ) -> Result<(), AccountError> {
+        if !(1..=db_accounts::ACCOUNT_COLORS).contains(&color) {
+            return Err(AccountError::Invalid(format!(
+                "There is no account colour {color}."
+            )));
+        }
+        if db_accounts::set_color(&self.db, account_id, color).await? {
+            Ok(())
+        } else {
+            Err(AccountError::NotFound)
+        }
+    }
+
+    /// Lists the accounts in `account_ids`' order from now on.
+    pub async fn reorder_accounts(&self, account_ids: &[String]) -> Result<(), AccountError> {
+        Ok(db_accounts::reorder(&self.db, account_ids).await?)
     }
 
     /// Revokes Google access (best effort), then deletes the secrets, cached mail, the

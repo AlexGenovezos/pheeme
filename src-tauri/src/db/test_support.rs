@@ -33,11 +33,32 @@ impl TestDb {
                 history_id: None,
                 created_at: 0,
                 updated_at: 0,
+                color: 1,
             },
         )
         .await
         .unwrap();
         db
+    }
+
+    /// Connects account `id` as `{id}@example.com`.
+    pub async fn add_account(&self, id: &str) {
+        insert_account(
+            &self.pool,
+            &DbAccount {
+                id: id.into(),
+                email: format!("{id}@example.com"),
+                display_name: None,
+                profile_photo_url: None,
+                client_id: "c".into(),
+                history_id: None,
+                created_at: 0,
+                updated_at: 0,
+                color: 1,
+            },
+        )
+        .await
+        .unwrap();
     }
 
     /// The data directory, to reopen the database as after a restart.

@@ -539,6 +539,8 @@ pub fn run() {
             commands::transfer::receive_client_transfer,
             commands::accounts::list_accounts,
             commands::accounts::remove_account,
+            commands::accounts::set_account_color,
+            commands::accounts::reorder_accounts,
             commands::threads::list_threads,
             commands::threads::get_thread,
             commands::threads::modify_threads,

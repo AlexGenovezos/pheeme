@@ -7,6 +7,8 @@ export interface AccountInfo {
   clientId: string;
   /** The first sync has finished, so the cache is usable; false shows skeletons. */
   synced: boolean;
+  /** 1–12: the `--color-account-N` theme token the account is drawn in (`ACCOUNT_COLORS`). */
+  color: number;
 }
 
 export type ClientChoice =
@@ -32,6 +34,11 @@ export const completeOauth = (flowId: string) => call("complete_oauth", { flowId
 export const cancelOauth = (flowId: string) => call("cancel_oauth", { flowId });
 export const listAccounts = () => call("list_accounts");
 export const removeAccount = (accountId: string) => call("remove_account", { accountId });
+/** Draws the account in colour `color` (1–12). */
+export const setAccountColor = (accountId: string, color: number) =>
+  call("set_account_color", { accountId, color });
+/** Lists the accounts in this order from now on (the sidebar, the rail, Settings). */
+export const reorderAccounts = (accountIds: string[]) => call("reorder_accounts", { accountIds });
 /** Opens an allow-listed https URL (Google, Pheeme) in the default browser. */
 export const openExternal = (url: string) => call("open_external", { url });
 

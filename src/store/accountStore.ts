@@ -9,6 +9,8 @@ import {
   NETWORK_EVENT,
   networkOnline,
   removeAccount,
+  reorderAccounts,
+  setAccountColor,
   SYNC_EVENTS,
   getGmailQuotaUsage,
   toCommandError,
@@ -48,6 +50,10 @@ interface AccountState {
   upsert: (account: AccountInfo) => void;
   /** Removes the account and moves navigation off it (`uiStore.forgetAccount`). */
   remove: (accountId: string) => Promise<void>;
+  /** Draws the account in colour `color` (1–12) at once; puts the old one back if saving it fails, and rethrows. */
+  setColor: (accountId: string, color: number) => Promise<void>;
+  /** Puts the accounts in `ids`' order at once; puts the old order back if saving it fails, and rethrows. */
+  reorder: (ids: string[]) => Promise<void>;
   /** Start signing an account in again; `reconnect(null)` ends it. */
   reconnect: (accountId: string | null) => void;
   /** The account's first sync finished, so its cache is usable. */
@@ -85,6 +91,42 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     set((state) => ({ accounts: state.accounts.filter((a) => a.id !== accountId) }));
     // Navigation pointing at the removed account would keep querying it.
     useUiStore.getState().forgetAccount(accountId, get().accounts);
+  },
+  setColor: async (accountId, color) => {
+    const before = get().accounts.find((a) => a.id === accountId)?.color;
+    if (before === undefined || before === color) return;
+    const paint = (c: number) =>
+      set((s) => ({
+        accounts: s.accounts.map((a) => (a.id === accountId ? { ...a, color: c } : a)),
+      }));
+    paint(color);
+    try {
+      await setAccountColor(accountId, color);
+    } catch (error) {
+      // Only if nothing changed it meanwhile.
+      if (get().accounts.find((a) => a.id === accountId)?.color === color) paint(before);
+      throw error;
+    }
+  },
+  reorder: async (ids) => {
+    const before = get().accounts;
+    const ordered = inOrder(before, ids);
+    if (ordered.every((a, i) => a === before[i])) return;
+    set({ accounts: ordered });
+    try {
+      await reorderAccounts(ordered.map((a) => a.id));
+    } catch (error) {
+      // Unless something moved them meanwhile; other changes to the accounts (a colour, a first sync) stay.
+      const now = get().accounts;
+      if (now.every((a, i) => a.id === ordered[i]?.id))
+        set({
+          accounts: inOrder(
+            now,
+            before.map((a) => a.id),
+          ),
+        });
+      throw error;
+    }
   },
   reconnect: (accountId) => set({ reconnecting: accountId }),
   markSynced: (accountId) =>
@@ -195,4 +237,13 @@ function setOnline(online: boolean) {
       ? s.syncErrors
       : Object.fromEntries(Object.entries(s.syncErrors).filter(([, e]) => e.code !== "network")),
   }));
+}
+
+/** `accounts` in `ids`' order; any `ids` leaves out keep their relative order after the rest. */
+export function inOrder<T extends { id: string }>(accounts: T[], ids: string[]): T[] {
+  const rank = (a: T) => {
+    const i = ids.indexOf(a.id);
+    return i === -1 ? ids.length : i;
+  };
+  return [...accounts].sort((a, b) => rank(a) - rank(b));
 }

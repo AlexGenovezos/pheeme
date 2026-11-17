@@ -334,7 +334,6 @@ impl Adapter for TasksService {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
-    use crate::db::accounts::{insert_account, DbAccount};
     use crate::db::test_support::TestDb;
     use crate::gmail::GmailError;
     use crate::sync::events::RecordingEvents;
@@ -352,21 +351,7 @@ pub(super) mod tests {
         let db = TestDb::new().await;
         let mut fakes = HashMap::new();
         for id in accounts {
-            insert_account(
-                &db.pool,
-                &DbAccount {
-                    id: (*id).into(),
-                    email: format!("{id}@example.com"),
-                    display_name: None,
-                    profile_photo_url: None,
-                    client_id: "c".into(),
-                    history_id: None,
-                    created_at: 0,
-                    updated_at: 0,
-                },
-            )
-            .await
-            .unwrap();
+            db.add_account(id).await;
             let fake = Arc::new(FakeTasks::default());
             fake.add_list("L", "My Tasks");
             fakes.insert((*id).to_owned(), fake);

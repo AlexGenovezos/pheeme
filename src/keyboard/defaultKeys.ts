@@ -10,6 +10,8 @@ export const DEFAULT_KEYS = {
   "view.toggleSidebar": "mod+b",
   "mode.mail": "mod+1",
   "mode.calendar": "mod+2",
+  "go.next-inbox": "ctrl+tab",
+  "go.previous-inbox": "ctrl+shift+tab",
   "list.next": "j",
   "list.previous": "k",
   "search.focus": "/",

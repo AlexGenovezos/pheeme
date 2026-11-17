@@ -47,7 +47,14 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
   useAccountStore.setState({
     accounts: [
-      { id: "a1", email: "a@example.com", displayName: null, clientId: "c", synced: true },
+      {
+        id: "a1",
+        email: "a@example.com",
+        displayName: null,
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
     ],
   });
   calls = [];
@@ -194,4 +201,28 @@ test("help.setupGuide asks App to open the setup guide", () => {
     .find((c) => c.id === "help.setupGuide")!
     .run();
   expect(useSetupGuide.getState().requested).toBe(before + 1);
+});
+
+test("Ctrl+Tab steps through All Inboxes and each account, keeping the tab; Ctrl+Shift+Tab goes back", () => {
+  const account = (id: string) => ({
+    id,
+    email: `${id}@example.com`,
+    displayName: null,
+    clientId: "c",
+    synced: true,
+    color: 1,
+  });
+  useAccountStore.setState({ accounts: [account("a1"), account("a2")] });
+  useUiStore.getState().setMailbox({ accountId: null, labelId: "INBOX" });
+  const mailbox = () => useUiStore.getState().mailbox;
+
+  press("Tab", { ctrlKey: true });
+  expect(mailbox()).toEqual({ accountId: "a1", labelId: "INBOX", category: "CATEGORY_PERSONAL" });
+  useUiStore.getState().setMailbox({ accountId: "a1", labelId: "STARRED" });
+  press("Tab", { ctrlKey: true });
+  expect(mailbox()).toEqual({ accountId: "a2", labelId: "STARRED" });
+  press("Tab", { ctrlKey: true });
+  expect(mailbox()).toEqual({ accountId: null, labelId: "INBOX" });
+  press("Tab", { ctrlKey: true, shiftKey: true });
+  expect(mailbox().accountId).toBe("a2");
 });

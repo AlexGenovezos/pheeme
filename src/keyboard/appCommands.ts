@@ -21,18 +21,20 @@ import {
 } from "../calendar/mailActions";
 import { useSetupGuide } from "../onboarding/guideStore";
 import {
+  ALL_INBOXES,
   CATEGORIES,
   categoryMailbox,
   FAVORITES,
   homeMailbox,
   resolveActiveAccount,
 } from "../mail/mailboxes";
+import { mailboxInAccount, nextInbox } from "../shell/sidebar/rail";
 import { usePaletteStore } from "../palette/paletteStore";
 import { useSettingsStore } from "../settings/settingsStore";
 import { speedReadOpenConversation } from "../speedread/open";
 import { useStatsStore } from "../stats/statsStore";
 import { useAccountStore } from "../store/accountStore";
-import { useInboxTabs } from "../store/inboxTabsStore";
+import { useInboxTabs, visibleCategories } from "../store/inboxTabsStore";
 import { useUiStore } from "../store/uiStore";
 import { useThemeStore } from "../theme/theme";
 import { type AppMode, useCalendarStore } from "../calendar/calendarStore";
@@ -111,6 +113,24 @@ export function appCommands(): Command[] {
       keywords: ["all inboxes"],
       run: () => ui().setMailbox(homeMailbox(accounts())),
     },
+    ...([1, -1] as const).map<Command>((by) => ({
+      id: by === 1 ? "go.next-inbox" : "go.previous-inbox",
+      title: by === 1 ? "Next account's inbox" : "Previous account's inbox",
+      group: "Navigation",
+      shortcut: DEFAULT_KEYS[by === 1 ? "go.next-inbox" : "go.previous-inbox"],
+      keywords: ["account", "switch", "all inboxes", "cycle"],
+      global: true,
+      // All Inboxes, then each account in order, landing where picking it on the account rail does.
+      run: () => {
+        const { mailbox, setMailbox } = ui();
+        const ids = accounts().map((a) => a.id);
+        const next = nextInbox(mailbox.accountId, ids, by);
+        if (next === mailbox.accountId) return;
+        if (next === null) return setMailbox(ALL_INBOXES);
+        const tabs = visibleCategories(next).map((c) => c.labelId);
+        setMailbox(mailboxInAccount(mailbox, next, tabs));
+      },
+    })),
     ...CATEGORIES.map<Command>((c) => ({
       id: `go.category.${c.name.toLowerCase()}`,
       title: `Go to ${c.name}`,
