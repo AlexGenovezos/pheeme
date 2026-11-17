@@ -206,6 +206,13 @@ impl TasksService {
         Ok(rows.iter().map(TaskDto::from).collect())
     }
 
+    /// Every account's not-completed tasks due on or before `through_date` (`YYYY-MM-DD`) in
+    /// shown lists, oldest due date first.
+    pub async fn due_through(&self, through_date: &str) -> Result<Vec<TaskDto>, MailError> {
+        let rows = db::tasks::open_due_through(&self.db, through_date).await?;
+        Ok(rows.iter().map(TaskDto::from).collect())
+    }
+
     /// Show or hide a list's dated tasks on the calendar (local only).
     pub async fn set_list_hidden(
         &self,

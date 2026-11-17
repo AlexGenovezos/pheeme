@@ -419,6 +419,27 @@ pub async fn dated_tasks<'e>(
     .await?)
 }
 
+/// Not-completed tasks due on or before `through_date` (`YYYY-MM-DD`) in lists that aren't
+/// hidden, every account's, oldest due date first.
+pub async fn open_due_through<'e>(
+    ex: impl SqliteExecutor<'e>,
+    through_date: &str,
+) -> Result<Vec<DbTask>> {
+    Ok(sqlx::query_as!(
+        DbTask,
+        r#"SELECT t.account_id, t.list_id, t.id, t.parent, t.position, t.title, t.notes,
+                  t.due_date, t.status, t.completed_ms, t.updated_ms, t.hidden AS "hidden: bool",
+                  t.etag, t.raw
+           FROM tasks t
+           JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+           WHERE t.due_date <= ? AND t.status != 'completed' AND t.hidden = 0 AND l.hidden = 0
+           ORDER BY t.due_date, t.account_id, l.sort_order, t.position, t.id"#,
+        through_date
+    )
+    .fetch_all(ex)
+    .await?)
+}
+
 pub async fn access<'e>(
     ex: impl SqliteExecutor<'e>,
     account_id: &str,
@@ -644,5 +665,57 @@ mod tests {
             ids(dated_tasks(pool, "2026-11-09", "2026-11-16").await.unwrap()),
             vec!["t1"]
         );
+    }
+
+    #[tokio::test]
+    async fn open_due_through_keeps_open_tasks_due_by_the_date() {
+        let db = TestDb::with_account("a").await;
+        let pool = &db.pool;
+        replace_task_lists(pool, "a", &[list("L", "Mine", "1"), list("M", "Work", "1")])
+            .await
+            .unwrap();
+        set_list_hidden(pool, "a", "M", true).await.unwrap();
+        let due = |id: &str, list: &str, date: Option<&str>| {
+            let mut t = task(id, id);
+            t.list_id = list.into();
+            t.due_date = date.map(Into::into);
+            t
+        };
+        let mut done = due("done", "L", Some("2026-11-16"));
+        done.status = "completed".into();
+        done.completed_ms = Some(5);
+        replace_tasks(
+            pool,
+            "a",
+            "L",
+            &[
+                due("today", "L", Some("2026-11-16")),
+                due("late", "L", Some("2026-11-10")),
+                done,
+                due("tomorrow", "L", Some("2026-11-17")),
+                due("undated", "L", None),
+            ],
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+        replace_tasks(
+            pool,
+            "a",
+            "M",
+            &[due("hidden_list", "M", Some("2026-11-12"))],
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+        let ids: Vec<String> = open_due_through(pool, "2026-11-16")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(ids, vec!["late", "today"]);
     }
 }
