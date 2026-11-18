@@ -7,8 +7,8 @@ import { MailboxDownloadNotice } from "../components/MailboxDownloadNotice";
 import { UpdateBanner } from "../components/UpdateBanner";
 import { CornerCard } from "../components/ui/CornerCard";
 import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
-import { useAccountStore } from "../store/accountStore";
-import { useDownloadStore } from "../store/downloadStore";
+import { type SyncFailure, useAccountStore } from "../store/accountStore";
+import { currentDownload, useDownloadStore } from "../store/downloadStore";
 
 export function CornerNotices() {
   const hasAccounts = useAccountStore((s) => s.accounts.length > 0);
@@ -34,13 +34,29 @@ function SyncNotices() {
       offline,
     })),
   );
-  // The download card speaks for a slowed account while it's open.
   const downloading = useDownloadStore(
     useShallow((s) => s.progress?.filter((p) => !p.complete).map((p) => p.accountId) ?? []),
   );
-  const dismissedDownloads = useDownloadStore((s) => s.dismissed);
+  // The download card speaks for a slowed account while it's open.
+  const covered = useDownloadStore(
+    useShallow((s) => {
+      const { summary, open } = currentDownload(s);
+      return open ? summary!.accountIds : [];
+    }),
+  );
   const [dismissed, setDismissed] = useState<string[]>([]);
   const dismiss = (key: string) => () => setDismissed((d) => [...d, key]);
+  // A closed failure is forgotten once it's over, so the next one shows even if it reads the same.
+  // (Adjusted while rendering, as React suggests for state that follows a prop.)
+  const failuresNow = Object.entries(syncErrors)
+    .map(([id, e]) => failureKey(id, e))
+    .join("\n");
+  const [failuresSeen, setFailuresSeen] = useState(failuresNow);
+  if (failuresSeen !== failuresNow) {
+    setFailuresSeen(failuresNow);
+    const now = failuresNow.split("\n");
+    setDismissed((d) => d.filter((key) => !key.startsWith("failed:") || now.includes(key)));
+  }
 
   const failures = accounts.flatMap((account) => {
     const error = syncErrors[account.id];
@@ -48,6 +64,7 @@ function SyncNotices() {
     if (isSignedOut(error)) {
       return [
         <CornerCard
+          waits
           key={`signed-out:${account.id}`}
           tone="danger"
           icon={<TriangleAlert aria-hidden="true" />}
@@ -57,10 +74,11 @@ function SyncNotices() {
         />,
       ];
     }
-    const key = `failed:${account.id}:${error.code}:${error.message}`;
+    const key = failureKey(account.id, error);
     if (dismissed.includes(key)) return [];
     return [
       <CornerCard
+        waits
         key={key}
         tone="danger"
         icon={<TriangleAlert aria-hidden="true" />}
@@ -71,9 +89,7 @@ function SyncNotices() {
     ];
   });
 
-  const slowIds = Object.keys(slowSync).filter(
-    (id) => !(downloading.includes(id) && !dismissedDownloads.includes(id)),
-  );
+  const slowIds = Object.keys(slowSync).filter((id) => !covered.includes(id));
   let slow = null;
   if (!offline && slowIds.length > 0) {
     const key = `slow:${Math.min(...slowIds.map((id) => slowSync[id]!.since))}`;
@@ -84,6 +100,7 @@ function SyncNotices() {
     if (!dismissed.includes(key)) {
       slow = (
         <CornerCard
+          waits
           icon={<Gauge aria-hidden="true" />}
           title="Gmail is slowing sync"
           description={
@@ -103,6 +120,7 @@ function SyncNotices() {
     <>
       {offline && (
         <CornerCard
+          waits
           icon={<WifiOff aria-hidden="true" />}
           title="You're offline"
           description="Pheeme syncs again when the connection is back. Changes you make wait until then."
@@ -113,3 +131,6 @@ function SyncNotices() {
     </>
   );
 }
+
+const failureKey = (accountId: string, error: SyncFailure) =>
+  `failed:${accountId}:${error.code}:${error.message}`;

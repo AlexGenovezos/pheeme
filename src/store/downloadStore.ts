@@ -1,5 +1,5 @@
 // The mailbox download (an account's first sync and the backfill after it), for the card in the
-// bottom-right corner and the sidebar's slow-sync note. Progress is asked every 2 s while an account
+// bottom-right corner. Progress is asked every 2 s while an account
 // is downloading; otherwise only when a sync starts, which is how a new account or a resync begins.
 import { create } from "zustand";
 import { getSyncProgress, listen, SYNC_EVENTS, type SyncProgress } from "../lib/tauri";
@@ -10,7 +10,8 @@ export const DOWNLOAD_POLL_MS = 2000;
 export const DOWNLOAD_DONE_MS = 5000;
 
 export interface DownloadSummary {
-  /** Accounts still downloading, in the order Rust answered. */
+  /** Accounts in this download, in the order Rust answered: those still downloading, and those that
+   * finished since it began (so the totals don't drop when one account finishes before another). */
   accountIds: string[];
   synced: number;
   /** `null` while Gmail's mailbox size isn't known yet for one of them. */
@@ -19,25 +20,40 @@ export interface DownloadSummary {
   percent: number | null;
 }
 
-/** What is still downloading, combined across accounts; `null` when nothing is. */
-export function summarizeDownload(progress: SyncProgress[]): DownloadSummary | null {
-  const downloading = progress.filter((p) => !p.complete);
-  if (downloading.length === 0) return null;
-  const synced = downloading.reduce((sum, p) => sum + p.syncedMessages, 0);
-  const total = downloading.every((p) => p.totalMessages !== null)
-    ? downloading.reduce((sum, p) => sum + p.totalMessages!, 0)
+/**
+ * What is downloading, combined across `progress`' unfinished accounts and the `episode`'s finished
+ * ones; `null` when nothing is unfinished.
+ */
+export function summarizeDownload(
+  progress: SyncProgress[],
+  episode: string[] = [],
+): DownloadSummary | null {
+  if (!progress.some((p) => !p.complete)) return null;
+  const rows = progress.filter((p) => !p.complete || episode.includes(p.accountId));
+  const synced = rows.reduce((sum, p) => sum + p.syncedMessages, 0);
+  const total = rows.every((p) => p.totalMessages !== null)
+    ? rows.reduce((sum, p) => sum + p.totalMessages!, 0)
     : null;
   return {
-    accountIds: downloading.map((p) => p.accountId),
+    accountIds: rows.map((p) => p.accountId),
     synced,
     total,
     percent: total ? Math.min(99, Math.floor((synced / total) * 100)) : null,
   };
 }
 
+/** The download the card shows, and whether the card is open (not closed for all of its accounts). */
+export function currentDownload(s: Pick<DownloadState, "progress" | "episode" | "dismissed">) {
+  const summary = s.progress ? summarizeDownload(s.progress, s.episode) : null;
+  const open = summary?.accountIds.some((id) => !s.dismissed.includes(id)) ?? false;
+  return { summary, open };
+}
+
 interface DownloadState {
   /** The last answer; `null` until the first. */
   progress: SyncProgress[] | null;
+  /** Every account that has downloaded since the current download began; empty between downloads. */
+  episode: string[];
   /** Accounts that were downloading when the card was closed; it stays closed until another starts. */
   dismissed: string[];
   /** Every download just finished while the card was open: it says so for a few seconds. */
@@ -75,48 +91,57 @@ async function refresh() {
   }
   if (subscribers === 0) return;
   if (next) record(next);
-  const downloading = next
-    ? summarizeDownload(next) !== null
-    : summarizeDownload(useDownloadStore.getState().progress ?? []) !== null;
+  // After a failed ask, the last answer decides: a sync starting asks again anyway.
+  const downloading = summarizeDownload(useDownloadStore.getState().progress ?? []) !== null;
   if (askAgain) void refresh();
-  else if (downloading || !next) pollTimer = setTimeout(() => void refresh(), DOWNLOAD_POLL_MS);
+  else if (downloading) pollTimer = setTimeout(() => void refresh(), DOWNLOAD_POLL_MS);
 }
 
 function record(next: SyncProgress[]) {
-  const { progress: before, dismissed } = useDownloadStore.getState();
-  const was = before ? summarizeDownload(before) : null;
-  const now = summarizeDownload(next);
-  if (was && !now) {
-    // Only an open card says it's done; one that was closed stays closed.
-    const open = was.accountIds.some((id) => !dismissed.includes(id));
-    const total = next
-      .filter((p) => was.accountIds.includes(p.accountId))
-      .reduce((sum, p) => sum + p.syncedMessages, 0);
+  const state = useDownloadStore.getState();
+  const was = currentDownload(state);
+  const unfinished = next.filter((p) => !p.complete).map((p) => p.accountId);
+  if (unfinished.length === 0) {
+    if (!was.summary) {
+      // Still nothing downloading (a "Mailbox downloaded" card keeps its few seconds).
+      useDownloadStore.setState({ progress: next, episode: [] });
+      return;
+    }
     clearTimeout(doneTimer);
-    if (open) {
+    // Only an open card says it's done; one that was closed stays closed.
+    const ids = was.summary.accountIds;
+    const total = next
+      .filter((p) => ids.includes(p.accountId))
+      .reduce((sum, p) => sum + p.syncedMessages, 0);
+    if (was.open) {
       doneTimer = setTimeout(() => useDownloadStore.setState({ finished: null }), DOWNLOAD_DONE_MS);
     }
-    useDownloadStore.setState({ progress: next, finished: open ? { total } : null });
+    useDownloadStore.setState({
+      progress: next,
+      episode: [],
+      finished: was.open ? { total } : null,
+    });
     return;
   }
-  if (now) {
-    clearTimeout(doneTimer);
-    useDownloadStore.setState({ progress: next, finished: null });
-    return;
-  }
-  useDownloadStore.setState({ progress: next });
+  clearTimeout(doneTimer);
+  // An account removed meanwhile leaves the download.
+  const present = state.episode.filter((id) => next.some((p) => p.accountId === id));
+  useDownloadStore.setState({
+    progress: next,
+    episode: [...new Set([...present, ...unfinished])],
+    finished: null,
+  });
 }
 
 export const useDownloadStore = create<DownloadState>((set) => ({
   progress: null,
+  episode: [],
   dismissed: [],
   finished: null,
   dismiss: () => {
     clearTimeout(doneTimer);
     set((s) => ({
-      dismissed: [
-        ...new Set([...s.dismissed, ...(summarizeDownload(s.progress ?? [])?.accountIds ?? [])]),
-      ],
+      dismissed: [...new Set([...s.dismissed, ...(currentDownload(s).summary?.accountIds ?? [])])],
       finished: null,
     }));
   },
@@ -153,5 +178,5 @@ export function __resetDownloadForTests() {
   clearTimeout(pollTimer);
   clearTimeout(doneTimer);
   pollTimer = undefined;
-  useDownloadStore.setState({ progress: null, dismissed: [], finished: null });
+  useDownloadStore.setState({ progress: null, episode: [], dismissed: [], finished: null });
 }

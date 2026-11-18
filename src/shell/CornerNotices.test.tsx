@@ -77,6 +77,28 @@ test("a closed failure stays closed until a different one arrives", async () => 
   stop();
 });
 
+test("a closed failure shows again if it comes back after the account synced", async () => {
+  mockIPC(() => undefined, { shouldMockEvents: true });
+  const stop = await useAccountStore.getState().subscribe();
+  render(<CornerNotices />);
+  await act(() => emit("sync:error", { accountId: "a1", code: "server", message: "Gmail broke" }));
+  fireEvent.click(
+    within(card("Couldn't sync me@home.test")).getByRole("button", { name: "Dismiss" }),
+  );
+  await act(() => emit("sync:completed", { accountId: "a1" }));
+  await act(() => emit("sync:error", { accountId: "a1", code: "server", message: "Gmail broke" }));
+  expect(await screen.findByText("Couldn't sync me@home.test")).toBeInTheDocument();
+  stop();
+});
+
+test("sync cards and the download card step aside while a dialog is open", () => {
+  useAccountStore.setState({ offline: true });
+  useDownloadStore.setState({ progress: [downloading("a1")], episode: ["a1"] });
+  render(<CornerNotices />);
+  expect(card("You're offline")).toHaveClass("ui-toast--waits");
+  expect(card("Downloading your mailbox")).toHaveClass("ui-toast--waits");
+});
+
 test("a signed-out account offers Sign in again and can't be closed", async () => {
   mockIPC(() => undefined, { shouldMockEvents: true });
   const stop = await useAccountStore.getState().subscribe();

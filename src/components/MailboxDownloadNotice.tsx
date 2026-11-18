@@ -1,7 +1,7 @@
 import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "../settings/settingsStore";
 import { useAccountStore } from "../store/accountStore";
-import { summarizeDownload, useDownloadStore } from "../store/downloadStore";
+import { currentDownload, useDownloadStore } from "../store/downloadStore";
 import { CornerCard } from "./ui/CornerCard";
 import "./MailboxDownloadNotice.css";
 
@@ -11,11 +11,11 @@ import "./MailboxDownloadNotice.css";
  * state, so the card keeps its size as numbers arrive and when it turns into "Mailbox downloaded".
  */
 export function MailboxDownloadNotice() {
-  const { progress, dismissed, finished, dismiss } = useDownloadStore();
+  const state = useDownloadStore();
+  const { finished, dismiss } = state;
+  const { summary, open } = currentDownload(state);
   const accounts = useAccountStore((s) => s.accounts);
   const slowed = useAccountStore(useShallow((s) => Object.keys(s.slowSync)));
-  const summary = progress ? summarizeDownload(progress) : null;
-  const open = summary?.accountIds.some((id) => !dismissed.includes(id)) ?? false;
   if (!open && !finished) return null;
 
   let title: string;
@@ -50,6 +50,8 @@ export function MailboxDownloadNotice() {
   return (
     <CornerCard
       className="mailbox-download"
+      // Details opens Settings: the card steps aside rather than cover the dialog.
+      waits
       title={
         <>
           <span>{title}</span>
