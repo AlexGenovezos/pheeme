@@ -133,11 +133,19 @@ test("search is account-wide; changing scope clears selection, and clear returns
     "search_messages",
     { accountIds: ["a"], query: "subject:invoice", before: null, limit: null },
   ]);
-  const scope = screen.getByRole("combobox", { name: "Search accounts" });
-  expect(scope).toHaveTextContent("a@example.com");
+  expect(document.querySelector(".toolbar__subtitle")).toHaveTextContent(
+    /result in a@example\.com$/,
+  );
   act(() => useUiStore.getState().checkAll(["a:Cached invoice"]));
+  fireEvent.click(screen.getByRole("button", { name: "Search options" }));
+  const options = screen.getByRole("dialog", { name: "Search options" });
+  const scope = within(options).getByRole("combobox", { name: "Search accounts" });
+  expect(scope).toHaveTextContent("a@example.com");
   fireEvent.click(scope);
   fireEvent.click(screen.getByRole("option", { name: "All accounts" }));
+  expect(options).toBeInTheDocument();
+  fireEvent.click(within(options).getByRole("button", { name: "Search" }));
+  expect(screen.queryByRole("dialog", { name: "Search options" })).not.toBeInTheDocument();
   expect(useUiStore.getState().checked).toEqual([]);
   await vi.waitFor(() =>
     expect(calls).toContainEqual([
@@ -194,7 +202,8 @@ test("offline Gmail search leaves cached rows usable and offers a retry", async 
   expect(await screen.findByText("Cached invoice")).toBeInTheDocument();
   const retry = await screen.findByRole("button", { name: "Retry Gmail" });
   expect(screen.getByText("Cached invoice")).toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("Gmail search incomplete");
+  expect(screen.getByRole("status")).toContainElement(retry);
+  expect(retry).toHaveAttribute("title", "Gmail search incomplete: No connection");
   remote = () => gmail(row("Recovered match"));
   fireEvent.click(retry);
   expect(await screen.findByText("Recovered match")).toBeInTheDocument();
@@ -230,4 +239,74 @@ test("Escape from results clears selection first, then returns to the mailbox", 
   fireEvent.keyDown(window, { key: "Escape" });
   expect(input()).toHaveValue("");
   expect(await screen.findByText("Previous mailbox")).toBeInTheDocument();
+});
+
+test("starting a search adds nothing under the search box, and Unread only stays as is:unread", async () => {
+  render(<Harness />);
+  await screen.findByText("Previous mailbox");
+  // The box's own buttons swap (the shortcut for Clear); the rows around it must not change.
+  const pane = document.querySelector(".list-pane")!;
+  const rows = (el: Element) => [...el.children].map((c) => c.className).join();
+  const shape = () => `${rows(pane)} | ${rows(pane.querySelector(".mail-search")!)}`;
+  const idle = shape();
+  type("invoice");
+  await screen.findByText("Cached invoice");
+  fireEvent.blur(input());
+  expect(shape()).toBe(idle);
+  expect(screen.queryByRole("combobox", { name: "Search accounts" })).not.toBeInTheDocument();
+
+  const unread = screen.getByRole("button", { name: "Unread only" });
+  expect(unread).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(unread);
+  expect(input()).toHaveValue("invoice is:unread");
+  expect(unread).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(unread);
+  expect(input()).toHaveValue("invoice");
+});
+
+test("Search options reads the search into fields and writes the form back", async () => {
+  render(<Harness />);
+  type("invoice from:amy -draft");
+  await screen.findByText("Cached invoice");
+  fireEvent.click(screen.getByRole("button", { name: "Search options" }));
+  const options = screen.getByRole("dialog", { name: "Search options" });
+  expect(within(options).getByRole("textbox", { name: "From" })).toHaveValue("amy");
+  expect(within(options).getByRole("textbox", { name: "Has the words" })).toHaveValue("invoice");
+  expect(within(options).getByRole("textbox", { name: "Doesn't have" })).toHaveValue("draft");
+  fireEvent.change(within(options).getByRole("textbox", { name: "Subject" }), {
+    target: { value: "q3 plan" },
+  });
+  fireEvent.click(within(options).getByRole("checkbox", { name: "Attachment" }));
+  fireEvent.click(within(options).getByRole("checkbox", { name: "Unread" }));
+  fireEvent.click(within(options).getByRole("combobox", { name: "Search in" }));
+  fireEvent.click(screen.getByRole("option", { name: "Sent" }));
+  fireEvent.submit(options);
+  expect(input()).toHaveValue(
+    'from:amy subject:"q3 plan" invoice -draft in:sent is:unread has:attachment',
+  );
+  await vi.waitFor(() =>
+    expect(calls).toContainEqual([
+      "search_messages",
+      expect.objectContaining({
+        query: 'from:amy subject:"q3 plan" invoice -draft in:sent is:unread has:attachment',
+      }),
+    ]),
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Search options" }));
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Search options" }), { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "Search options" })).not.toBeInTheDocument();
+});
+
+test("the box suggests operators and their values, completed with Tab or a click", async () => {
+  render(<Harness />);
+  fireEvent.focus(input());
+  type("invoice ha");
+  const suggestions = await screen.findByRole("region", { name: "Search suggestions" });
+  expect(within(suggestions).getByRole("button", { name: /^has:/ })).toBeInTheDocument();
+  fireEvent.keyDown(input(), { key: "Tab" });
+  expect(input()).toHaveValue("invoice has:");
+  type("invoice has:att");
+  fireEvent.click(await screen.findByRole("button", { name: /^has:attachment/ }));
+  expect(input()).toHaveValue("invoice has:attachment ");
 });

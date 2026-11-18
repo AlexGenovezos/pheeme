@@ -205,6 +205,15 @@ body[data-resizing] .shell__divider:active::after {
   font-variant-numeric: tabular-nums;
 }
 
+/* "12 results in someone@example.com" gives way before the Unread only button does. */
+.toolbar__subtitle--search {
+  flex-shrink: 1;
+  min-width: var(--space-0);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .toolbar__spacer {
   flex: 1;
   align-self: stretch;
@@ -252,6 +261,10 @@ body[data-resizing] .shell__divider:active::after {
   padding: var(--space-0) var(--space-3) var(--space-2);
   color: var(--color-foreground-muted);
   font-size: var(--font-size-sm);
+}
+.list-pane__count {
+  display: flex;
+  min-width: var(--space-0);
 }
 .list-pane__controls .ui-button {
   color: var(--color-foreground-muted);

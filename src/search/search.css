@@ -1,20 +1,11 @@
 .mail-search {
   position: relative;
 }
-.mail-search__scope,
+/* Lives in the list's controls row while searching (ListPane), so nothing moves when a search starts. */
 .mail-search__status {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  min-height: var(--control-height-lg);
-  color: var(--color-foreground-muted);
-  font-size: var(--font-size-xs);
-}
-.mail-search__account {
-  flex: 1;
-}
-.mail-search__status {
-  justify-content: space-between;
+  min-width: var(--space-0);
 }
 .mail-search__status > span {
   overflow: hidden;
@@ -24,7 +15,7 @@
 .mail-search__recent {
   position: absolute;
   inset-inline: var(--space-0);
-  top: calc(var(--control-height-md) + var(--control-height-lg));
+  top: calc(var(--control-height-md) + var(--space-1));
   z-index: var(--z-popover);
   max-height: var(--palette-list-max-height);
   overflow-y: auto;
@@ -53,6 +44,14 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.mail-search__operator {
+  font-family: var(--font-family-mono);
+}
+.mail-search__hint {
+  margin-inline-start: var(--space-2);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}
 .mail-search__suggestion:hover,
 .mail-search__suggestion:focus-visible {
   background: var(--color-control-hover-bg);
@@ -60,4 +59,75 @@
 /* The labelled Clear search button owns this action on every platform. */
 .mail-search input::-webkit-search-cancel-button {
   display: none;
+}
+
+.search-options {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: var(--search-options-width);
+  max-width: calc(100% - var(--space-4));
+  max-height: calc(100% - var(--space-4));
+  padding: var(--space-4);
+  font-size: var(--font-size-sm);
+}
+.search-options__title {
+  margin: var(--space-0);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
+/* Label, control, label, control: Gmail's own advanced search reads the same way. Only the fields
+   scroll, so the title and Search stay in view on a short window. */
+.search-options__grid {
+  display: grid;
+  grid-template-columns: max-content minmax(var(--space-0), 1fr) max-content minmax(
+      var(--space-0),
+      1fr
+    );
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  min-height: var(--space-0);
+  overflow-y: auto;
+}
+.search-options__label {
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.search-options__control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: var(--space-0);
+}
+.search-options__control > .ui-input,
+.search-options__control > button:first-child {
+  flex: 1;
+  min-width: var(--space-0);
+}
+.search-options__control > button.search-options__fixed {
+  flex: none;
+}
+.search-options__wide {
+  grid-column: span 3;
+}
+.search-options__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.search-options__check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.search-options__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.search-options__spacer {
+  flex: 1;
 }

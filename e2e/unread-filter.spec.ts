@@ -111,8 +111,14 @@ test("unread filtering survives reading and mailbox changes, and stays separate 
   await expect(rows.first()).toBeVisible();
   await expect(statement).toHaveCount(0);
 
-  await page.getByRole("searchbox", { name: "Search mail" }).fill("statement");
-  await expect(toggle).toHaveCount(0);
+  // While searching it stays in place and means the search's own is:unread, off until pressed.
+  const box = page.getByRole("searchbox", { name: "Search mail" });
+  await box.fill("statement");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await toggle.click();
+  await expect(box).toHaveValue("statement is:unread");
+  await toggle.click();
+  await expect(box).toHaveValue("statement");
   await page.getByRole("button", { name: "Clear search", exact: true }).click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await expect(statement).toHaveCount(0);
