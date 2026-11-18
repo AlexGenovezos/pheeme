@@ -28,7 +28,7 @@ import {
   homeMailbox,
   resolveActiveAccount,
 } from "../mail/mailboxes";
-import { mailboxInAccount, nextInbox } from "../shell/sidebar/rail";
+import { mailboxInAccount, nextInbox } from "../shell/sidebar/accountSwitch";
 import { usePaletteStore } from "../palette/paletteStore";
 import { useSettingsStore } from "../settings/settingsStore";
 import { speedReadOpenConversation } from "../speedread/open";
@@ -120,7 +120,7 @@ export function appCommands(): Command[] {
       shortcut: DEFAULT_KEYS[by === 1 ? "go.next-inbox" : "go.previous-inbox"],
       keywords: ["account", "switch", "all inboxes", "cycle"],
       global: true,
-      // All Inboxes, then each account in order, landing where picking it on the account rail does.
+      // All Inboxes, then each account in order, keeping the same Inbox tab or favorite where it can.
       run: () => {
         const { mailbox, setMailbox } = ui();
         const ids = accounts().map((a) => a.id);

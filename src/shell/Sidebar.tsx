@@ -44,8 +44,7 @@ import {
 import { Section } from "./sidebar/Section";
 import { NO_COUNTS, sameMailbox } from "./sidebar/shared";
 import { SidebarFooter } from "./SidebarFooter";
-import { useAccountIndicators, useRailShown } from "./accountIndicators";
-import { AccountRail } from "./sidebar/AccountRail";
+import { useAccountIndicators } from "./accountIndicators";
 import { Button } from "../components/ui/Button";
 import { describeShortcut } from "../keyboard/format";
 
@@ -302,7 +301,6 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   const errors = useAccountStore((s) => s.syncErrors);
   const sidebarShortcut = useKeybinding("view.toggleSidebar");
   const glow = useAccountIndicators((s) => s.glow);
-  const rail = useRailShown();
   // The account whose mailbox is open; null in All Inboxes, which is every account.
   const current = useUiStore((s) => s.mailbox.accountId);
   const composeShortcut = useKeybinding("compose.new");
@@ -310,10 +308,6 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
   const activeId = resolveActiveAccount(storedActive, accounts);
   const active = accounts.find((a) => a.id === activeId);
   const single = accounts.length === 1 ? accounts[0] : null;
-  // With the rail, the sidebar shows the account picked there alone, the way it shows a single account.
-  const shown = single ?? (rail ? (accounts.find((a) => a.id === current) ?? null) : null);
-  // The account whose Favorites and labels show.
-  const folders = rail ? shown : active;
 
   // With one account there is no All Inboxes row, so its Primary stands in for it.
   useEffect(() => {
@@ -339,7 +333,7 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
     },
   ]);
 
-  const sidebar = (
+  return (
     <div className="sidebar">
       <div className="toolbar toolbar--sidebar" {...dragRegion}>
         <span className="toolbar__spacer" {...dragRegion} />
@@ -351,30 +345,6 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
           onClick={toggleSidebar}
         />
       </div>
-
-      {rail && (
-        <div
-          className="sidebar__current-account"
-          title={shown?.email ?? "All Inboxes"}
-          style={
-            shown
-              ? ({
-                  "--account-color": `var(--color-account-${accountColorIndex(shown.id, accounts)})`,
-                } as CSSProperties)
-              : undefined
-          }
-        >
-          {shown ? (
-            <AccountColorButton
-              accountId={shown.id}
-              color={accountColorIndex(shown.id, accounts)}
-            />
-          ) : (
-            <Mails aria-hidden="true" />
-          )}
-          <span className="sidebar__account-email">{shown?.email ?? "All Inboxes"}</span>
-        </div>
-      )}
 
       <div className="sidebar__compose">
         <Button
@@ -393,8 +363,8 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
 
       <nav className="sidebar__scroll" aria-label="Mailboxes" onKeyDown={onMailboxKeyDown}>
         <Section title="Inboxes">
-          {shown ? (
-            <CategoryRows accountId={shown.id} />
+          {single ? (
+            <CategoryRows accountId={single.id} />
           ) : (
             <>
               <MailboxRow
@@ -417,21 +387,13 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
             </>
           )}
         </Section>
-        {/* With the rail, the shown account's; none in All Inboxes (pick an account on the rail). */}
-        {folders && <Favorites accountId={folders.id} />}
-        {folders && <LabelsSection accountId={folders.id} />}
+        {active && <Favorites accountId={active.id} />}
+        {active && <LabelsSection accountId={active.id} />}
       </nav>
 
       <ModSidebar />
       <NotificationOffer />
       <SidebarFooter onAddAccount={onAddAccount} />
-    </div>
-  );
-  if (!rail) return sidebar;
-  return (
-    <div className="sidebar-frame">
-      <AccountRail accounts={accounts} />
-      {sidebar}
     </div>
   );
 }

@@ -39,7 +39,7 @@ export const removeAccount = (accountId: string) => call("remove_account", { acc
 /** Draws the account in colour `color` (1–12). */
 export const setAccountColor = (accountId: string, color: number) =>
   call("set_account_color", { accountId, color });
-/** Lists the accounts in this order from now on (the sidebar, the rail, Settings). */
+/** Lists the accounts in this order from now on (the sidebar, Settings). */
 export const reorderAccounts = (accountIds: string[]) => call("reorder_accounts", { accountIds });
 /** Opens an allow-listed https URL (Google, Pheeme) in the default browser. */
 export const openExternal = (url: string) => call("open_external", { url });

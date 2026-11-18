@@ -129,7 +129,6 @@ const GlowControl = () => (
 const WindowColorControl = () => (
   <AccountIndicatorControl setting="windowColor" label="Account color across the window" />
 );
-const RailControl = () => <AccountIndicatorControl setting="rail" label="Account rail" />;
 
 function ReadingPaneControl() {
   const shown = useUiStore((s) => s.readingPane);
@@ -370,22 +369,6 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
               "A stripe of the account's color along the top of the window, and a tint behind the list's title.",
             keywords: ["accounts", "multiple accounts", "color", "stripe", "which account", "tint"],
             Control: WindowColorControl,
-          },
-          {
-            id: "account.rail",
-            title: "Account rail",
-            description:
-              "Your accounts as icons beside the sidebar, each with its unread count. The sidebar shows the account you pick there.",
-            keywords: [
-              "accounts",
-              "multiple accounts",
-              "switcher",
-              "switch account",
-              "icons",
-              "which account",
-              "sidebar",
-            ],
-            Control: RailControl,
           },
         ],
       },

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { ALL_INBOXES, categoryMailbox } from "../../mail/mailboxes";
-import { mailboxInAccount, nextInbox } from "./rail";
+import { mailboxInAccount, nextInbox } from "./accountSwitch";
 
 const TABS = ["CATEGORY_PERSONAL", "CATEGORY_UPDATES"];
 

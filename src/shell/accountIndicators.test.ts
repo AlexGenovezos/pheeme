@@ -11,12 +11,12 @@ const stored = (value: string | null) => ({
 
 test("Glow is on and the rest off until changed", () => {
   expect(readAccountIndicators(stored(null))).toEqual(DEFAULT_ACCOUNT_INDICATORS);
-  expect(DEFAULT_ACCOUNT_INDICATORS).toEqual({ glow: true, windowColor: false, rail: false });
+  expect(DEFAULT_ACCOUNT_INDICATORS).toEqual({ glow: true, windowColor: false });
 });
 
 test("reads stored choices, ignoring anything malformed", () => {
   expect(
     readAccountIndicators(stored(JSON.stringify({ glow: false, rail: true, windowColor: "yes" }))),
-  ).toEqual({ glow: false, windowColor: false, rail: true });
+  ).toEqual({ glow: false, windowColor: false });
   expect(readAccountIndicators(stored("not json"))).toEqual(DEFAULT_ACCOUNT_INDICATORS);
 });
