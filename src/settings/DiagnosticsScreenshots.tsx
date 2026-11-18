@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useRef, useState, type DragEvent, type RefOb
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { Skeleton } from "../components/ui/Skeleton";
+import { base64Of } from "../lib/base64";
 import { createSubscriptionScope } from "../lib/subscriptions";
 import { prepareScreenshot, toCommandError, type PreparedScreenshot } from "../lib/tauri";
 import { isTauri } from "../preview/runtime";
@@ -15,15 +16,6 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024;
 type Slot = { id: number; shot: PreparedScreenshot | null };
 /** A file from a paste, the picker or a drop in the browser preview; a path from a drop in the app. */
 type Source = Blob | string;
-
-async function base64Of(file: Blob): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary);
-}
 
 /** The image files on a clipboard or in a drop. */
 function imageFiles(data: DataTransfer | null): File[] {

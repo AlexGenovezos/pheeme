@@ -466,6 +466,15 @@ impl ComposeService {
         self.staging.stage_file(path).await
     }
 
+    pub async fn stage_pasted(
+        &self,
+        name: &str,
+        mime_type: &str,
+        bytes: &[u8],
+    ) -> Result<StagedAttachment, MailError> {
+        self.staging.stage_pasted(name, mime_type, bytes).await
+    }
+
     /// Drop files staged for a message that won't be opened after all.
     async fn discard_staged(&self, staged: &[StagedAttachment]) {
         let ids: Vec<String> = staged.iter().map(|a| a.id.clone()).collect();

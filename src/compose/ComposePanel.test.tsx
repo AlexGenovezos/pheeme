@@ -522,3 +522,32 @@ test("a failed autosave shows Not saved in the footer, in the place Draft saved 
   await act(async () => void (await useComposeStore.getState().save(1, { quiet: true })));
   expect(status).toHaveTextContent("Draft saved");
 });
+
+test("pasting a screenshot into the message attaches it; pasting text still types it", async () => {
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+    if (cmd === "stage_pasted_attachment")
+      return { id: "s1", filename: "image.png", mimeType: "image/png", size: 4, contentId: null };
+    return undefined;
+  });
+  const panel = await openNew();
+  const body = await within(panel).findByRole("textbox", { name: "Message" });
+  const png = new File([new Uint8Array([137, 80, 78, 71])], "image.png", { type: "image/png" });
+  fireEvent.paste(body, { clipboardData: { files: [png], types: ["Files"], getData: () => "" } });
+
+  expect(await within(panel).findByText("image.png")).toBeTruthy();
+  expect(calls.filter((c) => c.cmd === "stage_pasted_attachment").map((c) => c.args)).toEqual([
+    { filename: "image.png", mimeType: "image/png", data: "iVBORw==" },
+  ]);
+
+  fireEvent.paste(body, {
+    clipboardData: {
+      files: [png],
+      types: ["text/plain", "Files"],
+      getData: (t: string) => (t === "text/plain" ? "Q3 numbers" : ""),
+    },
+  });
+  expect(await within(panel).findByText(/Q3 numbers/)).toBeTruthy();
+  expect(useComposeStore.getState().windows[0].attaching).toBe(0);
+  expect(calls.filter((c) => c.cmd === "stage_pasted_attachment")).toHaveLength(1);
+});
