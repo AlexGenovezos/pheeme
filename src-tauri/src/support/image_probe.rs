@@ -59,6 +59,8 @@ impl ImageProbe {
 pub fn client() -> reqwest::Client {
     crate::http::client_builder()
         .referer(false)
+        // A proxy would resolve the name itself, past `PublicOnly`.
+        .no_proxy()
         .dns_resolver(Arc::new(PublicOnly))
         .redirect(redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= MAX_REDIRECTS {
@@ -168,8 +170,16 @@ async fn probe(
     deadline: tokio::time::Instant,
 ) -> ImageProbe {
     let start = Instant::now();
-    let until = deadline.min(tokio::time::Instant::now() + PROBE_TIMEOUT);
-    let result = tokio::time::timeout_at(until, fetch(client, &url)).await;
+    let now = tokio::time::Instant::now();
+    let until = deadline.min(now + PROBE_TIMEOUT);
+    // Queued behind slow ones until the batch's time ran out: not sent at all.
+    let result = if until <= now {
+        None
+    } else {
+        tokio::time::timeout_at(until, fetch(client, &url))
+            .await
+            .ok()
+    };
     let ms = start.elapsed().as_millis() as u64;
     let mut out = ImageProbe {
         url,
@@ -180,13 +190,13 @@ async fn probe(
         ms,
     };
     match result {
-        Err(_) => out.error = Some("timeout".into()),
-        Ok(Err((status, content_type, error))) => {
+        None => out.error = Some("timeout".into()),
+        Some(Err((status, content_type, error))) => {
             out.status = status;
             out.content_type = content_type;
             out.error = Some(error);
         }
-        Ok(Ok((status, content_type, bytes))) => {
+        Some(Ok((status, content_type, bytes))) => {
             out.status = Some(status);
             out.content_type = content_type;
             out.bytes = Some(bytes);
