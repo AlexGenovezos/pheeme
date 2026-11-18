@@ -142,7 +142,11 @@ export function useCalendarColor(accountId: string, calendar: CalendarInfo) {
   const [pending, setPending] = useState<string | null>(null);
   const { state: signIn, start, cancel } = useSignIn();
 
+  // One save at a time, so an older pick can't land on Google after a newer one.
+  const busy = useRef(false);
   const save = async (color: string) => {
+    if (busy.current) return;
+    busy.current = true;
     setSaving("saving");
     try {
       await useCalendarStore.getState().setColor(accountId, calendar.id, color);
@@ -158,6 +162,8 @@ export function useCalendarColor(accountId: string, calendar: CalendarInfo) {
       setSaving("idle");
       setPending(null);
       toastError(e);
+    } finally {
+      busy.current = false;
     }
   };
 

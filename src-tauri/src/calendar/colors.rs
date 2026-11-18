@@ -33,6 +33,9 @@ impl CalendarService {
                 CalendarError::NotFound => gone(),
                 e => e,
             })?;
+        // Holds off sync, so a calendar list it read before the change can't cache the old colour after.
+        let gate = self.poller.gate(account_id);
+        let _held = gate.lock().await;
         let entry = (self.api_for)(account_id)
             .set_calendar_color(
                 calendar_id,

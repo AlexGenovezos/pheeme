@@ -194,7 +194,7 @@ pub struct CalendarService {
     pub(super) db: SqlitePool,
     pub(super) api_for: CalendarFactory,
     pub(super) events: Arc<dyn SyncEvents>,
-    poller: Poller,
+    pub(super) poller: Poller,
 }
 
 impl CalendarService {

@@ -107,3 +107,14 @@ test("without access it asks once, then saves the colour it was given", async ()
   expect(shown()).toBe("#4986e7");
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+test("a second pick waits for the first to be saved", async () => {
+  render(<Row />);
+  fireEvent.click(screen.getByRole("button", { name: "Colour of Team" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Blue" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Red" }));
+  await settle();
+
+  expect(saves.map((s) => s.background)).toEqual(["#4986e7"]);
+  expect(shown()).toBe("#4986e7");
+});
