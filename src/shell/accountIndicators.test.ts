@@ -16,7 +16,7 @@ test("Glow is on and the rest off until changed", () => {
 
 test("reads stored choices, ignoring anything malformed", () => {
   expect(
-    readAccountIndicators(stored(JSON.stringify({ glow: false, windowColor: "yes" }))),
+    readAccountIndicators(stored(JSON.stringify({ glow: false, rail: true, windowColor: "yes" }))),
   ).toEqual({ glow: false, windowColor: false });
   expect(readAccountIndicators(stored("not json"))).toEqual(DEFAULT_ACCOUNT_INDICATORS);
 });
