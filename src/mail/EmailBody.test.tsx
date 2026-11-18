@@ -563,3 +563,40 @@ test("marks images that failed to load once the frame finishes loading", () => {
   expect(broken("failed")).toBe(true);
   expect(broken("pending")).toBe(false);
 });
+
+test("fetches a failed remote image again and shows it once it loads", () => {
+  vi.useFakeTimers();
+  const made: { src: string; onload: (() => void) | null }[] = [];
+  vi.stubGlobal(
+    "Image",
+    class {
+      src = "";
+      referrerPolicy = "";
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor() {
+        made.push(this);
+      }
+    },
+  );
+  try {
+    render(<EmailBody message={message()} />);
+    const doc = frame().contentDocument!;
+    doc.body.innerHTML = '<img id="remote" src="https://example.com/deal.png" alt="Deals">';
+    const image = doc.getElementById("remote")!;
+    Object.defineProperty(image, "complete", { configurable: true, value: true });
+    Object.defineProperty(image, "naturalWidth", { configurable: true, value: 0 });
+
+    fireEvent.load(frame());
+    expect(image.hasAttribute("data-pheeme-broken")).toBe(true);
+    act(() => vi.advanceTimersByTime(2_000));
+    expect(made.map((m) => m.src)).toEqual(["https://example.com/deal.png"]);
+
+    act(() => made[0].onload?.());
+    expect(image.hasAttribute("data-pheeme-broken")).toBe(false);
+    expect(image.getAttribute("data-pheeme-retries")).toBe("1");
+  } finally {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  }
+});

@@ -33,6 +33,8 @@ export interface DiagnosticsEmail {
   accountId: string;
   threadId: string;
   images: DiagnosticsImage[];
+  /** `navigator.onLine` when Send was pressed. */
+  online: boolean;
 }
 /** One `<img>` in the email's frames, as the window saw it. */
 export interface DiagnosticsImage {
@@ -43,6 +45,8 @@ export interface DiagnosticsImage {
   naturalWidth: number;
   naturalHeight: number;
   loading: string;
+  /** How many times the window fetched it again after it failed (`src/mail/imageRetry.ts`). */
+  retries: number;
 }
 /** Updater steps the UI saw; `log_update` in Rust writes them to the diagnostics log. */
 export type UpdateEvent =

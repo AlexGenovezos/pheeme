@@ -1,5 +1,6 @@
 import { useCalendarStore } from "../calendar/calendarStore";
 import type { DiagnosticsEmail, DiagnosticsImage } from "../lib/tauri";
+import { IMAGE_RETRIES } from "../mail/imageRetry";
 import { parseThreadKey, type ThreadKey } from "../mail/mailboxes";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
@@ -38,11 +39,16 @@ export function imagesOnScreen(doc: Document = document): DiagnosticsImage[] {
       naturalWidth: img.naturalWidth,
       naturalHeight: img.naturalHeight,
       loading: img.getAttribute("loading") ?? "",
+      retries: Number(img.getAttribute(IMAGE_RETRIES)) || 0,
     }));
   });
 }
 
 /** The request the backend reads the email from, with the images as they are at this moment. */
 export function emailRequest(key: ThreadKey, doc: Document = document): DiagnosticsEmail {
-  return { ...parseThreadKey(key), images: imagesOnScreen(doc) };
+  return {
+    ...parseThreadKey(key),
+    images: imagesOnScreen(doc),
+    online: doc.defaultView?.navigator.onLine ?? true,
+  };
 }

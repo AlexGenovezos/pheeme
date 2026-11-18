@@ -153,7 +153,7 @@ export function DiagnosticsSection() {
               <div className="settings-diagnostics__email-text">
                 <span className="settings-diagnostics__label">Include the email on screen</span>
                 <span className="settings-diagnostics__sender">
-                  {`“${onScreen.subject || "(no subject)"}”: its text, sender and image addresses go to the developer too, so they can see why it looks wrong.`}
+                  {`“${onScreen.subject || "(no subject)"}”: its text, sender and image addresses go to the developer too, so they can see why it looks wrong. Images that didn’t load are fetched once more to see why.`}
                 </span>
               </div>
             </div>
