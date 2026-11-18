@@ -52,6 +52,8 @@ export interface PopoverOptions {
   focusIn?(panel: HTMLElement | null): HTMLElement | null | undefined;
   /** Where focus goes when it closes; the element focused when it opened when this is left out. */
   returnFocus?: HTMLElement | null;
+  /** Targets outside the panel that don't close it (a list a field in it opened, the button that toggles it). */
+  ignore?(target: Node): boolean;
 }
 
 /**
@@ -66,10 +68,11 @@ export function usePopover({
   closeOnBlur = true,
   focusIn,
   returnFocus,
+  ignore,
 }: PopoverOptions) {
   const [pos, setPos] = useState(at);
   const opener = useRef<HTMLElement | null>(null);
-  const latest = useLatest({ onClose, focusIn });
+  const latest = useLatest({ onClose, focusIn, ignore });
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -96,6 +99,7 @@ export function usePopover({
   useDismiss(ref, {
     onOutside: () => latest.current.onClose(),
     onBlur: closeOnBlur ? () => latest.current.onClose() : undefined,
+    ignore: (target) => latest.current.ignore?.(target) ?? false,
   });
 
   return { pos, opener };

@@ -25,7 +25,8 @@ import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useMailStore } from "../store/mailStore";
 import { sidebarLayout, unreadOnlyFor, useUiStore } from "../store/uiStore";
-import { SearchBar, SEARCH_INPUT_ID } from "../search/SearchBar";
+import { hasTerm, toggleTerm } from "../search/operators";
+import { SearchBar, SearchStatus, SEARCH_INPUT_ID } from "../search/SearchBar";
 import { dragRegion } from "./chrome";
 import { DEFAULT_KEYS } from "../keyboard/defaultKeys";
 export { SEARCH_INPUT_ID };
@@ -109,6 +110,16 @@ export function ListPane() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
 
   const accountIds = useAccountStore((s) => s.accounts.map((a) => a.id).join("\n"));
+  const scopeEmail = useAccountStore((s) =>
+    s.accounts.length > 1 ? s.accounts.find((a) => a.id === searchAccountId)?.email : undefined,
+  );
+  // While searching, Unread only is the search's own `is:unread`, so the button stays where it is.
+  const unreadPressed = searchText ? hasTerm(searchText, "is", "unread") : unreadOnly;
+  const onUnreadOnly = () => {
+    if (!searchText) return toggleUnreadOnly();
+    const ui = useUiStore.getState();
+    ui.setSearch(toggleTerm(ui.searchText.trim(), "is", "unread", !unreadPressed));
+  };
   const threads = useMailStore((s) => s.threads);
 
   // Refetched when the mailbox or the accounts change.
@@ -237,7 +248,11 @@ export function ListPane() {
           {title}
         </h1>
         {searchText ? (
-          <span className="toolbar__subtitle" aria-live="polite">
+          <span
+            className="toolbar__subtitle toolbar__subtitle--search"
+            title={scopeEmail && `Searching ${scopeEmail} only`}
+            aria-live="polite"
+          >
             {threads.length}
             {next ||
             loading ||
@@ -248,6 +263,7 @@ export function ListPane() {
               ? "+"
               : ""}{" "}
             {threads.length === 1 ? "result" : "results"}
+            {scopeEmail && ` in ${scopeEmail}`}
           </span>
         ) : (
           // Always there, so the count arriving doesn't move the title row.
@@ -255,17 +271,15 @@ export function ListPane() {
             {unread === null ? <Skeleton width="5em" /> : unread > 0 ? `${unread} unread` : null}
           </span>
         )}
-        {!searchText && (
-          <Button
-            size="sm"
-            variant={unreadOnly ? "primary" : "secondary"}
-            className="toolbar__unread-toggle"
-            aria-pressed={unreadOnly}
-            onClick={toggleUnreadOnly}
-          >
-            Unread only
-          </Button>
-        )}
+        <Button
+          size="sm"
+          variant={unreadPressed ? "primary" : "secondary"}
+          className="toolbar__unread-toggle"
+          aria-pressed={unreadPressed}
+          onClick={onUnreadOnly}
+        >
+          Unread only
+        </Button>
       </div>
 
       <div className="list-pane__search">
@@ -290,8 +304,9 @@ export function ListPane() {
         >
           {anyChecked ? "Clear selection" : "Select all"}
         </Button>
-        <span>
+        <span className="list-pane__count">
           <span aria-live="polite">{anyChecked ? `${checkedCount} selected` : ""}</span>
+          {searchText && <SearchStatus />}
           {!anyChecked &&
             !searchText &&
             (threads.length === 0 && loading ? (

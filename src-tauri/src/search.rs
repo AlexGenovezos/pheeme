@@ -99,6 +99,7 @@ const OPERATORS: &[&str] = &[
     "list",
     "deliveredto",
     "rfc822msgid",
+    "header",
 ];
 
 fn is_operator(key: &str) -> bool {
@@ -449,6 +450,12 @@ mod tests {
             "larger:big",
             "\"unclosed",
             "list:foo",
+            "header:X-Mailer:Pheeme",
+            "in:archive",
+            "is:muted",
+            "has:yellow-star",
+            "has:nouserlabels",
+            "category:purchases",
         ] {
             assert_eq!(parse(q, NOW), None, "{q}");
         }
