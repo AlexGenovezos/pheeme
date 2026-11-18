@@ -14,6 +14,10 @@ ignore = [
   # and Info.plist, never mail or other outside input.
   { id = "RUSTSEC-2026-0194", reason = "plist via Tauri reads only our own files" },
   { id = "RUSTSEC-2026-0195", reason = "plist via Tauri reads only our own files" },
+  # chrono and chrono-tz were declared unmaintained (no known vulnerability). rrule and file-rotate
+  # are built on chrono, so moving to jiff means replacing them too; a job for its own PR.
+  { id = "RUSTSEC-2026-0543", reason = "unmaintained, not vulnerable; rrule and file-rotate need chrono" },
+  { id = "RUSTSEC-2026-0555", reason = "unmaintained, not vulnerable; rrule needs chrono-tz" },
 ]
 
 [licenses]
