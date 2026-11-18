@@ -14,10 +14,14 @@
   pointer-events: none;
 }
 
-/* Toasts move to the left while a panel covers the bottom-right corner. */
+/* Toasts stack just above the panels in the bottom-right corner (on the left they'd cover the
+   sidebar footer). An open panel always leaves the title bar's height free above it, even in a
+   short window, so a one-line toast never covers its fields. */
 :root:has(.compose-dock[data-open]) .ui-toast-viewport {
-  inset-inline-end: auto;
-  inset-inline-start: var(--space-4);
+  inset-block-end: calc(var(--compose-header-height) + var(--space-2));
+}
+:root:has(.compose:not(.compose--minimized)) .ui-toast-viewport {
+  inset-block-end: calc(min(var(--compose-height), var(--compose-max-height)) + var(--space-2));
 }
 
 .compose-dock__slot {
