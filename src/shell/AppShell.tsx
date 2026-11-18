@@ -10,7 +10,7 @@ import { PANE, useUiStore } from "../store/uiStore";
 import { ChordHint } from "./ChordHint";
 import { overlayTitleBar } from "./chrome";
 import { useSidebarFit } from "./sidebarFit";
-import { useRailShown, useWindowColor } from "./accountIndicators";
+import { useWindowColor } from "./accountIndicators";
 import { Divider } from "./Divider";
 import { ListPane } from "./ListPane";
 import { Sidebar } from "./Sidebar";
@@ -38,7 +38,6 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
   const { setSidebarWidth, setListWidth, resetSidebarWidth, resetListWidth } =
     useUiStore.getState();
 
-  const rail = useRailShown() ? PANE.rail : 0;
   const windowColor = useWindowColor();
 
   const width = useWidth(ref);
@@ -55,9 +54,8 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
     aside,
     width,
     readingPane ? PANE.listMin + PANE.viewMin : PANE.viewMin,
-    rail,
   );
-  const listSpace = width > 0 ? width - (layout === "expanded" ? sidebarWidth + rail : 0) : 0;
+  const listSpace = width > 0 ? width - (layout === "expanded" ? sidebarWidth : 0) : 0;
   const listMax =
     listSpace > 0
       ? Math.max(PANE.listMin, listSpace - PANE.viewMin)
@@ -67,8 +65,7 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
   const renderedListWidth = Math.min(Math.max(listWidth, PANE.listMin), listMax);
 
   const style = {
-    "--shell-sidebar-w": `${sidebarWidth + rail}px`,
-    "--shell-rail-w": `${rail}px`,
+    "--shell-sidebar-w": `${sidebarWidth}px`,
     ...(windowColor && { "--shell-account-color": windowColor }),
     "--shell-list-w": `${listWidth}px`,
     "--shell-list-min": `${PANE.listMin}px`,

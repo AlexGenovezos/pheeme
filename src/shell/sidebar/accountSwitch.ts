@@ -1,7 +1,7 @@
 import { categoryMailbox, FAVORITES, type MailboxRef } from "../../mail/mailboxes";
 
 /**
- * Where picking `accountId` on the account rail goes from `ref`: the same mailbox in that account when it has one
+ * Where switching to `accountId` (Ctrl+Tab) goes from `ref`: the same mailbox in that account when it has one
  * (an Inbox tab it shows, a favorite), else its first tab. `tabs` are the account's shown Inbox tabs, Primary first.
  */
 export function mailboxInAccount(ref: MailboxRef, accountId: string, tabs: string[]): MailboxRef {

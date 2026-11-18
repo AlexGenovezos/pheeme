@@ -218,15 +218,4 @@ describe("current account", () => {
     act(() => useAccountIndicators.getState().set("windowColor", false));
     expect(shell(container)).not.toHaveAttribute("data-account-color");
   });
-
-  test("the account rail widens the sidebar by its own width", () => {
-    const { container } = render(<AppShell />);
-    expect(shell(container).style.getPropertyValue("--shell-sidebar-w")).toBe(
-      `${PANE.sidebarDefault}px`,
-    );
-    act(() => useAccountIndicators.getState().set("rail", true));
-    expect(shell(container).style.getPropertyValue("--shell-sidebar-w")).toBe(
-      `${PANE.sidebarDefault + PANE.rail}px`,
-    );
-  });
 });

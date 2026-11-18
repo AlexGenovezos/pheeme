@@ -90,12 +90,6 @@
   /* Account color across the window: the stripe along the top and the list title's tint. */
   --account-edge-height: 3px;
   --account-window-tint: 8%;
-  /* Account rail: one icon per account beside the sidebar (its column width is PANE.rail). */
-  --account-rail-icon-size: 30px;
-  --account-rail-tint: 16%;
-  --account-rail-hover-tint: 26%;
-  --account-rail-ring: 2px;
-  --account-rail-badge-height: 15px;
   --label-dot-size: 6px;
   --sidebar-label-dot-size: 8px;
   --label-swatch-size: 20px;

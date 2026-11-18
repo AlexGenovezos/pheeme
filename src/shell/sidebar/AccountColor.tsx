@@ -1,5 +1,5 @@
 // An account's colour: its dot in the sidebar opens twelve swatches, and the one picked recolours the account
-// everywhere it shows (the dot, the rail, the All Inboxes stripe). Saved with the account, on this computer.
+// everywhere it shows (the dot, the All Inboxes stripe). Saved with the account, on this computer.
 import { type KeyboardEvent, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePopover } from "../../components/ui/usePopover";
