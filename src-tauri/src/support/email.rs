@@ -3,7 +3,7 @@
 //! metadata) and what the window saw of each image. Unlike the logs it isn't scrubbed; that's the point
 //! of including it. Written under `email/` in the zip.
 
-use super::SupportError;
+use super::{image_probe, SupportError};
 use crate::accounts::AccountInfo;
 use crate::db::{attachments, messages};
 use crate::render;
@@ -24,6 +24,9 @@ pub struct EmailRequest {
     /// Every image in the expanded messages' frames, as the window saw it when Send was pressed.
     #[serde(default)]
     pub images: Vec<ImageState>,
+    /// `navigator.onLine` when Send was pressed (older windows don't send it).
+    #[serde(default)]
+    pub online: Option<bool>,
 }
 
 /// One `<img>` in an email frame (`src/settings/emailOnScreen.ts`).
@@ -40,6 +43,9 @@ pub struct ImageState {
     pub natural_width: u32,
     pub natural_height: u32,
     pub loading: String,
+    /// How many times the window fetched it again after it failed (`src/mail/imageRetry.ts`).
+    #[serde(default)]
+    pub retries: u32,
 }
 
 pub struct EmailFiles {
@@ -50,10 +56,13 @@ pub struct EmailFiles {
 }
 
 /// Read the conversation from the cache. Only an account that is signed in here can be read.
+/// With a `probe` client, the images that failed in the window are fetched again from here
+/// ([`image_probe`]); tests leave it out.
 pub async fn collect(
     db: &SqlitePool,
     accounts: &[AccountInfo],
     request: &EmailRequest,
+    probe: Option<&reqwest::Client>,
 ) -> Result<EmailFiles, SupportError> {
     let account_index = accounts
         .iter()
@@ -115,11 +124,26 @@ pub async fn collect(
         .filter(|i| i.complete && i.natural_width == 0)
         .count();
     let loading = images.iter().filter(|i| !i.complete).count();
+    let retried = images.iter().filter(|i| i.retries > 0).count();
+    let probes = match probe {
+        Some(client) => {
+            let targets = image_probe::probe_targets(
+                images
+                    .iter()
+                    .filter(|i| i.complete && i.natural_width == 0)
+                    .map(|i| i.src.as_str()),
+            );
+            image_probe::probe_all(client, targets).await
+        }
+        None => Vec::new(),
+    };
     let thread = json!({
         "accountIndex": account_index,
         "threadId": request.thread_id,
+        "online": request.online,
         "messages": described,
         "images": images,
+        "imageProbes": probes,
     });
     let thread =
         serde_json::to_vec_pretty(&thread).map_err(|e| SupportError::Internal(e.to_string()))?;
@@ -133,6 +157,19 @@ pub async fn collect(
     );
     if failed > 0 || loading > 0 {
         highlight.push_str(&format!(" ({failed} failed, {loading} still loading)"));
+    }
+    if retried > 0 {
+        highlight.push_str(&format!(", {} fetched again", plural(retried, "image")));
+    }
+    if !probes.is_empty() {
+        let loaded = probes.iter().filter(|p| p.loaded()).count();
+        highlight.push_str(&format!(
+            "; of the failed, {loaded} of {} load from the app now",
+            probes.len()
+        ));
+    }
+    if request.online == Some(false) {
+        highlight.push_str("; the window was offline");
     }
     Ok(EmailFiles { files, highlight })
 }
@@ -214,6 +251,7 @@ mod tests {
             natural_width: width,
             natural_height: width,
             loading: "".into(),
+            retries: 0,
         }
     }
 
@@ -265,9 +303,10 @@ mod tests {
                 image("https://cdn.example/b.jpg", true, 40),
                 image("https://cdn.example/c.jpg", false, 0),
             ],
+            online: None,
         };
 
-        let out = collect(&db.pool, &accounts(&db).await, &request)
+        let out = collect(&db.pool, &accounts(&db).await, &request, None)
             .await
             .unwrap();
 
@@ -295,6 +334,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn says_which_images_were_fetched_again_and_whether_the_window_was_offline() {
+        let db = TestDb::with_account("a1").await;
+        upsert_message(&db.pool, &message("m1", Some("<p>Hi</p>"), None))
+            .await
+            .unwrap();
+        let mut again = image("https://cdn.example/a.png", true, 0);
+        again.retries = 2;
+        let request = EmailRequest {
+            account_id: "a1".into(),
+            thread_id: "t1".into(),
+            images: vec![again, image("https://cdn.example/b.png", true, 40)],
+            online: Some(false),
+        };
+
+        let out = collect(&db.pool, &accounts(&db).await, &request, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            out.highlight,
+            "Includes the email on screen: 1 message, 2 images (1 failed, 0 still loading), \
+             1 image fetched again; the window was offline"
+        );
+        let thread: Value = serde_json::from_str(file(&out, "email/thread.json")).unwrap();
+        assert_eq!(thread["online"], false);
+        assert_eq!(thread["images"][0]["retries"], 2);
+        assert_eq!(thread["imageProbes"], json!([]));
+    }
+
+    #[tokio::test]
     async fn refuses_an_account_that_isnt_signed_in_or_an_email_not_cached() {
         let db = TestDb::with_account("a1").await;
         let accounts = accounts(&db).await;
@@ -302,11 +371,18 @@ mod tests {
             account_id: "other".into(),
             thread_id: "t1".into(),
             images: vec![],
+            online: None,
         };
-        let err = collect(&db.pool, &accounts, &request).await.err().unwrap();
+        let err = collect(&db.pool, &accounts, &request, None)
+            .await
+            .err()
+            .unwrap();
         assert_eq!(err.code(), "invalid_input");
         request.account_id = "a1".into();
-        let err = collect(&db.pool, &accounts, &request).await.err().unwrap();
+        let err = collect(&db.pool, &accounts, &request, None)
+            .await
+            .err()
+            .unwrap();
         assert_eq!(err.code(), "invalid_input");
     }
 

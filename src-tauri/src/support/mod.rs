@@ -4,6 +4,7 @@
 
 pub mod bundle;
 pub mod email;
+pub mod image_probe;
 pub mod screenshot;
 pub mod scrub;
 pub mod upload;
@@ -308,7 +309,15 @@ pub async fn prepare(
     let mut own_addresses: Vec<String> = sources.accounts.iter().map(|a| a.email.clone()).collect();
     own_addresses.extend(reply_to.clone());
     let email = match &sources.email {
-        Some(request) => Some(email::collect(sources.db, sources.accounts, request).await?),
+        Some(request) => Some(
+            email::collect(
+                sources.db,
+                sources.accounts,
+                request,
+                Some(&crate::http::client()),
+            )
+            .await?,
+        ),
         None => None,
     };
     let mut highlights = highlights(&sources.opens, &sources.shown);

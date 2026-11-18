@@ -4,6 +4,7 @@ import { isEditableTarget, registry, type CommandRegistry } from "../keyboard/re
 import { platform } from "../lib/platform";
 import type { CommandError, MessageDetail, ThreadLoading as Loading } from "../lib/tauri";
 import { useThemeStore } from "../theme/theme";
+import { imageRetrier } from "./imageRetry";
 import { linkify, openLink } from "./linkify";
 import { BROKEN_IMAGE, buildSrcdoc } from "./srcdoc";
 import { ThreadLoading } from "./ThreadLoading";
@@ -262,11 +263,24 @@ function watchFrame(
     }
   };
 
+  const host = iframe.ownerDocument;
+  // A remote image that failed is fetched again a little later; once it loads it takes its place in the layout.
+  const retrier = host.defaultView
+    ? imageRetrier(host.defaultView, (image) => {
+        image.removeAttribute(BROKEN_IMAGE);
+        external = true;
+        remeasureFromZero();
+      })
+    : null;
+
   // The dark theme flips images back from the inverted page; a failed one (blocked host, offline) would
   // flip its alt text too, leaving the light email's dark text color on the now dark page.
   const markBroken = () => {
     for (const image of Array.from(doc.images)) {
-      if (image.complete) image.toggleAttribute(BROKEN_IMAGE, image.naturalWidth === 0);
+      if (!image.complete) continue;
+      const broken = image.naturalWidth === 0;
+      image.toggleAttribute(BROKEN_IMAGE, broken);
+      if (broken) retrier?.failed(image);
     }
   };
 
@@ -308,7 +322,6 @@ function watchFrame(
   // WebKit (the macOS app) runs none of the listeners on `doc` while the frame is sandboxed without scripts,
   // and a click into the email focuses the frame, after which no key reaches the app (Left, j/k, ...). There,
   // focus goes straight back to the reading pane; a selection made in the frame survives that.
-  const host = iframe.ownerDocument;
   const pane = () => iframe.parentElement?.closest<HTMLElement>("[tabindex]");
   let listenersRun = false;
   const probe = () => (listenersRun = true);
@@ -361,6 +374,7 @@ function watchFrame(
   measure();
 
   return () => {
+    retrier?.stop();
     iframe.removeEventListener("load", markBroken);
     observer?.disconnect();
     doc.removeEventListener("click", onClick, true);
