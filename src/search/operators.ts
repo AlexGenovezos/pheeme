@@ -204,9 +204,13 @@ export function toggleTerm(query: string, key: string, value: string, on: boolea
   const ts = terms(query);
   const kept = ts.filter((t, i) => !alone(ts, i) || !isTerm(t, key, value));
   // Taking out `is:unread` from `invoice AND is:unread` leaves an `AND` joining nothing.
-  const joined = kept.filter(
-    (t, i) => t.raw !== "AND" || (i > 0 && i < kept.length - 1 && kept[i + 1].raw !== "AND"),
-  );
+  const joined: Term[] = [];
+  for (const t of kept) {
+    if (t.raw === "AND" && (joined.length === 0 || joined[joined.length - 1].raw === "AND"))
+      continue;
+    joined.push(t);
+  }
+  if (joined[joined.length - 1]?.raw === "AND") joined.pop();
   return [...joined.map((t) => t.raw), ...(on ? [operatorTerm(key, value)] : [])].join(" ");
 }
 

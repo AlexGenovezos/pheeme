@@ -139,6 +139,8 @@ test("Unread only only counts an is:unread that stands alone", () => {
   expect(hasTerm("invoice AND is:unread", "is", "unread")).toBe(true);
   expect(toggleTerm("invoice AND is:unread", "is", "unread", false)).toBe("invoice");
   expect(toggleTerm("is:unread AND invoice", "is", "unread", false)).toBe("invoice");
+  expect(toggleTerm("is:unread AND is:unread AND invoice", "is", "unread", false)).toBe("invoice");
+  expect(toggleTerm("a AND is:unread AND b", "is", "unread", false)).toBe("a AND b");
 });
 
 test("nothing is suggested inside a quoted phrase", () => {
