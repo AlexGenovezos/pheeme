@@ -91,6 +91,33 @@ test("a closed failure shows again if it comes back after the account synced", a
   stop();
 });
 
+test("a closed multiline failure stays closed when another account's failure changes", async () => {
+  mockIPC(() => undefined, { shouldMockEvents: true });
+  const stop = await useAccountStore.getState().subscribe();
+  render(<CornerNotices />);
+  await act(() =>
+    emit("sync:error", { accountId: "a1", code: "server", message: "Gmail broke\nTry later" }),
+  );
+  fireEvent.click(
+    within(card("Couldn't sync me@home.test")).getByRole("button", { name: "Dismiss" }),
+  );
+  await act(() => emit("sync:error", { accountId: "a2", code: "server", message: "Other" }));
+  await screen.findByText("Couldn't sync me@work.test");
+  expect(screen.queryByText("Couldn't sync me@home.test")).not.toBeInTheDocument();
+  stop();
+});
+
+test("an account that finished downloading gets its own slowdown card", () => {
+  useAccountStore.setState({ slowSync: { a1: { contended: false, since: 0 } } });
+  useDownloadStore.setState({
+    progress: [{ ...downloading("a1"), complete: true }, downloading("a2")],
+    episode: ["a1", "a2"],
+  });
+  render(<CornerNotices />);
+  expect(screen.getByText("Gmail is slowing sync")).toBeInTheDocument();
+  expect(screen.getByText("You can keep using Pheeme meanwhile.")).toBeInTheDocument();
+});
+
 test("sync cards and the download card step aside while a dialog is open", () => {
   useAccountStore.setState({ offline: true });
   useDownloadStore.setState({ progress: [downloading("a1")], episode: ["a1"] });

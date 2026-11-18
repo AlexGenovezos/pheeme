@@ -36,7 +36,8 @@ export function MailboxDownloadNotice() {
         ? accounts.find((a) => a.id === summary.accountIds[0])?.email
         : `${summary.accountIds.length} accounts`;
     count = who ? `${counted} · ${who}` : counted;
-    note = summary.accountIds.some((id) => slowed.includes(id))
+    const unfinished = state.progress!.filter((p) => !p.complete).map((p) => p.accountId);
+    note = unfinished.some((id) => slowed.includes(id))
       ? "Gmail is slowing the download. It carries on by itself."
       : "You can keep using Pheeme meanwhile.";
   } else {

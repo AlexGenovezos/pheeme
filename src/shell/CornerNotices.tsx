@@ -41,20 +41,22 @@ function SyncNotices() {
   const covered = useDownloadStore(
     useShallow((s) => {
       const { summary, open } = currentDownload(s);
-      return open ? summary!.accountIds : [];
+      // Only accounts still downloading: one that finished syncs like any other.
+      const unfinished = s.progress?.filter((p) => !p.complete).map((p) => p.accountId) ?? [];
+      return open ? summary!.accountIds.filter((id) => unfinished.includes(id)) : [];
     }),
   );
   const [dismissed, setDismissed] = useState<string[]>([]);
   const dismiss = (key: string) => () => setDismissed((d) => [...d, key]);
   // A closed failure is forgotten once it's over, so the next one shows even if it reads the same.
   // (Adjusted while rendering, as React suggests for state that follows a prop.)
-  const failuresNow = Object.entries(syncErrors)
-    .map(([id, e]) => failureKey(id, e))
-    .join("\n");
+  const failuresNow = JSON.stringify(
+    Object.entries(syncErrors).map(([id, e]) => failureKey(id, e)),
+  );
   const [failuresSeen, setFailuresSeen] = useState(failuresNow);
   if (failuresSeen !== failuresNow) {
     setFailuresSeen(failuresNow);
-    const now = failuresNow.split("\n");
+    const now = JSON.parse(failuresNow) as string[];
     setDismissed((d) => d.filter((key) => !key.startsWith("failed:") || now.includes(key)));
   }
 
