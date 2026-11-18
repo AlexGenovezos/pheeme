@@ -98,7 +98,7 @@ impl Resolve for PublicOnly {
 pub fn probe_targets<'a>(urls: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for url in urls {
-        let remote = url.starts_with("https://") || url.starts_with("http://");
+        let remote = Url::parse(url).is_ok_and(|u| matches!(u.scheme(), "http" | "https"));
         if remote && is_public(url) && !out.iter().any(|u| u == url) {
             out.push(url.to_owned());
             if out.len() == MAX_PROBES {
@@ -131,24 +131,33 @@ fn is_public(url: &str) -> bool {
     }
 }
 
+/// Whether `ip` is a unicast address reachable across the internet (what the unstable
+/// `IpAddr::is_global` decides): not private, shared (carrier-grade NAT, also used by VPNs like
+/// Tailscale), loopback, link-local, multicast, documentation, benchmarking or reserved.
 fn public_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
+            let [a, b, c, _] = v4.octets();
             !(v4.is_private()
                 || v4.is_loopback()
                 || v4.is_link_local()
                 || v4.is_unspecified()
-                || v4.is_broadcast())
+                || v4.is_multicast()
+                || v4.is_documentation()
+                || a == 0 // "this network"
+                || a >= 240 // reserved and broadcast
+                || (a == 100 && (b & 0xc0) == 64) // shared address space, 100.64.0.0/10
+                || (a == 192 && b == 0 && c == 0) // protocol assignments
+                || (a == 198 && (b & 0xfe) == 18)) // benchmarking, 198.18.0.0/15
         }
         IpAddr::V6(v6) => {
             if let Some(v4) = v6.to_ipv4_mapped() {
                 return public_ip(IpAddr::V4(v4));
             }
-            let first = v6.segments()[0];
-            !(v6.is_loopback()
-                || v6.is_unspecified()
-                || (first & 0xfe00) == 0xfc00 // unique local
-                || (first & 0xffc0) == 0xfe80) // link-local
+            let [first, second, ..] = v6.segments();
+            // Global unicast is 2000::/3; everything else (loopback, unique local, link-local,
+            // multicast, IPv4-compatible) stays off, and documentation (2001:db8::/32) with it.
+            (first & 0xe000) == 0x2000 && !(first == 0x2001 && second == 0x0db8)
         }
     }
 }
@@ -269,10 +278,15 @@ mod tests {
             "https://a.example/1.png",
             "http://b.example/2.gif",
             "pheeme-att://localhost/x",
+            "HTTPS://d.example/3.png",
         ];
         assert_eq!(
             probe_targets(urls.iter().copied()),
-            ["https://a.example/1.png", "http://b.example/2.gif"]
+            [
+                "https://a.example/1.png",
+                "http://b.example/2.gif",
+                "HTTPS://d.example/3.png"
+            ]
         );
         let many: Vec<String> = (0..80).map(|i| format!("https://c.example/{i}")).collect();
         urls = many.iter().map(String::as_str).collect();
@@ -291,12 +305,20 @@ mod tests {
             "http://[::1]/a.png",
             "http://[fd00::1]/a.png",
             "http://[::ffff:192.168.1.1]/a.png",
+            "http://100.94.110.51/a.png",
+            "http://[ff02::1]/a.png",
+            "http://224.0.0.1/a.png",
             "https://8.8.8.8/a.png",
+            "https://[2606:4700::1111]/a.png",
             "https://cdn.example/a.png",
         ];
         assert_eq!(
             probe_targets(urls),
-            ["https://8.8.8.8/a.png", "https://cdn.example/a.png"]
+            [
+                "https://8.8.8.8/a.png",
+                "https://[2606:4700::1111]/a.png",
+                "https://cdn.example/a.png"
+            ]
         );
     }
 
