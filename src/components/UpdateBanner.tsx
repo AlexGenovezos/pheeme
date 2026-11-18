@@ -1,6 +1,6 @@
 import { displayVersion, useUpdateStore } from "../lib/updater";
 import { Button } from "./ui/Button";
-import "./ui/Toast.css";
+import { CornerCard } from "./ui/CornerCard";
 
 const manualCheckText = {
   checking: "Checking for updates…",
@@ -13,38 +13,38 @@ export function UpdateBanner() {
   const { available, applying, apply, manualCheck, dismissManualCheck } = useUpdateStore();
   if (available) {
     return (
-      <div role="status" className="ui-toast">
-        <div className="ui-toast__text">
-          <span className="ui-toast__title">Pheeme {displayVersion(available)} is ready</span>
-        </div>
-        <Button
-          className="ui-toast__button"
-          variant="primary"
-          size="sm"
-          disabled={applying}
-          onClick={() => void apply()}
-        >
-          {applying ? "Updating…" : "Restart to update"}
-        </Button>
-      </div>
+      <CornerCard
+        title={`Pheeme ${displayVersion(available)} is ready`}
+        action={
+          <Button
+            className="ui-toast__button"
+            variant="primary"
+            size="sm"
+            disabled={applying}
+            onClick={() => void apply()}
+          >
+            {applying ? "Updating…" : "Restart to update"}
+          </Button>
+        }
+      />
     );
   }
   // Result of a "Check for Updates…" from the app menu; background checks stay silent.
   if (manualCheck === "idle") return null;
   return (
-    <div role="status" className="ui-toast">
-      <div className="ui-toast__text">
-        <span className="ui-toast__title">{manualCheckText[manualCheck]}</span>
-      </div>
-      {/* Shown from the start, so the toast keeps its size when the result arrives. */}
-      <Button
-        className="ui-toast__button"
-        size="sm"
-        disabled={manualCheck === "checking"}
-        onClick={dismissManualCheck}
-      >
-        OK
-      </Button>
-    </div>
+    <CornerCard
+      title={manualCheckText[manualCheck]}
+      // Shown from the start, so the card keeps its size when the result arrives.
+      action={
+        <Button
+          className="ui-toast__button"
+          size="sm"
+          disabled={manualCheck === "checking"}
+          onClick={dismissManualCheck}
+        >
+          OK
+        </Button>
+      }
+    />
   );
 }

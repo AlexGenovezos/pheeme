@@ -398,17 +398,17 @@ test("an account's sync failure survives adding an account and coming back", asy
   // Listeners attach asynchronously after mount.
   await vi.waitFor(async () => {
     await emit("sync:error", { accountId: "a1", code: "network", message: "Gmail didn't answer" });
-    expect(screen.getByText("Sync failed: Gmail didn't answer")).toBeInTheDocument();
+    expect(screen.getByText("Gmail didn't answer")).toBeInTheDocument();
   });
 
   fireEvent.click(screen.getByRole("button", { name: "Add account" }));
   // A failure that arrives while the mail screen is closed is kept too.
   await act(() => emit("sync:error", { accountId: "a1", code: "auth", message: "Sign in again" }));
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(await screen.findByText("Sync failed: Sign in again")).toBeInTheDocument();
+  expect(await screen.findByText("Sign in again")).toBeInTheDocument();
 
   await act(() => emit("sync:completed", { accountId: "a1" }));
-  await vi.waitFor(() => expect(screen.queryByText(/Sync failed/)).not.toBeInTheDocument());
+  await vi.waitFor(() => expect(screen.queryByText(/Couldn't sync/)).not.toBeInTheDocument());
 });
 
 test("a signed-out account signs in again in place and goes back to the mail", async () => {
@@ -427,7 +427,7 @@ test("a signed-out account signs in again in place and goes back to the mail", a
   // An ordinary failure doesn't offer a sign-in.
   await vi.waitFor(async () => {
     await emit("sync:error", { accountId: "a1", code: "network", message: "Gmail didn't answer" });
-    expect(screen.getByText("Sync failed: Gmail didn't answer")).toBeInTheDocument();
+    expect(screen.getByText("Gmail didn't answer")).toBeInTheDocument();
   });
   expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
 

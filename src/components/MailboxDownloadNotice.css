@@ -1,0 +1,53 @@
+.mailbox-download .ui-toast__title,
+.mailbox-download__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: var(--space-0);
+}
+
+/* Reserved even before the mailbox size is known, so the title never moves. */
+.mailbox-download__percent {
+  min-width: var(--space-8);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.mailbox-download__bar {
+  appearance: none;
+  width: 100%;
+  height: var(--space-1-5);
+  margin-block: var(--space-1);
+  overflow: hidden;
+  border: none;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  /* The card is inverted against the app, so the bar takes its own text colour, not the accent. */
+  accent-color: currentColor;
+}
+.mailbox-download__bar::-webkit-progress-bar {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: var(--radius-full);
+}
+.mailbox-download__bar::-webkit-progress-value {
+  background: currentColor;
+  border-radius: var(--radius-full);
+}
+.mailbox-download__bar::-moz-progress-bar {
+  background: currentColor;
+  border-radius: var(--radius-full);
+}
+
+.mailbox-download__line {
+  min-width: var(--space-0);
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The action sits on the last line, so the card is no taller than its text. */
+.mailbox-download__footer .ui-toast__action {
+  margin-block: calc(-1 * var(--space-1));
+}

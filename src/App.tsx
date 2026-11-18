@@ -9,7 +9,7 @@ import { ComposeHost, useComposeEvents } from "./compose/ComposeHost";
 import { Onboarding } from "./onboarding/Onboarding";
 import { useSetupGuide } from "./onboarding/guideStore";
 import { useAccountStore } from "./store/accountStore";
-import { UpdateBanner } from "./components/UpdateBanner";
+import { useDownloadStore } from "./store/downloadStore";
 import { useAppCommands } from "./keyboard/appCommands";
 import { isEditableTarget } from "./keyboard/registry";
 import { useGlobalShortcuts } from "./keyboard/useCommands";
@@ -29,6 +29,7 @@ import { AppShell } from "./shell/AppShell";
 import { CalendarScreen } from "./calendar/CalendarScreen";
 import { useCalendarStore } from "./calendar/calendarStore";
 import { ContextMenuHost } from "./shell/ContextMenuHost";
+import { CornerNotices } from "./shell/CornerNotices";
 import { useInboxTabs } from "./store/inboxTabsStore";
 import { useLabelStore } from "./store/labelStore";
 import { useMailStore } from "./store/mailStore";
@@ -133,6 +134,7 @@ function useSessionSyncEvents() {
     const log = (err: unknown) => console.warn("sync event listener failed", err);
     scope.add((signal) => useAccountStore.getState().subscribe(signal)).catch(log);
     scope.add((signal) => useThreadStore.getState().subscribe(signal)).catch(log);
+    scope.add((signal) => useDownloadStore.getState().subscribe(signal)).catch(log);
     return scope.dispose;
   }, []);
 }
@@ -233,7 +235,7 @@ function App() {
         </>
       );
   }
-  return <ToastProvider pinned={<UpdateBanner />}>{screen}</ToastProvider>;
+  return <ToastProvider pinned={<CornerNotices />}>{screen}</ToastProvider>;
 }
 
 export default App;

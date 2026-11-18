@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
-import { X } from "lucide-react";
 import { create } from "zustand";
 import { toCommandError } from "../../lib/tauri";
-import { cx } from "../../lib/utils";
+import { CornerCard } from "./CornerCard";
 import "./Toast.css";
 
 export interface ToastOptions {
@@ -62,48 +61,33 @@ function ToastViewport({ pinned }: { pinned?: ReactNode }) {
   return (
     <div className="ui-toast-viewport" role="region" aria-label="Notifications">
       {toasts.map((t) => (
-        <div
+        <CornerCard
           key={t.id}
-          className={cx(
-            "ui-toast",
-            t.tone === "danger" && "ui-toast--danger",
-            // An offer that stays until answered (not an error): it waits behind a dialog.
-            t.duration === 0 && t.tone !== "danger" && "ui-toast--waits",
-          )}
+          title={t.title}
+          description={t.description}
+          tone={t.tone}
           role={t.tone === "danger" ? "alert" : "status"}
-        >
-          <div className="ui-toast__text">
-            <span className="ui-toast__title">{t.title}</span>
-            {t.description && (
-              <span className={cx("ui-toast__description", t.tone === "danger" && "selectable")}>
-                {t.description}
-              </span>
-            )}
-          </div>
-          {t.action && (
-            <button
-              type="button"
-              className="ui-toast__action"
-              onClick={() => {
-                t.action!.run();
-                dismissToast(t.id);
-              }}
-            >
-              {t.action.label}
-            </button>
-          )}
-          <button
-            type="button"
-            className="ui-toast__close"
-            aria-label="Dismiss"
-            onClick={() => {
-              t.onDismiss?.();
-              dismissToast(t.id);
-            }}
-          >
-            <X />
-          </button>
-        </div>
+          // An offer that stays until answered (not an error): it waits behind a dialog.
+          waits={t.duration === 0 && t.tone !== "danger"}
+          action={
+            t.action && (
+              <button
+                type="button"
+                className="ui-toast__action"
+                onClick={() => {
+                  t.action!.run();
+                  dismissToast(t.id);
+                }}
+              >
+                {t.action.label}
+              </button>
+            )
+          }
+          onDismiss={() => {
+            t.onDismiss?.();
+            dismissToast(t.id);
+          }}
+        />
       ))}
       {pinned}
     </div>
