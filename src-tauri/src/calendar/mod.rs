@@ -2,6 +2,7 @@
 //! from there. Tauri-free; `commands/calendar.rs` is the thin IPC adapter.
 
 pub mod availability;
+pub mod colors;
 pub mod convert;
 pub mod edit;
 pub mod error;
@@ -22,8 +23,8 @@ pub mod templates;
 pub mod writes;
 
 use crate::gmail::calendar::{
-    ApiEvent, CalendarListPage, CalendarSettings, EventsPage, FreeBusyCalendar, SendUpdates,
-    WriteOptions,
+    ApiCalendar, ApiEvent, CalendarListPage, CalendarSettings, EventsPage, FreeBusyCalendar,
+    SendUpdates, WriteOptions,
 };
 use crate::gmail::{GmailClient, GmailError};
 use serde_json::Value;
@@ -44,6 +45,12 @@ pub trait CalendarApi: Send + Sync {
         page_token: Option<&str>,
     ) -> Result<EventsPage, GmailError>;
     async fn calendar_settings(&self) -> Result<CalendarSettings, GmailError>;
+    async fn set_calendar_color(
+        &self,
+        calendar_id: &str,
+        background: &str,
+        foreground: &str,
+    ) -> Result<ApiCalendar, GmailError>;
     async fn insert_event(
         &self,
         calendar_id: &str,
@@ -105,6 +112,15 @@ impl CalendarApi for GmailClient {
 
     async fn calendar_settings(&self) -> Result<CalendarSettings, GmailError> {
         GmailClient::calendar_settings(self).await
+    }
+
+    async fn set_calendar_color(
+        &self,
+        calendar_id: &str,
+        background: &str,
+        foreground: &str,
+    ) -> Result<ApiCalendar, GmailError> {
+        GmailClient::set_calendar_color(self, calendar_id, background, foreground).await
     }
 
     async fn insert_event(

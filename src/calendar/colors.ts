@@ -18,6 +18,37 @@ export const EVENT_COLORS: Record<string, string> = {
   "11": "#dc2127",
 };
 
+/**
+ * Google Calendar's calendar colours (`colors.get` → `calendar`, `colorId` "1" to "24"), with names for
+ * the picker. A calendar shows in whichever Google sent; choosing one writes it to Google.
+ */
+export const CALENDAR_COLORS: { color: string; name: string }[] = [
+  { color: "#ac725e", name: "Cocoa" },
+  { color: "#d06b64", name: "Rose" },
+  { color: "#f83a22", name: "Red" },
+  { color: "#fa573c", name: "Tomato" },
+  { color: "#ff7537", name: "Tangerine" },
+  { color: "#ffad46", name: "Pumpkin" },
+  { color: "#42d692", name: "Mint" },
+  { color: "#16a765", name: "Green" },
+  { color: "#7bd148", name: "Lime" },
+  { color: "#b3dc6c", name: "Pistachio" },
+  { color: "#fbe983", name: "Lemon" },
+  { color: "#fad165", name: "Banana" },
+  { color: "#92e1c0", name: "Seafoam" },
+  { color: "#9fe1e7", name: "Aqua" },
+  { color: "#9fc6e7", name: "Sky" },
+  { color: "#4986e7", name: "Blue" },
+  { color: "#9a9cff", name: "Periwinkle" },
+  { color: "#b99aff", name: "Lavender" },
+  { color: "#c2c2c2", name: "Grey" },
+  { color: "#cabdbf", name: "Taupe" },
+  { color: "#cca6ac", name: "Dusty pink" },
+  { color: "#f691b2", name: "Pink" },
+  { color: "#cd74e6", name: "Orchid" },
+  { color: "#a47ae2", name: "Purple" },
+];
+
 /** A calendar with no colour from Google. */
 const FALLBACK = "#9fc6e7";
 

@@ -66,6 +66,25 @@ pub async fn set_calendar_hidden(
         .await?)
 }
 
+/// Recolour a calendar in the account's Google calendar list (`#rrggbb`). Rejects with
+/// `missing_scope` until the calendar-list consent is allowed.
+#[tauri::command]
+pub async fn set_calendar_color(
+    state: State<'_, AppState>,
+    account_id: String,
+    calendar_id: String,
+    background: String,
+    foreground: String,
+) -> Result<(), CommandError> {
+    Ok(user_action(state.calendar.set_calendar_color(
+        &account_id,
+        &calendar_id,
+        &background,
+        &foreground,
+    ))
+    .await?)
+}
+
 /// Sync the account's calendars now (after allowing access, or "Check again").
 #[tauri::command]
 pub async fn calendar_sync_now(

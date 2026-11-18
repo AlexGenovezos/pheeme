@@ -51,6 +51,12 @@ pub const CONTACT_WRITE_SCOPES: &[&str] = &["https://www.googleapis.com/auth/con
 /// `calendar.events` isn't accepted by `freeBusy` at all.
 pub const FREEBUSY_SCOPES: &[&str] = &["https://www.googleapis.com/auth/calendar.events.freebusy"];
 
+/// Changing how a calendar shows in the user's list (its colour, through `calendarList.patch`),
+/// asked for only when the user first recolours a calendar. It covers the calendar list alone,
+/// never the calendars' events or sharing.
+pub const CALENDAR_LIST_SCOPES: &[&str] =
+    &["https://www.googleapis.com/auth/calendar.calendarlist"];
+
 /// Google's consent screen lets users untick scopes; without this one the app is useless.
 pub const REQUIRED_SCOPE: &str = "https://www.googleapis.com/auth/gmail.modify";
 

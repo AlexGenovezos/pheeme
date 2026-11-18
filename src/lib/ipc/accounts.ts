@@ -21,7 +21,9 @@ export type ClientChoice =
   | { kind: "drive"; accountId: string }
   | { kind: "contacts"; accountId: string }
   /** See guests' free/busy in the event editor (asked when the planner first needs it). */
-  | { kind: "availability"; accountId: string };
+  | { kind: "availability"; accountId: string }
+  /** Change calendars' colours on Google Calendar (asked when a calendar is first recoloured). */
+  | { kind: "calendarColors"; accountId: string };
 
 export interface SignInStart {
   flowId: string;

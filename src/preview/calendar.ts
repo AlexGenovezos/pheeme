@@ -45,13 +45,16 @@ function calendar(id: string, summary: string, color: string, primary = false): 
  * `access`: the second account's calendar access (`?calendar=missing_scope`, `api_disabled`,
  * `unknown` or `error`; `on` by default). `now` anchors the fixture week. `zone` is the Google
  * Calendar time zone (`?calendarZone=America/New_York`; the computer's by default), for the
- * travelling note.
+ * travelling note. `colorsAllowed`: the accounts that may recolour calendars; any other asks for
+ * the consent first (`missing_scope`, until a sign-in with `{ kind: "calendarColors" }` adds it).
+ * Every account by default.
  */
 export function createCalendarHandlers(
   accounts: { id: string; email: string }[],
   access: string | null,
   now = Date.now(),
   zone: string | null = null,
+  colorsAllowed: Set<string> = new Set(accounts.map((a) => a.id)),
 ) {
   const calendarZone = zone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const statuses = new Map<string, CalendarAccess["status"]>(
@@ -435,6 +438,20 @@ export function createCalendarHandlers(
       const accountId = String(args.accountId);
       const cal = calendars.get(accountId)?.find((c) => c.id === String(args.calendarId));
       if (cal) cal.hidden = Boolean(args.hidden);
+      void emit(CALENDAR_EVENTS.updated, { accountId }).catch(() => {});
+    },
+    set_calendar_color: (args) => {
+      const accountId = String(args.accountId);
+      if (!colorsAllowed.has(accountId))
+        throw {
+          code: "missing_scope",
+          message: "Allow Pheeme to change your calendars' colours on Google Calendar.",
+        };
+      const cal = calendars.get(accountId)?.find((c) => c.id === String(args.calendarId));
+      if (!cal)
+        throw { code: "invalid_input", message: "That calendar isn't in your list any more." };
+      cal.backgroundColor = String(args.background).toLowerCase();
+      cal.foregroundColor = String(args.foreground).toLowerCase();
       void emit(CALENDAR_EVENTS.updated, { accountId }).catch(() => {});
     },
     calendar_sync_now: (args): CalendarAccess => {

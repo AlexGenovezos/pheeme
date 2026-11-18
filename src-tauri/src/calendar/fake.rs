@@ -57,7 +57,7 @@ fn reply_lost() -> GmailError {
 /// One write the fake received.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FakeWrite {
-    /// `"insert"`, `"patch"`, `"delete"`, `"move"` or `"import"`.
+    /// `"insert"`, `"patch"`, `"delete"`, `"move"`, `"import"` or `"calendarList.patch"`.
     pub method: &'static str,
     pub calendar_id: String,
     pub event_id: Option<String>,
@@ -446,6 +446,32 @@ impl CalendarApi for FakeCalendar {
     async fn calendar_settings(&self) -> Result<CalendarSettings, GmailError> {
         let s = self.enter()?;
         Ok(s.settings.clone())
+    }
+
+    async fn set_calendar_color(
+        &self,
+        calendar_id: &str,
+        background: &str,
+        foreground: &str,
+    ) -> Result<ApiCalendar, GmailError> {
+        let body = json!({"backgroundColor": background, "foregroundColor": foreground});
+        let (mut s, lost) =
+            self.begin_write(write("calendarList.patch", calendar_id, None, None, body))?;
+        let found = s
+            .calendars
+            .iter_mut()
+            .find(|c| c.id == calendar_id)
+            .map(|c| {
+                c.background_color = Some(background.into());
+                c.foreground_color = Some(foreground.into());
+                c.clone()
+            });
+        let result = found.ok_or_else(|| GmailError::Api {
+            status: 404,
+            reason: Some("notFound".into()),
+            message: "Not Found".into(),
+        });
+        reply(lost, result)
     }
 
     async fn insert_event(

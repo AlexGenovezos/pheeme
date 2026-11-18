@@ -177,6 +177,27 @@ pub async fn set_hidden<'e>(
     Ok(())
 }
 
+/// Store a calendar's colours as Google confirmed them (after recolouring it).
+pub async fn set_colors<'e>(
+    ex: impl SqliteExecutor<'e>,
+    account_id: &str,
+    calendar_id: &str,
+    background: Option<&str>,
+    foreground: Option<&str>,
+) -> Result<()> {
+    sqlx::query!(
+        "UPDATE calendars SET background_color = ?, foreground_color = ?
+         WHERE account_id = ? AND id = ?",
+        background,
+        foreground,
+        account_id,
+        calendar_id
+    )
+    .execute(ex)
+    .await?;
+    Ok(())
+}
+
 /// Apply one sync page (or one write's result) to a calendar in a single transaction:
 /// upsert `upserts`, delete `deleted_ids`, and store `sync_token` when given.
 ///

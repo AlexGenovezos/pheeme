@@ -193,6 +193,7 @@ export interface Commands {
     CalendarEvent[]
   >;
   set_calendar_hidden: Command<Calendar & { hidden: boolean }, void>;
+  set_calendar_color: Command<Calendar & { background: string; foreground: string }, void>;
   calendar_sync_now: Command<Account, CalendarAccess>;
   calendar_availability: Command<
     Account & { emails: string[]; fromMs: number; toMs: number },

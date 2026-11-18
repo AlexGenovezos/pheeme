@@ -16,6 +16,9 @@ pub enum CalendarError {
         "This event was changed somewhere else. Pheeme has loaded the latest version; make your change again."
     )]
     Conflict,
+    /// Recolouring a calendar needs the calendar-list consent, not yet allowed.
+    #[error("Allow Pheeme to change your calendars' colours on Google Calendar.")]
+    MissingScope,
     #[error("You're offline; changes can't be saved.")]
     Offline,
     /// The request may have reached Google (timeout, dropped connection).
@@ -39,6 +42,7 @@ impl CalendarError {
             CalendarError::ReadOnly(_) => "read_only",
             CalendarError::Invalid(_) => "invalid_input",
             CalendarError::Conflict => "conflict",
+            CalendarError::MissingScope => "missing_scope",
             CalendarError::Offline => "network",
             CalendarError::Unconfirmed => "unconfirmed",
             CalendarError::Incomplete(_) => "incomplete",
