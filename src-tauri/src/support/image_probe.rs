@@ -2,12 +2,15 @@
 //! from here, as Send is pressed. The webview never says why an image failed; this tells a server or
 //! network refusing them (the same failure from here) apart from a problem only the webview had (they
 //! load fine from here). Only images that failed are fetched, and only to read the answer's status and
-//! size: nothing fetched is kept. Addresses on this computer or the local network are left alone.
+//! size: nothing fetched is kept. Addresses on this computer or the local network are left alone,
+//! whether written in the URL, resolved from its name or reached by a redirect.
 
 use futures::stream::{self, StreamExt};
-use reqwest::Url;
+use reqwest::dns::{Addrs, Name, Resolve, Resolving};
+use reqwest::{redirect, Url};
 use serde::Serialize;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// At most this many images are fetched, the first ones in the email.
@@ -16,6 +19,10 @@ pub const MAX_PROBES: usize = 50;
 const CONCURRENT: usize = 6;
 /// Each fetch gives up after this.
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+/// All of them together give up after this, so Send never waits long on a slow network.
+pub const BATCH_TIMEOUT: Duration = Duration::from_secs(15);
+/// Redirects followed, each to an address on the internet.
+const MAX_REDIRECTS: usize = 5;
 /// Bytes read of each answer before stopping; enough to tell an image from an error page.
 const MAX_READ_BYTES: usize = 4 * 1024 * 1024;
 
@@ -47,12 +54,42 @@ impl ImageProbe {
     }
 }
 
-/// The client the probes use: no `Referer`, even on a redirect, like the email frame.
+/// The client the probes use: no `Referer`, even on a redirect, like the email frame, and only
+/// addresses on the internet ([`PublicOnly`], and every redirect hop).
 pub fn client() -> reqwest::Client {
     crate::http::client_builder()
         .referer(false)
+        .dns_resolver(Arc::new(PublicOnly))
+        .redirect(redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= MAX_REDIRECTS {
+                attempt.error("too many redirects")
+            } else if !is_public(attempt.url().as_str()) {
+                attempt.error("redirected to a local address")
+            } else {
+                attempt.follow()
+            }
+        }))
         .build()
         .expect("reqwest client builds")
+}
+
+/// Resolves a name to its internet addresses only; one with none is an error. (A URL with an
+/// IP address isn't resolved: [`probe_targets`] and the redirect policy check those.)
+struct PublicOnly;
+
+impl Resolve for PublicOnly {
+    fn resolve(&self, name: Name) -> Resolving {
+        Box::pin(async move {
+            let found: Vec<SocketAddr> = tokio::net::lookup_host((name.as_str(), 0))
+                .await?
+                .filter(|a| public_ip(a.ip()))
+                .collect();
+            if found.is_empty() {
+                return Err(format!("{} has no address on the internet", name.as_str()).into());
+            }
+            Ok(Box::new(found.into_iter()) as Addrs)
+        })
+    }
 }
 
 /// The distinct http(s) URLs of `urls` on the internet, in order, at most [`MAX_PROBES`].
@@ -114,18 +151,25 @@ fn public_ip(ip: IpAddr) -> bool {
     }
 }
 
-/// Fetch the URLs, [`CONCURRENT`] at a time, each within [`PROBE_TIMEOUT`]; in order.
+/// Fetch the URLs, [`CONCURRENT`] at a time, each within [`PROBE_TIMEOUT`] and all within
+/// [`BATCH_TIMEOUT`]; in order. One the batch's time ran out on says `timeout`.
 pub async fn probe_all(client: &reqwest::Client, urls: Vec<String>) -> Vec<ImageProbe> {
+    let deadline = tokio::time::Instant::now() + BATCH_TIMEOUT;
     stream::iter(urls)
-        .map(|url| probe(client, url))
+        .map(|url| probe(client, url, deadline))
         .buffered(CONCURRENT)
         .collect()
         .await
 }
 
-async fn probe(client: &reqwest::Client, url: String) -> ImageProbe {
+async fn probe(
+    client: &reqwest::Client,
+    url: String,
+    deadline: tokio::time::Instant,
+) -> ImageProbe {
     let start = Instant::now();
-    let result = tokio::time::timeout(PROBE_TIMEOUT, fetch(client, &url)).await;
+    let until = deadline.min(tokio::time::Instant::now() + PROBE_TIMEOUT);
+    let result = tokio::time::timeout_at(until, fetch(client, &url)).await;
     let ms = start.elapsed().as_millis() as u64;
     let mut out = ImageProbe {
         url,
@@ -268,6 +312,18 @@ mod tests {
             }
         });
         format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn names_resolving_only_to_local_addresses_are_refused() {
+        let local = PublicOnly.resolve("localhost".parse().unwrap()).await;
+        assert!(local.is_err());
+    }
+
+    #[test]
+    fn redirects_to_local_addresses_are_refused() {
+        assert!(!is_public("http://192.168.1.1/a.png"));
+        assert!(is_public("https://cdn.example/a.png"));
     }
 
     #[tokio::test]
