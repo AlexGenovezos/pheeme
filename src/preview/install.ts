@@ -126,6 +126,8 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
             synced: true,
             color: (i % 6) + 1,
           }));
+  const downloadTotal = params.get("download") === "1" ? 29_100 : 0;
+  let downloadSynced = 9_800;
   const flows = new Map<string, ClientChoice | null>();
   const beginSignIn = (args?: { client: ClientChoice }) => {
     const flowId = crypto.randomUUID();
@@ -251,7 +253,18 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     greet: (args) => `Hello, ${String(args.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
     get_sync_progress: () =>
-      accounts.map((account) => {
+      accounts.map((account, i) => {
+        // `?download=1` downloads the first account's mailbox, a page per poll, then finishes.
+        if (i === 0 && downloadTotal) {
+          downloadSynced = Math.min(downloadTotal, downloadSynced + 1400);
+          return {
+            accountId: account.id,
+            syncedMessages: downloadSynced,
+            totalMessages: downloadTotal,
+            downloadedMessages: downloadSynced,
+            complete: downloadSynced === downloadTotal,
+          };
+        }
         const count = threads
           .filter((t) => t.accountId === account.id)
           .reduce((total, thread) => total + thread.messages.length, 0);

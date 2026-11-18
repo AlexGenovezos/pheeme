@@ -2,13 +2,11 @@ import { ModSidebar } from "../mods/ModSurfaces";
 import { NotificationOffer } from "../desktop/NotificationOffer";
 import {
   ChevronRight,
-  Gauge,
   type LucideIcon,
   Mails,
   PanelLeftClose,
   SquarePen,
   TriangleAlert,
-  WifiOff,
 } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, memo, useEffect, useId } from "react";
 import { IconButton } from "../components/ui/IconButton";
@@ -28,7 +26,6 @@ import {
 } from "../mail/mailboxes";
 import { composeNew, markTabRead } from "../mail/actions";
 import { dropTarget } from "../mail/dragMail";
-import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
 import { type SyncFailure, useAccountStore } from "../store/accountStore";
 import { useInboxTabs, visibleCategories } from "../store/inboxTabsStore";
 import { useLabelStore } from "../store/labelStore";
@@ -249,7 +246,6 @@ function AccountSection({
           <ChevronRight className="sidebar__chevron" aria-hidden="true" />
         </button>
       </div>
-      <SyncErrorNote accountId={account.id} error={error} />
       <div id={rowsId} className="sidebar__group-rows" hidden={collapsed}>
         {!collapsed && <CategoryRows accountId={account.id} />}
       </div>
@@ -275,68 +271,6 @@ function dropMark(
   const next = order[at + 1];
   if (next !== undefined) return next === id ? "before" : undefined;
   return order[at - 1] === id ? "after" : undefined;
-}
-
-/**
- * A failed sync, with the way back in when Google signed the account out. `detailed` (the only account, which has no
- * header to carry the failure) spells out what failed; otherwise the note appears only for a sign-out.
- */
-function SyncErrorNote({
-  accountId,
-  error,
-  detailed = false,
-}: {
-  accountId: string;
-  error?: SyncFailure;
-  detailed?: boolean;
-}) {
-  if (!error || (!detailed && !isSignedOut(error))) return null;
-  return (
-    <div className="sidebar__sync-error" role="status" title={detailed ? error.message : undefined}>
-      {detailed && <TriangleAlert aria-hidden="true" />}
-      <span>{detailed ? `Sync failed: ${error.message}` : "Signed out by Google"}</span>
-      {isSignedOut(error) && <ReconnectButton accountId={accountId} />}
-    </div>
-  );
-}
-
-/** One calm note while Google can't be reached, in place of a failure on every account. */
-function OfflineNote() {
-  const offline = useAccountStore((s) => s.offline);
-  if (!offline) return null;
-  return (
-    <div
-      className="sidebar__sync-error sidebar__offline"
-      role="status"
-      title="Pheeme syncs again as soon as the connection is back. Changes you make wait until then."
-    >
-      <WifiOff aria-hidden="true" />
-      <span>Offline. Changes will sync later.</span>
-    </div>
-  );
-}
-
-/** One calm note while Gmail is slowing sync, however many accounts it slows. */
-function SlowSyncNote() {
-  const offline = useAccountStore((s) => s.offline);
-  const slowSync = useAccountStore((s) => s.slowSync);
-  const slow = Object.values(slowSync);
-  if (offline || slow.length === 0) return null;
-  const contended = slow.some((s) => s.contended);
-  return (
-    <div
-      className="sidebar__sync-error sidebar__offline"
-      role="status"
-      title="Gmail limits how fast an account can sync. Pheeme slows down and carries on by itself; nothing to do."
-    >
-      <Gauge aria-hidden="true" />
-      <span>
-        {contended
-          ? "Gmail is slowing sync. Another device may be syncing this account."
-          : "Gmail is slowing sync."}
-      </span>
-    </div>
-  );
 }
 
 function Favorites({ accountId }: { accountId: string }) {
@@ -459,13 +393,8 @@ export function Sidebar({ onAddAccount }: { onAddAccount?: () => void }) {
 
       <nav className="sidebar__scroll" aria-label="Mailboxes" onKeyDown={onMailboxKeyDown}>
         <Section title="Inboxes">
-          <OfflineNote />
-          <SlowSyncNote />
           {shown ? (
-            <>
-              <SyncErrorNote accountId={shown.id} error={errors[shown.id]} detailed />
-              <CategoryRows accountId={shown.id} />
-            </>
+            <CategoryRows accountId={shown.id} />
           ) : (
             <>
               <MailboxRow

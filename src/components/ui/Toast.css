@@ -32,6 +32,20 @@
   min-width: var(--space-0);
 }
 
+/* A card's state, before its text (offline, slowed, failed). */
+.ui-toast__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-block-start: var(--space-0-5);
+}
+.ui-toast__icon svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+.ui-toast--danger .ui-toast__icon {
+  color: var(--color-toast-danger-foreground);
+}
+
 .ui-toast__title {
   font-weight: var(--font-weight-medium);
 }
