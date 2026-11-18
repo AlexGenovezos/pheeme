@@ -1,4 +1,5 @@
 // Mail state: the thread list for the active mailbox, kept fresh by sync events.
+import { coalesce, type Coalesced } from "../lib/coalesce";
 import { create } from "zustand";
 import { subscribeAll } from "../lib/subscriptions";
 import { parseThreadKey, type ThreadKey, threadKey } from "../mail/mailboxes";
@@ -74,6 +75,8 @@ interface MailState {
 
 // Each load takes a ticket; only the latest ticket may write its result.
 let latest = 0;
+// The store's coalesced `reload` (made with the store), so tests can reset it.
+let reloadOnce: Coalesced<[boolean]> | null = null;
 
 const PAGE = 50;
 const MAX_RELOAD = 500;
@@ -405,6 +408,14 @@ export const useMailStore = create<MailState>((set, get) => {
       set((s) => ({ search: s.search && { ...s.search, remoteLoading: false } }));
   };
 
+  // Sync events, outbox changes and reads each ask for a reload; one runs at a time, plus one after it.
+  const reloader = coalesce(async (preserveRead: boolean) => {
+    const { query, threads } = get();
+    if (query?.search) await localSearch(latest, query, reloadDepth(threads.length));
+    else if (query) await get().load(query, reloadDepth(threads.length), preserveRead);
+  });
+  reloadOnce = reloader;
+
   return {
     ...EMPTY,
     query: null,
@@ -537,11 +548,7 @@ export const useMailStore = create<MailState>((set, get) => {
         set({ loading: false, error: toCommandError(error), errorSource: "more" });
       }
     },
-    reload: async (preserveRead = false) => {
-      const { query, threads } = get();
-      if (query?.search) await localSearch(latest, query, reloadDepth(threads.length));
-      else if (query) await get().load(query, reloadDepth(threads.length), preserveRead);
-    },
+    reload: (preserveRead = false) => reloader(preserveRead),
     retryGmail: () => remotePages(true),
     patch: (keys, fn, op) => {
       if (op !== undefined) pending.add(keys, op, { fn, query: null });
@@ -563,8 +570,12 @@ export const useMailStore = create<MailState>((set, get) => {
           return updated;
         }),
       }));
-      // Replace a request issued before the read, which cannot yet include this row.
-      if (newlyKept && get().loading) void get().reload(true);
+      // Replace a request issued before the read, which cannot yet include this row: its answer is dropped
+      // (a reload already running would otherwise land first and drop the row), and the reload reads again.
+      if (newlyKept && get().loading) {
+        if (!get().query?.search) latest++;
+        void get().reload(true);
+      }
     },
     remove: (keys, op) => {
       // The rows being removed are in the list on screen, which is the loaded query (else the one asked for).
@@ -679,6 +690,7 @@ useMailStore.subscribe((s, prev) => {
 /** Test helper. */
 export function __resetMailStoreForTests() {
   latest++;
+  reloadOnce?.reset();
   pending.clear();
   keptRead.clear();
   unfiltered = null;

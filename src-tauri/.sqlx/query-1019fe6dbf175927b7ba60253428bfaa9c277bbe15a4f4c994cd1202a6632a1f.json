@@ -1,0 +1,42 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n              (SELECT COUNT(*) FROM threads WHERE account_id = ?1) AS \"threads!: i64\",\n              (SELECT COUNT(*) FROM thread_labels\n               WHERE label_id = 'INBOX' AND account_id = ?1) AS \"inbox!: i64\",\n              (SELECT COUNT(*) FROM thread_labels\n               WHERE label_id = 'UNREAD' AND account_id = ?1) AS \"unread!: i64\",\n              (SELECT COUNT(*) FROM thread_labels WHERE account_id = ?1) AS \"rows!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "threads!: i64",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "inbox!: i64",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "unread!: i64",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": "Expression"
+      },
+      {
+        "name": "rows!: i64",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1019fe6dbf175927b7ba60253428bfaa9c277bbe15a4f4c994cd1202a6632a1f"
+}

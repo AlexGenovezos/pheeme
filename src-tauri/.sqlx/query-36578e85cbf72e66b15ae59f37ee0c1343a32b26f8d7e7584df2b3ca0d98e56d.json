@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO label_thread_counts (account_id, label_id, total, unread)\n                 VALUES (?, ?, ?, ?)\n                 ON CONFLICT (account_id, label_id) DO UPDATE SET\n                   total = total + excluded.total, unread = unread + excluded.unread",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "36578e85cbf72e66b15ae59f37ee0c1343a32b26f8d7e7584df2b3ca0d98e56d"
+}

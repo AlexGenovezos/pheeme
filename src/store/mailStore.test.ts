@@ -511,10 +511,17 @@ test("reading during a background load replaces the query that did not yet retai
   await useMailStore.getState().load({ accountIds: ["a"], labelId: "INBOX", unreadOnly: true });
   const background = useMailStore.getState().reload(true);
   await vi.waitFor(() => expect(release).toBeDefined());
-  useMailStore.getState().patch([threadKey("a", "t1")], (t) => ({ ...t, unread: false }));
-  await vi.waitFor(() => expect(calls).toBe(3));
+  useMailStore.getState().patch([threadKey("a", "t1")], (t) => ({
+    ...t,
+    unread: false,
+  }));
+  // The new query waits for the one running (one reload at a time), whose answer is then dropped.
+  expect(calls).toBe(2);
   release({ threads: [], next: null });
   await background;
+  expect(ids()).toEqual(["t1"]);
+  await vi.waitFor(() => expect(calls).toBe(3));
+  await vi.waitFor(() => expect(useMailStore.getState().loading).toBe(false));
   expect(ids()).toEqual(["t1"]);
   expect(useMailStore.getState().threads[0].unread).toBe(false);
 });

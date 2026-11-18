@@ -1,8 +1,9 @@
 use crate::db::messages::{self, DbMessage};
 use anyhow::Result;
+use counts::CountDeltas;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct DbThread {
@@ -33,18 +34,29 @@ pub async fn upsert_thread(
     label_ids: &[String],
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    upsert_thread_tx(&mut tx, thread, label_ids).await?;
+    let mut deltas = CountDeltas::default();
+    upsert_thread_tx(&mut tx, thread, label_ids, &mut deltas).await?;
+    deltas.flush(&mut tx, &thread.account_id).await?;
     bump_version(&mut tx, &thread.account_id).await?;
     tx.commit().await?;
     Ok(())
 }
 
-/// Upsert the thread row and replace its label set inside the caller's transaction.
+/// Upsert the thread row and replace its label set inside the caller's transaction, adding
+/// the change to `deltas`. Returns whether the thread existed before.
 async fn upsert_thread_tx(
     conn: &mut SqliteConnection,
     thread: &DbThread,
     label_ids: &[String],
-) -> Result<()> {
+    deltas: &mut CountDeltas,
+) -> Result<bool> {
+    let old_unread = sqlx::query_scalar!(
+        "SELECT unread_count FROM threads WHERE account_id = ? AND id = ?",
+        thread.account_id,
+        thread.id
+    )
+    .fetch_optional(&mut *conn)
+    .await?;
     sqlx::query!(
         r#"
         INSERT INTO threads (
@@ -80,14 +92,19 @@ async fn upsert_thread_tx(
     .execute(&mut *conn)
     .await?;
 
-    replace_thread_labels(
+    let old_labels = replace_thread_labels(
         conn,
         &thread.account_id,
         &thread.id,
         thread.last_message_date,
         label_ids,
     )
-    .await
+    .await?;
+    if let Some(old_unread) = old_unread {
+        deltas.add(&old_labels, old_unread, -1);
+    }
+    deltas.add(label_ids, thread.unread_count, 1);
+    Ok(old_unread.is_some())
 }
 
 /// Marks the account's threads changed, inside the transaction that changes them, so
@@ -104,21 +121,16 @@ async fn bump_version(conn: &mut SqliteConnection, account_id: &str) -> Result<(
 }
 
 /// Deletes and re-inserts the thread's label rows inside the caller's
-/// transaction, stamping each with the thread's `last_message_date`.
+/// transaction, stamping each with the thread's `last_message_date`. Returns the labels it
+/// had. Counts are the caller's to keep ([`CountDeltas`]).
 async fn replace_thread_labels(
     tx: &mut sqlx::SqliteConnection,
     account_id: &str,
     thread_id: &str,
     last_message_date: Option<i64>,
     label_ids: &[String],
-) -> Result<()> {
-    sqlx::query!(
-        "DELETE FROM thread_labels WHERE account_id = ? AND thread_id = ?",
-        account_id,
-        thread_id
-    )
-    .execute(&mut *tx)
-    .await?;
+) -> Result<Vec<String>> {
+    let old = delete_thread_labels(tx, account_id, thread_id).await?;
 
     for label_id in label_ids {
         sqlx::query!(
@@ -135,7 +147,22 @@ async fn replace_thread_labels(
         .execute(&mut *tx)
         .await?;
     }
-    Ok(())
+    Ok(old)
+}
+
+/// Deletes the thread's label rows, returning their label ids.
+async fn delete_thread_labels(
+    tx: &mut sqlx::SqliteConnection,
+    account_id: &str,
+    thread_id: &str,
+) -> Result<Vec<String>> {
+    Ok(sqlx::query_scalar!(
+        "DELETE FROM thread_labels WHERE account_id = ? AND thread_id = ? RETURNING label_id",
+        account_id,
+        thread_id
+    )
+    .fetch_all(&mut *tx)
+    .await?)
 }
 
 pub async fn get_thread(
@@ -173,7 +200,7 @@ pub async fn update_thread_labels(
     let mut tx = pool.begin().await?;
 
     let row = sqlx::query!(
-        "SELECT last_message_date FROM threads WHERE account_id = ? AND id = ?",
+        "SELECT last_message_date, unread_count FROM threads WHERE account_id = ? AND id = ?",
         account_id,
         thread_id
     )
@@ -181,7 +208,7 @@ pub async fn update_thread_labels(
     .await?;
 
     if let Some(row) = row {
-        replace_thread_labels(
+        let old = replace_thread_labels(
             &mut tx,
             account_id,
             thread_id,
@@ -189,6 +216,10 @@ pub async fn update_thread_labels(
             label_ids,
         )
         .await?;
+        let mut deltas = CountDeltas::default();
+        deltas.add(&old, row.unread_count, -1);
+        deltas.add(label_ids, row.unread_count, 1);
+        deltas.flush(&mut tx, account_id).await?;
         bump_version(&mut tx, account_id).await?;
     }
 
@@ -847,41 +878,38 @@ pub async fn recompute_threads(
     thread_ids: &[String],
 ) -> Result<RecomputeResult> {
     let mut result = RecomputeResult::default();
+    let mut deltas = CountDeltas::default();
     let unique: BTreeSet<&String> = thread_ids.iter().collect();
     for thread_id in unique {
-        let existed = sqlx::query_scalar!(
-            r#"SELECT 1 AS "one!: i64" FROM threads WHERE account_id = ? AND id = ?"#,
-            account_id,
-            thread_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?
-        .is_some();
         let msgs =
             messages::thread_messages_without_bodies(&mut *conn, account_id, thread_id).await?;
         match derive_thread(account_id, thread_id, &msgs) {
             Some((thread, labels)) => {
-                upsert_thread_tx(conn, &thread, &labels).await?;
-                if existed {
+                if upsert_thread_tx(conn, &thread, &labels, &mut deltas).await? {
                     result.updated.push(thread_id.clone());
                 } else {
                     result.created.push(thread_id.clone());
                 }
             }
-            None if existed => {
-                sqlx::query!(
-                    "DELETE FROM threads WHERE account_id = ? AND id = ?",
+            None => {
+                // The labels first: deleting the thread would cascade them away unseen.
+                let old_labels = delete_thread_labels(conn, account_id, thread_id).await?;
+                let old_unread = sqlx::query_scalar!(
+                    "DELETE FROM threads WHERE account_id = ? AND id = ? RETURNING unread_count",
                     account_id,
                     thread_id
                 )
-                .execute(&mut *conn)
+                .fetch_optional(&mut *conn)
                 .await?;
-                result.removed.push(thread_id.clone());
+                if let Some(old_unread) = old_unread {
+                    deltas.add(&old_labels, old_unread, -1);
+                    result.removed.push(thread_id.clone());
+                }
             }
-            None => {}
         }
     }
-    if !(result.created.is_empty() && result.updated.is_empty() && result.removed.is_empty()) {
+    if !result.is_empty() {
+        deltas.flush(&mut *conn, account_id).await?;
         bump_version(&mut *conn, account_id).await?;
     }
     Ok(result)
@@ -893,60 +921,42 @@ pub async fn recompute_threads(
 /// from the map excludes nothing), so an account without category labels still has its
 /// whole inbox under Primary. Labels with no unread threads are omitted.
 ///
-/// Walks the `UNREAD` rows of `idx_thread_labels_listing`, not the inbox: a large inbox is
-/// mostly read, and these counts rerun on every sync event. `CROSS JOIN` keeps that order
-/// (SQLite has no statistics to choose it).
+/// Read from `inbox_unread_counts`, which `recompute_threads` keeps ([`counts`]): the
+/// unread inbox threads grouped by the other tabs' categories they carry.
 pub async fn unread_counts(
     pool: &SqlitePool,
     account_ids: &[String],
     excludes: &HashMap<String, Vec<String>>,
 ) -> Result<Vec<(String, i64)>> {
     let accounts = serde_json::to_string(account_ids)?;
-    // `[account_id, label_id]` pairs, parsed once into `ex` and matched per account in the
-    // Primary branch.
-    let pairs: Vec<(&str, &str)> = account_ids
-        .iter()
-        .filter_map(|a| excludes.get(a).map(|labels| (a, labels)))
-        .flat_map(|(a, labels)| labels.iter().map(move |l| (a.as_str(), l.as_str())))
-        .collect();
-    let excluded = serde_json::to_string(&pairs)?;
     let rows = sqlx::query!(
-        r#"
-        WITH ex(account_id, label_id) AS MATERIALIZED (
-            SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?2)
-        )
-        SELECT label_id AS "label_id!", COUNT(*) AS "count!: i64"
-        FROM (
-            SELECT x.label_id AS label_id
-            FROM thread_labels u INDEXED BY idx_thread_labels_listing
-            CROSS JOIN thread_labels i
-              ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'
-            CROSS JOIN thread_labels x
-              ON x.account_id = u.account_id AND x.thread_id = u.thread_id
-             AND x.label_id IN ('INBOX', 'CATEGORY_SOCIAL',
-                                'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS')
-            WHERE u.label_id = 'UNREAD' AND u.account_id IN (SELECT value FROM json_each(?1))
-            UNION ALL
-            SELECT 'CATEGORY_PERSONAL' AS label_id
-            FROM thread_labels u INDEXED BY idx_thread_labels_listing
-            CROSS JOIN thread_labels i
-              ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'
-            WHERE u.label_id = 'UNREAD' AND u.account_id IN (SELECT value FROM json_each(?1))
-              AND NOT EXISTS (
-                    SELECT 1 FROM ex CROSS JOIN thread_labels c
-                      ON c.account_id = u.account_id AND c.thread_id = u.thread_id
-                     AND c.label_id = ex.label_id
-                    WHERE ex.account_id = u.account_id)
-        )
-        GROUP BY label_id
-        ORDER BY label_id
-        "#,
-        accounts,
-        excluded
+        r#"SELECT account_id AS "account_id!", categories AS "categories!", threads AS "threads!: i64"
+           FROM inbox_unread_counts
+           WHERE account_id IN (SELECT value FROM json_each(?1)) AND threads > 0"#,
+        accounts
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| (r.label_id, r.count)).collect())
+    let mut out: BTreeMap<String, i64> = BTreeMap::new();
+    for row in rows {
+        let categories: Vec<&str> = row
+            .categories
+            .split(',')
+            .filter(|c| !c.is_empty())
+            .collect();
+        *out.entry("INBOX".to_owned()).or_default() += row.threads;
+        for category in &categories {
+            *out.entry((*category).to_owned()).or_default() += row.threads;
+        }
+        let excluded = excludes.get(&row.account_id);
+        if !categories
+            .iter()
+            .any(|c| excluded.is_some_and(|ex| ex.iter().any(|e| e == c)))
+        {
+            *out.entry("CATEGORY_PERSONAL".to_owned()).or_default() += row.threads;
+        }
+    }
+    Ok(out.into_iter().filter(|(_, n)| *n > 0).collect())
 }
 
 /// The unread inbox threads of one account in one inbox tab, as [`unread_counts`] counts
@@ -1002,26 +1012,22 @@ pub struct LabelCounts {
 /// The count row for All Mail (every thread outside Spam and Trash), beside the labels.
 pub const ALL_MAIL: &str = "ALL";
 
-/// Thread counts per label id for one account, counted from the cached threads (not
-/// Gmail's own counters), plus an [`ALL_MAIL`] row. A thread counts as unread exactly when
-/// the lists show it unread (`unread_count > 0`), so Spam and Trash count their unread
-/// threads although a wholly spammed or trashed thread has no `UNREAD` label. Labels with
-/// no threads (and All Mail when empty) are omitted; no unread threads is `unread: 0`.
+/// Thread counts per label id for one account, plus an [`ALL_MAIL`] row last. A thread
+/// counts as unread exactly when the lists show it unread (`unread_count > 0`), so Spam and
+/// Trash count their unread threads although a wholly spammed or trashed thread has no
+/// `UNREAD` label. Labels with no threads (and All Mail when empty) are omitted; no unread
+/// threads is `unread: 0`.
 ///
-/// The sidebar asks after every sync, and counting takes seconds in a large mailbox, so the
-/// counts come with the version of the account's threads they were counted at
-/// ([`bump_version`]): given the `known` version, and nothing has changed since, this
-/// answers `None` without counting. When it does count, the unread side only visits
-/// candidate threads: `is_read` mirrors each message's `UNREAD` label, so an unread thread
-/// carries `UNREAD` unless all its messages are spammed or trashed, and then it carries
-/// `SPAM` or `TRASH`.
+/// Read from `label_thread_counts`, which `recompute_threads` keeps ([`counts`]). The counts
+/// come with the version of the account's threads they were read at ([`bump_version`]):
+/// given the `known` version, and nothing has changed since, this answers `None`.
 pub async fn label_counts(
     pool: &SqlitePool,
     account_id: &str,
     known: Option<i64>,
 ) -> Result<Option<LabelCounts>> {
-    // One snapshot for the version and all three queries, so a sync landing between them
-    // can't skew them or slip past the version.
+    // One snapshot for the version and the counts, so a sync landing between them can't slip
+    // past the version.
     let mut tx = pool.begin().await?;
     let version = sqlx::query_scalar!(
         r#"SELECT COALESCE((SELECT version FROM thread_versions WHERE account_id = ?), 0) AS "v!: i64""#,
@@ -1033,78 +1039,60 @@ pub async fn label_counts(
         tx.commit().await?;
         return Ok(None);
     }
-    let totals = sqlx::query!(
-        r#"
-        SELECT label_id AS "label_id!", COUNT(*) AS "total!: i64"
-        FROM thread_labels
-        WHERE account_id = ?
-        GROUP BY label_id
-        ORDER BY label_id
-        "#,
+    let rows = sqlx::query!(
+        r#"SELECT label_id AS "label_id!", total AS "total!: i64", unread AS "unread!: i64"
+           FROM label_thread_counts
+           WHERE account_id = ? AND total > 0
+           ORDER BY label_id = 'ALL', label_id"#,
         account_id
     )
     .fetch_all(&mut *tx)
-    .await?;
-    let unread: HashMap<String, i64> = sqlx::query!(
-        r#"
-        SELECT x.label_id AS "label_id!", COUNT(*) AS "unread!: i64"
-        FROM (
-            SELECT DISTINCT c.thread_id AS thread_id
-            FROM thread_labels c INDEXED BY idx_thread_labels_listing
-            WHERE c.label_id IN ('UNREAD', 'SPAM', 'TRASH') AND c.account_id = ?1
-        ) u
-        CROSS JOIN threads t ON t.account_id = ?1 AND t.id = u.thread_id
-        CROSS JOIN thread_labels x ON x.account_id = ?1 AND x.thread_id = u.thread_id
-        WHERE t.unread_count > 0
-        GROUP BY x.label_id
-        "#,
-        account_id
-    )
-    .fetch_all(&mut *tx)
-    .await?
-    .into_iter()
-    .map(|r| (r.label_id, r.unread))
-    .collect();
-    // The same predicate as `list_all_mail`: every thread minus those in Spam or Trash. Its
-    // unread threads aren't spammed or trashed, so all of them carry `UNREAD`.
-    let all = sqlx::query!(
-        r#"
-        SELECT
-            (SELECT COUNT(*) FROM threads WHERE account_id = ?1)
-            - (SELECT COUNT(DISTINCT thread_id)
-               FROM thread_labels INDEXED BY idx_thread_labels_listing
-               WHERE label_id IN ('SPAM', 'TRASH') AND account_id = ?1) AS "total!: i64",
-            (SELECT COUNT(*)
-             FROM thread_labels u INDEXED BY idx_thread_labels_listing
-             CROSS JOIN threads t ON t.account_id = u.account_id AND t.id = u.thread_id
-             WHERE u.label_id = 'UNREAD' AND u.account_id = ?1 AND t.unread_count > 0
-               AND NOT EXISTS (
-                    SELECT 1 FROM thread_labels e
-                    WHERE e.account_id = u.account_id AND e.thread_id = u.thread_id
-                      AND e.label_id IN ('SPAM', 'TRASH'))) AS "unread!: i64"
-        "#,
-        account_id
-    )
-    .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
-    let mut counts: Vec<LabelCount> = totals
+    let counts = rows
         .into_iter()
         .map(|r| LabelCount {
-            unread: unread.get(&r.label_id).copied().unwrap_or(0),
             label_id: r.label_id,
+            unread: r.unread,
             total: r.total,
         })
         .collect();
-    if all.total > 0 {
-        counts.push(LabelCount {
-            label_id: ALL_MAIL.to_owned(),
-            unread: all.unread,
-            total: all.total,
-        });
-    }
     Ok(Some(LabelCounts { version, counts }))
 }
 
+/// How big an account's cached mailbox is, for Send diagnostics: the list and count reads grow
+/// with these, not with the message count alone.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MailboxShape {
+    pub threads: i64,
+    pub inbox_threads: i64,
+    /// Threads carrying `UNREAD`, anywhere.
+    pub unread_threads: i64,
+    /// Rows of `thread_labels`: one per label per thread.
+    pub thread_label_rows: i64,
+}
+
+pub async fn mailbox_shape(pool: &SqlitePool, account_id: &str) -> Result<MailboxShape> {
+    let row = sqlx::query!(
+        r#"SELECT
+              (SELECT COUNT(*) FROM threads WHERE account_id = ?1) AS "threads!: i64",
+              (SELECT COUNT(*) FROM thread_labels
+               WHERE label_id = 'INBOX' AND account_id = ?1) AS "inbox!: i64",
+              (SELECT COUNT(*) FROM thread_labels
+               WHERE label_id = 'UNREAD' AND account_id = ?1) AS "unread!: i64",
+              (SELECT COUNT(*) FROM thread_labels WHERE account_id = ?1) AS "rows!: i64""#,
+        account_id
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(MailboxShape {
+        threads: row.threads,
+        inbox_threads: row.inbox,
+        unread_threads: row.unread,
+        thread_label_rows: row.rows,
+    })
+}
+
+mod counts;
 #[cfg(test)]
 mod tests;

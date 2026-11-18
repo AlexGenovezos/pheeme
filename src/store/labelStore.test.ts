@@ -179,7 +179,7 @@ test("one account failing leaves the others (and its own last values) in place",
   warn.mockRestore();
 });
 
-test("only the latest load writes its result", async () => {
+test("a load asked for while one runs waits for it, then reads again", async () => {
   const w = world();
   const gates: Array<() => void> = [];
   mockIPC((cmd, args) => {
@@ -196,11 +196,17 @@ test("only the latest load writes its result", async () => {
   await vi.waitFor(() => expect(gates).toHaveLength(1));
   w.counts.a = [{ labelId: "INBOX", unread: 1, total: 1 }];
   const second = store().load(["a"]);
+  const third = store().load(["a"]);
+  // Not a second query beside the first: one follow-up, shared by both calls.
+  await new Promise((r) => setTimeout(r, 0));
+  expect(gates).toHaveLength(1);
+  expect(second).toBe(third);
+
+  gates[0]();
+  await first;
   await vi.waitFor(() => expect(gates).toHaveLength(2));
   gates[1]();
   await second;
-  gates[0]();
-  await first;
   expect(store().counts.a.INBOX.unread).toBe(1);
 });
 

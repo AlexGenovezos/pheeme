@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT label_id AS \"label_id!\", total AS \"total!: i64\", unread AS \"unread!: i64\"\n           FROM label_thread_counts\n           WHERE account_id = ? AND total > 0\n           ORDER BY label_id = 'ALL', label_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "label_id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "label_thread_counts",
+            "name": "label_id"
+          }
+        }
+      },
+      {
+        "name": "total!: i64",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "label_thread_counts",
+            "name": "total"
+          }
+        }
+      },
+      {
+        "name": "unread!: i64",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "label_thread_counts",
+            "name": "unread"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1e7f578021a0ee88401cee080fdb81f880e0ecb3b2c5244a21f228c80c5f9802"
+}
