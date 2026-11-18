@@ -306,7 +306,7 @@ export function ListPane() {
         </Button>
         <span className="list-pane__count">
           <span aria-live="polite">{anyChecked ? `${checkedCount} selected` : ""}</span>
-          {!anyChecked && searchText && <SearchStatus />}
+          {searchText && <SearchStatus />}
           {!anyChecked &&
             !searchText &&
             (threads.length === 0 && loading ? (

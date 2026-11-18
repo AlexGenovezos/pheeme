@@ -1,6 +1,5 @@
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { RotateCw, Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { Kbd } from "../components/ui/Kbd";
 import { TextInput } from "../components/ui/TextInput";
@@ -23,15 +22,15 @@ export function SearchStatus() {
   return (
     <span className="mail-search__status" id="search-status" role="status" aria-live="polite">
       {error ? (
-        <Button
-          variant="ghost"
+        // An icon, so the row still fits beside Select all and Mark all as read in a narrow list.
+        <IconButton
           size="sm"
-          title={`Gmail search incomplete: ${error.message}`}
+          label="Retry Gmail"
+          title={`Gmail search incomplete: ${error.message}. Retry Gmail`}
+          icon={<RotateCw />}
           disabled={search?.remoteLoading}
           onClick={() => void useMailStore.getState().retryGmail()}
-        >
-          Retry Gmail
-        </Button>
+        />
       ) : (
         <span>
           {!search

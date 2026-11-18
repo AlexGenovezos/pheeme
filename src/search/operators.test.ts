@@ -51,7 +51,7 @@ test("operators are suggested for the word being typed, values once the key is t
 
 test("the form reads each operator into its field and writes the same search back", () => {
   const query =
-    'from:amy to:me cc:carl bcc:dee subject:"q3 plan" invoice OR receipt -draft -"old news" ' +
+    'from:amy to:me cc:carl bcc:dee subject:"q3 plan" invoice receipt -draft -"old news" ' +
     "in:sent category:updates is:unread is:muted has:attachment has:drive has:red-bang " +
     "filename:pdf list:team@example.com deliveredto:me@example.com after:2026/01/05 " +
     "before:02/01/2026 newer_than:2m older_than:7d smaller:500k rfc822msgid:abc@x header:X-A:b";
@@ -62,8 +62,8 @@ test("the form reads each operator into its field and writes the same search bac
     to: "me",
     cc: "carl",
     bcc: "dee",
-    subject: "q3 plan",
-    words: "invoice OR receipt",
+    subject: '"q3 plan"',
+    words: "invoice receipt",
     exclude: 'draft "old news"',
     mailbox: "in:sent",
     category: "updates",
@@ -75,8 +75,10 @@ test("the form reads each operator into its field and writes the same search bac
     deliveredto: "me@example.com",
     after: "2026-01-05",
     before: "2026-02-01",
-    newerThan: "2m",
-    olderThan: "7d",
+    newer: "2",
+    newerUnit: "m",
+    older: "7",
+    olderUnit: "d",
     sizeOp: "smaller",
     size: "500",
     sizeUnit: "K",
@@ -84,7 +86,7 @@ test("the form reads each operator into its field and writes the same search bac
     header: "X-A:b",
   });
   expect(fromForm(form)).toBe(
-    'from:amy to:me cc:carl bcc:dee subject:"q3 plan" invoice OR receipt -draft -"old news" ' +
+    'from:amy to:me cc:carl bcc:dee subject:"q3 plan" invoice receipt -draft -"old news" ' +
       "in:sent category:updates is:unread is:muted has:attachment has:drive has:red-bang " +
       "filename:pdf list:team@example.com deliveredto:me@example.com after:2026/01/05 " +
       "before:2026/02/01 newer_than:2m older_than:7d smaller:500K rfc822msgid:abc@x header:X-A:b",
@@ -98,5 +100,38 @@ test("terms without a free field stay in Has the words as written", () => {
   expect(form.words).toBe("from:b -is:starred in:nowhere in:inbox after:yesterday");
   expect(toForm("").words).toBe("");
   expect(fromForm(EMPTY_FORM)).toBe("");
-  expect(fromForm({ ...EMPTY_FORM, size: "big" })).toBe("");
+  expect(fromForm({ ...EMPTY_FORM, size: "big", newer: "soon" })).toBe("");
+  expect(fromForm({ ...EMPTY_FORM, newer: "4", older: "3", olderUnit: "y" })).toBe(
+    "newer_than:4d older_than:3y",
+  );
+});
+
+test("the form keeps OR, AROUND and quoted values as Gmail reads them", () => {
+  for (const query of ["invoice OR from:alice", "holiday AROUND 10 from:amy"]) {
+    const form = toForm(query);
+    expect(form).toEqual({ ...EMPTY_FORM, words: query });
+    expect(fromForm(form)).toBe(query);
+  }
+  const quoted = toForm('subject:"invoice" from:"me" is:"unread"');
+  expect([quoted.subject, quoted.from, quoted.is, quoted.words]).toEqual([
+    '"invoice"',
+    '"me"',
+    [],
+    'is:"unread"',
+  ]);
+  expect(fromForm(quoted)).toBe('from:"me" subject:"invoice" is:"unread"');
+});
+
+test("Unread only only counts an is:unread that stands alone", () => {
+  expect(hasTerm("invoice OR is:unread", "is", "unread")).toBe(false);
+  expect(toggleTerm("invoice OR is:unread", "is", "unread", false)).toBe("invoice OR is:unread");
+  expect(toggleTerm("invoice OR is:unread", "is", "unread", true)).toBe(
+    "invoice OR is:unread is:unread",
+  );
+  expect(hasTerm('is:"unread"', "is", "unread")).toBe(false);
+});
+
+test("nothing is suggested inside a quoted phrase", () => {
+  expect(suggest('subject:"log in', 15, []).items).toEqual([]);
+  expect(suggest('subject:"log" in', 16, []).items.map((s) => s.insert)).toEqual(["in:"]);
 });

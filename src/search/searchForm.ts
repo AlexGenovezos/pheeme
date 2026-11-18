@@ -4,6 +4,7 @@
 import {
   CATEGORY_VALUES,
   HAS_VALUES,
+  hasJoiners,
   IN_VALUES,
   IS_VALUES,
   operatorTerm,
@@ -12,6 +13,7 @@ import {
 } from "./operators";
 
 export type SizeUnit = "M" | "K" | "";
+export type AgeUnit = "d" | "m" | "y";
 
 export interface SearchForm {
   from: string;
@@ -35,9 +37,11 @@ export interface SearchForm {
   /** `YYYY-MM-DD`. */
   after: string;
   before: string;
-  /** `3d`, `2m`, `1y`. */
-  newerThan: string;
-  olderThan: string;
+  /** `newer_than:`/`older_than:`: a whole number of days, months or years. */
+  newer: string;
+  newerUnit: AgeUnit;
+  older: string;
+  olderUnit: AgeUnit;
   sizeOp: "larger" | "smaller";
   size: string;
   sizeUnit: SizeUnit;
@@ -63,8 +67,10 @@ export const EMPTY_FORM: SearchForm = {
   deliveredto: "",
   after: "",
   before: "",
-  newerThan: "",
-  olderThan: "",
+  newer: "",
+  newerUnit: "d",
+  older: "",
+  olderUnit: "d",
   sizeOp: "larger",
   size: "",
   sizeUnit: "M",
@@ -103,12 +109,15 @@ export function toForm(query: string): SearchForm {
   const form: SearchForm = { ...EMPTY_FORM, is: [], has: [] };
   const words: string[] = [];
   const exclude: string[] = [];
-  for (const t of terms(query)) {
+  const ts = terms(query);
+  // `a OR from:b` can't be taken apart: it all stays in Has the words, as written.
+  if (hasJoiners(ts)) return { ...form, words: ts.map((t) => t.raw).join(" ") };
+  for (const t of ts) {
     if (t.negated && t.key === null && !/^-[({]/.test(t.raw)) {
       exclude.push(t.raw.slice(1));
       continue;
     }
-    if (t.negated || t.key === null || !place(form, t.key, t.value)) words.push(t.raw);
+    if (t.negated || t.key === null || !place(form, t.key, t.value, t.written)) words.push(t.raw);
   }
   form.words = words.join(" ");
   form.exclude = exclude.join(" ");
@@ -116,14 +125,16 @@ export function toForm(query: string): SearchForm {
 }
 
 /** Puts one operator in its field; false when it has none or the field is taken. */
-function place(form: SearchForm, key: string, raw: string): boolean {
+function place(form: SearchForm, key: string, raw: string, written: string): boolean {
   const value = raw.toLowerCase();
   if (key in TEXT_FIELDS) {
     const field = TEXT_FIELDS[key as keyof typeof TEXT_FIELDS];
     if (form[field]) return false;
-    form[field] = raw;
+    // Kept with its quotes: `subject:"plan"` is an exact word, `subject:plan` a prefix.
+    form[field] = written;
     return true;
   }
+  if (written !== raw) return false;
   switch (key) {
     case "in":
     case "label":
@@ -158,9 +169,14 @@ function place(form: SearchForm, key: string, raw: string): boolean {
     }
     case "newer_than":
     case "older_than": {
-      const field = key === "newer_than" ? "newerThan" : "olderThan";
-      if (!/^\d+[dmy]$/.test(value) || form[field]) return false;
-      form[field] = value;
+      const [field, unit] =
+        key === "newer_than"
+          ? (["newer", "newerUnit"] as const)
+          : (["older", "olderUnit"] as const);
+      const age = /^(\d+)([dmy])$/.exec(value);
+      if (!age || form[field]) return false;
+      form[field] = age[1];
+      form[unit] = age[2] as AgeUnit;
       return true;
     }
     case "larger":
@@ -201,8 +217,8 @@ export function fromForm(form: SearchForm): string {
   text("deliveredto", form.deliveredto);
   if (form.after) out.push(`after:${form.after.replace(/-/g, "/")}`);
   if (form.before) out.push(`before:${form.before.replace(/-/g, "/")}`);
-  if (form.newerThan) out.push(`newer_than:${form.newerThan}`);
-  if (form.olderThan) out.push(`older_than:${form.olderThan}`);
+  if (/^\d+$/.test(form.newer.trim())) out.push(`newer_than:${form.newer.trim()}${form.newerUnit}`);
+  if (/^\d+$/.test(form.older.trim())) out.push(`older_than:${form.older.trim()}${form.olderUnit}`);
   if (/^\d+(\.\d+)?$/.test(form.size.trim()))
     out.push(`${form.sizeOp}:${form.size.trim()}${form.sizeUnit}`);
   text("rfc822msgid", form.messageId);

@@ -129,7 +129,19 @@ export interface Term {
   key: string | null;
   /** The operator's value without its quotes, or the word or phrase. */
   value: string;
+  /** The operator's value as written: quotes make Gmail match it exactly (`from:"me"` isn't you). */
+  written: string;
 }
+
+/** Words that join their neighbours: `a OR b` isn't `a` and `b`. */
+const JOINERS = new Set(["OR", "AND", "AROUND"]);
+
+/** Whether the query joins terms with OR, AND or AROUND, so its terms can't be taken apart. */
+export const hasJoiners = (ts: readonly Term[]) => ts.some((t) => JOINERS.has(t.raw));
+
+/** Whether term `i` stands alone: neither neighbour joins it to another (`OR`, `AROUND`). */
+const alone = (ts: readonly Term[], i: number) =>
+  !JOINERS.has(ts[i - 1]?.raw ?? "") && !JOINERS.has(ts[i + 1]?.raw ?? "");
 
 /** Splits a query into terms, keeping quoted phrases and bracketed groups whole. */
 export function terms(query: string): Term[] {
@@ -162,8 +174,8 @@ function term(raw: string): Term {
   const colon = body.indexOf(":");
   const key = colon > 0 ? body.slice(0, colon).toLowerCase() : "";
   const rest = colon > 0 ? body.slice(colon + 1) : "";
-  if (KEYS.has(key) && rest) return { raw, negated, key, value: unquote(rest) };
-  return { raw, negated, key: null, value: unquote(body) };
+  if (KEYS.has(key) && rest) return { raw, negated, key, value: unquote(rest), written: rest };
+  return { raw, negated, key: null, value: unquote(body), written: body };
 }
 
 const unquote = (s: string) =>
@@ -175,18 +187,19 @@ export function operatorTerm(key: string, value: string): string {
   return /\s/.test(text) && !/^["({]/.test(text) ? `${key}:"${text}"` : `${key}:${text}`;
 }
 
-/** Whether `query` has the term (`is:unread`), not negated. */
+const isTerm = (t: Term, key: string, value: string) =>
+  !t.negated && t.key === key && t.written.toLowerCase() === value.toLowerCase();
+
+/** Whether `query` has the term (`is:unread`) on its own: not negated, nor one side of an OR. */
 export function hasTerm(query: string, key: string, value: string): boolean {
-  return terms(query).some(
-    (t) => !t.negated && t.key === key && t.value.toLowerCase() === value.toLowerCase(),
-  );
+  const ts = terms(query);
+  return ts.some((t, i) => alone(ts, i) && isTerm(t, key, value));
 }
 
-/** `query` with the term added at the end, or every copy of it taken out. */
+/** `query` with the term added at the end, or every copy of it that stands alone taken out. */
 export function toggleTerm(query: string, key: string, value: string, on: boolean): string {
-  const kept = terms(query).filter(
-    (t) => t.negated || t.key !== key || t.value.toLowerCase() !== value.toLowerCase(),
-  );
+  const ts = terms(query);
+  const kept = ts.filter((t, i) => !alone(ts, i) || !isTerm(t, key, value));
   return [...kept.map((t) => t.raw), ...(on ? [operatorTerm(key, value)] : [])].join(" ");
 }
 
@@ -214,6 +227,8 @@ export function suggest(
   const start = before.search(/\S*$/) + (before.match(/\S*$/)?.[0].startsWith("-") ? 1 : 0);
   const word = query.slice(start, caret);
   const none = { start, items: [] };
+  // Inside a quoted phrase every word is text.
+  if ((before.match(/"/g)?.length ?? 0) % 2 === 1) return none;
   // Only at the end of a word: editing the middle of one shouldn't pop suggestions.
   if (!word || /^\S/.test(query.slice(caret))) return none;
   const colon = word.indexOf(":");

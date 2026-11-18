@@ -5,6 +5,7 @@ import { type ReactNode, type RefObject, useId, useMemo, useRef, useState } from
 import { Button } from "../components/ui/Button";
 import { DateField } from "../components/ui/DateField";
 import { IconButton } from "../components/ui/IconButton";
+import { inPicker } from "../components/ui/Picker";
 import { Select, type SelectOption } from "../components/ui/Select";
 import { TextInput } from "../components/ui/TextInput";
 import { usePopover } from "../components/ui/usePopover";
@@ -12,7 +13,6 @@ import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
 import { useUiStore } from "../store/uiStore";
 import {
-  AGE_VALUES,
   CATEGORY_VALUES,
   HAS_VALUES,
   IN_VALUES,
@@ -20,7 +20,7 @@ import {
   labelValue,
   STAR_VALUES,
 } from "./operators";
-import { fromForm, type SearchForm, type SizeUnit, toForm } from "./searchForm";
+import { type AgeUnit, fromForm, type SearchForm, type SizeUnit, toForm } from "./searchForm";
 import "../components/ui/Surface.css";
 
 /** The form's free-text fields. */
@@ -45,14 +45,15 @@ const SIZE_UNITS: SelectOption<SizeUnit>[] = [
   { value: "K", label: "KB" },
   { value: "", label: "bytes" },
 ];
+const AGE_UNITS: SelectOption<AgeUnit>[] = [
+  { value: "d", label: "days" },
+  { value: "m", label: "months" },
+  { value: "y", label: "years" },
+];
 const SIZE_OPS: SelectOption<SearchForm["sizeOp"]>[] = [
   { value: "larger", label: "Larger than" },
   { value: "smaller", label: "Smaller than" },
 ];
-
-/** A list a field in the panel opened (Select, DateField) is drawn outside it, in `data-picker`. */
-const inPicker = (target: Node) =>
-  !!(target instanceof Element ? target : target.parentElement)?.closest("[data-picker]");
 
 /** `value` is one of `options`, or an extra option showing it as written. */
 function withValue<T extends string>(options: SelectOption<T>[], value: T): SelectOption<T>[] {
@@ -155,6 +156,25 @@ export function SearchOptions({
         />
       </>,
     );
+  const age = (label: string, key: "newer" | "older", unit: "newerUnit" | "olderUnit") =>
+    field(
+      label,
+      <>
+        <TextInput
+          aria-label={label}
+          inputMode="numeric"
+          placeholder="Any age"
+          value={form[key]}
+          onChange={(e) => set(key, e.target.value)}
+        />
+        <Select
+          aria-label={`${label} unit`}
+          value={form[unit]}
+          options={AGE_UNITS}
+          onChange={(value) => set(unit, value)}
+        />
+      </>,
+    );
   const checks = (
     label: string,
     key: "is" | "has",
@@ -224,6 +244,7 @@ export function SearchOptions({
               [
                 ...any("All mail"),
                 ...IN_VALUES.map((x) => ({ value: `in:${x.value}`, label: x.label })),
+                { value: "label:encryptedmail", label: "Encrypted mail" },
                 ...labelOptions,
               ],
               form.mailbox,
@@ -258,24 +279,8 @@ export function SearchOptions({
         )}
         {date("After", "after")}
         {date("Before", "before")}
-        {field(
-          "Newer than",
-          <Select
-            aria-label="Newer than"
-            value={form.newerThan}
-            options={withValue([...any("Any age"), ...AGE_VALUES], form.newerThan)}
-            onChange={(value) => set("newerThan", value)}
-          />,
-        )}
-        {field(
-          "Older than",
-          <Select
-            aria-label="Older than"
-            value={form.olderThan}
-            options={withValue([...any("Any age"), ...AGE_VALUES], form.olderThan)}
-            onChange={(value) => set("olderThan", value)}
-          />,
-        )}
+        {age("Newer than", "newer", "newerUnit")}
+        {age("Older than", "older", "olderUnit")}
         {field(
           "Size",
           <>

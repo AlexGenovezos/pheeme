@@ -203,7 +203,10 @@ test("offline Gmail search leaves cached rows usable and offers a retry", async 
   const retry = await screen.findByRole("button", { name: "Retry Gmail" });
   expect(screen.getByText("Cached invoice")).toBeInTheDocument();
   expect(screen.getByRole("status")).toContainElement(retry);
-  expect(retry).toHaveAttribute("title", "Gmail search incomplete: No connection");
+  expect(retry).toHaveAttribute("title", "Gmail search incomplete: No connection. Retry Gmail");
+  // Selecting results keeps the retry in reach.
+  act(() => useUiStore.getState().checkAll(["a:Cached invoice"]));
+  expect(screen.getByRole("status")).toContainElement(retry);
   remote = () => gmail(row("Recovered match"));
   fireEvent.click(retry);
   expect(await screen.findByText("Recovered match")).toBeInTheDocument();
