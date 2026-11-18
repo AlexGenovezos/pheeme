@@ -164,7 +164,7 @@ pub async fn collect(
     if !probes.is_empty() {
         let loaded = probes.iter().filter(|p| p.loaded()).count();
         highlight.push_str(&format!(
-            "; of the failed, {loaded} of {} load from the app now",
+            "; of the failed, {loaded} of {} come back as images when the app fetches them",
             probes.len()
         ));
     }

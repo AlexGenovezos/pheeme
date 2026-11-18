@@ -314,7 +314,7 @@ pub async fn prepare(
                 sources.db,
                 sources.accounts,
                 request,
-                Some(&crate::http::client()),
+                Some(&image_probe::client()),
             )
             .await?,
         ),
