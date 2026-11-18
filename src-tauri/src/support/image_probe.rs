@@ -156,8 +156,17 @@ fn public_ip(ip: IpAddr) -> bool {
             }
             let [first, second, ..] = v6.segments();
             // Global unicast is 2000::/3; everything else (loopback, unique local, link-local,
-            // multicast, IPv4-compatible) stays off, and documentation (2001:db8::/32) with it.
-            (first & 0xe000) == 0x2000 && !(first == 0x2001 && second == 0x0db8)
+            // multicast, IPv4-compatible) stays off. Inside it, the special-purpose blocks that
+            // aren't globally reachable stay off too, whole: IETF protocol assignments
+            // (2001::/23, which holds benchmarking), 6to4 (2002::/16, which can wrap a private
+            // IPv4 address), documentation (2001:db8::/32, 3fff::/20) and segment routing
+            // (5f00::/16).
+            (first & 0xe000) == 0x2000
+                && !(first == 0x2001 && second < 0x0200)
+                && !(first == 0x2001 && second == 0x0db8)
+                && first != 0x2002
+                && (first & 0xfff0) != 0x3ff0
+                && first != 0x5f00
         }
     }
 }
@@ -308,6 +317,11 @@ mod tests {
             "http://100.94.110.51/a.png",
             "http://[ff02::1]/a.png",
             "http://224.0.0.1/a.png",
+            "http://[2001:2::1]/a.png",
+            "http://[2001:db8::1]/a.png",
+            "http://[3fff::1]/a.png",
+            "http://[2002:c0a8:101::1]/a.png",
+            "http://[5f00::1]/a.png",
             "https://8.8.8.8/a.png",
             "https://[2606:4700::1111]/a.png",
             "https://cdn.example/a.png",
