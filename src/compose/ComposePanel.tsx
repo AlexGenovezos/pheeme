@@ -23,6 +23,7 @@ import {
   useComposeStore,
 } from "./composeStore";
 import { EditorBody, EditorToolbar, replaceSignature, useComposeEditor } from "./Editor";
+import { pastedFiles } from "./paste";
 import { RecipientField } from "./RecipientField";
 import { asFrom, sameAddress, useSendAs } from "./sendAs";
 import { type SignatureUse, useSignatures } from "./signatures";
@@ -112,6 +113,12 @@ export function ComposePanel({ win }: { win: ComposeWindow }) {
       data-compose-id={win.id}
       data-owns-keys=""
       onKeyDown={onKeyDown}
+      onPaste={(e) => {
+        const files = pastedFiles(e.clipboardData);
+        if (files.length === 0) return;
+        e.preventDefault();
+        void store.attachFiles(win.id, files);
+      }}
     >
       <header className="compose__header">
         <span className="compose__title">{title}</span>

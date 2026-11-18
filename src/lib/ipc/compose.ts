@@ -84,6 +84,9 @@ export interface SendAsAddress {
 /** The addresses the account can send from, its own first. */
 export const sendAsAddresses = (accountId: string) => call("send_as_addresses", { accountId });
 export const stageAttachment = (path: string) => call("stage_attachment", { path });
+/** Attach bytes the window holds (base64), such as an image pasted from the clipboard. */
+export const stagePastedAttachment = (filename: string, mimeType: string, data: string) =>
+  call("stage_pasted_attachment", { filename, mimeType, data });
 /** Call when a compose panel closes (sent, saved or discarded). */
 export const discardAttachments = (ids: string[]) => call("discard_attachments", { ids });
 export const saveDraft = (accountId: string, message: ComposeDraft) =>

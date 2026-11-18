@@ -4,6 +4,7 @@ import { Bold, Italic, Link2, List, ListOrdered, Underline } from "lucide-react"
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { cx } from "../lib/utils";
+import { pastedFiles } from "./paste";
 import { SignatureNode } from "./SignatureNode";
 
 /** What TipTap gives back for an empty document; stored as "" so a blank message stays blank. */
@@ -34,7 +35,12 @@ export function useComposeEditor(
       SignatureNode,
     ],
     content: initialHtml,
-    editorProps: { attributes: { class: "compose-editor__content", "aria-label": label } },
+    editorProps: {
+      attributes: { class: "compose-editor__content", "aria-label": label },
+      // A paste of only files (a screenshot) is left to bubble to the compose panel, which attaches them;
+      // handled here so ProseMirror doesn't try to read it as text.
+      handlePaste: (_view, event) => pastedFiles(event.clipboardData).length > 0,
+    },
     onUpdate: ({ editor: e }) => {
       const html = e.getHTML();
       changed.current(html === EMPTY ? "" : html);

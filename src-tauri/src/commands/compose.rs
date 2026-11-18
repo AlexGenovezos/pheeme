@@ -7,8 +7,11 @@ use crate::compose::{
     StagedAttachment,
 };
 use crate::gmail::user_action;
+use crate::mail::MailError;
 use crate::sync::outbox::{FailedSend, ReturnedDraft};
 use crate::AppState;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use std::path::PathBuf;
 use tauri::State;
 
@@ -70,6 +73,23 @@ pub async fn stage_attachment(
     path: PathBuf,
 ) -> Result<StagedAttachment, CommandError> {
     Ok(state.compose.stage_file(&path).await?)
+}
+
+/// Attach a file the window holds as bytes (base64), such as an image pasted from the clipboard.
+#[tauri::command]
+pub async fn stage_pasted_attachment(
+    state: State<'_, AppState>,
+    filename: String,
+    mime_type: String,
+    data: String,
+) -> Result<StagedAttachment, CommandError> {
+    let bytes = BASE64
+        .decode(data)
+        .map_err(|_| MailError::Invalid("That file couldn't be read.".into()))?;
+    Ok(state
+        .compose
+        .stage_pasted(&filename, &mime_type, &bytes)
+        .await?)
 }
 
 #[tauri::command]

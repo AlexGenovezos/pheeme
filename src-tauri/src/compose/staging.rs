@@ -83,6 +83,29 @@ impl Staging {
         })
     }
 
+    /// Stage a file the window holds as bytes, not a path (an image pasted from the clipboard).
+    /// The type comes from the window when it's a valid MIME type, else from the name.
+    pub async fn stage_pasted(
+        &self,
+        name: &str,
+        mime_type: &str,
+        bytes: &[u8],
+    ) -> Result<StagedAttachment, MailError> {
+        if bytes.len() as u64 > MAX_ATTACHMENT_BYTES {
+            return Err(MailError::Invalid(
+                "Attachments can add up to 25 MB at most.".into(),
+            ));
+        }
+        let mime = match mime_type.parse::<mime_guess::mime::Mime>() {
+            Ok(m) => m.essence_str().to_owned(),
+            Err(_) => mime_guess::from_path(name)
+                .first_or_octet_stream()
+                .essence_str()
+                .to_owned(),
+        };
+        self.stage_bytes(name, &mime, None, bytes).await
+    }
+
     pub async fn stage_bytes(
         &self,
         filename: &str,
@@ -170,6 +193,33 @@ mod tests {
             Err(MailError::Invalid(_))
         ));
         assert!(staging.stage_file(dir.path()).await.is_err(), "not a file");
+    }
+
+    #[tokio::test]
+    async fn stage_pasted_keeps_a_valid_type_and_guesses_a_bad_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let staging = Staging::new(dir.path(), crate::storage::test_key());
+        let att = staging
+            .stage_pasted("image.png", "image/png", b"\x89PNG")
+            .await
+            .unwrap();
+        assert_eq!(
+            (att.filename.as_str(), att.mime_type.as_str(), att.size),
+            ("image.png", "image/png", 4)
+        );
+        assert_eq!(staging.read(&att).await.unwrap(), b"\x89PNG");
+
+        let guessed = staging
+            .stage_pasted("shot.jpg", "not a type\r\nX: y", b"j")
+            .await
+            .unwrap();
+        assert_eq!(guessed.mime_type, "image/jpeg");
+
+        let big = vec![0u8; MAX_ATTACHMENT_BYTES as usize + 1];
+        assert!(matches!(
+            staging.stage_pasted("big.png", "image/png", &big).await,
+            Err(MailError::Invalid(_))
+        ));
     }
 
     #[tokio::test]

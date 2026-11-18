@@ -187,6 +187,13 @@ export function createComposeHandlers(
         contentId: null,
       };
     },
+    stage_pasted_attachment: (args): StagedAttachment => ({
+      id: `staged-${++seq}`,
+      filename: String(args.filename),
+      mimeType: String(args.mimeType),
+      size: Math.floor((String(args.data).length * 3) / 4),
+      contentId: null,
+    }),
     discard_attachments: () => undefined,
     save_draft: (args): SavedDraft => {
       const accountId = String(args.accountId);

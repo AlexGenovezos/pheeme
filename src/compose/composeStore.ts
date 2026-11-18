@@ -2,6 +2,7 @@
 // until Gmail confirms them, so Undo and a refused send can bring the message back exactly as it was.
 import { create } from "zustand";
 import { toast, toastError } from "../components/ui/Toast";
+import { base64Of } from "../lib/base64";
 import {
   type ComposeDraft,
   type ComposeMode,
@@ -13,6 +14,7 @@ import {
   saveDraft,
   sendEmail,
   stageAttachment,
+  stagePastedAttachment,
   toCommandError,
 } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
@@ -60,6 +62,18 @@ export interface ComposeWindow {
 
 /** Gmail's limit on everything attached to one message. */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+/** A path the user picked or dropped, or a file the window holds (pasted from the clipboard). */
+export type AttachSource = string | File;
+
+async function stage(source: AttachSource) {
+  if (typeof source === "string") return stageAttachment(source);
+  if (source.size > MAX_ATTACHMENT_BYTES) {
+    throw { code: "invalid_input", message: "Attachments can add up to 25 MB at most." };
+  }
+  const ext = source.type.split("/")[1]?.split(/[+;]/)[0] || "bin";
+  return stagePastedAttachment(source.name || `image.${ext}`, source.type, await base64Of(source));
+}
 /** Panels side by side before the oldest has to be closed. */
 export const MAX_WINDOWS = 3;
 export const AUTOSAVE_MS = 30_000;
@@ -135,7 +149,8 @@ interface ComposeState {
   setAccount(id: number, accountId: string): void;
   /** Send from another of the account's addresses (a send-as alias). */
   setFrom(id: number, from: EmailAddress): void;
-  attachFiles(id: number, paths: string[]): Promise<void>;
+  /** Attach files: paths the user picked or dropped, or files from a paste. */
+  attachFiles(id: number, sources: AttachSource[]): Promise<void>;
   removeAttachment(id: number, attachmentId: string): void;
   /** Save to Gmail Drafts now (autosave passes `quiet`, which keeps failures off the toasts). */
   save(id: number, opts?: { quiet?: boolean }): Promise<boolean>;
@@ -396,14 +411,14 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       edit(id, (w) => ({ draft: { ...w.draft, from } }));
     },
 
-    async attachFiles(id, paths) {
-      if (paths.length === 0 || find(id)?.sending) return;
+    async attachFiles(id, sources) {
+      if (sources.length === 0 || find(id)?.sending) return;
       set((s) => ({
         windows: s.windows.map((w) =>
-          w.id === id ? { ...w, attaching: w.attaching + paths.length } : w,
+          w.id === id ? { ...w, attaching: w.attaching + sources.length } : w,
         ),
       }));
-      const results = await Promise.allSettled(paths.map((p) => stageAttachment(p)));
+      const results = await Promise.allSettled(sources.map(stage));
       const staged = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
       const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
       if (!find(id)) return dropStaged(staged);
@@ -412,7 +427,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
           w.id === id
             ? {
                 ...w,
-                attaching: Math.max(0, w.attaching - paths.length),
+                attaching: Math.max(0, w.attaching - sources.length),
                 draft: { ...w.draft, attachments: [...w.draft.attachments, ...staged] },
                 version: staged.length > 0 ? w.version + 1 : w.version,
               }
