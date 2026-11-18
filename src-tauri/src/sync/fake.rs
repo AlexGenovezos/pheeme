@@ -726,7 +726,8 @@ impl FakeGmail {
     }
 
     /// The search operators the app sends: `in:inbox`, `is:unread`, `category:x` (and
-    /// `-category:x`) and `before:<epoch seconds>`. Other terms match everything.
+    /// `-category:x`), `before:<epoch seconds>` and `from:<address>`. Other terms match
+    /// everything.
     fn operator_matches(m: &FakeMsg, term: &str) -> bool {
         let (negated, term) = match term.strip_prefix('-') {
             Some(rest) => (true, rest),
@@ -738,6 +739,10 @@ impl FakeGmail {
             Some(("is", "unread")) => has("UNREAD"),
             Some(("category", name)) => has(&format!("CATEGORY_{}", name.to_uppercase())),
             Some(("before", secs)) => secs.parse::<i64>().is_ok_and(|s| m.date_ms < s * 1000),
+            Some(("from", who)) => {
+                let who = who.trim_start_matches('(').trim_end_matches(')');
+                m.from.to_lowercase().contains(&who.to_lowercase())
+            }
             _ => return true,
         };
         hit != negated

@@ -313,6 +313,15 @@ pub fn run() {
         .on_menu_event(app_menu::on_event);
 
     builder
+        // First, so a second launch hands over to the running Pheeme before doing anything else:
+        // it brings that window forward and exits, instead of failing on the locked data folder.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Not after a failed start: that window is blank behind the error dialog.
+            if app.try_state::<AppState>().is_some() {
+                info!("Pheeme was opened again; showing the running window");
+                desktop::show_window(app);
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
