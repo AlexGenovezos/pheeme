@@ -139,9 +139,12 @@ const JOINERS = new Set(["OR", "AND", "AROUND"]);
 /** Whether the query joins terms with OR, AND or AROUND, so its terms can't be taken apart. */
 export const hasJoiners = (ts: readonly Term[]) => ts.some((t) => JOINERS.has(t.raw));
 
-/** Whether term `i` stands alone: neither neighbour joins it to another (`OR`, `AROUND`). */
+/** Words that make a term optional: `a OR b` needs neither. (`AND` is what a space means already.) */
+const EITHER = new Set(["OR", "AROUND"]);
+
+/** Whether term `i` is required: neither neighbour is `OR` or `AROUND`. */
 const alone = (ts: readonly Term[], i: number) =>
-  !JOINERS.has(ts[i - 1]?.raw ?? "") && !JOINERS.has(ts[i + 1]?.raw ?? "");
+  !EITHER.has(ts[i - 1]?.raw ?? "") && !EITHER.has(ts[i + 1]?.raw ?? "");
 
 /** Splits a query into terms, keeping quoted phrases and bracketed groups whole. */
 export function terms(query: string): Term[] {
@@ -200,7 +203,11 @@ export function hasTerm(query: string, key: string, value: string): boolean {
 export function toggleTerm(query: string, key: string, value: string, on: boolean): string {
   const ts = terms(query);
   const kept = ts.filter((t, i) => !alone(ts, i) || !isTerm(t, key, value));
-  return [...kept.map((t) => t.raw), ...(on ? [operatorTerm(key, value)] : [])].join(" ");
+  // Taking out `is:unread` from `invoice AND is:unread` leaves an `AND` joining nothing.
+  const joined = kept.filter(
+    (t, i) => t.raw !== "AND" || (i > 0 && i < kept.length - 1 && kept[i + 1].raw !== "AND"),
+  );
+  return [...joined.map((t) => t.raw), ...(on ? [operatorTerm(key, value)] : [])].join(" ");
 }
 
 /** How a label is written after `label:`: Gmail reads spaces and slashes as dashes. */

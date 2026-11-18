@@ -111,7 +111,7 @@ export function toForm(query: string): SearchForm {
   const exclude: string[] = [];
   const ts = terms(query);
   // `a OR from:b` can't be taken apart: it all stays in Has the words, as written.
-  if (hasJoiners(ts)) return { ...form, words: ts.map((t) => t.raw).join(" ") };
+  if (hasJoiners(ts)) return { ...form, words: query.trim() };
   for (const t of ts) {
     if (t.negated && t.key === null && !/^-[({]/.test(t.raw)) {
       exclude.push(t.raw.slice(1));
@@ -192,6 +192,20 @@ function place(form: SearchForm, key: string, raw: string, written: string): boo
     default:
       return false;
   }
+}
+
+/** Fields holding something Gmail can't read, which Search would otherwise drop. */
+export function invalidFields(form: SearchForm): ("newer" | "older" | "size")[] {
+  const bad = (text: string, ok: RegExp) => text.trim() !== "" && !ok.test(text.trim());
+  return (
+    [
+      ["newer", /^\d+$/],
+      ["older", /^\d+$/],
+      ["size", /^\d+(\.\d+)?$/],
+    ] as const
+  )
+    .filter(([key, ok]) => bad(form[key], ok))
+    .map(([key]) => key);
 }
 
 /** The query the form asks for, empty when it asks for nothing. */

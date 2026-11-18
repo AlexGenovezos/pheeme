@@ -20,7 +20,14 @@ import {
   labelValue,
   STAR_VALUES,
 } from "./operators";
-import { type AgeUnit, fromForm, type SearchForm, type SizeUnit, toForm } from "./searchForm";
+import {
+  type AgeUnit,
+  fromForm,
+  invalidFields,
+  type SearchForm,
+  type SizeUnit,
+  toForm,
+} from "./searchForm";
 import "../components/ui/Surface.css";
 
 /** The form's free-text fields. */
@@ -107,8 +114,13 @@ export function SearchOptions({
       .map(([value, name]) => ({ value, label: name, group: "Labels" }));
   }, [accounts, allLabels, account]);
 
+  const invalid = invalidFields(form);
   const search = (e: { preventDefault(): void }) => {
     e.preventDefault();
+    if (invalid.length) {
+      ref.current?.querySelector<HTMLElement>("[aria-invalid=true]")?.focus();
+      return;
+    }
     onClose();
     useUiStore.getState().setSearch(fromForm(form), account || null);
   };
@@ -163,6 +175,8 @@ export function SearchOptions({
         <TextInput
           aria-label={label}
           inputMode="numeric"
+          invalid={invalid.includes(key)}
+          title={invalid.includes(key) ? "A whole number" : undefined}
           placeholder="Any age"
           value={form[key]}
           onChange={(e) => set(key, e.target.value)}
@@ -294,6 +308,8 @@ export function SearchOptions({
             <TextInput
               aria-label="Size"
               inputMode="decimal"
+              invalid={invalid.includes("size")}
+              title={invalid.includes("size") ? "A number" : undefined}
               value={form.size}
               onChange={(e) => set("size", e.target.value)}
             />

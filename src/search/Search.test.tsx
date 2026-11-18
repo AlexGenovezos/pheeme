@@ -297,7 +297,14 @@ test("Search options reads the search into fields and writes the form back", asy
   );
 
   fireEvent.click(screen.getByRole("button", { name: "Search options" }));
-  fireEvent.keyDown(screen.getByRole("dialog", { name: "Search options" }), { key: "Escape" });
+  const again = screen.getByRole("dialog", { name: "Search options" });
+  const newer = within(again).getByRole("textbox", { name: "Newer than" });
+  fireEvent.change(newer, { target: { value: "7d" } });
+  fireEvent.submit(again);
+  // A value Gmail can't read keeps the form open on it rather than dropping it.
+  expect(again).toBeInTheDocument();
+  expect(newer).toHaveAttribute("aria-invalid", "true");
+  fireEvent.keyDown(again, { key: "Escape" });
   expect(screen.queryByRole("dialog", { name: "Search options" })).not.toBeInTheDocument();
 });
 

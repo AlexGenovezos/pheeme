@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { EMPTY_FORM, fromForm, toForm } from "./searchForm";
+import { EMPTY_FORM, fromForm, invalidFields, toForm } from "./searchForm";
 import { hasTerm, labelValue, suggest, terms, toggleTerm } from "./operators";
 
 test("terms keep phrases, quoted values and groups whole", () => {
@@ -101,12 +101,19 @@ test("terms without a free field stay in Has the words as written", () => {
   expect(toForm("").words).toBe("");
   expect(fromForm(EMPTY_FORM)).toBe("");
   expect(fromForm({ ...EMPTY_FORM, size: "big", newer: "soon" })).toBe("");
+  expect(invalidFields({ ...EMPTY_FORM, size: "big", newer: "7d", older: "1.5" })).toEqual([
+    "newer",
+    "older",
+    "size",
+  ]);
+  expect(invalidFields({ ...EMPTY_FORM, size: "2.5", newer: " 7 " })).toEqual([]);
   expect(fromForm({ ...EMPTY_FORM, newer: "4", older: "3", olderUnit: "y" })).toBe(
     "newer_than:4d older_than:3y",
   );
 });
 
 test("the form keeps OR, AROUND and quoted values as Gmail reads them", () => {
+  expect(toForm(" from:a  OR   from:b ").words).toBe("from:a  OR   from:b");
   for (const query of ["invoice OR from:alice", "holiday AROUND 10 from:amy"]) {
     const form = toForm(query);
     expect(form).toEqual({ ...EMPTY_FORM, words: query });
@@ -129,6 +136,9 @@ test("Unread only only counts an is:unread that stands alone", () => {
     "invoice OR is:unread is:unread",
   );
   expect(hasTerm('is:"unread"', "is", "unread")).toBe(false);
+  expect(hasTerm("invoice AND is:unread", "is", "unread")).toBe(true);
+  expect(toggleTerm("invoice AND is:unread", "is", "unread", false)).toBe("invoice");
+  expect(toggleTerm("is:unread AND invoice", "is", "unread", false)).toBe("invoice");
 });
 
 test("nothing is suggested inside a quoted phrase", () => {
