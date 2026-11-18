@@ -1,5 +1,5 @@
 .settings-scrim {
-  padding: var(--settings-margin);
+  padding: var(--settings-margin-top) var(--settings-margin) var(--settings-margin);
   animation: settings-fade var(--duration-base) var(--ease-standard);
 }
 

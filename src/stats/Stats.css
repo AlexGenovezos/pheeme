@@ -1,6 +1,6 @@
 /* The Stats window (StatsDialog.tsx): a dialog over the blurred app, the size of Settings. */
 .stats-scrim {
-  padding: var(--settings-margin);
+  padding: var(--settings-margin-top) var(--settings-margin) var(--settings-margin);
   animation: settings-fade var(--duration-base) var(--ease-standard);
 }
 
@@ -71,6 +71,9 @@
 .stats__content {
   display: grid;
   align-content: start;
+  width: 100%;
+  max-width: var(--stats-content-width);
+  margin: var(--space-0) auto;
   outline: none;
   gap: var(--space-5);
   font-size: var(--font-size-sm);
