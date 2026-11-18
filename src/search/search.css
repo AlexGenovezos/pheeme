@@ -24,7 +24,7 @@
 .mail-search__recent {
   position: absolute;
   inset-inline: var(--space-0);
-  top: var(--control-height-md);
+  top: calc(var(--control-height-md) + var(--control-height-lg));
   z-index: var(--z-popover);
   max-height: var(--palette-list-max-height);
   overflow-y: auto;

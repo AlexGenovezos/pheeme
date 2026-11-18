@@ -14,6 +14,7 @@ import "./search.css";
 import "../components/ui/Surface.css";
 
 export const SEARCH_INPUT_ID = "mail-search";
+const ATTACHMENT_QUERY = /(^|\s)has:attachment(?=\s|$)/gi;
 
 export function SearchBar() {
   const text = useUiStore((s) => s.searchText);
@@ -127,6 +128,20 @@ export function SearchBar() {
           }
         }}
       />
+      <label className="mail-search__scope">
+        <input
+          type="checkbox"
+          checked={!!text.match(ATTACHMENT_QUERY)}
+          onChange={(e) =>
+            setSearch(
+              e.target.checked
+                ? `${text.trim()} has:attachment `.trimStart()
+                : text.replace(ATTACHMENT_QUERY, "").trim(),
+            )
+          }
+        />
+        Has attachment
+      </label>
       {focused && (suggestions.length > 0 || historyError) && (
         <div
           className="mail-search__recent popover-surface"
