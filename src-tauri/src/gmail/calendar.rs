@@ -294,6 +294,25 @@ impl GmailClient {
         })
     }
 
+    /// Recolour a calendar in the account's list (how it shows for this account only, on every
+    /// device): `background` with `foreground` text, both `#rrggbb`. Google picks the nearest
+    /// `colorId` itself. Returns the updated entry. Needs
+    /// [`super::auth::CALENDAR_LIST_SCOPES`].
+    pub async fn set_calendar_color(
+        &self,
+        calendar_id: &str,
+        background: &str,
+        foreground: &str,
+    ) -> Result<ApiCalendar, GmailError> {
+        let req = ApiRequest::patch(&["users", "me", "calendarList", calendar_id])
+            .query("colorRgbFormat", "true")
+            .json(serde_json::json!({
+                "backgroundColor": background,
+                "foregroundColor": foreground,
+            }));
+        self.send_json(req).await
+    }
+
     /// The user's time zone and first day of the week.
     pub async fn calendar_settings(&self) -> Result<CalendarSettings, GmailError> {
         let time_zone: Setting = self
@@ -809,6 +828,38 @@ mod tests {
         assert!(!holidays.primary);
         assert!(!holidays.deleted);
         assert_eq!(holidays.access_role, "reader");
+    }
+
+    #[tokio::test]
+    async fn recolours_a_calendar_in_the_list() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path(
+                "/users/me/calendarList/team%23x@group.calendar.google.com",
+            ))
+            .and(query_param("colorRgbFormat", "true"))
+            .and(wiremock::matchers::body_json(json!({
+                "backgroundColor": "#4986e7",
+                "foregroundColor": "#000000",
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "team#x@group.calendar.google.com",
+                "summary": "Team",
+                "colorId": "16",
+                "backgroundColor": "#4986e7",
+                "foregroundColor": "#000000",
+                "accessRole": "reader",
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let entry = client
+            .set_calendar_color("team#x@group.calendar.google.com", "#4986e7", "#000000")
+            .await
+            .unwrap();
+        assert_eq!(entry.background_color.as_deref(), Some("#4986e7"));
+        assert_eq!(entry.access_role, "reader");
     }
 
     #[tokio::test]

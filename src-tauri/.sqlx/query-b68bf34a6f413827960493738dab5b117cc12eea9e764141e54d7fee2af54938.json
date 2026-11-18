@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE calendars SET background_color = ?, foreground_color = ?\n         WHERE account_id = ? AND id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "b68bf34a6f413827960493738dab5b117cc12eea9e764141e54d7fee2af54938"
+}

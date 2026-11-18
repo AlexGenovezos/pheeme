@@ -591,6 +591,7 @@ pub fn run() {
             commands::calendar::calendar_availability,
             commands::calendar::search_calendar_events,
             commands::calendar::set_calendar_hidden,
+            commands::calendar::set_calendar_color,
             commands::calendar::calendar_sync_now,
             commands::calendar::open_meeting_link,
             commands::calendar::set_calendar_foreground,

@@ -23,6 +23,7 @@ import { useUiStore } from "../store/uiStore";
 import { AccountAccess, syncLine } from "./AccessControls";
 import { openQuickAdd } from "./actions";
 import { screenDays, useCalendarStore, weekStartOf, displayZone } from "./calendarStore";
+import { CalendarColorButton, useCalendarColor } from "./CalendarColor";
 import { calendarColor, eventColors, textOn } from "./colors";
 import { addDays, addMonths, dateOf, formatDay, startOfMonth } from "./dates";
 import { useCalendarLookup } from "./EventBlock";
@@ -209,29 +210,43 @@ function MiniMonth() {
 function CalendarRow({ account, calendar }: { account: CalendarAccount; calendar: CalendarInfo }) {
   const color = calendarColor(calendar);
   const shown = !calendar.hidden;
+  const name = calendar.primary ? account.email : calendar.summary;
+  const picker = useCalendarColor(account.accountId, calendar);
   return (
-    <label className="cal-sidebar__calendar" title={calendar.summary}>
-      <input
-        type="checkbox"
-        className="cal-sidebar__check-input"
-        checked={shown}
-        onChange={(e) =>
-          void useCalendarStore
-            .getState()
-            .setHidden(account.accountId, calendar.id, !e.currentTarget.checked)
-        }
-      />
-      <span
-        className="cal-sidebar__check"
-        style={{ background: shown ? color : undefined, borderColor: color, color: textOn(color) }}
-        aria-hidden="true"
-      >
-        {shown && <Check />}
-      </span>
-      <span className="cal-sidebar__calendar-name">
-        {calendar.primary ? account.email : calendar.summary}
-      </span>
-    </label>
+    <div
+      className="cal-sidebar__calendar-row"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        picker.openAt({ x: e.clientX, y: e.clientY }, null);
+      }}
+    >
+      <label className="cal-sidebar__calendar" title={calendar.summary}>
+        <input
+          type="checkbox"
+          className="cal-sidebar__check-input"
+          checked={shown}
+          onChange={(e) =>
+            void useCalendarStore
+              .getState()
+              .setHidden(account.accountId, calendar.id, !e.currentTarget.checked)
+          }
+        />
+        <span
+          className="cal-sidebar__check"
+          style={{
+            background: shown ? color : undefined,
+            borderColor: color,
+            color: textOn(color),
+          }}
+          aria-hidden="true"
+        >
+          {shown && <Check />}
+        </span>
+        <span className="cal-sidebar__calendar-name">{name}</span>
+      </label>
+      <CalendarColorButton name={name} open={picker.open} onOpen={picker.openAt} />
+      {picker.popover}
+    </div>
   );
 }
 

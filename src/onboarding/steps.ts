@@ -21,6 +21,9 @@ export const CALENDAR_SCOPES = [
 /** Asked for when the event editor first checks guests' availability (`auth::FREEBUSY_SCOPES`). */
 const FREEBUSY_SCOPE = "https://www.googleapis.com/auth/calendar.events.freebusy";
 
+/** Asked for when a calendar is first recoloured (`auth::CALENDAR_LIST_SCOPES`). */
+const CALENDAR_LIST_SCOPE = "https://www.googleapis.com/auth/calendar.calendarlist";
+
 export type StepId =
   | "project"
   | "gmail-api"
@@ -153,7 +156,7 @@ export const STEPS: GuideStep[] = [
       "App information: enter the app name below and your email as the support email.",
       "Audience: choose External. Choose Internal only for a Google Workspace project used by your organization's accounts alone.",
       "Contact information: your email. Agree to the policy and click Create.",
-      "Optional: under Data access, add the scopes below. Pheeme asks for them when you sign in either way. gmail.settings.basic only lets Pheeme save sender rules (Gmail filters that file a sender's mail in an inbox tab), the two contacts scopes only let it read your contacts to suggest recipients, and the calendar scopes are asked for when you first open the calendar. calendar.events.freebusy is asked for separately when you first check guests' availability in the event editor; it only shows when people are busy, never what their events are.",
+      "Optional: under Data access, add the scopes below. Pheeme asks for them when you sign in either way. gmail.settings.basic only lets Pheeme save sender rules (Gmail filters that file a sender's mail in an inbox tab), the two contacts scopes only let it read your contacts to suggest recipients, and the calendar scopes are asked for when you first open the calendar. calendar.events.freebusy is asked for separately when you first check guests' availability in the event editor; it only shows when people are busy, never what their events are. calendar.calendarlist is asked for when you first change a calendar's colour; it only changes how calendars show in your list.",
       "Drive is optional: when you first use Attach from Google Drive or Save to Google Drive, allow Drive access and turn on the Drive API if asked. It lets Pheeme see file names and details, and create new files; sharing permissions stay as they are. Saving a person to Google Contacts asks separately for permission to write contacts.",
     ],
     why: "Google shows this screen when you sign in. The app is yours, so you're both its developer and its only user.",
@@ -166,7 +169,7 @@ export const STEPS: GuideStep[] = [
       { label: "Scopes (optional)", value: GMAIL_SCOPES.join(",") },
       {
         label: "Calendar scopes (optional)",
-        value: [...CALENDAR_SCOPES, FREEBUSY_SCOPE].join(","),
+        value: [...CALENDAR_SCOPES, FREEBUSY_SCOPE, CALENDAR_LIST_SCOPE].join(","),
       },
     ],
   },

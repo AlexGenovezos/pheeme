@@ -140,11 +140,16 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
   const drive = createDriveHandlers(accounts, threads, params.get("drive"));
   const calendarZone =
     params.get("calendarZone") || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // `?calendarColors=missing_scope`: recolouring a calendar asks for the consent first.
+  const calendarColorsAllowed = new Set(
+    params.get("calendarColors") === "missing_scope" ? [] : accounts.map((a) => a.id),
+  );
   const calendar = createCalendarHandlers(
     accounts,
     params.get("calendar"),
     undefined,
     calendarZone,
+    calendarColorsAllowed,
   );
   const availability = createAvailabilityHandlers(
     accounts,
@@ -457,12 +462,15 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
       if (
         choice &&
         "accountId" in choice &&
-        ["drive", "contacts", "calendar", "availability", "reconnect"].includes(choice.kind)
+        ["drive", "contacts", "calendar", "availability", "calendarColors", "reconnect"].includes(
+          choice.kind,
+        )
       ) {
         const existing = accounts.find((a) => a.id === choice.accountId);
         if (!existing) throw { code: "not_found", message: "That account isn't connected." };
         if (choice.kind === "drive") drive.allow(existing.id);
         if (choice.kind === "availability") availability.allow(existing.id);
+        if (choice.kind === "calendarColors") calendarColorsAllowed.add(existing.id);
         return existing;
       }
       const account = accounts.find((a) => a.email === "you@example.com") ?? {

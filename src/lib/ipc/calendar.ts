@@ -93,6 +93,16 @@ export const searchCalendarEvents = (
 /** Show or hide a calendar's events (local). */
 export const setCalendarHidden = (accountId: string, calendarId: string, hidden: boolean) =>
   call("set_calendar_hidden", { accountId, calendarId, hidden });
+/**
+ * Recolour a calendar in the account's Google calendar list (`#rrggbb`), so every device shows it.
+ * Rejects with `missing_scope` until the account allows it (`{ kind: "calendarColors" }`).
+ */
+export const setCalendarColor = (
+  accountId: string,
+  calendarId: string,
+  background: string,
+  foreground: string,
+) => call("set_calendar_color", { accountId, calendarId, background, foreground });
 /** Sync the account's calendars now (after allowing access, or "Check again"). */
 export const calendarSyncNow = (accountId: string) => call("calendar_sync_now", { accountId });
 /** One busy stretch, UTC ms, end exclusive. */

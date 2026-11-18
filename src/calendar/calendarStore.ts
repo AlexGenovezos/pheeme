@@ -10,13 +10,16 @@ import {
   CALENDAR_EVENTS,
   type CalendarAccount,
   type CalendarEvent,
+  type CalendarInfo,
   getCalendarAccounts,
   getCalendarEvents,
   getDatedTasks,
+  setCalendarColor,
   setCalendarHidden,
   toCommandError,
 } from "../lib/tauri";
 import { useTasksStore } from "../tasks/tasksStore";
+import { textOn } from "./colors";
 import { addDays, dateOf, isValidZone, systemZone } from "./dates";
 import { type CalendarView, daysRange, shiftAnchor, visibleDays, windowDays } from "./views";
 
@@ -132,6 +135,11 @@ interface CalendarState extends Prefs {
   /** Read the events around the days on screen (again). */
   loadEvents(): Promise<void>;
   setHidden(accountId: string, calendarId: string, hidden: boolean): Promise<void>;
+  /**
+   * Recolour a calendar on Google (`#rrggbb`): shown at once, put back if Google refuses. Rejects with
+   * the command error (`missing_scope` until the account allows it).
+   */
+  setColor(accountId: string, calendarId: string, background: string): Promise<void>;
   /** Reload on calendar sync events. Resolves to the unsubscribe function. */
   subscribe(signal?: AbortSignal): Promise<() => void>;
 }
@@ -154,6 +162,19 @@ let pending: Place | null = null;
 export const useCalendarStore = create<CalendarState>((set, get) => {
   const prefs = readPrefs();
   const save = (view = get().view) => writePrefs({ mode: get().mode, view });
+  /** Changes one calendar of `accountId` in place. */
+  const patchCalendar = (accountId: string, calendarId: string, changes: Partial<CalendarInfo>) =>
+    set((s) => ({
+      accounts:
+        s.accounts?.map((a) =>
+          a.accountId !== accountId
+            ? a
+            : {
+                ...a,
+                calendars: a.calendars.map((c) => (c.id === calendarId ? { ...c, ...changes } : c)),
+              },
+        ) ?? null,
+    }));
   /** The place on screen, or the one it's on its way to. */
   const target = (): Place => pending ?? { view: get().view, anchor: get().anchor };
 
@@ -312,20 +333,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
     loadEvents: () => show(target(), true),
 
     setHidden: async (accountId, calendarId, hidden) => {
-      const patch = (value: boolean) =>
-        set((s) => ({
-          accounts:
-            s.accounts?.map((a) =>
-              a.accountId !== accountId
-                ? a
-                : {
-                    ...a,
-                    calendars: a.calendars.map((c) =>
-                      c.id === calendarId ? { ...c, hidden: value } : c,
-                    ),
-                  },
-            ) ?? null,
-        }));
+      const patch = (value: boolean) => patchCalendar(accountId, calendarId, { hidden: value });
       patch(hidden);
       try {
         await setCalendarHidden(accountId, calendarId, hidden);
@@ -335,6 +343,27 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
         return;
       }
       await get().loadEvents();
+    },
+
+    setColor: async (accountId, calendarId, background) => {
+      const before = get()
+        .accounts?.find((a) => a.accountId === accountId)
+        ?.calendars.find((c) => c.id === calendarId);
+      if (!before) return;
+      const foreground = textOn(background);
+      patchCalendar(accountId, calendarId, {
+        backgroundColor: background,
+        foregroundColor: foreground,
+      });
+      try {
+        await setCalendarColor(accountId, calendarId, background, foreground);
+      } catch (e) {
+        patchCalendar(accountId, calendarId, {
+          backgroundColor: before.backgroundColor,
+          foregroundColor: before.foregroundColor,
+        });
+        throw e;
+      }
     },
 
     subscribe: (signal) =>

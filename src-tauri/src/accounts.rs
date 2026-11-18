@@ -93,6 +93,9 @@ pub enum ClientChoice {
     /// See guests' free/busy in the event editor (incremental consent).
     #[serde(rename_all = "camelCase")]
     Availability { account_id: String },
+    /// Change calendars' colours in the account's calendar list (incremental consent).
+    #[serde(rename_all = "camelCase")]
+    CalendarColors { account_id: String },
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -257,6 +260,7 @@ impl AccountService {
             ClientChoice::Drive { .. } => auth::DRIVE_SCOPES,
             ClientChoice::Contacts { .. } => auth::CONTACT_WRITE_SCOPES,
             ClientChoice::Availability { .. } => auth::FREEBUSY_SCOPES,
+            ClientChoice::CalendarColors { .. } => auth::CALENDAR_LIST_SCOPES,
             _ => &[],
         };
         let (creds, expected_email) = match choice {
@@ -272,7 +276,8 @@ impl AccountService {
             | ClientChoice::Calendar { account_id }
             | ClientChoice::Drive { account_id }
             | ClientChoice::Contacts { account_id }
-            | ClientChoice::Availability { account_id } => {
+            | ClientChoice::Availability { account_id }
+            | ClientChoice::CalendarColors { account_id } => {
                 let account = self.account(&account_id).await?;
                 let creds = self.saved_credentials(&account).await?.0;
                 (creds, Some(account.email))
@@ -1440,6 +1445,13 @@ mod tests {
                 },
                 auth::FREEBUSY_SCOPES[0],
                 // Never the broader calendar scopes: availability is its own consent.
+                auth::CALENDAR_SCOPE,
+            ),
+            (
+                ClientChoice::CalendarColors {
+                    account_id: account.id.clone(),
+                },
+                auth::CALENDAR_LIST_SCOPES[0],
                 auth::CALENDAR_SCOPE,
             ),
         ] {
