@@ -195,6 +195,8 @@ export const useLabelStore = create<LabelState>((set, get) => {
     categoryCounts: {},
     allInboxUnread: 0,
     load: (accountIds) => {
+      // Another set of accounts: a load still running for the old set mustn't publish its answer.
+      if (accountIds.join("\n") !== knownIds.join("\n")) ++latest;
       knownIds = accountIds;
       return loader();
     },
@@ -227,7 +229,9 @@ export const useLabelStore = create<LabelState>((set, get) => {
     },
     settleUnread: (op) => {
       if (!pendingReads.delete(op) || pendingReads.size > 0) return;
-      // Success, failure and cancelled automatic reads all reconcile against the cache.
+      // Success, failure and cancelled automatic reads all reconcile against the cache. A load still running
+      // may have read the counts before the change reached the cache, so its answer is dropped for the next one.
+      ++latest;
       void get().load(knownIds);
     },
     patchLabels: (accountId, apply) => {

@@ -55,6 +55,7 @@ export function coalesce<A extends unknown[]>(run: (...args: A) => Promise<void>
     reset() {
       generation++;
       running = false;
+      next?.settle(Promise.resolve());
       next = null;
     },
   });

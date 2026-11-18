@@ -217,6 +217,42 @@ const readChange = (delta = -1) => ({
   categoryIds: ["INBOX", "CATEGORY_SOCIAL"],
 });
 
+test("a refresh that read the counts before a read reached the cache doesn't publish them once it settles", async () => {
+  const w = world();
+  backend(w);
+  await store().load(["a"]);
+  store().patchUnread(1, [readChange()]);
+  expect(store().counts.a.INBOX.unread).toBe(2);
+
+  // A sync event's refresh reads the counts while the read is still on its way to the cache.
+  const gates: Array<() => void> = [];
+  mockIPC((cmd, args) => {
+    const a = args as { accountId?: string; accountIds?: string[] };
+    const snapshot =
+      cmd === "list_labels"
+        ? w.labels[a.accountId ?? ""]
+        : cmd === "label_counts"
+          ? w.counts[a.accountId ?? ""]
+          : a.accountIds?.length === 1
+            ? w.mailbox[a.accountIds[0]]
+            : [{ labelId: "INBOX", unread: w.allInbox }];
+    return new Promise((resolve) => gates.push(() => resolve(snapshot)));
+  });
+  const stale = store().load(["a"]);
+  await vi.waitFor(() => expect(gates.length).toBeGreaterThan(0));
+
+  // The read lands and settles; the old refresh then answers with the counts from before it.
+  w.counts.a = [{ labelId: "INBOX", unread: 2, total: 10 }];
+  store().settleUnread(1);
+  gates.splice(0).forEach((open) => open());
+  await stale;
+  expect(store().counts.a.INBOX.unread).toBe(2);
+
+  await vi.waitFor(() => expect(gates.length).toBeGreaterThan(0));
+  gates.splice(0).forEach((open) => open());
+  await vi.waitFor(() => expect(store().counts.a.INBOX.unread).toBe(2));
+});
+
 test("pending reads reject older refreshes and reconcile once all commands settle", async () => {
   const w = world();
   backend(w);
