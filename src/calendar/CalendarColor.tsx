@@ -104,11 +104,7 @@ function ColorPopover({
       <div className="cal-color__note" role="status">
         {saving === "needs_access" ? (
           <>
-            <span>
-              {authorizing
-                ? "Finish in your browser…"
-                : "Allow Pheeme to change colours on Google."}
-            </span>
+            <span>{authorizing ? "Finish in your browser…" : "Saving needs Google access."}</span>
             {authorizing ? (
               <Button size="sm" variant="ghost" onClick={onCancelAllow}>
                 Cancel
