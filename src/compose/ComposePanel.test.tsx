@@ -547,5 +547,7 @@ test("pasting a screenshot into the message attaches it; pasting text still type
       getData: (t: string) => (t === "text/plain" ? "Q3 numbers" : ""),
     },
   });
+  expect(await within(panel).findByText(/Q3 numbers/)).toBeTruthy();
+  expect(useComposeStore.getState().windows[0].attaching).toBe(0);
   expect(calls.filter((c) => c.cmd === "stage_pasted_attachment")).toHaveLength(1);
 });
