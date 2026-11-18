@@ -216,6 +216,15 @@ async fn encrypt_legacy_database(path: &Path, key: &StorageKey) -> Result<()> {
     Ok(())
 }
 
+/// The database's size in bytes (its pages, in use or free), for Send diagnostics.
+pub async fn database_bytes(pool: &SqlitePool) -> Result<i64> {
+    Ok(sqlx::query_scalar(
+        "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
+    )
+    .fetch_one(pool)
+    .await?)
+}
+
 /// A write transaction that takes SQLite's write lock up front (`BEGIN IMMEDIATE`), so it
 /// waits its turn behind other writers instead of failing when it upgrades from a read.
 pub async fn begin_write(pool: &SqlitePool) -> Result<sqlx::Transaction<'static, sqlx::Sqlite>> {

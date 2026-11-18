@@ -293,20 +293,20 @@ async fn label_counts_count_again_only_after_a_change() {
     };
     assert_eq!(inbox(mail.label_counts("a1").await.unwrap()), Some((1, 1)));
 
-    // A row gone behind the service's back (no version bump) isn't seen, so neither a
-    // repeat nor a sync that brings nothing new counts again.
-    sqlx::query("DELETE FROM thread_labels WHERE thread_id = 't1' AND label_id = 'INBOX'")
+    // A count changed behind the service's back (no version bump) isn't seen, so neither a
+    // repeat nor a sync that brings nothing new reads the counts again.
+    sqlx::query("UPDATE label_thread_counts SET total = total + 5 WHERE label_id = 'INBOX'")
         .execute(&db.pool)
         .await
         .unwrap();
     mail.sync.engine("a1").run_incremental_sync().await.unwrap();
     assert_eq!(inbox(mail.label_counts("a1").await.unwrap()), Some((1, 1)));
 
-    // A real change counts again.
+    // A real change reads them again (with the tweak, which only a recount would undo).
     mail.modify_threads("a1", &["t1".into()], &[], &["UNREAD".into()])
         .await
         .unwrap();
-    assert_eq!(inbox(mail.label_counts("a1").await.unwrap()), Some((0, 1)));
+    assert_eq!(inbox(mail.label_counts("a1").await.unwrap()), Some((0, 6)));
 }
 
 #[tokio::test]

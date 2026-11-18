@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM thread_labels WHERE account_id = ? AND thread_id = ? RETURNING label_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "label_id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "thread_labels",
+            "name": "label_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e0412707e42d4d04d2164fb0a448ce3a2486a8620192ee1199803ea3fb72fc21"
+}

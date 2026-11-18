@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO inbox_unread_counts (account_id, categories, threads)\n                 VALUES (?, ?, ?)\n                 ON CONFLICT (account_id, categories) DO UPDATE SET\n                   threads = threads + excluded.threads",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "972d0549b7beba576cfbedeb915c45dc39b1bf1a0b5adb4c7c2dd03595d771f4"
+}

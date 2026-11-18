@@ -1504,3 +1504,288 @@ async fn all_mail_pages_use_expression_indexes_without_sort() {
         }
     }
 }
+
+/// The label counts as they were counted before migration 020 kept them: what the kept counts
+/// must equal. `(label, total, unread)`, All Mail last.
+async fn label_counts_from_scratch(pool: &SqlitePool, account_id: &str) -> Vec<(String, i64, i64)> {
+    let unread: HashMap<String, i64> = sqlx::query(
+        "SELECT x.label_id, COUNT(*)
+         FROM (SELECT DISTINCT c.thread_id AS thread_id FROM thread_labels c
+               WHERE c.label_id IN ('UNREAD', 'SPAM', 'TRASH') AND c.account_id = ?1) u
+         CROSS JOIN threads t ON t.account_id = ?1 AND t.id = u.thread_id
+         CROSS JOIN thread_labels x ON x.account_id = ?1 AND x.thread_id = u.thread_id
+         WHERE t.unread_count > 0
+         GROUP BY x.label_id",
+    )
+    .bind(account_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|r| (r.get(0), r.get(1)))
+    .collect();
+    let mut out: Vec<(String, i64, i64)> = sqlx::query(
+        "SELECT label_id, COUNT(*) FROM thread_labels WHERE account_id = ?
+         GROUP BY label_id ORDER BY label_id",
+    )
+    .bind(account_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|r| {
+        let label: String = r.get(0);
+        let n = unread.get(&label).copied().unwrap_or(0);
+        (label, r.get(1), n)
+    })
+    .collect();
+    let all = sqlx::query(
+        "SELECT
+            (SELECT COUNT(*) FROM threads WHERE account_id = ?1)
+            - (SELECT COUNT(DISTINCT thread_id) FROM thread_labels
+               WHERE label_id IN ('SPAM', 'TRASH') AND account_id = ?1),
+            (SELECT COUNT(*) FROM thread_labels u
+             CROSS JOIN threads t ON t.account_id = u.account_id AND t.id = u.thread_id
+             WHERE u.label_id = 'UNREAD' AND u.account_id = ?1 AND t.unread_count > 0
+               AND NOT EXISTS (
+                    SELECT 1 FROM thread_labels e
+                    WHERE e.account_id = u.account_id AND e.thread_id = u.thread_id
+                      AND e.label_id IN ('SPAM', 'TRASH')))",
+    )
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let total: i64 = all.get(0);
+    if total > 0 {
+        out.push((ALL_MAIL.into(), total, all.get(1)));
+    }
+    out
+}
+
+/// The unread Inbox and tab counts as they were counted before migration 020, for one account
+/// whose Primary leaves out `excluded`.
+async fn unread_counts_from_scratch(
+    pool: &SqlitePool,
+    account_id: &str,
+    excluded: &[String],
+) -> Vec<(String, i64)> {
+    sqlx::query(
+        "SELECT label_id, COUNT(*) FROM (
+            SELECT x.label_id AS label_id
+            FROM thread_labels u
+            CROSS JOIN thread_labels i
+              ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'
+            CROSS JOIN thread_labels x
+              ON x.account_id = u.account_id AND x.thread_id = u.thread_id
+             AND x.label_id IN ('INBOX', 'CATEGORY_SOCIAL',
+                                'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS')
+            WHERE u.label_id = 'UNREAD' AND u.account_id = ?1
+            UNION ALL
+            SELECT 'CATEGORY_PERSONAL'
+            FROM thread_labels u
+            CROSS JOIN thread_labels i
+              ON i.account_id = u.account_id AND i.thread_id = u.thread_id AND i.label_id = 'INBOX'
+            WHERE u.label_id = 'UNREAD' AND u.account_id = ?1
+              AND NOT EXISTS (
+                    SELECT 1 FROM json_each(?2) ex CROSS JOIN thread_labels c
+                      ON c.account_id = u.account_id AND c.thread_id = u.thread_id
+                     AND c.label_id = ex.value))
+         GROUP BY label_id ORDER BY label_id",
+    )
+    .bind(account_id)
+    .bind(serde_json::to_string(excluded).unwrap())
+    .fetch_all(pool)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|r| (r.get(0), r.get(1)))
+    .collect()
+}
+
+async fn kept_label_counts(pool: &SqlitePool, account_id: &str) -> Vec<(String, i64, i64)> {
+    fresh_counts(pool, account_id)
+        .await
+        .into_iter()
+        .map(|c| (c.label_id, c.total, c.unread))
+        .collect()
+}
+
+/// Both kinds of count, kept and from scratch, for `a1` with Primary leaving out `excluded`.
+async fn assert_counts_match(pool: &SqlitePool, excluded: &[String], context: &str) {
+    assert_eq!(
+        kept_label_counts(pool, "a1").await,
+        label_counts_from_scratch(pool, "a1").await,
+        "label counts, {context}"
+    );
+    let mut excludes = HashMap::new();
+    excludes.insert("a1".to_owned(), excluded.to_vec());
+    assert_eq!(
+        unread_counts(pool, &labels(&["a1"]), &excludes)
+            .await
+            .unwrap(),
+        unread_counts_from_scratch(pool, "a1", excluded).await,
+        "unread counts, {context}"
+    );
+}
+
+/// A message's labels from a number: Inbox or archived, a category or two, unread, starred, a
+/// user label, now and then Spam or Trash.
+fn message_labels(n: u64) -> Vec<String> {
+    let mut l = Vec::new();
+    if !n.is_multiple_of(3) {
+        l.push("INBOX");
+    }
+    let tabs = [
+        "CATEGORY_PERSONAL",
+        "CATEGORY_SOCIAL",
+        "CATEGORY_PROMOTIONS",
+        "CATEGORY_UPDATES",
+        "CATEGORY_FORUMS",
+    ];
+    l.push(tabs[(n / 3 % 5) as usize]);
+    if n.is_multiple_of(11) {
+        l.push(tabs[(n / 7 % 5) as usize]);
+    }
+    if (n / 2).is_multiple_of(2) {
+        l.push("UNREAD");
+    }
+    if n.is_multiple_of(7) {
+        l.push("STARRED");
+    }
+    if n.is_multiple_of(5) {
+        l.push("Label_1");
+    }
+    match n % 13 {
+        0 => l.push("TRASH"),
+        1 => l.push("SPAM"),
+        _ => {}
+    }
+    l.sort();
+    l.dedup();
+    l.into_iter().map(String::from).collect()
+}
+
+fn mail(id: &str, thread_id: &str, labels: &[String], date: i64) -> DbMessage {
+    DbMessage {
+        id: id.into(),
+        account_id: "a1".into(),
+        thread_id: thread_id.into(),
+        label_ids: Some(serde_json::to_string(labels).unwrap()),
+        from_address: None,
+        from_name: None,
+        to_addresses: None,
+        cc_addresses: None,
+        subject: None,
+        snippet: None,
+        body_html: None,
+        body_text: None,
+        date: Some(date),
+        size_estimate: None,
+        has_attachment: 0,
+        is_read: (!labels.iter().any(|l| l == "UNREAD")).into(),
+        is_starred: labels.iter().any(|l| l == "STARRED").into(),
+        raw_headers: None,
+        fully_fetched: 0,
+        rfc822_message_id: None,
+    }
+}
+
+#[tokio::test]
+async fn kept_counts_match_counting_from_scratch_through_every_kind_of_change() {
+    let pool = seeded_pool().await;
+    // A small linear congruential generator: the same "random" mailbox every run.
+    let mut seed: u64 = 7;
+    let mut next = move || {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        seed >> 33
+    };
+    let primary_shows_all: Vec<String> = labels(&OTHERS);
+    let primary_shows_some: Vec<String> = labels(&["CATEGORY_PROMOTIONS"]);
+    let mut message_ids: Vec<(String, String)> = Vec::new();
+
+    for round in 0..12 {
+        let mut tx = pool.begin().await.unwrap();
+        let mut touched = Vec::new();
+        // New mail, some of it joining existing threads.
+        for i in 0..40 {
+            let thread = format!("t{}", next() % 60);
+            let id = format!("m{round}_{i}");
+            let l = message_labels(next());
+            messages::upsert_message_tx(&mut tx, &mail(&id, &thread, &l, (round * 100 + i) as i64))
+                .await
+                .unwrap();
+            message_ids.push((id, thread.clone()));
+            touched.push(thread);
+        }
+        // Relabels: read, archive, trash, star, ... as sync and the outbox apply them.
+        for _ in 0..25 {
+            let (id, thread) = message_ids[(next() as usize) % message_ids.len()].clone();
+            sqlx::query(
+                "UPDATE messages SET label_ids = ?, is_read = ? WHERE account_id = 'a1' AND id = ?",
+            )
+            .bind(serde_json::to_string(&message_labels(next())).unwrap())
+            .bind(i64::from(next() % 2 == 0))
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            touched.push(thread);
+        }
+        // Deletions, some emptying a thread so it goes.
+        for _ in 0..8 {
+            let at = (next() as usize) % message_ids.len();
+            let (id, thread) = message_ids.swap_remove(at);
+            sqlx::query("DELETE FROM messages WHERE account_id = 'a1' AND id = ?")
+                .bind(&id)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            touched.push(thread);
+        }
+        recompute_threads(&mut tx, "a1", &touched).await.unwrap();
+        tx.commit().await.unwrap();
+
+        assert_counts_match(&pool, &primary_shows_all, &format!("round {round}")).await;
+        assert_counts_match(
+            &pool,
+            &primary_shows_some,
+            &format!("round {round}, tabs hidden"),
+        )
+        .await;
+    }
+
+    // Migration 020 fills the counts from an existing mailbox the same way.
+    sqlx::query("DELETE FROM label_thread_counts")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM inbox_unread_counts")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let migration = include_str!("../migrations/020_thread_counts.sql");
+    for statement in migration.split(';').map(str::trim) {
+        let sql: String = statement
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("--"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if sql.trim_start().starts_with("INSERT") {
+            // The migration file itself, not input.
+            sqlx::query(sqlx::AssertSqlSafe(sql))
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+    assert_counts_match(&pool, &primary_shows_all, "after the migration's fill").await;
+    assert_counts_match(
+        &pool,
+        &primary_shows_some,
+        "after the migration's fill, tabs hidden",
+    )
+    .await;
+}

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT unread_count FROM threads WHERE account_id = ? AND id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "unread_count",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "unread_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "096bb6ac187fcd82f60db8bd4a149ecbdca0cb7f09a8f8cf965d82fb1c163cb4"
+}

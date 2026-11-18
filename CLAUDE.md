@@ -128,12 +128,13 @@ The speed reader (`src/speedread/`) flashes one word at a time from emails that 
 
 ### Database Schema Summary
 
-Twenty-seven tables, plus the `messages_fts` full-text index.
+Twenty-nine tables, plus the `messages_fts` full-text index.
 - `accounts` — Account identity and Gmail history_id for sync (no tokens; those are in the keychain), plus the user's order (`position`, dragged in the sidebar) and colour (`color`, 1–12: `--color-account-N`, picked from the account's dot)
 - `labels` — Gmail labels with message/thread unread/total counters
 - `threads` — Conversation rows, derived from their messages by `threads::recompute_threads` (never written directly by sync)
 - `thread_labels` — Thread/label membership; label listing uses keyset-paged `list_threads`
 - `thread_versions` — Per account, a number `recompute_threads` bumps whenever its threads or their labels change, so `label_counts` reuses its last count until then
+- `label_thread_counts` / `inbox_unread_counts` — The sidebar and tray counts, kept rather than counted: threads and unread threads per label (and `ALL` for All Mail), and unread inbox threads grouped by the other tabs' categories they carry (Inbox, each tab and Primary are sums of these). `recompute_threads` adds each thread's change in the same transaction (`db/threads/counts.rs`); counting an 800,000-message mailbox took seconds per query
 - `messages` — Full message data; `to_addresses`, `cc_addresses`, `raw_headers` as JSON; `fully_fetched = 0` means metadata only; `body_fetched_at` is when the cached body was downloaded (drives `body_retention`)
 - `attachments` — Attachment metadata incl. `content_id`/`is_inline` (content is cached on disk, not stored); cascades from messages
 - `outbox` / `outbox_messages` — Ordered queue of local changes and sends waiting for Gmail, with each target message's labels before the change

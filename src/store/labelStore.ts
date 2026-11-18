@@ -1,5 +1,6 @@
 // Labels and the counts the sidebar shows, all read from the local cache and refreshed on sync events.
 import { create } from "zustand";
+import { coalesce, type Coalesced } from "../lib/coalesce";
 import { subscribeAll } from "../lib/subscriptions";
 import {
   listen,
@@ -56,8 +57,8 @@ interface LabelState {
 let latest = 0;
 // The accounts of the last `load`, which sync events refresh.
 let knownIds: string[] = [];
-let refreshing = false;
-let refreshAgain = false;
+// The store's `load`, run once at a time (made with the store, which it writes to).
+let loadKnown: Coalesced<[]> | null = null;
 /** Read/unread changes waiting for their commands, by op: the accounts whose counts they patched. */
 const pendingReads = new Map<number, Set<string>>();
 /** Accounts whose counts a pending read has patched: a refresh keeps their counts until it settles. */
@@ -145,14 +146,12 @@ async function fetchInboxUnread(accountIds: string[]): Promise<number | null> {
   }
 }
 
-export const useLabelStore = create<LabelState>((set, get) => ({
-  labels: {},
-  counts: {},
-  categoryCounts: {},
-  allInboxUnread: 0,
-  load: async (accountIds) => {
+export const useLabelStore = create<LabelState>((set, get) => {
+  // One load at a time, plus one more for every call made while it ran: reads, sync events and outbox
+  // changes each ask for one, and in a large mailbox each takes seconds (`coalesce`).
+  const loader = coalesce(async () => {
     const ticket = ++latest;
-    knownIds = accountIds;
+    const accountIds = knownIds;
     const [accounts, inbox] = await Promise.all([
       Promise.all(accountIds.map(fetchAccount)),
       fetchInboxUnread(accountIds),
@@ -187,138 +186,139 @@ export const useLabelStore = create<LabelState>((set, get) => ({
         allInboxUnread: held.size > 0 ? s.allInboxUnread : (inbox ?? s.allInboxUnread),
       };
     });
-  },
-  patchUnread: (op, changes) => {
-    if (changes.length === 0) return;
-    pendingReads.set(
-      op,
-      new Set([...(pendingReads.get(op) ?? []), ...changes.map((c) => c.accountId)]),
-    );
-    ++latest; // A refresh started before this read mustn't put the old counts back.
-    set((s) => {
-      const counts = { ...s.counts };
-      const categoryCounts = { ...s.categoryCounts };
-      let allInboxUnread = s.allInboxUnread;
-      for (const { accountId, delta, labelIds, categoryIds } of changes) {
-        const labels = { ...counts[accountId] };
-        for (const id of new Set(labelIds)) {
-          const entry = labels[id];
-          if (entry) labels[id] = { ...entry, unread: Math.max(0, entry.unread + delta) };
+  });
+
+  loadKnown = loader;
+  return {
+    labels: {},
+    counts: {},
+    categoryCounts: {},
+    allInboxUnread: 0,
+    load: (accountIds) => {
+      // Another set of accounts: a load still running for the old set mustn't publish its answer.
+      if (accountIds.join("\n") !== knownIds.join("\n")) ++latest;
+      knownIds = accountIds;
+      return loader();
+    },
+    patchUnread: (op, changes) => {
+      if (changes.length === 0) return;
+      pendingReads.set(
+        op,
+        new Set([...(pendingReads.get(op) ?? []), ...changes.map((c) => c.accountId)]),
+      );
+      ++latest; // A refresh started before this read mustn't put the old counts back.
+      set((s) => {
+        const counts = { ...s.counts };
+        const categoryCounts = { ...s.categoryCounts };
+        let allInboxUnread = s.allInboxUnread;
+        for (const { accountId, delta, labelIds, categoryIds } of changes) {
+          const labels = { ...counts[accountId] };
+          for (const id of new Set(labelIds)) {
+            const entry = labels[id];
+            if (entry) labels[id] = { ...entry, unread: Math.max(0, entry.unread + delta) };
+          }
+          counts[accountId] = labels;
+          const categories = { ...categoryCounts[accountId] };
+          for (const id of new Set(categoryIds))
+            categories[id] = Math.max(0, (categories[id] ?? 0) + delta);
+          categoryCounts[accountId] = categories;
+          if (categoryIds.includes("INBOX")) allInboxUnread = Math.max(0, allInboxUnread + delta);
         }
-        counts[accountId] = labels;
-        const categories = { ...categoryCounts[accountId] };
-        for (const id of new Set(categoryIds))
-          categories[id] = Math.max(0, (categories[id] ?? 0) + delta);
-        categoryCounts[accountId] = categories;
-        if (categoryIds.includes("INBOX")) allInboxUnread = Math.max(0, allInboxUnread + delta);
+        return { counts, categoryCounts, allInboxUnread };
+      });
+    },
+    settleUnread: (op) => {
+      if (!pendingReads.delete(op) || pendingReads.size > 0) return;
+      // Success, failure and cancelled automatic reads all reconcile against the cache. A load still running
+      // may have read the counts before the change reached the cache, so its answer is dropped for the next one.
+      ++latest;
+      void get().load(knownIds);
+    },
+    patchLabels: (accountId, apply) => {
+      const id = ++nextLabelChange;
+      set((s) => {
+        const current = s.labels[accountId] ?? NO_LABELS;
+        const next = apply(current);
+        const was = new Map(current.map((l) => [l.id, l]));
+        const before = new Map<string, LabelInfo>();
+        const after = new Map<string, Partial<LabelInfo>>();
+        for (const l of next) {
+          const old = was.get(l.id);
+          if (!old || old === l) continue;
+          const fields: Record<string, unknown> = {};
+          for (const key of Object.keys(l) as (keyof LabelInfo)[])
+            if (l[key] !== old[key]) fields[key] = l[key];
+          before.set(l.id, old);
+          after.set(l.id, fields);
+        }
+        pendingLabels.set(id, { accountId, before, after });
+        return { labels: { ...s.labels, [accountId]: next } };
+      });
+      return id;
+    },
+    settleLabels: (change, changed) => {
+      const done = pendingLabels.get(change);
+      if (!done) return;
+      pendingLabels.delete(change);
+      const { accountId } = done;
+      // Gmail took it: an older change still waiting no longer owns the fields this one set.
+      if (changed)
+        for (const [older, waiting] of pendingLabels)
+          if (older < change && waiting.accountId === accountId)
+            for (const [labelId, fields] of done.after)
+              for (const key of Object.keys(fields))
+                delete waiting.after.get(labelId)?.[key as keyof LabelInfo];
+      set((s) => {
+        const current = s.labels[accountId] ?? NO_LABELS;
+        // Gmail's copy (or, refused, the labels as they were), then later changes still waiting on top.
+        const base = changed
+          ? patchById(current, new Map(changed.map((l) => [l.id, l])))
+          : undo(current, done);
+        return { labels: { ...s.labels, [accountId]: withPending(accountId, base) } };
+      });
+      // A refusal can come after Gmail took part of it (a rename stopped half-way): read back what it holds.
+      if (!changed && knownIds.length > 0) void get().load(knownIds);
+    },
+    subscribe: (signal) => {
+      // Sync bursts (initial sync, backfill) emit often; `load` runs once more at most while one is running.
+      const refresh = () => get().load(knownIds);
+      return subscribeAll(
+        [SYNC_EVENTS.labelsUpdated, SYNC_EVENTS.messagesUpdated, SYNC_EVENTS.completed].map(
+          (event) => () => listen(event, () => void refresh()),
+        ),
+        signal,
+      );
+    },
+    userLabels: (accountId) => {
+      const labels = get().labels[accountId];
+      if (!labels) return NO_LABELS;
+      let sorted = sortedUserLabels.get(labels);
+      if (!sorted) {
+        sorted = labels.filter((l) => l.type === "user").sort(byName);
+        sortedUserLabels.set(labels, sorted);
       }
-      return { counts, categoryCounts, allInboxUnread };
-    });
-  },
-  settleUnread: (op) => {
-    if (!pendingReads.delete(op) || pendingReads.size > 0) return;
-    // Success, failure and cancelled automatic reads all reconcile against the cache.
-    void get().load(knownIds);
-  },
-  patchLabels: (accountId, apply) => {
-    const id = ++nextLabelChange;
-    set((s) => {
-      const current = s.labels[accountId] ?? NO_LABELS;
-      const next = apply(current);
-      const was = new Map(current.map((l) => [l.id, l]));
-      const before = new Map<string, LabelInfo>();
-      const after = new Map<string, Partial<LabelInfo>>();
-      for (const l of next) {
-        const old = was.get(l.id);
-        if (!old || old === l) continue;
-        const fields: Record<string, unknown> = {};
-        for (const key of Object.keys(l) as (keyof LabelInfo)[])
-          if (l[key] !== old[key]) fields[key] = l[key];
-        before.set(l.id, old);
-        after.set(l.id, fields);
+      return sorted;
+    },
+    labelsById: (accountId) => {
+      const labels = get().labels[accountId];
+      if (!labels) return NO_LABEL_MAP;
+      let map = labelMaps.get(labels);
+      if (!map) {
+        map = new Map(labels.map((l) => [l.id, l]));
+        labelMaps.set(labels, map);
       }
-      pendingLabels.set(id, { accountId, before, after });
-      return { labels: { ...s.labels, [accountId]: next } };
-    });
-    return id;
-  },
-  settleLabels: (change, changed) => {
-    const done = pendingLabels.get(change);
-    if (!done) return;
-    pendingLabels.delete(change);
-    const { accountId } = done;
-    // Gmail took it: an older change still waiting no longer owns the fields this one set.
-    if (changed)
-      for (const [older, waiting] of pendingLabels)
-        if (older < change && waiting.accountId === accountId)
-          for (const [labelId, fields] of done.after)
-            for (const key of Object.keys(fields))
-              delete waiting.after.get(labelId)?.[key as keyof LabelInfo];
-    set((s) => {
-      const current = s.labels[accountId] ?? NO_LABELS;
-      // Gmail's copy (or, refused, the labels as they were), then later changes still waiting on top.
-      const base = changed
-        ? patchById(current, new Map(changed.map((l) => [l.id, l])))
-        : undo(current, done);
-      return { labels: { ...s.labels, [accountId]: withPending(accountId, base) } };
-    });
-    // A refusal can come after Gmail took part of it (a rename stopped half-way): read back what it holds.
-    if (!changed && knownIds.length > 0) void get().load(knownIds);
-  },
-  subscribe: (signal) => {
-    // Sync bursts (initial sync, backfill) emit often; refresh once more at most while one is running.
-    const refresh = async () => {
-      if (refreshing) {
-        refreshAgain = true;
-        return;
-      }
-      refreshing = true;
-      try {
-        do {
-          refreshAgain = false;
-          await get().load(knownIds);
-        } while (refreshAgain);
-      } finally {
-        refreshing = false;
-      }
-    };
-    return subscribeAll(
-      [SYNC_EVENTS.labelsUpdated, SYNC_EVENTS.messagesUpdated, SYNC_EVENTS.completed].map(
-        (event) => () => listen(event, () => void refresh()),
-      ),
-      signal,
-    );
-  },
-  userLabels: (accountId) => {
-    const labels = get().labels[accountId];
-    if (!labels) return NO_LABELS;
-    let sorted = sortedUserLabels.get(labels);
-    if (!sorted) {
-      sorted = labels.filter((l) => l.type === "user").sort(byName);
-      sortedUserLabels.set(labels, sorted);
-    }
-    return sorted;
-  },
-  labelsById: (accountId) => {
-    const labels = get().labels[accountId];
-    if (!labels) return NO_LABEL_MAP;
-    let map = labelMaps.get(labels);
-    if (!map) {
-      map = new Map(labels.map((l) => [l.id, l]));
-      labelMaps.set(labels, map);
-    }
-    return map;
-  },
-  labelName: (accountId, labelId) =>
-    get().labels[accountId]?.find((l) => l.id === labelId)?.name ?? labelId,
-}));
+      return map;
+    },
+    labelName: (accountId, labelId) =>
+      get().labels[accountId]?.find((l) => l.id === labelId)?.name ?? labelId,
+  };
+});
 
 /** Test helper. */
 export function __resetLabelStoreForTests() {
   latest++;
   knownIds = [];
-  refreshing = false;
-  refreshAgain = false;
+  loadKnown?.reset();
   pendingReads.clear();
   pendingLabels.clear();
   useLabelStore.setState({ labels: {}, counts: {}, categoryCounts: {}, allInboxUnread: 0 });

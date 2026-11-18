@@ -1,16 +1,16 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT last_message_date FROM threads WHERE account_id = ? AND id = ?",
+  "query": "DELETE FROM threads WHERE account_id = ? AND id = ? RETURNING unread_count",
   "describe": {
     "columns": [
       {
-        "name": "last_message_date",
+        "name": "unread_count",
         "ordinal": 0,
         "type_info": "Integer",
         "origin": {
           "Table": {
             "table": "threads",
-            "name": "last_message_date"
+            "name": "unread_count"
           }
         }
       }
@@ -19,8 +19,8 @@
       "Right": 2
     },
     "nullable": [
-      true
+      false
     ]
   },
-  "hash": "18b9ecc5de3c3a6b2e4900f11e91952828d861b70a75fffe515592204ca7b7dc"
+  "hash": "3723edd348a8abfb60bfe202978581a7f9c9d5335d8ddf5b2c492361baeace50"
 }

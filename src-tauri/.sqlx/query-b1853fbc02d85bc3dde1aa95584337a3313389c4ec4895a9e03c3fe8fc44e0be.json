@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT last_message_date, unread_count FROM threads WHERE account_id = ? AND id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "last_message_date",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "last_message_date"
+          }
+        }
+      },
+      {
+        "name": "unread_count",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "threads",
+            "name": "unread_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "b1853fbc02d85bc3dde1aa95584337a3313389c4ec4895a9e03c3fe8fc44e0be"
+}

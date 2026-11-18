@@ -10,7 +10,7 @@ pub mod scrub;
 pub mod upload;
 
 use crate::accounts::AccountInfo;
-use crate::db::{messages, sync_state};
+use crate::db::{self, messages, sync_state, threads};
 use crate::diagnostics::{OpenTiming, ShownOutcome, ShownTiming};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -85,6 +85,10 @@ pub struct AccountSummary {
     pub messages: i64,
     pub messages_with_bodies: i64,
     pub last_synced_at: Option<i64>,
+    pub threads: i64,
+    pub inbox_threads: i64,
+    pub unread_threads: i64,
+    pub thread_label_rows: i64,
 }
 
 pub async fn account_summaries(
@@ -95,12 +99,17 @@ pub async fn account_summaries(
     for account in accounts {
         let state = sync_state::get(db, &account.id).await?;
         let (messages, messages_with_bodies) = messages::body_counts(db, &account.id).await?;
+        let shape = threads::mailbox_shape(db, &account.id).await?;
         out.push(AccountSummary {
             initial_sync_done: account.synced,
             backfill_complete: state.backfill_complete,
             messages,
             messages_with_bodies,
             last_synced_at: state.last_synced_at,
+            threads: shape.threads,
+            inbox_threads: shape.inbox_threads,
+            unread_threads: shape.unread_threads,
+            thread_label_rows: shape.thread_label_rows,
         });
     }
     Ok(out)
@@ -109,6 +118,7 @@ pub async fn account_summaries(
 /// `summary.json`, less the note and reply address (the bundle adds those).
 pub fn summary(
     accounts: &[AccountSummary],
+    database_bytes: Option<i64>,
     quota_per_minute: u32,
     opens: &[OpenTiming],
     shown: &[ShownTiming],
@@ -119,6 +129,7 @@ pub fn summary(
         "arch": std::env::consts::ARCH,
         "generatedAt": chrono::Utc::now().to_rfc3339(),
         "accounts": accounts,
+        "databaseBytes": database_bytes,
         "quotaPerMinute": quota_per_minute,
         "recentOpens": opens,
         "recentShown": shown,
@@ -306,6 +317,7 @@ pub async fn prepare(
         .await
         .map_err(|e| SupportError::Internal(e.to_string()))??;
     let summaries = account_summaries(sources.db, sources.accounts).await?;
+    let database_bytes = db::database_bytes(sources.db).await.ok();
     let mut own_addresses: Vec<String> = sources.accounts.iter().map(|a| a.email.clone()).collect();
     own_addresses.extend(reply_to.clone());
     let email = match &sources.email {
@@ -342,6 +354,7 @@ pub async fn prepare(
         reply_to,
         summary: summary(
             &summaries,
+            database_bytes,
             sources.quota_per_minute,
             &sources.opens,
             &sources.shown,
@@ -445,7 +458,7 @@ mod tests {
 
     #[test]
     fn summary_lists_recent_shown_timings() {
-        let value = summary(&[], 6000, &[], &[shown(1500)]);
+        let value = summary(&[], None, 6000, &[], &[shown(1500)]);
         assert_eq!(value["recentShown"][0]["totalMs"], 1500);
         assert_eq!(value["recentShown"][0]["outcome"], "shown");
     }
@@ -541,6 +554,15 @@ mod tests {
             (2, 1)
         );
         assert!(summaries[0].last_synced_at.is_some());
+        assert_eq!(
+            (
+                summaries[0].threads,
+                summaries[0].inbox_threads,
+                summaries[0].unread_threads,
+                summaries[0].thread_label_rows
+            ),
+            (2, 2, 0, 2)
+        );
     }
 
     #[tokio::test]
@@ -590,8 +612,10 @@ mod tests {
         assert_eq!(
             summary["accounts"],
             json!([{"initialSyncDone": false, "backfillComplete": false, "messages": 0,
-                "messagesWithBodies": 0, "lastSyncedAt": null}])
+                "messagesWithBodies": 0, "lastSyncedAt": null, "threads": 0,
+                "inboxThreads": 0, "unreadThreads": 0, "threadLabelRows": 0}])
         );
+        assert!(summary["databaseBytes"].as_i64().unwrap() > 0);
         assert_eq!(summary["quotaPerMinute"], 6000);
         assert_eq!(summary["recentOpens"][0]["totalMs"], 1500);
         assert_eq!(summary["note"], "it hangs");
