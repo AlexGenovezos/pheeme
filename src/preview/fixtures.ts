@@ -486,6 +486,9 @@ export function createFixtureThreads(): FixtureThread[] {
         me,
         {
           unread: true,
+          // Remote images, so the preview shows Spam holding them back until Show images.
+          html: '<p><img src="https://prizes.example/open.gif" width="1" height="1" alt=""><img src="https://prizes.example/banner.png" alt="Prize banner" width="480" height="120"></p><p>Click here to claim: <a href="https://example.com/prize">https://example.com/prize</a></p>',
+          remote: true,
         },
       ),
     ]),

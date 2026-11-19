@@ -600,3 +600,84 @@ test("fetches a failed remote image again and shows it once it loads", () => {
     vi.useRealTimers();
   }
 });
+
+const spam = (id = "spam-1") =>
+  message({
+    id,
+    labelIds: ["SPAM"],
+    bodyHtml: '<img src="https://tracker.example/open.gif">',
+    hasRemoteContent: true,
+  });
+
+test("a message in Spam holds back its remote images until Show images, like Gmail", () => {
+  render(<EmailBody message={spam()} />);
+  expect(csp()).not.toContain("https:");
+  const note = screen.getByText(/Images in Spam are hidden/);
+  const bar = note.closest(".email-body__images")!;
+  const held = frame();
+
+  fireEvent.click(screen.getByRole("button", { name: "Show images" }));
+  // A fresh frame: rewriting the old document would keep the policy that blocked them.
+  expect(frame()).not.toBe(held);
+  expect(csp()).toContain("https: http:");
+  expect(screen.queryByRole("button", { name: "Show images" })).toBeNull();
+  // The bar keeps its place, so the body doesn't jump up under the header.
+  expect(bar.isConnected).toBe(true);
+  expect(bar.textContent).toMatch(/Images are shown/);
+});
+
+test("Show images lasts for that message when it is opened again", () => {
+  const { unmount } = render(<EmailBody message={spam("spam-2")} />);
+  fireEvent.click(screen.getByRole("button", { name: "Show images" }));
+  unmount();
+  render(<EmailBody message={spam("spam-2")} />);
+  expect(csp()).toContain("https: http:");
+});
+
+test("a held-back image in Spam isn't fetched again from the app's window", () => {
+  vi.useFakeTimers();
+  const made: unknown[] = [];
+  vi.stubGlobal(
+    "Image",
+    class {
+      constructor() {
+        made.push(this);
+      }
+    },
+  );
+  try {
+    render(<EmailBody message={spam("spam-3")} />);
+    const doc = frame().contentDocument!;
+    doc.body.innerHTML = '<img id="pixel" src="https://tracker.example/open.gif" alt="">';
+    const image = doc.getElementById("pixel")!;
+    Object.defineProperty(image, "complete", { configurable: true, value: true });
+    Object.defineProperty(image, "naturalWidth", { configurable: true, value: 0 });
+    fireEvent.load(frame());
+    act(() => vi.advanceTimersByTime(20_000));
+    expect(made).toEqual([]);
+  } finally {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  }
+});
+
+test("Spam mail without remote images, and mail outside Spam, get no Show images bar", () => {
+  render(<EmailBody message={message({ id: "spam-4", labelIds: ["SPAM"] })} />);
+  render(
+    <EmailBody
+      message={message({
+        bodyHtml: '<img src="https://example.com/photo.png">',
+        hasRemoteContent: true,
+      })}
+    />,
+  );
+  expect(screen.queryByText(/Images in Spam are hidden/)).toBeNull();
+});
+
+test("a message taken out of Spam while open gets a fresh frame that loads its images", () => {
+  const { rerender } = render(<EmailBody message={spam("spam-5")} />);
+  const held = frame();
+  rerender(<EmailBody message={{ ...spam("spam-5"), labelIds: ["INBOX"] }} />);
+  expect(frame()).not.toBe(held);
+  expect(csp()).toContain("https: http:");
+});

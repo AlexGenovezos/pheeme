@@ -677,3 +677,19 @@
   outline-offset: var(--focus-ring-inset);
   background: var(--color-list-hover-bg);
 }
+
+/* Spam's held-back images: both states in one cell, so showing them never changes the bar's height. */
+.email-body__images {
+  display: grid;
+  margin: var(--space-2) var(--space-4) 0;
+  color: var(--color-foreground-subtle);
+  font-size: var(--font-size-sm);
+}
+
+.email-body__images > * {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height-sm);
+}
