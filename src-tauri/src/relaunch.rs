@@ -133,16 +133,22 @@ mod tests {
         false
     }
 
-    #[test]
-    fn the_waiter_opens_only_after_the_old_process_ends() {
-        let dir = tempfile::tempdir().unwrap();
-        let opened = dir.path().join("opened");
-        let mut old = std::process::Command::new("sleep")
+    /// A running `sleep` standing in for the old app, and a waiter on it whose `open` makes a file.
+    fn wait_on_old_app(dir: &Path, tenths: u32) -> (std::process::Child, PathBuf) {
+        let opened = dir.join("opened");
+        let old = std::process::Command::new("sleep")
             .arg("30")
             .spawn()
             .unwrap();
         let open = [OsString::from("touch"), opened.clone().into_os_string()];
-        spawn_waiter(old.id(), WAIT_TENTHS, &open).unwrap();
+        spawn_waiter(old.id(), tenths, &open).unwrap();
+        (old, opened)
+    }
+
+    #[test]
+    fn the_waiter_opens_only_after_the_old_process_ends() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut old, opened) = wait_on_old_app(dir.path(), WAIT_TENTHS);
 
         assert!(
             !wait_for(&opened, Duration::from_millis(500)),
@@ -156,13 +162,7 @@ mod tests {
     #[test]
     fn the_waiter_gives_up_waiting_after_its_limit() {
         let dir = tempfile::tempdir().unwrap();
-        let opened = dir.path().join("opened");
-        let mut old = std::process::Command::new("sleep")
-            .arg("30")
-            .spawn()
-            .unwrap();
-        let open = [OsString::from("touch"), opened.clone().into_os_string()];
-        spawn_waiter(old.id(), 3, &open).unwrap();
+        let (mut old, opened) = wait_on_old_app(dir.path(), 3);
 
         assert!(wait_for(&opened, Duration::from_secs(5)), "kept waiting");
         old.kill().unwrap();
