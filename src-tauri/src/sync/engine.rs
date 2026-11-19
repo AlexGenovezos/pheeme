@@ -1117,12 +1117,15 @@ impl SyncEngine {
             tracing::warn!(account = %self.account_id, "Gmail listed no labels; label refresh skipped");
             return Ok(());
         }
-        let mut counted = Vec::new();
-        for id in std::iter::once("INBOX").chain(CATEGORY_LABELS) {
-            if list.iter().any(|l| l.id == id) {
-                counted.push(self.api.get_label(id).await?);
-            }
-        }
+        // Asked for together: one after another, these six requests made a sync with nothing
+        // to do take about 2 s (diagnostics report, v0.30).
+        let counted = futures::future::try_join_all(
+            std::iter::once("INBOX")
+                .chain(CATEGORY_LABELS)
+                .filter(|id| list.iter().any(|l| l.id == *id))
+                .map(|id| self.api.get_label(id)),
+        )
+        .await?;
         let mut rows: Vec<_> = list
             .iter()
             .map(|l| convert::to_db_label(&self.account_id, l))
