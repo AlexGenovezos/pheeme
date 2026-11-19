@@ -681,3 +681,9 @@ test("a message taken out of Spam while open gets a fresh frame that loads its i
   expect(frame()).not.toBe(held);
   expect(csp()).toContain("https: http:");
 });
+
+test("every Spam message is held, even one the sanitizer found no remote content in", () => {
+  render(<EmailBody message={message({ id: "spam-6", labelIds: ["SPAM"] })} />);
+  expect(csp()).not.toContain("https:");
+  expect(screen.queryByRole("button", { name: "Show images" })).toBeNull();
+});

@@ -27,7 +27,8 @@ export function EmailBody({
   loading?: Loading;
   onRetry?(): void;
 }) {
-  if (message.bodyHtml) return <MessageHtml message={message} html={message.bodyHtml} />;
+  if (message.bodyHtml)
+    return <MessageHtml key={message.id} message={message} html={message.bodyHtml} />;
   if (message.bodyText)
     return <div className="message-card__text selectable">{linkify(message.bodyText)}</div>;
   if (!message.bodyAvailable) {
@@ -61,16 +62,18 @@ const HIDDEN = { visibility: "hidden" } as const;
  * never moves under it.
  */
 function MessageHtml({ message, html }: { message: MessageDetail; html: string }) {
-  const held = message.hasRemoteContent && message.labelIds.includes("SPAM");
+  const spam = message.labelIds.includes("SPAM");
   const [shown, setShown] = useState(() => imagesShown.has(message.id));
-  const allowRemote = !held || shown;
+  // Held for every Spam message, since the sanitizer's remote check can miss what WebKit still fetches; the
+  // bar only where it found remote content.
+  const allowRemote = !spam || shown;
   const showImages = () => {
     imagesShown.add(message.id);
     setShown(true);
   };
   return (
     <>
-      {held && (
+      {spam && message.hasRemoteContent && (
         // Both states share one grid cell, so the bar is as tall as the longer one in either state.
         <div className="email-body__images">
           <div style={shown ? HIDDEN : undefined}>
@@ -159,7 +162,13 @@ export function HtmlBody({ messageId, html, declaresDark, allowRemote = true }: 
 
   // `onLoad`: a frame moved in the DOM starts over with a blank document and fires `load`; write it again.
   return (
-    <div className="email-body" ref={wrapper} data-message-id={messageId}>
+    <div
+      className="email-body"
+      ref={wrapper}
+      data-message-id={messageId}
+      // Send diagnostics leaves these frames' remote images out, or the backend would fetch them.
+      data-images-held={allowRemote ? undefined : ""}
+    >
       <iframe
         ref={frame}
         className="email-body__frame"

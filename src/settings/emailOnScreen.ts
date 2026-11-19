@@ -23,6 +23,8 @@ export function useEmailOnScreen(): EmailOnScreen | null {
   return { key, subject: detail.thread.subject ?? detail.messages[0]?.subject ?? null };
 }
 
+const REMOTE = /^\s*https?:/i;
+
 /** The open conversation's root in the reading pane (`ThreadView`), not the neighbours kept rendered out of sight. */
 const OPEN_ROOT = '.thread-view__retained[data-visible="true"]';
 
@@ -31,7 +33,12 @@ export function imagesOnScreen(doc: Document = document): DiagnosticsImage[] {
   const bodies = doc.querySelectorAll<HTMLElement>(`${OPEN_ROOT} .email-body[data-message-id]`);
   return [...bodies].flatMap((body) => {
     const frame = body.querySelector("iframe");
-    return [...(frame?.contentDocument?.images ?? [])].map((img) => ({
+    // A Spam message's remote images not shown yet: reporting them as failed would have the backend fetch them.
+    const held = body.hasAttribute("data-images-held");
+    const images = [...(frame?.contentDocument?.images ?? [])].filter(
+      (img) => !held || !REMOTE.test(img.getAttribute("src") ?? ""),
+    );
+    return images.map((img) => ({
       messageId: body.dataset.messageId ?? null,
       src: img.getAttribute("src") ?? "",
       currentSrc: img.currentSrc,
