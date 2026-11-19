@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { isEditableTarget, registry, type CommandRegistry } from "../keyboard/registry";
 import { platform } from "../lib/platform";
@@ -27,16 +27,8 @@ export function EmailBody({
   loading?: Loading;
   onRetry?(): void;
 }) {
-  if (message.bodyHtml) {
-    return (
-      <HtmlBody
-        key={message.id}
-        messageId={message.id}
-        html={message.bodyHtml}
-        declaresDark={message.declaresDarkMode}
-      />
-    );
-  }
+  if (message.bodyHtml)
+    return <MessageHtml key={message.id} message={message} html={message.bodyHtml} />;
   if (message.bodyText)
     return <div className="message-card__text selectable">{linkify(message.bodyText)}</div>;
   if (!message.bodyAvailable) {
@@ -59,14 +51,66 @@ export function EmailBody({
   return <p className="message-card__empty">This message is empty.</p>;
 }
 
+/** Spam messages whose images the user chose to show, for the rest of the session. */
+const imagesShown = new Set<string>();
+/** The Show images bar's state not in use: it keeps its size, unseen and out of reach. */
+const HIDDEN = { visibility: "hidden" } as const;
+
+/**
+ * Like Gmail, a message in Spam shows no remote images until the user asks: they would tell the sender the
+ * address is read, and when. The bar is there from the first frame and stays after Show images, so the body
+ * never moves under it.
+ */
+function MessageHtml({ message, html }: { message: MessageDetail; html: string }) {
+  const spam = message.labelIds.includes("SPAM");
+  const [shown, setShown] = useState(() => imagesShown.has(message.id));
+  // Held for every Spam message, since the sanitizer's remote check can miss what WebKit still fetches; the
+  // bar only where it found remote content.
+  const allowRemote = !spam || shown;
+  const showImages = () => {
+    imagesShown.add(message.id);
+    setShown(true);
+  };
+  return (
+    <>
+      {spam && message.hasRemoteContent && (
+        // Both states share one grid cell, so the bar is as tall as the longer one in either state.
+        <div className="email-body__images">
+          <div style={shown ? HIDDEN : undefined}>
+            <span>
+              Images in Spam are hidden. Showing them can tell the sender you opened this.
+            </span>
+            <Button size="sm" onClick={showImages}>
+              Show images
+            </Button>
+          </div>
+          <div style={shown ? undefined : HIDDEN}>
+            <span>Images are shown for this message.</span>
+          </div>
+        </div>
+      )}
+      {/* A new frame when that changes: a document keeps the first CSP written into it, through doc.open(). */}
+      <HtmlBody
+        key={`${message.id}:${allowRemote}`}
+        messageId={message.id}
+        html={html}
+        declaresDark={message.declaresDarkMode}
+        allowRemote={allowRemote}
+      />
+    </>
+  );
+}
+
 interface HtmlBodyProps {
   /** Marks the frame's message, for Send diagnostics' image report (`src/settings/emailOnScreen.ts`). */
   messageId?: string;
   html: string;
   declaresDark: boolean;
+  /** Load remote images (the default). Off, only `data:` and attachment images show, and none is retried. */
+  allowRemote?: boolean;
 }
 
-export function HtmlBody({ messageId, html, declaresDark }: HtmlBodyProps) {
+export function HtmlBody({ messageId, html, declaresDark, allowRemote = true }: HtmlBodyProps) {
   const dark = useThemeStore((s) => s.resolved === "dark");
   const wrapper = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -77,14 +121,15 @@ export function HtmlBody({ messageId, html, declaresDark }: HtmlBodyProps) {
   const srcDoc = useMemo(() => {
     const tokens = getComputedStyle(document.documentElement);
     return buildSrcdoc(html, {
-      // Bodies mount only when a message (or quoted original) is expanded. Opening it loads its images.
-      allowRemote: true,
+      // Bodies mount only when a message (or quoted original) is expanded. Opening it loads its images,
+      // except in Spam until Show images (`MessageHtml`).
+      allowRemote,
       dark,
       declaresDark,
       textColor: tokens.getPropertyValue("--color-foreground"),
       linkColor: tokens.getPropertyValue("--color-link"),
     });
-  }, [html, dark, declaresDark]);
+  }, [html, dark, declaresDark, allowRemote]);
 
   const detach = useCallback(() => {
     stopWatching.current?.();
@@ -107,8 +152,8 @@ export function HtmlBody({ messageId, html, declaresDark }: HtmlBodyProps) {
       doc.close();
       written.current = { doc, srcDoc };
     }
-    stopWatching.current = watchFrame(iframe, wrapper.current, doc);
-  }, [srcDoc, detach]);
+    stopWatching.current = watchFrame(iframe, wrapper.current, doc, allowRemote);
+  }, [srcDoc, detach, allowRemote]);
 
   useLayoutEffect(() => {
     show();
@@ -117,7 +162,13 @@ export function HtmlBody({ messageId, html, declaresDark }: HtmlBodyProps) {
 
   // `onLoad`: a frame moved in the DOM starts over with a blank document and fires `load`; write it again.
   return (
-    <div className="email-body" ref={wrapper} data-message-id={messageId}>
+    <div
+      className="email-body"
+      ref={wrapper}
+      data-message-id={messageId}
+      // Send diagnostics leaves these frames' remote images out, or the backend would fetch them.
+      data-images-held={allowRemote ? undefined : ""}
+    >
       <iframe
         ref={frame}
         className="email-body__frame"
@@ -171,6 +222,7 @@ function watchFrame(
   iframe: HTMLIFrameElement,
   wrapper: HTMLElement,
   doc: Document,
+  allowRemote: boolean,
   commands: CommandRegistry = registry,
 ): () => void {
   const root = doc.documentElement;
@@ -265,13 +317,15 @@ function watchFrame(
 
   const host = iframe.ownerDocument;
   // A remote image that failed is fetched again a little later; once it loads it takes its place in the layout.
-  const retrier = host.defaultView
-    ? imageRetrier(host.defaultView, (image) => {
-        image.removeAttribute(BROKEN_IMAGE);
-        external = true;
-        remeasureFromZero();
-      })
-    : null;
+  // Not while remote images are held back: the app's window would fetch what the frame's policy blocked.
+  const retrier =
+    allowRemote && host.defaultView
+      ? imageRetrier(host.defaultView, (image) => {
+          image.removeAttribute(BROKEN_IMAGE);
+          external = true;
+          remeasureFromZero();
+        })
+      : null;
 
   // The dark theme flips images back from the inverted page; a failed one (blocked host, offline) would
   // flip its alt text too, leaving the light email's dark text color on the now dark page.

@@ -546,11 +546,10 @@
   border: var(--space-0);
 }
 
+/* Spam's held-back images: both states in one cell, so showing them never changes the bar's height. */
 .email-body__images {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
+  display: grid;
+  margin: var(--space-2) var(--space-4) 0;
   padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2-5);
   border: var(--border-width) solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
@@ -558,14 +557,13 @@
   font-size: var(--font-size-sm);
 }
 
-.email-body__images-icon {
-  flex-shrink: 0;
-  width: var(--icon-size-sm);
-  height: var(--icon-size-sm);
-}
-
-.email-body__images-text {
-  flex: 1;
+.email-body__images > * {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--control-height-sm);
 }
 
 /* Keep speculative frames laid out at the reading pane width, including CSS backgrounds. */
