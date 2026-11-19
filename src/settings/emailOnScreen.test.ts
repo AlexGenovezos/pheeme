@@ -19,6 +19,8 @@ function body(messageId: string, held: boolean, images: string[]) {
 test("a Spam message's held-back remote images stay out of the report, so the backend never fetches them", () => {
   body("spam", true, [
     "https://tracker.example/open.gif",
+    "ht&#9;tps://tracker.example/tab.gif",
+    " HTTP://tracker.example/upper.gif",
     "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
   ]);
   body("inbox", false, ["https://example.com/photo.png"]);
