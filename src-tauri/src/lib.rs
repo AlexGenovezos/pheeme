@@ -24,6 +24,7 @@ mod lock;
 pub mod mail;
 pub mod mcp;
 pub mod mods;
+mod relaunch;
 pub mod render;
 pub mod search;
 pub mod secrets;
@@ -671,6 +672,7 @@ pub fn run() {
             }
             // Quit or restart: open compose panels are saved to Drafts first.
             if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                relaunch::note_exit_requested(*code);
                 commands::quit::save_drafts_before_exit(app, *code, api);
             }
             if let tauri::RunEvent::Exit = event {
@@ -695,6 +697,8 @@ pub fn run() {
                 if let Some(logs) = app.try_state::<diagnostics::LogGuard>() {
                     logs.shutdown();
                 }
+                // On macOS, restart without `open -n`'s second Dock icon.
+                relaunch::take_over_restart(app);
             }
         });
 }
