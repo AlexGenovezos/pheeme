@@ -25,7 +25,6 @@ interface World {
   labels: Record<string, LabelInfo[]>;
   counts: Record<string, { labelId: string; unread: number; total: number }[]>;
   mailbox: Record<string, { labelId: string; unread: number }[]>;
-  allInbox: number;
 }
 
 /** The commands the label store calls, answering from a mutable `world`; records every call. */
@@ -37,11 +36,7 @@ function backend(world: World) {
       const a = args as { accountId?: string; accountIds?: string[] };
       if (cmd === "list_labels") return world.labels[a.accountId ?? ""] ?? [];
       if (cmd === "label_counts") return world.counts[a.accountId ?? ""] ?? [];
-      if (cmd === "mailbox_counts") {
-        const ids = a.accountIds ?? [];
-        if (ids.length > 1) return [{ labelId: "INBOX", unread: world.allInbox }];
-        return world.mailbox[ids[0]] ?? [];
-      }
+      if (cmd === "mailbox_counts") return world.mailbox[a.accountIds?.[0] ?? ""] ?? [];
       return undefined;
     },
     { shouldMockEvents: true },
@@ -77,7 +72,6 @@ const world = (): World => ({
       { labelId: "CATEGORY_PERSONAL", unread: 2 },
     ],
   },
-  allInbox: 5,
 });
 
 beforeEach(() => __resetLabelStoreForTests());
@@ -100,6 +94,33 @@ test("a single account's All Inboxes total comes from its own mailbox counts", a
   backend(w);
   await store().load(["a"]);
   expect(store().allInboxUnread).toBe(3);
+});
+
+test("reads one account at a time, and no count across accounts", async () => {
+  const w = world();
+  w.labels.c = [];
+  w.counts.c = [{ labelId: "INBOX", unread: 1, total: 1 }];
+  w.mailbox.c = [{ labelId: "INBOX", unread: 1 }];
+  let running = 0;
+  let most = 0;
+  const asked: string[][] = [];
+  mockIPC(async (cmd, args) => {
+    const a = args as { accountId?: string; accountIds?: string[] };
+    if (a.accountIds) asked.push(a.accountIds);
+    most = Math.max(most, ++running);
+    await new Promise((r) => setTimeout(r, 1));
+    running--;
+    if (cmd === "list_labels") return w.labels[a.accountId ?? ""] ?? [];
+    if (cmd === "label_counts") return w.counts[a.accountId ?? ""] ?? [];
+    if (cmd === "mailbox_counts") return w.mailbox[a.accountIds?.[0] ?? ""] ?? [];
+    return undefined;
+  });
+  await store().load(["a", "b", "c"]);
+  // Each sync reloads every account: ten reads at once filled the database's ten connections, and the mail
+  // list queued behind them (diagnostics report, v0.30).
+  expect(most).toBe(3);
+  expect(asked).toEqual([["a"], ["b"], ["c"]]);
+  expect(store().allInboxUnread).toBe(6);
 });
 
 test("userLabels sorts and filters by type", async () => {
@@ -137,7 +158,7 @@ test("reloads counts on sync events", async () => {
   await emit("sync:labels_updated", { accountId: "a" });
   await vi.waitFor(() => expect(store().labels.a.map((l) => l.id)).toEqual(["Label_7"]));
 
-  w.allInbox = 11;
+  w.mailbox.b = [{ labelId: "INBOX", unread: 8 }];
   await emit("sync:completed", { accountId: "b" });
   await vi.waitFor(() => expect(store().allInboxUnread).toBe(11));
   stop();
@@ -162,10 +183,7 @@ test("one account failing leaves the others (and its own last values) in place",
       throw { code: "internal", message: "boom" };
     if (cmd === "list_labels") return w.labels[a.accountId ?? ""] ?? [];
     if (cmd === "label_counts") return w.counts[a.accountId ?? ""] ?? [];
-    if (cmd === "mailbox_counts")
-      return (a.accountIds ?? []).length > 1
-        ? [{ labelId: "INBOX", unread: w.allInbox }]
-        : (w.mailbox[(a.accountIds ?? [])[0]] ?? []);
+    if (cmd === "mailbox_counts") return w.mailbox[a.accountIds?.[0] ?? ""] ?? [];
     return undefined;
   });
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -233,9 +251,7 @@ test("a refresh that read the counts before a read reached the cache doesn't pub
         ? w.labels[a.accountId ?? ""]
         : cmd === "label_counts"
           ? w.counts[a.accountId ?? ""]
-          : a.accountIds?.length === 1
-            ? w.mailbox[a.accountIds[0]]
-            : [{ labelId: "INBOX", unread: w.allInbox }];
+          : w.mailbox[a.accountIds?.[0] ?? ""];
     return new Promise((resolve) => gates.push(() => resolve(snapshot)));
   });
   const stale = store().load(["a"]);
@@ -267,9 +283,7 @@ test("pending reads reject older refreshes and reconcile once all commands settl
         ? w.labels[a.accountId ?? ""]
         : cmd === "label_counts"
           ? w.counts[a.accountId ?? ""]
-          : a.accountIds?.length === 1
-            ? w.mailbox[a.accountIds[0]]
-            : [{ labelId: "INBOX", unread: w.allInbox }];
+          : w.mailbox[a.accountIds?.[0] ?? ""];
     await gate;
     return snapshot;
   });
@@ -285,7 +299,6 @@ test("pending reads reject older refreshes and reconcile once all commands settl
 
   // A refresh after one write commits mustn't count it twice or restore the other unread row.
   w.counts.a = [{ labelId: "INBOX", unread: 2, total: 10 }];
-  w.allInbox = 4;
   store().settleUnread(1);
   await store().load(["a", "b"]);
   expect(store().counts.a.INBOX.unread).toBe(1);
@@ -296,7 +309,6 @@ test("pending reads reject older refreshes and reconcile once all commands settl
     { labelId: "INBOX", unread: 1 },
     { labelId: "CATEGORY_PERSONAL", unread: 1 },
   ];
-  w.allInbox = 3;
   store().settleUnread(2);
   await vi.waitFor(() =>
     expect(store().categoryCounts.a).toEqual({ INBOX: 1, CATEGORY_PERSONAL: 1 }),
@@ -315,7 +327,7 @@ test("a refresh while a read waits still loads labels and other accounts, holdin
   // Account b is added while a's automatic read waits for its conversation.
   w.counts.a = [{ labelId: "INBOX", unread: 9, total: 10 }];
   w.labels.a = [...w.labels.a, label("Label_3", "New")];
-  w.allInbox = 42;
+  w.mailbox.a = [{ labelId: "INBOX", unread: 40 }];
   await store().load(["a", "b"]);
   expect(
     store()

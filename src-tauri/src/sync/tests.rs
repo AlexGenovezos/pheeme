@@ -2314,6 +2314,30 @@ async fn an_empty_label_list_from_gmail_strips_nothing() {
     assert!(listed(&h.pool, "Label_1").await.is_empty());
 }
 
+/// The Inbox and tab counters are asked for together: one after another, a sync with nothing to
+/// do took about 2 s (diagnostics report, v0.30).
+#[tokio::test]
+async fn label_sync_asks_for_the_counters_at_once() {
+    let h = harness().await;
+    let counters = system_gets(&h).await;
+    assert!(counters > 1, "the fake lists Inbox and the tabs");
+    let gate = h.fake.hold_get_labels();
+    let before = h.fake.calls("get_label");
+    let watch = async {
+        let all_asked = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while h.fake.calls("get_label") - before < counters {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        gate.add_permits(1);
+        all_asked
+    };
+    let (synced, all_asked) = tokio::join!(h.engine.sync_labels(), watch);
+    synced.unwrap();
+    all_asked.expect("every counter request starts before any answers");
+}
+
 /// `get_label` calls one `sync_labels` makes.
 async fn gets_during_label_sync(h: &H) -> usize {
     let before = h.fake.calls("get_label");

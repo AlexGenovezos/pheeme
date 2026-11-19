@@ -135,28 +135,20 @@ async function fetchAccount(accountId: string): Promise<AccountData | null> {
   }
 }
 
-async function fetchInboxUnread(accountIds: string[]): Promise<number | null> {
-  if (accountIds.length === 0) return 0;
-  try {
-    const counts = await mailboxCounts(accountIds);
-    return (counts ?? []).find((c) => c.labelId === "INBOX")?.unread ?? 0;
-  } catch (error) {
-    console.warn("couldn't load the All Inboxes count", error);
-    return null;
-  }
-}
-
 export const useLabelStore = create<LabelState>((set, get) => {
   // One load at a time, plus one more for every call made while it ran: reads, sync events and outbox
   // changes each ask for one, and in a large mailbox each takes seconds (`coalesce`).
   const loader = coalesce(async () => {
     const ticket = ++latest;
     const accountIds = knownIds;
-    const [accounts, inbox] = await Promise.all([
-      Promise.all(accountIds.map(fetchAccount)),
-      fetchInboxUnread(accountIds),
-    ]);
-    if (ticket !== latest) return;
+    // One account at a time. Every sync reloads every account, and reading them all at once (three reads each,
+    // plus a count across accounts) filled the database's ten connections, so the mail list and the tray queued
+    // behind the sidebar (diagnostics report, v0.30, three accounts).
+    const accounts: (AccountData | null)[] = [];
+    for (const id of accountIds) {
+      accounts.push(await fetchAccount(id));
+      if (ticket !== latest) return;
+    }
     // A count query can include some pending writes and miss others, so the counts a pending read patched stay as
     // they are (and the All Inboxes total with them) until every read settles and `settleUnread` queries again.
     // Everything else, labels and other accounts (one just added, say), refreshes as usual.
@@ -179,11 +171,13 @@ export const useLabelStore = create<LabelState>((set, get) => {
           if (s.categoryCounts[id]) categoryCounts[id] = s.categoryCounts[id];
         }
       });
+      // Inbox tabs don't change an account's Inbox count, so All Inboxes is their sum.
+      const inbox = accountIds.reduce((sum, id) => sum + (categoryCounts[id]?.INBOX ?? 0), 0);
       return {
         labels,
         counts,
         categoryCounts,
-        allInboxUnread: held.size > 0 ? s.allInboxUnread : (inbox ?? s.allInboxUnread),
+        allInboxUnread: held.size > 0 ? s.allInboxUnread : inbox,
       };
     });
   });
