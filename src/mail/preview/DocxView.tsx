@@ -1,6 +1,7 @@
 import { renderAsync } from "docx-preview";
 import { useEffect, useRef, useState } from "react";
 import { PreviewMessage } from "./PreviewMessage";
+import { usePreviewTrace } from "./trace";
 
 /**
  * The frame's own policy, on top of the app's: nothing loads from outside the document (images and fonts
@@ -28,6 +29,7 @@ export default function DocxView({
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+  const trace = usePreviewTrace();
 
   useEffect(() => {
     const doc = frame.current?.contentDocument;
@@ -50,13 +52,18 @@ export default function DocxView({
         if (stop.signal.aborted) return;
         // Links can't go anywhere from a preview; keep their text only.
         for (const link of doc.querySelectorAll("[href]")) link.removeAttribute("href");
+        trace?.shown();
         setState("ready");
       })
-      .catch(() => !stop.signal.aborted && setState("failed"));
+      .catch((error: unknown) => {
+        if (stop.signal.aborted) return;
+        trace?.failed("read", error);
+        setState("failed");
+      });
     return () => {
       stop.abort();
     };
-  }, [data]);
+  }, [data, trace]);
 
   useEffect(() => {
     const iframe = frame.current;

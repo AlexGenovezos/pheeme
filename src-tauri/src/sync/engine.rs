@@ -172,6 +172,22 @@ impl ColorSync {
     }
 }
 
+/// Where one sync's time went, step by step, for the `slow sync` log line. Milliseconds; a step
+/// that didn't run stays 0.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SyncPhases {
+    /// Listing Gmail's history since the cursor (`history.list`, every page).
+    pub history_ms: u64,
+    pub history_pages: u32,
+    pub history_records: usize,
+    /// Fetching and writing the changes it listed.
+    pub apply_ms: u64,
+    /// The next slice of a full resync.
+    pub resync_ms: u64,
+    /// Refreshing labels and their counters (Gmail, then the cache).
+    pub labels_ms: u64,
+}
+
 pub struct SyncEngine {
     db: SqlitePool,
     api: Arc<dyn MailApi>,
@@ -180,6 +196,7 @@ pub struct SyncEngine {
     write_lock: WriteLock,
     label_lock: LabelLock,
     colors: Arc<ColorSync>,
+    phases: std::sync::Mutex<SyncPhases>,
 }
 
 /// One cache write in progress: what the work handed to [`SyncEngine::write`] writes through.
@@ -254,7 +271,38 @@ impl SyncEngine {
             write_lock,
             label_lock: Default::default(),
             colors: Default::default(),
+            phases: Default::default(),
         }
+    }
+
+    /// Where this engine's syncs spent their time so far.
+    pub fn phases(&self) -> SyncPhases {
+        self.phases
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn note_phase(&self, note: impl FnOnce(&mut SyncPhases)) {
+        note(
+            &mut self
+                .phases
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+    }
+
+    /// Run `step`, then add its duration with `note`, whether it succeeded or not.
+    async fn timed<T>(
+        &self,
+        step: impl std::future::Future<Output = T>,
+        note: impl FnOnce(&mut SyncPhases, u64),
+    ) -> T {
+        let started = std::time::Instant::now();
+        let out = step.await;
+        let ms = crate::diagnostics::ms_since(started);
+        self.note_phase(|p| note(p, ms));
+        out
     }
 
     /// Share the account's [`ColorSync`] (the manager does; a lone engine has its own).
@@ -403,15 +451,25 @@ impl SyncEngine {
         // Read every page first: a failure while listing applies nothing.
         let mut records = Vec::new();
         let mut page_token: Option<String> = None;
+        let listing = std::time::Instant::now();
         let latest = loop {
+            self.note_phase(|p| p.history_pages += 1);
             let page = match self.api.list_history(&start, page_token.as_deref()).await {
                 Ok(page) => page,
                 Err(e) if e.is_history_expired() => {
+                    let history_ms = crate::diagnostics::ms_since(listing);
+                    self.note_phase(|p| p.history_ms += history_ms);
                     self.emit(SyncEvent::Started {
                         account_id: self.account(),
                     });
-                    self.begin_resync().await?;
-                    self.resync_step().await?;
+                    self.timed(
+                        async {
+                            self.begin_resync().await?;
+                            self.resync_step().await
+                        },
+                        |p, ms| p.resync_ms += ms,
+                    )
+                    .await?;
                     self.emit(SyncEvent::LabelsUpdated {
                         account_id: self.account(),
                     });
@@ -420,7 +478,11 @@ impl SyncEngine {
                     });
                     return Ok(Some(true));
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => {
+                    let history_ms = crate::diagnostics::ms_since(listing);
+                    self.note_phase(|p| p.history_ms += history_ms);
+                    return Err(e.into());
+                }
             };
             records.extend(page.history);
             page_token = page.next_page_token;
@@ -428,6 +490,11 @@ impl SyncEngine {
                 break page.history_id.unwrap_or(start.clone());
             }
         };
+        let history_ms = crate::diagnostics::ms_since(listing);
+        self.note_phase(|p| {
+            p.history_ms += history_ms;
+            p.history_records += records.len();
+        });
         let resyncing = settings::resync_position(&self.db, &self.account_id)
             .await?
             .is_some();
@@ -441,26 +508,34 @@ impl SyncEngine {
 
         let mut changed = false;
         if !quiet {
-            // Read before the writes open: hidden tabs' new mail alerts as Primary.
-            let hidden_tabs = settings::inbox_tabs(&self.db, &self.account_id).await?;
-            let chunks = history_chunks(&records);
-            let last = chunks.len() - 1;
-            for (n, chunk) in chunks.into_iter().enumerate() {
-                // A record's id is a valid place to resume from: Gmail lists what came after it.
-                let cursor = match chunk.last() {
-                    Some(record) if n < last => record.id.as_str(),
-                    _ => latest.as_str(),
-                };
-                changed |= self.apply_history(chunk, cursor, &hidden_tabs).await?;
-            }
+            let applying = async {
+                let mut changed = false;
+                // Read before the writes open: hidden tabs' new mail alerts as Primary.
+                let hidden_tabs = settings::inbox_tabs(&self.db, &self.account_id).await?;
+                let chunks = history_chunks(&records);
+                let last = chunks.len() - 1;
+                for (n, chunk) in chunks.into_iter().enumerate() {
+                    // A record's id is a valid place to resume from: Gmail lists what came after it.
+                    let cursor = match chunk.last() {
+                        Some(record) if n < last => record.id.as_str(),
+                        _ => latest.as_str(),
+                    };
+                    changed |= self.apply_history(chunk, cursor, &hidden_tabs).await?;
+                }
+                Ok::<_, SyncError>(changed)
+            };
+            changed |= self.timed(applying, |p, ms| p.apply_ms += ms).await?;
         }
         if resyncing {
-            changed |= self.resync_step().await?;
+            changed |= self
+                .timed(self.resync_step(), |p, ms| p.resync_ms += ms)
+                .await?;
         }
         if !quiet {
             // Counters move with every change and are cheap to read, so refresh them each
             // time; a failure here leaves the cursor committed and heals on the next sync.
-            self.sync_labels().await?;
+            self.timed(self.sync_labels(), |p, ms| p.labels_ms += ms)
+                .await?;
             self.emit(SyncEvent::LabelsUpdated {
                 account_id: self.account(),
             });

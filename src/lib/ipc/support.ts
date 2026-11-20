@@ -91,6 +91,72 @@ export interface ShownTiming {
 }
 /** Log how long a conversation took to show, for Send diagnostics. */
 export const logThreadShown = (timing: ShownTiming) => call("log_thread_shown", { timing });
+/**
+ * How one attachment preview went, measured in the window (`src/mail/preview/trace.ts`), so a "the PDF is blank"
+ * report says which step failed. No file name, contents or ids.
+ */
+export interface PreviewReport {
+  /** The reader that showed it: `pdf`, `docx`, `pptx`, `xlsx`, `csv`, `image` or `text`. */
+  kind: string;
+  /** The attachment's size as Gmail lists it. */
+  bytes: number | null;
+  /**
+   * `shown`: something was drawn. `blank`: the first page, or every drawn page, came out a single colour. `not_drawn`: the file was read
+   * but no page was drawn before the preview closed. `load_failed`: its bytes couldn't be fetched. `read_failed`: the
+   * reader couldn't parse them. `render_failed`: pages failed to draw. `left`: closed while still loading.
+   */
+  outcome:
+    | "shown"
+    | "blank"
+    | "not_drawn"
+    | "load_failed"
+    | "read_failed"
+    | "render_failed"
+    | "left";
+  /** Until the bytes were in hand. */
+  loadMs: number | null;
+  /** Until the reader had parsed them (a PDF's page sizes known). */
+  readMs: number | null;
+  /** Until the first page (or the whole file, for readers without pages) was drawn. */
+  shownMs: number | null;
+  /** Pages (or slides) in the file, when the reader counts them. */
+  pages: number | null;
+  /** Pages drawn, and how many of those came out blank. */
+  drawn: number;
+  blank: number;
+  /** The first drawn page's canvas size in device pixels (`1600x2070`), and the window's pixel ratio. */
+  canvas: string | null;
+  /** Page 1: `drawn`, `blank`, `unknown` (its pixels couldn't be read), `failed` to draw, null when not reached. */
+  firstPage: "drawn" | "blank" | "unknown" | "failed" | null;
+  pixelRatio: number;
+  /**
+   * Failures seen, and the first one as `stage: Name | first stack frames` (the message only for pdf.js's fixed-text
+   * errors: other readers' messages can quote the file).
+   */
+  errors: number;
+  error: string | null;
+  totalMs: number;
+}
+/** Log how an attachment preview went, for Send diagnostics. */
+export const logPreview = (report: PreviewReport) => call("log_preview", { report });
+/**
+ * A problem in the window, for Send diagnostics: an uncaught error or promise rejection, or the window's main thread
+ * falling behind while it was on screen (`src/lib/windowProblems.ts`). No email content.
+ */
+export interface WindowProblem {
+  kind: "error" | "rejection" | "stall";
+  /** The error as `Name: message` with the first stack frames (errors and rejections). */
+  message: string | null;
+  /** How far behind the main thread fell (stalls). */
+  lagMs: number | null;
+  /** Repeats of the same problem folded into this report since the last one. */
+  repeats: number;
+  /** Whether the window was visible and focused at the time. */
+  visible: boolean;
+  focused: boolean;
+}
+/** Log a problem in the window, for Send diagnostics. */
+export const logWindowProblem = (problem: WindowProblem) => call("log_window_problem", { problem });
 /** Whether the daily anonymous usage ping is on (it is unless the user turned it off). */
 export const telemetryEnabled = () => call("telemetry_enabled");
 /** Turn the anonymous usage ping on or off; off also forgets the install ID. Returns the stored choice. */

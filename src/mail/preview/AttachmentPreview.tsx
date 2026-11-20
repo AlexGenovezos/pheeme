@@ -11,13 +11,14 @@ import {
 import { Button } from "../../components/ui/Button";
 import { IconButton } from "../../components/ui/IconButton";
 import { isEditableTarget, registry } from "../../keyboard/registry";
-import { type AttachmentInfo, toCommandError } from "../../lib/tauri";
+import { type AttachmentInfo, logPreview, toCommandError } from "../../lib/tauri";
 import { formatSize } from "../AttachmentList";
 import { downloadAttachment, openAttachmentExternally } from "../attachmentActions";
 import { attachmentBytes } from "./bytes";
 import { canOpenExternally, previewKind, type PreviewKind } from "./kinds";
 import { type PreviewSession, usePreviewStore } from "./previewStore";
 import { PreviewMessage } from "./PreviewMessage";
+import { PreviewTrace, PreviewTraceContext, usePreviewTrace } from "./trace";
 import "./preview.css";
 import "../../components/ui/Surface.css";
 
@@ -52,7 +53,7 @@ export function AttachmentPreview() {
 
 /** A finished read, for the file whose key it carries; anything else on screen is still loading. */
 type Loaded =
-  | { key: string; state: "ready"; data: ArrayBuffer }
+  | { key: string; state: "ready"; data: ArrayBuffer; trace: PreviewTrace }
   | { key: string; state: "failed"; message: string };
 
 const nameOf = (file: AttachmentInfo) => file.filename ?? "Attachment";
@@ -84,11 +85,23 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
   useEffect(() => {
     if (kind === "other") return;
     const stop = new AbortController();
+    // Reported when the preview closes or moves on (`log_preview`), so a blank page leaves a trace.
+    const fileTrace = new PreviewTrace(
+      kind,
+      file.size ?? null,
+      (report) => void logPreview(report),
+    );
     attachmentBytes(accountId, messageId, file.id).then(
-      (data) => !stop.signal.aborted && setResult({ key: fileKey, state: "ready", data }),
-      (e) =>
-        !stop.signal.aborted &&
-        setResult({ key: fileKey, state: "failed", message: toCommandError(e).message }),
+      (data) => {
+        fileTrace.loaded();
+        if (!stop.signal.aborted)
+          setResult({ key: fileKey, state: "ready", data, trace: fileTrace });
+      },
+      (e) => {
+        fileTrace.failed("load", toCommandError(e).message);
+        if (!stop.signal.aborted)
+          setResult({ key: fileKey, state: "failed", message: toCommandError(e).message });
+      },
     );
     // Warm the neighbours, so flipping is instant.
     for (const d of [1, -1]) {
@@ -98,8 +111,9 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
     }
     return () => {
       stop.abort();
+      fileTrace.finish();
     };
-  }, [accountId, messageId, file.id, files, index, kind, fileKey]);
+  }, [accountId, messageId, file.id, file.size, files, index, kind, fileKey]);
 
   const download = async () => {
     setSaving(true);
@@ -237,15 +251,17 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
               Couldn't load “{name}”: {loaded.message}
             </PreviewMessage>
           ) : (
-            <Suspense fallback={<PreviewMessage busy>Opening…</PreviewMessage>}>
-              <FileBody
-                key={fileKey}
-                kind={kind}
-                data={loaded.data}
-                file={file}
-                onFrameFocus={refocus}
-              />
-            </Suspense>
+            <PreviewTraceContext value={loaded.trace}>
+              <Suspense fallback={<PreviewMessage busy>Opening…</PreviewMessage>}>
+                <FileBody
+                  key={fileKey}
+                  kind={kind}
+                  data={loaded.data}
+                  file={file}
+                  onFrameFocus={refocus}
+                />
+              </Suspense>
+            </PreviewTraceContext>
           )}
         </div>
       </div>
@@ -283,6 +299,7 @@ function FileBody({
 }
 
 function ImageView({ data, file }: { data: ArrayBuffer; file: AttachmentInfo }) {
+  const trace = usePreviewTrace();
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -291,7 +308,10 @@ function ImageView({ data, file }: { data: ArrayBuffer; file: AttachmentInfo }) 
     const stop = new AbortController();
     const reader = new FileReader();
     reader.onload = () => !stop.signal.aborted && setUrl(String(reader.result));
-    reader.onerror = () => !stop.signal.aborted && setFailed(true);
+    reader.onerror = () => {
+      trace?.failed("read", reader.error);
+      if (!stop.signal.aborted) setFailed(true);
+    };
     const type = /\.svg$/i.test(file.filename ?? "")
       ? "image/svg+xml"
       : (file.mimeType ?? "application/octet-stream");
@@ -299,7 +319,7 @@ function ImageView({ data, file }: { data: ArrayBuffer; file: AttachmentInfo }) 
     return () => {
       stop.abort();
     };
-  }, [data, file.filename, file.mimeType]);
+  }, [data, file.filename, file.mimeType, trace]);
 
   if (failed) return <PreviewMessage>Couldn't show this image.</PreviewMessage>;
   if (!url) return <PreviewMessage busy>Opening…</PreviewMessage>;
@@ -308,12 +328,18 @@ function ImageView({ data, file }: { data: ArrayBuffer; file: AttachmentInfo }) 
       className="file-preview__image"
       src={url}
       alt={nameOf(file)}
-      onError={() => setFailed(true)}
+      onLoad={() => trace?.shown()}
+      onError={() => {
+        trace?.failed("render", "the image couldn't be decoded");
+        setFailed(true);
+      }}
     />
   );
 }
 
 function TextView({ data }: { data: ArrayBuffer }) {
+  const trace = usePreviewTrace();
+  useEffect(() => trace?.shown(), [trace]);
   const cut = data.byteLength > MAX_TEXT_BYTES;
   const text = new TextDecoder().decode(cut ? data.slice(0, MAX_TEXT_BYTES) : data);
   return (

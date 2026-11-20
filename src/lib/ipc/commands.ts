@@ -56,7 +56,14 @@ import type { GmailSearchPage, SearchPage } from "./search";
 import type { InboxThread, SavedRules, SenderRule } from "./senderRules";
 import type { ClearedDownloads, ThemeFolderFile } from "./settings";
 import type { MailStats, Unsubscribed } from "./stats";
-import type { DiagnosticsEmail, PreparedScreenshot, ShownTiming, UpdateEvent } from "./support";
+import type {
+  DiagnosticsEmail,
+  PreparedScreenshot,
+  PreviewReport,
+  ShownTiming,
+  UpdateEvent,
+  WindowProblem,
+} from "./support";
 import type { Task, TaskEdit, TaskListRef, TaskRef, TasksAccess, TasksAccount } from "./tasks";
 import type { Forecast, LocationForecast, TemperatureUnit, WeatherPlace } from "./weather";
 
@@ -346,6 +353,8 @@ export interface Commands {
   start_hidden_next_launch: Command<void, void>;
   launch_hidden: Command<void, boolean>;
   log_thread_shown: Command<{ timing: ShownTiming }, void>;
+  log_preview: Command<{ report: PreviewReport }, void>;
+  log_window_problem: Command<{ problem: WindowProblem }, void>;
   telemetry_enabled: Command<void, boolean>;
   set_telemetry: Command<{ enabled: boolean }, boolean>;
   record_usage: Command<{ batch: UsageBatch }, void>;

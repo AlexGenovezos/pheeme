@@ -2,6 +2,7 @@ import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-d
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useEffect, useRef, useState } from "react";
 import { PreviewMessage } from "./PreviewMessage";
+import { isBlankCanvas, type PreviewTrace, usePreviewTrace } from "./trace";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -15,6 +16,7 @@ export default function PdfView({ data, name }: { data: ArrayBuffer; name: strin
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<PageSize[]>([]);
   const [failed, setFailed] = useState(false);
+  const trace = usePreviewTrace();
 
   useEffect(() => {
     const stop = new AbortController();
@@ -28,28 +30,43 @@ export default function PdfView({ data, name }: { data: ArrayBuffer; name: strin
           ),
         );
         if (stop.signal.aborted) return;
+        trace?.read(pdf.numPages);
         setSizes(pages.map((v) => ({ width: v.width, height: v.height })));
         setDoc(pdf);
       })
-      .catch(() => !stop.signal.aborted && setFailed(true));
+      .catch((error: unknown) => {
+        if (stop.signal.aborted) return;
+        trace?.failed("read", error);
+        setFailed(true);
+      });
     return () => {
       stop.abort();
       void task.destroy();
     };
-  }, [data]);
+  }, [data, trace]);
 
   if (failed) return <PreviewMessage>Couldn't read “{name}” as a PDF.</PreviewMessage>;
   if (!doc) return <PreviewMessage busy>Opening…</PreviewMessage>;
   return (
     <div className="file-preview__pages" aria-label={`${name}, ${sizes.length} pages`}>
       {sizes.map((size, i) => (
-        <PdfPage key={i} doc={doc} number={i + 1} size={size} />
+        <PdfPage key={i} doc={doc} number={i + 1} size={size} trace={trace} />
       ))}
     </div>
   );
 }
 
-function PdfPage({ doc, number, size }: { doc: PDFDocumentProxy; number: number; size: PageSize }) {
+function PdfPage({
+  doc,
+  number,
+  size,
+  trace,
+}: {
+  doc: PDFDocumentProxy;
+  number: number;
+  size: PageSize;
+  trace: PreviewTrace | null;
+}) {
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
@@ -71,20 +88,31 @@ function PdfPage({ doc, number, size }: { doc: PDFDocumentProxy; number: number;
     if (!visible || !el || !c) return;
     const stop = new AbortController();
     let task: { cancel(): void; promise: Promise<void> } | null = null;
-    void doc.getPage(number).then((page) => {
-      if (stop.signal.aborted) return;
-      const scale = (el.clientWidth / size.width) * (window.devicePixelRatio || 1);
-      const viewport = page.getViewport({ scale });
-      c.width = Math.floor(viewport.width);
-      c.height = Math.floor(viewport.height);
-      task = page.render({ canvas: c, viewport });
-      task.promise.catch(() => undefined);
-    });
+    doc
+      .getPage(number)
+      .then((page) => {
+        if (stop.signal.aborted) return;
+        const scale = (el.clientWidth / size.width) * (window.devicePixelRatio || 1);
+        const viewport = page.getViewport({ scale });
+        c.width = Math.floor(viewport.width);
+        c.height = Math.floor(viewport.height);
+        task = page.render({ canvas: c, viewport });
+        return task.promise.then(
+          () => {
+            if (!stop.signal.aborted) trace?.drew(number, isBlankCanvas(c), c);
+          },
+          (error: unknown) => {
+            // Cancelled because the page scrolled away or the preview closed: not a failure.
+            if (!stop.signal.aborted) trace?.failed("render", error, number);
+          },
+        );
+      })
+      .catch((error: unknown) => !stop.signal.aborted && trace?.failed("render", error, number));
     return () => {
       stop.abort();
       task?.cancel();
     };
-  }, [visible, doc, number, size.width]);
+  }, [visible, doc, number, size.width, trace]);
 
   return (
     <div

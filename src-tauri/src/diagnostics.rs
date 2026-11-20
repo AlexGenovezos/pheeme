@@ -268,6 +268,113 @@ impl ShownTiming {
     }
 }
 
+/// Text from the window, cut to `max` characters, so a misbehaving window can't fill the log.
+fn clip(text: &str, max: usize) -> String {
+    match text.char_indices().nth(max) {
+        Some((at, _)) => format!("{}…", &text[..at]),
+        None => text.to_owned(),
+    }
+}
+
+/// How one attachment preview went, measured in the window (`src/mail/preview/trace.ts`). No file
+/// name, contents or ids.
+#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewReport {
+    /// The reader: `pdf`, `docx`, `pptx`, `xlsx`, `csv`, `image` or `text`.
+    pub kind: String,
+    pub bytes: Option<u64>,
+    /// `shown`, `blank`, `not_drawn`, `load_failed`, `read_failed`, `render_failed` or `left`.
+    pub outcome: String,
+    pub load_ms: Option<u64>,
+    pub read_ms: Option<u64>,
+    pub shown_ms: Option<u64>,
+    pub pages: Option<u32>,
+    pub drawn: u32,
+    pub blank: u32,
+    /// The first drawn page's canvas in device pixels (`1600x2070`).
+    pub canvas: Option<String>,
+    /// Page 1: `drawn`, `blank`, `unknown` (its pixels couldn't be read) or `failed` to draw.
+    pub first_page: Option<String>,
+    pub pixel_ratio: f64,
+    pub errors: u32,
+    /// The first failure, `stage: Name: message`.
+    pub error: Option<String>,
+    pub total_ms: u64,
+}
+
+impl PreviewReport {
+    /// Write it to the log: at `warn` when nothing usable showed, else `info`.
+    pub fn log(&self) {
+        macro_rules! log_preview {
+            ($level:expr) => {
+                tracing::event!(
+                    $level,
+                    kind = %clip(&self.kind, 16),
+                    outcome = %clip(&self.outcome, 16),
+                    bytes = ?self.bytes,
+                    load_ms = ?self.load_ms,
+                    read_ms = ?self.read_ms,
+                    shown_ms = ?self.shown_ms,
+                    pages = ?self.pages,
+                    drawn = self.drawn,
+                    blank = self.blank,
+                    canvas = ?self.canvas.as_deref().map(|c| clip(c, 24)),
+                    first_page = ?self.first_page.as_deref().map(|c| clip(c, 8)),
+                    pixel_ratio = self.pixel_ratio,
+                    errors = self.errors,
+                    error = ?self.error.as_deref().map(|e| clip(e, 600)),
+                    total_ms = self.total_ms,
+                    "attachment preview"
+                )
+            };
+        }
+        if matches!(self.outcome.as_str(), "shown" | "left") && self.errors == 0 {
+            log_preview!(tracing::Level::INFO);
+        } else {
+            log_preview!(tracing::Level::WARN);
+        }
+    }
+}
+
+/// A problem in the window (`src/lib/windowProblems.ts`): an uncaught error or rejection, or its
+/// main thread falling behind while focused. No email content.
+#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowProblem {
+    /// `error`, `rejection` or `stall`.
+    pub kind: String,
+    pub message: Option<String>,
+    pub lag_ms: Option<u64>,
+    /// Repeats folded into this report since the last one.
+    pub repeats: u32,
+    pub visible: bool,
+    pub focused: bool,
+}
+
+impl WindowProblem {
+    pub fn log(&self) {
+        if self.kind == "stall" {
+            tracing::warn!(
+                lag_ms = ?self.lag_ms,
+                visible = self.visible,
+                focused = self.focused,
+                "window stalled"
+            );
+        } else {
+            tracing::warn!(
+                kind = %clip(&self.kind, 16),
+                repeats = self.repeats,
+                visible = self.visible,
+                focused = self.focused,
+                // Not `message=`: the support bundle's scrubber blanks that to the end of the line.
+                error = ?self.message.as_deref().map(|m| clip(m, 600)),
+                "window error"
+            );
+        }
+    }
+}
+
 /// How often the stall watch looks. A stall of 1.25 s or more always makes a tick late enough
 /// to report; shorter ones only when a tick falls inside them. Once a second keeps the watch to
 /// one wakeup a second, where every 100 ms cost the laptop's battery ten.
@@ -292,7 +399,7 @@ impl StallWatch {
     /// One tick at `now`, `waited` since the last by the monotonic clock and `wall` by the wall
     /// clock (`None` when it went backwards). Returns the lag to report.
     fn tick(&mut self, now: Instant, waited: Duration, wall: Option<Duration>) -> Option<Duration> {
-        if wall.is_some_and(|wall| wall > waited + SLEEP_GAP) {
+        if slept(waited, wall).is_some() {
             self.quiet_until = Some(now + AFTER_WAKE);
             return None;
         }
@@ -304,23 +411,75 @@ impl StallWatch {
     }
 }
 
+/// How long the computer slept between two ticks `waited` apart by the monotonic clock and
+/// `wall` apart by the wall clock, if it did.
+fn slept(waited: Duration, wall: Option<Duration>) -> Option<Duration> {
+    wall.filter(|wall| *wall > waited + SLEEP_GAP)
+        .map(|wall| wall - waited)
+}
+
+/// CPU time this process has used, all threads, user and system.
+#[cfg(unix)]
+fn cpu_time() -> Option<Duration> {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+    // SAFETY: `getrusage` fills the struct it's given, and reports failure by its return value.
+    if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
+        return None;
+    }
+    // SAFETY: zeroed, then filled by the successful call above.
+    let usage = unsafe { usage.assume_init() };
+    let time = |t: libc::timeval| {
+        Duration::from_secs(u64::try_from(t.tv_sec).unwrap_or(0))
+            + Duration::from_micros(u64::try_from(t.tv_usec).unwrap_or(0))
+    };
+    Some(time(usage.ru_utime) + time(usage.ru_stime))
+}
+
+#[cfg(not(unix))]
+fn cpu_time() -> Option<Duration> {
+    None
+}
+
 /// Warn when the async runtime falls behind: a tick that should come every second arriving
-/// late means its worker threads were busy (blocking work on the runtime), so every command
-/// and query result waited too. Quiet for a minute after the computer wakes from sleep.
+/// late means every command and query result waited too. Each warning says which kind of late it
+/// was: `cpu_ms` is the CPU time Pheeme used over the tick (`wall_ms`). Near zero means Pheeme
+/// wasn't running at all (the system held it back: App Nap, Power Nap, a busy or hot machine);
+/// close to `wall_ms` or more means its own threads were busy (blocking work on the runtime).
+/// With it, whether the window was focused and visible, the displays asleep, Low Power Mode and
+/// the thermal state ([`crate::presence`]). Sleeps are logged as such, and stalls within a minute
+/// of waking aren't reported.
 pub fn watch_runtime_stalls() {
     tauri::async_runtime::spawn(async {
         let mut tick = tokio::time::interval(STALL_TICK);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         tick.tick().await;
         let mut watch = StallWatch::default();
-        let mut last = (Instant::now(), SystemTime::now());
+        let mut last = (Instant::now(), SystemTime::now(), cpu_time());
         loop {
             tick.tick().await;
-            let now = (Instant::now(), SystemTime::now());
+            let now = (Instant::now(), SystemTime::now(), cpu_time());
             let waited = now.0.duration_since(last.0);
             let wall = now.1.duration_since(last.1).ok();
+            if let Some(slept) = slept(waited, wall) {
+                tracing::info!(slept_ms = slept.as_millis() as u64, "computer slept");
+            }
             if let Some(lag) = watch.tick(now.0, waited, wall) {
-                tracing::warn!(lag_ms = lag.as_millis() as u64, "async runtime stalled");
+                let cpu_ms = now
+                    .2
+                    .zip(last.2)
+                    .map(|(now, then)| now.saturating_sub(then).as_millis() as u64);
+                let presence = crate::presence::snapshot();
+                tracing::warn!(
+                    lag_ms = lag.as_millis() as u64,
+                    wall_ms = waited.as_millis() as u64,
+                    cpu_ms = ?cpu_ms,
+                    focused = ?presence.focused,
+                    visible = ?presence.visible,
+                    displays_asleep = ?presence.displays_asleep,
+                    low_power = ?presence.low_power,
+                    thermal = ?presence.thermal,
+                    "async runtime stalled"
+                );
             }
             last = now;
         }
@@ -363,6 +522,25 @@ mod tests {
             watch.tick(woke + ms(61_000), ms(2_100), Some(ms(2_100))),
             Some(ms(1_100))
         );
+    }
+
+    #[test]
+    fn a_sleep_is_the_wall_clock_running_ahead() {
+        assert_eq!(slept(ms(1_630), Some(ms(5_630))), Some(ms(4_000)));
+        assert_eq!(slept(ms(1_400), Some(ms(1_900))), None);
+        assert_eq!(slept(ms(1_400), None), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cpu_time_moves_forward_with_work() {
+        let before = cpu_time().unwrap();
+        let mut x = 0u64;
+        let start = Instant::now();
+        while start.elapsed() < ms(30) {
+            x = std::hint::black_box(x.wrapping_add(1));
+        }
+        assert!(cpu_time().unwrap() > before);
     }
 
     #[test]

@@ -12,6 +12,7 @@ import { initTheme } from "./theme/theme";
 import { watchThemeFolder } from "./theme/themeFolder";
 import { initReadingSize } from "./settings/readingSettings";
 import { openTimer } from "./mail/openTiming";
+import { watchWindowProblems } from "./lib/windowProblems";
 
 const root = document.documentElement;
 root.dataset.platform = platform;
@@ -24,6 +25,8 @@ initReadingSize();
 loadBindings();
 // From the first click: how long each conversation takes to show goes to the diagnostics log.
 openTimer();
+// Uncaught errors and a frozen window go to the diagnostics log too.
+watchWindowProblems();
 
 function render() {
   // After the preview fixtures are in, so the browser preview answers the folder read too.

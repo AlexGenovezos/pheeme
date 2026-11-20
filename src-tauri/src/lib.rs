@@ -24,6 +24,7 @@ mod lock;
 pub mod mail;
 pub mod mcp;
 pub mod mods;
+mod presence;
 mod relaunch;
 pub mod render;
 pub mod search;
@@ -355,6 +356,8 @@ pub fn run() {
             app.manage(diagnostics::init(log_dir));
             app.manage(weather::WeatherService::new());
             diagnostics::watch_runtime_stalls();
+            // Sleep, wake, sleeping displays and whether the window can be seen, for the log.
+            presence::watch();
             info!(
                 version = env!("CARGO_PKG_VERSION"),
                 os = std::env::consts::OS,
@@ -495,9 +498,14 @@ pub fn run() {
                     }
                 }
             }
-            if let tauri::WindowEvent::Focused(true) = event {
-                if let Some(state) = window.try_state::<AppState>() {
-                    state.sync.trigger_focus();
+            if let tauri::WindowEvent::Focused(focused) = event {
+                if window.label() == "main" {
+                    presence::set_focused(*focused);
+                }
+                if *focused {
+                    if let Some(state) = window.try_state::<AppState>() {
+                        state.sync.trigger_focus();
+                    }
                 }
             }
         })
@@ -659,6 +667,8 @@ pub fn run() {
             commands::updater::start_hidden_next_launch,
             commands::updater::launch_hidden,
             commands::support::log_thread_shown,
+            commands::support::log_preview,
+            commands::support::log_window_problem,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

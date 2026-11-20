@@ -198,6 +198,17 @@ fn effective_priority(requested: Priority, scope: Option<Scope>, probed: bool) -
     }
 }
 
+/// The chain of errors under `e` (`connection reset by peer`, `operation timed out`), joined.
+fn error_causes(e: &dyn std::error::Error) -> String {
+    let mut causes = Vec::new();
+    let mut source = e.source();
+    while let Some(cause) = source {
+        causes.push(cause.to_string());
+        source = cause.source();
+    }
+    causes.join(": ")
+}
+
 /// One Gmail API call, rebuilt for every attempt.
 #[derive(Debug, Clone)]
 pub(crate) struct ApiRequest {
@@ -465,14 +476,18 @@ impl GmailClient {
     /// slows down instead of piling retries on top of new requests.
     ///
     /// With a [`probe`] in scope (the reader opened a thread), a sync request is the reader's:
-    /// it runs at [`Priority::Interactive`], and its waits, retries and failures are reported.
+    /// it runs at [`Priority::Interactive`], and its waits, retries and failures are reported. A
+    /// passive probe (sync's own timing) only hears them.
     /// Inside [`user_action`] it is the user's too; inside [`background`] every request is
     /// background work (see [`effective_priority`]).
     async fn execute(&self, req: &ApiRequest) -> Result<Vec<u8>, GmailError> {
         let closed = |_| GmailError::Network("request limiter closed".into());
         let probe = probe::current();
-        let priority =
-            effective_priority(req.priority, SCOPE.try_with(|s| *s).ok(), probe.is_some());
+        let priority = effective_priority(
+            req.priority,
+            SCOPE.try_with(|s| *s).ok(),
+            probe.as_ref().is_some_and(|p| p.elevates()),
+        );
         let background = priority == Priority::Background;
         let user = priority == Priority::Interactive;
         let url = self.url_for(req)?;
@@ -551,9 +566,22 @@ impl GmailClient {
                     }
                     // A connect failure means the request never left; anything later is ambiguous.
                     let safe_to_retry = req.retry_ambiguous || e.is_connect();
-                    if safe_to_retry && attempt < self.retry.max_retries {
-                        let delay = jittered(self.retry.backoff(attempt));
-                        warn!(attempt, ?delay, error = %e, "Gmail request failed, retrying");
+                    let retry_in = (safe_to_retry && attempt < self.retry.max_retries)
+                        .then(|| jittered(self.retry.backoff(attempt)));
+                    // Which call, how long it ran and the underlying cause: "error decoding
+                    // response body" alone doesn't say whether the connection dropped or timed out.
+                    warn!(
+                        attempt,
+                        method = %req.method,
+                        resource = req.segments.first().map(String::as_str).unwrap_or(""),
+                        took_ms = sent.elapsed().as_millis() as u64,
+                        timeout = e.is_timeout(),
+                        error = %e,
+                        cause = %error_causes(&e),
+                        ?retry_in,
+                        "Gmail request failed"
+                    );
+                    if let Some(delay) = retry_in {
                         if let Some(p) = &probe {
                             p.retrying(attempt, delay, RetryReason::Network);
                         }

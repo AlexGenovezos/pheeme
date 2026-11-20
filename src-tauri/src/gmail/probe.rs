@@ -69,6 +69,9 @@ pub struct ProbeStats {
 pub struct RequestProbe {
     on_stage: Box<dyn Fn(ProbeStage) + Send + Sync>,
     state: Mutex<ProbeState>,
+    /// Whether probed requests become the reader's (see the module docs). A passive probe only
+    /// counts.
+    elevates: bool,
 }
 
 #[derive(Default)]
@@ -87,7 +90,23 @@ impl RequestProbe {
         Arc::new(Self {
             on_stage: Box::new(on_stage),
             state: Mutex::new(ProbeState::default()),
+            elevates: true,
         })
+    }
+
+    /// A probe that only counts what the requests in its scope waited on, leaving their
+    /// priority alone: sync's timing for the `slow sync` log line.
+    pub fn passive() -> Arc<Self> {
+        Arc::new(Self {
+            on_stage: Box::new(|_| {}),
+            state: Mutex::new(ProbeState::default()),
+            elevates: false,
+        })
+    }
+
+    /// Whether requests in this probe's scope run as the reader's.
+    pub(crate) fn elevates(&self) -> bool {
+        self.elevates
     }
 
     pub fn snapshot(&self) -> ProbeStats {
@@ -159,6 +178,15 @@ pub(crate) fn report(stage: ProbeStage) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_readers_probe_raises_priority() {
+        assert!(RequestProbe::new(|_| {}).elevates());
+        let passive = RequestProbe::passive();
+        assert!(!passive.elevates());
+        passive.sent(Duration::from_millis(40));
+        assert_eq!(passive.snapshot().requests, 1);
+    }
 
     #[tokio::test]
     async fn repeated_stages_are_reported_once_and_only_in_scope() {
