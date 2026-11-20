@@ -1,6 +1,7 @@
 import { PptxViewer, RECOMMENDED_ZIP_LIMITS } from "@aiden0z/pptx-renderer";
 import { useEffect, useRef, useState } from "react";
 import { PreviewMessage } from "./PreviewMessage";
+import { usePreviewTrace } from "./trace";
 
 /**
  * A PowerPoint deck, slide after slide down the panel, drawn as HTML and SVG by pptx-renderer.
@@ -16,6 +17,7 @@ export default function PptxView({ data, name }: { data: ArrayBuffer; name: stri
   const scroller = useRef<HTMLDivElement>(null);
   const slides = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+  const trace = usePreviewTrace();
 
   useEffect(() => {
     const root = slides.current;
@@ -35,7 +37,8 @@ export default function PptxView({ data, name }: { data: ArrayBuffer; name: stri
       scrollContainer,
       // Links can't go anywhere from a preview; keep their text only. (Just links: SVG
       // elements such as WordArt's <textPath> use href for references within the slide.)
-      onSlideRendered: (_, el) => {
+      onSlideRendered: (index, el) => {
+        trace?.drew(index + 1, false);
         for (const link of el.querySelectorAll("a[href]")) link.removeAttribute("href");
       },
     });
@@ -45,13 +48,21 @@ export default function PptxView({ data, name }: { data: ArrayBuffer; name: stri
         signal: stop.signal,
         listOptions: { windowed: true, initialSlides: 3, batchSize: 4 },
       })
-      .then(() => !stop.signal.aborted && setState("ready"))
-      .catch(() => !stop.signal.aborted && setState("failed"));
+      .then(() => {
+        if (stop.signal.aborted) return;
+        trace?.read();
+        setState("ready");
+      })
+      .catch((error: unknown) => {
+        if (stop.signal.aborted) return;
+        trace?.failed("read", error);
+        setState("failed");
+      });
     return () => {
       stop.abort();
       viewer.destroy();
     };
-  }, [data]);
+  }, [data, trace]);
 
   // Slides react to clicks (hyperlinks, jumps between slides); a preview stays put.
   useEffect(() => {

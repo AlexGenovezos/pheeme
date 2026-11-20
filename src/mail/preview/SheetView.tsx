@@ -2,6 +2,7 @@ import readXlsxFile from "read-excel-file/browser";
 import { useEffect, useState } from "react";
 import { parseDelimited } from "./csv";
 import { PreviewMessage } from "./PreviewMessage";
+import { usePreviewTrace } from "./trace";
 
 /** Past these the preview shows the top-left corner and says so; the file opens in full elsewhere. */
 export const MAX_ROWS = 1000;
@@ -61,18 +62,27 @@ export default function SheetView({
   const [sheets, setSheets] = useState<SheetData[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [active, setActive] = useState(0);
+  const trace = usePreviewTrace();
 
   useEffect(() => {
     // Mounted once per file (the panel keys it), so there's no earlier file's state to reset.
     const stop = new AbortController();
     readSheets(data, kind, name).then(
-      (s) => !stop.signal.aborted && setSheets(s),
-      () => !stop.signal.aborted && setFailed(true),
+      (s) => {
+        if (stop.signal.aborted) return;
+        trace?.shown();
+        setSheets(s);
+      },
+      (error: unknown) => {
+        if (stop.signal.aborted) return;
+        trace?.failed("read", error);
+        setFailed(true);
+      },
     );
     return () => {
       stop.abort();
     };
-  }, [data, kind, name]);
+  }, [data, kind, name, trace]);
 
   if (failed) return <PreviewMessage>Couldn't read “{name}” as a spreadsheet.</PreviewMessage>;
   if (!sheets) return <PreviewMessage busy>Opening…</PreviewMessage>;

@@ -626,6 +626,27 @@ async fn incremental_paginates_all_pages() {
 }
 
 #[tokio::test]
+async fn incremental_records_its_steps_for_the_slow_sync_line() {
+    let h = harness().await;
+    h.engine.run_initial_sync().await.unwrap();
+    h.fake.set_history_page_size(2);
+    for n in 0..3 {
+        h.fake
+            .add(FakeMsg::new(&format!("m{n}"), &format!("t{n}"), &["INBOX"]).days_ago(n));
+    }
+    h.engine.run_incremental_sync().await.unwrap();
+    let phases = h.engine.phases();
+    assert_eq!(phases.history_pages, 2);
+    assert_eq!(phases.history_records, 3);
+
+    // A quick check with nothing new lists one page and does nothing else.
+    assert_eq!(h.engine.check_incremental_sync().await.unwrap(), None);
+    let after = h.engine.phases();
+    assert_eq!(after.history_pages, 3);
+    assert_eq!(after.history_records, 3);
+}
+
+#[tokio::test]
 async fn incremental_failed_second_page_applies_nothing() {
     let h = harness().await;
     h.engine.run_initial_sync().await.unwrap();

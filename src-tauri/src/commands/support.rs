@@ -1,7 +1,7 @@
 //! Send diagnostics: thin adapters over [`crate::support`].
 
 use super::CommandError;
-use crate::diagnostics::ShownTiming;
+use crate::diagnostics::{PreviewReport, ShownTiming, WindowProblem};
 use crate::support::email::EmailRequest;
 use crate::support::{self, screenshot, Sources, SupportError};
 use crate::AppState;
@@ -130,6 +130,18 @@ async fn read_dropped(path: &str) -> Result<Vec<u8>, SupportError> {
 #[tauri::command]
 pub fn log_thread_shown(state: State<'_, AppState>, timing: ShownTiming) {
     state.mail.record_shown(timing);
+}
+
+/// How an attachment preview went (`src/mail/preview/trace.ts`).
+#[tauri::command]
+pub fn log_preview(report: PreviewReport) {
+    report.log();
+}
+
+/// An uncaught error or a frozen window (`src/lib/windowProblems.ts`).
+#[tauri::command]
+pub fn log_window_problem(problem: WindowProblem) {
+    problem.log();
 }
 
 #[cfg(test)]

@@ -283,7 +283,9 @@ impl SyncManager {
             return Ok(());
         }
         let a = self.account(account_id);
+        let asked = Instant::now();
         let _running = a.run_lock.lock().await;
+        let queued_ms = crate::diagnostics::ms_since(asked);
         let first = matches!(
             accounts::get_account(&self.db, account_id).await,
             Ok(Some(account)) if account.history_id.is_none()
@@ -292,9 +294,22 @@ impl SyncManager {
         let _first_done = FirstSyncDone(&a.first_sync);
         let engine = self.engine(account_id);
         let start = Instant::now();
+        let pool = crate::diagnostics::PoolLoad::of(&self.db);
         let full_due = lock(&a.last_full).is_none_or(|t| t.elapsed() >= FULL_SYNC_INTERVAL);
-        let result = async {
-            self.process_outbox(account_id).await?;
+        // Counts what its Gmail requests waited on, for the slow sync line; priorities unchanged.
+        let gmail = crate::gmail::probe::RequestProbe::passive();
+        let outbox_ms = std::sync::atomic::AtomicU64::new(0);
+        let outbox = || async {
+            let started = Instant::now();
+            let result = self.process_outbox(account_id).await;
+            outbox_ms.fetch_add(
+                crate::diagnostics::ms_since(started),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            result
+        };
+        let result = crate::gmail::probe::with_probe(gmail.clone(), async {
+            outbox().await?;
             let changed = if full_due {
                 Some(engine.run_incremental_sync().await?)
             } else {
@@ -303,18 +318,39 @@ impl SyncManager {
             if changed.is_some() {
                 *lock(&a.last_full) = Some(Instant::now());
             }
-            self.process_outbox(account_id).await?;
+            outbox().await?;
             Ok::<_, SyncError>(changed)
-        }
+        })
         .await;
         if result.is_err() {
             *lock(&a.last_full) = None;
         }
         if start.elapsed() >= SLOW_SYNC {
+            // Where the time went: each step, what its Gmail requests waited on, and the database
+            // pool when it began. Time the steps don't cover is the outbox's and the cache's.
+            let phases = engine.phases();
+            let gmail = gmail.snapshot();
             tracing::info!(
                 account = account_id,
                 elapsed_ms = start.elapsed().as_millis() as u64,
                 changed = ?result.as_ref().ok(),
+                full = full_due,
+                queued_ms,
+                outbox_ms = outbox_ms.load(std::sync::atomic::Ordering::Relaxed),
+                history_ms = phases.history_ms,
+                history_pages = phases.history_pages,
+                history_records = phases.history_records,
+                apply_ms = phases.apply_ms,
+                resync_ms = phases.resync_ms,
+                labels_ms = phases.labels_ms,
+                gmail_requests = gmail.requests,
+                gmail_ms = gmail.gmail_ms,
+                slot_wait_ms = gmail.slot_wait_ms,
+                quota_wait_ms = gmail.quota_wait_ms,
+                retries = gmail.retries,
+                last_status = ?gmail.last_status,
+                last_reason = ?gmail.last_reason,
+                %pool,
                 "slow sync"
             );
         }

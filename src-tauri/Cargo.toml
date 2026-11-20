@@ -84,6 +84,8 @@ chrono-tz = "0.10"
 [target.'cfg(unix)'.dependencies]
 # Ties the Local Network probe to one interface (IP_BOUND_IF), so a VPN can't answer for it.
 socket2 = { version = "0.6", features = ["all"] }
+# The process's CPU time, so a stall line says whether Pheeme was busy or held back (diagnostics.rs).
+libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5", default-features = false, features = ["tokio"] }
@@ -96,7 +98,11 @@ webkit2gtk = "2.0"
 security-framework = "3"
 # Registers the default that turns on WKWebView spell checking (already in the tree via tao and wry).
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDictionary", "NSObject", "NSString", "NSUserDefaults", "NSValue"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSDictionary", "NSNotification", "NSObject", "NSOperation", "NSProcessInfo", "NSString", "NSUserDefaults", "NSValue"] }
+# Sleep, wake, sleeping displays and whether the window is on screen, for the diagnostics log
+# (presence.rs). Both already in the tree via tao.
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWorkspace"] }
+block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winrt-notification = { package = "tauri-winrt-notification", version = "0.7" }
