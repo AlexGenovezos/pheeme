@@ -58,7 +58,8 @@ export class PreviewTrace {
     if (blank) this.blankPages.add(page);
     else this.blankPages.delete(page);
     // The page the user sees first: blank there is what "opened blank" means.
-    if (page === 1) this.firstPage = blank == null ? "unknown" : blank ? "blank" : "drawn";
+    if (page === 1 && this.firstPage !== "failed")
+      this.firstPage = blank == null ? "unknown" : blank ? "blank" : "drawn";
   }
 
   /** A reader without pages showed the whole file. */
@@ -71,8 +72,10 @@ export class PreviewTrace {
    * Kept: the error's name and code location, and its message only when Pheeme wrote it (a
    * failed load is the app's own `{ code, message }`) or it's pdf.js's fixed text.
    */
-  failed(stage: Stage, error: unknown) {
+  failed(stage: Stage, error: unknown, page?: number) {
     this.errors += 1;
+    // Page 1 failing is what the user saw, whatever later pages did.
+    if (page === 1) this.firstPage = "failed";
     const ownText = stage === "load" || (error instanceof Error && FIXED_MESSAGES.has(error.name));
     this.firstError ??= { stage, text: describeError(error, ownText) };
   }
@@ -102,6 +105,7 @@ export class PreviewTrace {
 
   private outcome(): PreviewReport["outcome"] {
     const drawn = this.drawnPages.size;
+    if (this.firstPage === "failed") return "render_failed";
     if (drawn > 0)
       return this.firstPage === "blank" || this.blankPages.size === drawn ? "blank" : "shown";
     switch (this.firstError?.stage) {

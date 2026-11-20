@@ -105,6 +105,10 @@ group("window problems", () => {
     const multi = new Error("secret\nmore secret");
     multi.stack = "f@tauri://localhost/assets/index.js:1:2\nglobal code@tauri://localhost/x.js:3:4";
     expect(describe(multi, false)).toBe("Error | f@assets/index.js:1:2 | global code@x.js:3:4");
+    // A real V8 stack: the message (with an `@`, over two lines) heads it.
+    const v8 = new TypeError("cell bob@example.com\nSalary: 92,000");
+    expect(describe(v8, false)).toMatch(/^TypeError \| at /);
+    expect(describe(v8, false)).not.toMatch(/bob|Salary/);
     expect(describe({ code: 1 })).toBe('{"code":1}');
     expect(describe("x".repeat(700))).toHaveLength(601);
   });

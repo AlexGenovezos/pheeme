@@ -109,6 +109,12 @@ it("a blank first page reads as blank even when a later page has content", () =>
   s.trace.drew(1, true);
   s.trace.finish();
   expect(s.reports[0]).toMatchObject({ outcome: "blank", firstPage: "blank", drawn: 2, blank: 1 });
+  const failed = setup();
+  failed.trace.failed("render", new Error("canvas too large"), 1);
+  failed.trace.drew(2, false);
+  failed.trace.drew(1, false);
+  failed.trace.finish();
+  expect(failed.reports[0]).toMatchObject({ outcome: "render_failed", firstPage: "failed" });
   const unread = setup();
   unread.trace.drew(1, null);
   unread.trace.finish();

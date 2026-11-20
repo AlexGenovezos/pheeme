@@ -103,11 +103,11 @@ function PdfPage({
           },
           (error: unknown) => {
             // Cancelled because the page scrolled away or the preview closed: not a failure.
-            if (!stop.signal.aborted) trace?.failed("render", error);
+            if (!stop.signal.aborted) trace?.failed("render", error, number);
           },
         );
       })
-      .catch((error: unknown) => !stop.signal.aborted && trace?.failed("render", error));
+      .catch((error: unknown) => !stop.signal.aborted && trace?.failed("render", error, number));
     return () => {
       stop.abort();
       task?.cancel();

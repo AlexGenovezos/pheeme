@@ -126,8 +126,8 @@ export interface PreviewReport {
   blank: number;
   /** The first drawn page's canvas size in device pixels (`1600x2070`), and the window's pixel ratio. */
   canvas: string | null;
-  /** Page 1 as drawn: `drawn`, `blank`, `unknown` (its pixels couldn't be read), null when not drawn. */
-  firstPage: "drawn" | "blank" | "unknown" | null;
+  /** Page 1: `drawn`, `blank`, `unknown` (its pixels couldn't be read), `failed` to draw, null when not reached. */
+  firstPage: "drawn" | "blank" | "unknown" | "failed" | null;
   pixelRatio: number;
   /**
    * Failures seen, and the first one as `stage: Name | first stack frames` (the message only for pdf.js's fixed-text

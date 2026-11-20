@@ -111,8 +111,12 @@ export function createProblemLog(deps: WindowProblemDeps): ProblemLog {
 export function describe(error: unknown, withMessage = true): string {
   let text: string;
   if (error instanceof Error) {
-    // Frame lines only (V8 `at …`, WebKit `fn@url:1:2`), never the message's own lines.
-    const frames = (error.stack ?? "")
+    // Frame lines only (V8 `at …`, WebKit `fn@url:1:2`). V8 starts the stack with the message,
+    // which can span lines: cut through its end first, so none of it reads as a frame.
+    let stack = error.stack ?? "";
+    const end = error.message ? stack.indexOf(error.message) : -1;
+    if (end >= 0) stack = stack.slice(end + error.message.length);
+    const frames = stack
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => /^at |@|:\d+:\d+\)?$/.test(line))
