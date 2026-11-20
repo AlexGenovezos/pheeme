@@ -45,6 +45,7 @@ it("reports a drawn PDF with its timings, once", () => {
       drawn: 2,
       blank: 0,
       canvas: "1600x2070",
+      firstPage: "drawn",
       pixelRatio: 2,
       errors: 0,
       error: null,
@@ -64,14 +65,17 @@ it("names what went wrong", () => {
     outcome: "load_failed",
     error: "load: Gmail is unreachable",
   });
+  const pdfError = Object.assign(new Error("Invalid PDF structure."), {
+    name: "InvalidPDFException",
+  });
   expect(
     outcome((t) => {
       t.loaded();
-      t.failed("read", new Error("Invalid PDF structure."));
+      t.failed("read", pdfError);
     }),
   ).toMatchObject({
     outcome: "read_failed",
-    error: expect.stringMatching(/^read: Error: Invalid PDF structure\. \| at /),
+    error: expect.stringMatching(/^read: InvalidPDFException: Invalid PDF structure\. \| at /),
   });
   expect(
     outcome((t) => {
@@ -89,6 +93,26 @@ it("names what went wrong", () => {
   ).toMatchObject({ outcome: "blank", drawn: 2, blank: 2 });
   expect(outcome((t) => t.read(3))).toMatchObject({ outcome: "not_drawn", drawn: 0 });
   expect(outcome((t) => t.loaded())).toMatchObject({ outcome: "left" });
+});
+
+it("keeps a reader's own message out, since it can quote the file", () => {
+  const s = setup("xlsx");
+  s.trace.failed("read", new TypeError('Unrecognized cell "Salary: 92,000"'));
+  s.trace.finish();
+  expect(s.reports[0].error).toMatch(/^read: TypeError \| at /);
+  expect(s.reports[0].error).not.toContain("Salary");
+});
+
+it("a blank first page reads as blank even when a later page has content", () => {
+  const s = setup();
+  s.trace.drew(2, false);
+  s.trace.drew(1, true);
+  s.trace.finish();
+  expect(s.reports[0]).toMatchObject({ outcome: "blank", firstPage: "blank", drawn: 2, blank: 1 });
+  const unread = setup();
+  unread.trace.drew(1, null);
+  unread.trace.finish();
+  expect(unread.reports[0]).toMatchObject({ outcome: "shown", firstPage: "unknown" });
 });
 
 it("a page redrawn with content stops counting as blank", () => {

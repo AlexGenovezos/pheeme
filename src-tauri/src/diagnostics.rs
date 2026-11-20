@@ -294,6 +294,8 @@ pub struct PreviewReport {
     pub blank: u32,
     /// The first drawn page's canvas in device pixels (`1600x2070`).
     pub canvas: Option<String>,
+    /// Page 1 as drawn: `drawn`, `blank` or `unknown` (its pixels couldn't be read).
+    pub first_page: Option<String>,
     pub pixel_ratio: f64,
     pub errors: u32,
     /// The first failure, `stage: Name: message`.
@@ -318,6 +320,7 @@ impl PreviewReport {
                     drawn = self.drawn,
                     blank = self.blank,
                     canvas = ?self.canvas.as_deref().map(|c| clip(c, 24)),
+                    first_page = ?self.first_page.as_deref().map(|c| clip(c, 8)),
                     pixel_ratio = self.pixel_ratio,
                     errors = self.errors,
                     error = ?self.error.as_deref().map(|e| clip(e, 600)),
@@ -361,10 +364,11 @@ impl WindowProblem {
         } else {
             tracing::warn!(
                 kind = %clip(&self.kind, 16),
-                message = ?self.message.as_deref().map(|m| clip(m, 600)),
                 repeats = self.repeats,
                 visible = self.visible,
                 focused = self.focused,
+                // Not `message=`: the support bundle's scrubber blanks that to the end of the line.
+                error = ?self.message.as_deref().map(|m| clip(m, 600)),
                 "window error"
             );
         }

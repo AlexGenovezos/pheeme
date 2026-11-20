@@ -98,6 +98,13 @@ group("window problems", () => {
     expect(describe(e)).toBe(
       "Error: boom | at f (assets/index.js:1:2) | at g (src/x.ts:3:4) | at h",
     );
+    expect(describe(e, false)).toBe(
+      "Error | at f (assets/index.js:1:2) | at g (src/x.ts:3:4) | at h",
+    );
+    // A message spanning lines never leaks into the frames; WebKit's frames are `fn@url:1:2`.
+    const multi = new Error("secret\nmore secret");
+    multi.stack = "f@tauri://localhost/assets/index.js:1:2\nglobal code@tauri://localhost/x.js:3:4";
+    expect(describe(multi, false)).toBe("Error | f@assets/index.js:1:2 | global code@x.js:3:4");
     expect(describe({ code: 1 })).toBe('{"code":1}');
     expect(describe("x".repeat(700))).toHaveLength(601);
   });

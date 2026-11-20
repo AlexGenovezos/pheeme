@@ -82,8 +82,10 @@ pub fn watch() {
 mod power {
     use objc2_foundation::{NSProcessInfo, NSProcessInfoThermalState};
 
+    /// Low Power Mode came to the Mac in macOS 12; asking an older one would throw.
     pub fn low_power() -> Option<bool> {
-        Some(NSProcessInfo::processInfo().isLowPowerModeEnabled())
+        objc2::available!(macos = 12.0)
+            .then(|| NSProcessInfo::processInfo().isLowPowerModeEnabled())
     }
 
     pub fn thermal() -> Option<&'static str> {
@@ -120,8 +122,7 @@ mod mac {
     };
     use objc2_foundation::{
         NSNotification, NSNotificationCenter, NSNotificationName,
-        NSProcessInfoPowerStateDidChangeNotification,
-        NSProcessInfoThermalStateDidChangeNotification,
+        NSProcessInfoThermalStateDidChangeNotification, NSString,
     };
     use std::ptr::NonNull;
 
@@ -129,7 +130,7 @@ mod mac {
     fn observe(
         center: &NSNotificationCenter,
         name: &NSNotificationName,
-        then: impl Fn() + 'static,
+        then: impl Fn() + Send + Sync + 'static,
     ) {
         let block = RcBlock::new(move |_: NonNull<NSNotification>| then());
         // SAFETY: no object filter and no queue (the block runs on the posting thread); the
@@ -147,29 +148,41 @@ mod mac {
             .contains(NSApplicationOcclusionState::Visible)
     }
 
+    /// AppKit posts the occlusion change on the main thread; elsewhere it's left alone.
+    fn note_visible() {
+        if let Some(mtm) = MainThreadMarker::new() {
+            super::set_visible(app_visible(mtm));
+        }
+    }
+
     pub fn watch() {
         let Some(mtm) = MainThreadMarker::new() else {
             tracing::warn!("presence watch started off the main thread; visibility not tracked");
             return;
         };
         super::set_visible(app_visible(mtm));
+        // Foundation posts thermal changes only to a process that has read the state once.
+        tracing::info!(
+            low_power = ?super::power::low_power(),
+            thermal = ?super::power::thermal(),
+            "power state"
+        );
         // SAFETY: the notification names are AppKit's and Foundation's own constants.
         unsafe {
             let center = NSNotificationCenter::defaultCenter();
             observe(
                 &center,
                 NSApplicationDidChangeOcclusionStateNotification,
-                move || {
-                    super::set_visible(app_visible(mtm));
-                },
+                note_visible,
             );
-            observe(
-                &center,
-                NSProcessInfoPowerStateDidChangeNotification,
-                || {
+            if objc2::available!(macos = 12.0) {
+                // By its value: the constant itself is missing before macOS 12, where linking to
+                // it would stop Pheeme from launching.
+                let name = NSString::from_str("NSProcessInfoPowerStateDidChangeNotification");
+                observe(&center, &name, || {
                     tracing::info!(low_power = ?super::power::low_power(), "Low Power Mode changed");
-                },
-            );
+                });
+            }
             observe(
                 &center,
                 NSProcessInfoThermalStateDidChangeNotification,

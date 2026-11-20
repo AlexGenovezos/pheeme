@@ -104,17 +104,24 @@ export function createProblemLog(deps: WindowProblemDeps): ProblemLog {
   return log;
 }
 
-/** `Name: message` and the first stack frames, with the app's own origin left out. */
-export function describe(error: unknown): string {
+/**
+ * `Name: message` and the first stack frames, with the app's own origin left out. Without
+ * `withMessage`, only the name and frames: for errors whose text can echo a file's content.
+ */
+export function describe(error: unknown, withMessage = true): string {
   let text: string;
   if (error instanceof Error) {
+    // Frame lines only (V8 `at …`, WebKit `fn@url:1:2`), never the message's own lines.
     const frames = (error.stack ?? "")
       .split("\n")
       .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith(`${error.name}:`) && line !== error.message)
+      .filter((line) => /^at |@|:\d+:\d+\)?$/.test(line))
       .slice(0, STACK_FRAMES)
       .map((line) => line.replace(/(?:tauri|https?):\/\/[^/]+\//g, ""));
-    text = [`${error.name}: ${error.message}`, ...frames].join(" | ");
+    const head = withMessage ? `${error.name}: ${error.message}` : error.name;
+    text = [head, ...frames].join(" | ");
+  } else if (!withMessage) {
+    text = typeof error;
   } else if (typeof error === "string") {
     text = error;
   } else {

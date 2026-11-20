@@ -17,6 +17,7 @@ export class PreviewTrace {
   private drawnPages = new Set<number>();
   private blankPages = new Set<number>();
   private canvas: string | null = null;
+  private firstPage: PreviewReport["firstPage"] = null;
   private errors = 0;
   private firstError: { stage: Stage; text: string } | null = null;
   private done = false;
@@ -46,13 +47,18 @@ export class PreviewTrace {
     if (pages != null) this.pages = pages;
   }
 
-  /** Page `page` (1-based) was drawn on `canvas`; `blank` when it came out a single colour. */
-  drew(page: number, blank: boolean, canvas?: { width: number; height: number }) {
+  /**
+   * Page `page` (1-based) was drawn on `canvas`; `blank` when it came out a single colour, null
+   * when its pixels couldn't be read.
+   */
+  drew(page: number, blank: boolean | null, canvas?: { width: number; height: number }) {
     this.shownMs ??= this.elapsed();
     if (canvas && this.canvas == null) this.canvas = `${canvas.width}x${canvas.height}`;
     this.drawnPages.add(page);
     if (blank) this.blankPages.add(page);
     else this.blankPages.delete(page);
+    // The page the user sees first: blank there is what "opened blank" means.
+    if (page === 1) this.firstPage = blank == null ? "unknown" : blank ? "blank" : "drawn";
   }
 
   /** A reader without pages showed the whole file. */
@@ -61,9 +67,14 @@ export class PreviewTrace {
     this.drew(1, false);
   }
 
+  /**
+   * Kept: the error's name and code location, and its message only when Pheeme wrote it (a
+   * failed load is the app's own `{ code, message }`) or it's pdf.js's fixed text.
+   */
   failed(stage: Stage, error: unknown) {
     this.errors += 1;
-    this.firstError ??= { stage, text: describeError(error) };
+    const ownText = stage === "load" || (error instanceof Error && FIXED_MESSAGES.has(error.name));
+    this.firstError ??= { stage, text: describeError(error, ownText) };
   }
 
   /** The preview closed or moved to another file: report it. Later calls do nothing. */
@@ -81,6 +92,7 @@ export class PreviewTrace {
       drawn: this.drawnPages.size,
       blank: this.blankPages.size,
       canvas: this.canvas,
+      firstPage: this.firstPage,
       pixelRatio: this.pixelRatio,
       errors: this.errors,
       error: this.firstError && `${this.firstError.stage}: ${this.firstError.text}`,
@@ -90,7 +102,8 @@ export class PreviewTrace {
 
   private outcome(): PreviewReport["outcome"] {
     const drawn = this.drawnPages.size;
-    if (drawn > 0) return this.blankPages.size === drawn ? "blank" : "shown";
+    if (drawn > 0)
+      return this.firstPage === "blank" || this.blankPages.size === drawn ? "blank" : "shown";
     switch (this.firstError?.stage) {
       case "load":
         return "load_failed";
@@ -103,6 +116,18 @@ export class PreviewTrace {
   }
 }
 
+/**
+ * pdf.js failures whose messages are fixed text. Other readers' errors can quote the file
+ * (a spreadsheet's cell, a name inside the archive), so only their name and frames are kept.
+ */
+const FIXED_MESSAGES = new Set([
+  "InvalidPDFException",
+  "MissingPDFException",
+  "PasswordException",
+  "ResponseException",
+  "UnexpectedResponseException",
+]);
+
 /** Where a failure happened: fetching the bytes, parsing them, or drawing a page. */
 export type Stage = "load" | "read" | "render";
 
@@ -111,17 +136,17 @@ const SAMPLE = 24;
 
 /**
  * Whether `canvas` holds a single colour (all white, or nothing drawn). Shrinks it to a 24×24 copy
- * first, so reading the pixels stays cheap whatever the page size. Unknown (false) when the pixels
- * can't be read.
+ * first, so reading the pixels stays cheap whatever the page size. Null when the pixels can't be
+ * read.
  */
-export function isBlankCanvas(canvas: HTMLCanvasElement): boolean {
+export function isBlankCanvas(canvas: HTMLCanvasElement): boolean | null {
   if (!canvas.width || !canvas.height) return true;
   try {
     const sample = document.createElement("canvas");
     sample.width = SAMPLE;
     sample.height = SAMPLE;
     const ctx = sample.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return false;
+    if (!ctx) return null;
     ctx.drawImage(canvas, 0, 0, SAMPLE, SAMPLE);
     const { data } = ctx.getImageData(0, 0, SAMPLE, SAMPLE);
     for (let i = 4; i < data.length; i += 4) {
@@ -135,7 +160,7 @@ export function isBlankCanvas(canvas: HTMLCanvasElement): boolean {
     }
     return true;
   } catch {
-    return false;
+    return null;
   }
 }
 

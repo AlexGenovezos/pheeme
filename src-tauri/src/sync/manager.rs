@@ -283,9 +283,7 @@ impl SyncManager {
             return Ok(());
         }
         let a = self.account(account_id);
-        let asked = Instant::now();
         let _running = a.run_lock.lock().await;
-        let queued_ms = crate::diagnostics::ms_since(asked);
         let first = matches!(
             accounts::get_account(&self.db, account_id).await,
             Ok(Some(account)) if account.history_id.is_none()
@@ -335,7 +333,6 @@ impl SyncManager {
                 elapsed_ms = start.elapsed().as_millis() as u64,
                 changed = ?result.as_ref().ok(),
                 full = full_due,
-                queued_ms,
                 outbox_ms = outbox_ms.load(std::sync::atomic::Ordering::Relaxed),
                 history_ms = phases.history_ms,
                 history_pages = phases.history_pages,

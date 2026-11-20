@@ -101,7 +101,7 @@ export interface PreviewReport {
   /** The attachment's size as Gmail lists it. */
   bytes: number | null;
   /**
-   * `shown`: something was drawn. `blank`: every drawn page came out a single colour. `not_drawn`: the file was read
+   * `shown`: something was drawn. `blank`: the first page, or every drawn page, came out a single colour. `not_drawn`: the file was read
    * but no page was drawn before the preview closed. `load_failed`: its bytes couldn't be fetched. `read_failed`: the
    * reader couldn't parse them. `render_failed`: pages failed to draw. `left`: closed while still loading.
    */
@@ -126,8 +126,13 @@ export interface PreviewReport {
   blank: number;
   /** The first drawn page's canvas size in device pixels (`1600x2070`), and the window's pixel ratio. */
   canvas: string | null;
+  /** Page 1 as drawn: `drawn`, `blank`, `unknown` (its pixels couldn't be read), null when not drawn. */
+  firstPage: "drawn" | "blank" | "unknown" | null;
   pixelRatio: number;
-  /** Failures seen, and the first one as `stage: Name: message | first stack frames`. */
+  /**
+   * Failures seen, and the first one as `stage: Name | first stack frames` (the message only for pdf.js's fixed-text
+   * errors: other readers' messages can quote the file).
+   */
   errors: number;
   error: string | null;
   totalMs: number;
@@ -136,7 +141,7 @@ export interface PreviewReport {
 export const logPreview = (report: PreviewReport) => call("log_preview", { report });
 /**
  * A problem in the window, for Send diagnostics: an uncaught error or promise rejection, or the window's main thread
- * falling behind while it was on screen (`src/diagnostics/windowProblems.ts`). No email content.
+ * falling behind while it was on screen (`src/lib/windowProblems.ts`). No email content.
  */
 export interface WindowProblem {
   kind: "error" | "rejection" | "stall";
