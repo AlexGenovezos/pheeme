@@ -71,8 +71,11 @@
   color: var(--color-foreground-muted);
   font-size: var(--font-size-xs);
 }
+/* Two lines, always: a longer refusal (a partial import) scrolls rather than moving the buttons. */
 .cal-file__error {
-  min-height: var(--space-5);
+  height: calc(var(--font-size-sm) * var(--line-height-normal) * 2);
+  overflow-y: auto;
+  line-height: var(--line-height-normal);
   margin: calc(var(--space-2) * -1) var(--space-0) var(--space-0);
   color: var(--color-danger);
   font-size: var(--font-size-sm);

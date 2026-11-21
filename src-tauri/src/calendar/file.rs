@@ -4,12 +4,15 @@
 //! `respond_to_invite` instead, so the organizer hears back; everything else goes in as a
 //! plain copy, without its organizer and guests, so nobody is emailed.
 
+use super::edit::{instance_id, OriginalStart};
 use super::error::CalendarError;
-use super::ics::{self, Invite};
+use super::ics::{self, IcsTime, Invite};
 use super::invite::{import_body, time_dto};
+use super::repeating::original_start_json;
 use super::service::{CalendarService, EventTimeDto};
 use super::writes::EventRef;
 use crate::db;
+use crate::gmail::calendar::{ApiEvent, SendUpdates, WriteOptions};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -71,6 +74,23 @@ fn copy_body(invite: &Invite) -> Value {
     body
 }
 
+/// A changed occurrence of a series, as a patch of its instance in the copy: its own times
+/// and details.
+fn occurrence_body(invite: &Invite) -> Value {
+    let body = import_body(invite);
+    let fields = ["start", "end", "summary", "description", "location"]
+        .into_iter()
+        .filter_map(|key| Some((key.to_owned(), body.get(key)?.clone())))
+        .collect();
+    Value::Object(fields)
+}
+
+const QUIET: WriteOptions<'static> = WriteOptions {
+    send_updates: SendUpdates::None,
+    if_match: None,
+    conference: false,
+};
+
 impl CalendarService {
     /// The account's calendar zone, for times the file writes without one.
     async fn floating_zone(
@@ -105,6 +125,45 @@ impl CalendarService {
             }
         }
         Ok(None)
+    }
+
+    /// Copies a changed occurrence (`RECURRENCE-ID`) onto the copied series `series_id`: its
+    /// instance patched, or deleted when the file cancels it. `None` for the series itself.
+    async fn copy_occurrence(
+        &self,
+        account_id: &str,
+        calendar_id: &str,
+        series_id: &str,
+        occurrence: &Invite,
+    ) -> Result<Option<ApiEvent>, CalendarError> {
+        let at = match &occurrence.recurrence_id {
+            Some(IcsTime::At { ms, .. }) => OriginalStart::Ms(*ms),
+            Some(IcsTime::Day(d)) => OriginalStart::Date(*d),
+            None => return Ok(None),
+        };
+        let id = instance_id(series_id, &at);
+        let api = (self.api_for)(account_id);
+        if !occurrence.cancelled() {
+            let result = api
+                .patch_event(calendar_id, &id, occurrence_body(occurrence), QUIET)
+                .await;
+            return self
+                .settle(account_id, calendar_id, None, result)
+                .await
+                .map(Some);
+        }
+        let result = api.delete_event(calendar_id, &id, QUIET).await;
+        self.settle(account_id, calendar_id, None, result).await?;
+        let zone = match &occurrence.recurrence_id {
+            Some(IcsTime::At { zone: Some(z), .. }) => z.as_str(),
+            _ => "UTC",
+        };
+        Ok(Some(ApiEvent::try_from(json!({
+            "id": id,
+            "status": "cancelled",
+            "recurringEventId": series_id,
+            "originalStartTime": original_start_json(&at, zone),
+        }))?))
     }
 
     /// Every event in the calendar file `ics_text`, read for `account_id` (the account the
@@ -148,18 +207,23 @@ impl CalendarService {
     }
 
     /// Adds the events of `ics_text` whose UIDs are in `uids` to `calendar_id` of
-    /// `account_id`, each as a plain copy (see [`copy_body`]). An event already on that
-    /// calendar (same UID) is left as it is, so trying again after a failure adds only the
-    /// rest. Cancelled events are never added.
+    /// `account_id`, each as a plain copy (see [`copy_body`]), a series with its changed
+    /// occurrences. An event already on that calendar (same UID) is left as it is, so trying
+    /// again after a failure adds only the rest. Cancelled events are never added.
+    /// `file_account_id` is the account the email came to: times written without a zone are
+    /// read in its zone, as [`Self::calendar_file`] showed them.
     pub async fn add_calendar_file(
         &self,
+        file_account_id: &str,
         account_id: &str,
         calendar_id: &str,
         ics_text: &str,
         uids: &[String],
     ) -> Result<AddedEvents, CalendarError> {
         self.writable(account_id, calendar_id).await?;
-        let wanted: Vec<Invite> = ics::parse_all(ics_text, self.floating_zone(account_id).await?)
+        let floating = self.floating_zone(file_account_id).await?;
+        let every = ics::parse_every(ics_text, floating);
+        let wanted: Vec<Invite> = ics::parse_all(ics_text, floating)
             .into_iter()
             .filter(|i| uids.contains(&i.uid) && !i.cancelled())
             .collect();
@@ -197,7 +261,24 @@ impl CalendarService {
                         calendar_id: calendar_id.to_owned(),
                         id: event.id.clone(),
                     });
+                    let series_id = event.id.clone();
                     imported.push(event);
+                    let changed = every
+                        .iter()
+                        .filter(|c| c.uid == invite.uid && !invite.recurrence.is_empty());
+                    for occurrence in changed {
+                        match self
+                            .copy_occurrence(account_id, calendar_id, &series_id, occurrence)
+                            .await
+                        {
+                            Ok(Some(saved)) => imported.push(saved),
+                            Ok(None) => {}
+                            Err(e) => failure = Some(e),
+                        }
+                    }
+                    if failure.is_some() {
+                        break;
+                    }
                 }
                 Err(e) => {
                     failure = Some(e);
@@ -205,7 +286,7 @@ impl CalendarService {
                 }
             }
         }
-        let added = imported.len();
+        let added = refs.len() - already;
         if !imported.is_empty() {
             self.save_all(account_id, calendar_id, imported).await?;
         }
@@ -304,22 +385,30 @@ mod tests {
         let file = h.service.calendar_file("a", &text).await.unwrap().unwrap();
         let added = h
             .service
-            .add_calendar_file("a", CAL, &text, &uids(&file))
+            .add_calendar_file("a", "a", CAL, &text, &uids(&file))
             .await
             .unwrap();
         assert_eq!((added.events.len(), added.already), (3, 0));
         let writes = h.fake("a").writes();
-        assert_eq!(writes.len(), 3);
+        let methods: Vec<_> = writes.iter().map(|w| w.method).collect();
+        assert_eq!(methods, ["import", "import", "patch", "import"]);
         for w in &writes {
-            assert_eq!(w.method, "import");
             assert_eq!(w.calendar_id, CAL);
             assert!(w.body.get("attendees").is_none());
             assert!(w.body.get("organizer").is_none());
+            assert!(w.send_updates.is_none_or(|s| s == SendUpdates::None));
         }
         assert_eq!(writes[0].body["iCalUID"], "game-1@league.example");
         assert_eq!(writes[1].body["recurrence"][0], "RRULE:FREQ=WEEKLY;COUNT=4");
         assert_eq!(writes[1].body["start"]["timeZone"], "America/Chicago");
-        assert_eq!(writes[2].body["start"]["date"], "2026-12-19");
+        // The practice moved on December 10 (17:00 to 18:00 Chicago): its instance in the copy.
+        let series = &added.events[1].id;
+        assert_eq!(
+            writes[2].event_id.as_deref(),
+            Some(format!("{series}_20261210T230000Z").as_str())
+        );
+        assert_eq!(writes[2].body["start"]["dateTime"], "2026-12-11T00:00:00Z");
+        assert_eq!(writes[3].body["start"]["date"], "2026-12-19");
 
         // Cached, so the file now reads as already there, and adding again adds nothing.
         let again = h.service.calendar_file("a", &text).await.unwrap().unwrap();
@@ -329,11 +418,11 @@ mod tests {
             .all(|e| e.existing.as_ref().is_some_and(|r| r.calendar_id == CAL)));
         let twice = h
             .service
-            .add_calendar_file("a", CAL, &text, &uids(&file))
+            .add_calendar_file("a", "a", CAL, &text, &uids(&file))
             .await
             .unwrap();
         assert_eq!(twice.already, 3);
-        assert_eq!(h.fake("a").writes().len(), 3);
+        assert_eq!(h.fake("a").writes().len(), 4);
     }
 
     #[tokio::test]
@@ -344,7 +433,13 @@ mod tests {
         let text = fixture("schedule.ics");
         let added = h
             .service
-            .add_calendar_file("a", "Kids", &text, &["party@league.example".to_owned()])
+            .add_calendar_file(
+                "a",
+                "a",
+                "Kids",
+                &text,
+                &["party@league.example".to_owned()],
+            )
             .await
             .unwrap();
         assert_eq!(added.events.len(), 1);
@@ -368,7 +463,7 @@ mod tests {
         });
         let err = h
             .service
-            .add_calendar_file("a", CAL, &text, &all)
+            .add_calendar_file("a", "a", CAL, &text, &all)
             .await
             .unwrap_err();
         assert!(
@@ -387,6 +482,7 @@ mod tests {
         let err = h
             .service
             .add_calendar_file(
+                "a",
                 "a",
                 "Holidays",
                 &fixture("schedule.ics"),

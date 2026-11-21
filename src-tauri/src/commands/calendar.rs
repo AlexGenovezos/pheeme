@@ -331,6 +331,7 @@ pub async fn add_calendar_file_events(
         });
     };
     Ok(user_action(state.calendar.add_calendar_file(
+        &account_id,
         &target_account_id,
         &calendar_id,
         &text,

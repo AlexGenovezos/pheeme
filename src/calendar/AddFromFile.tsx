@@ -158,13 +158,19 @@ function AddFromFileDialog({ source, file }: { source: FileSource; file: Calenda
     primary = toAdd.length > 1 ? `Add ${toAdd.length} events` : "Add";
   }
   const noCalendar = plan.kind === "copy" && !target;
-  const disabled = saving || (plan.kind === "copy" && (toAdd.length === 0 || !target));
+  // Accepting answers on the receiving account's own calendar, which needs its calendar access.
+  const noAccess = plan.kind === "accept" && !!receiving && needsAllow(receiving);
+  const disabled = saving || noAccess || (plan.kind === "copy" && (toAdd.length === 0 || !target));
+  // A write in flight finishes in this dialog: closing it now could close the next one.
+  const dismiss = () => {
+    if (!saving) close();
+  };
 
   return (
     <Modal
       title="Add to Google Calendar"
       titleId={titleId}
-      onClose={close}
+      onClose={dismiss}
       scrimClassName="cal-dialog-scrim dialog-scrim"
       className="cal-prompt cal-file dialog-surface"
       titleClassName="cal-prompt__title"
@@ -232,7 +238,7 @@ function AddFromFileDialog({ source, file }: { source: FileSource; file: Calenda
                 disabled={saving}
                 onChange={(accountId, calendarId) => setTarget({ accountId, calendarId })}
               />
-            ) : plan.kind === "copy" ? (
+            ) : plan.kind === "copy" || noAccess ? (
               receiving && needsAllow(receiving) ? (
                 <AllowButton account={receiving} />
               ) : null
@@ -248,9 +254,11 @@ function AddFromFileDialog({ source, file }: { source: FileSource; file: Calenda
           <p className="cal-file__hint">
             {noCalendar
               ? "Allow calendar access to add events here."
-              : plan.kind === "accept"
-                ? "An invitation goes on the calendar of the account it was sent to."
-                : " "}
+              : noAccess
+                ? "Allow calendar access to accept the invitation here."
+                : plan.kind === "accept"
+                  ? "An invitation goes on the calendar of the account it was sent to."
+                  : " "}
           </p>
         </div>
         {/* Always there, so the dialog doesn't grow when Google refuses. */}
@@ -259,7 +267,7 @@ function AddFromFileDialog({ source, file }: { source: FileSource; file: Calenda
         </p>
         <div className="cal-prompt__actions">
           {plan.kind !== "none" && (
-            <Button size="sm" variant="ghost" onClick={close}>
+            <Button size="sm" variant="ghost" onClick={close} disabled={saving}>
               Cancel
             </Button>
           )}

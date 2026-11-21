@@ -547,6 +547,23 @@ pub fn parse(text: &str, floating: Option<Tz>) -> Option<Invite> {
 /// carry a whole schedule). For a UID with several events (a series and its changed
 /// occurrences) it's the series; with only changed occurrences, the first of them.
 pub fn parse_all(text: &str, floating: Option<Tz>) -> Vec<Invite> {
+    let mut out: Vec<Invite> = Vec::new();
+    for invite in parse_every(text, floating) {
+        match out.iter_mut().find(|i| i.uid == invite.uid) {
+            // The series wins over a changed occurrence listed before it.
+            Some(seen) if seen.recurrence_id.is_some() && invite.recurrence_id.is_none() => {
+                *seen = invite;
+            }
+            Some(_) => {}
+            None => out.push(invite),
+        }
+    }
+    out
+}
+
+/// Every event in an iCalendar file in the file's order, changed occurrences of a series
+/// included (with `recurrence_id`).
+pub fn parse_every(text: &str, floating: Option<Tz>) -> Vec<Invite> {
     let all = lines(text);
     let mut method = None;
     let mut calendar_zone = None;
@@ -612,21 +629,10 @@ pub fn parse_all(text: &str, floating: Option<Tz>) -> Vec<Invite> {
         floating: calendar_zone.or(floating),
     };
     let method = method.unwrap_or_else(|| "REQUEST".into());
-    let mut out: Vec<Invite> = Vec::new();
-    for invite in events
+    events
         .iter()
         .filter_map(|e| event_of(e, method.clone(), &zones))
-    {
-        match out.iter_mut().find(|i| i.uid == invite.uid) {
-            // The series wins over a changed occurrence listed before it.
-            Some(seen) if seen.recurrence_id.is_some() && invite.recurrence_id.is_none() => {
-                *seen = invite;
-            }
-            Some(_) => {}
-            None => out.push(invite),
-        }
-    }
-    out
+        .collect()
 }
 
 fn observance_of(lines: &[Line]) -> Option<Observance> {
