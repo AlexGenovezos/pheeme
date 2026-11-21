@@ -5,17 +5,26 @@ import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
 import { toast } from "../components/ui/Toast";
 import { useKeybinding } from "../keyboard/useCommands";
+import type { ThreadSummary } from "../lib/tauri";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
+import { apply, keyOf, readChange } from "./change";
 import { conversationCode } from "./verificationCode";
 
 export const COPY_CODE_COMMAND = "conversation.copy-code";
 export const COPY_CODE_SHORTCUT = "shift+c";
 
-export function copyCode(code: string) {
+/** Resolves to whether the code reached the clipboard. */
+export function copyCode(code: string): Promise<boolean> {
   return navigator.clipboard.writeText(code).then(
-    () => void toast({ title: `Copied ${code}` }),
-    () => void toast({ title: "Couldn't copy the code", tone: "danger" }),
+    () => {
+      toast({ title: `Copied ${code}` });
+      return true;
+    },
+    () => {
+      toast({ title: "Couldn't copy the code", tone: "danger" });
+      return false;
+    },
   );
 }
 
@@ -64,11 +73,16 @@ export function CodeCard({ code }: { code: string }) {
   );
 }
 
-/** The code in a conversation row: clicking copies it without opening the conversation. */
-export function CodeChip({ code }: { code: string }) {
+/**
+ * The code in a conversation row: clicking copies it without opening the conversation, and marks an unread
+ * conversation read (the code was what it was for). Quietly: the Copied toast is the answer.
+ */
+export function CodeChip({ code, thread }: { code: string; thread: ThreadSummary }) {
   const copy = (e: MouseEvent) => {
     e.stopPropagation();
-    void copyCode(code);
+    void copyCode(code).then((copied) => {
+      if (copied && thread.unread) void apply([keyOf(thread)], readChange(true));
+    });
   };
   return (
     <button

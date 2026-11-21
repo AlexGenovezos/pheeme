@@ -236,14 +236,14 @@ export const ThreadRow = memo(function ThreadRow({
               )}
             </span>
           )}
-          {compact && code && <CodeChip code={code} />}
+          {compact && code && <CodeChip code={code} thread={thread} />}
           {thread.subject ?? "(no subject)"}
         </>
       }
       description={
         compact ? undefined : code ? (
           <>
-            <CodeChip code={code} />
+            <CodeChip code={code} thread={thread} />
             {thread.snippet}
           </>
         ) : (
