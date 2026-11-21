@@ -235,6 +235,8 @@ impl CalendarService {
         let api = (self.api_for)(account_id);
         let (mut refs, mut imported, mut already) = (Vec::new(), Vec::new(), 0);
         let mut failure = None;
+        // A series whose rollback Google didn't confirm: trying again would skip it.
+        let mut half_copied: Option<&str> = None;
         for invite in &wanted {
             let there = db::calendar::events_by_ical_uid(&self.db, account_id, &invite.uid)
                 .await?
@@ -279,19 +281,15 @@ impl CalendarService {
                     }
                 }
             }
-            if let Some(e) = failure.take() {
+            if failure.is_some() {
                 // Not left half copied: without it, trying again copies it whole.
-                failure = Some(
-                    match api.delete_event(calendar_id, &series_id, QUIET).await {
-                        Ok(()) => e,
-                        // Google kept it: trying again would skip it, so say how to put it right.
-                        Err(_) => CalendarError::Incomplete(format!(
-                            "“{}” went on your calendar without its changed dates. {e} Delete it \
-                         there, then add it again.",
-                            invite.summary.as_deref().unwrap_or("A repeating event")
-                        )),
-                    },
-                );
+                if api
+                    .delete_event(calendar_id, &series_id, QUIET)
+                    .await
+                    .is_err()
+                {
+                    half_copied = Some(invite.summary.as_deref().unwrap_or("A repeating event"));
+                }
                 break;
             }
             refs.push(EventRef {
@@ -305,13 +303,25 @@ impl CalendarService {
         if !imported.is_empty() {
             self.save_all(account_id, calendar_id, imported).await?;
         }
-        match failure {
-            None => Ok(AddedEvents {
+        match (failure, half_copied) {
+            (None, _) => Ok(AddedEvents {
                 events: refs,
                 already,
             }),
-            Some(e) if added + already == 0 => Err(e),
-            Some(e) => Err(CalendarError::Incomplete(format!(
+            (Some(e), Some(name)) => {
+                let done = added + already;
+                let counted = if done > 0 {
+                    format!("Added {done} of {} events. ", wanted.len())
+                } else {
+                    String::new()
+                };
+                Err(CalendarError::Incomplete(format!(
+                    "{counted}“{name}” may be on your calendar without its changed dates. {e} \
+                     If it's there, delete it, then add this file's events again."
+                )))
+            }
+            (Some(e), None) if added + already == 0 => Err(e),
+            (Some(e), None) => Err(CalendarError::Incomplete(format!(
                 "Added {} of {} events. {e} Try again to add the rest.",
                 added + already,
                 wanted.len()
@@ -512,23 +522,28 @@ mod tests {
     async fn a_series_google_keeps_half_copied_says_so() {
         let h = granted().await;
         let text = fixture("schedule.ics");
-        let practice = ["practice@league.example".to_owned()];
+        let both = [
+            "game-1@league.example".to_owned(),
+            "practice@league.example".to_owned(),
+        ];
         let refused = || GmailError::Api {
             status: 403,
             reason: Some("forbidden".into()),
             message: "nope".into(),
         };
-        // The moved occurrence's patch is refused, then so is taking the series back out.
-        h.fake("a").fail_write(1, refused);
+        // The game goes on; the practice's moved occurrence is refused, then so is taking the
+        // series back out.
         h.fake("a").fail_write(2, refused);
+        h.fake("a").fail_write(3, refused);
         let err = h
             .service
-            .add_calendar_file("a", "a", CAL, &text, &practice)
+            .add_calendar_file("a", "a", CAL, &text, &both)
             .await
             .unwrap_err();
         assert!(
             matches!(&err, CalendarError::Incomplete(m)
-                if m.starts_with("“Practice” went on your calendar without its changed dates.")),
+                if m.starts_with("Added 1 of 2 events. “Practice” may be on your calendar")
+                    && m.ends_with("delete it, then add this file's events again.")),
             "{err}"
         );
     }
