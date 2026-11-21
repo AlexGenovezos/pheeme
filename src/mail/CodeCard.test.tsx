@@ -144,6 +144,35 @@ test("the list row offers a recent code; clicking it copies without opening the 
   expect(useUiStore.getState().openThread).toBeNull();
 });
 
+test("copying the code from the list marks an unread conversation read, quietly", async () => {
+  const calls: { cmd: string; args: unknown }[] = [];
+  mockIPC((cmd, args) => void calls.push({ cmd, args }), { shouldMockEvents: true });
+  useMailStore.setState({ threads: [summary()] });
+  render(
+    <ToastProvider>
+      <ThreadList title="Inbox" onRowAction={vi.fn()} rowMenu={() => []} />
+    </ToastProvider>,
+  );
+
+  fireEvent.click(screen.getByLabelText("Copy verification code 779693"));
+  await waitFor(() => expect(useMailStore.getState().threads[0].unread).toBe(false));
+  expect(calls).toContainEqual({
+    cmd: "modify_threads",
+    args: { accountId: "a1", threadIds: ["t1"], add: [], remove: ["UNREAD"] },
+  });
+  await waitFor(() => expect(toasts()).toContain("Copied 779693"));
+  expect(toasts()).not.toContain("Marked as read");
+});
+
+test("a failed copy leaves the conversation unread", async () => {
+  writeText.mockRejectedValueOnce(new Error("denied"));
+  useMailStore.setState({ threads: [summary()] });
+  render(<ThreadList title="Inbox" onRowAction={vi.fn()} rowMenu={() => []} />);
+  fireEvent.click(screen.getByLabelText("Copy verification code 779693"));
+  await waitFor(() => expect(toasts()).toContain("Couldn't copy the code"));
+  expect(useMailStore.getState().threads[0].unread).toBe(true);
+});
+
 test("compact rows keep the code chip on the subject line", () => {
   useUiStore.setState({ listDensity: "compact" });
   useMailStore.setState({ threads: [summary()] });
