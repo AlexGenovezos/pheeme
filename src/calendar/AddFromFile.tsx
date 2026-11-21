@@ -24,7 +24,7 @@ import {
   type FileSource,
   planFor,
   useAddFromFileStore,
-} from "./addFromFile";
+} from "./calendarFile";
 import { displayZone, useCalendarStore } from "./calendarStore";
 import { CalendarPicker } from "./EventFields";
 import { describeWhen } from "./EventPopover";

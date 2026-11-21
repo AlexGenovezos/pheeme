@@ -96,7 +96,7 @@ test("clicking a file opens the preview on it, with the message's other files to
 
 test("clicking a calendar file reads its events and opens Add to calendar, not the preview", async () => {
   const { usePreviewStore } = await import("./preview/previewStore");
-  const { useAddFromFileStore } = await import("../calendar/addFromFile");
+  const { useAddFromFileStore } = await import("../calendar/calendarFile");
   const { useCalendarStore } = await import("../calendar/calendarStore");
   usePreviewStore.setState({ session: null });
   useAddFromFileStore.setState({ open: null, reading: null });

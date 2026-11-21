@@ -5,7 +5,7 @@ import { IconButton } from "../components/ui/IconButton";
 import type { AttachmentInfo } from "../lib/tauri";
 import { downloadAttachment } from "./attachmentActions";
 import { isCalendarBodyPart, isInvitePart } from "./invitePart";
-import { openAddFromFile, sourceKey, useAddFromFileStore } from "../calendar/addFromFile";
+import { openAddFromFile, sourceKey, useAddFromFileStore } from "../calendar/calendarFile";
 import { usePreviewStore } from "./preview/previewStore";
 import "./mail.css";
 

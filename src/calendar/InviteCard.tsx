@@ -43,7 +43,7 @@ import { eventColors } from "./colors";
 import { addDays, dateOf, formatDay, formatHour, wallClock, zonedMs } from "./dates";
 import { eventTitle, useCalendarLookup } from "./EventBlock";
 import { describeWhen } from "./EventPopover";
-import { openAddFromFile, sourceKey, useAddFromFileStore } from "./addFromFile";
+import { openAddFromFile, sourceKey, useAddFromFileStore } from "./calendarFile";
 import {
   canAnswer,
   cannotAnswer,
