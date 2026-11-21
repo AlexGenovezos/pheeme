@@ -279,9 +279,19 @@ impl CalendarService {
                     }
                 }
             }
-            if failure.is_some() {
+            if let Some(e) = failure.take() {
                 // Not left half copied: without it, trying again copies it whole.
-                let _ = api.delete_event(calendar_id, &series_id, QUIET).await;
+                failure = Some(
+                    match api.delete_event(calendar_id, &series_id, QUIET).await {
+                        Ok(()) => e,
+                        // Google kept it: trying again would skip it, so say how to put it right.
+                        Err(_) => CalendarError::Incomplete(format!(
+                            "“{}” went on your calendar without its changed dates. {e} Delete it \
+                         there, then add it again.",
+                            invite.summary.as_deref().unwrap_or("A repeating event")
+                        )),
+                    },
+                );
                 break;
             }
             refs.push(EventRef {
@@ -496,6 +506,31 @@ mod tests {
         assert_eq!(methods, ["import", "patch", "delete"]);
         let file = h.service.calendar_file("a", &text).await.unwrap().unwrap();
         assert!(file.events[1].existing.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_series_google_keeps_half_copied_says_so() {
+        let h = granted().await;
+        let text = fixture("schedule.ics");
+        let practice = ["practice@league.example".to_owned()];
+        let refused = || GmailError::Api {
+            status: 403,
+            reason: Some("forbidden".into()),
+            message: "nope".into(),
+        };
+        // The moved occurrence's patch is refused, then so is taking the series back out.
+        h.fake("a").fail_write(1, refused);
+        h.fake("a").fail_write(2, refused);
+        let err = h
+            .service
+            .add_calendar_file("a", "a", CAL, &text, &practice)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&err, CalendarError::Incomplete(m)
+                if m.starts_with("“Practice” went on your calendar without its changed dates.")),
+            "{err}"
+        );
     }
 
     #[tokio::test]
