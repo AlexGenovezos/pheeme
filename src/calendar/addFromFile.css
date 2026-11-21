@@ -85,3 +85,13 @@
   align-items: flex-start;
   min-width: var(--space-0);
 }
+/* A refused sign-in stays on the calendar row's one line (its full text is announced). */
+.cal-file__calendar-row .cal-access__allow {
+  flex-wrap: nowrap;
+  min-width: var(--space-0);
+}
+.cal-file__calendar-row .cal-access__error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

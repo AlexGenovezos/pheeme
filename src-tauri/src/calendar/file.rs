@@ -254,37 +254,42 @@ impl CalendarService {
                 continue;
             }
             let result = api.import_event(calendar_id, copy_body(invite)).await;
-            match self.settle(account_id, calendar_id, None, result).await {
-                Ok(event) => {
-                    refs.push(EventRef {
-                        account_id: account_id.to_owned(),
-                        calendar_id: calendar_id.to_owned(),
-                        id: event.id.clone(),
-                    });
-                    let series_id = event.id.clone();
-                    imported.push(event);
-                    let changed = every
-                        .iter()
-                        .filter(|c| c.uid == invite.uid && !invite.recurrence.is_empty());
-                    for occurrence in changed {
-                        match self
-                            .copy_occurrence(account_id, calendar_id, &series_id, occurrence)
-                            .await
-                        {
-                            Ok(Some(saved)) => imported.push(saved),
-                            Ok(None) => {}
-                            Err(e) => failure = Some(e),
-                        }
-                    }
-                    if failure.is_some() {
-                        break;
-                    }
-                }
+            let series = match self.settle(account_id, calendar_id, None, result).await {
+                Ok(event) => event,
                 Err(e) => {
                     failure = Some(e);
                     break;
                 }
+            };
+            let series_id = series.id.clone();
+            let mut saved = vec![series];
+            let changed = every
+                .iter()
+                .filter(|c| c.uid == invite.uid && !invite.recurrence.is_empty());
+            for occurrence in changed {
+                match self
+                    .copy_occurrence(account_id, calendar_id, &series_id, occurrence)
+                    .await
+                {
+                    Ok(Some(event)) => saved.push(event),
+                    Ok(None) => {}
+                    Err(e) => {
+                        failure = Some(e);
+                        break;
+                    }
+                }
             }
+            if failure.is_some() {
+                // Not left half copied: without it, trying again copies it whole.
+                let _ = api.delete_event(calendar_id, &series_id, QUIET).await;
+                break;
+            }
+            refs.push(EventRef {
+                account_id: account_id.to_owned(),
+                calendar_id: calendar_id.to_owned(),
+                id: series_id,
+            });
+            imported.extend(saved);
         }
         let added = refs.len() - already;
         if !imported.is_empty() {
@@ -470,6 +475,27 @@ mod tests {
             matches!(&err, CalendarError::Incomplete(m) if m.starts_with("Added 1 of 3 events.")),
             "{err}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_refused_occurrence_takes_its_series_back_out() {
+        let h = granted().await;
+        let text = fixture("schedule.ics");
+        let practice = ["practice@league.example".to_owned()];
+        // Write 0 imports the series, write 1 patches its moved occurrence.
+        h.fake("a").fail_write(1, || GmailError::Api {
+            status: 403,
+            reason: Some("forbidden".into()),
+            message: "nope".into(),
+        });
+        h.service
+            .add_calendar_file("a", "a", CAL, &text, &practice)
+            .await
+            .unwrap_err();
+        let methods: Vec<_> = h.fake("a").writes().iter().map(|w| w.method).collect();
+        assert_eq!(methods, ["import", "patch", "delete"]);
+        let file = h.service.calendar_file("a", &text).await.unwrap().unwrap();
+        assert!(file.events[1].existing.is_none());
     }
 
     #[tokio::test]
