@@ -206,6 +206,49 @@ export interface Invite {
 export const getMessageInvite = (accountId: string, messageId: string) =>
   call("message_invite", { accountId, messageId });
 
+/** One event in an email's calendar file (Mail's Add to calendar dialog). */
+export interface FileEvent {
+  uid: string;
+  summary: string | null;
+  location: string | null;
+  start: EventTime;
+  /** Exclusive: the day after the last, for an all-day event. */
+  end: EventTime;
+  allDay: boolean;
+  repeats: boolean;
+  cancelled: boolean;
+  /** The account is a guest of this invitation (not its organizer): adding it accepts. */
+  invited: boolean;
+  /** Where it already is (same iCalendar UID), on any account's calendar. */
+  existing: EventRef | null;
+  /** For an invitation: the event to import when accepting (`respondToCalendarInvite`). */
+  import: Record<string, unknown> | null;
+}
+/** Every event in an email's calendar file. */
+export interface CalendarFile {
+  events: FileEvent[];
+}
+/** What adding a calendar file's events did. */
+export interface AddedFileEvents {
+  /** The events now on the calendar, in the file's order. */
+  events: EventRef[];
+  /** How many of them were there already. */
+  already: number;
+}
+/** The events in a message's calendar file: the `.ics` attachment `attachmentId`, else its invitation. May download it. */
+export const getCalendarFile = (
+  accountId: string,
+  messageId: string,
+  attachmentId: string | null,
+) => call("calendar_file", { accountId, messageId, attachmentId });
+/** Adds the events with these UIDs to a calendar as plain copies: no organizer or guests, nobody emailed. */
+export const addCalendarFileEvents = (
+  file: { accountId: string; messageId: string; attachmentId: string | null },
+  targetAccountId: string,
+  calendarId: string,
+  uids: string[],
+) => call("add_calendar_file_events", { ...file, targetAccountId, calendarId, uids });
+
 // ── Event templates (local: saved in Pheeme's database, never sent to Google) ──
 
 export interface TemplateGuest {

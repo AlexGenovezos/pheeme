@@ -113,7 +113,7 @@ fn original_start(e: &DbEvent) -> Option<OriginalStart> {
 }
 
 /// `originalStartTime` as Google writes it.
-fn original_start_json(at: &OriginalStart, zone: &str) -> Value {
+pub(super) fn original_start_json(at: &OriginalStart, zone: &str) -> Value {
     match at {
         OriginalStart::Date(d) => json!({ "date": d.format("%Y-%m-%d").to_string() }),
         OriginalStart::Ms(ms) => {

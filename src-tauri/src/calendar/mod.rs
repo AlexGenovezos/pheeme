@@ -8,6 +8,7 @@ pub mod edit;
 pub mod error;
 #[cfg(test)]
 pub(crate) mod fake;
+pub mod file;
 pub mod ics;
 pub mod invite;
 pub mod meeting;

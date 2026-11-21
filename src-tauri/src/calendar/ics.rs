@@ -532,12 +532,38 @@ fn parse_duration(v: &str) -> Option<Duration> {
 
 // ── The file ─────────────────────────────────────────────────────────────────
 
-/// Reads the invitation in an iCalendar file. A file with several events for one UID (a
-/// series and its changed occurrences) gives the series; one with only changed occurrences
-/// gives the first. `None` when there is no event with a UID and a start.
+/// Reads the invitation in an iCalendar file: the first series or single event in it (see
+/// [`parse_all`]), else the first changed occurrence. `None` when there is no event with a UID
+/// and a start.
 ///
 /// `floating`: the zone for times written without one (the reader's Calendar zone).
 pub fn parse(text: &str, floating: Option<Tz>) -> Option<Invite> {
+    parse_all(text, floating)
+        .into_iter()
+        .min_by_key(|i| i.recurrence_id.is_some())
+}
+
+/// Every event in an iCalendar file, one per UID in the order they first appear (a file can
+/// carry a whole schedule). For a UID with several events (a series and its changed
+/// occurrences) it's the series; with only changed occurrences, the first of them.
+pub fn parse_all(text: &str, floating: Option<Tz>) -> Vec<Invite> {
+    let mut out: Vec<Invite> = Vec::new();
+    for invite in parse_every(text, floating) {
+        match out.iter_mut().find(|i| i.uid == invite.uid) {
+            // The series wins over a changed occurrence listed before it.
+            Some(seen) if seen.recurrence_id.is_some() && invite.recurrence_id.is_none() => {
+                *seen = invite;
+            }
+            Some(_) => {}
+            None => out.push(invite),
+        }
+    }
+    out
+}
+
+/// Every event in an iCalendar file in the file's order, changed occurrences of a series
+/// included (with `recurrence_id`).
+pub fn parse_every(text: &str, floating: Option<Tz>) -> Vec<Invite> {
     let all = lines(text);
     let mut method = None;
     let mut calendar_zone = None;
@@ -602,12 +628,11 @@ pub fn parse(text: &str, floating: Option<Tz>) -> Option<Invite> {
         defined: &zones,
         floating: calendar_zone.or(floating),
     };
-    let has = |e: &Vec<Line>, name: &str| e.iter().any(|l| l.name == name);
-    let chosen = events
+    let method = method.unwrap_or_else(|| "REQUEST".into());
+    events
         .iter()
-        .filter(|e| has(e, "UID") && has(e, "DTSTART"))
-        .min_by_key(|e| has(e, "RECURRENCE-ID"))?;
-    event_of(chosen, method.unwrap_or_else(|| "REQUEST".into()), &zones)
+        .filter_map(|e| event_of(e, method.clone(), &zones))
+        .collect()
 }
 
 fn observance_of(lines: &[Line]) -> Option<Observance> {
@@ -934,6 +959,36 @@ mod tests {
         assert_eq!(i.method, "REQUEST", "no METHOD reads as a request");
         let i = parse(ics, None).unwrap();
         assert_eq!(i.start, at("2026-11-12T09:00:00Z", None));
+    }
+
+    #[test]
+    fn a_schedule_gives_every_event_once() {
+        let all = parse_all(&fixture("schedule.ics"), None);
+        let uids: Vec<_> = all.iter().map(|i| i.uid.as_str()).collect();
+        assert_eq!(
+            uids,
+            [
+                "game-1@league.example",
+                "practice@league.example",
+                "party@league.example"
+            ]
+        );
+        assert_eq!(all[0].location.as_deref(), Some("Field 3, Riverside Park"));
+        // The series, not its changed occurrence listed before it.
+        assert_eq!(all[1].summary.as_deref(), Some("Practice"));
+        assert!(all[1].recurrence_id.is_none());
+        assert_eq!(all[1].recurrence, ["RRULE:FREQ=WEEKLY;COUNT=4"]);
+        assert_eq!(
+            all[1].start,
+            at("2026-12-03T23:00:00Z", Some("America/Chicago"))
+        );
+        assert!(all[2].all_day());
+        assert_eq!(all.iter().filter(|i| i.method == "REQUEST").count(), 3);
+        assert_eq!(
+            parse(&fixture("schedule.ics"), None).unwrap().uid,
+            "game-1@league.example",
+            "one invitation: the first event"
+        );
     }
 
     #[test]

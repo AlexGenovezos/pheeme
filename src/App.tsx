@@ -1,3 +1,4 @@
+import { AddFromFileHost } from "./calendar/AddFromFile";
 import { useDesktopEvents } from "./desktop/events";
 import { useNotificationPrompt } from "./desktop/prompt";
 import { useModCommands, useModEvents } from "./mods/lifecycle";
@@ -115,6 +116,7 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
       <Stats />
       <ThemeEditorHost />
       <AttachmentPreview />
+      <AddFromFileHost />
       <PersonHost />
       <ContextMenuHost />
       <SpeedReaderHost />

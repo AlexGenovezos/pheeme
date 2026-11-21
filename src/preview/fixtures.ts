@@ -551,6 +551,17 @@ export function createFixtureThreads(): FixtureThread[] {
         { attachments: invite("p-20") },
       ),
     ]),
+    // A calendar file from outside Google with a whole schedule: Add to calendar copies them all.
+    thread("p-ics", P, ["INBOX"], "U10 Hornets: fall schedule", [
+      message(
+        "p-ics-m1",
+        ["Riverside Youth Soccer", "schedule@riverside-soccer.example"],
+        daysAgo(2),
+        "Hi families,\n\nThe fall schedule is attached. Open it to add every game and practice to your calendar.\n\nCoach Dana",
+        me,
+        { attachments: [file("p-ics-file", "hornets-fall.ics", "text/calendar", 2_412)] },
+      ),
+    ]),
     // A plain email that names a time: Create event from email starts there.
     thread("p-21", P, ["INBOX"], "Coffee next week?", [
       message(

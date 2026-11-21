@@ -622,6 +622,8 @@ pub fn run() {
             commands::calendar::respond_to_calendar_event,
             commands::calendar::respond_to_calendar_invite,
             commands::calendar::message_invite,
+            commands::calendar::calendar_file,
+            commands::calendar::add_calendar_file_events,
             commands::calendar::event_templates,
             commands::calendar::save_event_template,
             commands::calendar::rename_event_template,

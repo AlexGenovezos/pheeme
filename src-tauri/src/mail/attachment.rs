@@ -137,6 +137,21 @@ impl MailService {
         Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
     }
 
+    /// The text of a calendar file in the message: the attachment `attachment_row_id` (an
+    /// `.ics` the user clicked), else the message's invitation part. `None` without either.
+    pub async fn calendar_file_text(
+        &self,
+        account_id: &str,
+        message_id: &str,
+        attachment_row_id: Option<&str>,
+    ) -> Result<Option<String>, MailError> {
+        let Some(id) = attachment_row_id else {
+            return self.invite_text(account_id, message_id).await;
+        };
+        let bytes = self.attachment(account_id, message_id, id).await?.bytes;
+        Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+    }
+
     /// The image behind a `cid:` reference; anything that isn't an `image/*` is `NotFound`.
     pub async fn inline_image(
         &self,
