@@ -200,6 +200,7 @@ export function MessageCard({
       />
       <AttachmentList
         accountId={accountId}
+        threadId={message.threadId}
         messageId={message.id}
         attachments={message.attachments}
       />

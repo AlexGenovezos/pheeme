@@ -74,14 +74,31 @@ export function inviteNotice(invite: Invite, tz: string): Notice | null {
   return null;
 }
 
-/** Whether the card can answer: a request or published event that isn't cancelled, that you're invited to (not your own). */
+/** Whether the card can answer: a request or published event that isn't cancelled, that lists you as a guest (not your own). */
 export function canAnswer(invite: Invite): boolean {
   if (invite.cancelled || invite.live?.status === "cancelled") return false;
   if (invite.method !== "REQUEST" && invite.method !== "PUBLISH") return false;
   if (invite.live) return invite.live.canRsvp;
   if (invite.organizer?.isSelf) return false;
   // One changed occurrence answers on the calendar's copy, which isn't cached yet.
-  return invite.recurrenceId === null && invite.import !== null;
+  if (invite.recurrenceId !== null || invite.import === null) return false;
+  // A file that doesn't list you (tickets, a booking, a schedule) has nobody to answer: it's added.
+  return invite.attendees.some((a) => a.isSelf && !a.organizer);
+}
+
+/**
+ * Why the card can't answer, and whether it offers Add to calendar instead: an event you aren't
+ * invited to that isn't on your calendar yet.
+ */
+export function cannotAnswer(invite: Invite): { why: string; add: boolean } {
+  if (invite.organizer?.isSelf) return { why: "You're the organizer.", add: false };
+  if (invite.cancelled || invite.live?.status === "cancelled")
+    return { why: "Nothing to answer.", add: false };
+  if (invite.method === "REPLY") return { why: "A guest's answer to your event.", add: false };
+  if (invite.live) return { why: "On your calendar.", add: false };
+  if (invite.recurrenceId !== null)
+    return { why: "This change isn't on your calendar yet.", add: false };
+  return { why: "Not on your calendar.", add: true };
 }
 
 /**

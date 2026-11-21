@@ -3,6 +3,7 @@
 use super::CommandError;
 use crate::calendar::availability::AvailabilityDto;
 use crate::calendar::edit::EventEdit;
+use crate::calendar::file::{AddedEvents, CalendarFileDto};
 use crate::calendar::invite::InviteDto;
 use crate::calendar::service::{
     CalendarAccessDto, CalendarAccountDto, CalendarEventDto, EventDetailDto,
@@ -287,6 +288,55 @@ pub async fn message_invite(
         return Ok(None);
     };
     Ok(state.calendar.invite(&account_id, &text).await?)
+}
+
+/// Every event in a message's calendar file (Mail's Add to calendar dialog): the `.ics`
+/// attachment `attachment_id`, else its invitation. `None` when it holds no event.
+#[tauri::command]
+pub async fn calendar_file(
+    state: State<'_, AppState>,
+    account_id: String,
+    message_id: String,
+    attachment_id: Option<String>,
+) -> Result<Option<CalendarFileDto>, CommandError> {
+    let text = state
+        .mail
+        .calendar_file_text(&account_id, &message_id, attachment_id.as_deref());
+    let Some(text) = user_action(text).await? else {
+        return Ok(None);
+    };
+    Ok(state.calendar.calendar_file(&account_id, &text).await?)
+}
+
+/// Adds the events with these UIDs from a message's calendar file to a calendar, as plain
+/// copies that email nobody (an invitation to the account is answered instead, through
+/// `respond_to_calendar_invite`).
+#[tauri::command]
+pub async fn add_calendar_file_events(
+    state: State<'_, AppState>,
+    account_id: String,
+    message_id: String,
+    attachment_id: Option<String>,
+    target_account_id: String,
+    calendar_id: String,
+    uids: Vec<String>,
+) -> Result<AddedEvents, CommandError> {
+    let text = state
+        .mail
+        .calendar_file_text(&account_id, &message_id, attachment_id.as_deref());
+    let Some(text) = user_action(text).await? else {
+        return Err(CommandError {
+            code: "not_found".into(),
+            message: "This email has no calendar file.".into(),
+        });
+    };
+    Ok(user_action(state.calendar.add_calendar_file(
+        &target_account_id,
+        &calendar_id,
+        &text,
+        &uids,
+    ))
+    .await?)
 }
 
 /// Joins a video call: opens its link (an event's or an invitation's) in the default browser.

@@ -12,6 +12,7 @@ import {
   type EventEdit,
   type EventRef,
   type EventTime,
+  type FileEvent,
   type Invite,
   type MeetingLink,
 } from "../lib/tauri";
@@ -383,6 +384,67 @@ export function createCalendarHandlers(
     ["p-20-m1", { eventId: null, cancelled: true }],
   ]);
   const morgan = { email: "morgan@example.org", name: "Morgan Lee", isSelf: false };
+  /** The events in the soccer schedule's `.ics` (fixture `p-ics`), from outside Google. */
+  const timedAt = (ms: number, minutes: number) => ({
+    start: { ms, date: null, timeZone: "America/Chicago" },
+    end: { ms: ms + minutes * 60_000, date: null, timeZone: "America/Chicago" },
+  });
+  const dayAt = (offset: number) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + offset);
+    const next = new Date(d);
+    next.setDate(d.getDate() + 1);
+    return {
+      start: { ms: null, date: isoDate(d), timeZone: null },
+      end: { ms: null, date: isoDate(next), timeZone: null },
+    };
+  };
+  const schedule = [
+    {
+      uid: "game-1@riverside-soccer.example",
+      summary: "Game vs Comets",
+      location: "Field 3, Riverside Park",
+      repeats: false,
+      ...timedAt(at(12, 9), 90),
+    },
+    {
+      uid: "practice@riverside-soccer.example",
+      summary: "Practice",
+      location: "Riverside Park",
+      repeats: true,
+      ...timedAt(at(9, 17, 30), 60),
+    },
+    {
+      uid: "game-2@riverside-soccer.example",
+      summary: "Game vs Hornets",
+      location: "Lincoln Field",
+      repeats: false,
+      ...timedAt(at(19, 10, 30), 90),
+    },
+    {
+      uid: "party@riverside-soccer.example",
+      summary: "End of season party",
+      location: null,
+      repeats: false,
+      ...dayAt(26),
+    },
+  ];
+  const scheduleEvent = (s: (typeof schedule)[number]): FileEvent => {
+    const e = events.find((o) => o.id === s.uid);
+    return {
+      uid: s.uid,
+      summary: s.summary,
+      location: s.location,
+      start: s.start,
+      end: s.end,
+      allDay: s.start.date !== null,
+      repeats: s.repeats,
+      cancelled: false,
+      invited: false,
+      existing: e ? ref(e) : null,
+      import: null,
+    };
+  };
 
   const handlers = {
     calendar_accounts: (): CalendarAccount[] =>
@@ -632,6 +694,59 @@ export function createCalendarHandlers(
         liveSequence: live ? 0 : null,
         import: { summary: e.summary },
       };
+    },
+    calendar_file: (args): { events: FileEvent[] } | null => {
+      const messageId = String(args.messageId);
+      if (messageId === "p-ics-m1") return { events: schedule.map(scheduleEvent) };
+      const invite = handlers.message_invite(args);
+      if (!invite) return null;
+      const e = events.find((o) => o.id === invite.uid);
+      return {
+        events: [
+          {
+            uid: invite.uid,
+            summary: invite.summary,
+            location: invite.location,
+            start: invite.start,
+            end: invite.end,
+            allDay: invite.allDay,
+            repeats: invite.recurrence.length > 0,
+            cancelled: invite.cancelled,
+            invited: !invite.cancelled,
+            existing: e && invite.live ? ref(e) : null,
+            import: invite.import,
+          },
+        ],
+      };
+    },
+    add_calendar_file_events: (args): { events: EventRef[]; already: number } => {
+      const accountId = String(args.targetAccountId);
+      const calendarId = String(args.calendarId);
+      const uids = args.uids as string[];
+      let already = 0;
+      const refs = schedule
+        .filter((s) => uids.includes(s.uid))
+        .map((s) => {
+          const there = events.find(
+            (o) => o.accountId === accountId && o.calendarId === calendarId && o.id === s.uid,
+          );
+          if (there) {
+            already += 1;
+            return ref(there);
+          }
+          const e: CalendarEvent = {
+            ...base({ id: accountId, email: "" }, calendarId, s.uid, s.summary),
+            location: s.location,
+            start: s.start,
+            end: s.end,
+            allDay: s.start.date !== null,
+            recurring: s.repeats,
+          };
+          events.push(e);
+          return ref(e);
+        });
+      changed(accountId);
+      return { events: refs, already };
     },
     respond_to_calendar_invite: (args): EventRef => {
       // The preview's invites carry their event id as iCalendar UID.

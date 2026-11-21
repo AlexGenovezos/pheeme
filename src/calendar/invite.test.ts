@@ -3,6 +3,7 @@ import type { CalendarEvent, EventDetail, Invite } from "../lib/tauri";
 import { inviteMessage, isCalendarBodyPart } from "../mail/invitePart";
 import {
   canAnswer,
+  cannotAnswer,
   clashes,
   clashText,
   inviteNotice,
@@ -134,6 +135,27 @@ describe("canAnswer", () => {
     expect(
       canAnswer(invite({ recurrenceId: { ms: T, date: null, timeZone: NY }, import: null })),
     ).toBe(false);
+    // A booking or ticket that doesn't list you is added, not answered.
+    expect(canAnswer(invite({ attendees: [] }))).toBe(false);
+    expect(canAnswer(invite({ method: "PUBLISH", attendees: [], organizer: null }))).toBe(false);
+  });
+});
+
+describe("cannotAnswer", () => {
+  test("offers Add to calendar only for an event that isn't on the calendar and doesn't list you", () => {
+    expect(cannotAnswer(invite({ attendees: [] }))).toEqual({
+      why: "Not on your calendar.",
+      add: true,
+    });
+    expect(cannotAnswer(invite({ attendees: [], live: live({ canRsvp: false }) }))).toEqual({
+      why: "On your calendar.",
+      add: false,
+    });
+    expect(cannotAnswer(invite({ cancelled: true })).add).toBe(false);
+    expect(cannotAnswer(invite({ method: "REPLY" })).add).toBe(false);
+    expect(
+      cannotAnswer(invite({ organizer: { email: "a@example.org", name: null, isSelf: true } })).why,
+    ).toBe("You're the organizer.");
   });
 });
 

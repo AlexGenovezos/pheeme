@@ -213,6 +213,34 @@ export function CalendarSelect({
   disabled?: boolean;
   id?: string;
 }) {
+  return (
+    <CalendarPicker
+      id={id}
+      accountId={form.accountId}
+      calendarId={form.calendarId}
+      lockAccount={lockAccount}
+      disabled={disabled}
+      onChange={(accountId, calendarId) => onChange({ ...form, accountId, calendarId })}
+    />
+  );
+}
+
+/** Every calendar you can add events to, by account: the select behind {@link CalendarSelect}. */
+export function CalendarPicker({
+  accountId,
+  calendarId,
+  onChange,
+  lockAccount = false,
+  disabled = false,
+  id,
+}: {
+  accountId: string;
+  calendarId: string;
+  onChange(accountId: string, calendarId: string): void;
+  lockAccount?: boolean;
+  disabled?: boolean;
+  id?: string;
+}) {
   const accounts = useCalendarStore((s) => s.accounts);
   const groups = useMemo(() => {
     const byAccount = new Map<string, ReturnType<typeof writableCalendars>>();
@@ -224,18 +252,16 @@ export function CalendarSelect({
     return [...byAccount.values()];
   }, [accounts]);
   const known = groups.some((g) =>
-    g.some((w) => w.account.accountId === form.accountId && w.calendar.id === form.calendarId),
+    g.some((w) => w.account.accountId === accountId && w.calendar.id === calendarId),
   );
   const options: SelectOption<string>[] = [
-    ...(known
-      ? []
-      : [{ value: calendarValue(form.accountId, form.calendarId), label: form.calendarId }]),
+    ...(known ? [] : [{ value: calendarValue(accountId, calendarId), label: calendarId }]),
     ...groups.flatMap((g) =>
       g.map((w) => ({
         value: calendarValue(w.account.accountId, w.calendar.id),
         label: w.calendar.primary ? w.account.email : w.calendar.summary,
         group: g[0].account.email,
-        disabled: lockAccount && w.account.accountId !== form.accountId,
+        disabled: lockAccount && w.account.accountId !== accountId,
       })),
     ),
   ];
@@ -244,12 +270,12 @@ export function CalendarSelect({
       id={id}
       className="cal-select"
       aria-label={id ? undefined : "Calendar"}
-      value={calendarValue(form.accountId, form.calendarId)}
+      value={calendarValue(accountId, calendarId)}
       options={options}
       disabled={disabled}
       onChange={(value) => {
-        const [accountId, calendarId] = value.split("\n");
-        onChange({ ...form, accountId, calendarId });
+        const [nextAccount, nextCalendar] = value.split("\n");
+        onChange(nextAccount, nextCalendar);
       }}
     />
   );

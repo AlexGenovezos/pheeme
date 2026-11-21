@@ -2,7 +2,15 @@
 // where (Join for a meeting link), who and how they answered, Yes / Maybe / No, and a mini day view
 // of the hours around it from every shown calendar, with clashes named. It shows the event as it is
 // now on the calendar when Pheeme has it, and says when the email is out of date or cancelled.
-import { CalendarDays, Clock, ExternalLink, MapPin, Users, Video } from "lucide-react";
+import {
+  CalendarDays,
+  CalendarPlus,
+  Clock,
+  ExternalLink,
+  MapPin,
+  Users,
+  Video,
+} from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -35,8 +43,10 @@ import { eventColors } from "./colors";
 import { addDays, dateOf, formatDay, formatHour, wallClock, zonedMs } from "./dates";
 import { eventTitle, useCalendarLookup } from "./EventBlock";
 import { describeWhen } from "./EventPopover";
+import { openAddFromFile, sourceKey, useAddFromFileStore } from "./addFromFile";
 import {
   canAnswer,
+  cannotAnswer,
   clashes,
   clashText,
   inviteNotice,
@@ -143,13 +153,17 @@ async function sendAnswer(
 
 function AnswerRow({
   invite,
-  accountId,
+  pinned,
   compact,
 }: {
   invite: Invite | null;
-  accountId: string;
+  pinned: PinnedEmail;
   compact: boolean;
 }) {
+  const accountId = pinned.accountId;
+  const adding = useAddFromFileStore(
+    (s) => s.reading === sourceKey({ messageId: pinned.messageId, attachmentId: null }),
+  );
   const accounts = useCalendarStore((s) => s.accounts);
   const account = accounts?.find((a) => a.accountId === accountId);
   const [pending, setPending] = useState<Answer | null>(null);
@@ -203,14 +217,23 @@ function AnswerRow({
       </>
     );
   } else if (!canAnswer(invite)) {
-    const why = invite.organizer?.isSelf
-      ? "You're the organizer."
-      : invite.cancelled || invite.live?.status === "cancelled"
-        ? "Nothing to answer."
-        : invite.method === "REPLY"
-          ? "A guest's answer to your event."
-          : "This change isn't on your calendar yet.";
-    body = <span className="invite-card__muted">{why}</span>;
+    const { why, add } = cannotAnswer(invite);
+    body = (
+      <>
+        <span className="invite-card__muted">{why}</span>
+        {add && (
+          <Button
+            size="sm"
+            icon={<CalendarPlus />}
+            disabled={adding}
+            aria-busy={adding}
+            onClick={() => void openAddFromFile({ ...pinned, attachmentId: null })}
+          >
+            Add to calendar
+          </Button>
+        )}
+      </>
+    );
   } else {
     body = (
       <>
@@ -538,7 +561,7 @@ export function InviteCard({
         <Users aria-hidden="true" />
         <span>{invite ? whoLine(organizer, guests) : <Skeleton width="14em" />}</span>
       </div>
-      <AnswerRow invite={invite} accountId={accountId} compact={compact} />
+      <AnswerRow invite={invite} pinned={pinned} compact={compact} />
       {!compact && (
         <>
           <MiniDay event={event} changes={changes} />

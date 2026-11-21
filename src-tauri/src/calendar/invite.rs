@@ -48,7 +48,7 @@ pub struct InviteDto {
     pub import: Option<Value>,
 }
 
-fn time_dto(t: &IcsTime) -> EventTimeDto {
+pub(super) fn time_dto(t: &IcsTime) -> EventTimeDto {
     match t {
         IcsTime::At { ms, zone } => EventTimeDto {
             ms: Some(*ms),
@@ -64,7 +64,7 @@ fn time_dto(t: &IcsTime) -> EventTimeDto {
 }
 
 /// The invitation as Google's event resource, for `events.import`.
-fn import_body(invite: &Invite) -> Value {
+pub(super) fn import_body(invite: &Invite) -> Value {
     let zone = |t: &IcsTime| match t {
         IcsTime::At { zone, .. } => zone.clone(),
         IcsTime::Day(_) => None,

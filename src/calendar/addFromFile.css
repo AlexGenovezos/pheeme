@@ -1,0 +1,84 @@
+/* Add to calendar from an email's .ics file: the events in it, the calendar, Add. */
+.cal-file {
+  width: var(--calendar-file-width);
+}
+.cal-file__events {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--calendar-file-list-max-height);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  overflow-y: auto;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  list-style: none;
+}
+.cal-file__event {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+.cal-file__event + .cal-file__event {
+  border-top: var(--border-width) solid var(--color-border);
+}
+.cal-file__event--done {
+  color: var(--color-foreground-muted);
+}
+.cal-file__event input {
+  margin-top: var(--space-0-5);
+}
+.cal-file__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  min-width: var(--space-0);
+}
+.cal-file__title {
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-file__when {
+  overflow: hidden;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-file__status {
+  flex-shrink: 0;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}
+.cal-file__calendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+.cal-file__calendar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height-sm);
+}
+.cal-file__hint {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+}
+.cal-file__error {
+  min-height: var(--space-5);
+  margin: calc(var(--space-2) * -1) var(--space-0) var(--space-0);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+.cal-file__pick {
+  flex: 1;
+  align-items: flex-start;
+  min-width: var(--space-0);
+}

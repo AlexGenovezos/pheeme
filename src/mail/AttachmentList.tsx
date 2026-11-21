@@ -4,7 +4,8 @@ import { useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import type { AttachmentInfo } from "../lib/tauri";
 import { downloadAttachment } from "./attachmentActions";
-import { isCalendarBodyPart } from "./invitePart";
+import { isCalendarBodyPart, isInvitePart } from "./invitePart";
+import { openAddFromFile, sourceKey, useAddFromFileStore } from "../calendar/addFromFile";
 import { usePreviewStore } from "./preview/previewStore";
 import "./mail.css";
 
@@ -22,13 +23,21 @@ export function formatSize(bytes: number): string {
 
 export interface AttachmentListProps {
   accountId: string;
+  /** The conversation, for Open in Calendar after a calendar file is added. */
+  threadId: string;
   messageId: string;
   attachments: AttachmentInfo[];
 }
 
 /** The message's files, each opening the preview panel. Inline images belong to the body, so they're left out. */
-export function AttachmentList({ accountId, messageId, attachments }: AttachmentListProps) {
+export function AttachmentList({
+  accountId,
+  threadId,
+  messageId,
+  attachments,
+}: AttachmentListProps) {
   const [saving, setSaving] = useState<ReadonlySet<string>>(new Set());
+  const reading = useAddFromFileStore((s) => s.reading);
   const [driveFile, setDriveFile] = useState<AttachmentInfo | null>(null);
   // The invite card stands in for an invitation's unnamed calendar part.
   const files = attachments.filter((a) => !a.isInline && !isCalendarBodyPart(a));
@@ -47,8 +56,11 @@ export function AttachmentList({ accountId, messageId, attachments }: Attachment
     }
   };
 
-  const preview = (index: number) =>
-    usePreviewStore.getState().open({ accountId, messageId, files, index });
+  // A calendar file offers to add its events to Google Calendar; anything else opens the preview.
+  const open = (file: AttachmentInfo, index: number) =>
+    isInvitePart(file)
+      ? void openAddFromFile({ accountId, threadId, messageId, attachmentId: file.id })
+      : usePreviewStore.getState().open({ accountId, messageId, files, index });
 
   return (
     <>
@@ -56,22 +68,25 @@ export function AttachmentList({ accountId, messageId, attachments }: Attachment
         {files.map((file, index) => {
           const name = file.filename ?? "Attachment";
           const downloading = saving.has(file.id);
+          const calendarFile = isInvitePart(file);
+          const busy = downloading || reading === sourceKey({ messageId, attachmentId: file.id });
+          const action = calendarFile ? `Add ${name} to calendar` : `Preview ${name}`;
           return (
             <li key={file.id} className="attachments__item">
               {/* Click, or Space/Enter with it focused, opens the preview (like Quick Look). */}
               <button
                 type="button"
                 className="attachments__open"
-                aria-label={`Preview ${name}`}
-                title={`Preview ${name}`}
-                onClick={() => preview(index)}
+                aria-label={action}
+                title={action}
+                onClick={() => open(file, index)}
               >
                 <File className="attachments__icon" aria-hidden="true" />
                 <span className="attachments__name">{name}</span>
               </button>
-              {downloading ? (
+              {busy ? (
                 <span className="attachments__size" role="status">
-                  Downloading…
+                  {downloading ? "Downloading…" : "Reading…"}
                 </span>
               ) : (
                 file.size != null && (

@@ -22,6 +22,8 @@ import type {
   CalendarEvent,
 } from "./calendar";
 import type {
+  AddedFileEvents,
+  CalendarFile,
   EditScope,
   EventDetail,
   EventEdit,
@@ -243,6 +245,20 @@ export interface Commands {
     EventRef
   >;
   message_invite: Command<Account & { messageId: string }, Invite | null>;
+  calendar_file: Command<
+    Account & { messageId: string; attachmentId: string | null },
+    CalendarFile | null
+  >;
+  add_calendar_file_events: Command<
+    Account & {
+      messageId: string;
+      attachmentId: string | null;
+      targetAccountId: string;
+      calendarId: string;
+      uids: string[];
+    },
+    AddedFileEvents
+  >;
   event_templates: Command<void, EventTemplate[]>;
   save_event_template: Command<
     { name: string; fields: TemplateFields; replace: boolean },

@@ -20,7 +20,7 @@ const files = [
 function renderFiles() {
   return render(
     <ToastProvider>
-      <AttachmentList accountId="a1" messageId="m1" attachments={files} />
+      <AttachmentList accountId="a1" threadId="t1" messageId="m1" attachments={files} />
     </ToastProvider>,
   );
 }
@@ -78,6 +78,7 @@ test("clicking a file opens the preview on it, with the message's other files to
   render(
     <AttachmentList
       accountId="a1"
+      threadId="t1"
       messageId="m1"
       attachments={[
         ...files,
@@ -91,4 +92,40 @@ test("clicking a file opens the preview on it, with the message's other files to
   expect(session?.index).toBe(1);
   expect(session?.files.map((f) => f.filename)).toEqual(["plan.pdf", "budget.xlsx"]);
   expect(session).toMatchObject({ accountId: "a1", messageId: "m1" });
+});
+
+test("clicking a calendar file reads its events and opens Add to calendar, not the preview", async () => {
+  const { usePreviewStore } = await import("./preview/previewStore");
+  const { useAddFromFileStore } = await import("../calendar/addFromFile");
+  const { useCalendarStore } = await import("../calendar/calendarStore");
+  usePreviewStore.setState({ session: null });
+  useAddFromFileStore.setState({ open: null, reading: null });
+  useCalendarStore.setState({ accounts: [] });
+  const calls: [string, unknown][] = [];
+  const file = { events: [] as unknown[] };
+  mockIPC((cmd, args) => {
+    calls.push([cmd, args]);
+    if (cmd === "calendar_file") return file;
+  });
+  render(
+    <AttachmentList
+      accountId="a1"
+      threadId="t1"
+      messageId="m1"
+      attachments={[
+        { ...files[0], id: "ics1", filename: "hornets.ics", mimeType: "application/octet-stream" },
+      ]}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Add hornets.ics to calendar" }));
+  await act(async () => {});
+  expect(calls).toContainEqual([
+    "calendar_file",
+    { accountId: "a1", messageId: "m1", attachmentId: "ics1" },
+  ]);
+  expect(usePreviewStore.getState().session).toBeNull();
+  expect(useAddFromFileStore.getState().open).toEqual({
+    source: { accountId: "a1", threadId: "t1", messageId: "m1", attachmentId: "ics1" },
+    file,
+  });
 });
