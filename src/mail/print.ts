@@ -44,12 +44,13 @@ const BODY_STYLE =
 
 /**
  * The message's text: its sanitized HTML as the reading pane shows it, else its plain text, else its preview. HTML
- * goes in a declarative shadow root (no script needed), so the email's own stylesheets apply only inside it; the
- * host's containment keeps positioned content from leaving the box.
+ * goes in a declarative shadow root (no script needed), so the email's own stylesheets apply only inside it. The
+ * box around the shadow host (out of reach of the email's `:host` rules) contains its layout, so fixed or absolute
+ * content stays in it; not its paint, which would cut off a wide email that printing otherwise scales to fit.
  */
 function body(m: MessageDetail): string {
   if (m.bodyHtml)
-    return `<div class="pheeme-print-body"><template shadowrootmode="open">${BODY_STYLE}${m.bodyHtml}</template></div>`;
+    return `<div class="pheeme-print-body"><div><template shadowrootmode="open">${BODY_STYLE}${m.bodyHtml}</template></div></div>`;
   const text = m.bodyText ?? m.snippet ?? "";
   return `<div class="pheeme-print-body"><div class="pheeme-print-text">${escape(text)}</div></div>`;
 }
@@ -87,7 +88,7 @@ body { margin: 24px; color: #000; background: #fff; font: 13px/1.5 system-ui, -a
 .pheeme-print-message { border-top: 1px solid #bbb; padding: 12px 0; }
 .pheeme-print-from { display: flex; justify-content: space-between; gap: 16px; }
 .pheeme-print-date, .pheeme-print-to { color: #555; }
-.pheeme-print-body { margin-top: 12px; overflow-wrap: break-word; position: relative; contain: layout paint; }
+.pheeme-print-body { margin-top: 12px; overflow-wrap: break-word; position: relative; contain: layout; }
 .pheeme-print-text { white-space: pre-wrap; }
 .pheeme-print-files { margin-top: 12px; border-top: 1px dashed #bbb; padding-top: 6px; color: #555; }
 .pheeme-print-files ul { margin: 4px 0 0; padding-left: 20px; }

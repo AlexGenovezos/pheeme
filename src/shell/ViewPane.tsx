@@ -124,12 +124,14 @@ export function ViewPane() {
           id: "label",
           label: "Label as…",
           shortcut: registry.shortcutFor("conversation.labels"),
+          disabled: stale,
           onSelect: () => void openLabelMenu({ x: r.left, y: r.bottom }),
         },
         {
           id: "move",
           label: "Move to…",
           shortcut: registry.shortcutFor("conversation.move"),
+          disabled: stale,
           onSelect: () => openMoveMenu({ x: r.left, y: r.bottom }),
         },
         {
@@ -290,7 +292,8 @@ export function ViewPane() {
         <IconButton
           label="More actions"
           icon={<MoreHorizontal />}
-          disabled={stale}
+          // Print and Create event need only the open conversation.
+          disabled={stale && off}
           onClick={openMore}
         />
       </div>
