@@ -111,6 +111,7 @@ export interface Commands {
   get_sync_progress: Command<void, SyncProgress[]>;
   network_online: Command<void, boolean>;
   open_mail_link: Command<{ url: string }, void>;
+  print_email: Command<{ title: string; html: string; allowRemote: boolean }, void>;
 
   // Mail: attachments
   save_attachment: Command<Attachment, string>;

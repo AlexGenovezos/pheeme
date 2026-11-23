@@ -518,6 +518,11 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     },
     open_external: () => undefined,
     open_mail_link: () => undefined,
+    // The page in a tab of its own, standing in for the print window.
+    print_email: (args) => {
+      const url = URL.createObjectURL(new Blob([String(args.html)], { type: "text/html" }));
+      window.open(url, "_blank", "noopener");
+    },
     open_meeting_link: () => undefined,
     save_attachment: () => "/Users/you/Downloads/attachment.pdf",
     // Every attachment of a kind reads as the matching sample file.

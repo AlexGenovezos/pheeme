@@ -8,6 +8,7 @@ pub mod contacts;
 pub mod drive;
 pub mod labels;
 pub mod mods;
+pub mod print;
 pub mod quit;
 pub mod search;
 pub mod sender_rules;
@@ -168,11 +169,13 @@ pub fn is_external_navigation(url: &Url) -> bool {
 
 /// [`is_external_navigation`] for a given platform and build. Tauri serves the app from
 /// `http(s)://tauri.localhost` only on Windows and Android (elsewhere it is `tauri://localhost`,
-/// which isn't a web link), and the Vite dev server on `localhost:1420` exists only in debug
+/// which isn't a web link; the same goes for print windows' `pheeme-print`), and the Vite dev server on `localhost:1420` exists only in debug
 /// builds. In any other build those addresses are external, so a link can't load them in the app.
 fn is_external_navigation_on(url: &Url, windows: bool, debug: bool) -> bool {
     let own_page = match (url.scheme(), url.host_str(), url.port()) {
         (_, Some("tauri.localhost"), None) => windows,
+        // A print window's page (`print.rs`), which WebView2 serves over `http`.
+        ("http", Some("pheeme-print.localhost"), None) => windows,
         ("http", Some("localhost"), Some(1420)) => debug,
         _ => false,
     };
@@ -286,6 +289,9 @@ mod tests {
         assert!(!external_on("https://tauri.localhost/", true, false));
         assert!(external_on("http://tauri.localhost/", false, true));
         assert!(external_on("https://tauri.localhost/", false, true));
+        // So is a print window's page.
+        assert!(!external_on("http://pheeme-print.localhost/1", true, false));
+        assert!(external_on("http://pheeme-print.localhost/1", false, false));
         // The dev server is the app only in debug builds.
         assert!(!external_on("http://localhost:1420/", false, true));
         assert!(external_on("http://localhost:1420/", true, false));

@@ -14,6 +14,7 @@ import {
 } from "../mail/actions";
 import { openCreateLabel } from "../labels/create";
 import { COPY_CODE_COMMAND, COPY_CODE_SHORTCUT, copyOpenConversationCode } from "../mail/CodeCard";
+import { PRINT_COMMAND, printConversation } from "../mail/print";
 import {
   CREATE_EVENT_COMMAND,
   CREATE_EVENT_SHORTCUT,
@@ -270,6 +271,14 @@ export function appCommands(): Command[] {
       shortcut: DEFAULT_KEYS["conversation.speed-read"],
       keywords: ["rsvp", "fast", "reader", "words per minute"],
       run: speedReadOpenConversation,
+    },
+    {
+      id: PRINT_COMMAND,
+      title: "Print",
+      group: "Conversation",
+      shortcut: DEFAULT_KEYS[PRINT_COMMAND],
+      keywords: ["paper", "pdf", "printer"],
+      run: () => void printConversation(),
     },
     {
       id: COPY_CODE_COMMAND,

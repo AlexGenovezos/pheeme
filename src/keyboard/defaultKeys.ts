@@ -27,6 +27,7 @@ export const DEFAULT_KEYS = {
   "conversation.reply-all": "a",
   "conversation.forward": "f",
   "conversation.speed-read": "shift+r",
+  "conversation.print": "mod+p",
   "calendar.today": "t",
   "calendar.next": "j",
   "calendar.previous": "k",

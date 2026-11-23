@@ -34,6 +34,7 @@ import {
   trash,
 } from "../mail/actions";
 import { threadKey } from "../mail/mailboxes";
+import { PRINT_COMMAND, printConversation } from "../mail/print";
 import {
   CREATE_EVENT_COMMAND,
   CREATE_EVENT_SHORTCUT,
@@ -150,6 +151,13 @@ export function ViewPane() {
           onSelect: () => void findSimilar("subject"),
         },
         { type: "separator" },
+        {
+          id: "print",
+          label: "Print",
+          shortcut: registry.shortcutFor(PRINT_COMMAND),
+          disabled: stale,
+          onSelect: () => void printConversation(),
+        },
         { id: "original", label: "Show original", onSelect: () => notYet("Show original") },
       ],
       { x: r.left, y: r.bottom },

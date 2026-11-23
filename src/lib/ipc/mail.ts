@@ -132,6 +132,9 @@ export const openAttachment = (accountId: string, messageId: string, attachmentI
 export const revealDownload = (path: string) => call("reveal_download", { path });
 /** Opens an http, https or mailto link from an email; anything else is rejected. */
 export const openMailLink = (url: string) => call("open_mail_link", { url });
+/** Opens a print window on `html` (a whole page) with the system's print dialog over it. */
+export const printEmail = (title: string, html: string, allowRemote: boolean) =>
+  call("print_email", { title, html, allowRemote });
 export interface SyncProgress {
   accountId: string;
   syncedMessages: number;
