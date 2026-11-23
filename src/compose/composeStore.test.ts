@@ -841,3 +841,34 @@ test("a save waits for pasted images to be staged; one that fails comes out of t
   expect(message.attachments.map((a) => a.contentId)).toEqual([contentIds[0], third.contentIds[0]]);
   vi.unstubAllGlobals();
 });
+
+test("closing a new message whose only content is an image still being staged asks first", async () => {
+  vi.stubGlobal(
+    "URL",
+    Object.assign(URL, { createObjectURL: () => "blob:x", revokeObjectURL: () => {} }),
+  );
+  let finish: (() => void) | null = null;
+  handlers.stage_pasted_attachment = (args) =>
+    new Promise((resolve) => {
+      finish = () =>
+        resolve({
+          id: "s1",
+          filename: "image.png",
+          mimeType: "image/png",
+          size: 4,
+          contentId: args.contentId,
+        });
+    });
+  const id = store().compose("a1");
+  const png = new File([new Uint8Array([137, 80, 78, 71])], "image.png", { type: "image/png" });
+  const { contentIds } = store().pasteImages(id, [png]);
+  store().update(id, { bodyHtml: `<p><img src="cid:${contentIds[0]}"></p>` });
+  store().requestClose(id);
+  expect(win(id).confirmingClose).toBe(true);
+  await vi.waitFor(() => expect(finish).not.toBeNull());
+  finish!();
+  await store().saveAndClose(id);
+  const message = called("save_draft")[0].message as ComposeDraft;
+  expect(message.attachments.map((a) => a.contentId)).toEqual(contentIds);
+  vi.unstubAllGlobals();
+});

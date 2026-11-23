@@ -682,7 +682,8 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         if (win.version > 0 && win.draft.draftId) toast({ title: "Draft saved" });
         return;
       }
-      if (isBlank(win.draft) && !win.draft.draftId) {
+      // An image still being staged isn't in what would be saved yet, but it is something to keep.
+      if (isBlank(win.draft) && !win.draft.draftId && !pastes.has(id)) {
         dispose(id, win.draft.attachments);
         return;
       }
