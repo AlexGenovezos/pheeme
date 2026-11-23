@@ -88,10 +88,14 @@ socket2 = { version = "0.6", features = ["all"] }
 libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-zbus = { version = "6", default-features = false, features = ["tokio"] }
+zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
 gungraun = { version = "0.20.0", features = ["act"], optional = true }
 # Turns on spell checking in the webview (already in the tree via wry).
 webkit2gtk = "2.0"
+
+# The tests serve fake desktop interfaces on a private bus.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+zbus = { version = "6", default-features = false, features = ["service"] }
 
 # Same major as keyring's apple-native backend, to recognise its macOS error codes.
 [target.'cfg(target_os = "macos")'.dependencies]

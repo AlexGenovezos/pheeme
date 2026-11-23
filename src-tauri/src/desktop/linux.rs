@@ -48,10 +48,11 @@ async fn serve(
     // A notification daemon may start late or restart. Reconnect on the next delivery.
     while let Some(first) = rx.recv().await {
         let connected = match &address {
-            Some(address) => match zbus::connection::Builder::address(address.as_str()) {
-                Ok(builder) => builder.build().await,
-                Err(error) => Err(error),
-            },
+            Some(address) => {
+                zbus::connection::Builder::address(address.as_str())
+                    .build()
+                    .await
+            }
             None => Connection::session().await,
         };
         let connection = match connected {
@@ -101,13 +102,13 @@ async fn serve(
                 if delivery.join.is_some() {
                     buttons.extend(["join", "Join"]);
                 }
-                let mut hints: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::from([(
+                let mut hints: HashMap<&str, zbus::Variant<'_>> = HashMap::from([(
                     "desktop-entry",
-                    zbus::zvariant::Value::from(crate::identity::APP_IDENTIFIER),
+                    zbus::Variant::from(crate::identity::APP_IDENTIFIER),
                 )]);
                 // The spec has a category for new mail but none for event reminders.
                 if matches!(delivery.target, NotifyTarget::Thread(_)) {
-                    hints.insert("category", zbus::zvariant::Value::from("email.arrived"));
+                    hints.insert("category", zbus::Variant::from("email.arrived"));
                 }
                 let result: zbus::Result<u32> = proxy
                     .call(
@@ -278,7 +279,6 @@ mod protocol_tests {
     async fn tray_requires_registered_host_not_just_a_watcher() {
         let (_bus, address) = private_bus();
         let client = zbus::connection::Builder::address(address.as_str())
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -288,11 +288,8 @@ mod protocol_tests {
         );
         let registered = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let server = zbus::connection::Builder::address(address.as_str())
-            .unwrap()
             .name("org.kde.StatusNotifierWatcher")
-            .unwrap()
             .serve_at("/StatusNotifierWatcher", FakeWatcher(registered.clone()))
-            .unwrap()
             .build()
             .await
             .unwrap();
@@ -336,7 +333,7 @@ mod protocol_tests {
             title: &str,
             body: &str,
             actions: Vec<String>,
-            _hints: HashMap<String, zbus::zvariant::OwnedValue>,
+            _hints: HashMap<String, zbus::OwnedVariant>,
             _expire: i32,
         ) -> u32 {
             let _ = self.calls.send((title.into(), body.into(), actions));
@@ -362,9 +359,7 @@ mod protocol_tests {
         let (_bus, address) = private_bus();
         let (calls_tx, mut calls) = mpsc::unbounded_channel();
         let server = zbus::connection::Builder::address(address.as_str())
-            .unwrap()
             .name("org.freedesktop.Notifications")
-            .unwrap()
             .serve_at(
                 "/org/freedesktop/Notifications",
                 FakeDesktop {
@@ -372,7 +367,6 @@ mod protocol_tests {
                     calls: calls_tx,
                 },
             )
-            .unwrap()
             .build()
             .await
             .unwrap();
