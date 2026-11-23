@@ -787,3 +787,48 @@ test("saving before quit waits for a send on its way to the outbox, and saves it
   expect(await saving).toBe(true);
   expect(called("save_draft")).toHaveLength(1);
 });
+
+test("a save waits for pasted images to be staged; one that fails comes out of the text", async () => {
+  vi.stubGlobal(
+    "URL",
+    Object.assign(URL, { createObjectURL: () => "blob:x", revokeObjectURL: () => {} }),
+  );
+  const finish: Array<(ok: boolean) => void> = [];
+  handlers.stage_pasted_attachment = (args) =>
+    new Promise((resolve, reject) =>
+      finish.push((ok) =>
+        ok
+          ? resolve({
+              id: `s${finish.length}`,
+              filename: "image.png",
+              mimeType: "image/png",
+              size: 4,
+              contentId: args.contentId,
+            })
+          : reject({ code: "invalid_input", message: "Too big." }),
+      ),
+    );
+  const id = store().compose("a1");
+  const png = new File([new Uint8Array([137, 80, 78, 71])], "image.png", { type: "image/png" });
+  const { contentIds, failed } = store().pasteImages(id, [png, png]);
+  // The editor puts them in the text (here, as it would store it), then the panel is minimized.
+  store().update(id, {
+    bodyHtml: `<p>Hi</p><p>${contentIds.map((c) => `<img src="cid:${c}">`).join("")}</p>`,
+  });
+  store().setMinimized(id, true);
+
+  const saved = store().save(id);
+  await Promise.resolve();
+  expect(called("save_draft")).toEqual([]);
+  await vi.waitFor(() => expect(finish).toHaveLength(2));
+  finish[0](true);
+  finish[1](false);
+  expect(await failed).toEqual([contentIds[1]]);
+  expect(await saved).toBe(true);
+
+  const message = called("save_draft")[0].message as ComposeDraft;
+  expect(message.bodyHtml).toContain(`cid:${contentIds[0]}`);
+  expect(message.bodyHtml).not.toContain(`cid:${contentIds[1]}`);
+  expect(message.attachments.map((a) => a.contentId)).toEqual([contentIds[0]]);
+  vi.unstubAllGlobals();
+});

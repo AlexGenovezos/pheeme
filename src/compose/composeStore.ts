@@ -20,7 +20,13 @@ import {
 } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useComposeSettings } from "./composeSettings";
-import { outgoingDraft } from "./inlineImages";
+import {
+  newContentId,
+  outgoingDraft,
+  stagedImage,
+  stagingImage,
+  withoutImages,
+} from "./inlineImages";
 import { isValidAddress } from "./recipients";
 import {
   checkFailedSends,
@@ -163,10 +169,11 @@ interface ComposeState {
   /** Attach files: paths the user picked or dropped, or files from a paste. */
   attachFiles(id: number, sources: AttachSource[]): Promise<void>;
   /**
-   * Stage images pasted into the text, each with the Content-ID (`contentIds`, in order) the text already shows it
-   * through. Resolves to the ones staged; nothing when the panel closed or is sending meanwhile.
+   * Images pasted into the text: names each with a Content-ID for the editor to put in at once (`contentIds`, in
+   * order) and stages their files. A file that can't be staged takes its image back out of the stored text, and
+   * `failed` resolves to those ids for the editor to do the same. A save waits for the staging.
    */
-  pasteImages(id: number, files: File[], contentIds: string[]): Promise<StagedAttachment[]>;
+  pasteImages(id: number, files: File[]): { contentIds: string[]; failed: Promise<string[]> };
   removeAttachment(id: number, attachmentId: string): void;
   /** Save to Gmail Drafts now (autosave passes `quiet`, which keeps failures off the toasts). */
   save(id: number, opts?: { quiet?: boolean }): Promise<boolean>;
@@ -206,6 +213,8 @@ interface ComposeState {
 
 let nextId = 1;
 let focusSeq = 0;
+/** Each window's pasted images being staged: a save waits, so it never keeps a `cid:` without its image. */
+const pastes = new Map<number, Promise<unknown>>();
 /** Each window's save in flight, so a send or a second save waits for it. */
 const saves = new Map<number, Promise<boolean>>();
 /** Sends being handed to the outbox, by panel: quitting waits for them. */
@@ -468,8 +477,33 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       await addStaged(id, sources);
     },
 
-    pasteImages(id, files, contentIds) {
-      return addStaged(id, files, contentIds);
+    pasteImages(id, files) {
+      const contentIds = files.map((file) => {
+        const contentId = newContentId();
+        stagingImage(contentId, file);
+        return contentId;
+      });
+      const failed = addStaged(id, files, contentIds).then((staged) => {
+        const kept = new Map(staged.map((a) => [a.contentId, a]));
+        for (const contentId of contentIds) stagedImage(contentId, kept.get(contentId) ?? null);
+        const lost = contentIds.filter((contentId) => !kept.has(contentId));
+        if (lost.length > 0)
+          set((s) => ({
+            windows: s.windows.map((w) =>
+              w.id === id
+                ? { ...w, draft: { ...w.draft, bodyHtml: withoutImages(w.draft.bodyHtml, lost) } }
+                : w,
+            ),
+          }));
+        return lost;
+      });
+      const before = pastes.get(id);
+      const all = Promise.all([before, failed]);
+      pastes.set(id, all);
+      void all.finally(() => {
+        if (pastes.get(id) === all) pastes.delete(id);
+      });
+      return { contentIds, failed };
     },
 
     removeAttachment(id, attachmentId) {
@@ -487,6 +521,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
 
     save(id, opts) {
       const run = async (): Promise<boolean> => {
+        await pastes.get(id);
         const win = find(id);
         // A queued send owns the message (and its draft id) now.
         if (!win || win.loading || win.sending) return false;
@@ -714,6 +749,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
 export function __resetComposeStoreForTests() {
   __resetSendingForTests();
   saves.clear();
+  pastes.clear();
   savedDrafts.clear();
   savedMessages.clear();
   draftMessages.clear();

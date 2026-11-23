@@ -80,6 +80,8 @@ export function removeImages(editor: TipTap, contentIds: string[]) {
         found.push({ from: pos, to: pos + node.nodeSize });
     });
     for (const { from, to } of found.reverse()) tr.delete(from, to);
+    // Not an edit to undo: undoing it would bring back an image that has no file.
+    tr.setMeta("addToHistory", false);
     return found.length > 0;
   });
 }

@@ -1,7 +1,15 @@
 import { expect, test, vi } from "vitest";
 import type { StagedAttachment } from "../lib/tauri";
 import { emptyDraft, isBlank } from "./composeStore";
-import { inlineImageUrl, isPastedImage, outgoingDraft, rememberImage } from "./inlineImages";
+import {
+  forgetImages,
+  inlineImageUrl,
+  isPastedImage,
+  outgoingDraft,
+  stagedImage,
+  stagingImage,
+  withoutImages,
+} from "./inlineImages";
 
 const att = (id: string, contentId: string | null): StagedAttachment => ({
   id,
@@ -53,14 +61,44 @@ test("a message that is only a pasted image isn't blank", () => {
   ).toBe(true);
 });
 
-test("an image shows only in the panel that has its file, or that is still staging it", async () => {
-  vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:shot" }));
-  rememberImage("x1@pheeme.app", new Blob(["png"]));
-  // Copied into another panel, which has no file to send with it.
-  expect(await inlineImageUrl("x1@pheeme.app", [], false)).toBeNull();
-  expect(await inlineImageUrl("x1@pheeme.app", [], true)).toBe("blob:shot");
-  expect(await inlineImageUrl("x1@pheeme.app", [att("x1", "x1@pheeme.app")], false)).toBe(
-    "blob:shot",
+test("a pasted image shows from its bytes while staged, then only in the panel that has its file", async () => {
+  let n = 0;
+  const revoked: string[] = [];
+  vi.stubGlobal(
+    "URL",
+    Object.assign(URL, {
+      createObjectURL: () => `blob:${++n}`,
+      revokeObjectURL: (u: string) => revoked.push(u),
+    }),
   );
+  stagingImage("x1@pheeme.app", new Blob(["png"]));
+  expect(await inlineImageUrl("x1@pheeme.app", [])).toBe("blob:1");
+  const mine = att("s1", "x1@pheeme.app");
+  stagedImage("x1@pheeme.app", mine);
+  expect(await inlineImageUrl("x1@pheeme.app", [mine])).toBe("blob:1");
+  // Copied into another panel, which has no file to send with it.
+  expect(await inlineImageUrl("x1@pheeme.app", [])).toBeNull();
+  // Another draft's file under the same Content-ID keeps its own image when this one closes.
+  const theirs = att("s2", "x1@pheeme.app");
+  stagedImage("x1@pheeme.app", null);
+  forgetImages([theirs]);
+  forgetImages([mine]);
+  await Promise.resolve();
+  expect(revoked).toEqual(["blob:1"]);
+
+  // Staging failed: its bytes go.
+  stagingImage("x2@pheeme.app", new Blob(["png"]));
+  stagedImage("x2@pheeme.app", null);
+  expect(revoked).toEqual(["blob:1", "blob:2"]);
+  expect(await inlineImageUrl("x2@pheeme.app", [])).toBeNull();
   vi.unstubAllGlobals();
+});
+
+test("withoutImages takes out only the named images", () => {
+  expect(
+    withoutImages(
+      '<p>a<img src="cid:A1@pheeme.app" alt="x" style="max-width:100%">b<img src="cid:b2@pheeme.app"></p>',
+      ["a1@pheeme.app"],
+    ),
+  ).toBe('<p>ab<img src="cid:b2@pheeme.app"></p>');
 });

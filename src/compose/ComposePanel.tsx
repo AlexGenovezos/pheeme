@@ -30,14 +30,7 @@ import {
   replaceSignature,
   useComposeEditor,
 } from "./Editor";
-import {
-  cidSrc,
-  inlineImageUrl,
-  isInlineImageFile,
-  isPastedImage,
-  newContentId,
-  rememberImage,
-} from "./inlineImages";
+import { cidSrc, inlineImageUrl, isInlineImageFile, isPastedImage } from "./inlineImages";
 import { pastedFiles } from "./paste";
 import { RecipientField } from "./RecipientField";
 import { asFrom, sameAddress, useSendAs } from "./sendAs";
@@ -216,8 +209,6 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   const [editorFocus, setEditorFocus] = useState(0);
   const { draft } = win;
   const editorRef = useRef<ReturnType<typeof useComposeEditor>>(null);
-  /** Images pasted into this panel's text whose files are still being staged. */
-  const staging = useRef(new Set<string>());
   // Images pasted into the text go in where the cursor is, at once, shown from the bytes in hand while their files
   // are staged; other pasted files are attached.
   const files = useMemo<EditorFiles>(
@@ -228,35 +219,26 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
         if (others.length > 0) void compose.attachFiles(win.id, others);
         const images = pasted.filter(isInlineImageFile);
         if (images.length === 0) return;
-        const ids = images.map((file) => {
-          const id = newContentId();
-          rememberImage(id, file);
-          staging.current.add(id);
-          return id;
-        });
+        const { contentIds, failed } = compose.pasteImages(win.id, images);
         editorRef.current
           ?.chain()
           .insertContent(
             images.map((file, i) => ({
               type: "inlineImage",
-              attrs: { src: cidSrc(ids[i]), alt: file.name || "image" },
+              attrs: { src: cidSrc(contentIds[i]), alt: file.name || "image" },
             })),
           )
           .run();
-        void compose.pasteImages(win.id, images, ids).then((staged) => {
-          for (const id of ids) staging.current.delete(id);
-          const kept = new Set(staged.map((a) => a.contentId));
-          const failed = ids.filter((id) => !kept.has(id));
-          // The store said why; the images it couldn't keep come out of the text.
+        void failed.then((lost) => {
+          // The store said why and took them out of the stored text; the open editor drops them too.
           const editor = editorRef.current;
-          if (failed.length > 0 && editor && !editor.isDestroyed) removeImages(editor, failed);
+          if (lost.length > 0 && editor && !editor.isDestroyed) removeImages(editor, lost);
         });
       },
       image: (contentId) =>
         inlineImageUrl(
           contentId,
           useComposeStore.getState().windows.find((w) => w.id === win.id)?.draft.attachments ?? [],
-          staging.current.has(contentId),
         ),
     }),
     [win.id],

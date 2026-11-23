@@ -35,45 +35,62 @@ export function outgoingDraft(draft: ComposeDraft): ComposeDraft {
   return kept.length === draft.attachments.length ? draft : { ...draft, attachments: kept };
 }
 
-/** Object URLs for the images shown in editors, by Content-ID. */
-const urls = new Map<string, Promise<string | null>>();
+/** What editors show while a pasted image's file is being staged: its bytes in hand, by Content-ID. */
+const pendingUrls = new Map<string, string>();
+/** What editors show once it is staged, by staged attachment id (two drafts may share a Content-ID). */
+const stagedUrls = new Map<string, Promise<string | null>>();
 
-/** A pasted image's bytes are in hand already; show them without asking Rust. */
-export function rememberImage(contentId: string, blob: Blob) {
-  urls.set(contentId, Promise.resolve(URL.createObjectURL(blob)));
+/** A pasted image is being staged under `contentId`: show it from `blob` meanwhile. */
+export function stagingImage(contentId: string, blob: Blob) {
+  pendingUrls.set(contentId, URL.createObjectURL(blob));
+}
+
+/** Staging ended: the image is now `att`'s, or (`null`) it failed and goes. */
+export function stagedImage(contentId: string, att: StagedAttachment | null) {
+  const url = pendingUrls.get(contentId);
+  pendingUrls.delete(contentId);
+  if (!url) return;
+  if (att) stagedUrls.set(att.id, Promise.resolve(url));
+  else URL.revokeObjectURL(url);
 }
 
 /**
- * Where an editor reads the image `cid:` names, from the panel's `attachments`; `null` when the panel doesn't have
- * it (an image copied from another panel, which wouldn't be sent). `pending`: it was just pasted and is still being
- * staged, so it is shown from its bytes in hand.
+ * Where an editor reads the image `cid:` names: the panel's staged file (from `attachments`), or the pasted bytes
+ * while it is being staged; `null` when there is neither (an image copied from another panel, which wouldn't be sent).
  */
 export function inlineImageUrl(
   contentId: string,
   attachments: StagedAttachment[],
-  pending: boolean,
 ): Promise<string | null> {
   const att = attachments.find((a) => a.contentId === contentId);
-  const known = urls.get(contentId);
-  if (known && (att || pending)) return known;
-  if (!att) return Promise.resolve(null);
+  if (!att) return Promise.resolve(pendingUrls.get(contentId) ?? null);
+  const known = stagedUrls.get(att.id);
+  if (known) return known;
   const url = readStagedAttachment(att.id).then(
     (bytes) => URL.createObjectURL(new Blob([bytes], { type: att.mimeType })),
     () => {
-      urls.delete(contentId);
+      stagedUrls.delete(att.id);
       return null;
     },
   );
-  urls.set(contentId, url);
+  stagedUrls.set(att.id, url);
   return url;
 }
 
 /** The staged files went away (the panel closed): let their images go too. */
 export function forgetImages(attachments: StagedAttachment[]) {
-  for (const { contentId } of attachments) {
-    const url = contentId ? urls.get(contentId) : undefined;
+  for (const { id } of attachments) {
+    const url = stagedUrls.get(id);
     if (!url) continue;
-    urls.delete(contentId!);
+    stagedUrls.delete(id);
     void url.then((u) => u && URL.revokeObjectURL(u));
   }
+}
+
+/** `html` without the images whose `cid:` names one of `contentIds`. */
+export function withoutImages(html: string, contentIds: string[]): string {
+  const ids = new Set(contentIds.map((id) => id.toLowerCase()));
+  return html.replace(/<img\b[^>]*\bsrc="cid:([^"]+)"[^>]*>/gi, (img, id: string) =>
+    ids.has(id.toLowerCase()) ? "" : img,
+  );
 }
