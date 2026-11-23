@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex};
 use crate::lock::lock;
 
 pub const PRINT_SCHEME: &str = "pheeme-print";
+/// Print windows' labels start with this (then the page number).
+pub const WINDOW_PREFIX: &str = "print-";
 /// The scheme's host on Windows, where WebView2 serves custom protocols over `http`.
 const WINDOWS_PRINT_HOST: &str = "pheeme-print.localhost";
 
@@ -115,7 +117,7 @@ pub fn open_window(
     let printed = AtomicBool::new(false);
     let built = tauri::WebviewWindowBuilder::new(
         app,
-        format!("print-{id}"),
+        format!("{WINDOW_PREFIX}{id}"),
         tauri::WebviewUrl::CustomProtocol(url),
     )
     .title(title)

@@ -38,11 +38,20 @@ const when = (ms: number, locale?: string) =>
     minute: "2-digit",
   });
 
-/** The message's text: its sanitized HTML as the reading pane shows it, else its plain text, else its preview. */
+/** What each message body's own styles start from inside its shadow root. */
+const BODY_STYLE =
+  "<style>:host { display: block; } img { max-width: 100%; height: auto; }</style>";
+
+/**
+ * The message's text: its sanitized HTML as the reading pane shows it, else its plain text, else its preview. HTML
+ * goes in a declarative shadow root (no script needed), so the email's own stylesheets apply only inside it; the
+ * host's containment keeps positioned content from leaving the box.
+ */
 function body(m: MessageDetail): string {
-  if (m.bodyHtml) return m.bodyHtml;
+  if (m.bodyHtml)
+    return `<div class="pheeme-print-body"><template shadowrootmode="open">${BODY_STYLE}${m.bodyHtml}</template></div>`;
   const text = m.bodyText ?? m.snippet ?? "";
-  return `<div class="pheeme-print-text">${escape(text)}</div>`;
+  return `<div class="pheeme-print-body"><div class="pheeme-print-text">${escape(text)}</div></div>`;
 }
 
 function message(m: MessageDetail, locale?: string): string {
@@ -53,7 +62,7 @@ function message(m: MessageDetail, locale?: string): string {
     `</div>`,
     m.to.length > 0 ? `<div class="pheeme-print-to">To: ${escape(people(m.to))}</div>` : "",
     m.cc.length > 0 ? `<div class="pheeme-print-to">Cc: ${escape(people(m.cc))}</div>` : "",
-    `<div class="pheeme-print-body">${body(m)}</div>`,
+    body(m),
   ];
   if (files.length > 0) {
     const names = files.map((a) => {
@@ -78,8 +87,7 @@ body { margin: 24px; color: #000; background: #fff; font: 13px/1.5 system-ui, -a
 .pheeme-print-message { border-top: 1px solid #bbb; padding: 12px 0; }
 .pheeme-print-from { display: flex; justify-content: space-between; gap: 16px; }
 .pheeme-print-date, .pheeme-print-to { color: #555; }
-.pheeme-print-body { margin-top: 12px; overflow-wrap: break-word; }
-.pheeme-print-body img { max-width: 100%; height: auto; }
+.pheeme-print-body { margin-top: 12px; overflow-wrap: break-word; position: relative; contain: layout paint; }
 .pheeme-print-text { white-space: pre-wrap; }
 .pheeme-print-files { margin-top: 12px; border-top: 1px dashed #bbb; padding-top: 6px; color: #555; }
 .pheeme-print-files ul { margin: 4px 0 0; padding-left: 20px; }
@@ -125,13 +133,19 @@ export async function printConversation() {
     toast({ title: "Open a conversation to print it." });
     return;
   }
-  const threads = useThreadStore.getState();
-  if (!threads.details.has(key)) await threads.load(key);
+  // Fetches what isn't cached, including bodies a cached conversation is still missing.
+  await useThreadStore.getState().load(key);
   const detail = useThreadStore.getState().details.get(key);
   if (!detail || detail.messages.length === 0) {
     toast({ title: "That conversation couldn't be loaded to print.", tone: "danger" });
     return;
   }
+  if (detail.messages.some((m) => !m.bodyAvailable))
+    toast({
+      title: "Some messages print as previews",
+      description:
+        detail.bodyError?.message ?? "Their full text isn't downloaded. Try again when online.",
+    });
   const accountId = parseThreadKey(key)?.accountId;
   const account =
     useAccountStore.getState().accounts.find((a) => a.id === accountId)?.email ?? null;

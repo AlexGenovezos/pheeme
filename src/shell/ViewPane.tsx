@@ -155,7 +155,7 @@ export function ViewPane() {
           id: "print",
           label: "Print",
           shortcut: registry.shortcutFor(PRINT_COMMAND),
-          disabled: stale,
+          disabled: !openKey,
           onSelect: () => void printConversation(),
         },
         { id: "original", label: "Show original", onSelect: () => notYet("Show original") },

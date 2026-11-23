@@ -93,8 +93,10 @@ test("the page has the subject, then each message with its people, date, text an
   expect(html).toContain("<b>Jonas Weber</b> &lt;jonas@example.net&gt;");
   expect(html).toContain("Mon, Nov 23, 2026");
   expect(html).toContain("To: Avery &lt;avery@example.com&gt;");
-  // The sanitized body goes in as the reading pane has it.
-  expect(html).toContain("<p>Lunch <b>Thursday</b>?</p>");
+  // The sanitized body goes in as the reading pane has it, in a shadow root of its own so its styles stay in it.
+  expect(html).toMatch(
+    /<div class="pheeme-print-body"><template shadowrootmode="open"><style>[^<]*<\/style><p>Lunch <b>Thursday<\/b>\?<\/p><\/template><\/div>/,
+  );
   expect(html).toContain("<b>avery@example.com</b>");
   expect(html).toContain("Cc: Mira &lt;mira@example.net&gt;");
   expect(html).toContain('<div class="pheeme-print-text">Yes!\n12:30 works.</div>');

@@ -6,9 +6,10 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 /// Open a print window on `html` (a whole page) titled `title`, with the print dialog over it.
-/// `allow_remote`: load remote images (held back for Spam, as in the reading pane).
+/// `allow_remote`: load remote images (held back for Spam, as in the reading pane). Async: a
+/// synchronous command that builds a window can deadlock WebView2.
 #[tauri::command]
-pub fn print_email(
+pub async fn print_email(
     app: AppHandle,
     pages: State<'_, Arc<PrintPages>>,
     title: String,

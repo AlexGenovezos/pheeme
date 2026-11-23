@@ -473,6 +473,11 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // A print window just closes (`print.rs`): hiding to the tray, quitting and the
+            // rest below are the main window's.
+            if window.label().starts_with(print::WINDOW_PREFIX) {
+                return;
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 #[cfg(target_os = "linux")]
                 {
