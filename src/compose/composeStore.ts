@@ -20,7 +20,7 @@ import {
 } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useComposeSettings } from "./composeSettings";
-import { outgoingDraft, rememberImage } from "./inlineImages";
+import { outgoingDraft } from "./inlineImages";
 import { isValidAddress } from "./recipients";
 import {
   checkFailedSends,
@@ -68,7 +68,7 @@ export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 /** A path the user picked or dropped, or a file the window holds (pasted from the clipboard). */
 export type AttachSource = string | File;
 
-async function stage(source: AttachSource, inline = false) {
+async function stage(source: AttachSource, contentId: string | null = null) {
   if (typeof source === "string") return stageAttachment(source);
   if (source.size > MAX_ATTACHMENT_BYTES) {
     throw { code: "invalid_input", message: "Attachments can add up to 25 MB at most." };
@@ -78,9 +78,8 @@ async function stage(source: AttachSource, inline = false) {
     source.name || `image.${ext}`,
     source.type,
     await base64Of(source),
-    inline,
+    contentId,
   );
-  if (inline) rememberImage(staged, source);
   return staged;
 }
 /** Panels side by side before the oldest has to be closed. */
@@ -116,7 +115,7 @@ export function isBlank(d: ComposeDraft): boolean {
     !d.subject.trim() &&
     !bodyText(body) &&
     !/<img\b/i.test(body) &&
-    d.attachments.length === 0
+    outgoingDraft(d).attachments.length === 0
   );
 }
 
@@ -164,10 +163,10 @@ interface ComposeState {
   /** Attach files: paths the user picked or dropped, or files from a paste. */
   attachFiles(id: number, sources: AttachSource[]): Promise<void>;
   /**
-   * Stage images pasted into the text, with the Content-IDs the text shows them through. Resolves to the ones
-   * staged, for the editor to put in place; nothing when the panel closed or is sending meanwhile.
+   * Stage images pasted into the text, each with the Content-ID (`contentIds`, in order) the text already shows it
+   * through. Resolves to the ones staged; nothing when the panel closed or is sending meanwhile.
    */
-  pasteImages(id: number, files: File[]): Promise<StagedAttachment[]>;
+  pasteImages(id: number, files: File[], contentIds: string[]): Promise<StagedAttachment[]>;
   removeAttachment(id: number, attachmentId: string): void;
   /** Save to Gmail Drafts now (autosave passes `quiet`, which keeps failures off the toasts). */
   save(id: number, opts?: { quiet?: boolean }): Promise<boolean>;
@@ -243,11 +242,11 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       ),
     }));
 
-  /** Stage files into a panel's attachments (`inline`: images pasted into the text). */
+  /** Stage files into a panel's attachments (with `contentIds`: images pasted into the text). */
   const addStaged = async (
     id: number,
     sources: AttachSource[],
-    inline: boolean,
+    contentIds: string[] = [],
   ): Promise<StagedAttachment[]> => {
     if (sources.length === 0 || find(id)?.sending) return [];
     set((s) => ({
@@ -255,7 +254,9 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         w.id === id ? { ...w, attaching: w.attaching + sources.length } : w,
       ),
     }));
-    const results = await Promise.allSettled(sources.map((source) => stage(source, inline)));
+    const results = await Promise.allSettled(
+      sources.map((source, i) => stage(source, contentIds[i] ?? null)),
+    );
     const staged = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
     const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
     if (!find(id)) {
@@ -464,11 +465,11 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     },
 
     async attachFiles(id, sources) {
-      await addStaged(id, sources, false);
+      await addStaged(id, sources);
     },
 
-    pasteImages(id, files) {
-      return addStaged(id, files, true);
+    pasteImages(id, files, contentIds) {
+      return addStaged(id, files, contentIds);
     },
 
     removeAttachment(id, attachmentId) {

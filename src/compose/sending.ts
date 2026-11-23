@@ -43,7 +43,7 @@ const checkedAccounts = new Set<string>();
 export const dropStaged = (attachments: StagedAttachment[]) => {
   if (attachments.length === 0) return;
   const ids = attachments.map((a) => a.id);
-  forgetImages(ids);
+  forgetImages(attachments);
   void discardAttachments(ids).catch(() => {});
 };
 

@@ -197,7 +197,7 @@ export function createComposeHandlers(
         filename: String(args.filename),
         mimeType: String(args.mimeType),
         size: Math.floor((String(args.data).length * 3) / 4),
-        contentId: args.inline ? `${id}@pheeme.app` : null,
+        contentId: (args.contentId as string | null | undefined) ?? null,
       };
     },
     read_staged_attachment: (args): ArrayBuffer => {

@@ -18,6 +18,14 @@ fn io(e: std::io::Error) -> MailError {
     MailError::from(anyhow::Error::new(e))
 }
 
+/// A Content-ID the compose window made for an image pasted into the text: up to 64 letters
+/// and digits at `pheeme.app`. Nothing else goes into the header, so it can't break it.
+pub fn is_pasted_content_id(id: &str) -> bool {
+    id.strip_suffix("@pheeme.app").is_some_and(|local| {
+        (1..=64).contains(&local.len()) && local.bytes().all(|b| b.is_ascii_alphanumeric())
+    })
+}
+
 impl Staging {
     pub fn new(cache_dir: &Path, key: StorageKey) -> Self {
         let files = EncryptedFiles::compose(cache_dir, key);
@@ -85,15 +93,18 @@ impl Staging {
 
     /// Stage a file the window holds as bytes, not a path (an image pasted from the clipboard).
     /// The type comes from the window when it's a valid MIME type, else from the name. An
-    /// `inline` image (pasted into the message's text) gets a fresh Content-ID, which the
-    /// body shows it through (`cid:`).
+    /// image pasted into the message's text comes with the Content-ID its `cid:` URL names
+    /// there (see [`is_pasted_content_id`]).
     pub async fn stage_pasted(
         &self,
         name: &str,
         mime_type: &str,
         bytes: &[u8],
-        inline: bool,
+        content_id: Option<&str>,
     ) -> Result<StagedAttachment, MailError> {
+        if content_id.is_some_and(|id| !is_pasted_content_id(id)) {
+            return Err(MailError::Invalid("That image couldn't be added.".into()));
+        }
         if bytes.len() as u64 > MAX_ATTACHMENT_BYTES {
             return Err(MailError::Invalid(
                 "Attachments can add up to 25 MB at most.".into(),
@@ -106,8 +117,8 @@ impl Staging {
                 .essence_str()
                 .to_owned(),
         };
-        let content_id = inline.then(|| format!("{}@pheeme.app", uuid::Uuid::new_v4().simple()));
-        self.stage_bytes(name, &mime, content_id, bytes).await
+        self.stage_bytes(name, &mime, content_id.map(str::to_owned), bytes)
+            .await
     }
 
     pub async fn stage_bytes(
@@ -212,7 +223,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let staging = Staging::new(dir.path(), crate::storage::test_key());
         let att = staging
-            .stage_pasted("image.png", "image/png", b"\x89PNG", false)
+            .stage_pasted("image.png", "image/png", b"\x89PNG", None)
             .await
             .unwrap();
         assert_eq!(att.content_id, None);
@@ -223,7 +234,7 @@ mod tests {
         assert_eq!(staging.read(&att).await.unwrap(), b"\x89PNG");
 
         let guessed = staging
-            .stage_pasted("shot.jpg", "not a type\r\nX: y", b"j", false)
+            .stage_pasted("shot.jpg", "not a type\r\nX: y", b"j", None)
             .await
             .unwrap();
         assert_eq!(guessed.mime_type, "image/jpeg");
@@ -231,35 +242,48 @@ mod tests {
         let big = vec![0u8; MAX_ATTACHMENT_BYTES as usize + 1];
         assert!(matches!(
             staging
-                .stage_pasted("big.png", "image/png", &big, false)
+                .stage_pasted("big.png", "image/png", &big, None)
                 .await,
             Err(MailError::Invalid(_))
         ));
     }
 
     #[tokio::test]
-    async fn inline_pastes_get_a_fresh_content_id_and_read_back_by_id() {
+    async fn inline_pastes_keep_a_valid_content_id_and_read_back_by_id() {
         let dir = tempfile::tempdir().unwrap();
         let staging = Staging::new(dir.path(), crate::storage::test_key());
-        let a = staging
-            .stage_pasted("image.png", "image/png", b"\x89PNG", true)
+        let att = staging
+            .stage_pasted(
+                "image.png",
+                "image/png",
+                b"\x89PNG",
+                Some("abc123@pheeme.app"),
+            )
             .await
             .unwrap();
-        let b = staging
-            .stage_pasted("image.png", "image/png", b"\x89PNG", true)
-            .await
-            .unwrap();
-        let cid = a.content_id.clone().unwrap();
-        assert!(cid.ends_with("@pheeme.app"), "{cid}");
-        assert!(cid
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || c == b'@' || c == b'.'));
-        assert_ne!(a.content_id, b.content_id);
-        assert_eq!(staging.read_id(&a.id).await.unwrap(), b"\x89PNG");
+        assert_eq!(att.content_id.as_deref(), Some("abc123@pheeme.app"));
+        assert_eq!(staging.read_id(&att.id).await.unwrap(), b"\x89PNG");
         assert!(matches!(
             staging.read_id("../../etc/passwd").await,
             Err(MailError::NotFound)
         ));
+        for bad in [
+            "abc@evil.example",
+            "@pheeme.app",
+            "a b@pheeme.app",
+            "a>\r\nBcc: x@pheeme.app",
+            &format!("{}@pheeme.app", "a".repeat(65)),
+        ] {
+            assert!(
+                matches!(
+                    staging
+                        .stage_pasted("i.png", "image/png", b"x", Some(bad))
+                        .await,
+                    Err(MailError::Invalid(_))
+                ),
+                "{bad:?}"
+            );
+        }
     }
 
     #[tokio::test]

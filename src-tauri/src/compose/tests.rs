@@ -321,7 +321,12 @@ async fn a_pasted_image_reopens_in_place_in_the_drafts_text() {
     let h = harness().await;
     let image = h
         .compose
-        .stage_pasted("image.png", "image/png", b"\x89PNG", true)
+        .stage_pasted(
+            "image.png",
+            "image/png",
+            b"\x89PNG",
+            Some("shot1@pheeme.app"),
+        )
         .await
         .unwrap();
     let cid = image.content_id.clone().unwrap();

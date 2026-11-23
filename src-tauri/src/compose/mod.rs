@@ -472,10 +472,10 @@ impl ComposeService {
         name: &str,
         mime_type: &str,
         bytes: &[u8],
-        inline: bool,
+        content_id: Option<&str>,
     ) -> Result<StagedAttachment, MailError> {
         self.staging
-            .stage_pasted(name, mime_type, bytes, inline)
+            .stage_pasted(name, mime_type, bytes, content_id)
             .await
     }
 

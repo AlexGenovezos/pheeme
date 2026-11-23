@@ -70,6 +70,20 @@ export function useComposeEditor(
   });
 }
 
+/** Take the images whose `cid:` names one of `contentIds` out of the text (their files couldn't be staged). */
+export function removeImages(editor: TipTap, contentIds: string[]) {
+  const srcs = new Set(contentIds.map((id) => `cid:${id}`));
+  editor.commands.command(({ tr, state }) => {
+    const found: Array<{ from: number; to: number }> = [];
+    state.doc.descendants((node, pos) => {
+      if (node.type.name === "inlineImage" && srcs.has(String(node.attrs.src)))
+        found.push({ from: pos, to: pos + node.nodeSize });
+    });
+    for (const { from, to } of found.reverse()) tr.delete(from, to);
+    return found.length > 0;
+  });
+}
+
 /** Put `html` in place of the body's signature (or after the body when it has none); `null` removes it. */
 export function replaceSignature(editor: TipTap, html: string | null) {
   editor.commands.command(({ tr, state }) => {

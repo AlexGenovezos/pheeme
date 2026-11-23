@@ -85,15 +85,15 @@ export interface SendAsAddress {
 export const sendAsAddresses = (accountId: string) => call("send_as_addresses", { accountId });
 export const stageAttachment = (path: string) => call("stage_attachment", { path });
 /**
- * Attach bytes the window holds (base64), such as an image pasted from the clipboard. `inline`: an image pasted
- * into the text, which comes back with a `contentId` for the body to show it through (`cid:`).
+ * Attach bytes the window holds (base64), such as an image pasted from the clipboard. `contentId`: an image pasted
+ * into the text, which shows it through that `cid:` (`<letters and digits>@pheeme.app`).
  */
 export const stagePastedAttachment = (
   filename: string,
   mimeType: string,
   data: string,
-  inline = false,
-) => call("stage_pasted_attachment", { filename, mimeType, data, inline });
+  contentId: string | null = null,
+) => call("stage_pasted_attachment", { filename, mimeType, data, contentId });
 /** A staged file's bytes (to show an image in the message's text). */
 export const readStagedAttachment = (id: string) => call("read_staged_attachment", { id });
 /** Call when a compose panel closes (sent, saved or discarded). */

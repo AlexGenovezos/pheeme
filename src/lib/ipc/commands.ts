@@ -172,7 +172,7 @@ export interface Commands {
   send_as_addresses: Command<Account, SendAsAddress[]>;
   stage_attachment: Command<{ path: string }, StagedAttachment>;
   stage_pasted_attachment: Command<
-    { filename: string; mimeType: string; data: string; inline?: boolean },
+    { filename: string; mimeType: string; data: string; contentId?: string | null },
     StagedAttachment
   >;
   read_staged_attachment: Command<{ id: string }, ArrayBuffer>;

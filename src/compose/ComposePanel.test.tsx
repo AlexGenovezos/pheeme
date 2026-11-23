@@ -523,21 +523,19 @@ test("a failed autosave shows Not saved in the footer, in the place Draft saved 
   expect(status).toHaveTextContent("Draft saved");
 });
 
-test("a screenshot pasted into the message goes in the text; other pasted files are attached", async () => {
+test("a screenshot pasted into the message goes in the text at once; other pasted files are attached", async () => {
   vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:shot" }));
-  let staged = 0;
+  let finishImage: (() => void) | null = null;
   mockIPC((cmd, args) => {
     calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
     if (cmd === "stage_pasted_attachment") {
-      const a = args as { filename: string; mimeType: string; inline?: boolean };
-      staged += 1;
-      return {
-        id: `s${staged}`,
-        filename: a.filename,
-        mimeType: a.mimeType,
-        size: 4,
-        contentId: a.inline ? `c${staged}@pheeme.app` : null,
-      };
+      const a = args as { filename: string; mimeType: string; contentId?: string | null };
+      const staged = { id: `s-${a.filename}`, filename: a.filename, mimeType: a.mimeType, size: 4 };
+      if (!a.contentId) return { ...staged, contentId: null };
+      // The image's file is still being staged while the test looks at the text.
+      return new Promise((resolve) => {
+        finishImage = () => resolve({ ...staged, contentId: a.contentId });
+      });
     }
     return undefined;
   });
@@ -551,20 +549,26 @@ test("a screenshot pasted into the message goes in the text; other pasted files 
     clipboardData: { files: [png, pdf], types: ["Files"], getData: () => "" },
   });
 
+  // In the text before its file is staged, where the cursor was, shown from the pasted bytes.
+  const win = () => useComposeStore.getState().windows[0];
+  const cid = /src="cid:([0-9a-f]{32}@pheeme\.app)"/.exec(win().draft.bodyHtml)?.[1];
+  expect(cid).toBeTruthy();
   const image = await waitFor(() => {
     const img = body.querySelector("img.compose-image");
-    expect(img).not.toBeNull();
-    return img as HTMLImageElement;
+    expect(img?.getAttribute("src")).toBe("blob:shot");
+    return img;
   });
-  expect(image.getAttribute("src")).toBe("blob:shot");
-  const win = () => useComposeStore.getState().windows[0];
-  expect(win().draft.bodyHtml).toContain('src="cid:c2@pheeme.app"');
+  expect(image).not.toBeNull();
+  await waitFor(() => expect(finishImage).not.toBeNull());
+  await act(async () => finishImage!());
+  await waitFor(() => expect(win().attaching).toBe(0));
+  expect(win().draft.attachments.map((a) => a.contentId)).toEqual([null, cid]);
   // Only the PDF is listed as a file; the image is in the text.
   expect(await within(panel).findByText("notes.pdf")).toBeTruthy();
   expect(within(panel).queryByText("image.png")).toBeNull();
   expect(calls.filter((c) => c.cmd === "stage_pasted_attachment").map((c) => c.args)).toEqual([
-    { filename: "notes.pdf", mimeType: "application/pdf", data: "JVBERg==", inline: false },
-    { filename: "image.png", mimeType: "image/png", data: "iVBORw==", inline: true },
+    { filename: "notes.pdf", mimeType: "application/pdf", data: "JVBERg==", contentId: null },
+    { filename: "image.png", mimeType: "image/png", data: "iVBORw==", contentId: cid },
   ]);
 
   // Pasted into the subject, a screenshot is still attached as a file.
@@ -583,5 +587,24 @@ test("a screenshot pasted into the message goes in the text; other pasted files 
   expect(await within(panel).findByText(/Q3 numbers/)).toBeTruthy();
   expect(win().attaching).toBe(0);
   expect(calls.filter((c) => c.cmd === "stage_pasted_attachment")).toHaveLength(3);
+  vi.unstubAllGlobals();
+});
+
+test("a pasted image whose file couldn't be staged comes back out of the text", async () => {
+  vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:shot" }));
+  mockIPC((cmd) => {
+    if (cmd === "stage_pasted_attachment")
+      throw { code: "invalid_input", message: "Attachments can add up to 25 MB at most." };
+    return undefined;
+  });
+  const panel = await openNew();
+  const body = await within(panel).findByRole("textbox", { name: "Message" });
+  const png = new File([new Uint8Array([137, 80, 78, 71])], "image.png", { type: "image/png" });
+  fireEvent.paste(body, { clipboardData: { files: [png], types: ["Files"], getData: () => "" } });
+  const win = () => useComposeStore.getState().windows[0];
+  expect(win().draft.bodyHtml).toContain("cid:");
+  await waitFor(() => expect(win().draft.bodyHtml).not.toContain("cid:"));
+  expect(body.querySelector("img.compose-image")).toBeNull();
+  expect(win().draft.attachments).toEqual([]);
   vi.unstubAllGlobals();
 });
