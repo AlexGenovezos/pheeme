@@ -11,6 +11,7 @@ afterEach(() => {
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
   useUiStore.setState({ openThread: null });
   useThreadStore.setState({ details: new Map() });
+  useAccountStore.setState({ accounts: [] });
 });
 
 const toastTitles = () => useToastStore.getState().toasts.map((t) => t.title);
