@@ -821,14 +821,23 @@ test("a save waits for pasted images to be staged; one that fails comes out of t
   await Promise.resolve();
   expect(called("save_draft")).toEqual([]);
   await vi.waitFor(() => expect(finish).toHaveLength(2));
+  // Another image pasted while the save waits: it waits for that one too.
+  const third = store().pasteImages(id, [png]);
+  store().update(id, {
+    bodyHtml: `${win(id).draft.bodyHtml}<img src="cid:${third.contentIds[0]}">`,
+  });
   finish[0](true);
   finish[1](false);
   expect(await failed).toEqual([contentIds[1]]);
+  await vi.waitFor(() => expect(finish).toHaveLength(3));
+  expect(called("save_draft")).toEqual([]);
+  finish[2](true);
   expect(await saved).toBe(true);
 
   const message = called("save_draft")[0].message as ComposeDraft;
   expect(message.bodyHtml).toContain(`cid:${contentIds[0]}`);
   expect(message.bodyHtml).not.toContain(`cid:${contentIds[1]}`);
-  expect(message.attachments.map((a) => a.contentId)).toEqual([contentIds[0]]);
+  expect(message.bodyHtml).toContain(`cid:${third.contentIds[0]}`);
+  expect(message.attachments.map((a) => a.contentId)).toEqual([contentIds[0], third.contentIds[0]]);
   vi.unstubAllGlobals();
 });

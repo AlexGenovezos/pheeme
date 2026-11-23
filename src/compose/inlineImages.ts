@@ -21,18 +21,30 @@ export const cidSrc = (contentId: string) => `cid:${contentId}`;
 const shows = (html: string | null | undefined, contentId: string) =>
   !!html && html.toLowerCase().includes(cidSrc(contentId).toLowerCase());
 
+/** The Content-IDs of the pasted images `html` shows. */
+const pastedIn = (html: string) =>
+  [...html.matchAll(/\bsrc="cid:([^"]+)"/gi)]
+    .map((m) => m[1])
+    .filter((id) => id.toLowerCase().endsWith(PASTED_DOMAIN));
+
 /**
- * The message as it goes to Gmail: a pasted image deleted from the text is left out. Its staged file stays
- * until the panel closes, so undoing the delete brings it back.
+ * The message as it goes to Gmail: a pasted image deleted from the text is left out (its staged file stays until
+ * the panel closes, so undoing the delete brings it back), and so is one in the text without a file (it couldn't be
+ * staged; undo or another editor can still hold it).
  */
 export function outgoingDraft(draft: ComposeDraft): ComposeDraft {
+  const owned = new Set(
+    draft.attachments.filter(isPastedImage).map((a) => a.contentId!.toLowerCase()),
+  );
+  const orphans = pastedIn(draft.bodyHtml).filter((id) => !owned.has(id.toLowerCase()));
+  const bodyHtml = orphans.length > 0 ? withoutImages(draft.bodyHtml, orphans) : draft.bodyHtml;
   const kept = draft.attachments.filter(
     (a) =>
-      !isPastedImage(a) ||
-      shows(draft.bodyHtml, a.contentId!) ||
-      shows(draft.quoteHtml, a.contentId!),
+      !isPastedImage(a) || shows(bodyHtml, a.contentId!) || shows(draft.quoteHtml, a.contentId!),
   );
-  return kept.length === draft.attachments.length ? draft : { ...draft, attachments: kept };
+  return kept.length === draft.attachments.length && bodyHtml === draft.bodyHtml
+    ? draft
+    : { ...draft, bodyHtml, attachments: kept };
 }
 
 /** What editors show while a pasted image's file is being staged: its bytes in hand, by Content-ID. */

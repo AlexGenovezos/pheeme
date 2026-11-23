@@ -115,13 +115,14 @@ const bodyText = (html: string) =>
 
 /** Nothing typed or pasted (a signature alone doesn't count), nobody to send to, nothing attached. */
 export function isBlank(d: ComposeDraft): boolean {
-  const body = withoutSignature(d.bodyHtml);
+  const out = outgoingDraft(d);
+  const body = withoutSignature(out.bodyHtml);
   return (
     d.to.length + d.cc.length + d.bcc.length === 0 &&
     !d.subject.trim() &&
     !bodyText(body) &&
     !/<img\b/i.test(body) &&
-    outgoingDraft(d).attachments.length === 0
+    out.attachments.length === 0
   );
 }
 
@@ -521,7 +522,8 @@ export const useComposeStore = create<ComposeState>((set, get) => {
 
     save(id, opts) {
       const run = async (): Promise<boolean> => {
-        await pastes.get(id);
+        // Until none is pending: an image pasted while waiting has to land too.
+        for (let p = pastes.get(id); p; p = pastes.get(id)) await p.catch(() => {});
         const win = find(id);
         // A queued send owns the message (and its draft id) now.
         if (!win || win.loading || win.sending) return false;

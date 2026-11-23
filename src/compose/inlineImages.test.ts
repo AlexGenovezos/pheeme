@@ -40,6 +40,16 @@ test("a pasted image deleted from the text isn't sent; files and the quote's ima
   ]);
   const unchanged = { ...draft, attachments: [att("kept", "kept@pheeme.app")] };
   expect(outgoingDraft(unchanged)).toBe(unchanged);
+
+  // In the text without a file (its staging failed, and undo brought it back): left out of the text too.
+  const orphan = outgoingDraft({
+    ...emptyDraft(),
+    bodyHtml: '<p>Hi<img src="cid:lost@pheeme.app"><img src="cid:logo@sender.example"></p>',
+  });
+  expect(orphan.bodyHtml).toBe('<p>Hi<img src="cid:logo@sender.example"></p>');
+  expect(isBlank({ ...emptyDraft(), bodyHtml: '<p><img src="cid:lost@pheeme.app"></p>' })).toBe(
+    true,
+  );
 });
 
 test("only images this app pasted count as pasted", () => {
@@ -49,7 +59,13 @@ test("only images this app pasted count as pasted", () => {
 });
 
 test("a message that is only a pasted image isn't blank", () => {
-  expect(isBlank({ ...emptyDraft(), bodyHtml: '<p><img src="cid:a@pheeme.app"></p>' })).toBe(false);
+  expect(
+    isBlank({
+      ...emptyDraft(),
+      bodyHtml: '<p><img src="cid:a@pheeme.app"></p>',
+      attachments: [att("a", "a@pheeme.app")],
+    }),
+  ).toBe(false);
   expect(isBlank({ ...emptyDraft(), bodyHtml: "<p></p>" })).toBe(true);
   // Pasted, then deleted from the text: nothing is left to send.
   expect(
