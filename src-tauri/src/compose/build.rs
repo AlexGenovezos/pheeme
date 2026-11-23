@@ -1,7 +1,8 @@
 //! Outgoing RFC 2822 messages, built with `lettre` (builder only; Gmail does the transport).
 //!
-//! Layout: `multipart/alternative` (plain text derived from the HTML, then the HTML) on its
-//! own, or wrapped in `multipart/mixed` with the attachments after it. Bcc stays in the
+//! Layout: `multipart/alternative` (plain text derived from the HTML, then the HTML). Images
+//! the HTML shows through `cid:` sit beside it in `multipart/related` (Gmail's own layout, so
+//! no client lists them as files), and files go after it all in `multipart/mixed`. Bcc stays in the
 //! headers because the Gmail API reads recipients from them (and strips it on delivery).
 
 use super::{ComposeDraft, StagedAttachment, MAX_ATTACHMENT_BYTES};
@@ -200,12 +201,23 @@ pub fn build_message(out: &Outgoing<'_>) -> Result<Vec<u8>, MailError> {
     }
 
     let html = full_html(draft);
-    let body = MultiPart::alternative_plain_html(html_to_text(&html), html);
-    let message = if out.attachments.is_empty() {
+    let mut body = MultiPart::alternative_plain_html(html_to_text(&html), html);
+    let (inline, files): (Vec<_>, Vec<_>) = out
+        .attachments
+        .iter()
+        .partition(|(att, _)| att.content_id.is_some());
+    if !inline.is_empty() {
+        let mut related = MultiPart::related().multipart(body);
+        for (att, bytes) in inline {
+            related = related.singlepart(attachment_part(att, bytes.clone()));
+        }
+        body = related;
+    }
+    let message = if files.is_empty() {
         builder.multipart(body)
     } else {
         let mut mixed = MultiPart::mixed().multipart(body);
-        for (att, bytes) in out.attachments {
+        for (att, bytes) in files {
             mixed = mixed.singlepart(attachment_part(att, bytes.clone()));
         }
         builder.multipart(mixed)
@@ -586,10 +598,16 @@ mod tests {
             h.get_first_value("References").unwrap(),
             "<root@x> <orig@x>"
         );
+        // mixed [ related [ alternative [ text, html ], logo.png ], notes.txt ]
         assert_eq!(mail.ctype.mimetype, "multipart/mixed");
-        let html = mail.subparts[0].subparts[1].get_body().unwrap();
+        assert_eq!(mail.subparts.len(), 2);
+        let related = &mail.subparts[0];
+        assert_eq!(related.ctype.mimetype, "multipart/related");
+        let alternative = &related.subparts[0];
+        assert_eq!(alternative.ctype.mimetype, "multipart/alternative");
+        let html = alternative.subparts[1].get_body().unwrap();
         assert!(html.contains("<p>Sounds good</p><br><blockquote>Original</blockquote>"));
-        let text = mail.subparts[0].subparts[0].get_body().unwrap();
+        let text = alternative.subparts[0].get_body().unwrap();
         assert_eq!(
             text.replace("\r\n", "\n").trim_end(),
             "Sounds good\n\n> Original"
@@ -600,11 +618,61 @@ mod tests {
         let disp = file.get_content_disposition();
         assert_eq!(disp.disposition, mailparse::DispositionType::Attachment);
         assert_eq!(disp.params["filename"], "notes.txt");
-        let inline = &mail.subparts[2];
+        let inline = &related.subparts[1];
+        assert_eq!(
+            inline.get_content_disposition().disposition,
+            mailparse::DispositionType::Inline
+        );
         assert_eq!(inline.get_body_raw().unwrap(), [0x89, 0x50, 0x4e]);
         assert_eq!(
             inline.headers.get_first_value("Content-ID").unwrap(),
             "<logo@x>"
+        );
+    }
+
+    #[test]
+    fn a_pasted_image_alone_goes_beside_the_html_in_related() {
+        let draft = ComposeDraft {
+            to: vec![addr(None, "bo@example.com")],
+            body_html: "<p>Before</p><img src=\"cid:abc@pheeme.app\"><p>After</p>".into(),
+            ..Default::default()
+        };
+        let image = (
+            StagedAttachment {
+                id: "1".into(),
+                filename: "image.png".into(),
+                mime_type: "image/png".into(),
+                size: 3,
+                content_id: Some("abc@pheeme.app".into()),
+            },
+            vec![0x89, 0x50, 0x4e],
+        );
+        let raw = build(&draft, &[image]);
+        let mail = parse(&raw);
+        assert_eq!(mail.ctype.mimetype, "multipart/related");
+        assert_eq!(mail.subparts[0].ctype.mimetype, "multipart/alternative");
+        let html = mail.subparts[0].subparts[1].get_body().unwrap();
+        assert!(html.contains("<img src=\"cid:abc@pheeme.app\">"));
+        use mailparse::MailHeaderMap;
+        assert_eq!(
+            mail.subparts[1]
+                .headers
+                .get_first_value("Content-ID")
+                .unwrap(),
+            "<abc@pheeme.app>"
+        );
+        // Read back the way Gmail's copy is read: an inline image, not a listed file.
+        let parsed = crate::gmail::mime::parse_raw(&crate::gmail::types::Message {
+            id: "m".into(),
+            raw: Some(crate::gmail::mime::encode_base64url(&raw)),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(parsed.attachments.len(), 1);
+        assert!(parsed.attachments[0].is_inline);
+        assert_eq!(
+            parsed.attachments[0].content_id.as_deref(),
+            Some("abc@pheeme.app")
         );
     }
 

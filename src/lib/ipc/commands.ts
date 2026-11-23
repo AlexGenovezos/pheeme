@@ -172,9 +172,10 @@ export interface Commands {
   send_as_addresses: Command<Account, SendAsAddress[]>;
   stage_attachment: Command<{ path: string }, StagedAttachment>;
   stage_pasted_attachment: Command<
-    { filename: string; mimeType: string; data: string },
+    { filename: string; mimeType: string; data: string; contentId?: string | null },
     StagedAttachment
   >;
+  read_staged_attachment: Command<{ id: string }, ArrayBuffer>;
   discard_attachments: Command<{ ids: string[] }, void>;
   save_draft: Command<Account & { message: ComposeDraft }, SavedDraft>;
   open_draft: Command<Account & { messageId: string }, ComposeDraft>;

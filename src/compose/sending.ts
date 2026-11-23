@@ -14,6 +14,7 @@ import {
   SYNC_EVENTS,
 } from "../lib/tauri";
 import type { ComposeWindow } from "./composeStore";
+import { forgetImages } from "./inlineImages";
 
 /** A send waiting to leave or to be confirmed, with what's needed to reopen it. */
 interface PendingSend {
@@ -40,7 +41,10 @@ const checkedAccounts = new Set<string>();
 
 /** Staged files nothing will read again. */
 export const dropStaged = (attachments: StagedAttachment[]) => {
-  if (attachments.length > 0) void discardAttachments(attachments.map((a) => a.id)).catch(() => {});
+  if (attachments.length === 0) return;
+  const ids = attachments.map((a) => a.id);
+  forgetImages(attachments);
+  void discardAttachments(ids).catch(() => {});
 };
 
 /** Track a send that reached the outbox, with the Undo toast for as long as it can still be taken back. */

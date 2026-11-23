@@ -4,25 +4,37 @@ import { Bold, Italic, Link2, List, ListOrdered, Underline } from "lucide-react"
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { cx } from "../lib/utils";
+import { InlineImageNode } from "./InlineImageNode";
 import { pastedFiles } from "./paste";
 import { SignatureNode } from "./SignatureNode";
 
 /** What TipTap gives back for an empty document; stored as "" so a blank message stays blank. */
 const EMPTY = "<p></p>";
 
+/** What the compose panel does for the editor: files pasted into it, and the images its text shows. */
+export interface EditorFiles {
+  /** Files pasted into the text (a screenshot, say). */
+  paste(files: File[]): void;
+  /** Where to read the image a `cid:` URL names. */
+  image(contentId: string): Promise<string | null>;
+}
+
 /**
- * The message body's editor: rich text with bold, italic, underline, lists and links, as HTML. The body
- * (`EditorBody`) and its formatting bar (`EditorToolbar`) render apart, so the bar can sit above the footer.
+ * The message body's editor: rich text with bold, italic, underline, lists, links and pasted images, as HTML. The
+ * body (`EditorBody`) and its formatting bar (`EditorToolbar`) render apart, so the bar can sit above the footer.
  */
 export function useComposeEditor(
   initialHtml: string,
   onChange: (html: string) => void,
   label = "Message",
+  files?: EditorFiles,
 ) {
   const changed = useRef(onChange);
+  const handlers = useRef(files);
   useEffect(() => {
     changed.current = onChange;
-  }, [onChange]);
+    handlers.current = files;
+  }, [onChange, files]);
   return useEditor({
     extensions: [
       StarterKit.configure({
@@ -33,18 +45,44 @@ export function useComposeEditor(
         link: { openOnClick: false, autolink: true, defaultProtocol: "https" },
       }),
       SignatureNode,
+      // `resolve` reads the ref when an image's node view asks, never during render.
+      // oxlint-disable-next-line react/refs
+      InlineImageNode.configure({
+        resolve: (contentId) => handlers.current?.image(contentId) ?? Promise.resolve(null),
+      }),
     ],
     content: initialHtml,
     editorProps: {
       attributes: { class: "compose-editor__content", "aria-label": label },
-      // A paste of only files (a screenshot) is left to bubble to the compose panel, which attaches them;
-      // handled here so ProseMirror doesn't try to read it as text.
-      handlePaste: (_view, event) => pastedFiles(event.clipboardData).length > 0,
+      // A paste of only files (a screenshot) goes to the panel, which puts images in the text and attaches the
+      // rest; handled here so ProseMirror doesn't try to read it as text.
+      handlePaste: (_view, event) => {
+        const pasted = pastedFiles(event.clipboardData);
+        if (pasted.length === 0) return false;
+        handlers.current?.paste(pasted);
+        return true;
+      },
     },
     onUpdate: ({ editor: e }) => {
       const html = e.getHTML();
       changed.current(html === EMPTY ? "" : html);
     },
+  });
+}
+
+/** Take the images whose `cid:` names one of `contentIds` out of the text (their files couldn't be staged). */
+export function removeImages(editor: TipTap, contentIds: string[]) {
+  const srcs = new Set(contentIds.map((id) => `cid:${id}`));
+  editor.commands.command(({ tr, state }) => {
+    const found: Array<{ from: number; to: number }> = [];
+    state.doc.descendants((node, pos) => {
+      if (node.type.name === "inlineImage" && srcs.has(String(node.attrs.src)))
+        found.push({ from: pos, to: pos + node.nodeSize });
+    });
+    for (const { from, to } of found.reverse()) tr.delete(from, to);
+    // Not an edit to undo: undoing it would bring back an image that has no file.
+    tr.setMeta("addToHistory", false);
+    return found.length > 0;
   });
 }
 

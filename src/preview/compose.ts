@@ -38,6 +38,8 @@ export function createComposeHandlers(
   const sends = new Map<string, ReturnType<typeof setTimeout>>();
   const signatureSettings = new Map<string, SignatureSettings>();
   let seq = 0;
+  /** Pasted files' bytes (base64), by staged id. */
+  const pasted = new Map<string, string>();
 
   const me = (accountId: string): EmailAddress => {
     const a = accounts().find((x) => x.id === accountId);
@@ -187,13 +189,22 @@ export function createComposeHandlers(
         contentId: null,
       };
     },
-    stage_pasted_attachment: (args): StagedAttachment => ({
-      id: `staged-${++seq}`,
-      filename: String(args.filename),
-      mimeType: String(args.mimeType),
-      size: Math.floor((String(args.data).length * 3) / 4),
-      contentId: null,
-    }),
+    stage_pasted_attachment: (args): StagedAttachment => {
+      const id = `staged-${++seq}`;
+      pasted.set(id, String(args.data));
+      return {
+        id,
+        filename: String(args.filename),
+        mimeType: String(args.mimeType),
+        size: Math.floor((String(args.data).length * 3) / 4),
+        contentId: (args.contentId as string | null | undefined) ?? null,
+      };
+    },
+    read_staged_attachment: (args): ArrayBuffer => {
+      const data = pasted.get(String(args.id));
+      if (data === undefined) throw { code: "not_found", message: "That file isn't staged." };
+      return Uint8Array.from(atob(data), (c) => c.charCodeAt(0)).buffer;
+    },
     discard_attachments: () => undefined,
     save_draft: (args): SavedDraft => {
       const accountId = String(args.accountId);

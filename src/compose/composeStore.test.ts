@@ -787,3 +787,88 @@ test("saving before quit waits for a send on its way to the outbox, and saves it
   expect(await saving).toBe(true);
   expect(called("save_draft")).toHaveLength(1);
 });
+
+test("a save waits for pasted images to be staged; one that fails comes out of the text", async () => {
+  vi.stubGlobal(
+    "URL",
+    Object.assign(URL, { createObjectURL: () => "blob:x", revokeObjectURL: () => {} }),
+  );
+  const finish: Array<(ok: boolean) => void> = [];
+  handlers.stage_pasted_attachment = (args) =>
+    new Promise((resolve, reject) =>
+      finish.push((ok) =>
+        ok
+          ? resolve({
+              id: `s${finish.length}`,
+              filename: "image.png",
+              mimeType: "image/png",
+              size: 4,
+              contentId: args.contentId,
+            })
+          : reject({ code: "invalid_input", message: "Too big." }),
+      ),
+    );
+  const id = store().compose("a1");
+  const png = new File([new Uint8Array([137, 80, 78, 71])], "image.png", { type: "image/png" });
+  const { contentIds, failed } = store().pasteImages(id, [png, png]);
+  // The editor puts them in the text (here, as it would store it), then the panel is minimized.
+  store().update(id, {
+    bodyHtml: `<p>Hi</p><p>${contentIds.map((c) => `<img src="cid:${c}">`).join("")}</p>`,
+  });
+  store().setMinimized(id, true);
+
+  const saved = store().save(id);
+  await Promise.resolve();
+  expect(called("save_draft")).toEqual([]);
+  await vi.waitFor(() => expect(finish).toHaveLength(2));
+  // Another image pasted while the save waits: it waits for that one too.
+  const third = store().pasteImages(id, [png]);
+  store().update(id, {
+    bodyHtml: `${win(id).draft.bodyHtml}<img src="cid:${third.contentIds[0]}">`,
+  });
+  finish[0](true);
+  finish[1](false);
+  expect(await failed).toEqual([contentIds[1]]);
+  await vi.waitFor(() => expect(finish).toHaveLength(3));
+  expect(called("save_draft")).toEqual([]);
+  finish[2](true);
+  expect(await saved).toBe(true);
+
+  const message = called("save_draft")[0].message as ComposeDraft;
+  expect(message.bodyHtml).toContain(`cid:${contentIds[0]}`);
+  expect(message.bodyHtml).not.toContain(`cid:${contentIds[1]}`);
+  expect(message.bodyHtml).toContain(`cid:${third.contentIds[0]}`);
+  expect(message.attachments.map((a) => a.contentId)).toEqual([contentIds[0], third.contentIds[0]]);
+  vi.unstubAllGlobals();
+});
+
+test("closing a new message whose only content is an image still being staged asks first", async () => {
+  vi.stubGlobal(
+    "URL",
+    Object.assign(URL, { createObjectURL: () => "blob:x", revokeObjectURL: () => {} }),
+  );
+  let finish: (() => void) | null = null;
+  handlers.stage_pasted_attachment = (args) =>
+    new Promise((resolve) => {
+      finish = () =>
+        resolve({
+          id: "s1",
+          filename: "image.png",
+          mimeType: "image/png",
+          size: 4,
+          contentId: args.contentId,
+        });
+    });
+  const id = store().compose("a1");
+  const png = new File([new Uint8Array([137, 80, 78, 71])], "image.png", { type: "image/png" });
+  const { contentIds } = store().pasteImages(id, [png]);
+  store().update(id, { bodyHtml: `<p><img src="cid:${contentIds[0]}"></p>` });
+  store().requestClose(id);
+  expect(win(id).confirmingClose).toBe(true);
+  await vi.waitFor(() => expect(finish).not.toBeNull());
+  finish!();
+  await store().saveAndClose(id);
+  const message = called("save_draft")[0].message as ComposeDraft;
+  expect(message.attachments.map((a) => a.contentId)).toEqual(contentIds);
+  vi.unstubAllGlobals();
+});

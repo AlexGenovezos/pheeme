@@ -317,6 +317,46 @@ async fn draft_round_trip_then_send_replaces_it() {
 }
 
 #[tokio::test]
+async fn a_pasted_image_reopens_in_place_in_the_drafts_text() {
+    let h = harness().await;
+    let image = h
+        .compose
+        .stage_pasted(
+            "image.png",
+            "image/png",
+            b"\x89PNG",
+            Some("shot1@pheeme.app"),
+        )
+        .await
+        .unwrap();
+    let cid = image.content_id.clone().unwrap();
+    let mut d = draft_to("bo@example.com");
+    d.body_html =
+        format!("<p>Before</p><p><img src=\"cid:{cid}\" alt=\"image.png\"></p><p>After</p>");
+    d.attachments = vec![image];
+    let saved = h.compose.save_draft(ACCT, &d).await.unwrap();
+
+    let opened = h.compose.open_draft(ACCT, &saved.message_id).await.unwrap();
+    assert!(
+        opened.body_html.contains(&format!("src=\"cid:{cid}\"")),
+        "{}",
+        opened.body_html
+    );
+    assert_eq!(opened.attachments.len(), 1);
+    assert_eq!(
+        opened.attachments[0].content_id.as_deref(),
+        Some(cid.as_str())
+    );
+    assert_eq!(
+        h.compose
+            .staged_bytes(&opened.attachments[0].id)
+            .await
+            .unwrap(),
+        b"\x89PNG"
+    );
+}
+
+#[tokio::test]
 async fn saving_a_draft_deleted_elsewhere_creates_a_new_one() {
     let h = harness().await;
     let mut d = draft_to("bo@example.com");

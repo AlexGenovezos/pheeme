@@ -7,7 +7,7 @@ export interface StagedAttachment {
   filename: string;
   mimeType: string;
   size: number;
-  /** Set for images the quoted HTML shows via `cid:`; sent inline. */
+  /** Set for images the HTML shows via `cid:` (in the quote, or pasted into the text); sent inline. */
   contentId?: string | null;
 }
 
@@ -84,9 +84,18 @@ export interface SendAsAddress {
 /** The addresses the account can send from, its own first. */
 export const sendAsAddresses = (accountId: string) => call("send_as_addresses", { accountId });
 export const stageAttachment = (path: string) => call("stage_attachment", { path });
-/** Attach bytes the window holds (base64), such as an image pasted from the clipboard. */
-export const stagePastedAttachment = (filename: string, mimeType: string, data: string) =>
-  call("stage_pasted_attachment", { filename, mimeType, data });
+/**
+ * Attach bytes the window holds (base64), such as an image pasted from the clipboard. `contentId`: an image pasted
+ * into the text, which shows it through that `cid:` (`<letters and digits>@pheeme.app`).
+ */
+export const stagePastedAttachment = (
+  filename: string,
+  mimeType: string,
+  data: string,
+  contentId: string | null = null,
+) => call("stage_pasted_attachment", { filename, mimeType, data, contentId });
+/** A staged file's bytes (to show an image in the message's text). */
+export const readStagedAttachment = (id: string) => call("read_staged_attachment", { id });
 /** Call when a compose panel closes (sent, saved or discarded). */
 export const discardAttachments = (ids: string[]) => call("discard_attachments", { ids });
 export const saveDraft = (accountId: string, message: ComposeDraft) =>

@@ -22,7 +22,15 @@ import {
   SEND_LATER_COMMAND,
   useComposeStore,
 } from "./composeStore";
-import { EditorBody, EditorToolbar, replaceSignature, useComposeEditor } from "./Editor";
+import {
+  EditorBody,
+  type EditorFiles,
+  EditorToolbar,
+  removeImages,
+  replaceSignature,
+  useComposeEditor,
+} from "./Editor";
+import { cidSrc, inlineImageUrl, isInlineImageFile, isPastedImage } from "./inlineImages";
 import { pastedFiles } from "./paste";
 import { RecipientField } from "./RecipientField";
 import { asFrom, sameAddress, useSendAs } from "./sendAs";
@@ -114,6 +122,8 @@ export function ComposePanel({ win }: { win: ComposeWindow }) {
       data-owns-keys=""
       onKeyDown={onKeyDown}
       onPaste={(e) => {
+        // The editor took it (an image pasted into the text).
+        if (e.defaultPrevented) return;
         const files = pastedFiles(e.clipboardData);
         if (files.length === 0) return;
         e.preventDefault();
@@ -198,7 +208,50 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   const [driveOpen, setDriveOpen] = useState(false);
   const [editorFocus, setEditorFocus] = useState(0);
   const { draft } = win;
-  const editor = useComposeEditor(draft.bodyHtml, (bodyHtml) => store.update(win.id, { bodyHtml }));
+  const editorRef = useRef<ReturnType<typeof useComposeEditor>>(null);
+  // Images pasted into the text go in where the cursor is, at once, shown from the bytes in hand while their files
+  // are staged; other pasted files are attached.
+  const files = useMemo<EditorFiles>(
+    () => ({
+      paste(pasted) {
+        const compose = useComposeStore.getState();
+        const others = pasted.filter((f) => !isInlineImageFile(f));
+        if (others.length > 0) void compose.attachFiles(win.id, others);
+        const images = pasted.filter(isInlineImageFile);
+        if (images.length === 0) return;
+        const { contentIds, failed } = compose.pasteImages(win.id, images);
+        editorRef.current
+          ?.chain()
+          .insertContent(
+            images.map((file, i) => ({
+              type: "inlineImage",
+              attrs: { src: cidSrc(contentIds[i]), alt: file.name || "image" },
+            })),
+          )
+          .run();
+        void failed.then((lost) => {
+          // The store said why and took them out of the stored text; the open editor drops them too.
+          const editor = editorRef.current;
+          if (lost.length > 0 && editor && !editor.isDestroyed) removeImages(editor, lost);
+        });
+      },
+      image: (contentId) =>
+        inlineImageUrl(
+          contentId,
+          useComposeStore.getState().windows.find((w) => w.id === win.id)?.draft.attachments ?? [],
+        ),
+    }),
+    [win.id],
+  );
+  const editor = useComposeEditor(
+    draft.bodyHtml,
+    (bodyHtml) => store.update(win.id, { bodyHtml }),
+    undefined,
+    files,
+  );
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
   useEffect(() => {
     editor?.setEditable(!win.sending, false); // no update event: not an edit
   }, [editor, win.sending]);
@@ -284,6 +337,8 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   };
 
   const bytes = attachmentBytes(draft);
+  // Images pasted into the text show there, not as files.
+  const listed = draft.attachments.filter((a) => !isPastedImage(a));
   const overLimit = bytes > MAX_ATTACHMENT_BYTES;
 
   const pickFiles = async () => {
@@ -413,9 +468,9 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
             {showQuote && <HtmlBody html={quote} declaresDark={false} />}
           </div>
         )}
-        {(draft.attachments.length > 0 || win.attaching > 0) && (
+        {(listed.length > 0 || win.attaching > 0) && (
           <ul className="compose-attachments" aria-label="Attachments">
-            {draft.attachments.map((a) => (
+            {listed.map((a) => (
               <li key={a.id} className="compose-attachment">
                 <Paperclip aria-hidden="true" className="compose-attachment__icon" />
                 <span className="compose-attachment__name" title={a.filename}>
