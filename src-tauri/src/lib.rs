@@ -25,6 +25,7 @@ pub mod mail;
 pub mod mcp;
 pub mod mods;
 mod presence;
+pub mod print;
 mod relaunch;
 pub mod render;
 pub mod search;
@@ -350,6 +351,12 @@ pub fn run() {
                 });
             },
         )
+        .register_uri_scheme_protocol(print::PRINT_SCHEME, |ctx, request| {
+            ctx.app_handle()
+                .state::<Arc<print::PrintPages>>()
+                .serve(&request.uri().to_string())
+        })
+        .manage(Arc::new(print::PrintPages::default()))
         .setup(|app| {
             let log_dir = app.path().app_log_dir();
             let log_path = log_dir.as_ref().ok().cloned();
@@ -466,6 +473,11 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // A print window just closes (`print.rs`): hiding to the tray, quitting and the
+            // rest below are the main window's.
+            if window.label().starts_with(print::WINDOW_PREFIX) {
+                return;
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 #[cfg(target_os = "linux")]
                 {
@@ -654,6 +666,7 @@ pub fn run() {
             commands::compose::stage_attachment,
             commands::compose::stage_pasted_attachment,
             commands::compose::read_staged_attachment,
+            commands::print::print_email,
             commands::compose::discard_attachments,
             commands::compose::save_draft,
             commands::compose::get_drafts,
