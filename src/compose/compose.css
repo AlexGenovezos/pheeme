@@ -393,6 +393,24 @@ button.compose-from:hover {
 .compose-editor__content a {
   color: var(--color-link);
 }
+/* An image pasted into the text: as wide as it is, up to the editor's width. */
+.compose-editor__content .compose-image {
+  max-width: 100%;
+  height: auto;
+  vertical-align: bottom;
+  border-radius: var(--radius-sm);
+}
+.compose-editor__content .compose-image.ProseMirror-selectednode {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+}
+/* Its file couldn't be read: a box keeps its place so the text around it doesn't move. */
+.compose-editor__content .compose-image--missing {
+  display: inline-block;
+  width: var(--space-12);
+  height: var(--space-12);
+  background: var(--color-surface-sunken);
+}
 /* The signature: one block, selected and deleted as a whole. */
 .compose-editor__content .gmail_signature {
   /* Its HTML is shown as written, so nothing in it may leave this box: positioned content is placed against

@@ -84,12 +84,15 @@ impl Staging {
     }
 
     /// Stage a file the window holds as bytes, not a path (an image pasted from the clipboard).
-    /// The type comes from the window when it's a valid MIME type, else from the name.
+    /// The type comes from the window when it's a valid MIME type, else from the name. An
+    /// `inline` image (pasted into the message's text) gets a fresh Content-ID, which the
+    /// body shows it through (`cid:`).
     pub async fn stage_pasted(
         &self,
         name: &str,
         mime_type: &str,
         bytes: &[u8],
+        inline: bool,
     ) -> Result<StagedAttachment, MailError> {
         if bytes.len() as u64 > MAX_ATTACHMENT_BYTES {
             return Err(MailError::Invalid(
@@ -103,7 +106,8 @@ impl Staging {
                 .essence_str()
                 .to_owned(),
         };
-        self.stage_bytes(name, &mime, None, bytes).await
+        let content_id = inline.then(|| format!("{}@pheeme.app", uuid::Uuid::new_v4().simple()));
+        self.stage_bytes(name, &mime, content_id, bytes).await
     }
 
     pub async fn stage_bytes(
@@ -125,11 +129,19 @@ impl Staging {
     }
 
     pub async fn read(&self, att: &StagedAttachment) -> Result<Vec<u8>, MailError> {
-        match self.files.read(&self.path_of(&att.id)?).await {
+        self.read_named(&att.id, &att.filename).await
+    }
+
+    /// A staged file's bytes by its handle (for the editor to show an inline image).
+    pub async fn read_id(&self, id: &str) -> Result<Vec<u8>, MailError> {
+        self.read_named(id, "That image").await
+    }
+
+    async fn read_named(&self, id: &str, filename: &str) -> Result<Vec<u8>, MailError> {
+        match self.files.read(&self.path_of(id)?).await {
             Ok(bytes) => Ok(bytes),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(MailError::Invalid(format!(
-                "{} is no longer available; attach it again.",
-                att.filename
+                "{filename} is no longer available; attach it again."
             ))),
             Err(e) => Err(io(e)),
         }
@@ -200,9 +212,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let staging = Staging::new(dir.path(), crate::storage::test_key());
         let att = staging
-            .stage_pasted("image.png", "image/png", b"\x89PNG")
+            .stage_pasted("image.png", "image/png", b"\x89PNG", false)
             .await
             .unwrap();
+        assert_eq!(att.content_id, None);
         assert_eq!(
             (att.filename.as_str(), att.mime_type.as_str(), att.size),
             ("image.png", "image/png", 4)
@@ -210,15 +223,42 @@ mod tests {
         assert_eq!(staging.read(&att).await.unwrap(), b"\x89PNG");
 
         let guessed = staging
-            .stage_pasted("shot.jpg", "not a type\r\nX: y", b"j")
+            .stage_pasted("shot.jpg", "not a type\r\nX: y", b"j", false)
             .await
             .unwrap();
         assert_eq!(guessed.mime_type, "image/jpeg");
 
         let big = vec![0u8; MAX_ATTACHMENT_BYTES as usize + 1];
         assert!(matches!(
-            staging.stage_pasted("big.png", "image/png", &big).await,
+            staging
+                .stage_pasted("big.png", "image/png", &big, false)
+                .await,
             Err(MailError::Invalid(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn inline_pastes_get_a_fresh_content_id_and_read_back_by_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let staging = Staging::new(dir.path(), crate::storage::test_key());
+        let a = staging
+            .stage_pasted("image.png", "image/png", b"\x89PNG", true)
+            .await
+            .unwrap();
+        let b = staging
+            .stage_pasted("image.png", "image/png", b"\x89PNG", true)
+            .await
+            .unwrap();
+        let cid = a.content_id.clone().unwrap();
+        assert!(cid.ends_with("@pheeme.app"), "{cid}");
+        assert!(cid
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'@' || c == b'.'));
+        assert_ne!(a.content_id, b.content_id);
+        assert_eq!(staging.read_id(&a.id).await.unwrap(), b"\x89PNG");
+        assert!(matches!(
+            staging.read_id("../../etc/passwd").await,
+            Err(MailError::NotFound)
         ));
     }
 

@@ -523,22 +523,55 @@ test("a failed autosave shows Not saved in the footer, in the place Draft saved 
   expect(status).toHaveTextContent("Draft saved");
 });
 
-test("pasting a screenshot into the message attaches it; pasting text still types it", async () => {
+test("a screenshot pasted into the message goes in the text; other pasted files are attached", async () => {
+  vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:shot" }));
+  let staged = 0;
   mockIPC((cmd, args) => {
     calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-    if (cmd === "stage_pasted_attachment")
-      return { id: "s1", filename: "image.png", mimeType: "image/png", size: 4, contentId: null };
+    if (cmd === "stage_pasted_attachment") {
+      const a = args as { filename: string; mimeType: string; inline?: boolean };
+      staged += 1;
+      return {
+        id: `s${staged}`,
+        filename: a.filename,
+        mimeType: a.mimeType,
+        size: 4,
+        contentId: a.inline ? `c${staged}@pheeme.app` : null,
+      };
+    }
     return undefined;
   });
   const panel = await openNew();
   const body = await within(panel).findByRole("textbox", { name: "Message" });
   const png = new File([new Uint8Array([137, 80, 78, 71])], "image.png", { type: "image/png" });
-  fireEvent.paste(body, { clipboardData: { files: [png], types: ["Files"], getData: () => "" } });
+  const pdf = new File([new Uint8Array([37, 80, 68, 70])], "notes.pdf", {
+    type: "application/pdf",
+  });
+  fireEvent.paste(body, {
+    clipboardData: { files: [png, pdf], types: ["Files"], getData: () => "" },
+  });
 
-  expect(await within(panel).findByText("image.png")).toBeTruthy();
+  const image = await waitFor(() => {
+    const img = body.querySelector("img.compose-image");
+    expect(img).not.toBeNull();
+    return img as HTMLImageElement;
+  });
+  expect(image.getAttribute("src")).toBe("blob:shot");
+  const win = () => useComposeStore.getState().windows[0];
+  expect(win().draft.bodyHtml).toContain('src="cid:c2@pheeme.app"');
+  // Only the PDF is listed as a file; the image is in the text.
+  expect(await within(panel).findByText("notes.pdf")).toBeTruthy();
+  expect(within(panel).queryByText("image.png")).toBeNull();
   expect(calls.filter((c) => c.cmd === "stage_pasted_attachment").map((c) => c.args)).toEqual([
-    { filename: "image.png", mimeType: "image/png", data: "iVBORw==" },
+    { filename: "notes.pdf", mimeType: "application/pdf", data: "JVBERg==", inline: false },
+    { filename: "image.png", mimeType: "image/png", data: "iVBORw==", inline: true },
   ]);
+
+  // Pasted into the subject, a screenshot is still attached as a file.
+  fireEvent.paste(within(panel).getByLabelText("Subject"), {
+    clipboardData: { files: [png], types: ["Files"], getData: () => "" },
+  });
+  expect(await within(panel).findByText("image.png")).toBeTruthy();
 
   fireEvent.paste(body, {
     clipboardData: {
@@ -548,6 +581,7 @@ test("pasting a screenshot into the message attaches it; pasting text still type
     },
   });
   expect(await within(panel).findByText(/Q3 numbers/)).toBeTruthy();
-  expect(useComposeStore.getState().windows[0].attaching).toBe(0);
-  expect(calls.filter((c) => c.cmd === "stage_pasted_attachment")).toHaveLength(1);
+  expect(win().attaching).toBe(0);
+  expect(calls.filter((c) => c.cmd === "stage_pasted_attachment")).toHaveLength(3);
+  vi.unstubAllGlobals();
 });

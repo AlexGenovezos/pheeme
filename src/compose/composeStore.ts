@@ -14,11 +14,13 @@ import {
   saveDraft,
   sendEmail,
   stageAttachment,
+  type StagedAttachment,
   stagePastedAttachment,
   toCommandError,
 } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useComposeSettings } from "./composeSettings";
+import { outgoingDraft, rememberImage } from "./inlineImages";
 import { isValidAddress } from "./recipients";
 import {
   checkFailedSends,
@@ -66,13 +68,20 @@ export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 /** A path the user picked or dropped, or a file the window holds (pasted from the clipboard). */
 export type AttachSource = string | File;
 
-async function stage(source: AttachSource) {
+async function stage(source: AttachSource, inline = false) {
   if (typeof source === "string") return stageAttachment(source);
   if (source.size > MAX_ATTACHMENT_BYTES) {
     throw { code: "invalid_input", message: "Attachments can add up to 25 MB at most." };
   }
   const ext = source.type.split("/")[1]?.split(/[+;]/)[0] || "bin";
-  return stagePastedAttachment(source.name || `image.${ext}`, source.type, await base64Of(source));
+  const staged = await stagePastedAttachment(
+    source.name || `image.${ext}`,
+    source.type,
+    await base64Of(source),
+    inline,
+  );
+  if (inline) rememberImage(staged, source);
+  return staged;
 }
 /** Panels side by side before the oldest has to be closed. */
 export const MAX_WINDOWS = 3;
@@ -99,18 +108,21 @@ const bodyText = (html: string) =>
     .replace(/&nbsp;/g, " ")
     .trim();
 
-/** Nothing typed (a signature alone doesn't count), nobody to send to, nothing attached. */
+/** Nothing typed or pasted (a signature alone doesn't count), nobody to send to, nothing attached. */
 export function isBlank(d: ComposeDraft): boolean {
+  const body = withoutSignature(d.bodyHtml);
   return (
     d.to.length + d.cc.length + d.bcc.length === 0 &&
     !d.subject.trim() &&
-    !bodyText(withoutSignature(d.bodyHtml)) &&
+    !bodyText(body) &&
+    !/<img\b/i.test(body) &&
     d.attachments.length === 0
   );
 }
 
+/** What the message's files add up to, as sent (a pasted image deleted from the text doesn't count). */
 export const attachmentBytes = (d: ComposeDraft) =>
-  d.attachments.reduce((sum, a) => sum + a.size, 0);
+  outgoingDraft(d).attachments.reduce((sum, a) => sum + a.size, 0);
 
 /** Why the message can't be sent yet, or `null`. */
 export function sendProblem(d: ComposeDraft): string | null {
@@ -151,6 +163,11 @@ interface ComposeState {
   setFrom(id: number, from: EmailAddress): void;
   /** Attach files: paths the user picked or dropped, or files from a paste. */
   attachFiles(id: number, sources: AttachSource[]): Promise<void>;
+  /**
+   * Stage images pasted into the text, with the Content-IDs the text shows them through. Resolves to the ones
+   * staged, for the editor to put in place; nothing when the panel closed or is sending meanwhile.
+   */
+  pasteImages(id: number, files: File[]): Promise<StagedAttachment[]>;
   removeAttachment(id: number, attachmentId: string): void;
   /** Save to Gmail Drafts now (autosave passes `quiet`, which keeps failures off the toasts). */
   save(id: number, opts?: { quiet?: boolean }): Promise<boolean>;
@@ -225,6 +242,41 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         w.id === id && !w.sending ? { ...w, ...change(w), version: w.version + 1, error: null } : w,
       ),
     }));
+
+  /** Stage files into a panel's attachments (`inline`: images pasted into the text). */
+  const addStaged = async (
+    id: number,
+    sources: AttachSource[],
+    inline: boolean,
+  ): Promise<StagedAttachment[]> => {
+    if (sources.length === 0 || find(id)?.sending) return [];
+    set((s) => ({
+      windows: s.windows.map((w) =>
+        w.id === id ? { ...w, attaching: w.attaching + sources.length } : w,
+      ),
+    }));
+    const results = await Promise.allSettled(sources.map((source) => stage(source, inline)));
+    const staged = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (!find(id)) {
+      dropStaged(staged);
+      return [];
+    }
+    set((s) => ({
+      windows: s.windows.map((w) =>
+        w.id === id
+          ? {
+              ...w,
+              attaching: Math.max(0, w.attaching - sources.length),
+              draft: { ...w.draft, attachments: [...w.draft.attachments, ...staged] },
+              version: staged.length > 0 ? w.version + 1 : w.version,
+            }
+          : w,
+      ),
+    }));
+    if (failed) toastError(failed.reason);
+    return staged;
+  };
 
   /** Make room and add a panel; returns its id, or `null` when the limit says no. */
   const open = (win: Omit<ComposeWindow, "id">, force = false): number | null => {
@@ -412,29 +464,11 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     },
 
     async attachFiles(id, sources) {
-      if (sources.length === 0 || find(id)?.sending) return;
-      set((s) => ({
-        windows: s.windows.map((w) =>
-          w.id === id ? { ...w, attaching: w.attaching + sources.length } : w,
-        ),
-      }));
-      const results = await Promise.allSettled(sources.map(stage));
-      const staged = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
-      const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
-      if (!find(id)) return dropStaged(staged);
-      set((s) => ({
-        windows: s.windows.map((w) =>
-          w.id === id
-            ? {
-                ...w,
-                attaching: Math.max(0, w.attaching - sources.length),
-                draft: { ...w.draft, attachments: [...w.draft.attachments, ...staged] },
-                version: staged.length > 0 ? w.version + 1 : w.version,
-              }
-            : w,
-        ),
-      }));
-      if (failed) toastError(failed.reason);
+      await addStaged(id, sources, false);
+    },
+
+    pasteImages(id, files) {
+      return addStaged(id, files, true);
     },
 
     removeAttachment(id, attachmentId) {
@@ -465,7 +499,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         const accountId = win.accountId;
         patch(id, { saving: true });
         try {
-          const saved = await saveDraft(accountId, win.draft);
+          const saved = await saveDraft(accountId, outgoingDraft(win.draft));
           savedDrafts.set(id, saved.draftId);
           savedMessages.set(id, saved.messageId);
           noteDraftMessage(id, saved.messageId);
@@ -553,7 +587,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         if (!current) return;
         const undoMs = useComposeSettings.getState().undoSendSeconds * 1000;
         try {
-          const queued = await sendEmail(current.accountId, current.draft, undoMs);
+          const queued = await sendEmail(current.accountId, outgoingDraft(current.draft), undoMs);
           remove(id);
           trackSend(current, queued, undoMs, host);
         } catch (e) {

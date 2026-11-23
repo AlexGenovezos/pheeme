@@ -653,6 +653,7 @@ pub fn run() {
             commands::compose::send_as_addresses,
             commands::compose::stage_attachment,
             commands::compose::stage_pasted_attachment,
+            commands::compose::read_staged_attachment,
             commands::compose::discard_attachments,
             commands::compose::save_draft,
             commands::compose::get_drafts,

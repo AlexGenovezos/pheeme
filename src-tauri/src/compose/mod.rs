@@ -74,7 +74,8 @@ pub struct StagedAttachment {
     pub filename: String,
     pub mime_type: String,
     pub size: u64,
-    /// Images the quoted HTML shows through `cid:`; sent inline.
+    /// Images the HTML shows through `cid:` (in the quote, or pasted into the text); sent
+    /// inline, beside the HTML.
     #[serde(default)]
     pub content_id: Option<String>,
 }
@@ -471,8 +472,16 @@ impl ComposeService {
         name: &str,
         mime_type: &str,
         bytes: &[u8],
+        inline: bool,
     ) -> Result<StagedAttachment, MailError> {
-        self.staging.stage_pasted(name, mime_type, bytes).await
+        self.staging
+            .stage_pasted(name, mime_type, bytes, inline)
+            .await
+    }
+
+    /// A staged file's bytes, for the editor to show an image pasted into the text.
+    pub async fn staged_bytes(&self, id: &str) -> Result<Vec<u8>, MailError> {
+        self.staging.read_id(id).await
     }
 
     /// Drop files staged for a message that won't be opened after all.

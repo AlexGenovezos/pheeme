@@ -76,20 +76,33 @@ pub async fn stage_attachment(
 }
 
 /// Attach a file the window holds as bytes (base64), such as an image pasted from the clipboard.
+/// `inline`: the image goes in the message's text (it gets a Content-ID to be shown through).
 #[tauri::command]
 pub async fn stage_pasted_attachment(
     state: State<'_, AppState>,
     filename: String,
     mime_type: String,
     data: String,
+    inline: Option<bool>,
 ) -> Result<StagedAttachment, CommandError> {
     let bytes = BASE64
         .decode(data)
         .map_err(|_| MailError::Invalid("That file couldn't be read.".into()))?;
     Ok(state
         .compose
-        .stage_pasted(&filename, &mime_type, &bytes)
+        .stage_pasted(&filename, &mime_type, &bytes, inline.unwrap_or(false))
         .await?)
+}
+
+/// A staged file's bytes as a raw binary response, for the editor to show an inline image.
+#[tauri::command]
+pub async fn read_staged_attachment(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<tauri::ipc::Response, CommandError> {
+    Ok(tauri::ipc::Response::new(
+        state.compose.staged_bytes(&id).await?,
+    ))
 }
 
 #[tauri::command]
