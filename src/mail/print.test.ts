@@ -1,6 +1,19 @@
-import { expect, test } from "vitest";
+import { mockIPC } from "@tauri-apps/api/mocks";
+import { afterEach, expect, test } from "vitest";
+import { dismissToast, useToastStore } from "../components/ui/Toast";
 import type { MessageDetail, ThreadDetail } from "../lib/tauri";
-import { printPage } from "./print";
+import { useAccountStore } from "../store/accountStore";
+import { useThreadStore } from "../store/threadStore";
+import { useUiStore } from "../store/uiStore";
+import { printConversation, printPage } from "./print";
+
+afterEach(() => {
+  useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
+  useUiStore.setState({ openThread: null });
+  useThreadStore.setState({ details: new Map() });
+});
+
+const toastTitles = () => useToastStore.getState().toasts.map((t) => t.title);
 
 function message(over: Partial<MessageDetail> = {}): MessageDetail {
   return {
@@ -144,4 +157,53 @@ test("a conversation with a message in Spam loads no remote images, as in the re
 
 test("a conversation without a subject prints as (no subject)", () => {
   expect(printPage(thread([message({ subject: null })], ""), null).title).toBe("(no subject)");
+});
+
+test("Print sends the open conversation's page to a print window", async () => {
+  const printed: Array<Record<string, unknown>> = [];
+  mockIPC((cmd, args) => {
+    if (cmd === "print_email") printed.push(args as Record<string, unknown>);
+    return undefined;
+  });
+  useAccountStore.setState({
+    accounts: [
+      {
+        id: "a1",
+        email: "avery@example.com",
+        displayName: null,
+        clientId: "c",
+        synced: true,
+        color: 1,
+      },
+    ],
+  });
+  useThreadStore.setState({ details: new Map([["a1:t1", thread([message()])]]) });
+  useUiStore.setState({ openThread: "a1:t1" });
+
+  await printConversation();
+  expect(printed).toHaveLength(1);
+  expect(printed[0].title).toBe("Plans");
+  expect(printed[0].allowRemote).toBe(true);
+  expect(String(printed[0].html)).toContain(
+    '<div class="pheeme-print-account">avery@example.com</div>',
+  );
+  expect(toastTitles()).toEqual([]);
+});
+
+test("Print says so when nothing is open, and when some messages print as previews", async () => {
+  const printed: unknown[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd === "print_email") printed.push(args);
+    // A body that still can't be fetched.
+    if (cmd === "get_thread") return thread([message({ bodyAvailable: false, bodyHtml: null })]);
+    return undefined;
+  });
+  await printConversation();
+  expect(toastTitles()).toEqual(["Open a conversation to print it."]);
+  expect(printed).toEqual([]);
+
+  useUiStore.setState({ openThread: "a1:t1" });
+  await printConversation();
+  expect(printed).toHaveLength(1);
+  expect(toastTitles()).toContain("Some messages print as previews");
 });
