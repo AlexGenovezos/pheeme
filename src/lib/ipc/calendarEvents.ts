@@ -140,6 +140,23 @@ export const copyCalendarEvent = (
     toAccountId,
     toCalendarId,
   });
+/**
+ * A calendar change as the window saw it, for Send diagnostics: from the user's last answer to Google's confirmation
+ * reaching the window (`writeMs`), then to the calendar redrawn with it (`redrawMs`). No titles or ids.
+ */
+export interface CalendarWriteShown {
+  op: "create" | "update" | "move" | "delete" | "copy" | "undo_create";
+  /** For a repeating event, which occurrences the change covered. */
+  scope: EditScope | null;
+  outcome: "shown" | "failed" | "conflict";
+  writeMs: number;
+  /** Null when the write failed and nothing was redrawn. */
+  redrawMs: number | null;
+  totalMs: number;
+}
+/** Log how long a calendar change took to show. */
+export const logCalendarWrite = (report: CalendarWriteShown) =>
+  call("log_calendar_write", { report });
 /** Answer an invitation (`accepted`, `tentative` or `declined`); guests are always told. */
 export const respondToCalendarEvent = (
   accountId: string,

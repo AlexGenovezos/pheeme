@@ -24,6 +24,7 @@ import type {
 import type {
   AddedFileEvents,
   CalendarFile,
+  CalendarWriteShown,
   EditScope,
   EventDetail,
   EventEdit,
@@ -247,6 +248,7 @@ export interface Commands {
     EventRef
   >;
   message_invite: Command<Account & { messageId: string }, Invite | null>;
+  log_calendar_write: Command<{ report: CalendarWriteShown }, void>;
   calendar_file: Command<
     Account & { messageId: string; attachmentId: string | null },
     CalendarFile | null

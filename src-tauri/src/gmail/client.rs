@@ -493,7 +493,11 @@ impl GmailClient {
         let url = self.url_for(req)?;
         // Before anything is held: a slow token refresh (or keychain prompt) must not hold
         // back other requests or slots.
+        let fetching = Instant::now();
         let mut token = self.tokens.access_token().await?;
+        if let Some(p) = &probe {
+            p.token_wait(fetching.elapsed());
+        }
         let mut waiting = user.then(|| self.user_waiting());
         if let Some(p) = &probe {
             p.stage(ProbeStage::Queued);
@@ -620,7 +624,11 @@ impl GmailClient {
                         "Gmail rejected the refreshed access token: {message}"
                     )));
                 }
+                let fetching = Instant::now();
                 token = self.tokens.refresh_access_token().await?;
+                if let Some(p) = &probe {
+                    p.token_wait(fetching.elapsed());
+                }
                 refreshed = true;
                 continue;
             }

@@ -55,6 +55,10 @@ pub enum ProbeStage {
 pub struct ProbeStats {
     pub slot_wait_ms: u64,
     pub quota_wait_ms: u64,
+    /// Getting an access token: the keychain, or Google when it had to be refreshed.
+    pub token_ms: u64,
+    /// Waiting between a failed attempt and the next one.
+    pub backoff_ms: u64,
     /// Time from sending a request to having read its response.
     pub gmail_ms: u64,
     /// Attempts sent, retries included.
@@ -132,6 +136,10 @@ impl RequestProbe {
         self.state().stats.quota_wait_ms += ms(waited);
     }
 
+    pub(crate) fn token_wait(&self, waited: Duration) {
+        self.state().stats.token_ms += ms(waited);
+    }
+
     /// One attempt went to Gmail and took `took` to answer (or fail).
     pub(crate) fn sent(&self, took: Duration) {
         let mut state = self.state();
@@ -147,7 +155,11 @@ impl RequestProbe {
 
     /// Report a retry: counts it and moves to [`ProbeStage::Retrying`].
     pub(crate) fn retrying(&self, attempt: u32, retry_in: Duration, reason: RetryReason) {
-        self.state().stats.retries += 1;
+        {
+            let mut state = self.state();
+            state.stats.retries += 1;
+            state.stats.backoff_ms += ms(retry_in);
+        }
         self.stage(ProbeStage::Retrying {
             attempt,
             retry_in,

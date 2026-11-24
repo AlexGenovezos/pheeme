@@ -28,6 +28,7 @@ import { displayZone, screenDays, useCalendarStore } from "./calendarStore";
 import { useTasksStore } from "../tasks/tasksStore";
 import { dateOf, formatDay, wallClock, zonedMs } from "./dates";
 import { ask, type EditorSpec, setMoving, useEditStore } from "./editStore";
+import { timeWrite, type WriteTimer } from "./writeTiming";
 import { eventKey, eventTitle } from "./EventBlock";
 import { templateTimes, withTemplate } from "./templates";
 import {
@@ -89,6 +90,11 @@ export function defaultCalendar(): WritableCalendar | undefined {
 }
 
 /** Say why a write failed. Changed elsewhere: read the account's calendars again first. */
+/** Ends a timed write that Google refused. */
+function writeFailed(timer: WriteTimer, e: unknown) {
+  timer.done(toCommandError(e).code === "conflict" ? "conflict" : "failed");
+}
+
 function reportError(e: unknown, what: string, accountId?: string) {
   const err = toCommandError(e);
   if (err.code === "conflict") {
@@ -182,6 +188,7 @@ async function saveNew(form: EventForm, done: () => void): Promise<Created | nul
   });
   if (!options) return null;
   const { sendUpdates } = options;
+  const timer = timeWrite("create");
   let ref: EventRef;
   try {
     ref = await createCalendarEvent(
@@ -191,11 +198,14 @@ async function saveNew(form: EventForm, done: () => void): Promise<Created | nul
       sendUpdates,
     );
   } catch (e) {
+    writeFailed(timer, e);
     reportError(e, "Couldn't create the event");
     return null;
   }
+  timer.wrote();
   rememberCalendar(form.accountId, form.calendarId);
   await calendars().loadEvents();
+  timer.done("shown");
   done();
   return { ref, sendUpdates };
 }
@@ -223,13 +233,17 @@ export async function saveQuickAdd(form: EventForm): Promise<boolean> {
 
 /** Undo quick add: delete what it made (a whole series), emailing the guests if it invited them. */
 async function undoCreate({ ref, sendUpdates }: Created, title: string) {
+  const timer = timeWrite("undo_create", "all");
   try {
     await deleteCalendarEvent(ref.accountId, ref.calendarId, ref.id, "all", sendUpdates);
   } catch (e) {
+    writeFailed(timer, e);
     reportError(e, `Couldn't remove “${title}”`, ref.accountId);
     return;
   }
+  timer.wrote();
   await calendars().loadEvents();
+  timer.done("shown");
   toast({ title: `Removed “${title}”` });
 }
 
@@ -507,6 +521,7 @@ export async function saveEditor(spec: EditorSpec, form: EventForm): Promise<Sav
   });
   if (!options) return { kind: "cancelled" };
   const { scope, sendUpdates } = options;
+  const timer = timeWrite(isEmptyEdit(edit) ? "move" : "update", event.recurring ? scope : null);
   try {
     let id = event.id;
     if (!isEmptyEdit(edit)) {
@@ -523,6 +538,7 @@ export async function saveEditor(spec: EditorSpec, form: EventForm): Promise<Sav
     if (moved)
       await moveCalendarEvent(event.accountId, event.calendarId, id, form.calendarId, sendUpdates);
   } catch (e) {
+    writeFailed(timer, e);
     const err = toCommandError(e);
     if (err.code === "conflict") {
       reportError(e, "", event.accountId);
@@ -531,8 +547,10 @@ export async function saveEditor(spec: EditorSpec, form: EventForm): Promise<Sav
     }
     return { kind: "failed", message: err.message };
   }
+  timer.wrote();
   closeEditor();
   await calendars().loadEvents();
+  timer.done("shown");
   return { kind: "saved" };
 }
 
@@ -564,6 +582,7 @@ export async function moveEvent(event: CalendarEvent, start: EventTime, end: Eve
         start: { ms: start.ms, timeZone: event.start.timeZone },
         end: { ms: end.ms, timeZone: event.end.timeZone ?? event.start.timeZone },
       };
+  const timer = timeWrite("move", event.recurring ? scope : null);
   try {
     await updateCalendarEvent(
       event.accountId,
@@ -573,8 +592,11 @@ export async function moveEvent(event: CalendarEvent, start: EventTime, end: Eve
       edit,
       sendUpdates,
     );
+    timer.wrote();
     await calendars().loadEvents();
+    timer.done("shown");
   } catch (e) {
+    writeFailed(timer, e);
     reportError(e, "Couldn't move the event", event.accountId);
   }
   settle();
@@ -601,11 +623,15 @@ export async function deleteEvent(event: CalendarEvent) {
   const key = eventKey(event);
   calendars().openEvent(null);
   useEditStore.setState((s) => ({ removed: [...s.removed, key] }));
+  const timer = timeWrite("delete", event.recurring ? scope : null);
   try {
     await deleteCalendarEvent(event.accountId, event.calendarId, event.id, scope, sendUpdates);
+    timer.wrote();
     await calendars().loadEvents();
+    timer.done("shown");
     toast({ title: `Deleted “${eventTitle(event)}”` });
   } catch (e) {
+    writeFailed(timer, e);
     reportError(e, "Couldn't delete the event", event.accountId);
   }
   useEditStore.setState((s) => ({ removed: s.removed.filter((k) => k !== key) }));
@@ -613,6 +639,7 @@ export async function deleteEvent(event: CalendarEvent) {
 
 /** Copy to another calendar (any account's). */
 export async function copyEvent(event: CalendarEvent, to: WritableCalendar) {
+  const timer = timeWrite("copy");
   try {
     await copyCalendarEvent(
       event.accountId,
@@ -622,10 +649,13 @@ export async function copyEvent(event: CalendarEvent, to: WritableCalendar) {
       to.calendar.id,
     );
   } catch (e) {
+    writeFailed(timer, e);
     reportError(e, "Couldn't copy the event");
     return;
   }
+  timer.wrote();
   await calendars().loadEvents();
+  timer.done("shown");
   const name = to.calendar.primary ? to.account.email : to.calendar.summary;
   toast({ title: `Copied to ${name}` });
 }

@@ -4,6 +4,7 @@
 //! with one [`Adapter`] per Google API saying how to read, sync and record it.
 
 use crate::db;
+use crate::gmail::probe::{with_probe, RequestProbe};
 use crate::gmail::GmailError;
 use crate::lock::lock;
 use serde::{Serialize, Serializer};
@@ -11,9 +12,9 @@ use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::Notify;
-use tracing::warn;
+use tracing::{info, warn};
 
 /// Where an account's access to one Google API stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,6 +202,9 @@ pub trait Adapter: Send + Sync {
     }
 }
 
+/// A sync that took longer than this is logged with where its time went.
+const SLOW_SYNC: Duration = Duration::from_secs(3);
+
 /// How often a [`Poller`] checks.
 #[derive(Debug, Clone, Copy)]
 pub struct Intervals {
@@ -317,9 +321,36 @@ impl Poller {
         asked: bool,
     ) -> anyhow::Result<()> {
         let gate = self.gate(account_id);
+        let queued = Instant::now();
         let _held = gate.lock().await;
+        let gate_wait = queued.elapsed();
         let before = adapter.access(account_id).await?;
-        let status = match adapter.sync(account_id, now, asked).await {
+        let probe = RequestProbe::passive();
+        let started = Instant::now();
+        let synced = with_probe(probe.clone(), adapter.sync(account_id, now, asked)).await;
+        if started.elapsed() >= SLOW_SYNC {
+            // Where the time went: Google's side, waits, and what's left (the cache).
+            let google = probe.snapshot();
+            info!(
+                account = account_id,
+                asked,
+                ok = synced.is_ok(),
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                gate_wait_ms = gate_wait.as_millis() as u64,
+                gmail_requests = google.requests,
+                gmail_ms = google.gmail_ms,
+                retries = google.retries,
+                backoff_ms = google.backoff_ms,
+                slot_wait_ms = google.slot_wait_ms,
+                quota_wait_ms = google.quota_wait_ms,
+                token_ms = google.token_ms,
+                last_status = ?google.last_status,
+                last_reason = ?google.last_reason,
+                "slow {} sync",
+                A::NAME
+            );
+        }
+        let status = match synced {
             Ok(()) => AccessStatus::On,
             Err(SyncFailure::Cache(e)) => return Err(e),
             Err(SyncFailure::Google(e)) => match AccessStatus::from_failure(&e) {
