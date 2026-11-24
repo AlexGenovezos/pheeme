@@ -191,7 +191,7 @@ impl CalendarWriteShown {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -247,5 +247,85 @@ mod tests {
             })
             .await;
         assert_eq!(failed.unwrap_err().code, "conflict");
+    }
+
+    /// The log lines written while `f` runs.
+    pub(crate) async fn logged<F: Future>(f: F) -> String {
+        use std::sync::{Arc, Mutex};
+        let out = Arc::new(Mutex::new(Vec::new()));
+        let sink = out.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(move || Writer(sink.clone()))
+            .finish();
+        let _default = tracing::subscriber::set_default(subscriber);
+        f.await;
+        let bytes = out.lock().unwrap().clone();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    struct Writer(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Writer {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_write_logs_googles_share_of_its_time() {
+        use crate::gmail::probe::{current, RetryReason};
+        let lines = logged(
+            Call::write("calendar", "delete_calendar_event")
+                .account("acct")
+                .with("scope", "following")
+                .with("send_updates", "all")
+                .run(async {
+                    // What `GmailClient::execute` reports for a slow, retried request.
+                    let probe = current().expect("the call puts a probe in scope");
+                    probe.token_wait(Duration::from_millis(30));
+                    probe.sent(Duration::from_millis(4_000));
+                    probe.retrying(0, Duration::from_millis(500), RetryReason::Network);
+                    probe.sent(Duration::from_millis(1_200));
+                    Ok(())
+                }),
+        )
+        .await;
+        for want in [
+            "calendar write op=delete_calendar_event",
+            "account=Some(\"acct\")",
+            "detail=scope=following,send_updates=all",
+            "outcome=ok",
+            "google_ms=5200",
+            "requests=2",
+            "retries=1",
+            "backoff_ms=500",
+            "token_ms=30",
+        ] {
+            assert!(lines.contains(want), "{want} missing from {lines}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_fast_read_logs_nothing_and_a_failed_one_warns() {
+        let quiet = logged(Call::read("calendar", "calendar_events").run(async { Ok(()) })).await;
+        assert_eq!(quiet, "");
+        let failed = logged(Call::read("calendar", "calendar_availability").run(async {
+            Err::<(), _>(CommandError {
+                code: "missing_scope".into(),
+                message: "Allow free/busy first.".into(),
+            })
+        }))
+        .await;
+        assert!(failed.contains("WARN"), "{failed}");
+        assert!(
+            failed.contains("calendar read op=calendar_availability"),
+            "{failed}"
+        );
+        assert!(failed.contains("outcome=missing_scope"), "{failed}");
     }
 }
