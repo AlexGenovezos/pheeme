@@ -8,6 +8,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewMail {
+    pub message_id: String,
     pub thread_id: String,
     pub sender: String,
     pub subject: String,
@@ -34,6 +35,7 @@ impl NewMail {
             return None;
         }
         Some(Self {
+            message_id: message.id.clone(),
             thread_id: message.thread_id.clone(),
             sender: message
                 .from_name

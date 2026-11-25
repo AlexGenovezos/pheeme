@@ -29,6 +29,8 @@ export interface DesktopSettings {
 export interface ThreadTarget {
   accountId: string;
   threadId: string;
+  /** The message the notification showed; missing from a notification shown by an older version. */
+  messageId?: string | null;
 }
 export interface EventTarget {
   accountId: string;

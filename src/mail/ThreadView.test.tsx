@@ -17,6 +17,7 @@ import { openAndMarkRead } from "./actions";
 import { threadKey } from "./mailboxes";
 import { ViewPane } from "../shell/ViewPane";
 import { ThreadView } from "./ThreadView";
+import { revealMessage, useRevealStore } from "./reveal";
 
 const KEY = threadKey("a1", "t1");
 
@@ -215,6 +216,50 @@ test("a refresh that marks messages read doesn't fold the open cards, but a new 
   expect(screen.getByText("Body 3")).toBeInTheDocument();
   expect(screen.getByText("Body 4")).toBeInTheDocument();
   expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
+});
+
+describe("bringing a message into view (a clicked notification)", () => {
+  const pane = () => screen.getByRole("region", { name: "Open conversation" });
+  beforeEach(() => {
+    revealMessage(null);
+    // jsdom lays nothing out: put each message's card 400px further down the pane.
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const id = this.getAttribute("data-message-id");
+      const top = id ? Number(id.slice(1)) * 400 - (pane().scrollTop ?? 0) : 0;
+      return { top, bottom: top, left: 0, right: 0, width: 0, height: 0, x: 0, y: top } as DOMRect;
+    });
+    return () => vi.restoreAllMocks();
+  });
+
+  test("unfolds a folded message and scrolls to it in the conversation already open", () => {
+    open(detail([message(1), message(2), message(3)]));
+    renderView();
+    expect(screen.queryByText("Body 2")).not.toBeInTheDocument();
+    act(() => revealMessage({ key: KEY, messageId: "m2" }));
+    expect(screen.getByText("Body 2")).toBeInTheDocument();
+    expect(pane().scrollTop).toBe(800);
+    expect(useRevealStore.getState().reveal).toBeNull();
+  });
+
+  test("waits for the conversation's refresh to bring the new message", () => {
+    open(detail([message(1), message(2)]));
+    renderView();
+    act(() => revealMessage({ key: KEY, messageId: "m3" }));
+    expect(pane().scrollTop).toBe(0);
+    act(() => open(detail([message(1), message(2), message(3, { unread: true })])));
+    expect(pane().scrollTop).toBe(1200);
+    expect(useRevealStore.getState().reveal).toBeNull();
+  });
+
+  test("is dropped when another conversation opens first", () => {
+    open(detail([message(1), message(2)]));
+    renderView();
+    act(() => revealMessage({ key: threadKey("a1", "other"), messageId: "m1" }));
+    expect(useRevealStore.getState().reveal).toBeNull();
+    expect(pane().scrollTop).toBe(0);
+  });
 });
 
 test("a sync event while the detail loads doesn't let mark-read overtake it", async () => {

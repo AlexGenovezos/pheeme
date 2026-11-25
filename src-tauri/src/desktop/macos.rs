@@ -105,7 +105,7 @@ pub async fn show(
     let join = join.map(CString::new).transpose()?;
     let body = CString::new(body)?;
     let identifier = match &target {
-        NotifyTarget::Thread(thread) => Some(CString::new(super::notification_id(thread))?),
+        NotifyTarget::Thread(mail) => Some(CString::new(super::notification_id(&mail.thread()))?),
         NotifyTarget::Event(_) => None,
     };
     let target = CString::new(serde_json::to_string(&target)?)?;

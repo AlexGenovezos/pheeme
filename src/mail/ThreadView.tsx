@@ -23,6 +23,7 @@ import { parseThreadKey, threadKey } from "./mailboxes";
 import { isJunk } from "./preloadImages";
 import { openTimer } from "./openTiming";
 import { conversationCode } from "./verificationCode";
+import { keepInView, revealMessage, useRevealStore } from "./reveal";
 import "./mail.css";
 
 /** Which messages are open. `seen` is every message already given its starting state. */
@@ -195,6 +196,30 @@ export function ThreadView() {
     scroller.current?.scrollTo?.({ top: 0 });
   }, [openKey]);
 
+  // A message to bring into view (a clicked notification's): once its card is on screen (Conversation unfolds it),
+  // scroll to it, after the reset to the top above. A conversation that hasn't got it yet waits for its refresh.
+  const reveal = useRevealStore((s) => s.reveal);
+  const holding = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!reveal) return;
+    if (reveal.key !== openKey) return revealMessage(null);
+    const pane = scroller.current;
+    const root = pane?.querySelector('.thread-view__retained[data-visible="true"]');
+    const target = root?.querySelector(`[data-message-id="${CSS.escape(reveal.messageId)}"]`);
+    if (!pane || !root || !target) return;
+    revealMessage(null);
+    holding.current?.();
+    holding.current = keepInView(pane, root, target);
+  }, [reveal, openKey, detail]);
+  // Another conversation, or none, lets go of the last one's message.
+  useEffect(
+    () => () => {
+      holding.current?.();
+      holding.current = null;
+    },
+    [openKey],
+  );
+
   let content;
   if (!openKey) {
     content = (
@@ -280,9 +305,15 @@ const Conversation = memo(function Conversation({
     seen: new Set(),
     open: new Set(),
   });
+  // A message to bring into view starts open, whatever it would otherwise be.
+  const reveal = useRevealStore((s) =>
+    active && s.reveal?.key === openKey ? s.reveal.messageId : null,
+  );
   let current = expansion;
   if (openKey && detail) {
     current = withNewMessages(expansion, openKey, detail);
+    if (reveal && !current.open.has(reveal) && detail.messages.some((m) => m.id === reveal))
+      current = { ...current, open: new Set(current.open).add(reveal) };
     if (current !== expansion) setExpansion(current);
   }
 

@@ -10,6 +10,7 @@ import { displayZone, useCalendarStore } from "../calendar/calendarStore";
 import { dateOf } from "../calendar/dates";
 import { createCalendarHandlers } from "../preview/calendar";
 import { openNotificationTarget, useDesktopEvents } from "./events";
+import { useRevealStore } from "../mail/reveal";
 import type { NotifyTarget } from "./api";
 import { byName } from "../preview/handlers";
 
@@ -40,6 +41,16 @@ test("opens the owning account and exact conversation, closing overlays and sear
     false,
   );
   expect(useUiStore.getState().openThread).toBe("a:reply");
+});
+
+test("brings the message the notification showed into view; an older notification opens the conversation", () => {
+  expect(
+    openNotificationTarget({ kind: "thread", accountId: "a", threadId: "t", messageId: "m2" }),
+  ).toBe(true);
+  expect(useRevealStore.getState().reveal).toEqual({ key: "a:t", messageId: "m2" });
+  expect(openNotificationTarget({ kind: "thread", accountId: "a", threadId: "t" })).toBe(true);
+  expect(useUiStore.getState().openThread).toBe("a:t");
+  expect(useRevealStore.getState().reveal).toBeNull();
 });
 
 test("marks the opened conversation read, as opening it from the list would", async () => {
