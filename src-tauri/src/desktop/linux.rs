@@ -1,7 +1,7 @@
 //! One D-Bus connection and signal listener for all notification clicks, without blocked threads.
 use super::super::{activate, join_call, NotifyTarget, ThreadTarget};
 use futures::StreamExt;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 use tauri::AppHandle;
 use tokio::sync::{mpsc, oneshot};
@@ -102,8 +102,12 @@ async fn serve(
         };
         // The desktop owns notification history. Bound our in-process routing map too.
         let mut targets = BTreeMap::<u32, (NotifyTarget, Option<String>)>::new();
+        // Banners that timed out. Some desktops (Plasma) keep them in their history, so they can
+        // still be clicked or closed, but replacing one wouldn't show the new message.
+        let mut expired = HashSet::<u32>::new();
         let mut next = Some(Request::Show(first));
         loop {
+            expired.retain(|id| targets.contains_key(id));
             if let Some(Request::Close(threads)) = &next {
                 let ids: Vec<u32> = ids_of(&targets, threads).collect();
                 for id in ids {
@@ -135,6 +139,17 @@ async fn serve(
                     replaces = ids_of(&targets, std::slice::from_ref(thread))
                         .next()
                         .unwrap_or(0);
+                    if expired.contains(&replaces) {
+                        // A fresh banner, with the old one taken out of the history.
+                        if let Err(error) = proxy
+                            .call::<_, _, ()>("CloseNotification", &(replaces,))
+                            .await
+                        {
+                            tracing::debug!(%error, "Could not close a notification");
+                        }
+                        targets.remove(&replaces);
+                        replaces = 0;
+                    }
                 }
                 let result: zbus::Result<u32> = proxy
                     .call(
@@ -184,7 +199,12 @@ async fn serve(
                     None => break,
                 },
                 signal = closed.next() => match signal {
-                    Some(signal) => if let Ok((id, _)) = signal.body().deserialize::<(u32, u32)>() { targets.remove(&id); },
+                    // Reason 1: the banner timed out, but may still be in the desktop's history.
+                    Some(signal) => match signal.body().deserialize::<(u32, u32)>() {
+                        Ok((id, 1)) => { expired.insert(id); }
+                        Ok((id, _)) => { targets.remove(&id); }
+                        Err(_) => {}
+                    },
                     None => break,
                 },
                 request = rx.recv() => match request { Some(request) => next = Some(request), None => return },
@@ -551,6 +571,29 @@ mod protocol_tests {
             4,
             "replaces the conversation's notification"
         );
+
+        // Its banner times out but stays in the desktop's history (Plasma): the next message
+        // takes the old one out and shows a fresh banner, which reading then closes.
+        FakeDesktop::notification_closed(fake.signal_emitter(), 4, 1)
+            .await
+            .unwrap();
+        let mut shown = false;
+        for _ in 0..50 {
+            let (result, done) = oneshot::channel();
+            tx.send(show(result)).await.unwrap();
+            done.await.unwrap().unwrap();
+            match replaced.recv().await.unwrap() {
+                // The signal hadn't arrived yet: it replaced the same notification again.
+                4 => continue,
+                closed => {
+                    assert_eq!(closed, u32::MAX - 4, "the expired one is closed first");
+                    assert_eq!(replaced.recv().await.unwrap(), 0, "then a new notification");
+                    shown = true;
+                    break;
+                }
+            }
+        }
+        assert!(shown);
         tx.send(Request::Close(vec![
             ThreadTarget {
                 account_id: "b".into(),
@@ -568,7 +611,7 @@ mod protocol_tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            u32::MAX - 4,
+            u32::MAX - 5,
             "closes only that account's conversation"
         );
         drop(tx);

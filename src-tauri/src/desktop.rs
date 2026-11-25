@@ -44,6 +44,9 @@ pub struct Desktop {
     /// Conversations whose new-mail notification may still be showing. Each is taken away once
     /// the conversation is no longer unread in the Inbox (see [`dismiss_finished`]).
     open: Mutex<HashSet<ThreadTarget>>,
+    /// Held while mail notifications are shown or dismissed, so a dismissal decided on older mail
+    /// can't take away a newer notification.
+    alerts: tokio::sync::Mutex<()>,
 }
 
 #[derive(Serialize)]
@@ -169,6 +172,9 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
                         .map(|m| (m.thread_id.clone(), m))
                         .collect();
                     let (mut shown, mut failed) = (0usize, 0usize);
+                    let desktop = app.state::<Arc<Desktop>>().inner().clone();
+                    let gate = desktop.alerts.lock().await;
+                    let mut delivered = Vec::new();
                     for (thread_id, mail) in by_thread {
                         let target = NotifyTarget::Thread(ThreadTarget {
                             account_id: account_id.clone(),
@@ -189,13 +195,17 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
                         .await
                         {
                             if let NotifyTarget::Thread(thread) = target {
-                                lock(&app.state::<Arc<Desktop>>().open).insert(thread);
+                                lock(&desktop.open).insert(thread.clone());
+                                delivered.push(thread);
                             }
                             shown += 1;
                         } else {
                             failed += 1;
                         }
                     }
+                    drop(gate);
+                    // Mail read while its notification was on the way.
+                    dismiss_checked(&app, delivered).await;
                     // Counts only: never the sender, subject or snippet.
                     tracing::info!(%account_id, alerts = shown + failed, shown, failed, "desktop alerts delivered");
                 }
@@ -246,6 +256,11 @@ fn dismiss_finished<'a>(
 
 /// Of `candidates` (conversations with a notification), dismiss the ones that no longer need it.
 async fn dismiss_checked(app: &AppHandle, candidates: Vec<ThreadTarget>) {
+    if candidates.is_empty() {
+        return;
+    }
+    let desktop = app.state::<Arc<Desktop>>().inner().clone();
+    let _gate = desktop.alerts.lock().await;
     let finished = match finished_threads(&app.state::<AppState>().db, candidates).await {
         Ok(finished) => finished,
         Err(error) => {
@@ -257,7 +272,6 @@ async fn dismiss_checked(app: &AppHandle, candidates: Vec<ThreadTarget>) {
         return;
     }
     {
-        let desktop = app.state::<Arc<Desktop>>();
         let mut open = lock(&desktop.open);
         for thread in &finished {
             open.remove(thread);
@@ -298,10 +312,12 @@ fn finished_of(
         .collect()
 }
 
-/// Whether a conversation with these labels still warrants its new-mail notification.
+/// Whether a conversation with these labels still warrants its new-mail notification. A
+/// conversation's labels leave out those of its trashed and spam messages, so one message
+/// trashed doesn't finish the rest.
 fn unread_in_inbox(labels: &[String]) -> bool {
     let has = |label: &str| labels.iter().any(|l| l == label);
-    has("INBOX") && has("UNREAD") && !has("TRASH") && !has("SPAM")
+    has("INBOX") && has("UNREAD")
 }
 
 // Do not pass control characters, arbitrarily large text or desktop markup from mail to the OS.
@@ -514,6 +530,7 @@ pub fn install(app: &AppHandle) {
         can_hide: AtomicBool::new(false),
         reminders: reminders.clone(),
         open: Mutex::new(HashSet::new()),
+        alerts: tokio::sync::Mutex::new(()),
     });
     app.manage(desktop.clone());
     platform::init(app);
@@ -694,8 +711,9 @@ mod tests {
             ("unread", vec!["INBOX", "UNREAD", "CATEGORY_PERSONAL"]),
             ("read", vec!["INBOX"]),
             ("archived", vec!["UNREAD"]),
-            ("trashed", vec!["INBOX", "UNREAD", "TRASH"]),
-            ("spam", vec!["UNREAD", "SPAM", "INBOX"]),
+            ("one-trashed", vec!["INBOX", "UNREAD", "TRASH"]),
+            ("trashed", vec!["TRASH"]),
+            ("spam", vec!["SPAM"]),
         ]
         .into_iter()
         .map(|(id, l)| {
@@ -705,9 +723,17 @@ mod tests {
             )
         })
         .collect();
-        let candidates = ["unread", "read", "archived", "trashed", "spam", "deleted"]
-            .map(thread)
-            .to_vec();
+        let candidates = [
+            "unread",
+            "one-trashed",
+            "read",
+            "archived",
+            "trashed",
+            "spam",
+            "deleted",
+        ]
+        .map(thread)
+        .to_vec();
         assert_eq!(
             finished_of(candidates, &labels),
             ["read", "archived", "trashed", "spam", "deleted"].map(thread)
