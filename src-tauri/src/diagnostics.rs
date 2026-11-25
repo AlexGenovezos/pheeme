@@ -269,7 +269,7 @@ impl ShownTiming {
 }
 
 /// Text from the window, cut to `max` characters, so a misbehaving window can't fill the log.
-pub(crate) fn clip(text: &str, max: usize) -> String {
+fn clip(text: &str, max: usize) -> String {
     match text.char_indices().nth(max) {
         Some((at, _)) => format!("{}…", &text[..at]),
         None => text.to_owned(),

@@ -11,10 +11,23 @@ export interface WriteTimer {
   done(outcome: CalendarWriteShown["outcome"]): void;
 }
 
-/** Runs `f` once the frame with the latest state has painted (the next frame, then the task after it). */
-function afterPaint(f: () => void) {
-  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => setTimeout(f, 0));
-  else setTimeout(f, 0);
+/** The longest a shown change waits for a frame: a hidden window paints none. */
+const PAINT_WAIT_MS = 1_000;
+
+/**
+ * Calls `f(true)` once the frame with the latest state has painted (the next frame, then the task after it), or
+ * `f(false)` if none painted within `PAINT_WAIT_MS`.
+ */
+function afterPaint(f: (painted: boolean) => void) {
+  let called = false;
+  const finish = (painted: boolean) => {
+    if (called) return;
+    called = true;
+    f(painted);
+  };
+  if (typeof requestAnimationFrame === "function")
+    requestAnimationFrame(() => setTimeout(() => finish(true), 0));
+  setTimeout(() => finish(false), PAINT_WAIT_MS);
 }
 
 export function timeWrite(
@@ -22,7 +35,7 @@ export function timeWrite(
   scope: EditScope | null = null,
   now: () => number = () => performance.now(),
   report: (r: CalendarWriteShown) => unknown = logCalendarWrite,
-  painted: (f: () => void) => void = afterPaint,
+  painted: (f: (painted: boolean) => void) => void = afterPaint,
 ): WriteTimer {
   const started = now();
   let wroteAt: number | null = null;
@@ -54,7 +67,7 @@ export function timeWrite(
       if (reported) return;
       reported = true;
       // Shown means painted: measured after the frame, without holding up the action.
-      if (outcome === "shown") painted(() => send(outcome));
+      if (outcome === "shown") painted((ok) => send(ok ? "shown" : "not_painted"));
       else send(outcome);
     },
   };

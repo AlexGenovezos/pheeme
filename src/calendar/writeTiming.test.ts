@@ -7,7 +7,7 @@ function clock(...times: number[]) {
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
-const paintNow = (f: () => void) => f();
+const paintNow = (f: (painted: boolean) => void) => f(true);
 
 describe("timeWrite", () => {
   it("splits the wait into Google's answer and the redraw", async () => {
@@ -36,7 +36,7 @@ describe("timeWrite", () => {
 
   it("measures a shown change only once the frame has painted", () => {
     const sent: CalendarWriteShown[] = [];
-    let paint: (() => void) | null = null;
+    let paint: ((painted: boolean) => void) | null = null;
     const timer = timeWrite(
       "create",
       null,
@@ -47,8 +47,22 @@ describe("timeWrite", () => {
     timer.wrote();
     timer.done("shown");
     expect(sent).toEqual([]);
-    paint!();
+    paint!(true);
     expect(sent[0]).toMatchObject({ redrawMs: 40, totalMs: 50 });
+  });
+
+  it("says when a hidden window painted no frame in time", () => {
+    const sent: CalendarWriteShown[] = [];
+    const timer = timeWrite(
+      "delete",
+      null,
+      clock(0, 10, 1_010),
+      (r) => sent.push(r),
+      (f) => f(false),
+    );
+    timer.wrote();
+    timer.done("shown");
+    expect(sent[0]).toMatchObject({ outcome: "not_painted", redrawMs: null, totalMs: 1_010 });
   });
 
   it("reports a refused write, or one the calendar didn't redraw, at once and once", () => {

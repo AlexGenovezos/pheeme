@@ -5,7 +5,7 @@
 //! alone, since a message can quote a title or address. No titles or addresses.
 
 use super::CommandError;
-use crate::diagnostics::clip;
+use crate::calendar::writes::EditScope;
 use crate::gmail::probe::{with_probe, ProbeStats, RequestProbe};
 use std::future::Future;
 use std::time::{Duration, Instant};
@@ -147,34 +147,91 @@ fn local_ms(elapsed_ms: u64, google: &ProbeStats) -> u64 {
 
 /// A calendar change as the window saw it (`src/calendar/writeTiming.ts`): from the user's
 /// last answer (Save, Delete, the drop) to Google's confirmation reaching the window
-/// (`write_ms`, so the backend's own line plus the IPC), then to the calendar redrawn with
-/// it (`redraw_ms`). No titles or ids.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+/// (`write_ms`, so the backend's own line plus the IPC), then to the calendar painted with
+/// it (`redraw_ms`). Every word is one of a fixed set, so nothing the window sends can carry
+/// a title or address into the log.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarWriteShown {
-    /// `create`, `update`, `move`, `delete`, `copy`, `undo_create` or `respond`.
-    pub op: String,
-    /// For a repeating event: `this`, `following` or `all`.
-    pub scope: Option<String>,
-    /// `shown`, `not_redrawn` (confirmed, but the calendar couldn't be read again), `failed`
-    /// or `conflict`.
-    pub outcome: String,
+    pub op: WriteOp,
+    /// For a repeating event, which occurrences the change covered.
+    pub scope: Option<EditScope>,
+    pub outcome: WriteOutcome,
     pub write_ms: u64,
-    /// `None` when the write failed, so nothing was redrawn.
+    /// `None` unless the calendar painted the change.
     pub redraw_ms: Option<u64>,
     pub total_ms: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WriteOp {
+    Create,
+    Update,
+    Move,
+    Delete,
+    Copy,
+    UndoCreate,
+    Respond,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WriteOutcome {
+    /// Painted with the change.
+    Shown,
+    /// Confirmed and read again, but no frame painted in time (the window was hidden).
+    NotPainted,
+    /// Confirmed, but the calendar couldn't be read again.
+    NotRedrawn,
+    Failed,
+    /// Changed elsewhere first (Google's 412).
+    Conflict,
+}
+
+impl WriteOp {
+    fn name(self) -> &'static str {
+        match self {
+            WriteOp::Create => "create",
+            WriteOp::Update => "update",
+            WriteOp::Move => "move",
+            WriteOp::Delete => "delete",
+            WriteOp::Copy => "copy",
+            WriteOp::UndoCreate => "undo_create",
+            WriteOp::Respond => "respond",
+        }
+    }
+}
+
+impl WriteOutcome {
+    fn name(self) -> &'static str {
+        match self {
+            WriteOutcome::Shown => "shown",
+            WriteOutcome::NotPainted => "not_painted",
+            WriteOutcome::NotRedrawn => "not_redrawn",
+            WriteOutcome::Failed => "failed",
+            WriteOutcome::Conflict => "conflict",
+        }
+    }
+}
+
+fn scope_name(scope: EditScope) -> &'static str {
+    match scope {
+        EditScope::This => "this",
+        EditScope::Following => "following",
+        EditScope::All => "all",
+    }
+}
+
 impl CalendarWriteShown {
     pub fn log(&self) {
-        let failed = self.outcome != "shown";
         macro_rules! log_shown {
             ($level:expr) => {
                 tracing::event!(
                     $level,
-                    op = %clip(&self.op, 16),
-                    scope = ?self.scope.as_deref().map(|s| clip(s, 16)),
-                    outcome = %clip(&self.outcome, 16),
+                    op = self.op.name(),
+                    scope = self.scope.map_or("none", scope_name),
+                    outcome = self.outcome.name(),
                     write_ms = self.write_ms,
                     redraw_ms = ?self.redraw_ms,
                     total_ms = self.total_ms,
@@ -182,10 +239,10 @@ impl CalendarWriteShown {
                 )
             };
         }
-        if failed {
-            log_shown!(tracing::Level::WARN);
-        } else {
+        if self.outcome == WriteOutcome::Shown {
             log_shown!(tracing::Level::INFO);
+        } else {
+            log_shown!(tracing::Level::WARN);
         }
     }
 }
@@ -329,5 +386,21 @@ pub(crate) mod tests {
         assert!(failed.contains("outcome=missing_scope"), "{failed}");
         // A message can quote a title or an address: only the code goes in the log.
         assert!(!failed.contains("free/busy"), "{failed}");
+    }
+
+    #[test]
+    fn the_window_report_takes_only_known_words() {
+        let report = |op: &str| {
+            serde_json::from_value::<CalendarWriteShown>(serde_json::json!({
+                "op": op, "scope": "following", "outcome": "not_painted",
+                "writeMs": 1, "redrawMs": null, "totalMs": 2,
+            }))
+        };
+        let read = report("undo_create").unwrap();
+        assert_eq!(
+            (read.op, read.scope),
+            (WriteOp::UndoCreate, Some(EditScope::Following))
+        );
+        assert!(report("Lunch with sam@example.com").is_err());
     }
 }

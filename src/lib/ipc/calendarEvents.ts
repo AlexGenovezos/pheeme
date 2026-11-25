@@ -148,10 +148,13 @@ export interface CalendarWriteShown {
   op: "create" | "update" | "move" | "delete" | "copy" | "undo_create" | "respond";
   /** For a repeating event, which occurrences the change covered. */
   scope: EditScope | null;
-  /** `not_redrawn`: Google confirmed it, but the calendar couldn't be read again. */
-  outcome: "shown" | "not_redrawn" | "failed" | "conflict";
+  /**
+   * `not_painted`: confirmed and read again, but no frame painted in time (a hidden window); `not_redrawn`: Google
+   * confirmed it, but the calendar couldn't be read again.
+   */
+  outcome: "shown" | "not_painted" | "not_redrawn" | "failed" | "conflict";
   writeMs: number;
-  /** Null when the write failed and nothing was redrawn. */
+  /** Null unless the calendar painted the change. */
   redrawMs: number | null;
   totalMs: number;
 }
