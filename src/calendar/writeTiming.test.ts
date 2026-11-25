@@ -7,11 +7,18 @@ function clock(...times: number[]) {
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
+const paintNow = (f: () => void) => f();
 
 describe("timeWrite", () => {
   it("splits the wait into Google's answer and the redraw", async () => {
     const sent: CalendarWriteShown[] = [];
-    const timer = timeWrite("delete", "following", clock(100, 4_100, 4_350), (r) => sent.push(r));
+    const timer = timeWrite(
+      "delete",
+      "following",
+      clock(100, 4_100, 4_350),
+      (r) => sent.push(r),
+      paintNow,
+    );
     timer.wrote();
     timer.done("shown");
     await settle();
@@ -27,21 +34,54 @@ describe("timeWrite", () => {
     ]);
   });
 
-  it("reports a refused write without a redraw, once", async () => {
+  it("measures a shown change only once the frame has painted", () => {
     const sent: CalendarWriteShown[] = [];
-    const timer = timeWrite("create", null, clock(0, 900), (r) => sent.push(r));
-    timer.done("failed");
+    let paint: (() => void) | null = null;
+    const timer = timeWrite(
+      "create",
+      null,
+      clock(0, 10, 50),
+      (r) => sent.push(r),
+      (f) => (paint = f),
+    );
+    timer.wrote();
     timer.done("shown");
-    await settle();
+    expect(sent).toEqual([]);
+    paint!();
+    expect(sent[0]).toMatchObject({ redrawMs: 40, totalMs: 50 });
+  });
+
+  it("reports a refused write, or one the calendar didn't redraw, at once and once", () => {
+    const sent: CalendarWriteShown[] = [];
+    const failed = timeWrite("create", null, clock(0, 900), (r) => sent.push(r), paintNow);
+    failed.done("failed");
+    failed.done("shown");
+    const stale = timeWrite("respond", null, clock(0, 300, 800), (r) => sent.push(r), paintNow);
+    stale.wrote();
+    stale.done("not_redrawn");
     expect(sent).toEqual([
       { op: "create", scope: null, outcome: "failed", writeMs: 900, redrawMs: null, totalMs: 900 },
+      {
+        op: "respond",
+        scope: null,
+        outcome: "not_redrawn",
+        writeMs: 300,
+        redrawMs: null,
+        totalMs: 800,
+      },
     ]);
   });
 
   it("never lets the log break the change", async () => {
-    const timer = timeWrite("copy", null, clock(0, 1, 2), () => {
-      throw new Error("ipc down");
-    });
+    const timer = timeWrite(
+      "copy",
+      null,
+      clock(0, 1, 2),
+      () => {
+        throw new Error("ipc down");
+      },
+      paintNow,
+    );
     timer.wrote();
     expect(() => timer.done("shown")).not.toThrow();
     await settle();

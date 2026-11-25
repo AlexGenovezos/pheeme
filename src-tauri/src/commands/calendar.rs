@@ -38,7 +38,6 @@ pub async fn calendar_events(
     time_zone: String,
 ) -> Result<Vec<CalendarEventDto>, CommandError> {
     Call::read(AREA, "calendar_events")
-        .with("days", (to_ms - from_ms) / 86_400_000)
         .run(async { Ok(state.calendar.events(from_ms, to_ms, &time_zone).await?) })
         .await
 }
@@ -305,6 +304,16 @@ pub async fn copy_calendar_event(
         .await
 }
 
+/// An invitation answer for the log: one of Google's words, never what the window sent otherwise.
+fn answer(response: &str) -> &'static str {
+    match response {
+        "accepted" => "accepted",
+        "tentative" => "tentative",
+        "declined" => "declined",
+        _ => "other",
+    }
+}
+
 /// Answer an invitation: `accepted`, `tentative` or `declined`.
 #[tauri::command]
 pub async fn respond_to_calendar_event(
@@ -319,7 +328,7 @@ pub async fn respond_to_calendar_event(
     Call::write(AREA, "respond_to_calendar_event")
         .account(&account_id)
         .with("scope", scope)
-        .with("response", response.as_str())
+        .with("response", answer(&response))
         .with("note", comment.is_some())
         .run(async {
             Ok(user_action(state.calendar.respond(
@@ -347,7 +356,7 @@ pub async fn respond_to_calendar_invite(
 ) -> Result<EventRef, CommandError> {
     Call::write(AREA, "respond_to_calendar_invite")
         .account(&account_id)
-        .with("response", response.as_str())
+        .with("response", answer(&response))
         .with("note", comment.is_some())
         .with("import", import.is_some())
         .run(async {

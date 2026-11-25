@@ -494,10 +494,11 @@ impl GmailClient {
         // Before anything is held: a slow token refresh (or keychain prompt) must not hold
         // back other requests or slots.
         let fetching = Instant::now();
-        let mut token = self.tokens.access_token().await?;
+        let token = self.tokens.access_token().await;
         if let Some(p) = &probe {
             p.token_wait(fetching.elapsed());
         }
+        let mut token = token?;
         let mut waiting = user.then(|| self.user_waiting());
         if let Some(p) = &probe {
             p.stage(ProbeStage::Queued);
@@ -625,10 +626,11 @@ impl GmailClient {
                     )));
                 }
                 let fetching = Instant::now();
-                token = self.tokens.refresh_access_token().await?;
+                let refreshed_token = self.tokens.refresh_access_token().await;
                 if let Some(p) = &probe {
                     p.token_wait(fetching.elapsed());
                 }
+                token = refreshed_token?;
                 refreshed = true;
                 continue;
             }

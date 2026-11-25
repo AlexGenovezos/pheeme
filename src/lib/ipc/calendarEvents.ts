@@ -145,10 +145,11 @@ export const copyCalendarEvent = (
  * reaching the window (`writeMs`), then to the calendar redrawn with it (`redrawMs`). No titles or ids.
  */
 export interface CalendarWriteShown {
-  op: "create" | "update" | "move" | "delete" | "copy" | "undo_create";
+  op: "create" | "update" | "move" | "delete" | "copy" | "undo_create" | "respond";
   /** For a repeating event, which occurrences the change covered. */
   scope: EditScope | null;
-  outcome: "shown" | "failed" | "conflict";
+  /** `not_redrawn`: Google confirmed it, but the calendar couldn't be read again. */
+  outcome: "shown" | "not_redrawn" | "failed" | "conflict";
   writeMs: number;
   /** Null when the write failed and nothing was redrawn. */
   redrawMs: number | null;

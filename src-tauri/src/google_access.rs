@@ -326,17 +326,19 @@ impl Poller {
         let _held = gate.lock().await;
         let gate_wait = queued.elapsed();
         let before = adapter.access(account_id).await?;
-        let probe = RequestProbe::passive();
+        // A sync the user asked for (`calendar_sync_now`) counts toward that command's probe.
+        let probe = crate::gmail::probe::current().unwrap_or_else(RequestProbe::passive);
         let started = Instant::now();
         let synced = with_probe(probe.clone(), adapter.sync(account_id, now, asked)).await;
-        if started.elapsed() >= SLOW_SYNC {
+        if queued.elapsed() >= SLOW_SYNC {
             // Where the time went: Google's side, waits, and what's left (the cache).
             let google = probe.snapshot();
             info!(
                 account = account_id,
                 asked,
                 ok = synced.is_ok(),
-                elapsed_ms = started.elapsed().as_millis() as u64,
+                elapsed_ms = queued.elapsed().as_millis() as u64,
+                sync_ms = started.elapsed().as_millis() as u64,
                 gate_wait_ms = gate_wait.as_millis() as u64,
                 gmail_requests = google.requests,
                 gmail_ms = google.gmail_ms,
@@ -434,18 +436,51 @@ mod tests {
         fn access_changed(&self, _: &str, _: &AccessStatus) {}
     }
 
-    async fn sync_taking(takes: Duration) -> String {
-        let adapter = Slow {
+    fn slow(takes: Duration) -> Slow {
+        Slow {
             pool: SqlitePool::connect_lazy("sqlite::memory:").unwrap(),
             takes,
             google: Duration::from_millis(3_900),
-        };
-        let poller = Poller::new(Intervals {
+        }
+    }
+
+    fn poller() -> Arc<Poller> {
+        Arc::new(Poller::new(Intervals {
             first: Duration::ZERO,
             background: Duration::from_secs(60),
             foreground: Duration::from_secs(15),
-        });
+        }))
+    }
+
+    async fn sync_taking(takes: Duration) -> String {
+        let (adapter, poller) = (slow(takes), poller());
         logged(async { poller.sync_now(&adapter, "acct", 0).await.unwrap() }).await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_sync_held_back_by_a_write_is_slow_too() {
+        let (adapter, poller) = (slow(Duration::ZERO), poller());
+        let write = poller.gate("acct").lock_owned().await;
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(4)).await;
+            drop(write);
+        });
+        let lines = logged(async { poller.sync_now(&adapter, "acct", 0).await.unwrap() }).await;
+        assert!(lines.contains("gate_wait_ms=4000"), "{lines}");
+        assert!(lines.contains("sync_ms=0"), "{lines}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_asked_for_sync_counts_toward_its_command() {
+        use crate::commands::timing::Call;
+        let (adapter, poller) = (slow(Duration::ZERO), poller());
+        let lines = logged(Call::write("calendar", "calendar_sync_now").run(async {
+            poller.sync_now(&adapter, "acct", 0).await.unwrap();
+            Ok(())
+        }))
+        .await;
+        assert!(lines.contains("google_ms=3900"), "{lines}");
+        assert!(lines.contains("requests=1"), "{lines}");
     }
 
     #[tokio::test(start_paused = true)]

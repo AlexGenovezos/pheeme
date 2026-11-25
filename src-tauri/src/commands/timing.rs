@@ -1,7 +1,8 @@
 //! One log line per Calendar or Tasks command, saying how long it took and how much of that
 //! was Google's: the requests (`google_ms`), retries and their backoff, the request slots and
 //! quota, the access token, and what's left (`local_ms`: the cache, locks, Pheeme itself).
-//! Writes are always logged; reads only when slow or failed. No titles, ids or addresses.
+//! Writes are always logged; reads only when slow or failed. A failure is logged by its code
+//! alone, since a message can quote a title or address. No titles or addresses.
 
 use super::CommandError;
 use crate::diagnostics::clip;
@@ -86,7 +87,6 @@ impl Call {
         let elapsed_ms = elapsed.as_millis() as u64;
         let detail = self.detail.join(",");
         let outcome = error.map_or("ok", |e| e.code.as_str());
-        let error = error.map(|e| clip(&e.message, 300));
         let kind = match self.kind {
             Kind::Write => "write",
             Kind::Read => "read",
@@ -99,7 +99,6 @@ impl Call {
                     account = ?self.account,
                     %detail,
                     %outcome,
-                    error = ?error,
                     elapsed_ms,
                     google_ms = google.gmail_ms,
                     local_ms = local_ms(elapsed_ms, google),
@@ -153,11 +152,12 @@ fn local_ms(elapsed_ms: u64, google: &ProbeStats) -> u64 {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarWriteShown {
-    /// `create`, `update`, `move`, `delete`, `copy` or `undo_create`.
+    /// `create`, `update`, `move`, `delete`, `copy`, `undo_create` or `respond`.
     pub op: String,
     /// For a repeating event: `this`, `following` or `all`.
     pub scope: Option<String>,
-    /// `shown`, `failed` or `conflict`.
+    /// `shown`, `not_redrawn` (confirmed, but the calendar couldn't be read again), `failed`
+    /// or `conflict`.
     pub outcome: String,
     pub write_ms: u64,
     /// `None` when the write failed, so nothing was redrawn.
@@ -327,5 +327,7 @@ pub(crate) mod tests {
             "{failed}"
         );
         assert!(failed.contains("outcome=missing_scope"), "{failed}");
+        // A message can quote a title or an address: only the code goes in the log.
+        assert!(!failed.contains("free/busy"), "{failed}");
     }
 }
