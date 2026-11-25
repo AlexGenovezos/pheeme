@@ -51,6 +51,7 @@ import {
   ThemeFolderControl,
 } from "./ThemeSettings";
 import { READING_SIZES, type ReadingSize, useReadingSettings } from "./readingSettings";
+import { type PrintScope, usePrintSettings } from "../mail/printSettings";
 import {
   OfferControl,
   PausesControl,
@@ -154,6 +155,22 @@ function ReadingSizeControl() {
         label: value === "large" ? "Large" : "Standard",
       }))}
       onChange={(value) => setSize(value as ReadingSize)}
+    />
+  );
+}
+
+function PrintScopeControl() {
+  const scope = usePrintSettings((s) => s.scope);
+  const setScope = usePrintSettings((s) => s.setScope);
+  return (
+    <SegmentedControl
+      label="What Print prints"
+      value={scope}
+      options={[
+        { value: "conversation", label: "Whole conversation" },
+        { value: "message", label: "Latest message" },
+      ]}
+      onChange={(value) => setScope(value as PrintScope)}
     />
   );
 }
@@ -397,6 +414,19 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
               "Preloading images lets senders see that an email was opened, along with your IP address and approximate location, even for emails you skip. Turning it off keeps text preloading, and loads images only when you open an email.",
             keywords: ["privacy", "images", "tracking"],
             Control: PreloadImagesControl,
+          },
+        ],
+      },
+      {
+        title: "Printing",
+        settings: [
+          {
+            id: "reading.printScope",
+            title: "Print",
+            description:
+              "What Print in the More menu, and its shortcut, prints. Each message's printer button prints just that message.",
+            keywords: ["printer", "paper", "pdf", "conversation", "message"],
+            Control: PrintScopeControl,
           },
         ],
       },

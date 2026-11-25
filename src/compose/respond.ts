@@ -7,7 +7,7 @@ import { useUiStore } from "../store/uiStore";
 import { useComposeStore } from "./composeStore";
 
 /** The message a Reply, Reply all or Forward answers: the conversation's latest that isn't a draft. */
-function replyTarget(detail: ThreadDetail | undefined): string | null {
+export function replyTarget(detail: ThreadDetail | undefined): string | null {
   const sent = detail?.messages.filter((m) => !m.labelIds.includes("DRAFT")) ?? [];
   return sent[sent.length - 1]?.id ?? null;
 }

@@ -5,13 +5,15 @@ import type { MessageDetail, ThreadDetail } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
-import { printConversation, printPage } from "./print";
+import { printMessage, printOpenConversation, printPage } from "./print";
+import { usePrintSettings } from "./printSettings";
 
 afterEach(() => {
   useToastStore.getState().toasts.forEach((t) => dismissToast(t.id));
   useUiStore.setState({ openThread: null });
   useThreadStore.setState({ details: new Map() });
   useAccountStore.setState({ accounts: [] });
+  usePrintSettings.setState({ scope: "conversation" });
 });
 
 const toastTitles = () => useToastStore.getState().toasts.map((t) => t.title);
@@ -181,7 +183,7 @@ test("Print sends the open conversation's page to a print window", async () => {
   useThreadStore.setState({ details: new Map([["a1:t1", thread([message()])]]) });
   useUiStore.setState({ openThread: "a1:t1" });
 
-  await printConversation();
+  await printOpenConversation();
   expect(printed).toHaveLength(1);
   expect(printed[0].title).toBe("Plans");
   expect(printed[0].allowRemote).toBe(true);
@@ -191,7 +193,7 @@ test("Print sends the open conversation's page to a print window", async () => {
   expect(toastTitles()).toEqual([]);
 });
 
-test("Print says so when nothing is open, and when some messages print as previews", async () => {
+test("Print says so when nothing is open, and when a message prints as a preview", async () => {
   const printed: unknown[] = [];
   mockIPC((cmd, args) => {
     if (cmd === "print_email") printed.push(args);
@@ -199,12 +201,69 @@ test("Print says so when nothing is open, and when some messages print as previe
     if (cmd === "get_thread") return thread([message({ bodyAvailable: false, bodyHtml: null })]);
     return undefined;
   });
-  await printConversation();
+  await printOpenConversation();
   expect(toastTitles()).toEqual(["Open a conversation to print it."]);
   expect(printed).toEqual([]);
 
   useUiStore.setState({ openThread: "a1:t1" });
-  await printConversation();
+  await printOpenConversation();
   expect(printed).toHaveLength(1);
-  expect(toastTitles()).toContain("Some messages print as previews");
+  expect(toastTitles()).toContain("It prints as a preview");
+});
+
+const twoAndADraft = () =>
+  thread([
+    message({ id: "m1", bodyHtml: "<p>first</p>" }),
+    message({ id: "m2", bodyHtml: "<p>second</p>", labelIds: ["SPAM"] }),
+    message({ id: "m3", bodyHtml: "<p>a draft</p>", labelIds: ["DRAFT"] }),
+  ]);
+
+test("a page of one message has only that message, and says it is one of the conversation's", () => {
+  const page = printPage(twoAndADraft(), null, undefined, "m1");
+  expect(page.html).toContain("<p>first</p>");
+  expect(page.html).not.toContain("<p>second</p>");
+  expect(page.html).not.toContain("<p>a draft</p>");
+  expect(page.html).toContain('<div class="pheeme-print-count">1 of 3 messages</div>');
+  // Another message being in Spam doesn't hold back this one's images.
+  expect(page.allowRemote).toBe(true);
+  expect(printPage(twoAndADraft(), null).html).toContain(
+    '<div class="pheeme-print-count">3 messages</div>',
+  );
+});
+
+/** What each print_email call printed, with get_thread answering `detail`. */
+function capturePrints(detail: ThreadDetail) {
+  const printed: string[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd === "get_thread") return detail;
+    if (cmd === "print_email") printed.push(String((args as { html: string }).html));
+    return undefined;
+  });
+  useThreadStore.setState({ details: new Map([["a1:t1", detail]]) });
+  return printed;
+}
+
+test("with Latest message chosen, Print prints only the message Reply answers", async () => {
+  const printed = capturePrints(twoAndADraft());
+  useUiStore.setState({ openThread: "a1:t1" });
+  usePrintSettings.setState({ scope: "message" });
+
+  await printOpenConversation();
+  expect(printed).toHaveLength(1);
+  expect(printed[0]).toContain("<p>second</p>");
+  expect(printed[0]).not.toContain("<p>first</p>");
+  expect(printed[0]).not.toContain("<p>a draft</p>");
+
+  usePrintSettings.setState({ scope: "conversation" });
+  await printOpenConversation();
+  expect(printed[1]).toContain("<p>first</p>");
+  expect(printed[1]).toContain("<p>a draft</p>");
+});
+
+test("a message's printer button prints that message alone, whatever the setting", async () => {
+  const printed = capturePrints(twoAndADraft());
+  await printMessage("a1:t1", "m1");
+  expect(printed).toHaveLength(1);
+  expect(printed[0]).toContain("<p>first</p>");
+  expect(printed[0]).not.toContain("<p>second</p>");
 });

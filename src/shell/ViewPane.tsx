@@ -34,7 +34,8 @@ import {
   trash,
 } from "../mail/actions";
 import { threadKey } from "../mail/mailboxes";
-import { PRINT_COMMAND, printConversation } from "../mail/print";
+import { PRINT_COMMAND, printOpenConversation } from "../mail/print";
+import { usePrintSettings } from "../mail/printSettings";
 import {
   CREATE_EVENT_COMMAND,
   CREATE_EVENT_SHORTCUT,
@@ -155,10 +156,11 @@ export function ViewPane() {
         { type: "separator" },
         {
           id: "print",
-          label: "Print",
+          label:
+            usePrintSettings.getState().scope === "message" ? "Print latest message" : "Print all",
           shortcut: registry.shortcutFor(PRINT_COMMAND),
           disabled: !openKey,
-          onSelect: () => void printConversation(),
+          onSelect: () => void printOpenConversation(),
         },
         { id: "original", label: "Show original", onSelect: () => notYet("Show original") },
       ],

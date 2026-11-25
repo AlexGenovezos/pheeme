@@ -1,14 +1,16 @@
-// Print, as Gmail does it: the open conversation as a plain page (the subject, then each message with who it's
-// from and to, when, its text and its files) in a window of its own, with the system's print dialog over it.
-// Rust shows the page under a policy that runs no script (`src-tauri/src/print.rs`).
+// Print, as Gmail does it: the open conversation, or one message of it, as a plain page (the subject, then each
+// message with who it's from and to, when, its text and its files) in a window of its own, with the system's print
+// dialog over it. Rust shows the page under a policy that runs no script (`src-tauri/src/print.rs`).
 import { toast, toastError } from "../components/ui/Toast";
 import { type EmailAddress, type MessageDetail, printEmail, type ThreadDetail } from "../lib/tauri";
+import { replyTarget } from "../compose/respond";
 import { useAccountStore } from "../store/accountStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
 import { formatSize } from "./AttachmentList";
 import { isCalendarBodyPart } from "./invitePart";
 import { parseThreadKey } from "./mailboxes";
+import { usePrintSettings } from "./printSettings";
 
 export const PRINT_COMMAND = "conversation.print";
 
@@ -96,17 +98,25 @@ body { margin: 24px; color: #000; background: #fff; font: 13px/1.5 system-ui, -a
 `;
 
 /**
- * The page for `detail`: title (the subject), the whole HTML document, and whether it may load remote images (not
- * when any message is in Spam, as in the reading pane until Show images).
+ * The page for `detail`, or only its message `only`: title (the subject), the whole HTML document, and whether it
+ * may load remote images (not when a printed message is in Spam, as in the reading pane until Show images).
  */
 export function printPage(
   detail: ThreadDetail,
   account: string | null,
   locale?: string,
+  only?: string,
 ): { title: string; html: string; allowRemote: boolean } {
+  const messages = only ? detail.messages.filter((m) => m.id === only) : detail.messages;
   const subject = detail.thread.subject?.trim() || detail.messages[0]?.subject?.trim() || "";
   const title = subject || "(no subject)";
-  const count = detail.messages.length;
+  const total = detail.messages.length;
+  const count =
+    messages.length < total
+      ? `${messages.length} of ${total} messages`
+      : total === 1
+        ? "1 message"
+        : `${total} messages`;
   const html = [
     "<!doctype html>",
     '<html><head><meta charset="utf-8">',
@@ -116,24 +126,37 @@ export function printPage(
     "</head><body>",
     account ? `<div class="pheeme-print-account">${escape(account)}</div>` : "",
     `<h1 class="pheeme-print-subject">${escape(title)}</h1>`,
-    `<div class="pheeme-print-count">${count === 1 ? "1 message" : `${count} messages`}</div>`,
-    ...detail.messages.map((m) => message(m, locale)),
+    `<div class="pheeme-print-count">${count}</div>`,
+    ...messages.map((m) => message(m, locale)),
     "</body></html>",
   ];
   return {
     title,
     html: html.filter(Boolean).join("\n"),
-    allowRemote: !detail.messages.some((m) => m.labelIds.includes("SPAM")),
+    allowRemote: !messages.some((m) => m.labelIds.includes("SPAM")),
   };
 }
 
-/** Print the open conversation (all of it, as Gmail's Print all does). */
-export async function printConversation() {
+/**
+ * Print (the shortcut, the palette and the More menu): the open conversation, or only its latest message (the one
+ * Reply answers) when Settings › Reading says so.
+ */
+export async function printOpenConversation() {
   const key = useUiStore.getState().openThread;
   if (!key) {
     toast({ title: "Open a conversation to print it." });
     return;
   }
+  await printThread(key, usePrintSettings.getState().scope === "message" ? "latest" : undefined);
+}
+
+/** A message's own printer button: that message alone. */
+export function printMessage(key: string, messageId: string) {
+  return printThread(key, messageId);
+}
+
+/** Print the conversation `key`, or only its message `only` (`latest` for the one Reply answers). */
+async function printThread(key: string, only?: string) {
   // Fetches what isn't cached, including bodies a cached conversation is still missing.
   await useThreadStore.getState().load(key);
   const detail = useThreadStore.getState().details.get(key);
@@ -141,16 +164,29 @@ export async function printConversation() {
     toast({ title: "That conversation couldn't be loaded to print.", tone: "danger" });
     return;
   }
-  if (detail.messages.some((m) => !m.bodyAvailable))
+  // A conversation of drafts alone has no message Reply answers: its newest draft, then.
+  const messageId =
+    only === "latest"
+      ? (replyTarget(detail) ?? detail.messages[detail.messages.length - 1]!.id)
+      : only;
+  const printed = messageId ? detail.messages.filter((m) => m.id === messageId) : detail.messages;
+  if (printed.length === 0) {
+    toast({ title: "That message couldn't be found to print.", tone: "danger" });
+    return;
+  }
+  if (printed.some((m) => !m.bodyAvailable))
     toast({
-      title: "Some messages print as previews",
+      title: printed.length === 1 ? "It prints as a preview" : "Some messages print as previews",
       description:
-        detail.bodyError?.message ?? "Their full text isn't downloaded. Try again when online.",
+        detail.bodyError?.message ??
+        (printed.length === 1
+          ? "Its full text isn't downloaded. Try again when online."
+          : "Their full text isn't downloaded. Try again when online."),
     });
   const accountId = parseThreadKey(key)?.accountId;
   const account =
     useAccountStore.getState().accounts.find((a) => a.id === accountId)?.email ?? null;
-  const page = printPage(detail, account);
+  const page = printPage(detail, account, undefined, messageId);
   try {
     await printEmail(page.title, page.html, page.allowRemote);
   } catch (e) {
