@@ -3,6 +3,7 @@
 
 typedef void (*PheemeClick)(const char *);
 typedef void (*PheemeCompletion)(void *, int32_t);
+typedef void (*PheemeListed)(void *, const char *);
 static PheemeClick clickHandler;
 static PheemeClick joinHandler;
 // A reminder for a video call offers Join, which opens the call without bringing Pheeme forward.
@@ -64,8 +65,11 @@ void pheeme_notifications_permission(bool request, void *context, PheemeCompleti
     }];
 }
 
+// `identifier`: a conversation's own (the same for each of its messages, so a new one replaces
+// the last), or NULL for a one-off.
 void pheeme_notifications_show(const char *title, const char *body, const char *target,
-                              const char *join, void *context, PheemeCompletion callback) {
+                              const char *identifier, const char *join, void *context,
+                              PheemeCompletion callback) {
     if (![NSBundle mainBundle].bundleIdentifier) { callback(context, -1); return; }
     UNMutableNotificationContent *content = [UNMutableNotificationContent new];
     content.title = [NSString stringWithUTF8String:title];
@@ -78,7 +82,39 @@ void pheeme_notifications_show(const char *title, const char *body, const char *
         content.userInfo = @{@"target": [NSString stringWithUTF8String:target]};
     }
     content.sound = [UNNotificationSound defaultSound];
-    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:[NSUUID UUID].UUIDString content:content trigger:nil];
+    NSString *requestId = identifier ? [NSString stringWithUTF8String:identifier] : [NSUUID UUID].UUIDString;
+    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:requestId content:content trigger:nil];
     [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request
         withCompletionHandler:^(NSError *error) { callback(context, error ? -1 : 0); }];
+}
+
+// Takes away delivered notifications (a conversation that was read). Copies the strings before
+// returning.
+void pheeme_notifications_remove(const char *const *identifiers, size_t count) {
+    if (![NSBundle mainBundle].bundleIdentifier) { return; }
+    NSMutableArray<NSString *> *ids = [NSMutableArray arrayWithCapacity:count];
+    for (size_t i = 0; i < count; i++) {
+        NSString *value = [NSString stringWithUTF8String:identifiers[i]];
+        if (value) { [ids addObject:value]; }
+    }
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    // A request just added may not be delivered yet: take it from both lists.
+    [center removePendingNotificationRequestsWithIdentifiers:ids];
+    [center removeDeliveredNotificationsWithIdentifiers:ids];
+}
+
+// The identifiers of the notifications still in Notification Center, as a JSON array (NULL if
+// they can't be read).
+void pheeme_notifications_delivered(void *context, PheemeListed callback) {
+    if (![NSBundle mainBundle].bundleIdentifier) { callback(context, NULL); return; }
+    [[UNUserNotificationCenter currentNotificationCenter]
+        getDeliveredNotificationsWithCompletionHandler:^(NSArray<UNNotification *> *notifications) {
+            NSMutableArray<NSString *> *ids = [NSMutableArray arrayWithCapacity:notifications.count];
+            for (UNNotification *notification in notifications) {
+                [ids addObject:notification.request.identifier];
+            }
+            NSData *json = [NSJSONSerialization dataWithJSONObject:ids options:0 error:nil];
+            NSString *text = json ? [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding] : nil;
+            callback(context, text ? text.UTF8String : NULL);
+        }];
 }

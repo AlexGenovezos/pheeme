@@ -109,7 +109,9 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winrt-notification = { package = "tauri-winrt-notification", version = "0.7" }
+# Toasts with a tag and group per conversation, so reading one takes its toast away (already in
+# the tree via tauri-winrt-notification).
+windows = { version = "0.61", features = ["Data_Xml_Dom", "Foundation", "Foundation_Collections", "UI_Notifications"] }
 # The Windows build number for the anonymous usage ping (already in the tree via tao).
 windows-version = "0.100"
 
