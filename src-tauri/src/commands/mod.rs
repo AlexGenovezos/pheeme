@@ -19,6 +19,7 @@ pub mod sync;
 pub mod tasks;
 pub mod themes;
 pub mod threads;
+pub mod timing;
 pub mod transfer;
 pub mod updater;
 pub mod weather;

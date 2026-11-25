@@ -44,8 +44,10 @@ import {
   deleteEvent,
   duplicateEvent,
   editEvent,
+  redraw,
   saveEventAsTemplate,
   writableCalendars,
+  writeFailed,
 } from "./actions";
 import { displayZone, type OpenEvent, useCalendarStore } from "./calendarStore";
 import { eventColors } from "./colors";
@@ -59,6 +61,7 @@ import { linkify } from "../mail/linkify";
 import { useBlockTask } from "../tasks/DatedTasks";
 import { useTasksStore } from "../tasks/tasksStore";
 import { AnswerRadios } from "./AnswerRadios";
+import { timeWrite } from "./writeTiming";
 import { type Answer, answerTally, answerWord } from "./rsvp";
 import { type OtherZone, placeName, useZoneSettings } from "./zoneSettings";
 import { dayShift, offsetMinutes, zoneCity } from "./zones";
@@ -215,11 +218,13 @@ function Rsvp({ detail }: { detail: EventDetail }) {
     setAsking(null);
     setPending(response);
     setError(null);
+    const timer = timeWrite("respond", detail.recurring ? scope : null);
     try {
       await respondToCalendarEvent(detail.accountId, detail.calendarId, detail.id, scope, response);
       setAnswered(response);
-      await useCalendarStore.getState().loadEvents();
+      await redraw(timer);
     } catch (e) {
+      writeFailed(timer, e);
       setError(toCommandError(e).message);
     } finally {
       setPending(null);

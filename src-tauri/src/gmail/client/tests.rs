@@ -658,6 +658,7 @@ async fn probe_reports_retry_stage_and_stats() {
     let stats = probe.snapshot();
     assert_eq!(stats.retries, 1);
     assert_eq!(stats.requests, 2);
+    assert_eq!(stats.backoff_ms, 1_000);
     assert_eq!(stats.last_status, Some(429));
     assert_eq!(stats.last_reason.as_deref(), Some("rateLimitExceeded"));
 }

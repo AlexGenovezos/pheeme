@@ -719,6 +719,7 @@ export function createCalendarHandlers(
         ],
       };
     },
+    log_calendar_write: () => undefined,
     add_calendar_file_events: (args): { events: EventRef[]; already: number } => {
       const accountId = String(args.targetAccountId);
       const calendarId = String(args.calendarId);

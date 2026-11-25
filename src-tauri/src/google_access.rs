@@ -4,6 +4,7 @@
 //! with one [`Adapter`] per Google API saying how to read, sync and record it.
 
 use crate::db;
+use crate::gmail::probe::{with_probe, RequestProbe};
 use crate::gmail::GmailError;
 use crate::lock::lock;
 use serde::{Serialize, Serializer};
@@ -13,7 +14,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
-use tracing::warn;
+use tokio::time::Instant;
+use tracing::{info, warn};
 
 /// Where an account's access to one Google API stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,6 +203,9 @@ pub trait Adapter: Send + Sync {
     }
 }
 
+/// A sync that took longer than this is logged with where its time went.
+const SLOW_SYNC: Duration = Duration::from_secs(3);
+
 /// How often a [`Poller`] checks.
 #[derive(Debug, Clone, Copy)]
 pub struct Intervals {
@@ -317,9 +322,38 @@ impl Poller {
         asked: bool,
     ) -> anyhow::Result<()> {
         let gate = self.gate(account_id);
+        let queued = Instant::now();
         let _held = gate.lock().await;
+        let gate_wait = queued.elapsed();
         let before = adapter.access(account_id).await?;
-        let status = match adapter.sync(account_id, now, asked).await {
+        // A sync the user asked for (`calendar_sync_now`) counts toward that command's probe.
+        let probe = crate::gmail::probe::current().unwrap_or_else(RequestProbe::passive);
+        let started = Instant::now();
+        let synced = with_probe(probe.clone(), adapter.sync(account_id, now, asked)).await;
+        if queued.elapsed() >= SLOW_SYNC {
+            // Where the time went: Google's side, waits, and what's left (the cache).
+            let google = probe.snapshot();
+            info!(
+                account = account_id,
+                asked,
+                ok = synced.is_ok(),
+                elapsed_ms = queued.elapsed().as_millis() as u64,
+                sync_ms = started.elapsed().as_millis() as u64,
+                gate_wait_ms = gate_wait.as_millis() as u64,
+                gmail_requests = google.requests,
+                gmail_ms = google.gmail_ms,
+                retries = google.retries,
+                backoff_ms = google.backoff_ms,
+                slot_wait_ms = google.slot_wait_ms,
+                quota_wait_ms = google.quota_wait_ms,
+                token_ms = google.token_ms,
+                last_status = ?google.last_status,
+                last_reason = ?google.last_reason,
+                "slow {} sync",
+                A::NAME
+            );
+        }
+        let status = match synced {
             Ok(()) => AccessStatus::On,
             Err(SyncFailure::Cache(e)) => return Err(e),
             Err(SyncFailure::Google(e)) => match AccessStatus::from_failure(&e) {
@@ -367,7 +401,105 @@ impl Poller {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::timing::tests::logged;
     use crate::gmail::error::tests::api;
+
+    /// An API whose sync takes `takes` and makes one request of `google`.
+    struct Slow {
+        pool: SqlitePool,
+        takes: Duration,
+        google: Duration,
+    }
+
+    #[async_trait::async_trait]
+    impl Adapter for Slow {
+        const NAME: &'static str = "calendar";
+        fn pool(&self) -> &SqlitePool {
+            &self.pool
+        }
+        async fn access(&self, _: &str) -> anyhow::Result<AccessStatus> {
+            Ok(AccessStatus::On)
+        }
+        async fn due(&self, _: &str, _: &AccessStatus) -> anyhow::Result<bool> {
+            Ok(true)
+        }
+        async fn sync(&self, _: &str, _: i64, _: bool) -> Result<(), SyncFailure> {
+            if let Some(probe) = crate::gmail::probe::current() {
+                probe.sent(self.google);
+            }
+            tokio::time::sleep(self.takes).await;
+            Ok(())
+        }
+        async fn record(&self, _: &str, _: &AccessStatus, _: i64) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn access_changed(&self, _: &str, _: &AccessStatus) {}
+    }
+
+    fn slow(takes: Duration) -> Slow {
+        Slow {
+            pool: SqlitePool::connect_lazy("sqlite::memory:").unwrap(),
+            takes,
+            google: Duration::from_millis(3_900),
+        }
+    }
+
+    fn poller() -> Arc<Poller> {
+        Arc::new(Poller::new(Intervals {
+            first: Duration::ZERO,
+            background: Duration::from_secs(60),
+            foreground: Duration::from_secs(15),
+        }))
+    }
+
+    async fn sync_taking(takes: Duration) -> String {
+        let (adapter, poller) = (slow(takes), poller());
+        logged(async { poller.sync_now(&adapter, "acct", 0).await.unwrap() }).await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_sync_held_back_by_a_write_is_slow_too() {
+        let (adapter, poller) = (slow(Duration::ZERO), poller());
+        let write = poller.gate("acct").lock_owned().await;
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(4)).await;
+            drop(write);
+        });
+        let lines = logged(async { poller.sync_now(&adapter, "acct", 0).await.unwrap() }).await;
+        assert!(lines.contains("gate_wait_ms=4000"), "{lines}");
+        assert!(lines.contains("sync_ms=0"), "{lines}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_asked_for_sync_counts_toward_its_command() {
+        use crate::commands::timing::Call;
+        let (adapter, poller) = (slow(Duration::ZERO), poller());
+        let lines = logged(Call::write("calendar", "calendar_sync_now").run(async {
+            poller.sync_now(&adapter, "acct", 0).await.unwrap();
+            Ok(())
+        }))
+        .await;
+        assert!(lines.contains("google_ms=3900"), "{lines}");
+        assert!(lines.contains("requests=1"), "{lines}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_sync_says_where_its_time_went() {
+        let lines = sync_taking(Duration::from_secs(4)).await;
+        for want in [
+            "slow calendar sync",
+            "account=\"acct\"",
+            "asked=true",
+            "ok=true",
+            "elapsed_ms=4000",
+            "gate_wait_ms=0",
+            "gmail_requests=1",
+            "gmail_ms=3900",
+        ] {
+            assert!(lines.contains(want), "{want} missing from {lines}");
+        }
+        assert_eq!(sync_taking(Duration::from_secs(1)).await, "");
+    }
 
     #[test]
     fn failures_that_pass_by_themselves_leave_the_status_alone() {
