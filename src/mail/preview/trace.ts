@@ -70,13 +70,17 @@ export class PreviewTrace {
 
   /**
    * Kept: the error's name and code location, and its message only when Pheeme wrote it (a
-   * failed load is the app's own `{ code, message }`) or it's pdf.js's fixed text.
+   * failed load is the app's own `{ code, message }`), it's pdf.js's fixed text, or it's the engine
+   * failing inside pdf.js's own code.
    */
   failed(stage: Stage, error: unknown, page?: number) {
     this.errors += 1;
     // Page 1 failing is what the user saw, whatever later pages did.
     if (page === 1) this.firstPage = "failed";
-    const ownText = stage === "load" || (error instanceof Error && FIXED_MESSAGES.has(error.name));
+    const ownText =
+      stage === "load" ||
+      (error instanceof Error &&
+        (FIXED_MESSAGES.has(error.name) || (this.kind === "pdf" && ENGINE_ERRORS.has(error.name))));
     this.firstError ??= { stage, text: describeError(error, ownText) };
   }
 
@@ -131,6 +135,13 @@ const FIXED_MESSAGES = new Set([
   "ResponseException",
   "UnexpectedResponseException",
 ]);
+
+/**
+ * The engine's own errors, whose messages quote the code that failed ("….getOrInsertComputed is not
+ * a function"), not the file: kept for pdf.js, the one reader whose code (not the file's text)
+ * they'd quote. They say whether the webview lacked a built-in or pdf.js tripped on its own state.
+ */
+const ENGINE_ERRORS = new Set(["TypeError", "ReferenceError"]);
 
 /** Where a failure happened: fetching the bytes, parsing them, or drawing a page. */
 export type Stage = "load" | "read" | "render";

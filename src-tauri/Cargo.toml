@@ -102,7 +102,7 @@ zbus = { version = "6", default-features = false, features = ["service"] }
 security-framework = "3"
 # Registers the default that turns on WKWebView spell checking (already in the tree via tao and wry).
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSDictionary", "NSNotification", "NSObject", "NSOperation", "NSProcessInfo", "NSString", "NSUserDefaults", "NSValue"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSBundle", "NSDictionary", "NSNotification", "NSObject", "NSOperation", "NSProcessInfo", "NSString", "NSUserDefaults", "NSValue"] }
 # Sleep, wake, sleeping displays and whether the window is on screen, for the diagnostics log
 # (presence.rs). Both already in the tree via tao.
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWorkspace"] }

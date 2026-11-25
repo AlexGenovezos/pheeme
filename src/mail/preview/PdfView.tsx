@@ -1,5 +1,7 @@
+// Before pdf.js: it calls built-ins older Macs' WebKit lacks.
+import "./pdfjsPolyfills";
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import workerUrl from "./pdf.worker?worker&url";
 import { useEffect, useRef, useState } from "react";
 import { PreviewMessage } from "./PreviewMessage";
 import { isBlankCanvas, type PreviewTrace, usePreviewTrace } from "./trace";
@@ -70,6 +72,7 @@ function PdfPage({
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const el = holder.current;
@@ -103,11 +106,17 @@ function PdfPage({
           },
           (error: unknown) => {
             // Cancelled because the page scrolled away or the preview closed: not a failure.
-            if (!stop.signal.aborted) trace?.failed("render", error, number);
+            if (stop.signal.aborted) return;
+            trace?.failed("render", error, number);
+            setFailed(true);
           },
         );
       })
-      .catch((error: unknown) => !stop.signal.aborted && trace?.failed("render", error, number));
+      .catch((error: unknown) => {
+        if (stop.signal.aborted) return;
+        trace?.failed("render", error, number);
+        setFailed(true);
+      });
     return () => {
       stop.abort();
       task?.cancel();
@@ -121,6 +130,12 @@ function PdfPage({
       style={{ aspectRatio: `${size.width} / ${size.height}` }}
     >
       <canvas ref={canvas} aria-label={`Page ${number}`} role="img" />
+      {/* Over the page's own frame, so a failure takes no more room than the page would have. */}
+      {failed && (
+        <p className="file-preview__page-failed">
+          Pheeme couldn't draw page {number}. Open the file in its app, or download it.
+        </p>
+      )}
     </div>
   );
 }

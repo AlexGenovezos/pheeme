@@ -103,6 +103,16 @@ it("keeps a reader's own message out, since it can quote the file", () => {
   expect(s.reports[0].error).not.toContain("Salary");
 });
 
+it("keeps the engine's message when pdf.js's own code fails", () => {
+  const s = setup("pdf");
+  s.trace.failed("render", new TypeError("this.#n.getOrInsertComputed is not a function"), 1);
+  s.trace.finish();
+  expect(s.reports[0]).toMatchObject({ outcome: "render_failed", firstPage: "failed" });
+  expect(s.reports[0].error).toMatch(
+    /^render: TypeError: this\.#n\.getOrInsertComputed is not a function/,
+  );
+});
+
 it("a blank first page reads as blank even when a later page has content", () => {
   const s = setup();
   s.trace.drew(2, false);
