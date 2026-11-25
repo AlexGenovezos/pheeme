@@ -22,8 +22,9 @@ afterEach(() => {
 });
 
 /** A pane whose target sits `at()` px down the content: its top on screen is that minus the scroll. */
-function setup(at: () => number) {
+function setup(at: () => number, scrollHeight = () => 2000) {
   const pane = document.createElement("div");
+  Object.defineProperty(pane, "scrollHeight", { get: scrollHeight });
   const content = document.createElement("div");
   const target = document.createElement("article");
   content.append(target);
@@ -53,4 +54,24 @@ test("lets go once the reader scrolls, also over an email's frame where no wheel
   expect(resized).toBeNull();
   at = 1100;
   expect(pane.scrollTop).toBe(300);
+});
+
+test("a scroll the layout caused (a frame above shrinking clamps it) keeps holding", () => {
+  let at = 800;
+  let tall = 2000;
+  const { pane, content, target } = setup(
+    () => at,
+    () => tall,
+  );
+  keepInView(pane, content, target);
+  tall = 1000; // a frame above shrank, and the browser clamped the scroll
+  at = 500;
+  pane.scrollTop = 600;
+  pane.dispatchEvent(new Event("scroll"));
+  expect(resized).not.toBeNull();
+  expect(pane.scrollTop).toBe(500);
+  tall = 2000; // and grew again
+  at = 800;
+  resized?.();
+  expect(pane.scrollTop).toBe(800);
 });

@@ -27,16 +27,20 @@ const HOLD_MS = 3000;
 export function keepInView(pane: HTMLElement, content: Element, target: Element): () => void {
   // The target's `scroll-margin-top` is the room left above it, as `scrollIntoView` would.
   const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
-  // Where this last left the pane: a scroll anywhere else is the user's, also one over an email's frame, whose
-  // wheel events never reach the pane.
+  // Where this last left the pane, and how tall the content was then: a scroll anywhere else is the user's (also one
+  // over an email's frame, whose wheel events never reach the pane), unless the content changed height, which moves
+  // or clamps the scroll by itself (a frame above shrinking): then place it again.
   let placed = pane.scrollTop;
+  let height = pane.scrollHeight;
   const place = () => {
     const offset = target.getBoundingClientRect().top - pane.getBoundingClientRect().top - margin;
     if (Math.abs(offset) >= 1) pane.scrollTop += offset;
     placed = pane.scrollTop;
+    height = pane.scrollHeight;
   };
   const onScroll = () => {
-    if (Math.abs(pane.scrollTop - placed) >= 1) stop();
+    if (pane.scrollHeight !== height) place();
+    else if (Math.abs(pane.scrollTop - placed) >= 1) stop();
   };
   place();
   const observer = typeof ResizeObserver === "function" ? new ResizeObserver(place) : null;
