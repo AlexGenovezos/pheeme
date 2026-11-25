@@ -66,6 +66,19 @@ test("a PDF draws in a webview without the newest built-ins", async ({ page }) =
   expect(errors).toEqual([]);
 });
 
+test("a PDF still draws where no worker can start", async ({ page }) => {
+  // pdf.js then imports its worker file into the window and needs its `WorkerMessageHandler`.
+  await page.addInitScript(() => {
+    window.Worker = function () {
+      throw new Error("Workers are blocked");
+    } as unknown as typeof Worker;
+  });
+  const first = await previewInvoice(page);
+
+  await expect.poll(() => drawn(first), { timeout: 15_000 }).toBe(true);
+  await expect(first.getByText(/couldn't draw/)).toHaveCount(0);
+});
+
 test("a page pdf.js can't draw says so in its place", async ({ page }) => {
   // Every page fails to draw: what any future gap in the built-ins would look like.
   await page.addInitScript(() => {
