@@ -5,6 +5,7 @@
 pub mod bundle;
 pub mod email;
 pub mod image_probe;
+pub mod platform;
 pub mod screenshot;
 pub mod scrub;
 pub mod upload;
@@ -126,7 +127,9 @@ pub fn summary(
     json!({
         "version": env!("CARGO_PKG_VERSION"),
         "os": std::env::consts::OS,
+        "osVersion": platform::os_version(),
         "arch": std::env::consts::ARCH,
+        "webview": platform::webview(),
         "generatedAt": chrono::Utc::now().to_rfc3339(),
         "accounts": accounts,
         "databaseBytes": database_bytes,

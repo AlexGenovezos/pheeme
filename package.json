@@ -43,6 +43,7 @@
     "@tiptap/react": "3.34.0",
     "@tiptap/starter-kit": "3.34.0",
     "chrono-node": "2.10.3",
+    "core-js": "3.51.0",
     "culori": "4.0.2",
     "docx-preview": "0.4.1",
     "dompurify": "3.4.18",
