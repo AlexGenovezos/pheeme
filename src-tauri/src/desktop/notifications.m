@@ -97,7 +97,10 @@ void pheeme_notifications_remove(const char *const *identifiers, size_t count) {
         NSString *value = [NSString stringWithUTF8String:identifiers[i]];
         if (value) { [ids addObject:value]; }
     }
-    [[UNUserNotificationCenter currentNotificationCenter] removeDeliveredNotificationsWithIdentifiers:ids];
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    // A request just added may not be delivered yet: take it from both lists.
+    [center removePendingNotificationRequestsWithIdentifiers:ids];
+    [center removeDeliveredNotificationsWithIdentifiers:ids];
 }
 
 // The identifiers of the notifications still in Notification Center, as a JSON array (NULL if

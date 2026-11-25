@@ -172,7 +172,9 @@ async fn serve(
                         if replaces != 0 {
                             targets.remove(&replaces);
                         }
-                        if targets.len() >= 256 {
+                        // Above Plasma's history of 1,000, so a read conversation's entry can
+                        // still be closed there.
+                        if targets.len() >= 1024 {
                             if let Some(id) = targets.keys().next().copied() {
                                 targets.remove(&id);
                             }
