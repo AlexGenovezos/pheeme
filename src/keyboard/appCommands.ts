@@ -14,7 +14,7 @@ import {
 } from "../mail/actions";
 import { openCreateLabel } from "../labels/create";
 import { COPY_CODE_COMMAND, COPY_CODE_SHORTCUT, copyOpenConversationCode } from "../mail/CodeCard";
-import { PRINT_COMMAND, printConversation } from "../mail/print";
+import { PRINT_COMMAND, printOpenConversation } from "../mail/print";
 import {
   CREATE_EVENT_COMMAND,
   CREATE_EVENT_SHORTCUT,
@@ -278,7 +278,7 @@ export function appCommands(): Command[] {
       group: "Conversation",
       shortcut: DEFAULT_KEYS[PRINT_COMMAND],
       keywords: ["paper", "pdf", "printer"],
-      run: () => void printConversation(),
+      run: () => void printOpenConversation(),
     },
     {
       id: COPY_CODE_COMMAND,

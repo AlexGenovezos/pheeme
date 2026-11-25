@@ -1,4 +1,4 @@
-import { ChevronUp, Forward, Pencil, Reply, ReplyAll } from "lucide-react";
+import { ChevronUp, Forward, Pencil, Printer, Reply, ReplyAll } from "lucide-react";
 import { type MouseEvent, useRef } from "react";
 import { showPerson } from "../contacts/personStore";
 import { useComposeStore } from "../compose/composeStore";
@@ -11,6 +11,7 @@ import { useThreadStore } from "../store/threadStore";
 import { AttachmentList } from "./AttachmentList";
 import { EmailBody } from "./EmailBody";
 import { threadKey } from "./mailboxes";
+import { printMessage } from "./print";
 import "./mail.css";
 
 export interface MessageCardProps {
@@ -154,34 +155,42 @@ export function MessageCard({
             {formatFullDate(message.date)}
           </time>
         )}
-        {respondHere && !isDraft && (
-          <div className="message-card__actions">
-            <IconButton
-              size="sm"
-              label="Reply to this message"
-              icon={<Reply />}
-              onClick={() =>
-                void useComposeStore.getState().respond(accountId, message.id, "reply")
-              }
-            />
-            <IconButton
-              size="sm"
-              label="Reply all to this message"
-              icon={<ReplyAll />}
-              onClick={() =>
-                void useComposeStore.getState().respond(accountId, message.id, "replyAll")
-              }
-            />
-            <IconButton
-              size="sm"
-              label="Forward this message"
-              icon={<Forward />}
-              onClick={() =>
-                void useComposeStore.getState().respond(accountId, message.id, "forward")
-              }
-            />
-          </div>
-        )}
+        <div className="message-card__actions">
+          {respondHere && !isDraft && (
+            <>
+              <IconButton
+                size="sm"
+                label="Reply to this message"
+                icon={<Reply />}
+                onClick={() =>
+                  void useComposeStore.getState().respond(accountId, message.id, "reply")
+                }
+              />
+              <IconButton
+                size="sm"
+                label="Reply all to this message"
+                icon={<ReplyAll />}
+                onClick={() =>
+                  void useComposeStore.getState().respond(accountId, message.id, "replyAll")
+                }
+              />
+              <IconButton
+                size="sm"
+                label="Forward this message"
+                icon={<Forward />}
+                onClick={() =>
+                  void useComposeStore.getState().respond(accountId, message.id, "forward")
+                }
+              />
+            </>
+          )}
+          <IconButton
+            size="sm"
+            label="Print this message"
+            icon={<Printer />}
+            onClick={() => void printMessage(threadKey(accountId, message.threadId), message.id)}
+          />
+        </div>
         <button
           type="button"
           className="message-card__toggle"
