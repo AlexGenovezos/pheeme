@@ -1,5 +1,5 @@
 //! One D-Bus connection and signal listener for all notification clicks, without blocked threads.
-use super::super::{activate, join_call, NotifyTarget};
+use super::super::{activate, join_call, NotifyTarget, ThreadTarget};
 use futures::StreamExt;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
@@ -15,10 +15,16 @@ struct Delivery {
     join: Option<String>,
     result: oneshot::Sender<anyhow::Result<()>>,
 }
-static SEND: OnceLock<mpsc::Sender<Delivery>> = OnceLock::new();
+/// What the notification worker is asked to do.
+enum Request {
+    Show(Delivery),
+    /// Close these conversations' notifications (they were read).
+    Close(Vec<ThreadTarget>),
+}
+static SEND: OnceLock<mpsc::Sender<Request>> = OnceLock::new();
 
 pub fn init(app: &AppHandle) {
-    let (tx, rx) = mpsc::channel::<Delivery>(128);
+    let (tx, rx) = mpsc::channel::<Request>(128);
     if SEND.set(tx).is_err() {
         return;
     }
@@ -41,12 +47,16 @@ enum Clicked {
 }
 
 async fn serve(
-    mut rx: mpsc::Receiver<Delivery>,
+    mut rx: mpsc::Receiver<Request>,
     address: Option<String>,
     on_click: Arc<dyn Fn(Clicked) + Send + Sync>,
 ) {
     // A notification daemon may start late or restart. Reconnect on the next delivery.
-    while let Some(first) = rx.recv().await {
+    while let Some(request) = rx.recv().await {
+        // Nothing shown on a new connection yet, so nothing to close.
+        let Request::Show(first) = request else {
+            continue;
+        };
         let connected = match &address {
             Some(address) => {
                 zbus::connection::Builder::address(address.as_str())
@@ -92,9 +102,20 @@ async fn serve(
         };
         // The desktop owns notification history. Bound our in-process routing map too.
         let mut targets = BTreeMap::<u32, (NotifyTarget, Option<String>)>::new();
-        let mut next = Some(first);
+        let mut next = Some(Request::Show(first));
         loop {
-            if let Some(delivery) = next.take() {
+            if let Some(Request::Close(threads)) = &next {
+                let ids: Vec<u32> = ids_of(&targets, threads).collect();
+                for id in ids {
+                    // Gone already (closed by the user) is fine; the server answers NotificationClosed.
+                    if let Err(error) = proxy.call::<_, _, ()>("CloseNotification", &(id,)).await {
+                        tracing::debug!(%error, "Could not close a notification");
+                    }
+                    targets.remove(&id);
+                }
+                next = None;
+            }
+            if let Some(Request::Show(delivery)) = next.take() {
                 // Notification bodies are Pango markup on some desktops; mail is plain text.
                 let body = escape_markup(&delivery.body);
                 let (icon, action) = presentation(&delivery.target);
@@ -107,15 +128,20 @@ async fn serve(
                     zbus::Variant::from(crate::identity::APP_IDENTIFIER),
                 )]);
                 // The spec has a category for new mail but none for event reminders.
-                if matches!(delivery.target, NotifyTarget::Thread(_)) {
+                let mut replaces = 0u32;
+                if let NotifyTarget::Thread(thread) = &delivery.target {
                     hints.insert("category", zbus::Variant::from("email.arrived"));
+                    // A conversation keeps one notification: a new message replaces the last.
+                    replaces = ids_of(&targets, std::slice::from_ref(thread))
+                        .next()
+                        .unwrap_or(0);
                 }
                 let result: zbus::Result<u32> = proxy
                     .call(
                         "Notify",
                         &(
                             "Pheeme",
-                            0u32,
+                            replaces,
                             icon,
                             delivery.title.as_str(),
                             body,
@@ -127,6 +153,10 @@ async fn serve(
                     .await;
                 match result {
                     Ok(id) => {
+                        // A server may give the replacement a new number.
+                        if replaces != 0 {
+                            targets.remove(&replaces);
+                        }
                         if targets.len() >= 256 {
                             if let Some(id) = targets.keys().next().copied() {
                                 targets.remove(&id);
@@ -157,10 +187,23 @@ async fn serve(
                     Some(signal) => if let Ok((id, _)) = signal.body().deserialize::<(u32, u32)>() { targets.remove(&id); },
                     None => break,
                 },
-                delivery = rx.recv() => match delivery { Some(delivery) => next = Some(delivery), None => return },
+                request = rx.recv() => match request { Some(request) => next = Some(request), None => return },
             }
         }
     }
+}
+
+/// The notification numbers of these conversations.
+fn ids_of<'a>(
+    targets: &'a BTreeMap<u32, (NotifyTarget, Option<String>)>,
+    threads: &'a [ThreadTarget],
+) -> impl Iterator<Item = u32> + 'a {
+    targets
+        .iter()
+        .filter_map(move |(id, (target, _))| match target {
+            NotifyTarget::Thread(t) if threads.contains(t) => Some(*id),
+            _ => None,
+        })
 }
 
 pub async fn permission(_: bool) -> anyhow::Result<String> {
@@ -186,15 +229,27 @@ pub async fn show(
         .get()
         .ok_or_else(|| anyhow::anyhow!("Notification service not initialized"))?;
     sender
-        .send(Delivery {
+        .send(Request::Show(Delivery {
             target,
             title,
             body,
             join,
             result,
-        })
+        }))
         .await?;
     rx.await?
+}
+
+pub async fn dismiss(threads: &[ThreadTarget]) -> anyhow::Result<()> {
+    let sender = SEND
+        .get()
+        .ok_or_else(|| anyhow::anyhow!("Notification service not initialized"))?;
+    sender.send(Request::Close(threads.to_vec())).await?;
+    Ok(())
+}
+
+pub async fn delivered() -> anyhow::Result<Vec<ThreadTarget>> {
+    Ok(Vec::new())
 }
 
 pub async fn tray_available() -> bool {
@@ -321,6 +376,8 @@ mod protocol_tests {
     struct FakeDesktop {
         next: AtomicU32,
         calls: mpsc::UnboundedSender<(String, String, Vec<String>)>,
+        /// Each Notify's `replaces_id`, and each CloseNotification as `u32::MAX - id`.
+        replaced: mpsc::UnboundedSender<u32>,
     }
     #[zbus::interface(name = "org.freedesktop.Notifications")]
     impl FakeDesktop {
@@ -328,7 +385,7 @@ mod protocol_tests {
         fn notify(
             &self,
             _app: &str,
-            _replace: u32,
+            replace: u32,
             _icon: &str,
             title: &str,
             body: &str,
@@ -337,7 +394,14 @@ mod protocol_tests {
             _expire: i32,
         ) -> u32 {
             let _ = self.calls.send((title.into(), body.into(), actions));
+            let _ = self.replaced.send(replace);
+            if replace != 0 {
+                return replace;
+            }
             self.next.fetch_add(1, Ordering::Relaxed)
+        }
+        fn close_notification(&self, id: u32) {
+            let _ = self.replaced.send(u32::MAX - id);
         }
         #[zbus(signal)]
         async fn action_invoked(
@@ -358,6 +422,7 @@ mod protocol_tests {
         // An isolated test bus and fake daemon: never displays mail on the user's desktop.
         let (_bus, address) = private_bus();
         let (calls_tx, mut calls) = mpsc::unbounded_channel();
+        let (replaced_tx, mut replaced) = mpsc::unbounded_channel();
         let server = zbus::connection::Builder::address(address.as_str())
             .name("org.freedesktop.Notifications")
             .serve_at(
@@ -365,6 +430,7 @@ mod protocol_tests {
                 FakeDesktop {
                     next: AtomicU32::new(1),
                     calls: calls_tx,
+                    replaced: replaced_tx,
                 },
             )
             .build()
@@ -399,13 +465,13 @@ mod protocol_tests {
             ),
         ] {
             let (result, done) = oneshot::channel();
-            tx.send(Delivery {
+            tx.send(Request::Show(Delivery {
                 target: target.clone(),
                 title: "Sender".into(),
                 body: "<b>Subject</b> & snippet".into(),
                 join,
                 result,
-            })
+            }))
             .await
             .unwrap();
             tokio::time::timeout(std::time::Duration::from_secs(5), done)
@@ -417,6 +483,11 @@ mod protocol_tests {
             assert_eq!(title, "Sender");
             assert_eq!(body, "&lt;b&gt;Subject&lt;/b&gt; &amp; snippet");
             assert_eq!(got_actions, actions);
+            assert_eq!(
+                replaced.recv().await.unwrap(),
+                0,
+                "each is a new notification"
+            );
         }
         let fake = server
             .object_server()
@@ -453,7 +524,52 @@ mod protocol_tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            Clicked::Open(thread)
+            Clicked::Open(thread.clone())
+        );
+
+        // One notification per conversation: a new message replaces the conversation's last
+        // one, and reading it closes that, leaving the event reminder alone.
+        let show = |result| {
+            Request::Show(Delivery {
+                target: thread.clone(),
+                title: "Sender".into(),
+                body: "Reply".into(),
+                join: None,
+                result,
+            })
+        };
+        let (result, done) = oneshot::channel();
+        tx.send(show(result)).await.unwrap();
+        done.await.unwrap().unwrap();
+        let fresh = replaced.recv().await.unwrap();
+        assert_eq!(fresh, 0);
+        let (result, done) = oneshot::channel();
+        tx.send(show(result)).await.unwrap();
+        done.await.unwrap().unwrap();
+        assert_eq!(
+            replaced.recv().await.unwrap(),
+            4,
+            "replaces the conversation's notification"
+        );
+        tx.send(Request::Close(vec![
+            ThreadTarget {
+                account_id: "b".into(),
+                thread_id: "same-thread-id".into(),
+            },
+            match &thread {
+                NotifyTarget::Thread(t) => t.clone(),
+                NotifyTarget::Event(_) => unreachable!(),
+            },
+        ]))
+        .await
+        .unwrap();
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(5), replaced.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            u32::MAX - 4,
+            "closes only that account's conversation"
         );
         drop(tx);
         worker.await.unwrap();

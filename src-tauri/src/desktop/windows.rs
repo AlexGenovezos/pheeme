@@ -1,11 +1,24 @@
-use super::super::{activate, join_call, NotifyTarget};
+//! Toasts through the WinRT notification API. A conversation's toast carries its thread id as
+//! tag and its account as group, so a new message replaces it and reading it takes it away.
+use super::super::{activate, join_call, NotifyTarget, ThreadTarget};
 use tauri::AppHandle;
-use winrt_notification::Toast;
+use windows::core::{Interface, HSTRING};
+use windows::Data::Xml::Dom::XmlDocument;
+use windows::Foundation::TypedEventHandler;
+use windows::UI::Notifications::{
+    ToastActivatedEventArgs, ToastNotification, ToastNotificationManager,
+};
 
 pub fn init(_: &AppHandle) {}
 pub async fn permission(_: bool) -> anyhow::Result<String> {
     Ok("system".into())
 }
+
+fn app_id() -> HSTRING {
+    // Pheeme's installer-created identity.
+    HSTRING::from(crate::identity::APP_IDENTIFIER)
+}
+
 pub async fn show(
     app: &AppHandle,
     target: NotifyTarget,
@@ -13,23 +26,64 @@ pub async fn show(
     body: String,
     join: Option<String>,
 ) -> anyhow::Result<()> {
-    let app = app.clone();
-    // Use Pheeme's installer-created identity. No high-priority toast or DND bypass.
-    let mut toast = Toast::new(crate::identity::APP_IDENTIFIER)
-        .title(&title)
-        .text1(&body);
-    if join.is_some() {
-        toast = toast.add_button("Join", "join");
+    let xml = XmlDocument::new()?;
+    xml.LoadXml(&HSTRING::from(super::toast_xml(
+        &title,
+        &body,
+        join.is_some(),
+    )))?;
+    let toast = ToastNotification::CreateToastNotification(&xml)?;
+    if let NotifyTarget::Thread(thread) = &target {
+        toast.SetTag(&HSTRING::from(&thread.thread_id))?;
+        toast.SetGroup(&HSTRING::from(&thread.account_id))?;
     }
-    toast
-        .on_activated(move |action| {
+    let app = app.clone();
+    toast.Activated(&TypedEventHandler::new(
+        move |_, args: windows::core::Ref<'_, windows::core::IInspectable>| {
             // The Join button's argument; a click on the toast itself has none.
+            let action = args
+                .ok()
+                .ok()
+                .and_then(|args| args.cast::<ToastActivatedEventArgs>().ok())
+                .and_then(|args| args.Arguments().ok())
+                .map(|arguments| arguments.to_string_lossy());
             match (action.as_deref(), &join) {
                 (Some("join"), Some(url)) => join_call(url),
                 _ => activate(&app, target.clone()),
             }
             Ok(())
-        })
-        .show()?;
+        },
+    ))?;
+    // No high-priority toast or DND bypass.
+    ToastNotificationManager::CreateToastNotifierWithId(&app_id())?.Show(&toast)?;
     Ok(())
+}
+
+pub async fn dismiss(threads: &[ThreadTarget]) -> anyhow::Result<()> {
+    let history = ToastNotificationManager::History()?;
+    for thread in threads {
+        history.RemoveGroupedTagWithId(
+            &HSTRING::from(&thread.thread_id),
+            &HSTRING::from(&thread.account_id),
+            &app_id(),
+        )?;
+    }
+    Ok(())
+}
+
+pub async fn delivered() -> anyhow::Result<Vec<ThreadTarget>> {
+    let toasts = ToastNotificationManager::History()?.GetHistoryWithId(&app_id())?;
+    let mut threads = Vec::new();
+    for i in 0..toasts.Size()? {
+        let toast = toasts.GetAt(i)?;
+        let (tag, group) = (toast.Tag()?, toast.Group()?);
+        // Event reminders carry no tag.
+        if !tag.is_empty() && !group.is_empty() {
+            threads.push(ThreadTarget {
+                account_id: group.to_string_lossy(),
+                thread_id: tag.to_string_lossy(),
+            });
+        }
+    }
+    Ok(threads)
 }

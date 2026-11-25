@@ -9,7 +9,7 @@ use crate::sync::SyncEvent;
 use crate::AppState;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -21,7 +21,7 @@ pub use schedule::{NotifySchedule, ScheduleMode};
 
 const TRAY: &str = "pheeme-mail";
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadTarget {
     pub account_id: String,
@@ -41,6 +41,9 @@ pub struct Desktop {
     pending: Mutex<Option<NotifyTarget>>,
     pub can_hide: AtomicBool,
     reminders: Arc<ReminderService>,
+    /// Conversations whose new-mail notification may still be showing. Each is taken away once
+    /// the conversation is no longer unread in the Inbox (see [`dismiss_finished`]).
+    open: Mutex<HashSet<ThreadTarget>>,
 }
 
 #[derive(Serialize)]
@@ -122,6 +125,16 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
     ) {
         refresh(app);
     }
+    if let SyncEvent::MessagesUpdated {
+        account_id,
+        added,
+        removed,
+        modified,
+    } = event
+    {
+        let changed = added.iter().chain(removed).chain(modified);
+        dismiss_finished(app, account_id, changed);
+    }
     if let SyncEvent::NewMail {
         account_id,
         messages,
@@ -166,9 +179,18 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
                             clean_text(&mail.subject, 160),
                             clean_text(&mail.snippet, 240)
                         );
-                        if platform::show(&app, target, clean_text(&mail.sender, 120), body, None)
-                            .await
+                        if platform::show(
+                            &app,
+                            target.clone(),
+                            clean_text(&mail.sender, 120),
+                            body,
+                            None,
+                        )
+                        .await
                         {
+                            if let NotifyTarget::Thread(thread) = target {
+                                lock(&app.state::<Arc<Desktop>>().open).insert(thread);
+                            }
                             shown += 1;
                         } else {
                             failed += 1;
@@ -186,6 +208,100 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
             }
         });
     }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Take away the notifications of the conversations in `changed` that are no longer unread in
+/// the Inbox: read, archived, trashed or deleted, here or on another device.
+fn dismiss_finished<'a>(
+    app: &AppHandle,
+    account_id: &str,
+    changed: impl Iterator<Item = &'a String>,
+) {
+    let Some(desktop) = app.try_state::<Arc<Desktop>>() else {
+        return;
+    };
+    let candidates: Vec<ThreadTarget> = {
+        let open = lock(&desktop.open);
+        if open.is_empty() {
+            return;
+        }
+        changed
+            .map(|thread_id| ThreadTarget {
+                account_id: account_id.to_owned(),
+                thread_id: thread_id.clone(),
+            })
+            .filter(|t| open.contains(t))
+            .collect()
+    };
+    if candidates.is_empty() {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move { dismiss_checked(&app, candidates).await });
+}
+
+/// Of `candidates` (conversations with a notification), dismiss the ones that no longer need it.
+async fn dismiss_checked(app: &AppHandle, candidates: Vec<ThreadTarget>) {
+    let finished = match finished_threads(&app.state::<AppState>().db, candidates).await {
+        Ok(finished) => finished,
+        Err(error) => {
+            tracing::warn!(%error, "Could not check notified conversations");
+            return;
+        }
+    };
+    if finished.is_empty() {
+        return;
+    }
+    {
+        let desktop = app.state::<Arc<Desktop>>();
+        let mut open = lock(&desktop.open);
+        for thread in &finished {
+            open.remove(thread);
+        }
+    }
+    platform::dismiss(&finished).await;
+    // Counts only, as for delivery.
+    tracing::info!(dismissed = finished.len(), "mail notifications dismissed");
+}
+
+/// The conversations of `candidates` that are no longer unread in the Inbox, as cached.
+async fn finished_threads(
+    pool: &sqlx::SqlitePool,
+    candidates: Vec<ThreadTarget>,
+) -> anyhow::Result<Vec<ThreadTarget>> {
+    let keys: Vec<(String, String)> = candidates
+        .iter()
+        .map(|t| (t.account_id.clone(), t.thread_id.clone()))
+        .collect();
+    let labels = db::threads::system_label_ids_for(pool, &keys).await?;
+    Ok(finished_of(candidates, &labels))
+}
+
+/// The conversations of `candidates` that are no longer unread in the Inbox. `labels` holds each
+/// cached conversation's system labels; a conversation missing from it is gone from the cache.
+fn finished_of(
+    candidates: Vec<ThreadTarget>,
+    labels: &HashMap<(String, String), Vec<String>>,
+) -> Vec<ThreadTarget> {
+    candidates
+        .into_iter()
+        .filter(|t| {
+            let labels = labels
+                .get(&(t.account_id.clone(), t.thread_id.clone()))
+                .map_or(&[][..], Vec::as_slice);
+            !unread_in_inbox(labels)
+        })
+        .collect()
+}
+
+/// Whether a conversation with these labels still warrants its new-mail notification.
+fn unread_in_inbox(labels: &[String]) -> bool {
+    let has = |label: &str| labels.iter().any(|l| l == label);
+    has("INBOX") && has("UNREAD") && !has("TRASH") && !has("SPAM")
 }
 
 // Do not pass control characters, arbitrarily large text or desktop markup from mail to the OS.
@@ -397,9 +513,23 @@ pub fn install(app: &AppHandle) {
         pending: Mutex::new(None),
         can_hide: AtomicBool::new(false),
         reminders: reminders.clone(),
+        open: Mutex::new(HashSet::new()),
     });
     app.manage(desktop.clone());
     platform::init(app);
+    // Notification Center (macOS) and Action Center (Windows) keep notifications from earlier
+    // launches. Pick them up, and take away the ones read since, maybe on another device.
+    {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let delivered = platform::delivered().await;
+            if delivered.is_empty() {
+                return;
+            }
+            lock(&app.state::<Arc<Desktop>>().open).extend(delivered.iter().cloned());
+            dismiss_checked(&app, delivered).await;
+        });
+    }
     tauri::async_runtime::spawn(reminders.run());
     let shown =
         tauri::async_runtime::block_on(db::settings::tray_icon(&app.state::<AppState>().db))
@@ -488,5 +618,99 @@ mod tests {
     fn notification_text_is_bounded_and_has_no_controls() {
         assert_eq!(clean_text("Subject\n\0\u{1b}hi", 9), "Subjecthi");
         assert_eq!(clean_text("éééé", 2), "éé");
+    }
+
+    fn thread(id: &str) -> ThreadTarget {
+        ThreadTarget {
+            account_id: "a".into(),
+            thread_id: id.into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn reading_or_archiving_in_pheeme_finishes_a_notified_conversation() {
+        use crate::mail::MailService;
+        use crate::sync::events::RecordingEvents;
+        use crate::sync::fake::{FakeGmail, FakeMsg};
+        use crate::sync::MailApi;
+        use crate::SyncManager;
+
+        let db = crate::db::test_support::TestDb::with_account("a1").await;
+        let fake = Arc::new(FakeGmail::new());
+        for (m, t) in [
+            ("m1", "read"),
+            ("m2", "archived"),
+            ("m3", "trashed"),
+            ("m4", "kept"),
+        ] {
+            fake.seed(FakeMsg::new(m, t, &["INBOX", "UNREAD"]));
+        }
+        let api = fake.clone();
+        let sync = SyncManager::new(
+            db.pool.clone(),
+            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+            Arc::new(RecordingEvents::default()),
+        );
+        sync.sync_account("a1").await.unwrap();
+        let mail = MailService::new(
+            db.pool.clone(),
+            sync,
+            db.dir().join("cache"),
+            crate::storage::test_key(),
+        );
+        let notified: Vec<ThreadTarget> = ["read", "archived", "trashed", "kept", "never-cached"]
+            .map(|id| ThreadTarget {
+                account_id: "a1".into(),
+                thread_id: id.into(),
+            })
+            .to_vec();
+        let finished = |candidates| finished_threads(&db.pool, candidates);
+        assert_eq!(
+            finished(notified[..4].to_vec()).await.unwrap(),
+            [],
+            "unread in the Inbox: the notifications stay"
+        );
+
+        mail.modify_threads("a1", &["read".into()], &[], &["UNREAD".into()])
+            .await
+            .unwrap();
+        mail.modify_threads("a1", &["archived".into()], &[], &["INBOX".into()])
+            .await
+            .unwrap();
+        mail.trash_threads("a1", &["trashed".into()]).await.unwrap();
+
+        let ids: Vec<String> = finished(notified)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|t| t.thread_id)
+            .collect();
+        assert_eq!(ids, ["read", "archived", "trashed", "never-cached"]);
+    }
+
+    #[test]
+    fn notifications_go_once_a_conversation_is_no_longer_unread_in_the_inbox() {
+        let labels: HashMap<(String, String), Vec<String>> = [
+            ("unread", vec!["INBOX", "UNREAD", "CATEGORY_PERSONAL"]),
+            ("read", vec!["INBOX"]),
+            ("archived", vec!["UNREAD"]),
+            ("trashed", vec!["INBOX", "UNREAD", "TRASH"]),
+            ("spam", vec!["UNREAD", "SPAM", "INBOX"]),
+        ]
+        .into_iter()
+        .map(|(id, l)| {
+            (
+                ("a".to_owned(), id.to_owned()),
+                l.into_iter().map(String::from).collect(),
+            )
+        })
+        .collect();
+        let candidates = ["unread", "read", "archived", "trashed", "spam", "deleted"]
+            .map(thread)
+            .to_vec();
+        assert_eq!(
+            finished_of(candidates, &labels),
+            ["read", "archived", "trashed", "spam", "deleted"].map(thread)
+        );
     }
 }
