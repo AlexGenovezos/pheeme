@@ -337,6 +337,8 @@
   border: var(--border-width) solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   background: var(--color-pane-bg);
+  /* A message brought into view (a notification's) keeps the conversation's top padding above it. */
+  scroll-margin-top: var(--space-6);
 }
 
 .message-card--collapsed:hover {

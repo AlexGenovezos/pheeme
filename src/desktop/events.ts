@@ -3,6 +3,7 @@ import { toast } from "../components/ui/Toast";
 import { listen, stopQuietly } from "../lib/tauri";
 import { openAndMarkRead } from "../mail/actions";
 import { CATEGORIES, categoryMailbox, threadKey } from "../mail/mailboxes";
+import { revealMessage } from "../mail/reveal";
 import { useModStore } from "../mods/store";
 import { useSettingsStore } from "../settings/settingsStore";
 import { useAccountStore } from "../store/accountStore";
@@ -58,12 +59,15 @@ function firstCalendarLoad(): Promise<void> {
 
 /**
  * New mail: the account's Primary inbox (only Primary mail notifies) with the conversation open and marked read, as
- * opening it from the list would. It still opens if another device archived it after delivery.
+ * opening it from the list would, scrolled to the message the notification showed, even when it was open already.
+ * It still opens if another device archived it after delivery.
  */
 function openThread(target: ThreadTarget) {
   useCalendarStore.getState().setMode("mail");
   useUiStore.getState().setMailbox(categoryMailbox(target.accountId, CATEGORIES[0].labelId));
-  openAndMarkRead(threadKey(target.accountId, target.threadId), 1, { unread: true });
+  const key = threadKey(target.accountId, target.threadId);
+  openAndMarkRead(key, 1, { unread: true });
+  revealMessage(target.messageId ? { key, messageId: target.messageId } : null);
 }
 
 export function useDesktopEvents(ready: boolean, showMail: () => void) {

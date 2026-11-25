@@ -136,9 +136,7 @@ async fn serve(
                 if let NotifyTarget::Thread(thread) = &delivery.target {
                     hints.insert("category", zbus::Variant::from("email.arrived"));
                     // A conversation keeps one notification: a new message replaces the last.
-                    replaces = ids_of(&targets, std::slice::from_ref(thread))
-                        .next()
-                        .unwrap_or(0);
+                    replaces = ids_of(&targets, &[thread.thread()]).next().unwrap_or(0);
                     if expired.contains(&replaces) {
                         // A fresh banner, with the old one taken out of the history.
                         if let Err(error) = proxy
@@ -223,7 +221,7 @@ fn ids_of<'a>(
     targets
         .iter()
         .filter_map(move |(id, (target, _))| match target {
-            NotifyTarget::Thread(t) if threads.contains(t) => Some(*id),
+            NotifyTarget::Thread(t) if threads.contains(&t.thread()) => Some(*id),
             _ => None,
         })
 }
@@ -472,9 +470,10 @@ mod protocol_tests {
             calendar_id: "b@example.com".into(),
             event_id: "review".into(),
         });
-        let thread = NotifyTarget::Thread(crate::desktop::ThreadTarget {
+        let thread = NotifyTarget::Thread(crate::desktop::MailTarget {
             account_id: "a".into(),
             thread_id: "same-thread-id".into(),
+            message_id: Some("m1".into()),
         });
         let call = "https://acme.zoom.us/j/42";
         for (target, join, actions) in [
@@ -550,10 +549,18 @@ mod protocol_tests {
         );
 
         // One notification per conversation: a new message replaces the conversation's last
-        // one, and reading it closes that, leaving the event reminder alone.
+        // one, and reading it closes that, leaving the event reminder alone. Each message's
+        // notification opens that message, so the click target differs but the identity doesn't.
+        let reply = match &thread {
+            NotifyTarget::Thread(t) => NotifyTarget::Thread(crate::desktop::MailTarget {
+                message_id: Some("m2".into()),
+                ..t.clone()
+            }),
+            NotifyTarget::Event(_) => unreachable!(),
+        };
         let show = |result| {
             Request::Show(Delivery {
-                target: thread.clone(),
+                target: reply.clone(),
                 title: "Sender".into(),
                 body: "Reply".into(),
                 join: None,
@@ -602,7 +609,7 @@ mod protocol_tests {
                 thread_id: "same-thread-id".into(),
             },
             match &thread {
-                NotifyTarget::Thread(t) => t.clone(),
+                NotifyTarget::Thread(t) => t.thread(),
                 NotifyTarget::Event(_) => unreachable!(),
             },
         ]))

@@ -28,11 +28,33 @@ pub struct ThreadTarget {
     pub thread_id: String,
 }
 
+/// What clicking a new-mail notification opens: its conversation, at the message it showed. The
+/// conversation alone ([`MailTarget::thread`]) is the notification's identity, so a newer message
+/// replaces it and reading the conversation takes it away.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MailTarget {
+    pub account_id: String,
+    pub thread_id: String,
+    /// `None` in a notification shown by a version before this one (macOS keeps them).
+    #[serde(default)]
+    pub message_id: Option<String>,
+}
+
+impl MailTarget {
+    pub fn thread(&self) -> ThreadTarget {
+        ThreadTarget {
+            account_id: self.account_id.clone(),
+            thread_id: self.thread_id.clone(),
+        }
+    }
+}
+
 /// What clicking a notification opens: a conversation, or an event (a reminder).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum NotifyTarget {
-    Thread(ThreadTarget),
+    Thread(MailTarget),
     Event(EventTarget),
 }
 
@@ -176,9 +198,10 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
                     let gate = desktop.alerts.lock().await;
                     let mut delivered = Vec::new();
                     for (thread_id, mail) in by_thread {
-                        let target = NotifyTarget::Thread(ThreadTarget {
+                        let target = NotifyTarget::Thread(MailTarget {
                             account_id: account_id.clone(),
                             thread_id,
+                            message_id: Some(mail.message_id.clone()),
                         });
                         let body = format!(
                             "{}\n{}",
@@ -194,7 +217,8 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
                         )
                         .await
                         {
-                            if let NotifyTarget::Thread(thread) = target {
+                            if let NotifyTarget::Thread(mail) = target {
+                                let thread = mail.thread();
                                 lock(&desktop.open).insert(thread.clone());
                                 delivered.push(thread);
                             }
@@ -635,6 +659,29 @@ mod tests {
     fn notification_text_is_bounded_and_has_no_controls() {
         assert_eq!(clean_text("Subject\n\0\u{1b}hi", 9), "Subjecthi");
         assert_eq!(clean_text("éééé", 2), "éé");
+    }
+
+    #[test]
+    fn a_mail_click_opens_its_message_and_older_notifications_still_open() {
+        let target = NotifyTarget::Thread(MailTarget {
+            account_id: "a".into(),
+            thread_id: "t".into(),
+            message_id: Some("m".into()),
+        });
+        let json = serde_json::to_string(&target).unwrap();
+        assert_eq!(
+            json,
+            r#"{"kind":"thread","accountId":"a","threadId":"t","messageId":"m"}"#
+        );
+        assert_eq!(serde_json::from_str::<NotifyTarget>(&json).unwrap(), target);
+        // macOS keeps the target of a notification shown before an update.
+        let older: NotifyTarget =
+            serde_json::from_str(r#"{"kind":"thread","accountId":"a","threadId":"t"}"#).unwrap();
+        let NotifyTarget::Thread(older) = older else {
+            panic!("a mail target");
+        };
+        assert_eq!(older.message_id, None);
+        assert_eq!(older.thread(), thread("t"));
     }
 
     fn thread(id: &str) -> ThreadTarget {
