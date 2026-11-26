@@ -138,7 +138,7 @@ fn html_of_text(text: &str) -> String {
         .map(|p| p.trim_matches('\n'))
         .filter(|p| !p.trim().is_empty())
         .map(|p| {
-            let lines: Vec<String> = p.lines().map(|l| escape(l)).collect();
+            let lines: Vec<String> = p.lines().map(escape).collect();
             format!("<p>{}</p>", lines.join("<br>"))
         })
         .collect()
