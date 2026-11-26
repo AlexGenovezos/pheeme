@@ -220,8 +220,9 @@ function AccountVacation({
         <div className="settings-row__text">
           <div className="settings-row__title">Message</div>
           <div className="settings-row__description">
-            Gmail's formatting: fonts, sizes, colours, alignment, lists, quotes and links. Pictures,
-            tables and headings set in Gmail are dropped once you edit the text here.
+            Gmail's format bar: fonts, sizes, colours, alignment, lists, quotes and links. Editing a
+            message set in Gmail can lose what the bar doesn't have, like pictures, tables or
+            headings.
           </div>
         </div>
         <Suspense fallback={<div className="vacation-editor" aria-hidden="true" />}>
