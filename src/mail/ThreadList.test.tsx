@@ -739,6 +739,19 @@ describe("importance marker", () => {
     },
   );
 
+  test("a Spam row keeps the slot but can't be toggled", () => {
+    const onRowAction = vi.fn();
+    useMailStore.setState({
+      threads: [{ ...thread(1), systemLabelIds: ["SPAM"] }],
+      loading: false,
+      next: null,
+    });
+    render(<ThreadList {...props({ onRowAction })} />);
+    expect(marks()[0]).toHaveAttribute("data-disabled");
+    fireEvent.click(marks()[0]);
+    expect(onRowAction).not.toHaveBeenCalled();
+  });
+
   test("clicking the marker toggles it without opening the row", () => {
     const onRowAction = vi.fn();
     useMailStore.setState({ threads: [thread(1)], loading: false, next: null });

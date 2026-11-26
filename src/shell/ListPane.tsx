@@ -10,6 +10,7 @@ import type { ThreadSummary } from "../lib/tauri";
 import {
   archiveSlotAction,
   composeNew,
+  canMarkImportance,
   findSimilar,
   isImportant,
   markSearchResultsRead,
@@ -77,6 +78,7 @@ export const rowMenu = (t: ThreadSummary) => {
     },
     {
       id: "important",
+      disabled: !canMarkImportance(t),
       label: isImportant(t) ? "Mark as not important" : "Mark as important",
       shortcut: registry.shortcutFor(
         isImportant(t) ? "conversation.mark-not-important" : "conversation.mark-important",

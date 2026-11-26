@@ -543,6 +543,30 @@ describe("important", () => {
     expect(toasts()[0].action).toBeDefined();
   });
 
+  test("not important takes the row out of an is:important search too", async () => {
+    setList([
+      thread(1, "a1", { systemLabelIds: ["IMPORTANT"] }),
+      thread(2, "a1", { systemLabelIds: ["IMPORTANT"] }),
+    ]);
+    useMailStore.setState({
+      query: { accountIds: ["a1"], labelId: "ALL", search: "invoice is:important" },
+    });
+    useUiStore.setState({ openThread: key(1) });
+    await setImportant(false);
+    expect(listKeys()).toEqual([key(2)]);
+  });
+
+  test("Spam and Trash conversations can't be marked: Gmail shows no importance there", async () => {
+    setList([
+      thread(1, "a1", { systemLabelIds: ["SPAM"] }),
+      thread(2, "a1", { systemLabelIds: ["TRASH"] }),
+    ]);
+    useUiStore.setState({ checked: [key(1), key(2)] });
+    await setImportant(true);
+    expect(modifyCalls()).toEqual([]);
+    expect(toasts()).toHaveLength(0);
+  });
+
   test("not important elsewhere keeps the row", async () => {
     setList([thread(1, "a1", { systemLabelIds: ["IMPORTANT", "INBOX"] })]);
     useUiStore.setState({ openThread: key(1) });

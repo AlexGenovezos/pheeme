@@ -13,7 +13,7 @@ import { ImportantMark } from "./ImportantMark";
 import { CodeChip } from "./CodeCard";
 import { startMailDrag } from "./dragMail";
 import { type Location, threadKey } from "./mailboxes";
-import { isImportant } from "./importance";
+import { canMarkImportance, isImportant } from "./importance";
 import { LIST_CODE_MAX_AGE, rowCode } from "./verificationCode";
 import "./mail.css";
 
@@ -151,6 +151,7 @@ export const ThreadRow = memo(function ThreadRow({
         <>
           <ImportantMark
             important={important}
+            enabled={canMarkImportance(thread)}
             shortcut={registry.shortcutFor(
               important ? "conversation.mark-not-important" : "conversation.mark-important",
             )}

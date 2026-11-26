@@ -23,6 +23,6 @@ export {
   toggleStar,
   trash,
 } from "./mutations";
-export { isImportant } from "./importance";
+export { canMarkImportance, isImportant } from "./importance";
 export { findSimilar, markSearchResultsRead } from "./searchActions";
 export { openAndMarkRead, targets, targetsOf } from "./change";

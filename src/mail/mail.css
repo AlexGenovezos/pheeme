@@ -70,11 +70,15 @@
   fill: currentColor;
   opacity: 1;
 }
-.thread-row:hover .thread-row__important:not([data-important]) .thread-row__important-glyph {
+.thread-row:hover
+  .thread-row__important:not([data-important], [data-disabled])
+  .thread-row__important-glyph {
   color: var(--color-foreground-muted);
   opacity: 1;
 }
-.thread-row__important:not([data-important]):hover .thread-row__important-glyph {
+.thread-row:hover
+  .thread-row__important:not([data-important], [data-disabled]):hover
+  .thread-row__important-glyph {
   color: var(--color-warning);
 }
 

@@ -28,6 +28,7 @@ import {
   respond,
   openLabelMenu,
   openMoveMenu,
+  canMarkImportance,
   isImportant,
   setImportant,
   setRead,
@@ -103,7 +104,8 @@ export function ViewPane() {
   const anyUnread = rows.some((t) => t.unread);
   const starred = rows[0]?.starred ?? false;
   // Mark as important unless every target already is, like Mark as read: one slot, its words swapped.
-  const anyNotImportant = rows.some((t) => !isImportant(t));
+  const markable = rows.filter(canMarkImportance);
+  const anyNotImportant = markable.some((t) => !isImportant(t));
   const keys = {
     back: useKeybinding("conversation.close"),
     archive: useKeybinding("conversation.archive"),
@@ -131,7 +133,7 @@ export function ViewPane() {
           id: "important",
           label: anyNotImportant ? "Mark as important" : "Mark as not important",
           shortcut: anyNotImportant ? keys.important : keys.notImportant,
-          disabled: stale,
+          disabled: markable.length === 0,
           onSelect: () => void setImportant(anyNotImportant),
         },
         {
