@@ -227,19 +227,23 @@ pub fn build_message(out: &Outgoing<'_>) -> Result<Vec<u8>, MailError> {
 }
 
 fn attachment_part(att: &StagedAttachment, bytes: Vec<u8>) -> SinglePart {
-    let content_type = ContentType::parse(&att.mime_type)
-        .unwrap_or_else(|_| ContentType::parse("application/octet-stream").expect("valid"));
+    let octets = || ContentType::parse("application/octet-stream").expect("valid");
     let builder = match att.content_id.as_deref() {
         Some(cid) => Attachment::new_inline_with_name(cid.to_owned(), att.filename.clone()),
         None => Attachment::new(att.filename.clone()),
     };
-    let body = if att.mime_type.trim().eq_ignore_ascii_case(FORWARDED_MESSAGE) {
-        message_body(bytes)
-    } else {
-        // Base64: the bytes arrive exactly as attached (no line-ending rewrites).
-        base64_body(bytes)
-    };
-    builder.body(body, content_type)
+    if att.mime_type.trim().eq_ignore_ascii_case(FORWARDED_MESSAGE) {
+        // RFC 2046 lets a `message/rfc822` part be only 7bit, 8bit or binary, so a message that
+        // can't go as it stands (a line over 998 bytes, a bare CR or LF, a NUL) goes as a plain
+        // `.eml` file in base64 instead, which readers still open as a message.
+        return match message_body(bytes) {
+            Ok(body) => builder.body(body, ContentType::parse(FORWARDED_MESSAGE).expect("valid")),
+            Err(bytes) => builder.body(base64_body(bytes), octets()),
+        };
+    }
+    let content_type = ContentType::parse(&att.mime_type).unwrap_or_else(|_| octets());
+    // Base64: the bytes arrive exactly as attached (no line-ending rewrites).
+    builder.body(base64_body(bytes), content_type)
 }
 
 /// The content type of a message forwarded as an attachment (an `.eml` file).
@@ -250,19 +254,17 @@ fn base64_body(bytes: Vec<u8>) -> Body {
         .expect("any bytes can be base64-encoded")
 }
 
-/// A forwarded message as it stands: RFC 2046 lets a `message/rfc822` part be only 7bit, 8bit
-/// or binary, so readers show it as a message. One that wouldn't be valid that way (a line
-/// longer than 998 bytes, a bare CR or LF, a NUL) goes as base64, which readers also take.
-fn message_body(bytes: Vec<u8>) -> Body {
+/// A forwarded message as it stands (7bit or 8bit), or its bytes back when it can't go so.
+fn message_body(bytes: Vec<u8>) -> Result<Body, Vec<u8>> {
     if !is_valid_8bit(&bytes) {
-        return base64_body(bytes);
+        return Err(bytes);
     }
     let encoding = if bytes.is_ascii() {
         ContentTransferEncoding::SevenBit
     } else {
         ContentTransferEncoding::EightBit
     };
-    Body::dangerous_pre_encoded(bytes, encoding)
+    Ok(Body::dangerous_pre_encoded(bytes, encoding))
 }
 
 /// RFC 5322 lines: CRLF only, each at most 998 bytes, no NUL.
@@ -716,8 +718,17 @@ mod tests {
             })
             .collect();
         assert_eq!(encodings, ["7bit", "8bit", "base64", "base64"]);
+        let types: Vec<&str> = parts.iter().map(|p| p.ctype.mimetype.as_str()).collect();
+        assert_eq!(
+            types,
+            [
+                "message/rfc822",
+                "message/rfc822",
+                "application/octet-stream",
+                "application/octet-stream"
+            ]
+        );
         for (part, (att, bytes)) in parts.iter().zip(&files) {
-            assert_eq!(part.ctype.mimetype, "message/rfc822");
             assert_eq!(
                 part.get_content_disposition().params["filename"],
                 att.filename

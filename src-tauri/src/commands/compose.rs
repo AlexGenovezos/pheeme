@@ -35,11 +35,11 @@ pub async fn forward_as_attachment(
     thread_ids: Vec<String>,
     message_ids: Vec<String>,
 ) -> Result<ComposeDraft, CommandError> {
-    Ok(user_action(state.compose.forward_as_attachment(
-        &account_id,
-        &thread_ids,
-        &message_ids,
-    ))
+    Ok(user_action(
+        state
+            .compose
+            .forward_as_attachment(&account_id, &thread_ids, &message_ids),
+    )
     .await?)
 }
 

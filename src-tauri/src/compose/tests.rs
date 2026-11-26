@@ -963,7 +963,10 @@ async fn forward_as_attachment_keeps_to_gmails_25_mb_and_cleans_up_on_failure() 
         .forward_as_attachment(ACCT, &["t1".into()], &[])
         .await
         .unwrap_err();
-    assert!(matches!(&err, MailError::Invalid(m) if m.contains("25 MB")), "{err:?}");
+    assert!(
+        matches!(&err, MailError::Invalid(m) if m.contains("25 MB")),
+        "{err:?}"
+    );
     assert_eq!(h.fake.calls("message_raw"), 0);
 
     // A download that fails drops the files already staged.
@@ -977,9 +980,30 @@ async fn forward_as_attachment_keeps_to_gmails_25_mb_and_cleans_up_on_failure() 
         .forward_as_attachment(ACCT, &[], &["m1".into(), "gone".into()])
         .await
         .unwrap_err();
-    assert!(matches!(err, MailError::NotFound | MailError::Sync(_)), "{err:?}");
+    assert!(
+        matches!(err, MailError::NotFound | MailError::Sync(_)),
+        "{err:?}"
+    );
     assert_eq!(staged_files(&h), before);
 
     let none = h.compose.forward_as_attachment(ACCT, &[], &[]).await;
     assert!(matches!(none, Err(MailError::Invalid(_))));
+}
+
+#[tokio::test]
+async fn forwarding_a_conversation_takes_every_message_gmail_has_not_only_the_cached() {
+    let h = harness().await;
+    h.fake
+        .seed(FakeMsg::new("m1", "t1", &["INBOX"]).days_ago(2));
+    h.sync.sync_account(ACCT).await.unwrap();
+    // Arrived (or was never downloaded) after the last sync.
+    h.fake
+        .seed(FakeMsg::new("m2", "t1", &["INBOX"]).days_ago(1));
+    let d = h
+        .compose
+        .forward_as_attachment(ACCT, &["t1".into()], &[])
+        .await
+        .unwrap();
+    assert_eq!(d.attachments.len(), 2);
+    assert_eq!(h.fake.calls("message_raw"), 2);
 }

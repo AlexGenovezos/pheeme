@@ -107,8 +107,8 @@ impl ComposeService {
         })
     }
 
-    /// The messages to attach, in order and each once: a conversation's from the cache (else
-    /// from Gmail), drafts left out.
+    /// The messages to attach, in order and each once: a conversation's as Gmail has it (the
+    /// cache may hold only part of it), drafts left out; sizes from Gmail, else the cache.
     async fn forwarded_messages(
         &self,
         account_id: &str,
@@ -126,32 +126,28 @@ impl ComposeService {
             }
         };
         let is_draft = |labels: &[String]| labels.iter().any(|l| l == "DRAFT");
+        let cached_size = |m: Option<messages::DbMessage>| {
+            m.and_then(|m| m.size_estimate)
+                .and_then(|s| u64::try_from(s).ok())
+        };
         for thread_id in thread_ids {
-            let cached = messages::get_messages_for_thread(&self.db, account_id, thread_id).await?;
-            if cached.is_empty() {
-                let thread = self
-                    .api(account_id)
-                    .get_thread(thread_id, MessageFormat::Minimal)
-                    .await?;
-                for m in thread.messages {
-                    if !is_draft(&m.label_ids) {
-                        add(m.id, m.size_estimate);
-                    }
+            let thread = self
+                .api(account_id)
+                .get_thread(thread_id, MessageFormat::Minimal)
+                .await?;
+            for m in thread.messages {
+                if is_draft(&m.label_ids) {
+                    continue;
                 }
-                continue;
-            }
-            for m in cached {
-                if !is_draft(&m.labels()) {
-                    let size = m.size_estimate.and_then(|s| u64::try_from(s).ok());
-                    add(m.id, size);
-                }
+                let size = match m.size_estimate {
+                    Some(size) => Some(size),
+                    None => cached_size(messages::get_message(&self.db, account_id, &m.id).await?),
+                };
+                add(m.id, size);
             }
         }
         for id in message_ids {
-            let size = messages::get_message(&self.db, account_id, id)
-                .await?
-                .and_then(|m| m.size_estimate)
-                .and_then(|s| u64::try_from(s).ok());
+            let size = cached_size(messages::get_message(&self.db, account_id, id).await?);
             add(id.clone(), size);
         }
         Ok(picks)

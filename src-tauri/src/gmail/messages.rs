@@ -98,8 +98,7 @@ impl GmailClient {
     /// The message exactly as Gmail stores it (RFC 2822 bytes, `format=raw`), for the user's
     /// own requests (Forward as attachment, Show original); callers run it in `user_action`.
     pub async fn get_raw(&self, id: &str) -> Result<Vec<u8>, GmailError> {
-        let req = ApiRequest::get(&["messages", id])
-            .query("format", MessageFormat::Raw.as_str());
+        let req = ApiRequest::get(&["messages", id]).query("format", MessageFormat::Raw.as_str());
         let msg: Message = self.send_json(req).await?;
         let raw = msg
             .raw
