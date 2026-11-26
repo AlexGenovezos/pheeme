@@ -288,7 +288,7 @@ function FileBody({
     case "docx":
       return <DocxView data={data} name={name} onFrameFocus={onFrameFocus} />;
     case "pptx":
-      return <PptxView data={data} name={name} />;
+      return <PptxView data={data} name={name} onFrameFocus={onFrameFocus} />;
     case "xlsx":
     case "csv":
       return <SheetView data={data} kind={kind} name={name} />;

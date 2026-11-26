@@ -7,10 +7,17 @@ use std::{
 
 pub const MAX_PACKAGE: u64 = 2 * 1024 * 1024;
 
-/// Read through an already-opened handle with a cap: file growth cannot evade limits.
+/// Read through an already-opened handle with a cap: file growth cannot evade limits. On Unix
+/// the open refuses a symlink, so one swapped in after staging checked the file type isn't
+/// followed.
 pub fn read_limited(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NOFOLLOW);
     let mut bytes = Vec::new();
-    fs::File::open(path)
+    options
+        .open(path)
         .map_err(|e| e.to_string())?
         .take(limit + 1)
         .read_to_end(&mut bytes)

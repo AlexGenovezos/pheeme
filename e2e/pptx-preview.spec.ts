@@ -16,7 +16,10 @@ function productionCsp(): string {
     .join("; ");
 }
 
-/** Opens the app under the production CSP and previews the sample deck; returns its slides. */
+/**
+ * Opens the app under the production CSP and previews the sample deck; returns the frame it's drawn
+ * in and its slides.
+ */
 async function previewDeck(page: Page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
   await page.route("/", async (route) => {
@@ -30,17 +33,19 @@ async function previewDeck(page: Page) {
   await page.goto("/");
   await page.getByRole("option", { name: /Icon sketches for the dock/ }).click();
   await page.getByRole("button", { name: "Preview icon-review.pptx" }).click();
-  const deck = page
+  const frame = page
     .getByRole("dialog", { name: "Preview: icon-review.pptx" })
-    .locator(".file-preview__slides");
-  await expect(deck).toHaveAttribute("data-state", "ready");
-  return deck;
+    .locator("iframe.file-preview__slides");
+  await expect(frame).toHaveAttribute("data-state", "ready");
+  // Script-less: nothing the deck puts in the frame can run.
+  await expect(frame).toHaveAttribute("sandbox", "allow-same-origin");
+  return { frame, deck: frame.contentFrame().locator("#deck") };
 }
 
 test("a PowerPoint attachment previews slide by slide under the app's CSP", async ({ page }) => {
   const violations: string[] = [];
   page.on("console", (m) => /Content.Security.Policy/i.test(m.text()) && violations.push(m.text()));
-  const deck = await previewDeck(page);
+  const { deck } = await previewDeck(page);
 
   await expect(deck.getByText("Icon refresh", { exact: true })).toBeVisible();
   await expect(deck.getByText("Three directions explored, one favourite")).toBeVisible();
@@ -59,7 +64,39 @@ test("a PowerPoint attachment previews slide by slide under the app's CSP", asyn
   await expect(deck.getByText("Hours by platform")).toBeVisible();
   await expect(deck.locator("canvas").first()).toBeVisible();
 
+  // Every slide was drawn at the deck's width, inside the frame.
+  const widths = await deck
+    .locator("[data-slide-index]")
+    .evaluateAll((slides) => slides.map((s) => s.getBoundingClientRect().width));
+  expect(widths.length).toBe(3);
+  for (const width of widths) expect(width).toBeGreaterThan(600);
+
   expect(violations).toEqual([]);
+});
+
+test("a deck's embedded fonts reach the frame it's drawn in", async ({ page }) => {
+  // The sample deck with a font embedded for Arial, the typeface of its text.
+  await page.route("**/sample-*.pptx", (route) =>
+    route.fulfill({ path: "e2e/fixtures/embedded-font.pptx" }),
+  );
+  const { frame, deck } = await previewDeck(page);
+  const title = deck.getByText("Icon refresh", { exact: true });
+  await expect(title).toBeVisible();
+  // The renderer draws the text in a family of its own naming, registered on the app's document.
+  const family = await title.evaluate((el) => getComputedStyle(el).fontFamily);
+  const embedded = /__pptx_embedded_\w+/.exec(family)?.[0];
+  expect(embedded, family).toBeTruthy();
+  await expect
+    .poll(() =>
+      frame.evaluate(
+        (f: HTMLIFrameElement, name) =>
+          [...f.contentDocument!.fonts].some(
+            (face) => face.family.replace(/"/g, "") === name && face.status === "loaded",
+          ),
+        embedded!,
+      ),
+    )
+    .toBe(true);
 });
 
 test("chart tooltips can't put a deck's markup into the app", async ({ page }) => {
@@ -67,7 +104,7 @@ test("chart tooltips can't put a deck's markup into the app", async ({ page }) =
   await page.route("**/sample-*.pptx", (route) =>
     route.fulfill({ path: "e2e/fixtures/chart-tooltip.pptx" }),
   );
-  const deck = await previewDeck(page);
+  const { deck } = await previewDeck(page);
   const chart = deck.locator("canvas").first();
   await expect(chart).toBeVisible();
   const box = (await chart.boundingBox())!;
@@ -75,4 +112,5 @@ test("chart tooltips can't put a deck's markup into the app", async ({ page }) =
     for (let y = 0.05; y < 1; y += 0.1)
       await page.mouse.move(box.x + box.width * x, box.y + box.height * y);
   await expect(page.locator("#injected")).toHaveCount(0);
+  await expect(deck.locator("#injected")).toHaveCount(0);
 });
