@@ -23,14 +23,17 @@ const shell = (scrollbar: string, width: string) =>
  * nothing in the deck can run. Slides parse and mount as they scroll into view, so a long deck
  * opens as fast as a short one.
  *
- * The renderer registers a deck's embedded fonts on the app's document (and measures text there),
- * so each one it adds is added to the frame's fonts too. Nothing loads from outside the file:
- * external media is blocked, and links and click actions are swallowed.
+ * The renderer registers a deck's embedded fonts on the app's document (and briefly stages slide
+ * subtrees offscreen on `document.body` for text measurement before moving them into the frame), so
+ * `externalMedia: "block"` and the pinned renderer version remain load-bearing alongside the iframe
+ * sandbox. Each embedded font is mirrored into the frame and pruned when evicted. Nothing loads
+ * from outside the file, and links and click/keyboard slide actions are disabled.
  */
-export default function PptxView({ data, name, onFrameKeyDown }: FramePreviewProps) {
+export default function PptxView({ data, name, onFrameKeyDown, onFrameFocus }: FramePreviewProps) {
   const { frame, state } = useSandboxedFrame(
     data,
     onFrameKeyDown,
+    onFrameFocus,
     (doc, signal, trace) => {
       const root = doc.getElementById("deck")!;
       const scrollContainer = doc.getElementById("scroller")!;
@@ -78,9 +81,20 @@ export default function PptxView({ data, name, onFrameKeyDown }: FramePreviewPro
         onSlideRendered: (index, el) => {
           shareFonts();
           trace?.drew(index + 1, false);
-          for (const link of el.querySelectorAll("a[href]")) link.removeAttribute("href");
+          for (const link of el.querySelectorAll("a[href], a[*|href]")) {
+            link.removeAttribute("href");
+            link.removeAttributeNS("http://www.w3.org/1999/xlink", "href");
+          }
+          for (const link of el.querySelectorAll<HTMLElement>('[role="link"]')) {
+            link.removeAttribute("role");
+            link.removeAttribute("tabindex");
+            link.style.cursor = "";
+          }
         },
       });
+      // PptxViewer runs in the parent realm, so disable its slide-jump and window.open hooks too.
+      viewer.goToSlide = async () => {};
+      (viewer as unknown as { handleNavigate?: () => void }).handleNavigate = () => {};
       // The viewer may keep the buffer it's given; keep the cached one intact.
       const done = viewer
         .open(data.slice(0), {

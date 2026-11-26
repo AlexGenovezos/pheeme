@@ -33,7 +33,7 @@ const PptxView = lazy(surfaceLoader(() => import("./PptxView")));
 const MAX_TEXT_BYTES = 1024 * 1024;
 
 const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"]):not([data-focus-guard])';
 
 const INTERACTIVE =
   'button, a[href], input, select, textarea, summary, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="switch"], [role="menuitem"], [role="option"]';
@@ -125,13 +125,15 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
     }
   };
 
+  const refocus = useCallback(() => stageRef.current?.focus({ preventScroll: true }), []);
+
   const handleFrameKeyDown = useCallback(
     (e: globalThis.KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "Escape") {
         e.preventDefault();
         close();
-      } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      } else if (!e.shiftKey && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
         const tag = (e.target as Element | null)?.tagName;
         if (tag === "VIDEO" || tag === "AUDIO") return;
         e.preventDefault();
@@ -274,11 +276,20 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
                   data={loaded.data}
                   file={file}
                   onFrameKeyDown={handleFrameKeyDown}
+                  onFrameFocus={refocus}
                 />
               </Suspense>
             </PreviewTraceContext>
           )}
         </div>
+        {/* Catches Tab leaving a focused sandboxed iframe so focus wraps back into the modal. */}
+        <span
+          tabIndex={0}
+          aria-hidden="true"
+          data-focus-guard=""
+          className="file-preview__focus-guard"
+          onFocus={() => dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus()}
+        />
       </div>
     </div>
   );
@@ -289,20 +300,36 @@ function FileBody({
   data,
   file,
   onFrameKeyDown,
+  onFrameFocus,
 }: {
   kind: Exclude<PreviewKind, "other">;
   data: ArrayBuffer;
   file: AttachmentInfo;
   onFrameKeyDown(e: globalThis.KeyboardEvent): void;
+  onFrameFocus(): void;
 }) {
   const name = nameOf(file);
   switch (kind) {
     case "pdf":
       return <PdfView data={data} name={name} />;
     case "docx":
-      return <DocxView data={data} name={name} onFrameKeyDown={onFrameKeyDown} />;
+      return (
+        <DocxView
+          data={data}
+          name={name}
+          onFrameKeyDown={onFrameKeyDown}
+          onFrameFocus={onFrameFocus}
+        />
+      );
     case "pptx":
-      return <PptxView data={data} name={name} onFrameKeyDown={onFrameKeyDown} />;
+      return (
+        <PptxView
+          data={data}
+          name={name}
+          onFrameKeyDown={onFrameKeyDown}
+          onFrameFocus={onFrameFocus}
+        />
+      );
     case "xlsx":
     case "csv":
       return <SheetView data={data} kind={kind} name={name} />;

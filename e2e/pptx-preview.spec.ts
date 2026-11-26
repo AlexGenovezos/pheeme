@@ -117,16 +117,26 @@ test("chart tooltips can't put a deck's markup into the app", async ({ page }) =
   await expect(deck.locator("#injected")).toHaveCount(0);
 });
 
-test("clicking a slide keeps focus in the frame and Escape still closes the preview", async ({
+test("clicking a slide keeps focus in the frame, traps Tab, ignores Shift+Arrow, and Escape closes", async ({
   page,
 }) => {
   const { frame, deck } = await previewDeck(page);
+  const dialog = page.getByRole("dialog", { name: "Preview: icon-review.pptx" });
   await deck.getByText("Icon refresh", { exact: true }).click();
   // Focus stays in the frame (not stolen back to the stage) so copy and Page Down work.
   await expect(frame).toBeFocused();
   const scroller = frame.contentFrame().locator("#scroller");
   await page.keyboard.press("PageDown");
   await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  // Shift+ArrowRight adjusts selection rather than stepping to the next attachment.
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect(dialog).toBeVisible();
+  // Tabbing out of the frame stays trapped inside the modal dialog.
+  await page.keyboard.press("Tab");
+  await expect
+    .poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]'))))
+    .toBe(true);
+  await deck.getByText("Icon refresh", { exact: true }).click();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog", { name: "Preview: icon-review.pptx" })).toHaveCount(0);
+  await expect(dialog).toHaveCount(0);
 });

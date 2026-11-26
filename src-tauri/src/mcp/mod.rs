@@ -9,10 +9,10 @@ pub mod protocol;
 
 use crate::local_api::{ApiError, LocalApi};
 use bytes::Bytes;
-use http_body_util::{BodyExt, Full, Limited};
+use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Incoming;
 use hyper::header::{
-    HeaderValue, ALLOW, AUTHORIZATION, CONTENT_TYPE, HOST, ORIGIN, WWW_AUTHENTICATE,
+    HeaderValue, ALLOW, AUTHORIZATION, CONNECTION, CONTENT_TYPE, HOST, ORIGIN, WWW_AUTHENTICATE,
 };
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -260,6 +260,10 @@ fn plain(status: StatusCode, text: &str) -> Response<Full<Bytes>> {
         CONTENT_TYPE,
         HeaderValue::from_static("text/plain; charset=utf-8"),
     );
+    // Close the socket on error responses so unauthenticated keep-alive requests can't hold slots.
+    response
+        .headers_mut()
+        .insert(CONNECTION, HeaderValue::from_static("close"));
     response
 }
 
@@ -350,7 +354,15 @@ async fn respond(
     let read = Limited::new(req.into_body(), MAX_BODY).collect();
     let body = match tokio::time::timeout(limits.body_timeout, read).await {
         Ok(Ok(body)) => body.to_bytes(),
-        Ok(Err(_)) => return plain(StatusCode::PAYLOAD_TOO_LARGE, "That request is too large."),
+        Ok(Err(e)) if e.is::<LengthLimitError>() => {
+            return plain(StatusCode::PAYLOAD_TOO_LARGE, "That request is too large.");
+        }
+        Ok(Err(_)) => {
+            return plain(
+                StatusCode::BAD_REQUEST,
+                "The request body couldn't be read.",
+            );
+        }
         Err(_) => {
             return plain(
                 StatusCode::REQUEST_TIMEOUT,
@@ -587,6 +599,31 @@ mod tests {
                 .is_some_and(|a| a.starts_with("HTTP/1.1 405")),
             "{answer:?}"
         );
+        assert!(
+            answer
+                .as_deref()
+                .is_some_and(|a| a.to_ascii_lowercase().contains("connection: close")),
+            "error responses close the socket so keep-alive can't pin slots: {answer:?}"
+        );
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn oversized_request_body_returns_413() {
+        let h = setup(FakeGmail::new()).await;
+        let new = h.api.connect_client("Test").await.unwrap();
+        let server = McpServer::new(Arc::new(h.api), 0);
+        let status = server.start().await;
+        let client = crate::http::client_builder().no_proxy().build().unwrap();
+        let oversized = vec![b' '; MAX_BODY + 1];
+        let res = client
+            .post(&status.url)
+            .bearer_auth(&new.token)
+            .body(oversized)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 413);
         server.stop().await;
     }
 

@@ -146,6 +146,14 @@
   color-scheme: light;
 }
 
+.file-preview__focus-guard {
+  position: fixed;
+  width: var(--border-width);
+  height: var(--border-width);
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* PowerPoint: the frame (styled inside, see PptxView) stays laid out while the deck loads, since
    the renderer sizes the slides to it. */
 .file-preview__slides[data-state="loading"],
