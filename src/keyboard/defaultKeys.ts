@@ -20,6 +20,8 @@ export const DEFAULT_KEYS = {
   "conversation.star": "s",
   "conversation.mark-read": "shift+i",
   "conversation.mark-unread": "shift+u",
+  "conversation.mark-important": "+",
+  "conversation.mark-not-important": "-",
   "conversation.labels": "l",
   "conversation.move": "v",
   "conversation.close": "u",

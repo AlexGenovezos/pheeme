@@ -22,6 +22,7 @@ import {
   openFocused,
   openLabelMenu,
   openMoveMenu,
+  setImportant,
   setRead,
   setStarred,
   targets,
@@ -492,6 +493,74 @@ describe("star and read", () => {
     expect(last(toasts())?.title).toBe("Marked as read");
     last(toasts())!.action!.run();
     expect(useMailStore.getState().threads[0].unread).toBe(true);
+  });
+});
+
+describe("important", () => {
+  test("marking patches the rows and the cached conversation, announces, and Undo restores them", async () => {
+    setList([thread(1, "a1", { systemLabelIds: ["INBOX"] })]);
+    useUiStore.setState({ openThread: key(1) });
+    await setImportant(true);
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: ["IMPORTANT"], remove: [] },
+    ]);
+    expect(useMailStore.getState().threads[0].systemLabelIds).toEqual(["IMPORTANT", "INBOX"]);
+    expect(toasts()[0].title).toBe("Marked as important");
+
+    toasts()[0].action!.run();
+    expect(useMailStore.getState().threads[0].systemLabelIds).toEqual(["INBOX"]);
+    await flush();
+    expect(modifyCalls()[1]).toMatchObject({ add: [], remove: ["IMPORTANT"] });
+  });
+
+  test("only the conversations that aren't in that state yet change; none left does nothing", async () => {
+    setList([
+      thread(1, "a1", { systemLabelIds: ["IMPORTANT"] }),
+      thread(2),
+      thread(3, "a1", { systemLabelIds: ["IMPORTANT"] }),
+    ]);
+    useUiStore.setState({ checked: [key(1), key(2), key(3)] });
+    await setImportant(true);
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t2"], add: ["IMPORTANT"], remove: [] },
+    ]);
+
+    await setImportant(true);
+    expect(modifyCalls()).toHaveLength(1);
+    expect(toasts()).toHaveLength(1);
+  });
+
+  test("not important takes the row out of the Important mailbox, and Undo asks the cache to bring it back", async () => {
+    setList([
+      thread(1, "a1", { systemLabelIds: ["IMPORTANT"] }),
+      thread(2, "a1", { systemLabelIds: ["IMPORTANT"] }),
+    ]);
+    useUiStore.setState({ mailbox: { accountId: null, labelId: "IMPORTANT" }, openThread: key(1) });
+    await setImportant(false);
+    expect(listKeys()).toEqual([key(2)]);
+    expect(modifyCalls()[0]).toMatchObject({ add: [], remove: ["IMPORTANT"] });
+    expect(toasts()[0].title).toBe("Marked as not important");
+    expect(toasts()[0].action).toBeDefined();
+  });
+
+  test("not important elsewhere keeps the row", async () => {
+    setList([thread(1, "a1", { systemLabelIds: ["IMPORTANT", "INBOX"] })]);
+    useUiStore.setState({ openThread: key(1) });
+    await setImportant(false);
+    expect(useMailStore.getState().threads[0].systemLabelIds).toEqual(["INBOX"]);
+  });
+
+  test("+ and = mark important and - marks not important, through the registry commands", () => {
+    const byId = new Map(appCommands().map((c) => [c.id, c]));
+    expect(byId.get("conversation.mark-important")?.shortcut).toBe("+");
+    expect(byId.get("conversation.mark-important-alt")?.shortcut).toBe("=");
+    expect(byId.get("conversation.mark-not-important")?.shortcut).toBe("-");
+    setList([thread(1)]);
+    useUiStore.setState({ openThread: key(1) });
+    byId.get("conversation.mark-important-alt")!.run();
+    expect(useMailStore.getState().threads[0].systemLabelIds).toEqual(["IMPORTANT"]);
+    byId.get("conversation.mark-not-important")!.run();
+    expect(useMailStore.getState().threads[0].systemLabelIds).toEqual([]);
   });
 });
 

@@ -1,6 +1,7 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
+import { showContextMenu } from "../lib/contextMenu";
 import type { ThreadSummary } from "../lib/tauri";
 import { threadKey } from "../mail/mailboxes";
 import { __resetMailStoreForTests, useMailStore } from "../store/mailStore";
@@ -8,6 +9,8 @@ import { __resetThreadStoreForTests } from "../store/threadStore";
 import { __resetUiStoreForTests, useUiStore } from "../store/uiStore";
 import { useComposeSettings } from "../compose/composeSettings";
 import { ViewPane } from "./ViewPane";
+
+vi.mock("../lib/contextMenu", () => ({ showContextMenu: vi.fn(async () => {}) }));
 
 const thread = (n: number, over: Partial<ThreadSummary> = {}): ThreadSummary => ({
   id: `t${n}`,
@@ -149,4 +152,36 @@ test("in Spam the Archive button is Not spam, and in Trash it's Move to Inbox", 
   act(() => useUiStore.setState({ mailbox: { accountId: "a1", labelId: "TRASH" } }));
   render(<ViewPane />);
   expect(button("Move to Inbox").querySelector("svg")).toHaveClass("lucide-inbox");
+});
+
+const moreMenu = () => {
+  fireEvent.click(button("More actions"));
+  const items = vi.mocked(showContextMenu).mock.lastCall![0];
+  return items.filter((i) => i.type !== "separator") as Array<{
+    id: string;
+    label: string;
+    shortcut?: string;
+    disabled?: boolean;
+    onSelect(): void;
+  }>;
+};
+
+test("the More menu's importance item swaps its words in place and acts on the checked rows", async () => {
+  act(() => {
+    useUiStore.getState().toggleChecked(key(1));
+    useUiStore.getState().toggleChecked(key(2));
+  });
+  render(<ViewPane />);
+  let items = moreMenu();
+  const at = items.findIndex((i) => i.id === "important");
+  expect(items[at]).toMatchObject({ label: "Mark as important", disabled: false });
+  await act(async () => items[at].onSelect());
+  expect(modified).toEqual([
+    { accountId: "a1", threadIds: ["t1", "t2"], add: ["IMPORTANT"], remove: [] },
+  ]);
+
+  // Every target is important now: the same slot offers the opposite.
+  items = moreMenu();
+  expect(items.findIndex((i) => i.id === "important")).toBe(at);
+  expect(items[at].label).toBe("Mark as not important");
 });

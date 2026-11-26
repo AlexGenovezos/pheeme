@@ -11,8 +11,10 @@ import {
   archiveSlotAction,
   composeNew,
   findSimilar,
+  isImportant,
   markSearchResultsRead,
   moveSelection,
+  setImportant,
   setRead,
   setStarred,
   trash,
@@ -39,6 +41,7 @@ const onRowAction = (action: RowAction, t: ThreadSummary) => {
   const keys = [threadKey(t.accountId, t.id)];
   if (action === "archive") void archiveSlotAction(keys);
   else if (action === "delete") void trash(keys);
+  else if (action === "important") void setImportant(!isImportant(t), keys);
   else void setRead(t.unread, keys);
 };
 
@@ -71,6 +74,14 @@ export const rowMenu = (t: ThreadSummary) => {
       label: t.starred ? "Remove star" : "Add star",
       shortcut: registry.shortcutFor("conversation.star"),
       onSelect: () => void setStarred(!t.starred, keys),
+    },
+    {
+      id: "important",
+      label: isImportant(t) ? "Mark as not important" : "Mark as important",
+      shortcut: registry.shortcutFor(
+        isImportant(t) ? "conversation.mark-not-important" : "conversation.mark-important",
+      ),
+      onSelect: () => void setImportant(!isImportant(t), keys),
     },
     { type: "separator" as const },
     {

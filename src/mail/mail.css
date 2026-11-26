@@ -47,6 +47,37 @@
   cursor: default;
 }
 
+/* Gmail's importance marker. Every row reserves its slot, so toggling it (or the hover outline) never moves the sender. */
+.thread-row__important {
+  display: inline-block;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  margin-inline-end: var(--space-1-5);
+  vertical-align: text-bottom;
+  color: var(--color-warning);
+  cursor: default;
+}
+.thread-row__important-glyph {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  opacity: 0;
+}
+.thread-row__important[data-important] .thread-row__important-glyph {
+  fill: currentColor;
+  opacity: 1;
+}
+.thread-row:hover .thread-row__important:not([data-important]) .thread-row__important-glyph {
+  color: var(--color-foreground-muted);
+  opacity: 1;
+}
+.thread-row__important:not([data-important]):hover .thread-row__important-glyph {
+  color: var(--color-warning);
+}
+
 .thread-row__account {
   display: inline-block;
   width: var(--account-dot-size);

@@ -8,6 +8,7 @@ import {
   openLabelMenu,
   openMoveMenu,
   respond,
+  setImportant,
   setRead,
   toggleStar,
   trash,
@@ -191,6 +192,29 @@ export function appCommands(): Command[] {
       group: "Conversation",
       shortcut: DEFAULT_KEYS["conversation.mark-read"],
       run: () => void setRead(true),
+    },
+    {
+      id: "conversation.mark-important",
+      title: "Mark as important",
+      group: "Conversation",
+      shortcut: DEFAULT_KEYS["conversation.mark-important"],
+      run: () => void setImportant(true),
+    },
+    {
+      // Gmail takes `=` as well as `+` (the same key without Shift), so both mark important.
+      id: "conversation.mark-important-alt",
+      title: "Mark as important (alternate key)",
+      group: "Conversation",
+      shortcut: "=",
+      hidden: true,
+      run: () => void setImportant(true),
+    },
+    {
+      id: "conversation.mark-not-important",
+      title: "Mark as not important",
+      group: "Conversation",
+      shortcut: DEFAULT_KEYS["conversation.mark-not-important"],
+      run: () => void setImportant(false),
     },
     {
       id: "conversation.labels",
