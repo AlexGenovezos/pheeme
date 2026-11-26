@@ -99,8 +99,8 @@ const UPLOAD_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 pub trait TokenProvider: Send + Sync {
     /// A currently valid access token (implementations may cache).
     async fn access_token(&self) -> Result<String, GmailError>;
-    /// Force a refresh after a 401 and return the new token.
-    async fn refresh_access_token(&self) -> Result<String, GmailError>;
+    /// Get a fresh token after Gmail rejected the token sent on the request.
+    async fn refresh_access_token(&self, rejected: &str) -> Result<String, GmailError>;
 }
 
 /// Exponential backoff for 429, 5xx and network failures.
@@ -604,13 +604,22 @@ impl GmailClient {
                 // Like the first token: a slow refresh (or keychain prompt) holds no slot.
                 drop(slots.take());
                 let fetching = Instant::now();
-                let refreshed_token = self.tokens.refresh_access_token().await;
+                let refreshed_token = self.tokens.refresh_access_token(&token).await;
                 if let Some(p) = &probe {
                     p.token_wait(fetching.elapsed());
                 }
                 token = refreshed_token?;
                 refreshed = true;
+                // The retry is ready to compete for a slot again.
+                waiting = user.then(|| self.user_waiting());
+                let queued = Instant::now();
+                if let Some(p) = &probe {
+                    p.stage(ProbeStage::Queued);
+                }
                 slots = Some(self.take_slots(priority).await?);
+                if let Some(p) = &probe {
+                    p.slot_wait(queued.elapsed());
+                }
                 continue;
             }
 
@@ -899,7 +908,7 @@ pub(crate) mod test_support {
             Ok(format!("token-{}", self.refreshes.load(Ordering::SeqCst)))
         }
 
-        async fn refresh_access_token(&self) -> Result<String, GmailError> {
+        async fn refresh_access_token(&self, _rejected: &str) -> Result<String, GmailError> {
             let n = self.refreshes.fetch_add(1, Ordering::SeqCst) + 1;
             Ok(format!("token-{n}"))
         }

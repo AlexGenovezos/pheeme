@@ -12,7 +12,9 @@ use super::outbox;
 use crate::db::accounts;
 use crate::gmail::{usage_source, user_action, GmailError, UsageSource, RATE_LIMIT_COOLDOWN};
 use crate::lock::lock;
+use crate::shutdown::{Shutdown, Stop};
 use sqlx::SqlitePool;
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -42,11 +44,11 @@ pub type ApiFactory = Arc<dyn Fn(&str) -> Arc<dyn MailApi> + Send + Sync>;
 
 /// Clears a flag (`running`, `backfilling`, `first_sync`) however the work it marks ends:
 /// finished, failed, panicked, or dropped while waiting.
-struct ClearOnDrop<'a>(&'a AtomicBool);
+struct ClearOnDrop<T: Borrow<AtomicBool>>(T);
 
-impl Drop for ClearOnDrop<'_> {
+impl<T: Borrow<AtomicBool>> Drop for ClearOnDrop<T> {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+        self.0.borrow().store(false, Ordering::SeqCst);
     }
 }
 
@@ -59,7 +61,7 @@ struct AccountSync {
     outbox_lock: tokio::sync::Mutex<()>,
     running: AtomicBool,
     dirty: AtomicBool,
-    backfilling: AtomicBool,
+    backfilling: Arc<AtomicBool>,
     /// The account's first sync (no history cursor yet) is running.
     first_sync: AtomicBool,
     /// When the last full sync succeeded; `None` after a failure, so the next one runs in full
@@ -72,6 +74,7 @@ pub struct SyncManager {
     api_for: ApiFactory,
     events: Arc<dyn SyncEvents>,
     runtime: Handle,
+    shutdown: Shutdown,
     accounts: Mutex<HashMap<String, Arc<AccountSync>>>,
     last_focus: Mutex<Option<Instant>>,
     backfill_pause: Duration,
@@ -125,6 +128,7 @@ impl SyncManager {
             api_for,
             events,
             runtime: Handle::current(),
+            shutdown: crate::shutdown::APP.clone(),
             accounts: Mutex::new(HashMap::new()),
             last_focus: Mutex::new(None),
             backfill_pause,
@@ -148,7 +152,7 @@ impl SyncManager {
         tracing::info!("can't reach Google; syncing again once the connection is back");
         self.events.emit(SyncEvent::Network { online: false });
         let this = self.clone();
-        self.runtime.spawn(crate::shutdown::until(async move {
+        self.runtime.spawn(self.shutdown.until(async move {
             this.connectivity.wait_until_online().await;
             tracing::info!("Google is reachable again; syncing");
             // Changes that failed while the connection was going go now, not after their backoff.
@@ -212,7 +216,7 @@ impl SyncManager {
                     outbox_lock: Default::default(),
                     running: AtomicBool::new(false),
                     dirty: AtomicBool::new(false),
-                    backfilling: AtomicBool::new(false),
+                    backfilling: Arc::default(),
                     first_sync: AtomicBool::new(false),
                     last_full: Mutex::new(None),
                 })
@@ -222,7 +226,10 @@ impl SyncManager {
 
     /// The account's engine, sharing its API client and write lock.
     pub fn engine(&self, account_id: &str) -> SyncEngine {
-        let a = self.account(account_id);
+        self.engine_for(account_id, &self.account(account_id))
+    }
+
+    fn engine_for(&self, account_id: &str, a: &AccountSync) -> SyncEngine {
         SyncEngine::new(
             self.db.clone(),
             a.api.clone(),
@@ -264,15 +271,30 @@ impl SyncManager {
         )
     }
 
+    async fn live_account(&self, account_id: &str, stop: &Stop) -> Option<Arc<AccountSync>> {
+        let existing = lock(&self.accounts).get(account_id).cloned();
+        if existing.is_some() {
+            return existing;
+        }
+        // A queued trigger for a removed account mustn't recreate its Gmail usage meter.
+        (stop.until(self.exists(account_id)).await == Some(true)).then(|| self.account(account_id))
+    }
+
     /// Serialize queue processing separately from fetching mail. A send whose undo window expires
     /// must not wait for a slow history/body fetch, while label operations still keep their order.
-    async fn process_outbox(&self, account_id: &str) -> Result<(), SyncError> {
-        let a = self.account(account_id);
-        let _processing = a.outbox_lock.lock().await;
+    async fn process_outbox(
+        &self,
+        account_id: &str,
+        a: &AccountSync,
+        stop: &Stop,
+    ) -> Result<(), SyncError> {
+        let Some(_processing) = stop.until(a.outbox_lock.lock()).await else {
+            return Ok(());
+        };
         // Every queued change is something the user did: it goes ahead of sync and backfill, and
         // its Gmail quota counts as theirs.
-        let engine = self.engine(account_id);
-        let dispatch = outbox::process(&engine, now_ms());
+        let engine = self.engine_for(account_id, a);
+        let dispatch = outbox::process_until(&engine, now_ms(), stop);
         user_action(usage_source(UsageSource::YourChanges, dispatch)).await?;
         Ok(())
     }
@@ -281,19 +303,38 @@ impl SyncManager {
     /// sure the backfill is running. Errors are emitted as `sync:error`, except for an
     /// account that was removed meanwhile, which is dropped quietly.
     pub async fn sync_account(self: &Arc<Self>, account_id: &str) -> Result<(), SyncError> {
-        if !self.exists(account_id).await {
-            self.forget(account_id);
+        let Some(stop) = self.shutdown.track() else {
             return Ok(());
-        }
-        let a = self.account(account_id);
-        let _running = a.run_lock.lock().await;
-        let first = matches!(
-            accounts::get_account(&self.db, account_id).await,
-            Ok(Some(account)) if account.history_id.is_none()
-        );
+        };
+        let Some(a) = self.live_account(account_id, &stop).await else {
+            return Ok(());
+        };
+        self.sync_with(account_id, &a, &stop).await
+    }
+
+    async fn sync_with(
+        self: &Arc<Self>,
+        account_id: &str,
+        a: &AccountSync,
+        stop: &Stop,
+    ) -> Result<(), SyncError> {
+        let Some(_running) = stop.until(a.run_lock.lock()).await else {
+            return Ok(());
+        };
+        let first = match stop
+            .until(accounts::get_account(&self.db, account_id))
+            .await
+        {
+            Some(Ok(Some(account))) => account.history_id.is_none(),
+            Some(_) => {
+                self.forget(account_id);
+                return Ok(());
+            }
+            None => return Ok(()),
+        };
         a.first_sync.store(first, Ordering::SeqCst);
         let _first_done = ClearOnDrop(&a.first_sync);
-        let engine = self.engine(account_id);
+        let engine = self.engine_for(account_id, a);
         let start = Instant::now();
         let pool = crate::diagnostics::PoolLoad::of(&self.db);
         let full_due = lock(&a.last_full).is_none_or(|t| t.elapsed() >= FULL_SYNC_INTERVAL);
@@ -302,7 +343,7 @@ impl SyncManager {
         let outbox_ms = std::sync::atomic::AtomicU64::new(0);
         let outbox = || async {
             let started = Instant::now();
-            let result = self.process_outbox(account_id).await;
+            let result = self.process_outbox(account_id, a, stop).await;
             outbox_ms.fetch_add(
                 crate::diagnostics::ms_since(started),
                 std::sync::atomic::Ordering::Relaxed,
@@ -311,11 +352,19 @@ impl SyncManager {
         };
         let result = crate::gmail::probe::with_probe(gmail.clone(), async {
             outbox().await?;
-            let changed = if full_due {
-                Some(engine.run_incremental_sync().await?)
-            } else {
-                engine.check_incremental_sync().await?
+            let Some(changed) = stop
+                .until(async {
+                    if full_due {
+                        engine.run_incremental_sync().await.map(Some)
+                    } else {
+                        engine.check_incremental_sync().await
+                    }
+                })
+                .await
+            else {
+                return Ok(None);
             };
+            let changed = changed?;
             if changed.is_some() {
                 *lock(&a.last_full) = Some(Instant::now());
             }
@@ -323,6 +372,9 @@ impl SyncManager {
             Ok::<_, SyncError>(changed)
         })
         .await;
+        if stop.stopping() {
+            return Ok(());
+        }
         if result.is_err() {
             *lock(&a.last_full) = None;
         }
@@ -360,7 +412,7 @@ impl SyncManager {
                 if note_keychain(&self.keychain_waiting, false) {
                     tracing::info!("the keychain can be read again; syncing");
                 }
-                self.ensure_backfill(account_id);
+                self.ensure_backfill(account_id, a);
                 Ok(())
             }
             Err(_) if !self.exists(account_id).await => {
@@ -378,15 +430,20 @@ impl SyncManager {
     /// Sync now, coalescing with a sync already running for the account (it runs once
     /// more afterwards instead of in parallel).
     pub async fn run_coalesced(self: &Arc<Self>, account_id: &str) {
-        let a = self.account(account_id);
+        let Some(stop) = self.shutdown.track() else {
+            return;
+        };
+        let Some(a) = self.live_account(account_id, &stop).await else {
+            return;
+        };
         a.dirty.store(true, Ordering::SeqCst);
-        while a.dirty.load(Ordering::SeqCst) {
+        while !stop.stopping() && a.dirty.load(Ordering::SeqCst) {
             if a.running.swap(true, Ordering::SeqCst) {
                 return; // the running loop sees `dirty` and goes again
             }
             let _running = ClearOnDrop(&a.running);
-            while a.dirty.swap(false, Ordering::SeqCst) {
-                let _ = self.sync_account(account_id).await;
+            while !stop.stopping() && a.dirty.swap(false, Ordering::SeqCst) {
+                let _ = self.sync_with(account_id, &a, &stop).await;
             }
         }
     }
@@ -409,13 +466,16 @@ impl SyncManager {
             return;
         }
         let this = self.clone();
-        self.runtime.spawn(crate::shutdown::until(async move {
+        let Some(stop) = self.shutdown.track() else {
+            return;
+        };
+        self.runtime.spawn(async move {
             let ids = match account_id {
                 Some(id) => vec![id],
-                None => this.account_ids().await,
+                None => stop.until(this.account_ids()).await.unwrap_or_default(),
             };
             futures::future::join_all(ids.iter().map(|id| this.run_coalesced(id))).await;
-        }));
+        });
     }
 
     /// Dispatch queued changes once `delay` has passed, then refresh mail. Dispatch runs independently
@@ -423,22 +483,26 @@ impl SyncManager {
     pub fn trigger_after(self: &Arc<Self>, account_id: &str, delay: Duration) {
         let this = self.clone();
         let id = account_id.to_owned();
-        self.runtime.spawn(crate::shutdown::until(async move {
-            tokio::time::sleep(delay).await;
-            if !this.exists(&id).await {
-                this.forget(&id);
+        let Some(stop) = self.shutdown.track() else {
+            return;
+        };
+        self.runtime.spawn(async move {
+            if stop.until(tokio::time::sleep(delay)).await.is_none()
+                || stop.until(this.exists(&id)).await != Some(true)
+            {
                 return;
             }
             // The change stays queued; coming back online sends it.
             if !this.online() {
                 return;
             }
-            if let Err(e) = this.process_outbox(&id).await {
+            let a = this.account(&id);
+            if let Err(e) = this.process_outbox(&id, &a, &stop).await {
                 this.log_failure(&id, &e, "scheduled outbox dispatch failed");
                 this.report_error(&id, &e);
             }
             this.run_coalesced(&id).await;
-        }));
+        });
     }
 
     /// The window gained focus.
@@ -460,7 +524,7 @@ impl SyncManager {
     /// Sync every account now and then every [`SYNC_INTERVAL`].
     pub fn start(self: &Arc<Self>) {
         let this = self.clone();
-        self.runtime.spawn(crate::shutdown::until(async move {
+        self.runtime.spawn(self.shutdown.until(async move {
             // On the shared clock, so the calendar's and tasks' checks share mail's wakeups.
             // After the computer sleeps, this checks once rather than catching up.
             loop {
@@ -473,16 +537,16 @@ impl SyncManager {
         }));
     }
 
-    fn ensure_backfill(self: &Arc<Self>, account_id: &str) {
-        let a = self.account(account_id);
+    fn ensure_backfill(self: &Arc<Self>, account_id: &str, a: &AccountSync) {
         if a.backfilling.swap(true, Ordering::SeqCst) {
             return;
         }
+        let backfilling = ClearOnDrop(a.backfilling.clone());
+        let engine = self.engine_for(account_id, a);
         let this = self.clone();
         let id = account_id.to_owned();
-        self.runtime.spawn(crate::shutdown::until(async move {
-            let _backfilling = ClearOnDrop(&a.backfilling);
-            let engine = this.engine(&id);
+        self.runtime.spawn(self.shutdown.until(async move {
+            let _backfilling = backfilling;
             loop {
                 if !this.exists(&id).await {
                     break;
@@ -681,6 +745,61 @@ mod tests {
         gate.add_permits(10);
         sync.await;
         assert_eq!(fake.sent().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn shutdown_lets_claimed_sends_finish_and_leaves_other_sends_pending() {
+        for scheduled in [false, true] {
+            let (_dir, pool, fake, _events, mut manager) = setup().await;
+            let shutdown = Shutdown::default();
+            Arc::get_mut(&mut manager).unwrap().shutdown = shutdown.clone();
+            let raw = b"To: friend@example.com\r\nSubject: Hello\r\n\r\nHi";
+            let first = outbox::queue_send(&pool, "a1", raw, &Default::default())
+                .await
+                .unwrap();
+            let second = outbox::queue_send(&pool, "a1", raw, &Default::default())
+                .await
+                .unwrap();
+            let gate = fake.hold_sends();
+            if scheduled {
+                manager.trigger_after("a1", Duration::ZERO);
+            } else {
+                manager.trigger(Some("a1".into()));
+            }
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while fake.calls("send_message") == 0 {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("send wasn't claimed");
+            let claimed = crate::db::outbox::get(&pool, &first)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(claimed.status, "checking");
+
+            let drain = shutdown.drain();
+            tokio::pin!(drain);
+            assert!(futures::poll!(&mut drain).is_pending());
+            gate.add_permits(1);
+            tokio::time::timeout(Duration::from_secs(5), drain)
+                .await
+                .unwrap();
+
+            assert_eq!(fake.calls("send_message"), 1);
+            assert_eq!(fake.sent().len(), 1);
+            assert!(crate::db::outbox::get(&pool, &first)
+                .await
+                .unwrap()
+                .is_none());
+            let waiting = crate::db::outbox::get(&pool, &second)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(waiting.status, "pending");
+            assert_eq!(waiting.attempts, 0);
+        }
     }
 
     #[tokio::test]
@@ -1031,11 +1150,27 @@ mod tests {
 
     #[tokio::test]
     async fn asking_about_a_removed_account_doesnt_bring_it_back() {
-        let (_dir, _pool, _fake, _events, manager) = setup().await;
+        let (_dir, pool, _fake, _events, manager) = setup().await;
         manager.account("a1");
+        let mut tx = crate::db::begin_write(&pool).await.unwrap();
+        accounts::delete_account(&mut *tx, "a1").await.unwrap();
+        tx.commit().await.unwrap();
         manager.forget("a1");
         assert!(!manager.sync_busy("a1"));
+        manager.run_coalesced("a1").await;
         assert!(!lock(&manager.accounts).contains_key("a1"));
+    }
+
+    #[tokio::test]
+    async fn shutdown_before_the_backfill_is_polled_clears_its_flag() {
+        let (_dir, _pool, _fake, _events, mut manager) = setup().await;
+        let shutdown = Shutdown::default();
+        Arc::get_mut(&mut manager).unwrap().shutdown = shutdown.clone();
+        let a = manager.account("a1");
+        manager.ensure_backfill("a1", &a);
+        assert!(a.backfilling.load(Ordering::SeqCst));
+        shutdown.drain().await;
+        assert!(!a.backfilling.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
@@ -1048,7 +1183,7 @@ mod tests {
             hook.store(true, Ordering::SeqCst);
             panic!("backfill blew up");
         });
-        manager.ensure_backfill("a1");
+        manager.ensure_backfill("a1", &manager.account("a1"));
         tokio::time::timeout(Duration::from_secs(5), async {
             while manager.sync_busy("a1") {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1056,6 +1191,9 @@ mod tests {
         })
         .await
         .expect("the backfill stayed marked as running");
-        assert!(ran.load(Ordering::SeqCst), "the backfill never reached its fetch");
+        assert!(
+            ran.load(Ordering::SeqCst),
+            "the backfill never reached its fetch"
+        );
     }
 }

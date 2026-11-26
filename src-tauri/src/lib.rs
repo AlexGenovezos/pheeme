@@ -59,6 +59,8 @@ use tracing::info;
 
 /// How long quitting waits for queries in flight before the database closes.
 const DB_CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+/// How long to let the background tasks stop and any claimed sends settle.
+const BACKGROUND_DRAIN_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub struct AppState {
     pub db: SqlitePool,
@@ -476,9 +478,9 @@ pub fn run() {
                 use tauri::Emitter;
                 let _ = activity_events.emit("assistant:activity", ());
             }));
-            tauri::async_runtime::spawn(async move {
+            tauri::async_runtime::spawn(shutdown::until(async move {
                 assistants.apply_setting().await;
-            });
+            }));
             if telemetry::active_in_this_build() {
                 tauri::async_runtime::spawn(shutdown::until(telemetry::run(state.db.clone())));
             }
@@ -764,7 +766,6 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 info!("Pheeme exiting");
                 let mut db_closed = true;
-                shutdown::begin();
                 if let Some(state) = app.try_state::<AppState>() {
                     if let Err(error) = storage::clear_opened(&state.cache_dir) {
                         tracing::warn!(%error, "couldn't remove opened attachment copies");
@@ -773,13 +774,29 @@ pub fn run() {
                     // connection still working on its own thread then crashes the process. So
                     // close them all first, letting a query in flight finish for a moment.
                     let db = state.db.clone();
+                    let assistants = state.assistants.clone();
                     db_closed = tauri::async_runtime::block_on(async move {
+                        let drain = async {
+                            shutdown::APP.drain().await;
+                            assistants.stop().await;
+                        };
+                        if tokio::time::timeout(BACKGROUND_DRAIN_WAIT, drain)
+                            .await
+                            .is_err()
+                        {
+                            // A task could still use the pool. Leave with the same fast exit
+                            // as for a busy connection, without running SQLCipher's exit hooks.
+                            tracing::warn!("background work still running at exit");
+                            return false;
+                        }
                         tokio::time::timeout(DB_CLOSE_WAIT, db.close())
                             .await
                             .is_ok()
                     });
                     if !db_closed {
-                        tracing::warn!("database still busy at exit: leaving without exit hooks");
+                        tracing::warn!(
+                            "database did not close at exit: leaving without exit hooks"
+                        );
                     }
                 }
                 if let Some(logs) = app.try_state::<diagnostics::LogGuard>() {

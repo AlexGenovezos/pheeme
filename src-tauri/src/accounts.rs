@@ -594,20 +594,35 @@ impl AccountService {
         if let Some(token) = self.cached_token(account_id) {
             return Ok(token);
         }
-        self.refresh_access_token(account_id).await
+        self.refresh_after(account_id, None).await
     }
 
     /// Exchanges the stored refresh token for a new access token. Callers that ask while
     /// another refresh for the account runs wait for it and share its token.
     pub async fn refresh_access_token(&self, account_id: &str) -> Result<String, AccountError> {
-        let stale = lock(&self.tokens).get(account_id).map(|(token, _)| token.clone());
-        let gate = Arc::clone(lock(&self.refreshing).entry(account_id.to_owned()).or_default());
+        let stale = lock(&self.tokens)
+            .get(account_id)
+            .map(|(token, _)| token.clone());
+        self.refresh_after(account_id, stale.as_deref()).await
+    }
+
+    async fn refresh_after(
+        &self,
+        account_id: &str,
+        rejected: Option<&str>,
+    ) -> Result<String, AccountError> {
+        let gate = Arc::clone(
+            lock(&self.refreshing)
+                .entry(account_id.to_owned())
+                .or_default(),
+        );
         let _refreshing = gate.lock().await;
-        // A refresh that finished while this one waited already replaced the stale token.
-        if let Some(token) = self.cached_token(account_id) {
-            if Some(&token) != stale.as_ref() {
-                return Ok(token);
-            }
+        // A late 401 can arrive after a different request already replaced its token.
+        if let Some(token) = self
+            .cached_token(account_id)
+            .filter(|token| Some(token.as_str()) != rejected)
+        {
+            return Ok(token);
         }
         let account = self.account(account_id).await?;
         let (creds, refresh_token) = self.saved_credentials(&account).await?;
@@ -649,9 +664,12 @@ impl crate::gmail::TokenProvider for AccountTokens {
             .map_err(token_error)
     }
 
-    async fn refresh_access_token(&self) -> Result<String, crate::gmail::GmailError> {
+    async fn refresh_access_token(
+        &self,
+        rejected: &str,
+    ) -> Result<String, crate::gmail::GmailError> {
         self.service
-            .refresh_access_token(&self.account_id)
+            .refresh_after(&self.account_id, Some(rejected))
             .await
             .map_err(token_error)
     }
@@ -1218,12 +1236,23 @@ mod tests {
             .expect(1)
             .mount(&h.server)
             .await;
-        // Two requests got a 401 with the same token.
+        // Two requests got a 401 with the same token, then a third 401 came back late.
         let (a, b) = tokio::join!(
-            h.service.refresh_access_token(&account.id),
-            h.service.refresh_access_token(&account.id)
+            h.service.refresh_after(&account.id, Some("access-1")),
+            h.service.refresh_after(&account.id, Some("access-1"))
         );
-        assert_eq!((a.unwrap(), b.unwrap()), ("access-2".into(), "access-2".into()));
+        assert_eq!(
+            (a.unwrap(), b.unwrap()),
+            ("access-2".into(), "access-2".into())
+        );
+        assert_eq!(
+            h.service
+                .refresh_after(&account.id, Some("access-1"))
+                .await
+                .unwrap(),
+            "access-2"
+        );
+        h.server.verify().await;
         // And two found none cached (at launch): one exchange, with the rotated token.
         lock(&h.service.tokens).remove(&account.id);
         h.server.reset().await;
@@ -1243,7 +1272,10 @@ mod tests {
             h.service.access_token(&account.id),
             h.service.access_token(&account.id)
         );
-        assert_eq!((a.unwrap(), b.unwrap()), ("access-3".into(), "access-3".into()));
+        assert_eq!(
+            (a.unwrap(), b.unwrap()),
+            ("access-3".into(), "access-3".into())
+        );
         h.server.verify().await;
         assert_eq!(
             h.secrets.get(&account.id).unwrap().unwrap().refresh_token,
@@ -1269,7 +1301,7 @@ mod tests {
             )
             .mount(&h.server)
             .await;
-        let error = tokens.refresh_access_token().await.unwrap_err();
+        let error = tokens.refresh_access_token("access-1").await.unwrap_err();
         assert!(
             matches!(error, crate::gmail::GmailError::SignedOut(ref m) if m.contains("Sign in again")),
             "{error:?}"

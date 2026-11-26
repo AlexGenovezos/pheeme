@@ -266,6 +266,7 @@ struct State {
     /// While set, every `batch_get_messages` waits for a permit (see [`FakeGmail::hold_batch_gets`]).
     batch_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     draft_delete_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
+    send_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     thread_get_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     label_get_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
     label_write_gate: Option<std::sync::Arc<tokio::sync::Semaphore>>,
@@ -455,6 +456,13 @@ impl FakeGmail {
     pub fn hold_draft_deletes(&self) -> std::sync::Arc<tokio::sync::Semaphore> {
         let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
         self.lock().draft_delete_gate = Some(gate.clone());
+        gate
+    }
+
+    /// Stall sends before Gmail accepts the message.
+    pub fn hold_sends(&self) -> std::sync::Arc<tokio::sync::Semaphore> {
+        let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+        self.lock().send_gate = Some(gate.clone());
         gate
     }
 
@@ -1215,6 +1223,10 @@ impl MailApi for FakeGmail {
         thread_id: Option<&str>,
     ) -> Result<String, GmailError> {
         self.enter("send_message")?;
+        let gate = self.lock().send_gate.clone();
+        if let Some(gate) = gate {
+            let _permit = gate.acquire().await.expect("gate open");
+        }
         let id = {
             let mut s = self.lock();
             s.sent.push(encode_base64url(rfc822));

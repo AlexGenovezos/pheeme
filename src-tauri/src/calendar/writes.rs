@@ -636,7 +636,14 @@ mod tests {
         let service = h.service.clone();
         let write = tokio::spawn(async move {
             service
-                .update_event("a", CAL, "e", EditScope::All, summary("New"), SendUpdates::None)
+                .update_event(
+                    "a",
+                    CAL,
+                    "e",
+                    EditScope::All,
+                    summary("New"),
+                    SendUpdates::None,
+                )
                 .await
         });
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;

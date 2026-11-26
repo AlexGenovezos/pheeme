@@ -333,7 +333,8 @@ impl TokenProvider for StuckRefresh {
         Ok("token-0".into())
     }
 
-    async fn refresh_access_token(&self) -> Result<String, GmailError> {
+    async fn refresh_access_token(&self, rejected: &str) -> Result<String, GmailError> {
+        assert_eq!(rejected, "token-0");
         self.refreshing.notify_one();
         let _ = self.release.acquire().await;
         Ok("token-1".into())
@@ -764,7 +765,7 @@ impl TokenProvider for StuckFirstToken {
         Ok("token-0".into())
     }
 
-    async fn refresh_access_token(&self) -> Result<String, GmailError> {
+    async fn refresh_access_token(&self, _rejected: &str) -> Result<String, GmailError> {
         self.access_token().await
     }
 }
