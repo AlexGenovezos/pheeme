@@ -15,7 +15,7 @@ use crate::lock::lock;
 use crate::shutdown::{Shutdown, Stop};
 use sqlx::SqlitePool;
 use std::borrow::Borrow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -76,6 +76,8 @@ pub struct SyncManager {
     runtime: Handle,
     shutdown: Shutdown,
     accounts: Mutex<HashMap<String, Arc<AccountSync>>>,
+    /// Accounts removed via [`forget`]; stale triggers check the DB before recreating state.
+    forgotten: Mutex<HashSet<String>>,
     last_focus: Mutex<Option<Instant>>,
     backfill_pause: Duration,
     rate_limit_pause: Duration,
@@ -130,6 +132,7 @@ impl SyncManager {
             runtime: Handle::current(),
             shutdown: crate::shutdown::APP.clone(),
             accounts: Mutex::new(HashMap::new()),
+            forgotten: Mutex::new(HashSet::new()),
             last_focus: Mutex::new(None),
             backfill_pause,
             rate_limit_pause,
@@ -262,6 +265,7 @@ impl SyncManager {
     /// Drop an account's sync state (it was removed).
     pub fn forget(&self, account_id: &str) {
         lock(&self.accounts).remove(account_id);
+        lock(&self.forgotten).insert(account_id.to_owned());
     }
 
     async fn exists(&self, account_id: &str) -> bool {
@@ -272,12 +276,19 @@ impl SyncManager {
     }
 
     async fn live_account(&self, account_id: &str, stop: &Stop) -> Option<Arc<AccountSync>> {
-        let existing = lock(&self.accounts).get(account_id).cloned();
-        if existing.is_some() {
-            return existing;
+        if let Some(existing) = lock(&self.accounts).get(account_id).cloned() {
+            return Some(existing);
         }
-        // A queued trigger for a removed account mustn't recreate its Gmail usage meter.
-        (stop.until(self.exists(account_id)).await == Some(true)).then(|| self.account(account_id))
+        // Only check the DB when the account was explicitly forgotten; normal first-use lookups
+        // stay synchronous so concurrent callers coalesce without racing on SQLite.
+        if !lock(&self.forgotten).contains(account_id) {
+            return Some(self.account(account_id));
+        }
+        if stop.until(self.exists(account_id)).await == Some(true) {
+            lock(&self.forgotten).remove(account_id);
+            return Some(self.account(account_id));
+        }
+        None
     }
 
     /// Serialize queue processing separately from fetching mail. A send whose undo window expires
