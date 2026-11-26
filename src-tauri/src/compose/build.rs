@@ -227,16 +227,65 @@ pub fn build_message(out: &Outgoing<'_>) -> Result<Vec<u8>, MailError> {
 }
 
 fn attachment_part(att: &StagedAttachment, bytes: Vec<u8>) -> SinglePart {
-    let content_type = ContentType::parse(&att.mime_type)
-        .unwrap_or_else(|_| ContentType::parse("application/octet-stream").expect("valid"));
+    let octets = || ContentType::parse("application/octet-stream").expect("valid");
     let builder = match att.content_id.as_deref() {
         Some(cid) => Attachment::new_inline_with_name(cid.to_owned(), att.filename.clone()),
         None => Attachment::new(att.filename.clone()),
     };
-    // Base64 always: the bytes arrive exactly as attached (no line-ending rewrites).
-    let body = Body::new_with_encoding(bytes, ContentTransferEncoding::Base64)
-        .expect("any bytes can be base64-encoded");
-    builder.body(body, content_type)
+    if att.mime_type.trim().eq_ignore_ascii_case(FORWARDED_MESSAGE) {
+        // RFC 2046 lets a `message/rfc822` part be only 7bit, 8bit or binary, so a message that
+        // can't go as it stands (a line over 998 bytes, a bare CR or LF, a NUL) goes as a plain
+        // `.eml` file in base64 instead, which readers still open as a message.
+        return match message_body(bytes) {
+            Ok(body) => builder.body(body, ContentType::parse(FORWARDED_MESSAGE).expect("valid")),
+            Err(bytes) => builder.body(base64_body(bytes), octets()),
+        };
+    }
+    let content_type = ContentType::parse(&att.mime_type).unwrap_or_else(|_| octets());
+    // Base64: the bytes arrive exactly as attached (no line-ending rewrites).
+    builder.body(base64_body(bytes), content_type)
+}
+
+/// The content type of a message forwarded as an attachment (an `.eml` file).
+pub const FORWARDED_MESSAGE: &str = "message/rfc822";
+
+fn base64_body(bytes: Vec<u8>) -> Body {
+    Body::new_with_encoding(bytes, ContentTransferEncoding::Base64)
+        .expect("any bytes can be base64-encoded")
+}
+
+/// A forwarded message as it stands (7bit or 8bit), or its bytes back when it can't go so.
+fn message_body(bytes: Vec<u8>) -> Result<Body, Vec<u8>> {
+    if !is_valid_8bit(&bytes) {
+        return Err(bytes);
+    }
+    let encoding = if bytes.is_ascii() {
+        ContentTransferEncoding::SevenBit
+    } else {
+        ContentTransferEncoding::EightBit
+    };
+    Ok(Body::dangerous_pre_encoded(bytes, encoding))
+}
+
+/// RFC 5322 lines: CRLF only, each at most 998 bytes, no NUL.
+fn is_valid_8bit(bytes: &[u8]) -> bool {
+    let mut line = 0usize;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            0 => return false,
+            b'\r' if bytes.get(i + 1) != Some(&b'\n') => return false,
+            b'\n' if i == 0 || bytes[i - 1] != b'\r' => return false,
+            b'\r' => {}
+            b'\n' => line = 0,
+            _ => {
+                line += 1;
+                if line > 998 {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 /// Plain-text alternative of an HTML body: block ends become line breaks, list items get
@@ -628,6 +677,64 @@ mod tests {
             inline.headers.get_first_value("Content-ID").unwrap(),
             "<logo@x>"
         );
+    }
+
+    #[test]
+    fn a_forwarded_message_goes_as_it_stands_unless_it_cannot() {
+        let forwarded = |name: &str, bytes: &[u8]| {
+            (
+                StagedAttachment {
+                    id: name.into(),
+                    filename: format!("{name}.eml"),
+                    mime_type: FORWARDED_MESSAGE.into(),
+                    size: bytes.len() as u64,
+                    content_id: None,
+                },
+                bytes.to_vec(),
+            )
+        };
+        let long_line = format!("Subject: x\r\n\r\n{}\r\n", "a".repeat(999));
+        let files = vec![
+            forwarded("ascii", b"Subject: Hi\r\n\r\nHello\r\n"),
+            forwarded("utf8", "Subject: Hi\r\n\r\nCaf\u{e9}\r\n".as_bytes()),
+            forwarded("bare-lf", b"Subject: Hi\n\nHello\n"),
+            forwarded("long", long_line.as_bytes()),
+        ];
+        let draft = ComposeDraft {
+            to: vec![addr(None, "bo@example.com")],
+            subject: "Fwd".into(),
+            ..Default::default()
+        };
+        let raw = build(&draft, &files);
+        let mail = parse(&raw);
+        let parts = &mail.subparts[1..];
+        let encodings: Vec<String> = parts
+            .iter()
+            .map(|p| {
+                use mailparse::MailHeaderMap;
+                p.headers
+                    .get_first_value("Content-Transfer-Encoding")
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(encodings, ["7bit", "8bit", "base64", "base64"]);
+        let types: Vec<&str> = parts.iter().map(|p| p.ctype.mimetype.as_str()).collect();
+        assert_eq!(
+            types,
+            [
+                "message/rfc822",
+                "message/rfc822",
+                "application/octet-stream",
+                "application/octet-stream"
+            ]
+        );
+        for (part, (att, bytes)) in parts.iter().zip(&files) {
+            assert_eq!(
+                part.get_content_disposition().params["filename"],
+                att.filename
+            );
+            assert_eq!(&part.get_body_raw().unwrap(), bytes, "{}", att.filename);
+        }
     }
 
     #[test]

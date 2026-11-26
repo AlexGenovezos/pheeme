@@ -236,6 +236,29 @@ test("a reply panel loads its template; a failure closes it with the reason", as
   expect(titles()).toContain("Gone.");
 });
 
+test("forward as attachment opens a new message with the .eml files; a failure closes it", async () => {
+  const eml = { id: "s1", filename: "Hi.eml", mimeType: "message/rfc822", size: 900 };
+  handlers.forward_as_attachment = () => ({
+    ...emptyDraft(),
+    subject: "Fwd: Hi",
+    attachments: [eml],
+  });
+  await store().forwardAsAttachment("a1", { threadIds: ["t1", "t2"] });
+  expect(called("forward_as_attachment")).toEqual([
+    { accountId: "a1", threadIds: ["t1", "t2"], messageIds: [] },
+  ]);
+  expect(store().windows).toMatchObject([
+    { kind: "new", loading: false, draft: { subject: "Fwd: Hi", attachments: [eml] } },
+  ]);
+
+  handlers.forward_as_attachment = () => {
+    throw { code: "invalid_input", message: "Too big." };
+  };
+  await store().forwardAsAttachment("a1", { messageIds: ["m1"] });
+  expect(store().windows).toHaveLength(1);
+  expect(titles()).toContain("Too big.");
+});
+
 const SIGNED =
   '<p></p><div class="gmail_signature" data-smartmail="gmail_signature"><b>Me</b></div>';
 

@@ -26,6 +26,23 @@ pub async fn compose_template(
     Ok(user_action(state.compose.template(&account_id, &message_id, mode)).await?)
 }
 
+/// A new message with each message of `thread_ids`, and each of `message_ids`, attached as
+/// an `.eml` file (Forward as attachment).
+#[tauri::command]
+pub async fn forward_as_attachment(
+    state: State<'_, AppState>,
+    account_id: String,
+    thread_ids: Vec<String>,
+    message_ids: Vec<String>,
+) -> Result<ComposeDraft, CommandError> {
+    Ok(user_action(
+        state
+            .compose
+            .forward_as_attachment(&account_id, &thread_ids, &message_ids),
+    )
+    .await?)
+}
+
 /// The account's signature as set in Gmail (HTML), or `None` when it has none.
 #[tauri::command]
 pub async fn gmail_signature(

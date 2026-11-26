@@ -58,6 +58,19 @@ export interface QueuedSend {
 
 export const composeTemplate = (accountId: string, messageId: string, mode: ComposeMode) =>
   call("compose_template", { accountId, messageId, mode });
+/**
+ * A new message with every message of `threadIds` (drafts left out) and each of `messageIds` attached as an `.eml`
+ * file, as Gmail's Forward as attachment. One conversation gives the subject `Fwd: …`; several leave it empty.
+ */
+export const forwardAsAttachment = (
+  accountId: string,
+  sources: { threadIds?: string[]; messageIds?: string[] },
+) =>
+  call("forward_as_attachment", {
+    accountId,
+    threadIds: sources.threadIds ?? [],
+    messageIds: sources.messageIds ?? [],
+  });
 /** The account's signature as set in Gmail (HTML), or `null` when it has none. */
 export const gmailSignature = (accountId: string) => call("gmail_signature", { accountId });
 /** An account's choices in Settings › Compose, as Pheeme keeps them for every compose path (AI drafts too). */

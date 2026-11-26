@@ -178,6 +178,10 @@ export interface Commands {
 
   // Compose
   compose_template: Command<Account & { messageId: string; mode: ComposeMode }, ComposeDraft>;
+  forward_as_attachment: Command<
+    Account & { threadIds: string[]; messageIds: string[] },
+    ComposeDraft
+  >;
   gmail_signature: Command<Account, string | null>;
   signature_settings: Command<Account, SignatureSettings | null>;
   set_signature_settings: Command<Account & { settings: SignatureSettings }, void>;

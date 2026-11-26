@@ -95,6 +95,17 @@ impl GmailClient {
         Ok(msg)
     }
 
+    /// The message exactly as Gmail stores it (RFC 2822 bytes, `format=raw`), for the user's
+    /// own requests (Forward as attachment, Show original); callers run it in `user_action`.
+    pub async fn get_raw(&self, id: &str) -> Result<Vec<u8>, GmailError> {
+        let req = ApiRequest::get(&["messages", id]).query("format", MessageFormat::Raw.as_str());
+        let msg: Message = self.send_json(req).await?;
+        let raw = msg
+            .raw
+            .ok_or_else(|| GmailError::Decode(format!("message {id} has no raw body")))?;
+        decode_base64url(&raw)
+    }
+
     /// Gmail moves large text/plain and text/html bodies out of the payload behind an
     /// `attachmentId`. Fetch them so the parser sees the body like any other.
     pub(crate) fn fill_external_bodies<'a>(
@@ -496,6 +507,23 @@ mod tests {
             client.get_attachment("m1", "a1").await.unwrap(),
             b"\xfb\xff"
         );
+    }
+
+    #[tokio::test]
+    async fn get_raw_asks_for_the_raw_format_and_decodes_it() {
+        let server = MockServer::start().await;
+        let source = b"Subject: Caf\xc3\xa9\r\n\r\nbody";
+        Mock::given(method("GET"))
+            .and(path("/messages/m1"))
+            .and(query_param("format", "raw"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "m1", "threadId": "t1", "raw": encode_base64url(source)
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        assert_eq!(client.get_raw("m1").await.unwrap(), source);
     }
 
     #[tokio::test]
