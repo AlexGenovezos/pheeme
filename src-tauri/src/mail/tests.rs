@@ -115,6 +115,60 @@ async fn modify_threads_applies_now_emits_and_reaches_gmail() {
     ));
 }
 
+#[tokio::test]
+async fn modify_threads_reports_spam_and_undoes_it_but_never_touches_trash() {
+    let db = TestDb::with_account("a1").await;
+    let fake = Arc::new(FakeGmail::new());
+    fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+    let api = fake.clone();
+    let sync = SyncManager::new(
+        db.pool.clone(),
+        Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
+        Arc::new(RecordingEvents::default()),
+    );
+    sync.sync_account("a1").await.unwrap();
+    let mail = MailService::new(
+        db.pool.clone(),
+        sync,
+        db.dir().join("cache"),
+        crate::storage::test_key(),
+    );
+    let in_mailbox = |label: &'static str| {
+        let mail = &mail;
+        async move {
+            mail.list_threads(&["a1".into()], label, None, None, None, None)
+                .await
+                .unwrap()
+                .threads
+                .len()
+        }
+    };
+
+    mail.modify_threads("a1", &["t1".into()], &["SPAM".into()], &["INBOX".into()])
+        .await
+        .unwrap();
+    assert_eq!(
+        (in_mailbox("INBOX").await, in_mailbox("SPAM").await),
+        (0, 1)
+    );
+
+    mail.modify_threads("a1", &["t1".into()], &["INBOX".into()], &["SPAM".into()])
+        .await
+        .unwrap();
+    assert_eq!(
+        (in_mailbox("INBOX").await, in_mailbox("SPAM").await),
+        (1, 0)
+    );
+
+    for (add, remove) in [("TRASH", "INBOX"), ("INBOX", "TRASH")] {
+        assert!(matches!(
+            mail.modify_threads("a1", &["t1".into()], &[add.into()], &[remove.into()])
+                .await,
+            Err(MailError::Invalid(_))
+        ));
+    }
+}
+
 #[test]
 fn inbox_tab_search_names_the_tab_or_what_primary_leaves_out() {
     assert_eq!(

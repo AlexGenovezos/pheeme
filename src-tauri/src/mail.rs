@@ -474,13 +474,8 @@ impl MailService {
         if thread_ids.is_empty() || (add.is_empty() && remove.is_empty()) {
             return Err(MailError::Invalid("Nothing to change.".into()));
         }
-        // Spam can be left only the way Gmail's Not spam leaves it: back to the inbox.
-        let not_spam = add.iter().any(|l| l == "INBOX");
-        if add.iter().any(|l| l == "TRASH" || l == "SPAM")
-            || remove
-                .iter()
-                .any(|l| l == "TRASH" || (l == "SPAM" && !not_spam))
-        {
+        // Spam can be added (Report spam) and removed (Not spam, or Undo of Report spam); Trash has its own command.
+        if add.iter().chain(remove).any(|l| l == "TRASH") {
             return Err(MailError::Invalid("Use trash for Trash.".into()));
         }
         let queued = outbox::enqueue_modify(&self.db, account_id, thread_ids, add, remove).await?;

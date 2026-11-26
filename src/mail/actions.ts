@@ -17,6 +17,7 @@ export {
   archive,
   archiveSlotAction,
   markTabRead,
+  reportSpam,
   setImportant,
   setRead,
   setStarred,

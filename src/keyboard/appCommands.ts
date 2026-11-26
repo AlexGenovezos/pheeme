@@ -1,5 +1,6 @@
 import {
   archiveSlotAction,
+  reportSpam,
   closeConversation,
   composeNew,
   findSimilar,
@@ -172,6 +173,15 @@ export function appCommands(): Command[] {
       shortcut: DEFAULT_KEYS["conversation.delete"],
       keywords: ["trash"],
       run: () => void trash(),
+    },
+    {
+      id: "conversation.report-spam",
+      title: "Report spam",
+      group: "Conversation",
+      shortcut: DEFAULT_KEYS["conversation.report-spam"],
+      keywords: ["junk", "phishing", "spam"],
+      // Skips what is in Spam, Trash or Drafts, like Gmail.
+      run: () => void reportSpam(),
     },
     {
       id: "conversation.star",

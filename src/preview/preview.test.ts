@@ -390,7 +390,56 @@ describe("preview IPC", () => {
     });
   });
 
-  test("modify_threads refuses Trash and Spam like the backend", () => {
+  test("modify_threads reports spam but refuses Trash like the backend", async () => {
+    installPreview();
+    await invoke("modify_threads", {
+      accountId: "acc-personal",
+      threadIds: ["p-05"],
+      add: ["SPAM"],
+      remove: ["INBOX"],
+    });
+    const spam = await invoke<{ threads: { id: string }[] }>("list_threads", {
+      accountIds: ["acc-personal"],
+      labelId: "SPAM",
+    });
+    expect(spam.threads.map((t) => t.id)).toContain("p-05");
+  });
+
+  test("a reported conversation drops its Important marker while in Spam, and Undo brings it back", async () => {
+    installPreview();
+    const base = createFixtureThreads().find((t) => t.labelIds.includes("INBOX"))!;
+    const rows = async (labelId: string) =>
+      (
+        await invoke<{ threads: { id: string; systemLabelIds: string[] }[] }>("list_threads", {
+          accountIds: [base.accountId],
+          labelId,
+        })
+      ).threads.find((t) => t.id === base.id);
+    await invoke("modify_threads", {
+      accountId: base.accountId,
+      threadIds: [base.id],
+      add: ["IMPORTANT"],
+      remove: [],
+    });
+    await invoke("modify_threads", {
+      accountId: base.accountId,
+      threadIds: [base.id],
+      add: ["SPAM"],
+      remove: ["INBOX"],
+    });
+    const inSpam = (await rows("SPAM"))?.systemLabelIds ?? [];
+    expect(inSpam).toContain("SPAM");
+    expect(inSpam).not.toContain("IMPORTANT");
+    await invoke("modify_threads", {
+      accountId: base.accountId,
+      threadIds: [base.id],
+      add: ["INBOX"],
+      remove: ["SPAM"],
+    });
+    expect((await rows("INBOX"))?.systemLabelIds).toContain("IMPORTANT");
+  });
+
+  test("modify_threads refuses Trash like the backend", () => {
     const handlers = createPreviewHandlers();
     expect(() =>
       handlers.modify_threads({
@@ -400,6 +449,16 @@ describe("preview IPC", () => {
         remove: [],
       }),
     ).toThrow();
+  });
+
+  test("search never lists Spam, so a reported hit stays gone after a reload", async () => {
+    installPreview();
+    const spam = createFixtureThreads().find((t) => t.labelIds.includes("SPAM"))!;
+    const page = await invoke<{ threads: { id: string }[] }>("search_messages", {
+      accountIds: [spam.accountId],
+      query: "prize",
+    });
+    expect(page.threads.map((x) => x.id)).not.toContain(spam.id);
   });
 
   test("search and recent searches answer in preview", async () => {

@@ -741,7 +741,7 @@ export function hasLabel(t: FixtureThread, labelId: string): boolean {
 
 /**
  * Threads in a mailbox, newest first, as `list_threads` selects them. `ALL` is everything but Spam and
- * Trash. `category` narrows an inbox: Primary (`CATEGORY_PERSONAL`) is the inbox minus the tabs still shown.
+ * Trash, which are listed only in their own mailboxes. `category` narrows an inbox: Primary (`CATEGORY_PERSONAL`) is the inbox minus the tabs still shown.
  */
 export function threadsIn(
   threads: FixtureThread[],
@@ -750,8 +750,13 @@ export function threadsIn(
   accountIds?: string[],
   hiddenTabs: HiddenTabs = () => [],
 ): FixtureThread[] {
+  // Like the cache, a conversation in Spam or Trash is listed only there.
   let found = threads.filter((t) =>
-    mailbox === "ALL" ? !hasLabel(t, "SPAM") && !hasLabel(t, "TRASH") : hasLabel(t, mailbox),
+    mailbox === "SPAM" || mailbox === "TRASH"
+      ? hasLabel(t, mailbox)
+      : !hasLabel(t, "SPAM") &&
+        !hasLabel(t, "TRASH") &&
+        (mailbox === "ALL" || hasLabel(t, mailbox)),
   );
   // No account ids means every account.
   if (accountIds?.length) found = found.filter((t) => accountIds.includes(t.accountId));

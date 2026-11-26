@@ -74,8 +74,16 @@ export function toSummary(t: FixtureThread, labels: PreviewLabel[]): ThreadSumma
     hasAttachment: t.messages.some((m) => m.attachments.some((a) => !a.isInline)),
     messageCount: t.messages.length,
     labelIds: userLabelIds(t, labels),
+    // Like the cache, a conversation in Trash or Spam carries only that one of its system labels (an Important
+    // marker or an Inbox label doesn't show while it sits there).
     systemLabelIds: [
-      ...t.labelIds.filter((id) => !labels.some((l) => l.accountId === t.accountId && l.id === id)),
+      ...(hasLabel(t, "TRASH")
+        ? ["TRASH"]
+        : hasLabel(t, "SPAM")
+          ? ["SPAM"]
+          : t.labelIds.filter(
+              (id) => !labels.some((l) => l.accountId === t.accountId && l.id === id),
+            )),
       ...(hasLabel(t, "UNREAD") ? ["UNREAD"] : []),
     ].sort(),
   };
@@ -207,6 +215,8 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     const ids = args.accountIds;
     return threads.filter((t) => {
       if (ids.length && !ids.includes(t.accountId)) return false;
+      // Like local search, never Spam or Trash. (The preview reads no operators; `in:` is just a word here.)
+      if (hasLabel(t, "SPAM") || hasLabel(t, "TRASH")) return false;
       const row = summary(t);
       const text = [row.subject, row.fromName, row.fromAddress, row.snippet]
         .join(" ")
@@ -423,12 +433,10 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     modify_threads: (args) => {
       const add = args.add;
       const remove = args.remove;
-      // Like the backend: Spam can only be left for the inbox (Not spam), and getting INBOX leaves Trash.
+      // Like the backend: Spam can be added and removed (Report spam, Not spam), Trash has its own command, and
+      // getting INBOX leaves Trash.
       const toInbox = add.includes("INBOX");
-      if (
-        add.some((l) => l === "TRASH" || l === "SPAM") ||
-        remove.some((l) => l === "TRASH" || (l === "SPAM" && !toInbox))
-      ) {
+      if (add.includes("TRASH") || remove.includes("TRASH")) {
         throw { code: "invalid", message: "Use trash for Trash." };
       }
       return changeThreads(args, (t) => {
