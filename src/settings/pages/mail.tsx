@@ -1,4 +1,4 @@
-import { Contact, LayoutList, SquarePen, Users } from "lucide-react";
+import { Contact, Filter, LayoutList, SquarePen, Users } from "lucide-react";
 import {
   type DefaultReply,
   UNDO_SEND_CHOICES,
@@ -16,6 +16,7 @@ import { MailStatsLink } from "../MailStatsLink";
 import type { SettingsPageDef } from "../schema";
 import { SenderRulesSettings } from "../SenderRulesSettings";
 import { SignatureSettings } from "../SignatureSettings";
+import { FiltersSettings } from "../../filters/FiltersSettings";
 
 function DefaultReplyControl() {
   const reply = useComposeSettings((s) => s.defaultReply);
@@ -203,4 +204,23 @@ export const CONTACTS_PAGE: SettingsPageDef = {
     "address book",
   ],
   Component: ContactsSettings,
+};
+
+export const FILTERS_PAGE: SettingsPageDef = {
+  id: "filters",
+  title: "Filters",
+  icon: Filter,
+  group: "Mail",
+  keywords: [
+    "rules",
+    "filter messages like these",
+    "skip the inbox",
+    "auto label",
+    "forward",
+    "delete",
+    "never spam",
+    "important",
+    "categorize",
+  ],
+  sections: [{ id: "filters", Component: FiltersSettings, matches: accountsMatch }],
 };

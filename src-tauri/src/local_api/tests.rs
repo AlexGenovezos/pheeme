@@ -760,7 +760,7 @@ async fn audits_what_filters_caught() {
     );
     assert_eq!(
         filters[0]["gmail_query"],
-        "from:(alerts@bank.com) in:anywhere newer_than:7d"
+        "from:alerts@bank.com in:anywhere newer_than:7d"
     );
     assert_eq!(filters[0]["matched"], 2);
     assert_eq!(filters[0]["more"], false);

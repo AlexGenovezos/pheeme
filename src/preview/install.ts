@@ -30,6 +30,7 @@ import { createComposeHandlers } from "./compose";
 import { sampleAttachment } from "./attachments";
 import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel } from "./labels";
 import { createSenderRuleHandlers } from "./senderRules";
+import { createFilterHandlers } from "./filters";
 import { createCalendarHandlers } from "./calendar";
 import { createAvailabilityHandlers } from "./availability";
 import { createTasksHandlers } from "./tasks";
@@ -344,6 +345,12 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
       threads,
       (id) => accounts.find((a) => a.id === id)?.email,
       params.get("senderRules") === "missing",
+    ),
+    ...createFilterHandlers(
+      threads,
+      labels,
+      params.get("senderRules") === "missing",
+      changeThreads,
     ),
     ...createContactHandlers(
       threads,

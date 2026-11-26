@@ -23,6 +23,7 @@ import { useStatsStore } from "./stats/statsStore";
 import { closeThemeEditor, useThemeEditorStore } from "./theme/editor/editorStore";
 import { usePreviewStore } from "./mail/preview/previewStore";
 import { useModStore } from "./mods/store";
+import { useFilterEditorStore } from "./filters/editorStore";
 import { PersonHost } from "./contacts/PersonPanel";
 import { useSettingsStore } from "./settings/settingsStore";
 import { isTauri } from "./preview/runtime";
@@ -50,6 +51,13 @@ const Settings = lazy(
     import("./settings/Settings").then(({ Settings }) => ({ default: Settings })),
   ),
 );
+const FilterEditorHost = lazy(
+  surfaceLoader(() =>
+    import("./filters/FilterEditor").then(({ FilterEditorHost }) => ({
+      default: FilterEditorHost,
+    })),
+  ),
+);
 const Stats = lazy(
   surfaceLoader(() => import("./stats/StatsDialog").then(({ Stats }) => ({ default: Stats }))),
 );
@@ -70,6 +78,7 @@ const AttachmentPreview = lazy(
 
 function SecondarySurfaces({ onAddAccount }: { onAddAccount: () => void }) {
   const settings = useSettingsStore((s) => s.open);
+  const filterEditor = useFilterEditorStore((s) => s.editor !== null);
   const stats = useStatsStore((s) => s.open);
   const theme = useThemeEditorStore((s) => s.open);
   const attachment = usePreviewStore((s) => s.session !== null);
@@ -87,6 +96,16 @@ function SecondarySurfaces({ onAddAccount }: { onAddAccount: () => void }) {
           onClose={closeSettings}
         >
           <Settings onAddAccount={onAddAccount} />
+        </LazyDialog>
+      )}
+      {/* After Settings, so the editor Settings › Filters opens sits over it. */}
+      {filterEditor && (
+        <LazyDialog
+          title="Couldn't open the filter editor"
+          loadingTitle="Opening the filter editor…"
+          onClose={useFilterEditorStore.getState().close}
+        >
+          <FilterEditorHost />
         </LazyDialog>
       )}
       {stats && (

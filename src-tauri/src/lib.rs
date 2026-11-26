@@ -65,6 +65,7 @@ pub struct AppState {
     pub mail: mail::MailService,
     pub labels: labels::LabelService,
     pub sender_rules: sender_rules::SenderRuleService,
+    pub filters: filters::FilterService,
     pub compose: compose::ComposeService,
     pub contacts: Arc<contacts::ContactService>,
     pub drive: drive::DriveService,
@@ -193,6 +194,7 @@ pub async fn build_state(
     );
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
+    let filters = filters::FilterService::new(db.clone(), sync.clone());
     let compose =
         compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir, key);
     let drive = drive::DriveService::new(accounts.clone(), mail.clone());
@@ -221,6 +223,7 @@ pub async fn build_state(
         mail,
         labels,
         sender_rules,
+        filters,
         compose,
         contacts,
         drive,
@@ -648,6 +651,12 @@ pub fn run() {
             commands::sender_rules::undo_sender_rules,
             commands::sender_rules::delete_sender_rule,
             commands::sender_rules::inbox_threads_from,
+            commands::filters::list_filters,
+            commands::filters::create_filter,
+            commands::filters::replace_filter,
+            commands::filters::delete_filter,
+            commands::filters::filter_matches,
+            commands::filters::forwarding_addresses,
             commands::stats::mail_stats,
             commands::stats::unsubscribe_sender,
             commands::search::search_messages,

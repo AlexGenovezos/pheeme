@@ -1,8 +1,11 @@
-//! `users.settings.filters`: list, create, delete. Needs the `gmail.settings.basic` scope.
+//! `users.settings.filters`: list, create, delete, and the forwarding addresses a filter may
+//! forward to. Needs the `gmail.settings.basic` scope.
 
 use super::client::{ApiRequest, GmailClient};
 use super::error::GmailError;
-use super::types::{Filter, FilterListResponse};
+use super::types::{
+    Filter, FilterListResponse, ForwardingAddress, ForwardingAddressListResponse,
+};
 use reqwest::Method;
 use serde_json::json;
 
@@ -31,6 +34,14 @@ impl GmailClient {
             &["settings", "filters", id],
         ))
         .await
+    }
+
+    /// Every forwarding address, verified or not.
+    pub async fn list_forwarding_addresses(&self) -> Result<Vec<ForwardingAddress>, GmailError> {
+        let res: ForwardingAddressListResponse = self
+            .send_json(ApiRequest::get(&["settings", "forwardingAddresses"]))
+            .await?;
+        Ok(res.forwarding_addresses)
     }
 }
 
@@ -127,5 +138,30 @@ mod tests {
             .unwrap();
         assert_eq!(created.id.as_deref(), Some("f9"));
         client.delete_filter("f9").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn lists_forwarding_addresses_and_an_empty_answer() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/settings/forwardingAddresses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"forwardingAddresses": [
+                {"forwardingEmail": "me@else.com", "verificationStatus": "accepted"},
+                {"forwardingEmail": "new@else.com", "verificationStatus": "pending"}
+            ]})))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/settings/forwardingAddresses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        let list = client.list_forwarding_addresses().await.unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].forwarding_email, "me@else.com");
+        assert_eq!(list[1].verification_status.as_deref(), Some("pending"));
+        assert!(client.list_forwarding_addresses().await.unwrap().is_empty());
     }
 }

@@ -372,8 +372,7 @@ async fn own_address(db: &SqlitePool, account_id: &str) -> Result<String, MailEr
 mod tests {
     use super::*;
     use crate::db::test_support::TestDb;
-    use crate::sync::events::RecordingEvents;
-    use crate::sync::fake::{FakeGmail, FakeMsg};
+    use crate::sync::fake::{synced, FakeGmail, FakeMsg};
 
     struct Harness {
         _db: TestDb,
@@ -385,13 +384,7 @@ mod tests {
         let db = TestDb::with_account("a1").await;
         let pool = db.pool.clone();
         let fake = Arc::new(fake);
-        let api = fake.clone();
-        let sync = SyncManager::new(
-            pool.clone(),
-            Arc::new(move |_| api.clone() as Arc<dyn MailApi>),
-            Arc::new(RecordingEvents::default()),
-        );
-        sync.sync_account("a1").await.unwrap();
+        let sync = synced(&pool, fake.clone(), "a1").await;
         Harness {
             _db: db,
             rules: SenderRuleService::new(pool, sync),

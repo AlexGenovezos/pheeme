@@ -1,0 +1,131 @@
+.filter-editor-scrim {
+  padding: var(--space-4);
+}
+.filter-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: var(--filter-editor-width);
+  max-width: 100%;
+  max-height: 100%;
+  padding: var(--space-4);
+  overflow-y: auto;
+  font-size: var(--font-size-sm);
+  animation: label-picker-in var(--duration-slow) var(--ease-out);
+}
+.filter-editor:focus-visible {
+  outline: none;
+}
+.filter-editor__title {
+  margin: var(--space-0);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+.filter-editor__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.filter-editor__account {
+  margin: calc(-1 * var(--space-2)) var(--space-0) var(--space-0);
+  color: var(--color-foreground-muted);
+}
+.filter-editor__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: var(--space-0);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  border: none;
+}
+.filter-editor__legend {
+  padding: var(--space-0);
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-caps);
+  color: var(--color-foreground-muted);
+}
+/* Label and field, one per row, like Gmail's own filter form. */
+.filter-editor__grid {
+  display: grid;
+  grid-template-columns: max-content minmax(var(--space-0), 1fr);
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+}
+.filter-editor__label {
+  color: var(--color-foreground-muted);
+  white-space: nowrap;
+}
+.filter-editor__size,
+.filter-editor__action-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: var(--space-0);
+}
+.filter-editor__size > .ui-input,
+.filter-editor__action-control > .ui-input,
+.filter-editor__action-control > button {
+  flex: 1;
+  min-width: var(--space-0);
+}
+.filter-editor__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+.filter-editor__actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+.filter-editor__check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.filter-editor__check:has(input:disabled) {
+  color: var(--color-foreground-muted);
+}
+/* A ticked action's control sits beside it; the hint under the control, both always there. */
+.filter-editor__action {
+  display: grid;
+  grid-template-columns: var(--filter-action-label-width) minmax(var(--space-0), 1fr);
+  gap: var(--space-1) var(--space-2);
+  align-items: center;
+}
+.filter-editor__action-control :disabled {
+  opacity: 0.5;
+}
+.filter-editor__hint {
+  grid-column: 2;
+  display: block;
+  margin: var(--space-0);
+  font-size: var(--font-size-xs);
+  color: var(--color-foreground-muted);
+}
+.filter-editor__existing {
+  align-items: flex-start;
+  padding-top: var(--space-2);
+  border-top: var(--border-width) solid var(--color-border-subtle);
+}
+.filter-editor__existing input {
+  margin-top: var(--space-0-5);
+}
+/* One line kept for a refusal, so it appears without moving the buttons. */
+.filter-editor__error {
+  min-height: calc(var(--font-size-sm) * var(--line-height-normal));
+  margin: var(--space-0);
+  color: var(--color-danger);
+}
+.filter-editor__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.filter-row .settings-row__title {
+  overflow-wrap: anywhere;
+}

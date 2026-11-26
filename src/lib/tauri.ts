@@ -13,6 +13,7 @@ export * from "./ipc/labels";
 export * from "./ipc/mail";
 export * from "./ipc/search";
 export * from "./ipc/senderRules";
+export * from "./ipc/filters";
 export * from "./ipc/settings";
 export * from "./ipc/stats";
 export * from "./ipc/support";

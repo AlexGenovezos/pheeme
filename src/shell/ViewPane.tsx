@@ -51,6 +51,7 @@ import {
   UNSUBSCRIBE_COMMAND,
   unsubscribeOpenConversation,
 } from "../mail/unsubscribe";
+import { FILTER_LIKE_THESE_COMMAND, filterMessagesLikeThese } from "../filters/likeThese";
 import { usePrintSettings } from "../mail/printSettings";
 import {
   CREATE_EVENT_COMMAND,
@@ -187,6 +188,13 @@ export function ViewPane() {
           id: "similar-subject",
           label: "Find emails with this subject",
           onSelect: () => void findSimilar("subject"),
+        },
+        {
+          id: "filter-like-these",
+          label: "Filter messages like these",
+          shortcut: registry.shortcutFor(FILTER_LIKE_THESE_COMMAND),
+          disabled: !openKey,
+          onSelect: () => void filterMessagesLikeThese(),
         },
         { type: "separator" },
         {

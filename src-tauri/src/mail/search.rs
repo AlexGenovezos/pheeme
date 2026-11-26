@@ -112,26 +112,7 @@ impl MailService {
         if query.is_empty() || (change.add.is_empty() && change.remove.is_empty()) {
             return Err(MailError::Invalid("Nothing to change.".into()));
         }
-        let account = [account_id.to_owned()];
-        let mut thread_ids = Vec::new();
-        let mut local = true;
-        let mut before = None;
-        loop {
-            let page = self
-                .search_messages(&account, query, before, Some(MAX_PAGE))
-                .await?;
-            local &= page.local;
-            thread_ids.extend(
-                page.threads
-                    .into_iter()
-                    .filter(|t| (change.keep)(t))
-                    .map(|t| t.id),
-            );
-            match page.next {
-                Some(next) => before = Some(next),
-                None => break,
-            }
-        }
+        let (thread_ids, local) = self.cached_matches(account_id, query, change.keep).await?;
         let (gmail, _) = search::gmail_query(query);
         let sweep = format!("({gmail}) {}", change.narrow).trim_end().to_owned();
         if !dry_run {
@@ -152,6 +133,75 @@ impl MailService {
             local,
             gmail_query: sweep,
         })
+    }
+
+    /// Every cached conversation a search finds that `keep` selects, and whether the local
+    /// search could run it at all (false: syntax only Gmail understands, so none found).
+    async fn cached_matches(
+        &self,
+        account_id: &str,
+        query: &str,
+        keep: fn(&ThreadSummaryDto) -> bool,
+    ) -> Result<(Vec<String>, bool), MailError> {
+        let account = [account_id.to_owned()];
+        let mut thread_ids = Vec::new();
+        let mut local = true;
+        let mut before = None;
+        loop {
+            let page = self
+                .search_messages(&account, query, before, Some(MAX_PAGE))
+                .await?;
+            local &= page.local;
+            thread_ids.extend(page.threads.into_iter().filter(|t| keep(t)).map(|t| t.id));
+            match page.next {
+                Some(next) => before = Some(next),
+                None => break,
+            }
+        }
+        Ok((thread_ids, local))
+    }
+
+    /// The cached conversations a search finds, and whether the local search could run it
+    /// (false: only Gmail understands it, so none were found).
+    pub async fn matching_threads(
+        &self,
+        account_id: &str,
+        query: &str,
+    ) -> Result<(Vec<String>, bool), MailError> {
+        self.cached_matches(account_id, query.trim(), |_| true).await
+    }
+
+    /// Every conversation a search finds: from the cache when the local search can run it,
+    /// else from Gmail's search, page by page (caching what it finds).
+    pub async fn every_match(
+        &self,
+        account_id: &str,
+        query: &str,
+    ) -> Result<Vec<String>, MailError> {
+        let (ids, local) = self.matching_threads(account_id, query).await?;
+        if local {
+            return Ok(ids);
+        }
+        let account = [account_id.to_owned()];
+        let mut ids = Vec::new();
+        let mut tokens = None;
+        loop {
+            let page = self.search_gmail(&account, query, tokens).await?;
+            if !page.failed.is_empty() {
+                return Err(MailError::Invalid(
+                    "Gmail's search didn't answer, so nothing was changed. Try again.".into(),
+                ));
+            }
+            for t in page.threads {
+                if !ids.contains(&t.id) {
+                    ids.push(t.id);
+                }
+            }
+            if page.next.is_empty() {
+                return Ok(ids);
+            }
+            tokens = Some(page.next);
+        }
     }
 
     /// Local search over cached mail, newest first, keyset-paged like
