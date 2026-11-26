@@ -1,7 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import { __resetForTests, useUpdateStore } from "../lib/updater";
-import { UpdateBanner } from "./UpdateBanner";
+import { UP_TO_DATE_MS, UpdateBanner } from "./UpdateBanner";
 
 beforeEach(() => __resetForTests());
 
@@ -51,6 +51,31 @@ test("OK dismisses the manual check result", () => {
   render(<UpdateBanner />);
   fireEvent.click(screen.getByRole("button", { name: "OK" }));
   expect(screen.queryByRole("status")).toBeNull();
+});
+
+test("up to date goes away by itself; a failed check stays until OK", () => {
+  vi.useFakeTimers();
+  try {
+    useUpdateStore.setState({ manualCheck: "current" });
+    render(<UpdateBanner />);
+    act(() => vi.advanceTimersByTime(UP_TO_DATE_MS - 1));
+    expect(screen.getByRole("status")).toHaveTextContent("Pheeme is up to date");
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByRole("status")).toBeNull();
+    // Settings › About still reads the result.
+    expect(useUpdateStore.getState().manualCheck).toBe("current");
+
+    // Checking again shows the card again.
+    act(() => useUpdateStore.setState({ manualCheck: "checking" }));
+    act(() => useUpdateStore.setState({ manualCheck: "current" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Pheeme is up to date");
+
+    act(() => useUpdateStore.setState({ manualCheck: "failed" }));
+    act(() => vi.advanceTimersByTime(UP_TO_DATE_MS * 2));
+    expect(screen.getByRole("status")).toHaveTextContent("Couldn't check for updates");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("an available update takes precedence over the check result", () => {
