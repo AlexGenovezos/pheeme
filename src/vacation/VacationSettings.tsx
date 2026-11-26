@@ -72,16 +72,20 @@ function AccountVacation({
   const problem = formProblem(form);
 
   const edit = (change: Partial<VacationForm>) => {
-    setDraft({ ...form, ...change });
+    const next = { ...form, ...change };
+    // An edit undone by hand is no draft, so it can't hide what Gmail says next time.
+    setDraft(sameForm(next, original) ? null : next);
     setResult(null);
   };
   const save = async () => {
     if (!loaded || problem) return;
+    const sent = draft;
     setSaving(true);
     const error = await useVacation.getState().save(accountId, responderOf(form, workspace));
     setSaving(false);
     setResult(error ?? "saved");
-    if (!error) setDraft(null);
+    // Only the draft it saved: Settings may have been reopened and edited again meanwhile.
+    if (!error && useVacation.getState().drafts[accountId] === sent) setDraft(null);
   };
   const discard = () => {
     setDraft(null);

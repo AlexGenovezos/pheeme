@@ -197,3 +197,18 @@ test("a read that started before End now can't turn the responder back on", asyn
   await stale;
   expect(useVacation.getState().accounts.a1?.value?.enabled).toBe(false);
 });
+
+test("an edit put back by hand leaves no draft behind", async () => {
+  backend(null);
+  render(<VacationSettings />);
+  await flush();
+  const subject = within(section("me@gmail.com")).getByRole("textbox", { name: "Subject" });
+  const on = within(section("me@gmail.com")).getByRole("switch", {
+    name: "Vacation responder for me@gmail.com",
+  });
+  fireEvent.click(on);
+  expect(useVacation.getState().drafts.a1).toBeDefined();
+  fireEvent.click(on);
+  expect(useVacation.getState().drafts.a1).toBeUndefined();
+  expect(subject).toBeDisabled();
+});
