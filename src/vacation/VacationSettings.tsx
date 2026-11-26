@@ -228,6 +228,7 @@ function AccountVacation({
         <Suspense fallback={<div className="vacation-editor" aria-hidden="true" />}>
           <VacationEditor
             html={form.html}
+            original={original.html}
             label={`Vacation message for ${email}`}
             disabled={!fieldsOn}
             onChange={(html) => {
