@@ -20,7 +20,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{watch, Semaphore, SemaphorePermit};
 use tokio::time::Instant;
 use tracing::warn;
 
@@ -466,7 +466,8 @@ impl GmailClient {
     /// the first successful response.
     ///
     /// The permit is held for the whole call, backoff sleeps included, so a rate-limited client
-    /// slows down instead of piling retries on top of new requests.
+    /// slows down instead of piling retries on top of new requests. Only fetching a token holds
+    /// none: a slow refresh after a 401 must not keep other requests waiting.
     ///
     /// With a [`probe`] in scope (the reader opened a thread), a sync request is the reader's:
     /// it runs at [`Priority::Interactive`], and its waits, retries and failures are reported. A
@@ -474,7 +475,6 @@ impl GmailClient {
     /// Inside [`user_action`] it is the user's too; inside [`background`] every request is
     /// background work (see [`effective_priority`]).
     async fn execute(&self, req: &ApiRequest) -> Result<Vec<u8>, GmailError> {
-        let closed = |_| GmailError::Network("request limiter closed".into());
         let probe = probe::current();
         let priority = effective_priority(
             req.priority,
@@ -497,24 +497,7 @@ impl GmailClient {
             p.stage(ProbeStage::Queued);
         }
         let queued = Instant::now();
-        if !user {
-            // Before taking any slot, so requests held back don't keep slots from anyone.
-            self.wait_turn(background).await?;
-        }
-        // Take the narrowest gate first: queued bulk calls must not hold sync's slots, and
-        // queued sync calls must not reserve the last two global slots. All calls still share
-        // the total cap and Gmail quota limiter.
-        let _bulk = if background {
-            Some(self.bulk_permits.acquire().await.map_err(closed)?)
-        } else {
-            None
-        };
-        let _background = if priority == Priority::Interactive {
-            None
-        } else {
-            Some(self.background_permits.acquire().await.map_err(closed)?)
-        };
-        let _permit = self.permits.acquire().await.map_err(closed)?;
+        let mut slots = Some(self.take_slots(priority).await?);
         if let Some(p) = &probe {
             p.slot_wait(queued.elapsed());
         }
@@ -618,6 +601,8 @@ impl GmailClient {
                         "Gmail rejected the refreshed access token: {message}"
                     )));
                 }
+                // Like the first token: a slow refresh (or keychain prompt) holds no slot.
+                drop(slots.take());
                 let fetching = Instant::now();
                 let refreshed_token = self.tokens.refresh_access_token().await;
                 if let Some(p) = &probe {
@@ -625,6 +610,7 @@ impl GmailClient {
                 }
                 token = refreshed_token?;
                 refreshed = true;
+                slots = Some(self.take_slots(priority).await?);
                 continue;
             }
 
@@ -688,6 +674,35 @@ impl GmailClient {
         }
     }
 
+    /// Waits for this request's turn and its concurrency slots.
+    async fn take_slots(&self, priority: Priority) -> Result<Slots<'_>, GmailError> {
+        let closed = |_| GmailError::Network("request limiter closed".into());
+        let background = priority == Priority::Background;
+        if priority != Priority::Interactive {
+            // Before taking any slot, so requests held back don't keep slots from anyone.
+            self.wait_turn(background).await?;
+        }
+        // Take the narrowest gate first: queued bulk calls must not hold sync's slots, and
+        // queued sync calls must not reserve the last two global slots. All calls still share
+        // the total cap and Gmail quota limiter.
+        let bulk = if background {
+            Some(self.bulk_permits.acquire().await.map_err(closed)?)
+        } else {
+            None
+        };
+        let background = if priority == Priority::Interactive {
+            None
+        } else {
+            Some(self.background_permits.acquire().await.map_err(closed)?)
+        };
+        let all = self.permits.acquire().await.map_err(closed)?;
+        Ok(Slots {
+            _bulk: bulk,
+            _background: background,
+            _all: all,
+        })
+    }
+
     fn user_waiting(&self) -> UserWaiting<'_> {
         self.users_waiting.send_modify(|n| *n += 1);
         UserWaiting(&self.users_waiting)
@@ -704,6 +719,13 @@ impl GmailClient {
             _ => Ok(()),
         }
     }
+}
+
+/// The concurrency slots one request holds while it talks to Gmail, released on drop.
+struct Slots<'a> {
+    _bulk: Option<SemaphorePermit<'a>>,
+    _background: Option<SemaphorePermit<'a>>,
+    _all: SemaphorePermit<'a>,
 }
 
 /// The HTTP request for one attempt at `req`: the bearer, its headers, query and body.

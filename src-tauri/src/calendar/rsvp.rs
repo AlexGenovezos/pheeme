@@ -98,6 +98,21 @@ impl CalendarService {
         response: &str,
         comment: Option<String>,
     ) -> Result<EventRef, CalendarError> {
+        let _held = self.hold(account_id).await;
+        self.respond_held(account_id, calendar_id, event_id, scope, response, comment)
+            .await
+    }
+
+    /// [`Self::respond`] with the account's sync gate already held.
+    async fn respond_held(
+        &self,
+        account_id: &str,
+        calendar_id: &str,
+        event_id: &str,
+        scope: EditScope,
+        response: &str,
+        comment: Option<String>,
+    ) -> Result<EventRef, CalendarError> {
         if !RESPONSES.contains(&response) {
             return Err(invalid("The answer must be yes, maybe or no."));
         }
@@ -197,6 +212,7 @@ impl CalendarService {
         if !RESPONSES.contains(&response) {
             return Err(invalid("The answer must be yes, maybe or no."));
         }
+        let _held = self.hold(account_id).await;
         let primary = db::calendar::calendars(&self.db, Some(account_id))
             .await?
             .into_iter()
@@ -221,7 +237,7 @@ impl CalendarService {
             }
         };
         let answered = self
-            .respond(
+            .respond_held(
                 account_id,
                 &calendar_id,
                 &id,

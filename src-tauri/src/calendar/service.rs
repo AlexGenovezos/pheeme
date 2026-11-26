@@ -207,6 +207,11 @@ impl CalendarService {
         })
     }
 
+    /// Drop a removed account's sync bookkeeping.
+    pub fn forget(&self, account_id: &str) {
+        self.poller.forget(account_id);
+    }
+
     /// Every account with its calendar access, settings and calendars.
     pub async fn accounts(&self) -> Result<Vec<CalendarAccountDto>, MailError> {
         let accounts = db::accounts::list_accounts(&self.db).await?;

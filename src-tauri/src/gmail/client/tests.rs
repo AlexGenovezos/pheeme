@@ -321,6 +321,66 @@ async fn second_401_is_an_auth_error() {
     assert_eq!(tokens.refreshes.load(Ordering::SeqCst), 1);
 }
 
+/// Hands out `token-0`; a refresh hangs until released, then hands out `token-1`.
+struct StuckRefresh {
+    refreshing: tokio::sync::Notify,
+    release: Semaphore,
+}
+
+#[async_trait::async_trait]
+impl TokenProvider for StuckRefresh {
+    async fn access_token(&self) -> Result<String, GmailError> {
+        Ok("token-0".into())
+    }
+
+    async fn refresh_access_token(&self) -> Result<String, GmailError> {
+        self.refreshing.notify_one();
+        let _ = self.release.acquire().await;
+        Ok("token-1".into())
+    }
+}
+
+#[tokio::test]
+async fn a_slow_refresh_after_401_holds_no_slot() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(header("authorization", "Bearer token-0"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(error_json(
+            401,
+            "authError",
+            "Invalid Credentials",
+        )))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(header("authorization", "Bearer token-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(profile_json()))
+        .mount(&server)
+        .await;
+    let tokens = Arc::new(StuckRefresh {
+        refreshing: tokio::sync::Notify::new(),
+        release: Semaphore::new(0),
+    });
+    let client = GmailClient::new(tokens.clone()).with_base_url(server.uri());
+    let c = client.clone();
+    let request = tokio::spawn(background(async move {
+        c.send_json::<UserProfile>(ApiRequest::get(&["profile"]))
+            .await
+    }));
+
+    tokens.refreshing.notified().await;
+    assert_eq!(client.permits.available_permits(), MAX_CONCURRENT_REQUESTS);
+    assert_eq!(
+        client.background_permits.available_permits(),
+        MAX_BACKGROUND_REQUESTS
+    );
+    assert_eq!(client.bulk_permits.available_permits(), MAX_BULK_REQUESTS);
+
+    tokens.release.add_permits(1);
+    request.await.unwrap().unwrap();
+    assert_eq!(client.permits.available_permits(), MAX_CONCURRENT_REQUESTS);
+}
+
 #[tokio::test]
 async fn unreachable_server_ends_as_network_error() {
     // Bind then drop a listener to get a port nothing is listening on.

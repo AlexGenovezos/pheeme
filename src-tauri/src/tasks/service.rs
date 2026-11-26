@@ -161,6 +161,11 @@ impl TasksService {
         })
     }
 
+    /// Drop a removed account's sync bookkeeping.
+    pub fn forget(&self, account_id: &str) {
+        self.poller.forget(account_id);
+    }
+
     /// The account's sync-and-write gate.
     pub(super) fn gate(&self, account_id: &str) -> Arc<tokio::sync::Mutex<()>> {
         self.poller.gate(account_id)

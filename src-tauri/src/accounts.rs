@@ -152,6 +152,10 @@ pub struct AccountService {
     /// Lets `cancel_sign_in` stop the callback wait even after `complete_sign_in` took it.
     active: Mutex<Option<(String, AbortHandle)>>,
     tokens: Mutex<HashMap<String, (String, Instant)>>,
+    /// One refresh at a time per account, so requests that find the token expired (or get a
+    /// 401) together share one keychain read and one exchange, and a rotated refresh token
+    /// is never raced by a refresh still using the old one.
+    refreshing: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 fn now() -> i64 {
@@ -204,6 +208,7 @@ impl AccountService {
             pending: Mutex::new(None),
             active: Mutex::new(None),
             tokens: Mutex::new(HashMap::new()),
+            refreshing: Mutex::new(HashMap::new()),
         }
     }
 
@@ -568,6 +573,7 @@ impl AccountService {
             .await?;
         tx.commit().await.map_err(anyhow::Error::new)?;
         lock(&self.tokens).remove(account_id);
+        lock(&self.refreshing).remove(account_id);
         Ok(())
     }
 
@@ -576,18 +582,33 @@ impl AccountService {
         lock(&self.tokens).insert(account_id.to_owned(), (token, expires_at));
     }
 
+    /// The cached access token, if it won't expire within the margin.
+    fn cached_token(&self, account_id: &str) -> Option<String> {
+        let tokens = lock(&self.tokens);
+        let (token, expires_at) = tokens.get(account_id)?;
+        (*expires_at > Instant::now() + EXPIRY_MARGIN).then(|| token.clone())
+    }
+
     /// A valid access token for API calls, refreshing it when it's about to expire.
     pub async fn access_token(&self, account_id: &str) -> Result<String, AccountError> {
-        if let Some((token, expires_at)) = lock(&self.tokens).get(account_id) {
-            if *expires_at > Instant::now() + EXPIRY_MARGIN {
-                return Ok(token.clone());
-            }
+        if let Some(token) = self.cached_token(account_id) {
+            return Ok(token);
         }
         self.refresh_access_token(account_id).await
     }
 
-    /// Exchanges the stored refresh token for a new access token.
+    /// Exchanges the stored refresh token for a new access token. Callers that ask while
+    /// another refresh for the account runs wait for it and share its token.
     pub async fn refresh_access_token(&self, account_id: &str) -> Result<String, AccountError> {
+        let stale = lock(&self.tokens).get(account_id).map(|(token, _)| token.clone());
+        let gate = Arc::clone(lock(&self.refreshing).entry(account_id.to_owned()).or_default());
+        let _refreshing = gate.lock().await;
+        // A refresh that finished while this one waited already replaced the stale token.
+        if let Some(token) = self.cached_token(account_id) {
+            if Some(&token) != stale.as_ref() {
+                return Ok(token);
+            }
+        }
         let account = self.account(account_id).await?;
         let (creds, refresh_token) = self.saved_credentials(&account).await?;
         let tokens = auth::refresh(&self.http, &self.endpoints, &creds, &refresh_token).await?;
@@ -1177,6 +1198,57 @@ mod tests {
         let error = h.service.access_token(&account.id).await.unwrap_err();
         assert_eq!(error.code(), "invalid_grant");
         assert!(error.to_string().contains("Sign in again"));
+    }
+
+    #[tokio::test]
+    async fn simultaneous_refreshes_share_one_exchange() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+
+        h.server.reset().await;
+        Mock::given(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "access_token": "access-2", "expires_in": 3600, "refresh_token": "refresh-2"
+                    }))
+                    .set_delay(Duration::from_millis(200)),
+            )
+            .expect(1)
+            .mount(&h.server)
+            .await;
+        // Two requests got a 401 with the same token.
+        let (a, b) = tokio::join!(
+            h.service.refresh_access_token(&account.id),
+            h.service.refresh_access_token(&account.id)
+        );
+        assert_eq!((a.unwrap(), b.unwrap()), ("access-2".into(), "access-2".into()));
+        // And two found none cached (at launch): one exchange, with the rotated token.
+        lock(&h.service.tokens).remove(&account.id);
+        h.server.reset().await;
+        Mock::given(path("/token"))
+            .and(body_string_contains("refresh_token=refresh-2"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "access_token": "access-3", "expires_in": 3600, "refresh_token": "refresh-3"
+                    }))
+                    .set_delay(Duration::from_millis(200)),
+            )
+            .expect(1)
+            .mount(&h.server)
+            .await;
+        let (a, b) = tokio::join!(
+            h.service.access_token(&account.id),
+            h.service.access_token(&account.id)
+        );
+        assert_eq!((a.unwrap(), b.unwrap()), ("access-3".into(), "access-3".into()));
+        h.server.verify().await;
+        assert_eq!(
+            h.secrets.get(&account.id).unwrap().unwrap().refresh_token,
+            "refresh-3"
+        );
     }
 
     #[tokio::test]

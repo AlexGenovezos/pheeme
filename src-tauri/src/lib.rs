@@ -32,6 +32,7 @@ pub mod search;
 pub mod secrets;
 pub mod sender_rules;
 pub mod senders;
+mod shutdown;
 mod spelling;
 pub mod stats;
 pub mod storage;
@@ -211,12 +212,12 @@ pub async fn build_state(
     compose.sweep_staging().await;
     tokio::spawn({
         let mail = mail.clone();
-        async move { mail.sweep_attachment_cache().await }
+        shutdown::until(async move { mail.sweep_attachment_cache().await })
     });
-    tokio::spawn(body_retention::run(db.clone()));
-    tokio::spawn(contacts.clone().run());
-    tokio::spawn(calendar.clone().run());
-    tokio::spawn(tasks.clone().run());
+    tokio::spawn(shutdown::until(body_retention::run(db.clone())));
+    tokio::spawn(shutdown::until(contacts.clone().run()));
+    tokio::spawn(shutdown::until(calendar.clone().run()));
+    tokio::spawn(shutdown::until(tasks.clone().run()));
     Ok(AppState {
         db,
         accounts,
@@ -479,7 +480,7 @@ pub fn run() {
                 assistants.apply_setting().await;
             });
             if telemetry::active_in_this_build() {
-                tauri::async_runtime::spawn(telemetry::run(state.db.clone()));
+                tauri::async_runtime::spawn(shutdown::until(telemetry::run(state.db.clone())));
             }
             let hidden = tauri::async_runtime::block_on(db::settings::take_start_hidden(
                 &state.db,
@@ -763,6 +764,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 info!("Pheeme exiting");
                 let mut db_closed = true;
+                shutdown::begin();
                 if let Some(state) = app.try_state::<AppState>() {
                     if let Err(error) = storage::clear_opened(&state.cache_dir) {
                         tracing::warn!(%error, "couldn't remove opened attachment copies");

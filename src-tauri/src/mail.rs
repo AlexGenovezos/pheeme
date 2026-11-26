@@ -27,6 +27,7 @@ use crate::db::{labels, messages, settings};
 use crate::diagnostics::{OpenTiming, OpenTimings, ShownTiming, ShownTimings};
 use crate::gmail::probe::with_probe;
 use crate::gmail::GmailError;
+use crate::lock::lock;
 use crate::render;
 use crate::sync::engine::now_ms;
 use crate::sync::engine::SyncError;
@@ -204,6 +205,7 @@ impl MailService {
 
     /// Drop a removed account's cached attachment bytes.
     pub async fn forget_account(&self, account_id: &str) {
+        lock(&self.label_counts).remove(account_id);
         self.attachments.remove_account(account_id).await;
     }
 
@@ -425,11 +427,11 @@ impl MailService {
     /// Unread and total conversations per label of one account, counted from the cache.
     /// Counted again only when the account's threads changed since the last count.
     pub async fn label_counts(&self, account_id: &str) -> Result<Vec<LabelCountDto>, MailError> {
-        let cached = self.cached_label_counts().get(account_id).cloned();
+        let cached = lock(&self.label_counts).get(account_id).cloned();
         let known = cached.as_ref().map(|c| c.version);
         let counts = match threads::label_counts(&self.db, account_id, known).await? {
             Some(fresh) => {
-                let mut cache = self.cached_label_counts();
+                let mut cache = lock(&self.label_counts);
                 // A slower count of an older version mustn't replace a newer one.
                 if cache
                     .get(account_id)
@@ -451,14 +453,6 @@ impl MailService {
                 total: c.total,
             })
             .collect())
-    }
-
-    fn cached_label_counts(
-        &self,
-    ) -> std::sync::MutexGuard<'_, HashMap<String, threads::LabelCounts>> {
-        self.label_counts
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Add/remove labels on whole threads (archive = remove `INBOX`, read = remove

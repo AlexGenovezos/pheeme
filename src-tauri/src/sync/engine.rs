@@ -277,19 +277,11 @@ impl SyncEngine {
 
     /// Where this engine's syncs spent their time so far.
     pub fn phases(&self) -> SyncPhases {
-        self.phases
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+        crate::lock::lock(&self.phases).clone()
     }
 
     fn note_phase(&self, note: impl FnOnce(&mut SyncPhases)) {
-        note(
-            &mut self
-                .phases
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
+        note(&mut crate::lock::lock(&self.phases));
     }
 
     /// Run `step`, then add its duration with `note`, whether it succeeded or not.

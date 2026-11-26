@@ -247,6 +247,12 @@ impl Poller {
             .clone()
     }
 
+    /// Drop a removed account's bookkeeping.
+    pub fn forget(&self, account_id: &str) {
+        lock(&self.forced).remove(account_id);
+        lock(&self.gates).remove(account_id);
+    }
+
     /// The data is (or stopped being) in front: check at the foreground interval.
     pub fn set_foreground(&self, on: bool) {
         let was = self.foreground.swap(on, Ordering::Relaxed);

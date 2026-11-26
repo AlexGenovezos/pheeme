@@ -220,6 +220,7 @@ impl CalendarService {
         ics_text: &str,
         uids: &[String],
     ) -> Result<AddedEvents, CalendarError> {
+        let _held = self.hold(account_id).await;
         self.writable(account_id, calendar_id).await?;
         let floating = self.floating_zone(file_account_id).await?;
         let every = ics::parse_every(ics_text, floating);

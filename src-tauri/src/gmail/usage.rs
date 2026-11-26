@@ -214,6 +214,11 @@ impl QuotaUsage {
             .clone()
     }
 
+    /// Drop a removed account's meter.
+    pub fn forget(&self, account_id: &str) {
+        self.accounts().remove(account_id);
+    }
+
     /// The last hour of `account_id`'s usage against a limit of `limit_per_minute` units.
     pub fn report(&self, account_id: &str, limit_per_minute: u32) -> UsageReport {
         let minutes = match self.accounts().get(account_id) {
@@ -307,6 +312,16 @@ mod tests {
     fn usage_at(ms: u64) -> (QuotaUsage, TestClock) {
         let clock = TestClock::at(ms);
         (QuotaUsage::with_clock(clock.clock()), clock)
+    }
+
+    #[test]
+    fn a_forgotten_account_reports_nothing() {
+        let (usage, _) = usage_at(T0 + 25_000);
+        usage.account("a1").record(UsageSource::Sync, 5);
+        usage.account("a2").record(UsageSource::Sync, 7);
+        usage.forget("a1");
+        let units = |id| usage.report(id, 6_000).minutes[59].units.sync;
+        assert_eq!((units("a1"), units("a2")), (0, 7));
     }
 
     #[test]

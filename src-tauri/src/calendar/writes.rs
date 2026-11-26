@@ -16,6 +16,7 @@ use crate::gmail::GmailError;
 use crate::sync::SyncEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::OwnedMutexGuard;
 
 /// Which events of a series a change applies to. Any scope on a single event is that event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -107,6 +108,13 @@ fn has_meet(raw: &Value) -> bool {
 }
 
 impl CalendarService {
+    /// Holds the account's sync gate for a write, so a running sync (a full re-sync after
+    /// Google expires the sync token included) can't cache an older version of what the write
+    /// changes. Only the public write methods take it: the gate isn't reentrant.
+    pub(super) async fn hold(&self, account_id: &str) -> OwnedMutexGuard<()> {
+        self.poller.gate(account_id).lock_owned().await
+    }
+
     /// Resolves `id`: a cached row, or an instance id of a cached series (checked against the
     /// series' rule). Cancelled rows and anything else are `NotFound`.
     pub(super) async fn target(
@@ -306,6 +314,7 @@ impl CalendarService {
         edit: EventEdit,
         send: SendUpdates,
     ) -> Result<EventRef, CalendarError> {
+        let _held = self.hold(account_id).await;
         let calendar = self.writable(account_id, calendar_id).await?;
         edit::validate(&edit, true)?;
         let mut body = edit::body(&edit, None, zone_of(&calendar));
@@ -332,6 +341,7 @@ impl CalendarService {
         edit: EventEdit,
         send: SendUpdates,
     ) -> Result<EventRef, CalendarError> {
+        let _held = self.hold(account_id).await;
         let calendar = self.writable(account_id, calendar_id).await?;
         let target = self.target(account_id, calendar_id, event_id).await?;
         let event = match self.resolve(account_id, calendar_id, target, scope).await? {
@@ -375,6 +385,7 @@ impl CalendarService {
         scope: EditScope,
         send: SendUpdates,
     ) -> Result<(), CalendarError> {
+        let _held = self.hold(account_id).await;
         let calendar = self.writable(account_id, calendar_id).await?;
         let target = self.target(account_id, calendar_id, event_id).await?;
         match self.resolve(account_id, calendar_id, target, scope).await? {
@@ -418,6 +429,7 @@ impl CalendarService {
         destination_calendar_id: &str,
         send: SendUpdates,
     ) -> Result<EventRef, CalendarError> {
+        let _held = self.hold(account_id).await;
         let source = self.writable(account_id, calendar_id).await?;
         let event = match self.target(account_id, calendar_id, event_id).await? {
             Target::Stored(e) if e.recurring_event_id.is_none() => e,
@@ -460,6 +472,8 @@ impl CalendarService {
         to_account_id: &str,
         to_calendar_id: &str,
     ) -> Result<EventRef, CalendarError> {
+        // The copy is cached under the destination account.
+        let _held = self.hold(to_account_id).await;
         self.calendar(account_id, calendar_id).await?;
         let destination = self.writable(to_account_id, to_calendar_id).await?;
         let zone = zone_of(&destination);
@@ -613,6 +627,26 @@ mod tests {
         assert_eq!(serde_json::Value::String(row.etag.clone()), google["etag"]);
         assert_eq!(row.start_ms, Some(ms("2026-11-12T17:00:00Z")));
         assert_eq!(h.events.names(), vec!["calendar:updated"]);
+    }
+
+    #[tokio::test]
+    async fn a_write_waits_for_a_running_sync() {
+        let h = with_event().await;
+        let sync = h.service.poller.gate("a").lock_owned().await;
+        let service = h.service.clone();
+        let write = tokio::spawn(async move {
+            service
+                .update_event("a", CAL, "e", EditScope::All, summary("New"), SendUpdates::None)
+                .await
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(h.fake("a").writes().is_empty(), "written while a sync ran");
+
+        drop(sync);
+        write.await.unwrap().unwrap();
+        assert_eq!(h.fake("a").writes().len(), 1);
+        let row = cached(&h, "a", CAL, "e").await.unwrap();
+        assert_eq!(row.summary.as_deref(), Some("New"));
     }
 
     #[tokio::test]

@@ -58,9 +58,7 @@ impl QuotaLimiter {
     }
 
     pub(super) fn pace(&self) -> std::sync::MutexGuard<'_, Pace> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        crate::lock::lock(&self.state)
     }
 
     /// Units per second allowed at `now`.
