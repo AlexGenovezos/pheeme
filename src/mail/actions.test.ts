@@ -556,6 +556,28 @@ describe("important", () => {
     expect(listKeys()).toEqual([key(2)]);
   });
 
+  test("Search options' in:important leaves the same way", async () => {
+    setList([
+      thread(1, "a1", { systemLabelIds: ["IMPORTANT"] }),
+      thread(2, "a1", { systemLabelIds: ["IMPORTANT"] }),
+    ]);
+    useMailStore.setState({
+      query: { accountIds: ["a1"], labelId: "ALL", search: "in:important" },
+    });
+    useUiStore.setState({ openThread: key(1) });
+    await setImportant(false);
+    expect(listKeys()).toEqual([key(2)]);
+  });
+
+  test("a partly trashed conversation that still shows IMPORTANT can be cleared", async () => {
+    setList([thread(1, "a1", { systemLabelIds: ["IMPORTANT", "TRASH"] })]);
+    useUiStore.setState({ openThread: key(1) });
+    await setImportant(false);
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: [], remove: ["IMPORTANT"] },
+    ]);
+  });
+
   test("Spam and Trash conversations can't be marked: Gmail shows no importance there", async () => {
     setList([
       thread(1, "a1", { systemLabelIds: ["SPAM"] }),

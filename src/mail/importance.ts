@@ -5,9 +5,12 @@ import type { ThreadSummary } from "../lib/tauri";
 export const isImportant = (t: Pick<ThreadSummary, "systemLabelIds">): boolean =>
   t.systemLabelIds.includes("IMPORTANT");
 
-/** Spam and Trash show a conversation without its other labels, so importance can't be set or shown there. */
+/**
+ * Spam and Trash show a conversation without its other labels, so importance can't be set there. A conversation
+ * that is partly in Spam or Trash but still shows IMPORTANT can still be cleared.
+ */
 export const canMarkImportance = (t: Pick<ThreadSummary, "systemLabelIds">): boolean =>
-  !t.systemLabelIds.includes("SPAM") && !t.systemLabelIds.includes("TRASH");
+  isImportant(t) || (!t.systemLabelIds.includes("SPAM") && !t.systemLabelIds.includes("TRASH"));
 
 /** The row with IMPORTANT added or removed, its system labels kept sorted like the backend's. */
 export function withImportance(t: ThreadSummary, important: boolean): ThreadSummary {

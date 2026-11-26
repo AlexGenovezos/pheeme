@@ -94,9 +94,15 @@ export function toggleStar(keys?: ThreadKey[]): Promise<void> {
   return first ? setStarred(!first.thread.starred, keys) : Promise.resolve();
 }
 
-/** The Important mailbox, or a search for `is:important`, where a conversation that stops being important leaves. */
-const inImportant = () =>
-  inMailbox("IMPORTANT") || hasTerm(mail().query?.search ?? "", "is", "important");
+/** The Important mailbox, or a search for it (`is:important`, or `in:important` from Search options), where a conversation that stops being important leaves. */
+const inImportant = () => {
+  const search = mail().query?.search ?? "";
+  return (
+    inMailbox("IMPORTANT") ||
+    hasTerm(search, "is", "important") ||
+    hasTerm(search, "in", "important")
+  );
+};
 
 /**
  * Gmail's Mark as important and Mark as not important. Only the conversations that aren't in that state yet change, so
