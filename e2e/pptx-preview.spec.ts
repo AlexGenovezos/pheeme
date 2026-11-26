@@ -39,6 +39,8 @@ async function previewDeck(page: Page) {
   await expect(frame).toHaveAttribute("data-state", "ready");
   // Script-less: nothing the deck puts in the frame can run.
   await expect(frame).toHaveAttribute("sandbox", "allow-same-origin");
+  // Match the frame's own light document so dark mode doesn't paint an opaque white canvas.
+  await expect(frame).toHaveCSS("color-scheme", "light");
   return { frame, deck: frame.contentFrame().locator("#deck") };
 }
 
@@ -113,4 +115,18 @@ test("chart tooltips can't put a deck's markup into the app", async ({ page }) =
       await page.mouse.move(box.x + box.width * x, box.y + box.height * y);
   await expect(page.locator("#injected")).toHaveCount(0);
   await expect(deck.locator("#injected")).toHaveCount(0);
+});
+
+test("clicking a slide keeps focus in the frame and Escape still closes the preview", async ({
+  page,
+}) => {
+  const { frame, deck } = await previewDeck(page);
+  await deck.getByText("Icon refresh", { exact: true }).click();
+  // Focus stays in the frame (not stolen back to the stage) so copy and Page Down work.
+  await expect(frame).toBeFocused();
+  const scroller = frame.contentFrame().locator("#scroller");
+  await page.keyboard.press("PageDown");
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Preview: icon-review.pptx" })).toHaveCount(0);
 });

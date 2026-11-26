@@ -6,18 +6,18 @@ export type FrameState = "loading" | "ready" | "failed";
 export interface FramePreviewProps {
   data: ArrayBuffer;
   name: string;
-  /** The frame took focus (a click inside it); keys typed there would never reach the panel. */
-  onFrameFocus?(): void;
+  /** Keys pressed while focus is inside the frame (e.g. Escape, Left/Right). */
+  onFrameKeyDown?(e: KeyboardEvent): void;
 }
 
 /**
  * Shared lifecycle for a script-less sandboxed preview iframe (`DocxView`, `PptxView`): writes
- * `shell` into the frame, tracks loading/ready/failed state, and notifies the panel when the frame
- * takes focus so Escape/shortcuts still work.
+ * `shell` into the frame, tracks loading/ready/failed state, and forwards frame keydown events to
+ * the panel without stealing focus from the document.
  */
 export function useSandboxedFrame(
   data: ArrayBuffer,
-  onFrameFocus: (() => void) | undefined,
+  onFrameKeyDown: ((e: KeyboardEvent) => void) | undefined,
   render: (
     doc: Document,
     signal: AbortSignal,
@@ -28,6 +28,8 @@ export function useSandboxedFrame(
   const frame = useRef<HTMLIFrameElement>(null);
   const [state, setState] = useState<FrameState>("loading");
   const trace = usePreviewTrace();
+  const onKeyDownRef = useRef(onFrameKeyDown);
+  onKeyDownRef.current = onFrameKeyDown;
 
   useEffect(() => {
     const doc = frame.current?.contentDocument;
@@ -37,6 +39,8 @@ export function useSandboxedFrame(
     doc.open();
     doc.write(buildShell());
     doc.close();
+    const onKeyDown = (e: KeyboardEvent) => onKeyDownRef.current?.(e);
+    doc.addEventListener("keydown", onKeyDown);
     const { done, cleanup } = render(doc, stop.signal, trace);
     done
       .then(() => {
@@ -50,21 +54,12 @@ export function useSandboxedFrame(
       });
     return () => {
       stop.abort();
+      doc.removeEventListener("keydown", onKeyDown);
       cleanup?.();
     };
     // `render` and `buildShell` depend only on `data`/`trace` (stable per mount/file).
     // oxlint-disable-next-line react/exhaustive-deps
   }, [data, trace]);
-
-  useEffect(() => {
-    const iframe = frame.current;
-    const host = iframe?.ownerDocument.defaultView;
-    if (!iframe || !host || !onFrameFocus) return;
-    const onBlur = () =>
-      setTimeout(() => iframe.ownerDocument.activeElement === iframe && onFrameFocus());
-    host.addEventListener("blur", onBlur);
-    return () => host.removeEventListener("blur", onBlur);
-  }, [onFrameFocus]);
 
   return { frame, state };
 }

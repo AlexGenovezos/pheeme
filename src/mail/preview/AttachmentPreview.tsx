@@ -125,7 +125,21 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
     }
   };
 
-  const refocus = useCallback(() => stageRef.current?.focus({ preventScroll: true }), []);
+  const handleFrameKeyDown = useCallback(
+    (e: globalThis.KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        const tag = (e.target as Element | null)?.tagName;
+        if (tag === "VIDEO" || tag === "AUDIO") return;
+        e.preventDefault();
+        step(e.key === "ArrowRight" ? 1 : -1);
+      }
+    },
+    [close, step],
+  );
 
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
@@ -259,7 +273,7 @@ function PreviewPanel({ session }: { session: PreviewSession }) {
                   kind={kind}
                   data={loaded.data}
                   file={file}
-                  onFrameFocus={refocus}
+                  onFrameKeyDown={handleFrameKeyDown}
                 />
               </Suspense>
             </PreviewTraceContext>
@@ -274,21 +288,21 @@ function FileBody({
   kind,
   data,
   file,
-  onFrameFocus,
+  onFrameKeyDown,
 }: {
   kind: Exclude<PreviewKind, "other">;
   data: ArrayBuffer;
   file: AttachmentInfo;
-  onFrameFocus(): void;
+  onFrameKeyDown(e: globalThis.KeyboardEvent): void;
 }) {
   const name = nameOf(file);
   switch (kind) {
     case "pdf":
       return <PdfView data={data} name={name} />;
     case "docx":
-      return <DocxView data={data} name={name} onFrameFocus={onFrameFocus} />;
+      return <DocxView data={data} name={name} onFrameKeyDown={onFrameKeyDown} />;
     case "pptx":
-      return <PptxView data={data} name={name} onFrameFocus={onFrameFocus} />;
+      return <PptxView data={data} name={name} onFrameKeyDown={onFrameKeyDown} />;
     case "xlsx":
     case "csv":
       return <SheetView data={data} kind={kind} name={name} />;

@@ -4,13 +4,13 @@ import { type FramePreviewProps, useSandboxedFrame } from "./sandboxedFrame";
 
 /**
  * The frame's own policy, on top of the app's: nothing loads from outside the document (pictures
- * come in as `blob:` URLs), and the frame is sandboxed without scripts. The deck scrolls in
- * `#scroller`; charts take no pointer input, since their tooltips would insert the deck's text as
- * markup.
+ * and embedded audio/video come in as `blob:` URLs), and the frame is sandboxed without scripts.
+ * The deck scrolls in `#scroller`; charts take no pointer input, since their tooltips would insert
+ * the deck's text as markup.
  */
 const shell = (scrollbar: string, width: string) =>
   "<!doctype html><html><head><meta charset='utf-8'>" +
-  `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data: blob:; form-action 'none'; base-uri 'none'">` +
+  `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; media-src blob:; font-src data: blob:; form-action 'none'; base-uri 'none'">` +
   "<style>html,body{margin:0;height:100%}body{background:transparent}" +
   `#scroller{box-sizing:border-box;height:100%;overflow:auto;padding:16px;scrollbar-width:thin;scrollbar-color:${scrollbar} transparent}` +
   `#deck{max-width:${width};margin:0 auto}` +
@@ -27,20 +27,28 @@ const shell = (scrollbar: string, width: string) =>
  * so each one it adds is added to the frame's fonts too. Nothing loads from outside the file:
  * external media is blocked, and links and click actions are swallowed.
  */
-export default function PptxView({ data, name, onFrameFocus }: FramePreviewProps) {
+export default function PptxView({ data, name, onFrameKeyDown }: FramePreviewProps) {
   const { frame, state } = useSandboxedFrame(
     data,
-    onFrameFocus,
+    onFrameKeyDown,
     (doc, signal, trace) => {
       const root = doc.getElementById("deck")!;
       const scrollContainer = doc.getElementById("scroller")!;
 
       const appFonts = new Set(document.fonts);
+      const mirrored = new Set<FontFace>();
       const shareFonts = () => {
+        for (const face of mirrored) {
+          if (!document.fonts.has(face)) {
+            doc.fonts.delete(face);
+            mirrored.delete(face);
+          }
+        }
         for (const face of document.fonts) {
-          if (appFonts.has(face) || doc.fonts.has(face)) continue;
+          if (appFonts.has(face) || mirrored.has(face)) continue;
           try {
             doc.fonts.add(face);
+            mirrored.add(face);
           } catch {
             // A face the app's CSS declared can't join another set; the deck's own never are.
           }
@@ -88,6 +96,8 @@ export default function PptxView({ data, name, onFrameFocus }: FramePreviewProps
         done,
         cleanup: () => {
           viewer.destroy();
+          for (const face of mirrored) doc.fonts.delete(face);
+          mirrored.clear();
           root.removeEventListener("click", swallow, true);
           root.removeEventListener("auxclick", swallow, true);
         },

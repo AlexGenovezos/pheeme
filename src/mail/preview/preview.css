@@ -136,11 +136,14 @@
   text-align: center;
 }
 
-/* Word: the document's own pages, in a sandboxed frame that scrolls itself. */
+/* Word & PowerPoint: the document's own pages, in a sandboxed frame that scrolls itself.
+   Keep color-scheme light on the element to match its document so dark mode doesn't force an
+   opaque white canvas behind the transparent body on Chromium/WebView2. */
 .file-preview__frame {
   flex: 1;
   width: 100%;
   border: none;
+  color-scheme: light;
 }
 
 /* PowerPoint: the frame (styled inside, see PptxView) stays laid out while the deck loads, since

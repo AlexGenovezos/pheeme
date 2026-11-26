@@ -16,10 +16,10 @@ const SHELL =
  * A Word document laid out page by page by docx-preview, inside a script-less sandboxed frame. The
  * parent writes and fills the frame (same origin), so nothing in the document can run.
  */
-export default function DocxView({ data, name, onFrameFocus }: FramePreviewProps) {
+export default function DocxView({ data, name, onFrameKeyDown }: FramePreviewProps) {
   const { frame, state } = useSandboxedFrame(
     data,
-    onFrameFocus,
+    onFrameKeyDown,
     (doc, signal, trace) => ({
       done: renderAsync(data, doc.body, doc.head, {
         className: "docx",
