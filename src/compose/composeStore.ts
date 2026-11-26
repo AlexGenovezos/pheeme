@@ -180,9 +180,9 @@ interface ComposeState {
   save(id: number, opts?: { quiet?: boolean }): Promise<boolean>;
   /**
    * Save every open message with unsaved changes, before the app quits or restarts. False when one couldn't
-   * be saved: its panel comes up saying why.
+   * be saved. Usually brings up the panel that couldn't save.
    */
-  saveAll(): Promise<boolean>;
+  saveAll(options?: { focusOnFailure?: boolean }): Promise<boolean>;
   send(id: number): Promise<void>;
   /**
    * Send later: save the message to Gmail Drafts now, close the panel and open the draft in Gmail on the web,
@@ -581,7 +581,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       return next;
     },
 
-    async saveAll() {
+    async saveAll({ focusOnFailure = true } = {}) {
       let allSaved = true;
       // A send on its way to the outbox lands there first; one that fails leaves its panel to save.
       await Promise.all(sends.values());
@@ -590,7 +590,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         const saved = await saveUntilClean(id, (w) => !w.loading && !w.sending);
         if (saved === false) {
           allSaved = false;
-          get().focus(id);
+          if (focusOnFailure) get().focus(id);
         }
       }
       return allSaved;

@@ -64,17 +64,20 @@ export function targets(): ThreadKey[] {
 /** `keys` (default: the targets) that are still in the list, once each, with their rows. */
 export function present(
   keys: ThreadKey[] | undefined,
+  threads = mail().threads,
 ): Array<{ key: ThreadKey; thread: ThreadSummary }> {
-  const byKey = new Map(mail().threads.map((t) => [keyOf(t), t]));
-  const seen = new Set<ThreadKey>();
-  const rows: Array<{ key: ThreadKey; thread: ThreadSummary }> = [];
-  for (const key of keys ?? targets()) {
-    const thread = byKey.get(key);
-    if (!thread || seen.has(key)) continue;
-    seen.add(key);
-    rows.push({ key, thread });
+  const wanted = new Set(keys ?? targets());
+  if (wanted.size === 0) return [];
+  const found = new Map<ThreadKey, ThreadSummary>();
+  for (const thread of threads) {
+    const key = keyOf(thread);
+    if (wanted.has(key)) found.set(key, thread);
+    if (found.size === wanted.size) break;
   }
-  return rows;
+  return [...wanted].flatMap((key) => {
+    const thread = found.get(key);
+    return thread ? [{ key, thread }] : [];
+  });
 }
 
 /** One entry per account: Gmail ids are per account, and so is the command. */

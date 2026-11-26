@@ -71,6 +71,31 @@ afterEach(() => {
 });
 
 describe("CalendarScreen", () => {
+  test("Go to date keeps the picker and keyboard in the dialog and restores focus", async () => {
+    backend(null);
+    render(<CalendarScreen />);
+    await flush();
+    const opener = screen.getByRole("button", { name: /^Today/ });
+    opener.focus();
+    act(() => void registry.run("calendar.goto"));
+
+    const dialog = screen.getByRole("dialog", { name: "Go to date" });
+    const field = within(dialog).getByRole("combobox", { name: "Go to date" });
+    const go = within(dialog).getByRole("button", { name: "Go" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(within(dialog).getByRole("grid")).toBeVisible();
+    expect(field).toHaveFocus();
+    expect(registry.handleKeyDown(new KeyboardEvent("keydown", { key: "n" }))).toBe(false);
+
+    fireEvent.keyDown(field, { key: "Tab", shiftKey: true });
+    expect(go).toHaveFocus();
+    fireEvent.keyDown(go, { key: "Tab" });
+    expect(field).toHaveFocus();
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(dialog).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
   test("the week shows every account's events, and unticking a calendar hides its events", async () => {
     backend(null);
     render(<CalendarScreen />);

@@ -3,8 +3,9 @@ import { useDesktopEvents } from "./desktop/events";
 import { useNotificationPrompt } from "./desktop/prompt";
 import { useModCommands, useModEvents } from "./mods/lifecycle";
 import { ModPanel } from "./mods/ModSurfaces";
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { ErrorBoundary, LazyDialog, surfaceLoader } from "./components/ui/ErrorBoundary";
 import { toast, ToastProvider } from "./components/ui/Toast";
 import { ComposeHost, useComposeEvents } from "./compose/ComposeHost";
 import { Onboarding } from "./onboarding/Onboarding";
@@ -18,16 +19,15 @@ import { createSubscriptionScope } from "./lib/subscriptions";
 import { listen, SYNC_EVENTS } from "./lib/tauri";
 import { listenForManualChecks, startUpdateChecks } from "./lib/updater";
 import { CommandPalette } from "./palette/CommandPalette";
-import { Settings } from "./settings/Settings";
-import { Stats } from "./stats/StatsDialog";
-import { ThemeEditorHost } from "./theme/editor/ThemeEditor";
-import { AttachmentPreview } from "./mail/preview/AttachmentPreview";
+import { useStatsStore } from "./stats/statsStore";
+import { closeThemeEditor, useThemeEditorStore } from "./theme/editor/editorStore";
+import { usePreviewStore } from "./mail/preview/previewStore";
+import { useModStore } from "./mods/store";
 import { PersonHost } from "./contacts/PersonPanel";
 import { useSettingsStore } from "./settings/settingsStore";
 import { isTauri } from "./preview/runtime";
 import { revealWindow } from "./theme/nativeWindow";
 import { AppShell } from "./shell/AppShell";
-import { CalendarScreen } from "./calendar/CalendarScreen";
 import { useCalendarStore } from "./calendar/calendarStore";
 import { ContextMenuHost } from "./shell/ContextMenuHost";
 import { CornerNotices } from "./shell/CornerNotices";
@@ -39,6 +39,95 @@ import { startPreloading } from "./mail/preload";
 import { SpeedReaderHost } from "./speedread/SpeedReader";
 import { TasksPanelHost } from "./tasks/TasksPanel";
 import { useUsageTracking } from "./usage/useUsageTracking";
+
+const CalendarScreen = lazy(
+  surfaceLoader(() =>
+    import("./calendar/CalendarScreen").then(({ CalendarScreen }) => ({ default: CalendarScreen })),
+  ),
+);
+const Settings = lazy(
+  surfaceLoader(() =>
+    import("./settings/Settings").then(({ Settings }) => ({ default: Settings })),
+  ),
+);
+const Stats = lazy(
+  surfaceLoader(() => import("./stats/StatsDialog").then(({ Stats }) => ({ default: Stats }))),
+);
+const ThemeEditorHost = lazy(
+  surfaceLoader(() =>
+    import("./theme/editor/ThemeEditor").then(({ ThemeEditorHost }) => ({
+      default: ThemeEditorHost,
+    })),
+  ),
+);
+const AttachmentPreview = lazy(
+  surfaceLoader(() =>
+    import("./mail/preview/AttachmentPreview").then(({ AttachmentPreview }) => ({
+      default: AttachmentPreview,
+    })),
+  ),
+);
+
+function SecondarySurfaces({ onAddAccount }: { onAddAccount: () => void }) {
+  const settings = useSettingsStore((s) => s.open);
+  const stats = useStatsStore((s) => s.open);
+  const theme = useThemeEditorStore((s) => s.open);
+  const attachment = usePreviewStore((s) => s.session !== null);
+  const mod = useModStore((s) => s.panel);
+  const closeSettings = useSettingsStore.getState().close;
+  const closeStats = useStatsStore.getState().close;
+  const closePreview = usePreviewStore.getState().close;
+  // These are overlays. Loading a chunk leaves the app's geometry and other open surfaces in place.
+  return (
+    <>
+      {settings && (
+        <LazyDialog
+          title="Couldn't open Settings"
+          loadingTitle="Opening Settings…"
+          onClose={closeSettings}
+        >
+          <Settings onAddAccount={onAddAccount} />
+        </LazyDialog>
+      )}
+      {stats && (
+        <LazyDialog
+          title="Couldn't open statistics"
+          loadingTitle="Opening Stats…"
+          onClose={closeStats}
+        >
+          <Stats />
+        </LazyDialog>
+      )}
+      {theme && (
+        <LazyDialog
+          title="Couldn't open the theme editor"
+          loadingTitle="Opening the theme editor…"
+          onClose={closeThemeEditor}
+        >
+          <ThemeEditorHost />
+        </LazyDialog>
+      )}
+      {attachment && (
+        <LazyDialog
+          title="Couldn't preview the attachment"
+          loadingTitle="Opening the preview…"
+          onClose={closePreview}
+        >
+          <AttachmentPreview />
+        </LazyDialog>
+      )}
+      {mod && (
+        <ErrorBoundary
+          key={mod}
+          title="Couldn't open the mod panel"
+          onClose={() => useModStore.getState().openPanel(null)}
+        >
+          <ModPanel />
+        </ErrorBoundary>
+      )}
+    </>
+  );
+}
 
 /** Hide the webview's own menu (Reload, Inspect…) outside text; dev builds keep it for devtools. */
 function useNativeContextMenuOnly() {
@@ -102,9 +191,24 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
 
   return (
     <>
-      <div className="tasks-frame">
+      <div className="tasks-frame" data-mode={mode}>
         {mode === "calendar" ? (
-          <CalendarScreen onAddAccount={onAddAccount} />
+          <ErrorBoundary
+            title="Couldn't open Calendar"
+            className="tasks-frame__surface"
+            recovery={{
+              label: "Back to Mail",
+              run: () => useCalendarStore.getState().setMode("mail"),
+            }}
+          >
+            <Suspense
+              fallback={
+                <div className="tasks-frame__surface" role="status" aria-label="Loading Calendar" />
+              }
+            >
+              <CalendarScreen onAddAccount={onAddAccount} />
+            </Suspense>
+          </ErrorBoundary>
         ) : (
           <AppShell onAddAccount={onAddAccount} />
         )}
@@ -112,15 +216,11 @@ function MailScreen({ onAddAccount }: { onAddAccount: () => void }) {
       </div>
       <ComposeHost />
       <CommandPalette />
-      <Settings onAddAccount={onAddAccount} />
-      <Stats />
-      <ThemeEditorHost />
-      <AttachmentPreview />
+      <SecondarySurfaces onAddAccount={onAddAccount} />
       <AddFromFileHost />
       <PersonHost />
       <ContextMenuHost />
       <SpeedReaderHost />
-      <ModPanel />
     </>
   );
 }
@@ -240,4 +340,10 @@ function App() {
   return <ToastProvider pinned={<CornerNotices />}>{screen}</ToastProvider>;
 }
 
-export default App;
+export default function AppRoot() {
+  return (
+    <ErrorBoundary title="Pheeme stopped unexpectedly" reloadOnly>
+      <App />
+    </ErrorBoundary>
+  );
+}

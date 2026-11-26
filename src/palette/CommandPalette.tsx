@@ -49,6 +49,8 @@ function PaletteDialog({ reg, onClose }: { reg: CommandRegistry; onClose(): void
   }, [commands, query, calendarZone]);
   const grouped = !query.trim();
 
+  useEffect(() => reg.suspend("palette.toggle"), [reg]);
+
   const restoreFocus = () => {
     if (restored.current) return;
     restored.current = true;

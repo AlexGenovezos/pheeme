@@ -3,9 +3,18 @@ import DOMPurify from "dompurify";
 import { ChevronDown, HardDrive, Minus, MoreHorizontal, Paperclip, Trash2, X } from "lucide-react";
 import { DriveDialog } from "../drive/DriveDialog";
 import { driveFileUrl } from "../drive/api";
-import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { trapTab, useDialogFocus } from "../components/ui/useDialogFocus";
 import { describeShortcut } from "../keyboard/format";
 import { useKeybinding } from "../keyboard/useCommands";
 import { showContextMenu } from "../lib/contextMenu";
@@ -59,12 +68,6 @@ export function ComposePanel({ win }: { win: ComposeWindow }) {
   const subject = win.draft.subject.trim();
   const title = win.minimized && subject ? subject : TITLES[win.kind];
 
-  // The send prompt takes focus, so Escape and Enter reach it even from the editor's link input.
-  const confirmSendRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (win.confirmingSend) confirmSendRef.current?.focus();
-  }, [win.confirmingSend]);
-
   // Autosave while there's something new (minimized too).
   useEffect(() => {
     if (win.loading) return;
@@ -78,7 +81,7 @@ export function ComposePanel({ win }: { win: ComposeWindow }) {
   const onKeyDown = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      if (!win.confirmingSend) store.requestSend(win.id);
+      if (!win.confirmingSend && !win.confirmingClose) store.requestSend(win.id);
     } else if (e.key === "Escape" && !e.defaultPrevented) {
       e.preventDefault();
       if (win.confirmingSend) store.cancelSend(win.id);
@@ -156,36 +159,57 @@ export function ComposePanel({ win }: { win: ComposeWindow }) {
       )}
 
       {win.confirmingSend && (
-        <div className="compose__confirm" role="alertdialog" aria-label="Send this message?">
-          <p className="compose__confirm-title">Send this message?</p>
-          <div className="compose__confirm-actions">
-            <Button variant="ghost" onClick={() => store.cancelSend(win.id)}>
-              Keep editing
-            </Button>
-            <Button ref={confirmSendRef} variant="primary" onClick={() => void store.send(win.id)}>
-              Send
-            </Button>
-          </div>
-        </div>
+        <ComposeConfirmation label="Send this message?" title="Send this message?">
+          <Button variant="ghost" onClick={() => store.cancelSend(win.id)}>
+            Keep editing
+          </Button>
+          <Button data-autofocus="" variant="primary" onClick={() => void store.send(win.id)}>
+            Send
+          </Button>
+        </ComposeConfirmation>
       )}
 
       {win.confirmingClose && (
-        <div className="compose__confirm" role="alertdialog" aria-label="Save draft or discard?">
-          <p className="compose__confirm-title">Save this message as a draft?</p>
-          <div className="compose__confirm-actions">
-            <Button variant="ghost" onClick={() => store.cancelClose(win.id)}>
-              Keep editing
-            </Button>
-            <Button variant="danger" onClick={() => void store.discard(win.id)}>
-              Discard
-            </Button>
-            <Button variant="primary" onClick={() => void store.saveAndClose(win.id)}>
-              Save draft
-            </Button>
-          </div>
-        </div>
+        <ComposeConfirmation label="Save draft or discard?" title="Save this message as a draft?">
+          <Button data-autofocus="" variant="ghost" onClick={() => store.cancelClose(win.id)}>
+            Keep editing
+          </Button>
+          <Button variant="danger" onClick={() => void store.discard(win.id)}>
+            Discard
+          </Button>
+          <Button variant="primary" onClick={() => void store.saveAndClose(win.id)}>
+            Save draft
+          </Button>
+        </ComposeConfirmation>
       )}
     </section>
+  );
+}
+
+function ComposeConfirmation({
+  label,
+  title,
+  children,
+}: {
+  label: string;
+  title: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useDialogFocus(ref);
+  return (
+    <div
+      ref={ref}
+      className="compose__confirm"
+      role="alertdialog"
+      aria-label={label}
+      aria-modal="true"
+      tabIndex={-1}
+      onKeyDown={(e) => trapTab(e, ref.current)}
+    >
+      <p className="compose__confirm-title">{title}</p>
+      <div className="compose__confirm-actions">{children}</div>
+    </div>
   );
 }
 
@@ -208,6 +232,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   const [driveOpen, setDriveOpen] = useState(false);
   const [editorFocus, setEditorFocus] = useState(0);
   const { draft } = win;
+  const confirming = win.confirmingSend || win.confirmingClose;
   const editorRef = useRef<ReturnType<typeof useComposeEditor>>(null);
   // Images pasted into the text go in where the cursor is, at once, shown from the bytes in hand while their files
   // are staged; other pasted files are attached.
@@ -308,7 +333,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
 
   // Focus: replies start in the body, new messages in To.
   useEffect(() => {
-    if (!focusRequest) return;
+    if (!focusRequest || confirming) return;
     if (win.kind === "new" && draft.to.length === 0) toRef.current?.focus();
     else setEditorFocus((n) => n + 1);
     // Only a new request moves focus, not every edit.
@@ -452,7 +477,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
       </div>
 
       <div className="compose__body">
-        <EditorBody editor={editor} focusSeq={editorFocus} />
+        <EditorBody editor={editor} focusSeq={editorFocus} inert={confirming} />
         {quote && (
           <div className="compose-quote">
             <button

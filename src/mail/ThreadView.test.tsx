@@ -1,6 +1,7 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { Profiler } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { __resetComposeStoreForTests, useComposeStore } from "../compose/composeStore";
 import { dismissToast, ToastProvider, useToastStore } from "../components/ui/Toast";
@@ -815,6 +816,56 @@ test("nearby cached conversations keep their iframe documents through navigation
   expect(frame.contentDocument).toBe(doc);
   expect(frame.contentDocument!.documentElement).toBe(root);
   expect(container.querySelectorAll("iframe").length).toBeLessThanOrEqual(5);
+});
+
+test("evicting a mounted neighbour keeps the open conversation and its iframe", () => {
+  const current = detail([message(1, { bodyHtml: "<p>The open conversation</p>" })]);
+  const neighbour = detail([message(2, { bodyHtml: "<p>The nearby conversation</p>" })]);
+  neighbour.thread.id = "t2";
+  const neighbourKey = threadKey("a1", neighbour.thread.id);
+  useUiStore.setState({ openThread: KEY });
+  useMailStore.setState({ threads: [current.thread, neighbour.thread] });
+  useThreadStore.setState({
+    details: new Map([
+      [KEY, current],
+      [neighbourKey, neighbour],
+    ]),
+  });
+
+  const { container } = renderView();
+  const frame = container.querySelector('[data-visible="true"] iframe');
+  expect(frame).not.toBeNull();
+  const document = (frame as HTMLIFrameElement).contentDocument;
+  expect(container.querySelectorAll("iframe")).toHaveLength(2);
+
+  expect(() => act(() => useThreadStore.getState().evict("a1", ["t2"]))).not.toThrow();
+  expect(container.querySelectorAll("iframe")).toHaveLength(1);
+  expect(container.querySelector("iframe")).toBe(frame);
+  expect((frame as HTMLIFrameElement).contentDocument).toBe(document);
+});
+
+test("an unrelated cached detail does not render the reading pane", () => {
+  const current = detail([message(1)]);
+  open(current);
+  const onRender = vi.fn();
+  render(
+    <Profiler id="ThreadView" onRender={onRender}>
+      <ThreadView />
+    </Profiler>,
+  );
+  onRender.mockClear();
+
+  const unrelated = detail([message(2)]);
+  unrelated.thread.id = "unrelated";
+  act(() =>
+    useThreadStore.setState({
+      details: new Map([
+        [KEY, current],
+        [threadKey("a1", unrelated.thread.id), unrelated],
+      ]),
+    }),
+  );
+  expect(onRender).not.toHaveBeenCalled();
 });
 
 test("Spam and Trash neighbours aren't rendered out of sight, so their remote images stay unloaded", () => {

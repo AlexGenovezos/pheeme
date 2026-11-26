@@ -64,6 +64,8 @@ export interface DateFieldProps extends Omit<
   placeholder?: string;
   /** Opens with the grid showing (a "Go to date" dialog). */
   defaultOpen?: boolean;
+  /** Keep the grid within its dialog for assistive technology. */
+  inlinePopover?: boolean;
 }
 
 export const DateField = forwardRef<HTMLButtonElement, DateFieldProps>(function DateField(
@@ -75,6 +77,7 @@ export const DateField = forwardRef<HTMLButtonElement, DateFieldProps>(function 
     weekStart = 0,
     placeholder = "",
     defaultOpen = false,
+    inlinePopover,
     className,
     disabled,
     onKeyDown: onKeyDownProp,
@@ -201,7 +204,7 @@ export const DateField = forwardRef<HTMLButtonElement, DateFieldProps>(function 
         </span>
       </button>
       {open && (
-        <PickerPopover anchor={ref} onClose={close}>
+        <PickerPopover anchor={ref} onClose={close} inline={inlinePopover}>
           <div className="ui-calendar">
             <div className="ui-calendar__head">
               <span id={titleId} className="ui-calendar__title" aria-live="polite">

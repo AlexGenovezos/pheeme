@@ -123,8 +123,12 @@ describe("CommandPalette", () => {
     expect(elsewhere).toHaveFocus();
 
     openWithKeyboard();
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(toggleSidebar).not.toHaveBeenCalled();
     fireEvent.keyDown(screen.getByRole("combobox"), { key: "k", ctrlKey: true });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(toggleSidebar).toHaveBeenCalledOnce();
   });
 
   test("a time to convert answers first, and Enter copies the answer", () => {
