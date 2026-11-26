@@ -954,7 +954,7 @@ async fn forward_as_attachment_keeps_to_gmails_25_mb_and_cleans_up_on_failure() 
     h.sync.sync_account(ACCT).await.unwrap();
 
     // Too big by Gmail's estimate: refused before anything downloads.
-    sqlx::query("UPDATE messages SET size_estimate = 13000000")
+    sqlx::query("UPDATE messages SET size_estimate = 14000000")
         .execute(&h.pool)
         .await
         .unwrap();
