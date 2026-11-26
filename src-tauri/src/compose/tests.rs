@@ -848,3 +848,137 @@ async fn forwarding_an_invitation_attaches_its_file_but_not_the_calendar_part() 
     let names: Vec<&str> = d.attachments.iter().map(|a| a.filename.as_str()).collect();
     assert_eq!(names, ["invite.ics"]);
 }
+
+const OTHER: &[u8] = b"From: Cy <cy@example.com>\r\n\
+To: me@example.com\r\n\
+Subject: =?UTF-8?B?Q2Fmw6k=?= plans\r\n\
+Message-ID: <c1@example.com>\r\n\
+Content-Type: text/plain; charset=utf-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+Caf\xc3\xa9 at noon?\r\n";
+
+#[tokio::test]
+async fn forward_as_attachment_carries_each_message_whole_in_the_mime() {
+    let h = harness().await;
+    h.fake
+        .seed(FakeMsg::from_raw("m2", "t1", &["INBOX"], ORIGINAL).days_ago(2));
+    h.fake
+        .seed(FakeMsg::from_raw("m3", "t1", &["SENT"], OTHER).days_ago(1));
+    h.fake.seed(FakeMsg::new("d1", "t1", &["DRAFT"]));
+    h.sync.sync_account(ACCT).await.unwrap();
+
+    let mut d = h
+        .compose
+        .forward_as_attachment(ACCT, &["t1".into()], &[])
+        .await
+        .unwrap();
+    // One conversation: its subject, forwarded; the draft in it stays behind.
+    assert_eq!(d.subject, "Fwd: Plans");
+    assert!(d.to.is_empty() && d.thread_id.is_none() && d.in_reply_to.is_none());
+    let files: Vec<(&str, &str)> = d
+        .attachments
+        .iter()
+        .map(|a| (a.filename.as_str(), a.mime_type.as_str()))
+        .collect();
+    assert_eq!(
+        files,
+        [
+            ("Plans.eml", "message/rfc822"),
+            ("Caf\u{e9} plans.eml", "message/rfc822")
+        ]
+    );
+    assert_eq!(h.fake.calls("message_raw"), 2);
+
+    d.to = vec![addr("bo@example.com")];
+    h.compose.send(ACCT, &d, 0).await.unwrap();
+    h.sync.trigger(Some(ACCT.into()));
+    wait_for_sends(&h.fake, 1).await;
+    let raw = decode_base64url(&h.fake.sent()[0]).unwrap();
+    let mail = mailparse::parse_mail(&raw).unwrap();
+    assert_eq!(mail.ctype.mimetype, "multipart/mixed");
+    let parts = &mail.subparts[1..];
+    assert_eq!(parts.len(), 2);
+    for (part, (original, name, encoding)) in parts.iter().zip([
+        (ORIGINAL, "Plans.eml", "7bit"),
+        (OTHER, "Caf\u{e9} plans.eml", "8bit"),
+    ]) {
+        assert_eq!(part.ctype.mimetype, "message/rfc822");
+        assert_eq!(
+            part.headers
+                .get_first_value("Content-Transfer-Encoding")
+                .unwrap(),
+            encoding
+        );
+        let disp = part.get_content_disposition();
+        assert_eq!(disp.disposition, mailparse::DispositionType::Attachment);
+        assert_eq!(disp.params["filename"], name);
+        // Byte for byte as Gmail stores it, so the reader opens the original message.
+        assert_eq!(part.get_body_raw().unwrap(), original);
+        let inner = mailparse::parse_mail(&part.get_body_raw().unwrap()).unwrap();
+        assert!(inner.headers.get_first_value("Message-ID").is_some());
+    }
+}
+
+#[tokio::test]
+async fn forwarding_several_conversations_leaves_the_subject_empty() {
+    let h = harness().await;
+    h.fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+    h.fake.seed(FakeMsg::new("m2", "t2", &["INBOX"]));
+    h.sync.sync_account(ACCT).await.unwrap();
+    let d = h
+        .compose
+        .forward_as_attachment(ACCT, &["t1".into(), "t2".into()], &[])
+        .await
+        .unwrap();
+    assert_eq!(d.subject, "");
+    let names: Vec<&str> = d.attachments.iter().map(|a| a.filename.as_str()).collect();
+    assert_eq!(names, ["Subject t1.eml", "Subject t2.eml"]);
+
+    // One message from a conversation, from its own menu.
+    let one = h
+        .compose
+        .forward_as_attachment(ACCT, &[], &["m2".into()])
+        .await
+        .unwrap();
+    assert_eq!(one.subject, "Fwd: Subject t2");
+    assert_eq!(one.attachments.len(), 1);
+}
+
+#[tokio::test]
+async fn forward_as_attachment_keeps_to_gmails_25_mb_and_cleans_up_on_failure() {
+    let h = harness().await;
+    h.fake.seed(FakeMsg::new("m1", "t1", &["INBOX"]));
+    h.fake.seed(FakeMsg::new("m2", "t1", &["INBOX"]));
+    h.sync.sync_account(ACCT).await.unwrap();
+
+    // Too big by Gmail's estimate: refused before anything downloads.
+    sqlx::query("UPDATE messages SET size_estimate = 13000000")
+        .execute(&h.pool)
+        .await
+        .unwrap();
+    let err = h
+        .compose
+        .forward_as_attachment(ACCT, &["t1".into()], &[])
+        .await
+        .unwrap_err();
+    assert!(matches!(&err, MailError::Invalid(m) if m.contains("25 MB")), "{err:?}");
+    assert_eq!(h.fake.calls("message_raw"), 0);
+
+    // A download that fails drops the files already staged.
+    sqlx::query("UPDATE messages SET size_estimate = 10")
+        .execute(&h.pool)
+        .await
+        .unwrap();
+    let before = staged_files(&h);
+    let err = h
+        .compose
+        .forward_as_attachment(ACCT, &[], &["m1".into(), "gone".into()])
+        .await
+        .unwrap_err();
+    assert!(matches!(err, MailError::NotFound | MailError::Sync(_)), "{err:?}");
+    assert_eq!(staged_files(&h), before);
+
+    let none = h.compose.forward_as_attachment(ACCT, &[], &[]).await;
+    assert!(matches!(none, Err(MailError::Invalid(_))));
+}

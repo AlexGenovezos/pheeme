@@ -230,6 +230,20 @@ impl FakeMsg {
         }
     }
 
+    /// The RFC 2822 source `format=raw` serves: the stored one, else one made from the
+    /// generated parts (headers and the text body).
+    pub fn rfc822(&self) -> Vec<u8> {
+        if let Some(raw) = &self.raw {
+            return raw.clone();
+        }
+        format!(
+            "From: {}\r\nSubject: {}\r\nMessage-ID: {}\r\nMIME-Version: 1.0\r\n\
+             Content-Type: text/plain; charset=utf-8\r\n\r\n{}\r\n",
+            self.from, self.subject, self.message_id, self.body
+        )
+        .into_bytes()
+    }
+
     fn envelope(&self) -> Message {
         Message {
             id: self.id.clone(),
@@ -1360,6 +1374,15 @@ impl MailApi for FakeGmail {
             Some(e) => Err(e),
             None => Ok(message_id),
         }
+    }
+
+    async fn message_raw(&self, id: &str) -> Result<Vec<u8>, GmailError> {
+        self.enter("message_raw")?;
+        self.lock()
+            .messages
+            .get(id)
+            .map(FakeMsg::rfc822)
+            .ok_or_else(not_found)
     }
 
     async fn get_attachment(

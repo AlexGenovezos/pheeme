@@ -1,6 +1,11 @@
 // Every mail action, shared by buttons, context menus and keyboard shortcuts. The actions live in sibling modules
 // (`change.ts` is what they share); this is the one place the rest of the app imports them from.
-export { composeNew, respond } from "../compose/respond";
+export {
+  composeNew,
+  forwardConversationsAsAttachment,
+  forwardMessageAsAttachment,
+  respond,
+} from "../compose/respond";
 export {
   applyLabel,
   labelMembership,

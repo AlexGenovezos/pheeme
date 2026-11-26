@@ -9,6 +9,7 @@ import {
   composeTemplate,
   type EmailAddress,
   deleteDraft,
+  forwardAsAttachment,
   openExternal,
   openDraft,
   saveDraft,
@@ -160,6 +161,14 @@ interface ComposeState {
   compose(accountId: string, initial?: Partial<ComposeDraft>): number;
   /** Reply, Reply all or Forward `messageId`. */
   respond(accountId: string, messageId: string, mode: ComposeMode): Promise<void>;
+  /**
+   * Forward as attachment: a new message from `accountId` with every message of `threadIds` and each of
+   * `messageIds` attached as an `.eml` file.
+   */
+  forwardAsAttachment(
+    accountId: string,
+    sources: { threadIds?: string[]; messageIds?: string[] },
+  ): Promise<void>;
   /** Edit a saved draft (the message in Drafts). */
   editDraft(accountId: string, messageId: string): Promise<void>;
   update(id: number, change: Partial<ComposeDraft>): void;
@@ -415,6 +424,27 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         if (!find(id)) return dropStaged(draft.attachments); // closed while loading
         draft.bodyHtml = bodyWithSignature(
           useSignatures.getState().signatureFor(accountId, "reply", draft.from?.address),
+        );
+        patch(id, { draft, loading: false });
+        get().focus(id);
+      } catch (e) {
+        remove(id);
+        toastError(e);
+      }
+    },
+
+    async forwardAsAttachment(accountId, sources) {
+      const id = open(blank(accountId, "new", emptyDraft(), true));
+      if (id === null) return;
+      try {
+        const draft = await forwardAsAttachment(accountId, sources);
+        const win = find(id);
+        if (!win) return dropStaged(draft.attachments); // closed while loading
+        // A new message like any other: Gmail's default address and the new-message signature.
+        const from = win.draft.from ?? useSendAs.getState().defaultFrom(win.accountId);
+        draft.from = from;
+        draft.bodyHtml = bodyWithSignature(
+          useSignatures.getState().signatureFor(win.accountId, "new", from?.address),
         );
         patch(id, { draft, loading: false });
         get().focus(id);

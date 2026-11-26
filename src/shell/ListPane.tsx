@@ -11,6 +11,7 @@ import {
   composeNew,
   canMarkImportance,
   findSimilar,
+  forwardConversationsAsAttachment,
   isImportant,
   markSearchResultsRead,
   moveSelection,
@@ -32,6 +33,7 @@ import { hasTerm, toggleTerm } from "../search/operators";
 import { SearchBar, SearchStatus, SEARCH_INPUT_ID } from "../search/SearchBar";
 import { dragRegion } from "./chrome";
 import { DEFAULT_KEYS } from "../keyboard/defaultKeys";
+import { FORWARD_AS_ATTACHMENT_COMMAND } from "../compose/respond";
 export { SEARCH_INPUT_ID };
 
 const onRowAction = (action: RowAction, t: ThreadSummary) => {
@@ -88,6 +90,12 @@ export const rowMenu = (t: ThreadSummary) => {
         isImportant(t) ? "conversation.mark-not-important" : "conversation.mark-important",
       ),
       onSelect: () => void setImportant(!isImportant(t), keys),
+    },
+    {
+      id: "forward-attachment",
+      label: "Forward as attachment",
+      shortcut: registry.shortcutFor(FORWARD_AS_ATTACHMENT_COMMAND),
+      onSelect: () => void forwardConversationsAsAttachment(keys),
     },
     { type: "separator" as const },
     {

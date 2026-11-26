@@ -4,6 +4,7 @@ import {
   closeConversation,
   composeNew,
   findSimilar,
+  forwardConversationsAsAttachment,
   labelMenuAnchor,
   openFocused,
   openLabelMenu,
@@ -14,6 +15,7 @@ import {
   toggleStar,
   trash,
 } from "../mail/actions";
+import { FORWARD_AS_ATTACHMENT_COMMAND } from "../compose/respond";
 import { openCreateLabel } from "../labels/create";
 import { COPY_CODE_COMMAND, COPY_CODE_SHORTCUT, copyOpenConversationCode } from "../mail/CodeCard";
 import { PRINT_COMMAND, printOpenConversation } from "../mail/print";
@@ -306,6 +308,14 @@ export function appCommands(): Command[] {
       group: "Conversation",
       shortcut: DEFAULT_KEYS["conversation.forward"],
       run: () => void respond("forward"),
+    },
+    {
+      // Gmail gives it no key either.
+      id: FORWARD_AS_ATTACHMENT_COMMAND,
+      title: "Forward as attachment",
+      group: "Conversation",
+      keywords: ["eml", "attach", "message/rfc822"],
+      run: () => void forwardConversationsAsAttachment(),
     },
     {
       id: "conversation.speed-read",

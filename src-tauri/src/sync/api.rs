@@ -76,6 +76,8 @@ pub trait MailApi: Send + Sync {
         message_id: &str,
         attachment_id: &str,
     ) -> Result<Vec<u8>, GmailError>;
+    /// A message's RFC 2822 bytes as Gmail stores it (`format=raw`).
+    async fn message_raw(&self, id: &str) -> Result<Vec<u8>, GmailError>;
     async fn list_drafts(&self, page_token: Option<&str>) -> Result<DraftListResponse, GmailError>;
     /// A draft with its message in `format=full`.
     async fn get_draft(&self, id: &str) -> Result<Draft, GmailError>;
@@ -211,6 +213,10 @@ impl MailApi for GmailClient {
         attachment_id: &str,
     ) -> Result<Vec<u8>, GmailError> {
         GmailClient::get_attachment(self, message_id, attachment_id).await
+    }
+
+    async fn message_raw(&self, id: &str) -> Result<Vec<u8>, GmailError> {
+        GmailClient::get_raw(self, id).await
     }
 
     async fn list_drafts(&self, page_token: Option<&str>) -> Result<DraftListResponse, GmailError> {

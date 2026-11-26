@@ -33,6 +33,7 @@ import {
   reportSpam,
   closeConversation,
   findSimilar,
+  forwardConversationsAsAttachment,
   respond,
   openLabelMenu,
   openMoveMenu,
@@ -45,6 +46,8 @@ import {
   trash,
 } from "../mail/actions";
 import { present } from "../mail/change";
+import { FORWARD_AS_ATTACHMENT_COMMAND } from "../compose/respond";
+import { threadKey } from "../mail/mailboxes";
 import { PRINT_COMMAND, printOpenConversation } from "../mail/print";
 import {
   lacksUnsubscribe,
@@ -170,6 +173,14 @@ export function ViewPane() {
           shortcut: registry.shortcutFor("conversation.report-spam"),
           disabled: !spammable,
           onSelect: () => void reportSpam(),
+        },
+        {
+          id: "forward-attachment",
+          label: "Forward as attachment",
+          shortcut: registry.shortcutFor(FORWARD_AS_ATTACHMENT_COMMAND),
+          disabled: stale,
+          onSelect: () =>
+            void forwardConversationsAsAttachment(rows.map((t) => threadKey(t.accountId, t.id))),
         },
         {
           id: "create-event",

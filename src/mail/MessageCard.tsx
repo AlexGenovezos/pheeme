@@ -1,9 +1,11 @@
-import { ChevronUp, Forward, Pencil, Printer, Reply, ReplyAll } from "lucide-react";
+import { ChevronUp, Forward, MoreVertical, Pencil, Printer, Reply, ReplyAll } from "lucide-react";
 import { type MouseEvent, useRef } from "react";
 import { showPerson } from "../contacts/personStore";
 import { useComposeStore } from "../compose/composeStore";
+import { forwardMessageAsAttachment } from "./actions";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { showContextMenu } from "../lib/contextMenu";
 import { formatFullDate, formatListDate } from "../lib/dates";
 import type { CommandError, MessageDetail, ThreadLoading } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
@@ -228,6 +230,26 @@ export function MessageCard({
             icon={<Printer />}
             onClick={() => void printMessage(threadKey(accountId, message.threadId), message.id)}
           />
+          {!isDraft && (
+            <IconButton
+              size="sm"
+              label="More options for this message"
+              icon={<MoreVertical />}
+              onClick={(e: MouseEvent<HTMLButtonElement>) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                void showContextMenu(
+                  [
+                    {
+                      id: "forward-attachment",
+                      label: "Forward as attachment",
+                      onSelect: () => void forwardMessageAsAttachment(accountId, message.id),
+                    },
+                  ],
+                  { x: r.left, y: r.bottom },
+                );
+              }}
+            />
+          )}
         </div>
         <button
           type="button"

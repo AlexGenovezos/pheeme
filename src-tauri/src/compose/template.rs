@@ -45,7 +45,7 @@ fn distinct(list: Vec<EmailAddress>, exclude: &[&EmailAddress]) -> Vec<EmailAddr
         .collect()
 }
 
-fn prefixed(subject: Option<&str>, prefix: &str, already: &[&str]) -> String {
+pub(super) fn prefixed(subject: Option<&str>, prefix: &str, already: &[&str]) -> String {
     let subject = subject.unwrap_or("").trim();
     let lower = subject.to_ascii_lowercase();
     if already.iter().any(|p| lower.starts_with(p)) {

@@ -179,6 +179,60 @@ export function createComposeHandlers(
       };
       return draft;
     },
+    forward_as_attachment: (args) => {
+      const accountId = String(args.accountId);
+      const threadIds = args.threadIds as string[];
+      const messageIds = args.messageIds as string[];
+      const mine = threads.filter((t) => t.accountId === accountId);
+      // Fixture messages carry no subject or labels of their own: each goes by its conversation's.
+      const picked = mine.flatMap((t) =>
+        t.messages
+          .filter(
+            (m) =>
+              (threadIds.includes(t.id) && !t.labelIds.includes("DRAFT")) ||
+              messageIds.includes(m.id),
+          )
+          .map((m) => ({ m, subject: t.subject })),
+      );
+      if (picked.length === 0)
+        throw { code: "invalid_input", message: "There's nothing to forward." };
+      const taken = new Set<string>();
+      const attachments = picked.map(({ m, subject }): StagedAttachment => {
+        const stem =
+          subject
+            .replace(/[/\\:<>"|?*]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim() || "(no subject)";
+        let filename = `${stem}.eml`;
+        for (let n = 2; taken.has(filename.toLowerCase()); n++) filename = `${stem} (${n}).eml`;
+        taken.add(filename.toLowerCase());
+        return {
+          id: `staged-${++seq}`,
+          filename,
+          mimeType: "message/rfc822",
+          size: 2_000 + (m.bodyHtml ?? m.bodyText ?? "").length,
+          contentId: null,
+        };
+      });
+      const draft: ComposeDraft = {
+        from: null,
+        to: [],
+        cc: [],
+        bcc: [],
+        subject:
+          threadIds.length + messageIds.length === 1
+            ? prefixed(picked[0]?.subject ?? "", "Fwd: ")
+            : "",
+        bodyHtml: "",
+        quoteHtml: null,
+        attachments,
+        inReplyTo: null,
+        references: [],
+        threadId: null,
+        draftId: null,
+      };
+      return draft;
+    },
     stage_attachment: (args): StagedAttachment => {
       const path = String(args.path);
       const filename = path.split(/[\\/]/).pop() || "file";
