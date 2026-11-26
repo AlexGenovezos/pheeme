@@ -313,6 +313,9 @@
   --compose-editor-min-height: 160px;
   /* Settings › Signatures: the editor for an account's own signature. */
   --signature-editor-min-height: 96px;
+  /* Settings › Vacation responder: the message box, and the subject field. */
+  --vacation-editor-height: 168px;
+  --vacation-subject-width: 280px;
   --compose-link-input-width: 220px;
   /* The formatting bar's font button: wide enough for "Trebuchet MS", so a font change never resizes it. */
   --compose-font-button-width: 92px;

@@ -20,6 +20,7 @@ pub mod threads;
 pub mod types;
 pub mod usage;
 pub mod user;
+pub mod vacation;
 
 pub use client::{
     background, user_action, GmailClient, QuotaSetting, RetryPolicy, TokenProvider,

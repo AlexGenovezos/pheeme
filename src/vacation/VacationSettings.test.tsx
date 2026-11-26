@@ -1,0 +1,134 @@
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test } from "vitest";
+import type { AccountInfo } from "../lib/tauri";
+import { createVacationHandlers } from "../preview/vacation";
+import { useAccountStore } from "../store/accountStore";
+import { VacationNotices } from "./VacationNotices";
+import { VacationSettings } from "./VacationSettings";
+import { useVacation } from "./vacationStore";
+
+const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+const accounts = [
+  { id: "a1", email: "me@gmail.com" },
+  { id: "a2", email: "me@studio.org" },
+] as AccountInfo[];
+let calls: { cmd: string; args: Record<string, unknown> }[] = [];
+
+function backend(mode: string | null) {
+  const handlers = createVacationHandlers(accounts, mode) as Record<
+    string,
+    (args: unknown) => unknown
+  >;
+  mockIPC((cmd, args) => {
+    calls.push({ cmd, args: args as Record<string, unknown> });
+    return handlers[cmd]?.(args);
+  });
+}
+
+beforeEach(() => {
+  calls = [];
+  useVacation.setState({ accounts: {} });
+  useAccountStore.setState({ accounts });
+});
+afterEach(() => clearMocks());
+
+const section = (email: string) =>
+  screen.getByRole("region", { name: `Vacation responder · ${email}` });
+const control = (region: HTMLElement, name: string) => within(region).getByRole("switch", { name });
+
+test("every field is there while Gmail answers, disabled until the responder is turned on", async () => {
+  backend(null);
+  render(<VacationSettings />);
+  const one = section("me@gmail.com");
+  const before = one.querySelectorAll(".settings-row").length;
+  expect(
+    within(one).getByRole("switch", { name: "Vacation responder for me@gmail.com" }),
+  ).toBeDisabled();
+  await flush();
+  expect(one.querySelectorAll(".settings-row").length).toBe(before);
+  expect(within(one).getByRole("textbox", { name: "Subject" })).toBeDisabled();
+
+  fireEvent.click(within(one).getByRole("switch", { name: "Vacation responder for me@gmail.com" }));
+  expect(within(one).getByRole("textbox", { name: "Subject" })).toBeEnabled();
+  // Last day waits for its switch; the domain limit is only for Workspace accounts.
+  expect(within(one).getByRole("combobox", { name: "Last day" })).toBeDisabled();
+  fireEvent.click(within(one).getByRole("switch", { name: "Has a last day" }));
+  expect(within(one).getByRole("combobox", { name: "Last day" })).toBeEnabled();
+  expect(control(one, "Only reply to people at gmail.com")).toBeDisabled();
+  expect(one).toHaveTextContent("Only for Google Workspace accounts.");
+  expect(one.querySelectorAll(".settings-row").length).toBe(before);
+
+  const work = section("me@studio.org");
+  fireEvent.click(
+    within(work).getByRole("switch", { name: "Vacation responder for me@studio.org" }),
+  );
+  expect(control(work, "Only reply to people at studio.org")).toBeEnabled();
+});
+
+test("Save sends the form to Gmail, and Discard puts Gmail's back", async () => {
+  backend(null);
+  render(<VacationSettings />);
+  await flush();
+  const one = section("me@gmail.com");
+  const save = within(one).getByRole("button", { name: "Save" });
+  expect(save).toBeDisabled();
+  fireEvent.click(within(one).getByRole("switch", { name: "Vacation responder for me@gmail.com" }));
+  fireEvent.change(within(one).getByRole("textbox", { name: "Subject" }), {
+    target: { value: "Away" },
+  });
+  expect(one).toHaveTextContent("Not saved yet.");
+  fireEvent.click(save);
+  await flush();
+  const sent = calls.find((c) => c.cmd === "set_vacation_responder")!;
+  expect(sent.args).toMatchObject({
+    accountId: "a1",
+    responder: { enabled: true, subject: "Away", endMs: null, onlyDomain: false },
+  });
+  expect(one).toHaveTextContent("Saved to Gmail.");
+  expect(useVacation.getState().accounts.a1?.value?.enabled).toBe(true);
+
+  fireEvent.change(within(one).getByRole("textbox", { name: "Subject" }), {
+    target: { value: "Gone" },
+  });
+  fireEvent.click(within(one).getByRole("button", { name: "Discard" }));
+  expect(within(one).getByRole("textbox", { name: "Subject" })).toHaveValue("Away");
+});
+
+test("an account that hasn't allowed its mail settings is asked to sign in again", async () => {
+  backend("missing");
+  render(<VacationSettings />);
+  await flush();
+  const one = section("me@gmail.com");
+  expect(one).toHaveTextContent("can't see this account's Gmail settings");
+  expect(within(one).getByRole("button", { name: "Sign in again" })).toBeInTheDocument();
+});
+
+test("a responder that's on shows in the corner, and End now turns it off in Gmail", async () => {
+  backend("on");
+  render(<VacationNotices />);
+  await flush();
+  const card = screen.getByRole("status");
+  expect(card).toHaveTextContent("Vacation responder is on");
+  expect(card).toHaveTextContent("me@gmail.com: “Out of office”");
+  fireEvent.click(within(card).getByRole("button", { name: "End now" }));
+  await flush();
+  expect(calls.some((c) => c.cmd === "end_vacation_responder")).toBe(true);
+  expect(screen.queryByText("Vacation responder is on")).toBeNull();
+});
+
+test("Gmail's message fills the editor once it loads, and a responder that's on enables the fields", async () => {
+  backend("on");
+  render(<VacationSettings />);
+  await flush();
+  const one = section("me@gmail.com");
+  const message = await within(one).findByRole("textbox", {
+    name: "Vacation message for me@gmail.com",
+  });
+  await waitFor(() => expect(message).toHaveTextContent("back next week"));
+  expect(message).toHaveAttribute("contenteditable", "true");
+  expect(within(one).getByRole("textbox", { name: "Subject" })).toHaveValue("Out of office");
+  expect(within(one).getByRole("combobox", { name: "Last day" })).toBeEnabled();
+  expect(within(one).getByRole("button", { name: "Save" })).toBeDisabled();
+});

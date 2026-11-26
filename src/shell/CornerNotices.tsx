@@ -1,5 +1,6 @@
 // The cards pinned in the bottom-right corner, under the toasts: sync trouble first, then the
-// mailbox download, then the update offer (nearest the corner). Each draws through `CornerCard`.
+// mailbox download, then a vacation responder that's on, then the update offer (nearest the
+// corner). Each draws through `CornerCard`.
 import { useState } from "react";
 import { Gauge, TriangleAlert, WifiOff } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -9,6 +10,7 @@ import { CornerCard } from "../components/ui/CornerCard";
 import { isSignedOut, ReconnectButton } from "../onboarding/Reconnect";
 import { type SyncFailure, useAccountStore } from "../store/accountStore";
 import { currentDownload, useDownloadStore } from "../store/downloadStore";
+import { VacationNotices } from "../vacation/VacationNotices";
 
 export function CornerNotices() {
   const hasAccounts = useAccountStore((s) => s.accounts.length > 0);
@@ -16,6 +18,7 @@ export function CornerNotices() {
     <>
       {hasAccounts && <SyncNotices />}
       {hasAccounts && <MailboxDownloadNotice />}
+      {hasAccounts && <VacationNotices />}
       <UpdateBanner />
     </>
   );

@@ -18,4 +18,5 @@ export * from "./ipc/settings";
 export * from "./ipc/stats";
 export * from "./ipc/support";
 export * from "./ipc/tasks";
+export * from "./ipc/vacation";
 export * from "./ipc/weather";

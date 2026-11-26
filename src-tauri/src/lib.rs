@@ -44,6 +44,7 @@ pub mod telemetry;
 mod test_logs;
 mod text;
 pub mod transfer;
+pub mod vacation;
 pub mod weather;
 
 use anyhow::Context;
@@ -69,6 +70,7 @@ pub struct AppState {
     pub labels: labels::LabelService,
     pub sender_rules: sender_rules::SenderRuleService,
     pub filters: filters::FilterService,
+    pub vacation: vacation::VacationService,
     pub compose: compose::ComposeService,
     pub contacts: Arc<contacts::ContactService>,
     pub drive: drive::DriveService,
@@ -198,6 +200,7 @@ pub async fn build_state(
     let labels = labels::LabelService::new(db.clone(), sync.clone());
     let sender_rules = sender_rules::SenderRuleService::new(db.clone(), sync.clone());
     let filters = filters::FilterService::new(db.clone(), sync.clone());
+    let vacation = vacation::VacationService::new(db.clone(), sync.clone());
     let compose =
         compose::ComposeService::new(db.clone(), sync.clone(), mail.clone(), cache_dir, key);
     let drive = drive::DriveService::new(accounts.clone(), mail.clone());
@@ -227,6 +230,7 @@ pub async fn build_state(
         labels,
         sender_rules,
         filters,
+        vacation,
         compose,
         contacts,
         drive,
@@ -660,6 +664,9 @@ pub fn run() {
             commands::filters::delete_filter,
             commands::filters::filter_matches,
             commands::filters::forwarding_addresses,
+            commands::vacation::get_vacation_responder,
+            commands::vacation::set_vacation_responder,
+            commands::vacation::end_vacation_responder,
             commands::stats::mail_stats,
             commands::stats::unsubscribe_sender,
             commands::search::search_messages,

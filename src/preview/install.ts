@@ -31,6 +31,7 @@ import { sampleAttachment } from "./attachments";
 import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel } from "./labels";
 import { createSenderRuleHandlers } from "./senderRules";
 import { createFilterHandlers } from "./filters";
+import { createVacationHandlers } from "./vacation";
 import { createCalendarHandlers } from "./calendar";
 import { createAvailabilityHandlers } from "./availability";
 import { createTasksHandlers } from "./tasks";
@@ -352,6 +353,7 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
       params.get("senderRules") === "missing",
       changeThreads,
     ),
+    ...createVacationHandlers(accounts, params.get("vacation")),
     ...createContactHandlers(
       threads,
       (id) => accounts.find((a) => a.id === id)?.email,
