@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useWidth } from "../lib/useWidth";
 import { ColorPopoverHost } from "../labels/ColorPopover";
 import { LabelDialogHost } from "../labels/LabelDialog";
+import { UnsubscribeDialogHost } from "../mail/UnsubscribeDialog";
 import { LabelPickerHost } from "../labels/LabelPicker";
 import { CategoryMoveHost } from "../mail/CategoryMoveDialog";
 import { DragCardHost } from "../mail/dragMail";
@@ -132,6 +133,7 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
       <CategoryMoveHost />
       <DragCardHost />
       <LabelDialogHost />
+      <UnsubscribeDialogHost />
       <ColorPopoverHost />
     </div>
   );

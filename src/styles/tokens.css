@@ -238,6 +238,7 @@
   --calendar-editor-width: 680px;
   --calendar-editor-max-height: 88vh;
   --calendar-prompt-width: 380px;
+  --confirm-dialog-width: 380px;
   --calendar-file-width: 460px;
   --calendar-file-list-max-height: 300px;
   --calendar-resize-handle: 6px;

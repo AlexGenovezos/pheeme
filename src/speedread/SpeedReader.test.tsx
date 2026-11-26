@@ -200,6 +200,7 @@ describe("speedReadOpenConversation", () => {
     labelIds: ["INBOX"],
     hasAttachment: false,
     attachments: [],
+    unsubscribe: "none",
   });
 
   function openThread(messages: MessageDetail[]) {

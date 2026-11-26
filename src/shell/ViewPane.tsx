@@ -38,6 +38,11 @@ import {
 } from "../mail/actions";
 import { threadKey } from "../mail/mailboxes";
 import { PRINT_COMMAND, printOpenConversation } from "../mail/print";
+import {
+  lacksUnsubscribe,
+  UNSUBSCRIBE_COMMAND,
+  unsubscribeOpenConversation,
+} from "../mail/unsubscribe";
 import { usePrintSettings } from "../mail/printSettings";
 import {
   CREATE_EVENT_COMMAND,
@@ -176,6 +181,13 @@ export function ViewPane() {
           shortcut: registry.shortcutFor(PRINT_COMMAND),
           disabled: !openKey,
           onSelect: () => void printOpenConversation(),
+        },
+        {
+          id: "unsubscribe",
+          label: "Unsubscribe from sender…",
+          shortcut: registry.shortcutFor(UNSUBSCRIBE_COMMAND),
+          disabled: !openKey || lacksUnsubscribe(openKey),
+          onSelect: () => void unsubscribeOpenConversation(),
         },
         { id: "original", label: "Show original", onSelect: () => notYet("Show original") },
       ],

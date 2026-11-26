@@ -77,6 +77,8 @@ export interface MessageDetail {
   labelIds: string[];
   hasAttachment: boolean;
   attachments: AttachmentInfo[];
+  /** How the message offers to unsubscribe (its `List-Unsubscribe` headers): `none` when it doesn't. */
+  unsubscribe: "one_click" | "link" | "email" | "none";
 }
 
 export interface ThreadDetail {

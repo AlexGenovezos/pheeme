@@ -249,6 +249,7 @@ describe("createEventFromEmail", () => {
     labelIds: ["INBOX"],
     hasAttachment: false,
     attachments: [],
+    unsubscribe: "none",
   };
   const detail = {
     thread: { id: "p-21", accountId: "acc-personal", subject: "Re: Coffee next week?" },

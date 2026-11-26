@@ -6,8 +6,6 @@ import { Info } from "lucide-react";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Skeleton } from "../components/ui/Skeleton";
-import { toast } from "../components/ui/Toast";
-import { useComposeStore } from "../compose/composeStore";
 import {
   getMailStats,
   type InboxTab,
@@ -16,9 +14,8 @@ import {
   type PlaceStats,
   type SenderStats,
   toCommandError,
-  unsubscribeSender,
 } from "../lib/tauri";
-import { openLink } from "../mail/linkify";
+import { messageKey, unsubscribeFrom, useUnsubscribeStore } from "../mail/unsubscribe";
 import { useAccountStore } from "../store/accountStore";
 import { useStatsStore } from "./statsStore";
 
@@ -107,28 +104,6 @@ export function rate(n: number, days: number, per = 1): string {
 }
 
 const shortDate = (d: Date) => d.toLocaleDateString([], { month: "short", day: "numeric" });
-
-/** The address and the fields Pheeme can fill in from a `mailto:` link. */
-export function parseMailto(url: string): { to: string; subject: string; body: string } | null {
-  if (!/^mailto:/i.test(url)) return null;
-  const [path, query = ""] = url.slice("mailto:".length).split("?", 2);
-  const params = new URLSearchParams(query);
-  const to = decodeURIComponent(path).split(",")[0]?.trim() || params.get("to") || "";
-  if (!to) return null;
-  return {
-    to,
-    subject: params.get("subject") ?? "unsubscribe",
-    body: params.get("body") ?? "",
-  };
-}
-
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-
-type SenderState = "busy" | "done" | "opened";
-/** Senders unsubscribed from this session, so switching pages doesn't offer it again. */
-const handled = new Map<string, SenderState>();
-const senderKey = (s: Pick<SenderStats, "accountId" | "sender">) => `${s.accountId}\n${s.sender}`;
 
 /** Mail stats for a time range and an account (or all), asked again whenever either changes. */
 export function useMailStats() {
@@ -448,7 +423,7 @@ export function Senders({ stats, days }: { stats: MailStats | null; days: number
           </thead>
           <tbody>
             {rows.map((s, i) => (
-              <SenderRow key={s ? senderKey(s) : i} sender={s} days={days} />
+              <SenderRow key={s ? `${s.accountId}\n${s.sender}` : i} sender={s} days={days} />
             ))}
           </tbody>
         </table>
@@ -486,14 +461,11 @@ function SenderRow({ sender: s, days }: { sender: SenderStats | null; days: numb
 }
 
 function UnsubscribeButton({ sender }: { sender: SenderStats }) {
-  const key = senderKey(sender);
-  const [state, setState] = useState<SenderState | undefined>(() => handled.get(key));
+  // Senders unsubscribed from this session, so no page offers it again (the conversation's too).
+  const state = useUnsubscribeStore((s) =>
+    sender.messageId ? s.senders[messageKey(sender.accountId, sender.messageId)] : undefined,
+  );
   const who = sender.name || sender.sender;
-  const mark = (next: SenderState | undefined) => {
-    if (next) handled.set(key, next);
-    else handled.delete(key);
-    setState(next);
-  };
 
   if (sender.unsubscribe === "none" || !sender.threadId) {
     return (
@@ -512,50 +484,14 @@ function UnsubscribeButton({ sender }: { sender: SenderStats }) {
   }
 
   async function unsubscribe() {
-    mark("busy");
-    try {
-      const result = await unsubscribeSender(sender.accountId, sender.threadId!, sender.messageId);
-      if (result.unsubscribed) {
-        mark("done");
-        toast({
-          title: `Unsubscribed from ${who}`,
-          description: "Some lists take a few days to stop.",
-        });
-      } else if (result.web) {
-        mark("opened");
-        openLink(result.web);
-        toast({
-          title: `Opened ${who}'s unsubscribe page`,
-          description: "Finish there to stop their mail.",
-        });
-      } else if (result.mailto && parseMailto(result.mailto)) {
-        const mail = parseMailto(result.mailto)!;
-        mark("opened");
-        useComposeStore.getState().compose(sender.accountId, {
-          to: [{ name: null, address: mail.to }],
-          subject: mail.subject,
-          bodyHtml: mail.body ? `<p>${escapeHtml(mail.body)}</p>` : "",
-        });
-        useStatsStore.getState().close();
-        toast({
-          title: `${who} unsubscribes by email`,
-          description: "Send the message that just opened to stop their mail.",
-        });
-      } else {
-        mark(undefined);
-        toast({
-          title: `${who} doesn't offer unsubscribing`,
-          description: "A sender rule or filter can file their mail instead.",
-        });
-      }
-    } catch (raw) {
-      mark(undefined);
-      toast({
-        title: `Couldn't unsubscribe from ${who}`,
-        description: toCommandError(raw).message,
-        tone: "danger",
-      });
-    }
+    const outcome = await unsubscribeFrom({
+      accountId: sender.accountId,
+      threadId: sender.threadId!,
+      messageId: sender.messageId,
+      who,
+    });
+    // A message to send opens over everything: this window would hide it.
+    if (outcome === "email") useStatsStore.getState().close();
   }
 
   return (
@@ -568,8 +504,4 @@ function UnsubscribeButton({ sender }: { sender: SenderStats }) {
       Unsubscribe
     </Button>
   );
-}
-
-export function __resetUnsubscribedForTests() {
-  handled.clear();
 }

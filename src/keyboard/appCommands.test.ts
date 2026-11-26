@@ -97,6 +97,7 @@ function cacheOpenThread() {
               labelIds: ["INBOX"],
               hasAttachment: false,
               attachments: [],
+              unsubscribe: "none",
             },
           ],
           bodyError: null,

@@ -180,35 +180,37 @@ export function previewMailStats(
   };
 }
 
-/** What unsubscribing from a preview sender does, by the kind its fixture offers. */
-export function previewUnsubscribe(threadId: string): Unsubscribed {
-  const s = SENDERS[Number(threadId.replace("stats-thread-", ""))];
-  if (!s || s.unsubscribe === "none") {
-    return {
-      sender: s?.sender ?? null,
-      method: "none",
-      unsubscribed: false,
-      web: null,
-      mailto: null,
-    };
+/** What unsubscribing from `sender` does, by the kind its mail offers. */
+export function previewUnsubscribeOutcome(
+  sender: string | null,
+  kind: UnsubscribeKind | undefined,
+): Unsubscribed {
+  if (!sender || !kind || kind === "none" || kind === "unknown") {
+    return { sender, method: "none", unsubscribed: false, web: null, mailto: null };
   }
-  if (s.unsubscribe === "link") {
+  if (kind === "link") {
     return {
-      sender: s.sender,
+      sender,
       method: "link",
       unsubscribed: false,
       web: "https://example.com/unsubscribe",
       mailto: null,
     };
   }
-  if (s.unsubscribe === "email") {
+  if (kind === "email") {
     return {
-      sender: s.sender,
+      sender,
       method: "email",
       unsubscribed: false,
       web: null,
       mailto: "mailto:leave@substack.com?subject=unsubscribe",
     };
   }
-  return { sender: s.sender, method: "one_click", unsubscribed: true, web: null, mailto: null };
+  return { sender, method: "one_click", unsubscribed: true, web: null, mailto: null };
+}
+
+/** What unsubscribing from a preview sender in the Stats window does. */
+export function previewUnsubscribe(threadId: string): Unsubscribed {
+  const s = SENDERS[Number(threadId.replace("stats-thread-", ""))];
+  return previewUnsubscribeOutcome(s?.sender ?? null, s?.unsubscribe);
 }

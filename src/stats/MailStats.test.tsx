@@ -4,16 +4,9 @@ import { beforeEach, expect, test } from "vitest";
 import { useToastStore } from "../components/ui/Toast";
 import { useComposeStore } from "../compose/composeStore";
 import type { MailStats, SenderStats, Unsubscribed } from "../lib/tauri";
+import { __resetUnsubscribedForTests, parseMailto } from "../mail/unsubscribe";
 import { useAccountStore } from "../store/accountStore";
-import {
-  __resetUnsubscribedForTests,
-  buckets,
-  dayKey,
-  parseMailto,
-  percent,
-  rate,
-  windowStart,
-} from "./MailStats";
+import { buckets, dayKey, percent, rate, windowStart } from "./MailStats";
 import { Stats } from "./StatsDialog";
 import { useStatsStore } from "./statsStore";
 
@@ -34,7 +27,8 @@ const counts = (received: number, opened: number, replied = 0, starred = 0) => (
 const sender = (over: Partial<SenderStats>): SenderStats => ({
   accountId: "a",
   threadId: "t1",
-  messageId: "m1",
+  // Each sender's newest message, named after its conversation (t2 → m2).
+  messageId: `m${over.threadId?.slice(1) ?? "1"}`,
   sender: "deals@shop.com",
   name: "Shop",
   tab: "promotions",
