@@ -8,6 +8,7 @@
 mod attachment;
 mod dto;
 mod open_timing;
+mod original;
 mod search;
 
 pub use attachment::{
@@ -18,6 +19,7 @@ pub use dto::{
     AttachmentDto, BodyErrorDto, CountDto, LabelCountDto, LabelDto, MessageDetailDto,
     ThreadCursorDto, ThreadDetailDto, ThreadPageDto, ThreadSummaryDto,
 };
+pub use original::{AuthResult, OriginalDto, OriginalSummary};
 pub use search::{GmailSearchPageDto, SearchChange, SearchChangeDto, SearchPageDto};
 
 use crate::attachment_cache::AttachmentCache;

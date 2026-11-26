@@ -1,0 +1,92 @@
+.original {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.original__summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.original__summary dt {
+  color: var(--color-foreground-muted);
+}
+.original__summary dd {
+  margin: 0;
+  min-width: 0;
+}
+/* One line per value, so the summary is as tall when Gmail answers as it was while it loaded; the
+   full text is the tooltip and the source below. */
+.original__summary dd,
+.original__detail,
+.original__size {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.original__summary dd > .selectable {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.original__check {
+  display: contents;
+}
+.original__auth {
+  min-width: 0;
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+.original__result {
+  flex-shrink: 0;
+  font-weight: var(--font-weight-semibold);
+}
+.original__result--pass {
+  color: var(--color-success);
+}
+.original__result--fail {
+  color: var(--color-danger);
+}
+.original__detail,
+.original__muted {
+  color: var(--color-foreground-muted);
+}
+.original__detail {
+  min-width: 0;
+}
+.original__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.original__size {
+  flex: 1;
+  min-width: 0;
+}
+.original__source,
+.original__failed {
+  flex: 1;
+  min-height: var(--space-12);
+  margin: 0;
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+}
+.original__source {
+  overflow: auto;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.original__failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}

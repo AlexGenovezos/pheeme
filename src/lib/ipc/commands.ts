@@ -50,6 +50,7 @@ import type { LabelColor, LabelCount, LabelDeletePreview, LabelEdit, LabelInfo }
 import type {
   ListThreadsArgs,
   MailboxCount,
+  OriginalMessage,
   SyncProgress,
   ThreadCursor,
   ThreadDetail,
@@ -117,6 +118,8 @@ export interface Commands {
 
   // Mail: attachments
   save_attachment: Command<Attachment, string>;
+  message_original: Command<Account & { messageId: string; full: boolean }, OriginalMessage>;
+  save_original: Command<Account & { messageId: string }, string>;
   read_attachment: Command<Attachment, ArrayBuffer>;
   prefetch_attachments: Command<Account & { messageIds: string[] }, void>;
   open_attachment: Command<Attachment, void>;

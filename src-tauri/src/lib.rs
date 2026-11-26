@@ -606,6 +606,8 @@ pub fn run() {
             commands::open_mail_link,
             commands::attachments::save_attachment,
             commands::attachments::reveal_download,
+            commands::attachments::message_original,
+            commands::attachments::save_original,
             commands::attachments::read_attachment,
             commands::attachments::prefetch_attachments,
             commands::attachments::open_attachment,
