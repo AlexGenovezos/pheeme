@@ -10,10 +10,16 @@ const htmlOf = (editor: TipTap) => {
   const html = editor.getHTML();
   return html === EMPTY ? "" : html;
 };
-/** Whether the editor reads two HTML messages as the same document. */
+/**
+ * Whether the editor reads two HTML messages as the same document. An empty paragraph after a
+ * closing list or quote doesn't count: the editor adds one there anyway.
+ */
 const sameDocument = (editor: TipTap, a: string, b: string) => {
   const parsed = (html: string) =>
-    getHTMLFromFragment(createDocument(html, editor.schema).content, editor.schema);
+    getHTMLFromFragment(createDocument(html, editor.schema).content, editor.schema).replace(
+      /(<\/(?:ul|ol|blockquote)>)<p><\/p>$/,
+      "$1",
+    );
   return a === b || parsed(a) === parsed(b);
 };
 
