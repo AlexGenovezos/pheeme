@@ -489,13 +489,16 @@ impl FilterService {
         account_id: &str,
         spec: &FilterSpec,
     ) -> Result<Option<usize>, MailError> {
-        let (query, _) = crate::search::gmail_query(&spec_query(spec)?);
+        let (query, spam_trash) = crate::search::gmail_query(&spec_query(spec)?);
+        // As each change searches: the label sweep never reaches Spam and Trash, Delete it's
+        // search does when the query asks (`in:anywhere`).
+        let spam_trash = spam_trash && spec.trash;
         let api = self.api(account_id);
         let mut threads = HashSet::new();
         let mut token: Option<String> = None;
         for _ in 0..COUNT_PAGES {
             let page = api
-                .search_messages(&query, false, token.as_deref(), 500)
+                .search_messages(&query, spam_trash, token.as_deref(), 500)
                 .await?;
             threads.extend(page.messages.into_iter().map(|m| m.thread_id));
             match page.next_page_token {
