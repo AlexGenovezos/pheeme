@@ -75,15 +75,14 @@ pub async fn delete_filter(
     Ok(user_action(state.filters.delete(&account_id, &filter_id)).await?)
 }
 
-/// How many cached conversations the form's search matches (`None`: only Gmail can tell).
-/// Local, no Gmail call.
+/// How many conversations in Gmail the form's search matches (`None`: too many to count).
 #[tauri::command]
 pub async fn filter_matches(
     state: State<'_, AppState>,
     account_id: String,
     spec: FilterSpec,
 ) -> Result<Option<usize>, CommandError> {
-    Ok(filters::count_matches(&state.mail, &account_id, &spec).await?)
+    Ok(user_action(state.filters.count_matches(&account_id, &spec)).await?)
 }
 
 /// The verified addresses a filter can forward to.

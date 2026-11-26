@@ -45,7 +45,7 @@ const SIZE_COMPARISONS: { value: FilterForm["sizeComparison"]; label: string }[]
 type Forwarding = { kind: "loading" } | { kind: "ready"; list: string[] } | { kind: "error" };
 
 /** The match count waits this long after typing stops, so it isn't asked for every key. */
-const COUNT_DELAY_MS = 300;
+const COUNT_DELAY_MS = 500;
 
 function useForwarding(accountId: string): Forwarding {
   const [state, setState] = useState<Forwarding>({ kind: "loading" });

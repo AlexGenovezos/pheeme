@@ -227,8 +227,6 @@ export function createFilterHandlers(
     },
     filter_matches: (args): number | null => {
       check(args.spec, false);
-      // Like the local search: `-word` is Gmail-only syntax, so only Gmail could count it.
-      if (args.spec.negatedQuery.trim() || args.spec.excludeChats) return null;
       return hits(args.accountId, args.spec).length;
     },
     forwarding_addresses: (args): string[] => {

@@ -66,7 +66,7 @@ export const replaceFilter = (
 ) => call("replace_filter", { accountId, filterId, spec, applyToExisting });
 export const deleteFilter = (accountId: string, filterId: string) =>
   call("delete_filter", { accountId, filterId });
-/** Cached conversations the form's search matches; null when only Gmail can tell. */
+/** Conversations in Gmail the form's search matches; null when there are too many to count. */
 export const filterMatches = (accountId: string, spec: FilterSpec) =>
   call("filter_matches", { accountId, spec });
 /** The verified addresses a filter can forward to. */

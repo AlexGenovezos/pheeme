@@ -18,7 +18,7 @@ use crate::sync::MailApi;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::SqlitePool;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 /// A filter as a person would describe it (snake_case, like the rest of the local API's output).
@@ -94,12 +94,13 @@ impl FilterService {
         spec: &FilterSpec,
     ) -> Result<FilterEntryDto, MailError> {
         let filter = spec.to_filter()?;
+        // Read first: once Gmail has made the filter, nothing here may fail the save.
+        let names = label_names(&self.db, account_id).await?;
         let created = self
             .api(account_id)
             .create_filter(&filter)
             .await
             .map_err(refusal)?;
-        let names = label_names(&self.db, account_id).await?;
         tracing::info!(account = account_id, filter = ?created.id, "filter created");
         Ok(entry(&created, &names))
     }
@@ -477,16 +478,33 @@ pub fn spec_query(spec: &FilterSpec) -> Result<String, MailError> {
         .ok_or_else(|| MailError::Invalid("Fill in at least one search option.".into()))
 }
 
-/// How many conversations the form's search matches now, as far as the cache can tell:
-/// `None` when the search uses syntax only Gmail understands.
-pub async fn count_matches(
-    mail: &MailService,
-    account_id: &str,
-    spec: &FilterSpec,
-) -> Result<Option<usize>, MailError> {
-    let query = spec_query(spec)?;
-    let (ids, local) = mail.matching_threads(account_id, &query).await?;
-    Ok(local.then_some(ids.len()))
+/// Gmail search pages [`FilterService::count_matches`] reads before giving up on a number.
+const COUNT_PAGES: usize = 10;
+
+impl FilterService {
+    /// How many conversations in Gmail the form's search matches now (what Also apply filter
+    /// changes), from Gmail's message ids alone; `None` past [`COUNT_PAGES`] pages of 500.
+    pub async fn count_matches(
+        &self,
+        account_id: &str,
+        spec: &FilterSpec,
+    ) -> Result<Option<usize>, MailError> {
+        let (query, _) = crate::search::gmail_query(&spec_query(spec)?);
+        let api = self.api(account_id);
+        let mut threads = HashSet::new();
+        let mut token: Option<String> = None;
+        for _ in 0..COUNT_PAGES {
+            let page = api
+                .search_messages(&query, false, token.as_deref(), 500)
+                .await?;
+            threads.extend(page.messages.into_iter().map(|m| m.thread_id));
+            match page.next_page_token {
+                Some(next) if !next.is_empty() => token = Some(next),
+                _ => return Ok(Some(threads.len())),
+            }
+        }
+        Ok(None)
+    }
 }
 
 /// "Also apply filter to matching conversations": the filter's label changes for every match,
@@ -1104,7 +1122,7 @@ mod tests {
             let h = setup(fake).await;
 
             assert_eq!(
-                count_matches(&h.mail, "a1", &spec()).await.unwrap(),
+                h.filters.count_matches("a1", &spec()).await.unwrap(),
                 Some(2)
             );
             let criteria_only = FilterSpec {
@@ -1112,18 +1130,12 @@ mod tests {
                 ..Default::default()
             };
             assert_eq!(
-                count_matches(&h.mail, "a1", &criteria_only).await.unwrap(),
+                h.filters.count_matches("a1", &criteria_only).await.unwrap(),
                 Some(2),
                 "counted before any action is chosen"
             );
-            let gmail_only = FilterSpec {
-                subject: "-x".into(),
-                ..spec()
-            };
-            assert_eq!(
-                count_matches(&h.mail, "a1", &gmail_only).await.unwrap(),
-                None
-            );
+            let searches = h.fake.calls("search_messages");
+            assert!(searches >= 2, "counted by Gmail, not the cache");
 
             apply_to_existing(&h.mail, "a1", &spec()).await.unwrap();
             let inbox = h

@@ -73,7 +73,7 @@ test("creates the filter, applies it to existing mail when asked, and reports ba
   const existing = screen.getByLabelText(/Also apply filter to/);
   expect(existing).toHaveProperty("disabled", true);
   fireEvent.click(screen.getByLabelText("Star it"));
-  await act(() => vi.advanceTimersByTimeAsync(400));
+  await act(() => vi.advanceTimersByTimeAsync(600));
   expect(screen.getByText("Also apply filter to 4 matching conversations.")).toBeTruthy();
   expect(existing).toHaveProperty("disabled", false);
   fireEvent.click(existing);
