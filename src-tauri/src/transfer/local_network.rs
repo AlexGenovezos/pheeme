@@ -27,6 +27,7 @@ pub fn access() -> LocalNetworkAccess {
 
 /// A probe target: an address on one Wi-Fi or Ethernet network, and that
 /// network's interface.
+#[cfg_attr(not(unix), allow(dead_code))]
 struct Target {
     ip: Ipv4Addr,
     interface: u32,
