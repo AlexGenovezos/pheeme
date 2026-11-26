@@ -62,6 +62,13 @@ test("up to date goes away by itself; a failed check stays until OK", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Pheeme is up to date");
     act(() => vi.advanceTimersByTime(1));
     expect(screen.queryByRole("status")).toBeNull();
+    // Settings › About still reads the result.
+    expect(useUpdateStore.getState().manualCheck).toBe("current");
+
+    // Checking again shows the card again.
+    act(() => useUpdateStore.setState({ manualCheck: "checking" }));
+    act(() => useUpdateStore.setState({ manualCheck: "current" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Pheeme is up to date");
 
     act(() => useUpdateStore.setState({ manualCheck: "failed" }));
     act(() => vi.advanceTimersByTime(UP_TO_DATE_MS * 2));

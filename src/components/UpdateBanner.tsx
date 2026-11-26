@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { displayVersion, useUpdateStore } from "../lib/updater";
 import { Button } from "./ui/Button";
 import { CornerCard } from "./ui/CornerCard";
@@ -15,11 +15,16 @@ export const UP_TO_DATE_MS = 5_000;
 /** Pinned under the toasts: an update is downloaded on click, then the app restarts. */
 export function UpdateBanner() {
   const { available, applying, apply, manualCheck, dismissManualCheck } = useUpdateStore();
+  // Hides only this card: Settings › About keeps saying it's up to date.
+  const [expired, setExpired] = useState(false);
   useEffect(() => {
     if (manualCheck !== "current") return;
-    const id = setTimeout(dismissManualCheck, UP_TO_DATE_MS);
-    return () => clearTimeout(id);
-  }, [manualCheck, dismissManualCheck]);
+    const id = setTimeout(() => setExpired(true), UP_TO_DATE_MS);
+    return () => {
+      clearTimeout(id);
+      setExpired(false);
+    };
+  }, [manualCheck]);
   if (available) {
     return (
       <CornerCard
@@ -39,7 +44,7 @@ export function UpdateBanner() {
     );
   }
   // Result of a "Check for Updates…" from the app menu; background checks stay silent.
-  if (manualCheck === "idle") return null;
+  if (manualCheck === "idle" || (manualCheck === "current" && expired)) return null;
   return (
     <CornerCard
       title={manualCheckText[manualCheck]}
