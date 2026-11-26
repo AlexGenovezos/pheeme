@@ -704,25 +704,30 @@ pub fn run() {
             }
             if let tauri::RunEvent::Exit = event {
                 info!("Pheeme exiting");
+                let mut db_closed = true;
                 if let Some(state) = app.try_state::<AppState>() {
                     if let Err(error) = storage::clear_opened(&state.cache_dir) {
                         tracing::warn!(%error, "couldn't remove opened attachment copies");
                     }
                     // SQLCipher (4.7 and later) frees its locks and memory in an exit hook; a
-                    // connection still closing on its own thread then crashes the process. So
+                    // connection still working on its own thread then crashes the process. So
                     // close them all first, letting a query in flight finish for a moment.
                     let db = state.db.clone();
-                    let closed = tauri::async_runtime::block_on(async move {
+                    db_closed = tauri::async_runtime::block_on(async move {
                         tokio::time::timeout(DB_CLOSE_WAIT, db.close())
                             .await
                             .is_ok()
                     });
-                    if !closed {
-                        tracing::warn!("database still busy at exit");
+                    if !db_closed {
+                        tracing::warn!("database still busy at exit: leaving without exit hooks");
                     }
                 }
                 if let Some(logs) = app.try_state::<diagnostics::LogGuard>() {
                     logs.shutdown();
+                }
+                // Still busy: end here, before Tauri's exit runs SQLCipher's hook under it.
+                if !db_closed {
+                    relaunch::exit_without_exit_hooks(app);
                 }
                 // On macOS, restart without `open -n`'s second Dock icon.
                 relaunch::take_over_restart(app);

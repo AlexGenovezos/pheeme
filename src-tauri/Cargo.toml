@@ -78,14 +78,14 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 # Screenshots added to a diagnostics report: decoded and re-encoded as a clean PNG.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rrule = "0.14"
+# The process's CPU time for stall lines (diagnostics.rs), and `_exit` (relaunch.rs).
+libc = "0.2"
 chrono-tz = "0.10"
 
 # Valgrind only runs on Linux. Optional so that plain builds don't need libclang.
 [target.'cfg(unix)'.dependencies]
 # Ties the Local Network probe to one interface (IP_BOUND_IF), so a VPN can't answer for it.
 socket2 = { version = "0.6", features = ["all"] }
-# The process's CPU time, so a stall line says whether Pheeme was busy or held back (diagnostics.rs).
-libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
