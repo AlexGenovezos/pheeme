@@ -235,19 +235,21 @@ mod exit_tests {
     use std::process::Command;
     use std::time::Duration;
 
-    /// Set in the child process `end_process_never_crashes_under_a_running_query` starts.
+    /// Set in the child process `end_process_never_crashes_under_a_running_query` starts: the
+    /// database file to use (the parent's temporary folder, so it's removed after the test).
     const CHILD: &str = "PHEEME_EXIT_CHILD";
 
     /// Keeps queries decrypting pages on the connections' own threads, then ends the process
     /// with [`super::end_process`] while they run.
-    fn exit_while_queries_run() -> ! {
-        let dir = tempfile::tempdir().unwrap();
+    fn exit_while_queries_run(db: &std::path::Path) -> ! {
         let options = crate::storage::test_key()
-            .database_options(&dir.path().join("db.sqlite"))
+            .database_options(db)
             .create_if_missing(true)
             // A tiny page cache, so every scan decrypts pages through SQLCipher.
             .pragma("cache_size", "8");
-        tokio::runtime::Runtime::new().unwrap().block_on(async {
+        // Kept alive to the end, so the queries are still running when the process ends.
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
             let pool = SqlitePoolOptions::new()
                 .max_connections(4)
                 .connect_with(options)
@@ -279,8 +281,8 @@ mod exit_tests {
     /// The child side: does nothing in an ordinary test run.
     #[test]
     fn child() {
-        if std::env::var_os(CHILD).is_some() {
-            exit_while_queries_run();
+        if let Some(db) = std::env::var_os(CHILD) {
+            exit_while_queries_run(std::path::Path::new(&db));
         }
     }
 
@@ -288,10 +290,11 @@ mod exit_tests {
     /// SQLCipher's exit hook (as the Mac did restarting into 0.34).
     #[test]
     fn end_process_never_crashes_under_a_running_query() {
-        for _ in 0..8 {
+        let dir = tempfile::tempdir().unwrap();
+        for run in 0..8 {
             let status = Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "relaunch::exit_tests::child", "--quiet"])
-                .env(CHILD, "1")
+                .env(CHILD, dir.path().join(format!("{run}.sqlite")))
                 .status()
                 .unwrap();
             assert!(status.success(), "the child ended with {status}");
