@@ -48,8 +48,9 @@ pub mod weather;
 use anyhow::Context;
 use secrets::SecretStore;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use sync::manager::SyncManager;
 use sync::{SyncEvent, SyncEvents};
 use tauri::Manager;
@@ -80,8 +81,52 @@ pub struct AppState {
     pub gmail_usage: gmail::QuotaUsage,
     /// Where the logs are written (for Send diagnostics); `None` when there is no log dir.
     pub log_dir: Option<PathBuf>,
+    google_clients: GoogleClientCaches,
     storage_guard: Option<storage::UnlockedStorage>,
     cache_dir: PathBuf,
+}
+
+#[derive(Default)]
+struct GoogleClients {
+    people: Option<Arc<dyn contacts::PeopleApi>>,
+    calendar: Option<Arc<dyn calendar::CalendarApi>>,
+    tasks: Option<Arc<dyn tasks::TasksApi>>,
+}
+
+#[derive(Clone, Default)]
+struct GoogleClientCaches(Arc<Mutex<HashMap<String, GoogleClients>>>);
+
+impl GoogleClientCaches {
+    fn register(&self, account_id: &str) {
+        lock::lock(&self.0)
+            .entry(account_id.to_owned())
+            .or_default();
+    }
+
+    fn forget(&self, account_id: &str) {
+        lock::lock(&self.0).remove(account_id);
+    }
+
+    fn factory<T: ?Sized + Send + Sync + 'static>(
+        &self,
+        accounts: &Arc<accounts::AccountService>,
+        slot: fn(&mut GoogleClients) -> &mut Option<Arc<T>>,
+        create: impl Fn(Arc<dyn gmail::TokenProvider>) -> Arc<T> + Send + Sync + 'static,
+    ) -> impl Fn(&str) -> Arc<T> + 'static {
+        let cache = self.clone();
+        let accounts = accounts.clone();
+        move |account_id| {
+            let create = || {
+                let tokens = Arc::new(accounts::AccountTokens::new(accounts.clone(), account_id));
+                create(tokens)
+            };
+            if let Some(clients) = lock::lock(&cache.0).get_mut(account_id) {
+                return slot(clients).get_or_insert_with(create).clone();
+            }
+            // An in-flight poll can still ask after removal. Only registered accounts are cached.
+            create()
+        }
+    }
 }
 
 /// Build application state: open the database in `data_dir` (attachment bytes are cached
@@ -117,24 +162,28 @@ pub async fn build_state(
         ) as Arc<dyn sync::MailApi>
     });
     let sync = SyncManager::new(db.clone(), api_for, events.clone());
-    let tokens = accounts.clone();
-    let people_for: contacts::PeopleFactory = Arc::new(move |account_id: &str| {
-        let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
-        Arc::new(gmail::GmailClient::people(provider)) as Arc<dyn contacts::PeopleApi>
-    });
+    let google_clients = GoogleClientCaches::default();
+    for account in accounts.list_accounts().await? {
+        google_clients.register(&account.id);
+    }
+    let people_for = Arc::new(google_clients.factory(
+        &accounts,
+        |clients| &mut clients.people,
+        |tokens| Arc::new(gmail::GmailClient::people(tokens)),
+    ));
     let contacts = contacts::ContactService::new(db.clone(), people_for);
-    let tokens = accounts.clone();
-    let calendar_for: calendar::CalendarFactory = Arc::new(move |account_id: &str| {
-        let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
-        Arc::new(gmail::GmailClient::calendar(provider)) as Arc<dyn calendar::CalendarApi>
-    });
+    let calendar_for = Arc::new(google_clients.factory(
+        &accounts,
+        |clients| &mut clients.calendar,
+        |tokens| Arc::new(gmail::GmailClient::calendar(tokens)),
+    ));
     let calendar =
         calendar::service::CalendarService::new(db.clone(), calendar_for, events.clone());
-    let tokens = accounts.clone();
-    let tasks_for: tasks::TasksFactory = Arc::new(move |account_id: &str| {
-        let provider = Arc::new(accounts::AccountTokens::new(tokens.clone(), account_id));
-        Arc::new(gmail::GmailClient::tasks(provider)) as Arc<dyn tasks::TasksApi>
-    });
+    let tasks_for = Arc::new(google_clients.factory(
+        &accounts,
+        |clients| &mut clients.tasks,
+        |tokens| Arc::new(gmail::GmailClient::tasks(tokens)),
+    ));
     let tasks = tasks::service::TasksService::new(db.clone(), tasks_for, events);
     let mail = mail::MailService::new(
         db.clone(),
@@ -183,6 +232,7 @@ pub async fn build_state(
         gmail_quota,
         gmail_usage,
         log_dir: None,
+        google_clients,
         storage_guard: None,
         cache_dir: cache_dir.to_path_buf(),
     })
@@ -738,6 +788,32 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn google_api_factory_reuses_each_accounts_client_until_forgotten() {
+        let db = db::test_support::TestDb::new().await;
+        let accounts = Arc::new(accounts::AccountService::new(
+            db.pool.clone(),
+            Arc::new(secrets::MemoryStore::new()),
+        ));
+        let caches = GoogleClientCaches::default();
+        caches.register("a1");
+        caches.register("a2");
+        let calendar_for = caches.factory(
+            &accounts,
+            |clients| &mut clients.calendar,
+            |tokens| Arc::new(gmail::GmailClient::calendar(tokens)),
+        );
+        let first = calendar_for("a1");
+        let other = calendar_for("a2");
+        assert!(Arc::ptr_eq(&first, &calendar_for("a1")));
+        assert!(!Arc::ptr_eq(&first, &other));
+        caches.forget("a1");
+        let uncached = calendar_for("a1");
+        assert!(!Arc::ptr_eq(&first, &uncached));
+        assert!(!Arc::ptr_eq(&uncached, &calendar_for("a1")));
+        assert!(Arc::ptr_eq(&other, &calendar_for("a2")));
+    }
 
     #[test]
     fn attachment_response_never_panics_on_a_bad_content_type() {

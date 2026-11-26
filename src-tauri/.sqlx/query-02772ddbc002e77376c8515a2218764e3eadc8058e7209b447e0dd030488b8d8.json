@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT e.account_id, e.calendar_id, e.id, e.ical_uid, e.recurring_event_id,\n                  e.original_start_ms, e.original_start_date, e.status, e.start_ms, e.end_ms,\n                  e.start_date, e.end_date, e.time_zone, e.recurrence, e.recur_until_ms,\n                  e.summary, e.location, e.description, e.organizer_email, e.self_response,\n                  e.attendees, e.conference, e.color_id, e.transparency, e.visibility,\n                  e.reminders, e.html_link, e.etag, e.updated_ms, e.raw\n           FROM events e\n           JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar_id\n           WHERE c.hidden = 0 AND e.recurrence IS NOT NULL AND e.status != 'cancelled'\n             AND e.start_ms < ?2 + CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END\n             AND (e.recur_until_ms IS NULL\n                  OR e.recur_until_ms > ?1 - CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END)",
+  "query": "SELECT e.account_id, e.calendar_id, e.id, e.ical_uid, e.recurring_event_id,\n                      e.original_start_ms, e.original_start_date, e.status, e.start_ms, e.end_ms,\n                      e.start_date, e.end_date, e.time_zone, e.recurrence, e.recur_until_ms,\n                      e.summary, e.location, e.description, e.organizer_email, e.self_response,\n                      e.attendees, e.conference, e.color_id, e.transparency, e.visibility,\n                      e.reminders, e.html_link, e.etag, e.updated_ms, e.raw\n               FROM events e\n           JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar_id\n           WHERE c.hidden = 0 AND e.recurrence IS NOT NULL AND e.status != 'cancelled'\n             AND (?4 IS NULL OR e.account_id = ?4)\n             AND e.start_ms < ?2 + CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END\n             AND (e.recur_until_ms IS NULL\n                  OR e.recur_until_ms > ?1 - CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END)",
   "describe": {
     "columns": [
       {
@@ -335,7 +335,7 @@
       }
     ],
     "parameters": {
-      "Right": 3
+      "Right": 4
     },
     "nullable": [
       false,
@@ -370,5 +370,5 @@
       false
     ]
   },
-  "hash": "3f285a5547c641b6aae35cc7220b45d6ebe43f7ad0a72a44cd4467f0fca3617b"
+  "hash": "02772ddbc002e77376c8515a2218764e3eadc8058e7209b447e0dd030488b8d8"
 }

@@ -91,8 +91,6 @@ impl Default for QuotaSetting {
     }
 }
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-
 /// Uploads carry whole messages (attachments up to Gmail's 25 MB), so they get longer.
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
@@ -383,13 +381,8 @@ pub struct GmailClient {
 
 impl GmailClient {
     pub fn new(tokens: Arc<dyn TokenProvider>) -> Self {
-        let http = crate::http::client_builder()
-            .timeout(REQUEST_TIMEOUT)
-            .user_agent(concat!("pheeme/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .expect("reqwest client with static configuration builds");
         Self {
-            http,
+            http: crate::http::google_api_client(),
             tokens,
             base_url: DEFAULT_BASE_URL.to_owned(),
             retry: RetryPolicy::default(),

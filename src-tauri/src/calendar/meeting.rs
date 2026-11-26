@@ -207,20 +207,23 @@ pub fn for_event(
 }
 
 /// A cached event's call (see [`for_event`]).
-pub fn of_event(e: &DbEvent) -> Option<MeetingLink> {
+pub fn of_event(e: &DbEvent, raw: Option<&Value>) -> Option<MeetingLink> {
     let conference: Option<Value> = e
         .conference
         .as_deref()
         .and_then(|c| serde_json::from_str(c).ok());
     // Google mirrors Meet's `hangoutLink` in the conference data; read the full event only
     // when it has one without the other.
-    let hangout: Option<String> = (conference.is_none() && e.raw.contains("\"hangoutLink\""))
+    let parsed = (raw.is_none() && conference.is_none() && e.raw.contains("\"hangoutLink\""))
         .then(|| serde_json::from_str::<Value>(&e.raw).ok())
-        .flatten()
-        .and_then(|raw| raw.get("hangoutLink")?.as_str().map(str::to_owned));
+        .flatten();
+    let hangout = raw
+        .or(parsed.as_ref())
+        .filter(|_| conference.is_none())
+        .and_then(|raw| raw.get("hangoutLink")?.as_str());
     for_event(
         conference.as_ref(),
-        hangout.as_deref(),
+        hangout,
         e.location.as_deref(),
         e.description.as_deref(),
     )

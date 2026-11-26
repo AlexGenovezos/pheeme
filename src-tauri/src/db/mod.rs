@@ -24,7 +24,8 @@ pub(crate) mod test_support;
 use crate::storage::StorageKey;
 use anyhow::{ensure, Context, Result};
 use sqlx::{
-    sqlite::SqliteConnectOptions, ConnectOptions, Connection, SqliteConnection, SqlitePool,
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    ConnectOptions, Connection, SqliteConnection, SqlitePool,
 };
 use std::path::Path;
 use tracing::info;
@@ -91,7 +92,12 @@ pub async fn init_db(data_dir: &Path, key: &StorageKey) -> Result<SqlitePool> {
     #[cfg(test)]
     let options = options.synchronous(sqlx::sqlite::SqliteSynchronous::Off);
 
-    let pool = SqlitePool::connect_with(options).await?;
+    // Each connection can cache 16 MiB of decrypted pages. Four leave room for readers
+    // during a WAL write while keeping the aggregate page cache budget at 64 MiB.
+    let pool = SqlitePoolOptions::new()
+        .max_connections(4)
+        .connect_with(options)
+        .await?;
 
     // Unknown pragmas are silently ignored by ordinary SQLite. Refuse to run if a build
     // accidentally loses SQLCipher, rather than accepting `key` and storing plaintext.

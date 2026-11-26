@@ -468,71 +468,81 @@ pub async fn events_overlapping(
     from_ms: i64,
     to_ms: i64,
 ) -> Result<Vec<DbEvent>> {
-    let mut conn = pool.acquire().await?;
-    let mut rows = sqlx::query_as!(
-        DbEvent,
-        r#"SELECT e.account_id, e.calendar_id, e.id, e.ical_uid, e.recurring_event_id,
-                  e.original_start_ms, e.original_start_date, e.status, e.start_ms, e.end_ms,
-                  e.start_date, e.end_date, e.time_zone, e.recurrence, e.recur_until_ms,
-                  e.summary, e.location, e.description, e.organizer_email, e.self_response,
-                  e.attendees, e.conference, e.color_id, e.transparency, e.visibility,
-                  e.reminders, e.html_link, e.etag, e.updated_ms, e.raw
-           FROM events e
+    events_overlapping_for(pool, from_ms, to_ms, None).await
+}
+
+macro_rules! range_events {
+    ($filter:literal, $($arg:expr),+ $(,)?) => {
+        sqlx::query_as!(
+            DbEvent,
+            r#"SELECT e.account_id, e.calendar_id, e.id, e.ical_uid, e.recurring_event_id,
+                      e.original_start_ms, e.original_start_date, e.status, e.start_ms, e.end_ms,
+                      e.start_date, e.end_date, e.time_zone, e.recurrence, e.recur_until_ms,
+                      e.summary, e.location, e.description, e.organizer_email, e.self_response,
+                      e.attendees, e.conference, e.color_id, e.transparency, e.visibility,
+                      e.reminders, e.html_link, e.etag, e.updated_ms, e.raw
+               FROM events e"# + $filter,
+            $($arg),+
+        )
+    };
+}
+
+pub(crate) async fn events_overlapping_for(
+    pool: &SqlitePool,
+    from_ms: i64,
+    to_ms: i64,
+    account_id: Option<&str>,
+) -> Result<Vec<DbEvent>> {
+    let mut tx = pool.begin().await?;
+    let mut rows = range_events!(
+        r#"
            JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar_id
            WHERE c.hidden = 0 AND e.recurrence IS NOT NULL AND e.status != 'cancelled'
+             AND (?4 IS NULL OR e.account_id = ?4)
              AND e.start_ms < ?2 + CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END
              AND (e.recur_until_ms IS NULL
                   OR e.recur_until_ms > ?1 - CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END)"#,
         from_ms,
         to_ms,
-        DAY_MS
+        DAY_MS,
+        account_id
     )
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *tx)
     .await?;
-    let series: HashSet<(String, String, String)> = rows
+    let series: Vec<_> = rows
         .iter()
-        .map(|e| (e.account_id.clone(), e.calendar_id.clone(), e.id.clone()))
+        .map(|e| (&e.account_id, &e.calendar_id, &e.id))
         .collect();
-    let others = sqlx::query_as!(
-        DbEvent,
-        r#"SELECT e.account_id, e.calendar_id, e.id, e.ical_uid, e.recurring_event_id,
-                  e.original_start_ms, e.original_start_date, e.status, e.start_ms, e.end_ms,
-                  e.start_date, e.end_date, e.time_zone, e.recurrence, e.recur_until_ms,
-                  e.summary, e.location, e.description, e.organizer_email, e.self_response,
-                  e.attendees, e.conference, e.color_id, e.transparency, e.visibility,
-                  e.reminders, e.html_link, e.etag, e.updated_ms, e.raw
-           FROM events e
-           JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar_id
-           WHERE c.hidden = 0 AND e.recurrence IS NULL AND (
-               (e.status != 'cancelled'
-                AND e.start_ms < ?2 + CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END
-                AND e.end_ms > ?1 - CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END)
-               OR (e.recurring_event_id IS NOT NULL
-                   AND coalesce(e.original_start_ms, e.start_ms) < ?2 + ?3))"#,
+    let series = serde_json::to_string(&series)?;
+    // Take the union by rowid so a moved occurrence found by both paths is read only once.
+    // The series index lets SQLite look up overrides for just the selected masters.
+    let others = range_events!(
+        r#"
+           WHERE e.rowid IN (
+               SELECT s.rowid FROM events s
+               JOIN calendars c ON c.account_id = s.account_id AND c.id = s.calendar_id
+               WHERE c.hidden = 0 AND s.recurrence IS NULL AND s.status != 'cancelled'
+                 AND (?4 IS NULL OR s.account_id = ?4)
+                 AND s.start_ms < ?2 + CASE WHEN s.start_date IS NULL THEN 0 ELSE ?3 END
+                 AND s.end_ms > ?1 - CASE WHEN s.start_date IS NULL THEN 0 ELSE ?3 END
+               UNION
+               SELECT o.rowid FROM json_each(?5) AS series
+               JOIN events o ON o.account_id = series.value ->> 0
+                            AND o.calendar_id = series.value ->> 1
+                            AND o.recurring_event_id = series.value ->> 2
+               WHERE o.recurrence IS NULL AND coalesce(o.original_start_ms, o.start_ms) < ?2 + ?3
+           )"#,
         from_ms,
         to_ms,
-        DAY_MS
+        DAY_MS,
+        account_id,
+        series
     )
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *tx)
     .await?;
-    rows.extend(others.into_iter().filter(|e| {
-        let overlaps = e.status != "cancelled"
-            && e.start_ms.is_some_and(|s| s < to_ms + pad(e))
-            && e.end_ms.is_some_and(|end| end > from_ms - pad(e));
-        overlaps
-            || e.recurring_event_id.as_ref().is_some_and(|master| {
-                series.contains(&(e.account_id.clone(), e.calendar_id.clone(), master.clone()))
-            })
-    }));
+    tx.commit().await?;
+    rows.extend(others);
     Ok(rows)
-}
-
-fn pad(e: &DbEvent) -> i64 {
-    if e.is_all_day() {
-        DAY_MS
-    } else {
-        0
-    }
 }
 
 /// The account's calendar access and settings, if it was ever asked for.
@@ -732,11 +742,18 @@ mod tests {
         cancelled.original_start_ms = Some(24 * H);
         cancelled.start_ms = None;
         cancelled.end_ms = None;
+        let mut unrelated = cancelled.clone();
+        unrelated.id = "ended_x".into();
+        unrelated.recurring_event_id = Some("ended".into());
+        unrelated.original_start_ms = Some(H);
+        let mut moved_in = event("C", "ended_y", 10 * H, 11 * H);
+        moved_in.recurring_event_id = Some("ended".into());
+        moved_in.original_start_ms = Some(H);
         apply_event_changes(
             pool,
             "a",
             "C",
-            &[single, open_series, ended, cancelled],
+            &[single, open_series, ended, cancelled, unrelated, moved_in],
             &[],
             None,
         )
@@ -756,7 +773,7 @@ mod tests {
         let got = events_overlapping(pool, 10 * H + H / 2, 12 * H)
             .await
             .unwrap();
-        assert_eq!(ids(&got), vec!["open", "open_x", "single"]);
+        assert_eq!(ids(&got), vec!["ended_y", "open", "open_x", "single"]);
         let got = events_overlapping(pool, 11 * H, 12 * H).await.unwrap();
         assert_eq!(ids(&got), vec!["open", "open_x"]);
     }

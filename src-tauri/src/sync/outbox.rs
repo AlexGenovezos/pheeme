@@ -24,10 +24,12 @@ use crate::gmail::mime::{
     EmailAddress,
 };
 use crate::gmail::{GmailError, MessageFormat};
+use futures::stream::{self, StreamExt};
 use mailparse::MailHeaderMap;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 use std::collections::{BTreeSet, HashMap};
+use std::future::Future;
 
 /// What a queued op does, stored in `outbox.kind` as [`OpKind::as_str`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -952,8 +954,8 @@ async fn apply_op(engine: &SyncEngine, queued: &DbOp, now: i64) -> Result<Step, 
     }
 }
 
-/// Send the op's next batch of conversations to Gmail. `None` when Gmail took it and more
-/// are left.
+/// Send the op's next batch of conversations to Gmail. `None` when there is more to send,
+/// or when a label deletion changed the pending operation and it needs to be read again.
 async fn apply_batch(
     engine: &SyncEngine,
     queued: &DbOp,
@@ -985,23 +987,20 @@ async fn apply_batch(
         // The thread as Gmail has it now: older messages we never cached are included,
         // mail that arrived after the user acted is not.
         let mut ids = Vec::new();
-        for thread_id in batch {
-            match engine
-                .api()
-                .get_thread(thread_id, MessageFormat::Minimal)
-                .await
-            {
-                Ok(thread) => ids.extend(
+        request_batch(
+            batch,
+            |id| engine.api().get_thread(id, MessageFormat::Minimal),
+            |thread| {
+                ids.extend(
                     thread
                         .messages
-                        .iter()
+                        .into_iter()
                         .filter(|m| covers(op, recorded.contains(&m.id), m.internal_date_ms()))
-                        .map(|m| m.id.clone()),
-                ),
-                Err(e) if e.is_not_found() => {}
-                Err(e) => return Err(e),
-            }
-        }
+                        .map(|m| m.id),
+                );
+            },
+        )
+        .await?;
         Ok(ids)
     }
     .await;
@@ -1058,7 +1057,7 @@ async fn apply_batch(
                     .is_none_or(|now| now.payload != sent);
                 drop(held);
                 if scrubbed {
-                    return Box::pin(apply_batch(engine, queued, now)).await;
+                    return Ok(None);
                 }
             }
             rollback(engine, op, &e).await?;
@@ -1142,11 +1141,48 @@ async fn swept_ids(
 }
 
 async fn trash_all(engine: &SyncEngine, ids: &[String]) -> Result<(), GmailError> {
+    // A rejection must stop writes for the remaining messages. Gmail applies each trash
+    // request independently, and rollback can only restore the cache to Gmail's state.
     for id in ids {
         match engine.api().trash_message(id).await {
             Ok(()) => {}
             Err(e) if e.is_not_found() => {}
             Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+async fn request_batch<'a, T, F>(
+    ids: &'a [String],
+    request: impl Fn(&'a str) -> F + Send,
+    mut receive: impl FnMut(T) + Send,
+) -> Result<(), GmailError>
+where
+    T: Send,
+    F: Future<Output = Result<T, GmailError>> + Send,
+{
+    use crate::gmail::client::MAX_CONCURRENT_REQUESTS;
+
+    for chunk in ids.chunks(MAX_CONCURRENT_REQUESTS) {
+        // Let every read we started settle before deciding to retry or roll back.
+        // Inspect responses in input order so the same first error decides the outcome.
+        let mut requests = Vec::with_capacity(chunk.len());
+        for (index, id) in chunk.iter().enumerate() {
+            let response = request(id);
+            requests.push(async move { (index, response.await) });
+        }
+        let mut responses: Vec<_> = stream::iter(requests)
+            .buffer_unordered(MAX_CONCURRENT_REQUESTS)
+            .collect()
+            .await;
+        responses.sort_unstable_by_key(|(index, _)| *index);
+        for (_, response) in responses {
+            match response {
+                Ok(value) => receive(value),
+                Err(e) if e.is_not_found() => {}
+                Err(e) => return Err(e),
+            }
         }
     }
     Ok(())
@@ -1400,6 +1436,62 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn batch_waits_for_in_flight_requests_and_reports_the_first_error_in_input_order() {
+        use crate::gmail::client::MAX_CONCURRENT_REQUESTS;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::time::Duration;
+        use tokio::{sync::Notify, time};
+
+        let ids: Vec<_> = (0..=MAX_CONCURRENT_REQUESTS)
+            .map(|i| i.to_string())
+            .collect();
+        let next_chunk = ids.last().unwrap().as_str();
+        let later_error = &Notify::new();
+        let settled = &AtomicBool::new(false);
+        let result = time::timeout(
+            Duration::from_secs(1),
+            request_batch(
+                &ids,
+                |id| async move {
+                    match id {
+                        "0" => Err(GmailError::Api {
+                            status: 404,
+                            reason: None,
+                            message: "gone".into(),
+                        }),
+                        "1" => {
+                            later_error.notified().await;
+                            Err(GmailError::Offline("offline".into()))
+                        }
+                        "2" => {
+                            later_error.notify_one();
+                            Err(GmailError::Api {
+                                status: 403,
+                                reason: None,
+                                message: "denied".into(),
+                            })
+                        }
+                        "3" => {
+                            time::sleep(Duration::from_millis(10)).await;
+                            settled.store(true, Ordering::Relaxed);
+                            Ok(())
+                        }
+                        _ if id == next_chunk => {
+                            panic!("started another group after a failure")
+                        }
+                        _ => Ok(()),
+                    }
+                },
+                |()| {},
+            ),
+        )
+        .await
+        .expect("requests overlap");
+        assert!(matches!(result, Err(GmailError::Offline(_))));
+        assert!(settled.load(Ordering::Relaxed));
+    }
 
     fn op(kind: OpKind, payload: &str) -> DbOp {
         DbOp {

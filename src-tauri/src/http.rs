@@ -3,7 +3,8 @@
 //! which installs ring, the provider the updater plugin also picks. Clippy rejects
 //! `reqwest::Client::new`, `reqwest::Client::builder` and `reqwest::get` (see `clippy.toml`).
 
-use std::sync::Once;
+use std::sync::{Once, OnceLock};
+use std::time::Duration;
 
 /// A `reqwest::ClientBuilder`, with the TLS provider installed.
 #[allow(clippy::disallowed_methods)]
@@ -21,6 +22,20 @@ pub fn client() -> reqwest::Client {
     client_builder()
         .build()
         .expect("reqwest client builds with default config")
+}
+
+/// One connection pool for Gmail, Calendar, Tasks and People API requests.
+pub(crate) fn google_api_client() -> reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            client_builder()
+                .timeout(Duration::from_secs(30))
+                .user_agent(concat!("pheeme/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .expect("reqwest client with static configuration builds")
+        })
+        .clone()
 }
 
 #[cfg(test)]

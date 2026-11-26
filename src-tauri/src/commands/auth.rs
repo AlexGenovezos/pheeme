@@ -20,6 +20,7 @@ pub async fn complete_oauth(
     flow_id: String,
 ) -> Result<AccountInfo, CommandError> {
     let account = state.accounts.complete_sign_in(&flow_id).await?;
+    state.google_clients.register(&account.id);
     state.sync.trigger(Some(account.id.clone()));
     // Allowing calendar access is a sign-in too: find out at once whether it now has it.
     state.calendar.trigger(Some(account.id.clone()));

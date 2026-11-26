@@ -61,11 +61,11 @@ pub fn parse_labels(json: Option<&str>) -> Vec<String> {
     parse_json(json)
 }
 
-/// Insert or update a message. A metadata-only copy (`fully_fetched = 0`) never erases a
-/// body that was already cached.
-pub async fn upsert_message_tx(conn: &mut SqliteConnection, msg: &DbMessage) -> Result<()> {
-    sqlx::query!(
-        r#"
+// Both writes must insert the same columns, including the body-retention timestamp.
+macro_rules! insert_message {
+    ($msg:ident, $conflict:literal) => {
+        sqlx::query!(
+            r#"
         INSERT INTO messages (
             id, account_id, thread_id, label_ids,
             from_address, from_name, to_addresses, cc_addresses,
@@ -74,7 +74,39 @@ pub async fn upsert_message_tx(conn: &mut SqliteConnection, msg: &DbMessage) -> 
             raw_headers, fully_fetched, rfc822_message_id, body_fetched_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                   CASE WHEN ? = 1 THEN unixepoch() * 1000 END)
-        ON CONFLICT(id, account_id) DO UPDATE SET
+        ON CONFLICT(id, account_id) "#
+                + $conflict,
+            $msg.id,
+            $msg.account_id,
+            $msg.thread_id,
+            $msg.label_ids,
+            $msg.from_address,
+            $msg.from_name,
+            $msg.to_addresses,
+            $msg.cc_addresses,
+            $msg.subject,
+            $msg.snippet,
+            $msg.body_html,
+            $msg.body_text,
+            $msg.date,
+            $msg.size_estimate,
+            $msg.has_attachment,
+            $msg.is_read,
+            $msg.is_starred,
+            $msg.raw_headers,
+            $msg.fully_fetched,
+            $msg.rfc822_message_id,
+            $msg.fully_fetched,
+        )
+    };
+}
+
+/// Insert or update a message. A metadata-only copy (`fully_fetched = 0`) never erases a
+/// body that was already cached.
+pub async fn upsert_message_tx(conn: &mut SqliteConnection, msg: &DbMessage) -> Result<()> {
+    insert_message!(
+        msg,
+        r#"DO UPDATE SET
             thread_id = excluded.thread_id,
             label_ids = excluded.label_ids,
             from_address = excluded.from_address,
@@ -94,28 +126,7 @@ pub async fn upsert_message_tx(conn: &mut SqliteConnection, msg: &DbMessage) -> 
             body_fetched_at = CASE WHEN excluded.fully_fetched = 1 THEN excluded.body_fetched_at ELSE messages.body_fetched_at END,
             fully_fetched = MAX(excluded.fully_fetched, messages.fully_fetched),
             rfc822_message_id = COALESCE(excluded.rfc822_message_id, messages.rfc822_message_id)
-        "#,
-        msg.id,
-        msg.account_id,
-        msg.thread_id,
-        msg.label_ids,
-        msg.from_address,
-        msg.from_name,
-        msg.to_addresses,
-        msg.cc_addresses,
-        msg.subject,
-        msg.snippet,
-        msg.body_html,
-        msg.body_text,
-        msg.date,
-        msg.size_estimate,
-        msg.has_attachment,
-        msg.is_read,
-        msg.is_starred,
-        msg.raw_headers,
-        msg.fully_fetched,
-        msg.rfc822_message_id,
-        msg.fully_fetched,
+        "#
     )
     .execute(&mut *conn)
     .await?;
@@ -133,19 +144,10 @@ pub async fn insert_message_if_absent(
     conn: &mut SqliteConnection,
     msg: &DbMessage,
 ) -> Result<bool> {
-    let exists = sqlx::query_scalar!(
-        r#"SELECT 1 AS "one!: i64" FROM messages WHERE account_id = ? AND id = ?"#,
-        msg.account_id,
-        msg.id
-    )
-    .fetch_optional(&mut *conn)
-    .await?
-    .is_some();
-    if exists {
-        return Ok(false);
-    }
-    upsert_message_tx(conn, msg).await?;
-    Ok(true)
+    let result = insert_message!(msg, "DO NOTHING")
+        .execute(&mut *conn)
+        .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 /// Replace a cached message's label set, keeping `is_read`/`is_starred` in step.
@@ -201,10 +203,16 @@ pub async fn existing_ids(
     account_id: &str,
     ids: &[String],
 ) -> Result<HashSet<String>> {
-    Ok(label_map(conn, account_id, ids)
-        .await?
-        .into_keys()
-        .collect())
+    let ids_json = serde_json::to_string(ids)?;
+    let rows = sqlx::query_scalar!(
+        r#"SELECT id AS "id!" FROM messages
+           WHERE account_id = ? AND id IN (SELECT value FROM json_each(?))"#,
+        account_id,
+        ids_json
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+    Ok(rows.into_iter().collect())
 }
 
 /// Up to `limit` cached message ids that sort below `below` (every id when `None`), highest
