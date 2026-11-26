@@ -213,11 +213,11 @@ test("an edit put back by hand leaves no draft behind", async () => {
   expect(subject).toBeDisabled();
 });
 
-test("a form reopened while its save is on the way waits for it", async () => {
-  backend(null);
+test("a form reopened while its save is on the way waits for it, and so does End now", async () => {
+  backend("on");
   render(<VacationSettings />);
   await flush();
-  const handlers = createVacationHandlers(accounts, null) as Record<
+  const handlers = createVacationHandlers(accounts, "on") as Record<
     string,
     (a: unknown) => unknown
   >;
@@ -231,14 +231,22 @@ test("a form reopened while its save is on the way waits for it", async () => {
     within(section("me@gmail.com")).getByRole("switch", {
       name: "Vacation responder for me@gmail.com",
     });
+  // Turning it off is on its way to Gmail; meanwhile Settings is closed and opened again.
   fireEvent.click(toggle());
   fireEvent.click(within(section("me@gmail.com")).getByRole("button", { name: "Save" }));
   cleanup();
-  render(<VacationSettings />);
+  render(
+    <>
+      <VacationSettings />
+      <VacationNotices />
+    </>,
+  );
   await flush();
   expect(toggle()).toBeDisabled();
+  expect(screen.getByRole("button", { name: "End now" })).toBeDisabled();
   await act(async () => land());
   await flush();
   expect(toggle()).toBeEnabled();
-  expect(toggle()).toBeChecked();
+  expect(toggle()).not.toBeChecked();
+  expect(screen.queryByRole("button", { name: "End now" })).toBeNull();
 });

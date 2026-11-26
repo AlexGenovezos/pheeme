@@ -22,12 +22,11 @@ export function VacationNotices() {
     useShallow((s) => Object.fromEntries(accounts.map((a) => [a.id, s.accounts[a.id]?.value]))),
   );
   const [dismissed, setDismissed] = useState<string[]>([]);
-  const [ending, setEnding] = useState<string | null>(null);
+  // Waits for any save or End now still on its way, so two writes never race in Gmail.
+  const writing = useVacation((s) => s.writing);
 
   const endNow = async (accountId: string) => {
-    setEnding(accountId);
     const error = await useVacation.getState().end(accountId);
-    setEnding(null);
     if (error) toastError(error);
   };
 
@@ -59,7 +58,7 @@ export function VacationNotices() {
               <Button
                 className="ui-toast__button"
                 size="sm"
-                disabled={ending === account.id}
+                disabled={writing[account.id] ?? false}
                 onClick={() => void endNow(account.id)}
               >
                 End now
