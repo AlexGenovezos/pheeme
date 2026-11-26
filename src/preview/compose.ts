@@ -100,6 +100,7 @@ export function createComposeHandlers(
       hasRemoteContent: false,
       declaresDarkMode: false,
       attachments: [],
+      unsubscribe: "none" as const,
     };
     const thread = d.threadId
       ? threads.find((t) => t.accountId === accountId && t.id === d.threadId)

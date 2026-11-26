@@ -139,6 +139,7 @@ const msg = (id: string, over: Partial<MessageDetail> = {}): MessageDetail => ({
   labelIds: ["INBOX"],
   hasAttachment: false,
   attachments: [],
+  unsubscribe: "none",
   ...over,
 });
 

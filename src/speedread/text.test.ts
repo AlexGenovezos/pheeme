@@ -26,6 +26,7 @@ function msg(body: { html?: string; text?: string }): MessageDetail {
     labelIds: [],
     hasAttachment: false,
     attachments: [],
+    unsubscribe: "none",
   };
 }
 

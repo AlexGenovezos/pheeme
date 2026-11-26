@@ -1,0 +1,71 @@
+.unsubscribe-scrim {
+  padding: var(--space-4);
+}
+
+.unsubscribe-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: var(--confirm-dialog-width);
+  max-width: 100%;
+  padding: var(--space-4);
+}
+
+.unsubscribe-dialog:focus-visible {
+  outline: none;
+}
+
+.unsubscribe-dialog__title {
+  margin: var(--space-0);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.unsubscribe-dialog__message {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+
+.unsubscribe-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* Unsubscribe beside the sender in a message's header. Both words are laid in the same cell, the
+   longer one hidden, so swapping "Unsubscribe" for "Unsubscribed" never changes its width. */
+.message-card__unsubscribe {
+  display: inline-grid;
+  padding: var(--space-0);
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-foreground-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.message-card__unsubscribe:hover:not(:disabled) {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+.message-card__unsubscribe:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.message-card__unsubscribe:disabled {
+  cursor: default;
+}
+
+.message-card__unsubscribe > span {
+  grid-area: 1 / 1;
+}
+
+.message-card__unsubscribe > [data-hidden] {
+  visibility: hidden;
+}

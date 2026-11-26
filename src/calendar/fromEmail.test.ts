@@ -42,6 +42,7 @@ function message(over: Partial<MessageDetail> = {}): MessageDetail {
     labelIds: [],
     hasAttachment: false,
     attachments: [],
+    unsubscribe: "none",
     ...over,
   };
 }

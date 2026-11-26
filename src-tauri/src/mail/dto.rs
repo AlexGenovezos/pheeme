@@ -136,6 +136,9 @@ pub struct MessageDetailDto {
     pub label_ids: Vec<String>,
     pub has_attachment: bool,
     pub attachments: Vec<AttachmentDto>,
+    /// How the message offers to unsubscribe, from its `List-Unsubscribe` headers:
+    /// `one_click`, `link`, `email` or `none` (see [`crate::senders::UnsubscribeOptions`]).
+    pub unsubscribe: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -165,7 +168,9 @@ impl From<DbAttachment> for AttachmentDto {
 impl From<DbMessage> for MessageDetailDto {
     fn from(m: DbMessage) -> Self {
         let body_available = has_body(&m);
+        let unsubscribe = crate::senders::options(&m.headers()).kind();
         Self {
+            unsubscribe,
             body_available,
             to: m.to(),
             cc: m.cc(),
@@ -291,4 +296,50 @@ pub struct LabelCountDto {
 /// The message's body is cached: a full copy (possibly genuinely empty) or any body text.
 pub(super) fn has_body(m: &DbMessage) -> bool {
     m.fully_fetched != 0 || m.body_html.is_some() || m.body_text.is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message(headers: Option<&str>) -> DbMessage {
+        DbMessage {
+            id: "m1".into(),
+            account_id: "a1".into(),
+            thread_id: "t1".into(),
+            label_ids: Some(r#"["INBOX"]"#.into()),
+            from_address: Some("news@example.com".into()),
+            from_name: None,
+            to_addresses: None,
+            cc_addresses: None,
+            subject: None,
+            snippet: None,
+            body_html: None,
+            body_text: Some("hi".into()),
+            date: Some(1),
+            size_estimate: None,
+            has_attachment: 0,
+            is_read: 1,
+            is_starred: 0,
+            raw_headers: headers.map(str::to_owned),
+            fully_fetched: 1,
+            rfc822_message_id: None,
+        }
+    }
+
+    #[test]
+    fn a_message_says_how_it_offers_to_unsubscribe() {
+        let one_click = r#"[
+            {"name":"List-Unsubscribe","value":"<https://example.com/u?x=1>, <mailto:u@example.com>"},
+            {"name":"List-Unsubscribe-Post","value":"List-Unsubscribe=One-Click"}
+        ]"#;
+        let link = r#"[{"name":"List-Unsubscribe","value":"<https://example.com/u>"}]"#;
+        let email = r#"[{"name":"List-Unsubscribe","value":"<mailto:u@example.com>"}]"#;
+        let kind = |h| MessageDetailDto::from(message(h)).unsubscribe;
+        assert_eq!(kind(Some(one_click)), "one_click");
+        assert_eq!(kind(Some(link)), "link");
+        assert_eq!(kind(Some(email)), "email");
+        assert_eq!(kind(Some("[]")), "none");
+        assert_eq!(kind(None), "none");
+    }
 }

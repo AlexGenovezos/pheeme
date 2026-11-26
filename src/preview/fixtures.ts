@@ -41,6 +41,8 @@ export interface FixtureMessage {
   hasRemoteContent: boolean;
   declaresDarkMode: boolean;
   attachments: AttachmentInfo[];
+  /** What its `List-Unsubscribe` headers offer (a `List-Unsubscribe-Post` makes it one click); none when absent. */
+  unsubscribe: "one_click" | "link" | "email" | "none";
 }
 
 export interface FixtureThread {
@@ -213,6 +215,7 @@ interface MessageOptions {
   remote?: boolean;
   dark?: boolean;
   attachments?: AttachmentInfo[];
+  unsubscribe?: FixtureMessage["unsubscribe"];
 }
 
 const addr = ([name, address]: Person): EmailAddress => ({ name, address });
@@ -238,6 +241,7 @@ function message(
     hasRemoteContent: o.remote ?? false,
     declaresDarkMode: o.dark ?? false,
     attachments: o.attachments ?? [],
+    unsubscribe: o.unsubscribe ?? "none",
   };
 }
 
@@ -407,7 +411,7 @@ export function createFixtureThreads(): FixtureThread[] {
         hoursAgo(14),
         "Seven small interfaces worth stealing from this month. Read the issue: https://example.com/review/issue-31",
         me,
-        { unread: true, html: DARK_NEWSLETTER_HTML, dark: true },
+        { unread: true, html: DARK_NEWSLETTER_HTML, dark: true, unsubscribe: "one_click" },
       ),
     ]),
     thread("p-09", P, ["INBOX", "CATEGORY_PROMOTIONS"], "OAuth consent screen verification", [
@@ -621,6 +625,7 @@ export function createFixtureThreads(): FixtureThread[] {
         {
           unread: true,
           html: PROMO_HTML,
+          unsubscribe: "link",
         },
       ),
     ]),

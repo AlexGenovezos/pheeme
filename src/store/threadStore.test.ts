@@ -288,6 +288,7 @@ const withBody = (id: string, bodyAvailable: boolean): ThreadDetail => ({
       labelIds: [],
       hasAttachment: false,
       attachments: [],
+      unsubscribe: "none",
     },
   ],
 });

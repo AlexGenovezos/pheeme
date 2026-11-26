@@ -4,16 +4,9 @@ import { beforeEach, expect, test } from "vitest";
 import { useToastStore } from "../components/ui/Toast";
 import { useComposeStore } from "../compose/composeStore";
 import type { MailStats, SenderStats, Unsubscribed } from "../lib/tauri";
+import { __resetUnsubscribedForTests, parseMailto } from "../mail/unsubscribe";
 import { useAccountStore } from "../store/accountStore";
-import {
-  __resetUnsubscribedForTests,
-  buckets,
-  dayKey,
-  parseMailto,
-  percent,
-  rate,
-  windowStart,
-} from "./MailStats";
+import { buckets, dayKey, percent, rate, windowStart } from "./MailStats";
 import { Stats } from "./StatsDialog";
 import { useStatsStore } from "./statsStore";
 

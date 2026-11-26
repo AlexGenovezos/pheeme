@@ -16,6 +16,7 @@ import {
 import { openCreateLabel } from "../labels/create";
 import { COPY_CODE_COMMAND, COPY_CODE_SHORTCUT, copyOpenConversationCode } from "../mail/CodeCard";
 import { PRINT_COMMAND, printOpenConversation } from "../mail/print";
+import { UNSUBSCRIBE_COMMAND, unsubscribeOpenConversation } from "../mail/unsubscribe";
 import {
   CREATE_EVENT_COMMAND,
   CREATE_EVENT_SHORTCUT,
@@ -303,6 +304,13 @@ export function appCommands(): Command[] {
       shortcut: DEFAULT_KEYS[PRINT_COMMAND],
       keywords: ["paper", "pdf", "printer"],
       run: () => void printOpenConversation(),
+    },
+    {
+      id: UNSUBSCRIBE_COMMAND,
+      title: "Unsubscribe from sender…",
+      group: "Conversation",
+      keywords: ["mailing list", "newsletter", "stop emails", "opt out"],
+      run: () => void unsubscribeOpenConversation(),
     },
     {
       id: COPY_CODE_COMMAND,

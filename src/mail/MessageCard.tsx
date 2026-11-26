@@ -12,7 +12,14 @@ import { AttachmentList } from "./AttachmentList";
 import { EmailBody } from "./EmailBody";
 import { threadKey } from "./mailboxes";
 import { printMessage } from "./print";
+import {
+  confirmUnsubscribe,
+  senderKey,
+  UNSUBSCRIBE_COMMAND,
+  useUnsubscribeStore,
+} from "./unsubscribe";
 import "./mail.css";
+import "./unsubscribe.css";
 
 export interface MessageCardProps {
   message: MessageDetail;
@@ -27,6 +34,13 @@ export interface MessageCardProps {
    *  conversation of several needs these to reach an earlier one (the original of a bounce, say). */
   respondHere?: boolean;
 }
+
+const UNSUBSCRIBE_LABEL = {
+  idle: "Unsubscribe",
+  busy: "Unsubscribe",
+  done: "Unsubscribed",
+  opened: "Opened",
+};
 
 const senderName = (m: MessageDetail) => m.fromName || m.fromAddress || "Unknown sender";
 
@@ -46,6 +60,9 @@ export function MessageCard({
   const name = isDraft ? "Draft" : senderName(message);
   const when = message.date > 0 ? new Date(message.date) : null;
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
+  const unsubscribeState = useUnsubscribeStore((s) =>
+    message.fromAddress ? s.senders[senderKey(accountId, message.fromAddress)] : undefined,
+  );
 
   if (!expanded) {
     return (
@@ -121,6 +138,28 @@ export function MessageCard({
             {message.fromName && message.fromAddress && (
               <span className="message-card__address selectable">{message.fromAddress}</span>
             )}
+            {message.unsubscribe !== "none" &&
+              !isDraft &&
+              message.fromAddress?.toLowerCase() !== myAddress && (
+                <button
+                  type="button"
+                  className="message-card__unsubscribe"
+                  data-command={UNSUBSCRIBE_COMMAND}
+                  aria-label={
+                    unsubscribeState === "done"
+                      ? `Unsubscribed from ${name}`
+                      : `Unsubscribe from ${name}`
+                  }
+                  title={`Unsubscribe from ${name}`}
+                  disabled={unsubscribeState !== undefined}
+                  onClick={() => confirmUnsubscribe(accountId, message)}
+                >
+                  <span>{UNSUBSCRIBE_LABEL[unsubscribeState ?? "idle"]}</span>
+                  <span data-hidden="" aria-hidden="true">
+                    Unsubscribed
+                  </span>
+                </button>
+              )}
           </div>
           {recipientGroups.length > 0 && (
             <div className="message-card__to selectable">

@@ -38,7 +38,7 @@ import { createWeatherHandlers } from "./weather";
 import { createContactHandlers, type MeetingsWith } from "./contacts";
 import { createTransferHandlers } from "./transfer";
 import { previewQuotaUsage } from "./quota";
-import { previewMailStats, previewUnsubscribe } from "./stats";
+import { previewMailStats, previewUnsubscribe, previewUnsubscribeOutcome } from "./stats";
 import { createDriveHandlers } from "./drive";
 import { byName, type PreviewHandlers } from "./handlers";
 
@@ -103,6 +103,7 @@ function toDetail(t: FixtureThread, labels: PreviewLabel[]): ThreadDetail {
     labelIds: m.unread ? [...t.labelIds, "UNREAD"] : [...t.labelIds],
     hasAttachment: m.attachments.length > 0,
     attachments: m.attachments.map((a) => ({ ...a })),
+    unsubscribe: m.unsubscribe,
   }));
   return { thread: toSummary(t, labels), messages, bodyError: null };
 }
@@ -306,7 +307,13 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     gmail_quota: () => gmailQuota,
     gmail_quota_usage: (args) => previewQuotaUsage(args.accountId, gmailQuota),
     mail_stats: (args) => previewMailStats(args.accountId, args.sinceMs),
-    unsubscribe_sender: (args) => previewUnsubscribe(args.threadId),
+    unsubscribe_sender: (args) => {
+      // A message in the conversation, else a sender in the Stats window.
+      const m = threads.flatMap((t) => t.messages).find((x) => x.id === args.messageId);
+      return m
+        ? previewUnsubscribeOutcome(m.fromAddress, m.unsubscribe)
+        : previewUnsubscribe(args.threadId);
+    },
     set_gmail_quota: (args) => {
       gmailQuota = Math.min(1_200_000, Math.max(600, args.perMinute || 6000));
       return gmailQuota;
