@@ -23,6 +23,7 @@ pub mod threads;
 pub mod timing;
 pub mod transfer;
 pub mod updater;
+pub mod vacation;
 pub mod weather;
 
 use crate::accounts::AccountError;

@@ -1,0 +1,303 @@
+// Settings › Vacation responder: each account's Gmail vacation responder (out-of-office reply),
+// read from Gmail when the page opens and saved straight back with Save, as on Gmail's own
+// settings page. Every field is there from the first frame; while the responder is off (or
+// still loading) they stay in place, disabled, and Last day waits for its switch.
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { Button } from "../components/ui/Button";
+import { DateField } from "../components/ui/DateField";
+import { Skeleton } from "../components/ui/Skeleton";
+import { Switch } from "../components/ui/Switch";
+import { TextInput } from "../components/ui/TextInput";
+import { cx } from "../lib/utils";
+import type { CommandError } from "../lib/tauri";
+import { ReconnectButton } from "../onboarding/Reconnect";
+import { accountSectionTitle, SettingsRow, SettingsSection } from "../settings/rows";
+import { useAccountStore } from "../store/accountStore";
+import { formOf, formProblem, responderOf, sameForm, type VacationForm } from "./form";
+import { useVacation } from "./vacationStore";
+import "./Vacation.css";
+
+const VacationEditor = lazy(() => import("./VacationEditor"));
+
+/** The empty form shown, disabled, until Gmail answers. */
+const BLANK: VacationForm = formOf({
+  enabled: false,
+  subject: "",
+  html: "",
+  onlyContacts: false,
+  onlyDomain: false,
+  startMs: null,
+  endMs: null,
+  workspace: false,
+});
+
+function AccountVacation({
+  accountId,
+  email,
+  title,
+}: {
+  accountId: string;
+  email: string;
+  title: string;
+}) {
+  const state = useVacation((s) => s.accounts[accountId]);
+  const loaded = state?.value;
+  // Kept in the store, so an unsaved edit outlives closing Settings (signing in again closes it).
+  const draft = useVacation((s) => s.drafts[accountId] ?? null);
+  const setDraft = (form: VacationForm | null) => useVacation.getState().setDraft(accountId, form);
+  // In the store, so a form reopened while its save is on the way waits for it too.
+  const saving = useVacation((s) => s.writing[accountId] ?? false);
+  const [result, setResult] = useState<CommandError | "saved" | null>(null);
+  // The fields wait for a fresh read when the page opens, so an edit never starts from an
+  // answer another device has since changed. Only that read's failure stops them.
+  const [opened, setOpened] = useState(false);
+  const [readError, setReadError] = useState<CommandError | undefined>();
+  const read = useCallback(() => {
+    void useVacation
+      .getState()
+      .refresh(accountId)
+      .then(() => {
+        setReadError(useVacation.getState().accounts[accountId]?.error);
+        setOpened(true);
+      });
+  }, [accountId]);
+  useEffect(read, [read]);
+
+  const original = loaded ? formOf(loaded) : BLANK;
+  const form = draft ?? original;
+  const dirty = draft !== null && !sameForm(draft, original);
+  const ready = loaded !== undefined && opened && !readError && !saving;
+  const fieldsOn = ready && form.enabled;
+  const workspace = loaded?.workspace ?? false;
+  const domain = email.split("@")[1] ?? "";
+  const problem = formProblem(form);
+
+  const edit = (change: Partial<VacationForm>) => {
+    const next = { ...form, ...change };
+    // An edit undone by hand is no draft, so it can't hide what Gmail says next time.
+    setDraft(sameForm(next, original) ? null : next);
+    setResult(null);
+  };
+  const save = async () => {
+    if (!loaded || problem) return;
+    const sent = draft;
+    const error = await useVacation.getState().save(accountId, responderOf(form, workspace));
+    setResult(error ?? "saved");
+    // Only the draft it saved: Settings may have been reopened and edited again meanwhile.
+    if (!error && useVacation.getState().drafts[accountId] === sent) setDraft(null);
+  };
+  const discard = () => {
+    setDraft(null);
+    setResult(null);
+  };
+
+  // One status line under the fields, holding its place whatever it says.
+  const saveError = result !== null && result !== "saved" ? result : undefined;
+  const readScopeMissing = readError?.code === "missing_scope";
+  // Gmail lets older sign-ins (mail access only) read the responder but not change it.
+  const writeScopeMissing = saveError?.code === "missing_scope";
+  let status: React.ReactNode;
+  if (readScopeMissing)
+    status =
+      "Pheeme can't see this account's Gmail settings. Sign in again and allow Pheeme to manage your basic mail settings.";
+  else if (writeScopeMissing)
+    status =
+      "Pheeme isn't allowed to change this account's Gmail settings. Sign in again and allow Pheeme to manage your basic mail settings.";
+  else if (readError) status = `Couldn't read it from Gmail: ${readError.message}`;
+  else if (!loaded || !opened) status = <Skeleton width="40%" />;
+  else if (saving) status = "Saving to Gmail…";
+  else if (problem && dirty) status = problem;
+  else if (result === "saved") status = "Saved to Gmail.";
+  else if (saveError) status = `Couldn't save it: ${saveError.message}`;
+  else if (dirty) status = "Not saved yet.";
+  else status = loaded.enabled ? "On in Gmail." : "Off in Gmail.";
+  const failed = !!readError || !!saveError || (dirty && problem !== null);
+
+  let actions;
+  if (readScopeMissing) actions = <ReconnectButton accountId={accountId} />;
+  else if (readError)
+    actions = (
+      <Button
+        size="sm"
+        onClick={() => {
+          setOpened(false);
+          read();
+        }}
+      >
+        Try again
+      </Button>
+    );
+  else
+    actions = (
+      <>
+        <Button size="sm" disabled={!dirty || saving} onClick={discard}>
+          Discard
+        </Button>
+        {/* Save can't work until the account allows it; the draft waits in the store for after. */}
+        {writeScopeMissing ? (
+          <ReconnectButton accountId={accountId} />
+        ) : (
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!dirty || !ready || problem !== null}
+            onClick={() => void save()}
+          >
+            Save
+          </Button>
+        )}
+      </>
+    );
+
+  const off = (on: boolean) => cx(!on && "vacation-row--off");
+
+  return (
+    <SettingsSection title={title}>
+      <SettingsRow
+        title="Vacation responder"
+        description="Gmail replies to mail that arrives while you're away, once to each sender every 4 days. Turn it on to set the days and the message."
+        control={
+          <Switch
+            label={`Vacation responder for ${email}`}
+            checked={form.enabled}
+            disabled={!ready}
+            onChange={(enabled) => edit({ enabled })}
+          />
+        }
+      />
+      <SettingsRow
+        className={off(fieldsOn)}
+        title="First day"
+        control={
+          <DateField
+            inlinePopover
+            aria-label="First day"
+            value={form.firstDay}
+            disabled={!fieldsOn}
+            onChange={(firstDay) => edit({ firstDay })}
+          />
+        }
+      />
+      <SettingsRow
+        className={off(fieldsOn)}
+        title="Last day"
+        description="Optional. Turn on to stop replying after this day."
+        control={
+          <>
+            <Switch
+              label="Has a last day"
+              checked={form.ends}
+              disabled={!fieldsOn}
+              onChange={(ends) => edit({ ends })}
+            />
+            <DateField
+              inlinePopover
+              aria-label="Last day"
+              value={form.ends ? form.lastDay : ""}
+              placeholder="No last day"
+              min={form.firstDay}
+              disabled={!fieldsOn || !form.ends}
+              onChange={(lastDay) => edit({ lastDay })}
+            />
+          </>
+        }
+      />
+      <SettingsRow
+        className={off(fieldsOn)}
+        title="Subject"
+        control={
+          <TextInput
+            className="vacation-subject"
+            aria-label="Subject"
+            placeholder="Re: their subject"
+            value={form.subject}
+            disabled={!fieldsOn}
+            onChange={(e) => edit({ subject: e.target.value })}
+          />
+        }
+      />
+      <div className={cx("settings-row settings-row--stacked", off(fieldsOn))}>
+        <div className="settings-row__text">
+          <div className="settings-row__title">Message</div>
+          <div className="settings-row__description">
+            Gmail's format bar: fonts, sizes, colours, alignment, lists, quotes and links. Editing a
+            message set in Gmail can lose what the bar doesn't have, like pictures, tables or
+            headings.
+          </div>
+        </div>
+        <Suspense fallback={<div className="vacation-editor" aria-hidden="true" />}>
+          <VacationEditor
+            html={form.html}
+            original={original.html}
+            label={`Vacation message for ${email}`}
+            disabled={!fieldsOn}
+            onChange={(html) => {
+              // The editor reports its own text back when it loads; that's no edit.
+              if (html !== form.html) edit({ html });
+            }}
+          />
+        </Suspense>
+      </div>
+      <SettingsRow
+        className={off(fieldsOn)}
+        title="Only reply to people in my Contacts"
+        control={
+          <Switch
+            label="Only reply to people in my Contacts"
+            checked={form.onlyContacts}
+            disabled={!fieldsOn}
+            onChange={(onlyContacts) => edit({ onlyContacts })}
+          />
+        }
+      />
+      <SettingsRow
+        className={off(fieldsOn && workspace)}
+        title={`Only reply to people at ${domain}`}
+        description={
+          !loaded ? (
+            <Skeleton width="50%" />
+          ) : workspace ? (
+            "Mail from outside your organization gets no reply."
+          ) : (
+            "Only for Google Workspace accounts."
+          )
+        }
+        control={
+          <Switch
+            label={`Only reply to people at ${domain}`}
+            checked={workspace && form.onlyDomain}
+            disabled={!fieldsOn || !workspace}
+            onChange={(onlyDomain) => edit({ onlyDomain })}
+          />
+        }
+      />
+      <SettingsRow
+        className={cx("vacation-status", failed && "vacation-status--failed")}
+        title={<span role="status">{status}</span>}
+        control={actions}
+      />
+    </SettingsSection>
+  );
+}
+
+export function VacationSettings() {
+  const accounts = useAccountStore((s) => s.accounts);
+  if (accounts.length === 0)
+    return (
+      <SettingsSection title="Vacation responder">
+        <SettingsRow title="Connect an account to set its vacation responder" />
+      </SettingsSection>
+    );
+  return (
+    <>
+      {accounts.map((a) => (
+        <AccountVacation
+          key={a.id}
+          accountId={a.id}
+          email={a.email}
+          title={accountSectionTitle("Vacation responder", a.email, accounts.length)}
+        />
+      ))}
+    </>
+  );
+}

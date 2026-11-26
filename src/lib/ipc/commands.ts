@@ -70,6 +70,7 @@ import type {
   WindowProblem,
 } from "./support";
 import type { Task, TaskEdit, TaskListRef, TaskRef, TasksAccess, TasksAccount } from "./tasks";
+import type { VacationResponder } from "./vacation";
 import type { Forecast, LocationForecast, TemperatureUnit, WeatherPlace } from "./weather";
 
 /** One command: `args` is `void` when it takes none. */
@@ -171,6 +172,11 @@ export interface Commands {
   delete_filter: Command<Account & { filterId: string }, void>;
   filter_matches: Command<Account & { spec: FilterSpec }, number | null>;
   forwarding_addresses: Command<Account, string[]>;
+
+  // Vacation responder (Gmail settings)
+  get_vacation_responder: Command<Account, VacationResponder>;
+  set_vacation_responder: Command<Account & { responder: VacationResponder }, VacationResponder>;
+  end_vacation_responder: Command<Account, VacationResponder>;
 
   // Stats
   mail_stats: Command<{ accountId: string | null; sinceMs: number }, MailStats>;

@@ -1,4 +1,4 @@
-import { Contact, Filter, LayoutList, SquarePen, Users } from "lucide-react";
+import { Contact, Filter, LayoutList, Palmtree, SquarePen, Users } from "lucide-react";
 import {
   type DefaultReply,
   UNDO_SEND_CHOICES,
@@ -17,6 +17,7 @@ import type { SettingsPageDef } from "../schema";
 import { SenderRulesSettings } from "../SenderRulesSettings";
 import { SignatureSettings } from "../SignatureSettings";
 import { FiltersSettings } from "../../filters/FiltersSettings";
+import { VacationSettings } from "../../vacation/VacationSettings";
 
 function DefaultReplyControl() {
   const reply = useComposeSettings((s) => s.defaultReply);
@@ -187,6 +188,25 @@ export const COMPOSE_PAGE: SettingsPageDef = {
       matches: accountsMatch,
     },
   ],
+};
+
+// A page of its own, as on Gmail: a whole form per account, which would bury Compose's settings.
+export const VACATION_PAGE: SettingsPageDef = {
+  id: "vacation",
+  title: "Vacation responder",
+  icon: Palmtree,
+  group: "Mail",
+  keywords: [
+    "out of office",
+    "ooo",
+    "auto reply",
+    "automatic reply",
+    "away",
+    "holiday",
+    "leave",
+    "travel",
+  ],
+  sections: [{ id: "vacation", Component: VacationSettings, matches: accountsMatch }],
 };
 
 export const CONTACTS_PAGE: SettingsPageDef = {

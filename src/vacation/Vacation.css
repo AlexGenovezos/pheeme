@@ -1,0 +1,49 @@
+/* Settings › Vacation responder (src/vacation/VacationSettings.tsx). */
+
+/* A fixed height whether loading, empty or full, so the rows below never move; long text scrolls. */
+.vacation-editor {
+  display: flex;
+  flex-direction: column;
+  height: var(--vacation-editor-height);
+  border: var(--border-width) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg);
+}
+.vacation-editor .compose-editor {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: var(--space-2);
+  overflow-y: auto;
+}
+.vacation-editor__tools {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-top: var(--border-width) solid var(--color-border-subtle);
+}
+.vacation-editor .compose-toolbar {
+  background: transparent;
+}
+.vacation-editor--disabled .compose-editor {
+  color: var(--color-foreground-disabled);
+  cursor: default;
+}
+
+.vacation-subject {
+  width: var(--vacation-subject-width);
+}
+
+/* Fields that don't apply yet stay in place, dimmed. */
+.vacation-row--off .settings-row__title,
+.vacation-row--off .ui-input__field {
+  color: var(--color-foreground-disabled);
+}
+
+.vacation-status .settings-row__title {
+  color: var(--color-foreground-muted);
+  font-weight: var(--font-weight-regular);
+}
+.vacation-status--failed .settings-row__title {
+  color: var(--color-danger);
+}

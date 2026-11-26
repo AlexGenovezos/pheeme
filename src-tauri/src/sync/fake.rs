@@ -9,6 +9,7 @@ use crate::gmail::types::{
     MessageListResponse, MessagePart, MessagePartBody, MessageRef, SendAs, Thread,
     ThreadListResponse, UserProfile,
 };
+use crate::gmail::vacation::VacationSettings;
 use crate::gmail::{GmailError, MessageFormat};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
@@ -305,6 +306,8 @@ struct State {
     send_as: Vec<SendAs>,
     /// `users.settings.forwardingAddresses`.
     forwarding: Vec<ForwardingAddress>,
+    /// `users.settings.vacation`.
+    vacation: VacationSettings,
 }
 
 /// A sync manager over `fake` for every account, with `account_id` synced once (service tests).
@@ -416,6 +419,11 @@ impl FakeGmail {
     /// Set the account's forwarding addresses.
     pub fn set_forwarding(&self, forwarding: Vec<ForwardingAddress>) {
         self.lock().forwarding = forwarding;
+    }
+
+    /// The vacation responder as Gmail holds it.
+    pub fn vacation(&self) -> VacationSettings {
+        self.lock().vacation.clone()
     }
 
     /// Every filter, by id.
@@ -1328,6 +1336,20 @@ impl MailApi for FakeGmail {
     async fn list_send_as(&self) -> Result<Vec<SendAs>, GmailError> {
         self.enter("list_send_as")?;
         Ok(self.lock().send_as.clone())
+    }
+
+    async fn get_vacation(&self) -> Result<VacationSettings, GmailError> {
+        self.enter("get_vacation")?;
+        Ok(self.lock().vacation.clone())
+    }
+
+    async fn update_vacation(
+        &self,
+        settings: &VacationSettings,
+    ) -> Result<VacationSettings, GmailError> {
+        self.enter("update_vacation")?;
+        self.lock().vacation = settings.clone();
+        Ok(settings.clone())
     }
 
     async fn list_filters(&self) -> Result<Vec<Filter>, GmailError> {

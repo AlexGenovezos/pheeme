@@ -5,6 +5,7 @@ use crate::gmail::types::{
     Draft, DraftListResponse, Filter, ForwardingAddress, HistoryListResponse, Label, LabelColor,
     LabelUpdate, Message, MessageListResponse, SendAs, Thread, ThreadListResponse, UserProfile,
 };
+use crate::gmail::vacation::VacationSettings;
 use crate::gmail::{GmailClient, GmailError, MessageFormat};
 
 /// Priority isn't part of the trait: the backfill and other bulk work call the same methods
@@ -103,6 +104,12 @@ pub trait MailApi: Send + Sync {
     async fn list_forwarding_addresses(&self) -> Result<Vec<ForwardingAddress>, GmailError>;
     /// The account's send-as addresses and their signatures (needs `gmail.settings.basic`).
     async fn list_send_as(&self) -> Result<Vec<SendAs>, GmailError>;
+    /// The vacation responder (needs `gmail.settings.basic`).
+    async fn get_vacation(&self) -> Result<VacationSettings, GmailError>;
+    async fn update_vacation(
+        &self,
+        settings: &VacationSettings,
+    ) -> Result<VacationSettings, GmailError>;
 }
 
 #[async_trait::async_trait]
@@ -270,5 +277,16 @@ impl MailApi for GmailClient {
 
     async fn list_send_as(&self) -> Result<Vec<SendAs>, GmailError> {
         GmailClient::list_send_as(self).await
+    }
+
+    async fn get_vacation(&self) -> Result<VacationSettings, GmailError> {
+        GmailClient::get_vacation(self).await
+    }
+
+    async fn update_vacation(
+        &self,
+        settings: &VacationSettings,
+    ) -> Result<VacationSettings, GmailError> {
+        GmailClient::update_vacation(self, settings).await
     }
 }
