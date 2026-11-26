@@ -293,6 +293,22 @@ pub struct FilterListResponse {
     pub filter: Vec<Filter>,
 }
 
+/// A forwarding address (`users.settings.forwardingAddresses`): a filter can forward only to
+/// one Gmail has verified (`accepted`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ForwardingAddress {
+    pub forwarding_email: String,
+    pub verification_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardingAddressListResponse {
+    #[serde(default)]
+    pub forwarding_addresses: Vec<ForwardingAddress>,
+}
+
 /// A send-as address (`users.settings.sendAs`): the account's own address, or an alias.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]

@@ -4,9 +4,10 @@
 use super::api::MailApi;
 use crate::gmail::mime::encode_base64url;
 use crate::gmail::types::{
-    Draft, DraftListResponse, Filter, Header, HistoryLabelChange, HistoryListResponse,
-    HistoryMessage, HistoryRecord, Label, LabelColor, LabelUpdate, Message, MessageListResponse,
-    MessagePart, MessagePartBody, MessageRef, SendAs, Thread, ThreadListResponse, UserProfile,
+    Draft, DraftListResponse, Filter, ForwardingAddress, Header, HistoryLabelChange,
+    HistoryListResponse, HistoryMessage, HistoryRecord, Label, LabelColor, LabelUpdate, Message,
+    MessageListResponse, MessagePart, MessagePartBody, MessageRef, SendAs, Thread,
+    ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailError, MessageFormat};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -287,6 +288,24 @@ struct State {
     next_filter: u64,
     /// `users.settings.sendAs`.
     send_as: Vec<SendAs>,
+    /// `users.settings.forwardingAddresses`.
+    forwarding: Vec<ForwardingAddress>,
+}
+
+/// A sync manager over `fake` for every account, with `account_id` synced once (service tests).
+#[cfg(test)]
+pub async fn synced(
+    pool: &sqlx::SqlitePool,
+    fake: std::sync::Arc<FakeGmail>,
+    account_id: &str,
+) -> std::sync::Arc<super::manager::SyncManager> {
+    let sync = super::manager::SyncManager::new(
+        pool.clone(),
+        std::sync::Arc::new(move |_| fake.clone() as std::sync::Arc<dyn MailApi>),
+        std::sync::Arc::new(super::events::RecordingEvents::default()),
+    );
+    sync.sync_account(account_id).await.unwrap();
+    sync
 }
 
 pub struct FakeGmail {
@@ -377,6 +396,11 @@ impl FakeGmail {
     /// Set the account's send-as addresses (and their signatures).
     pub fn set_send_as(&self, send_as: Vec<SendAs>) {
         self.lock().send_as = send_as;
+    }
+
+    /// Set the account's forwarding addresses.
+    pub fn set_forwarding(&self, forwarding: Vec<ForwardingAddress>) {
+        self.lock().forwarding = forwarding;
     }
 
     /// Every filter, by id.
@@ -1312,6 +1336,11 @@ impl MailApi for FakeGmail {
             Some(_) => Ok(()),
             None => Err(not_found()),
         }
+    }
+
+    async fn list_forwarding_addresses(&self) -> Result<Vec<ForwardingAddress>, GmailError> {
+        self.enter("list_forwarding_addresses")?;
+        Ok(self.lock().forwarding.clone())
     }
 
     async fn send_draft(&self, id: &str) -> Result<String, GmailError> {

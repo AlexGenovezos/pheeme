@@ -2,8 +2,8 @@
 //! an in-memory mailbox ([`super::fake::FakeGmail`]).
 
 use crate::gmail::types::{
-    Draft, DraftListResponse, Filter, HistoryListResponse, Label, LabelColor, LabelUpdate, Message,
-    MessageListResponse, SendAs, Thread, ThreadListResponse, UserProfile,
+    Draft, DraftListResponse, Filter, ForwardingAddress, HistoryListResponse, Label, LabelColor,
+    LabelUpdate, Message, MessageListResponse, SendAs, Thread, ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailClient, GmailError, MessageFormat};
 
@@ -97,6 +97,8 @@ pub trait MailApi: Send + Sync {
     async fn list_filters(&self) -> Result<Vec<Filter>, GmailError>;
     async fn create_filter(&self, filter: &Filter) -> Result<Filter, GmailError>;
     async fn delete_filter(&self, id: &str) -> Result<(), GmailError>;
+    /// The addresses a filter may forward to, verified or not (needs `gmail.settings.basic`).
+    async fn list_forwarding_addresses(&self) -> Result<Vec<ForwardingAddress>, GmailError>;
     /// The account's send-as addresses and their signatures (needs `gmail.settings.basic`).
     async fn list_send_as(&self) -> Result<Vec<SendAs>, GmailError>;
 }
@@ -254,6 +256,10 @@ impl MailApi for GmailClient {
 
     async fn delete_filter(&self, id: &str) -> Result<(), GmailError> {
         GmailClient::delete_filter(self, id).await
+    }
+
+    async fn list_forwarding_addresses(&self) -> Result<Vec<ForwardingAddress>, GmailError> {
+        GmailClient::list_forwarding_addresses(self).await
     }
 
     async fn list_send_as(&self) -> Result<Vec<SendAs>, GmailError> {

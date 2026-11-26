@@ -18,6 +18,7 @@ import { openCreateLabel } from "../labels/create";
 import { COPY_CODE_COMMAND, COPY_CODE_SHORTCUT, copyOpenConversationCode } from "../mail/CodeCard";
 import { PRINT_COMMAND, printOpenConversation } from "../mail/print";
 import { UNSUBSCRIBE_COMMAND, unsubscribeOpenConversation } from "../mail/unsubscribe";
+import { FILTER_LIKE_THESE_COMMAND, filterMessagesLikeThese } from "../filters/likeThese";
 import {
   CREATE_EVENT_COMMAND,
   CREATE_EVENT_SHORTCUT,
@@ -93,6 +94,13 @@ export function appCommands(): Command[] {
       group: "General",
       keywords: ["settings", "add account", "remove account", "sign out"],
       run: () => useSettingsStore.getState().openSettings("accounts"),
+    },
+    {
+      id: "settings.filters",
+      title: "Manage filters",
+      group: "General",
+      keywords: ["settings", "gmail filters", "rules", "create filter", "edit filter"],
+      run: () => useSettingsStore.getState().openSettings("filters"),
     },
     {
       id: "help.setupGuide",
@@ -321,6 +329,13 @@ export function appCommands(): Command[] {
       group: "Conversation",
       keywords: ["mailing list", "newsletter", "stop emails", "opt out"],
       run: () => void unsubscribeOpenConversation(),
+    },
+    {
+      id: FILTER_LIKE_THESE_COMMAND,
+      title: "Filter messages like these",
+      group: "Conversation",
+      keywords: ["filter", "rule", "sender", "create filter", "automatically"],
+      run: () => void filterMessagesLikeThese(),
     },
     {
       id: COPY_CODE_COMMAND,

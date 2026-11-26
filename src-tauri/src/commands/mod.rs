@@ -6,6 +6,7 @@ pub mod calendar;
 pub mod compose;
 pub mod contacts;
 pub mod drive;
+pub mod filters;
 pub mod labels;
 pub mod mods;
 pub mod print;

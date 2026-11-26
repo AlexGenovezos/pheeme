@@ -15,6 +15,7 @@ import {
 import { applyLabel, moveTo } from "../mail/actions";
 import { useLabelStore } from "../store/labelStore";
 import { ColorGrid } from "./ColorPopover";
+import { addCreatedLabel } from "./create";
 import { type LabelDialogSpec, useLabelDialogStore } from "./dialogStore";
 import { editLabel } from "./edit";
 import { LabelChip } from "./LabelChip";
@@ -119,15 +120,7 @@ function LabelForm({ spec, onClose }: { spec: LabelDialogSpec; onClose(): void }
         if (editing) void editLabel(accountId, editing.id, { name: full });
       } else {
         const created = await createLabel(accountId, full, color ? labelColor(color) : null);
-        useLabelStore.setState((s) => ({
-          labels: {
-            ...s.labels,
-            [accountId]: [
-              ...(s.labels[accountId] ?? []).filter((l) => l.id !== created.id),
-              created,
-            ],
-          },
-        }));
+        addCreatedLabel(accountId, created);
         if (spec.applyTo?.length && spec.move) void moveTo(accountId, spec.applyTo, created.id);
         else if (spec.applyTo?.length)
           void applyLabel(accountId, created.id, true, spec.applyTo, { evenIfGone: true });

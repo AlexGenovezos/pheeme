@@ -154,6 +154,35 @@ impl MailService {
         })
     }
 
+    /// Every conversation Gmail's search finds, downloaded or not, page by page (caching what it
+    /// finds).
+    pub async fn every_match(
+        &self,
+        account_id: &str,
+        query: &str,
+    ) -> Result<Vec<String>, MailError> {
+        let account = [account_id.to_owned()];
+        let mut ids = Vec::new();
+        let mut tokens = None;
+        loop {
+            let page = self.search_gmail(&account, query, tokens).await?;
+            if !page.failed.is_empty() {
+                return Err(MailError::Invalid(
+                    "Gmail's search didn't answer, so nothing was changed. Try again.".into(),
+                ));
+            }
+            for t in page.threads {
+                if !ids.contains(&t.id) {
+                    ids.push(t.id);
+                }
+            }
+            if page.next.is_empty() {
+                return Ok(ids);
+            }
+            tokens = Some(page.next);
+        }
+    }
+
     /// Local search over cached mail, newest first, keyset-paged like
     /// [`Self::list_threads`]. Takes Gmail search syntax (see [`crate::search`]).
     pub async fn search_messages(
