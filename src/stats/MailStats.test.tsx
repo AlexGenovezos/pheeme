@@ -27,7 +27,8 @@ const counts = (received: number, opened: number, replied = 0, starred = 0) => (
 const sender = (over: Partial<SenderStats>): SenderStats => ({
   accountId: "a",
   threadId: "t1",
-  messageId: "m1",
+  // Each sender's newest message, named after its conversation (t2 → m2).
+  messageId: `m${over.threadId?.slice(1) ?? "1"}`,
   sender: "deals@shop.com",
   name: "Shop",
   tab: "promotions",

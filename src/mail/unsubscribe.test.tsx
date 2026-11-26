@@ -162,3 +162,37 @@ test("the command asks about the open conversation, or says it has nothing", asy
   });
   expect(screen.getByRole("dialog")).toHaveTextContent("Unsubscribe from The Review?");
 });
+
+test("two messages from one address are separate lists", async () => {
+  render(
+    <>
+      <MessageCard message={message({ id: "m1" })} accountId="a1" expanded onToggle={() => {}} />
+      <MessageCard message={message({ id: "m2" })} accountId="a1" expanded onToggle={() => {}} />
+      <UnsubscribeDialogHost />
+    </>,
+  );
+  fireEvent.click(screen.getAllByRole("button", { name: "Unsubscribe from The Review" })[0]!);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Unsubscribe" }));
+  });
+  expect(screen.getAllByRole("button", { name: "Unsubscribe from The Review" })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Unsubscribed from The Review" })).toBeDisabled();
+});
+
+test("an opened page can be asked for again", async () => {
+  answer = {
+    sender: "hello@review.example",
+    method: "link",
+    unsubscribed: false,
+    web: "https://example.com/u",
+    mailto: null,
+  };
+  renderCard(message({ unsubscribe: "link" }));
+  fireEvent.click(screen.getByRole("button", { name: "Unsubscribe from The Review" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Unsubscribe" }));
+  });
+  const opened = screen.getByRole("button", { name: "Unsubscribe from The Review" });
+  expect(opened).toHaveTextContent("Opened");
+  expect(opened).toBeEnabled();
+});

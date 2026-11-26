@@ -15,7 +15,7 @@ import {
   type SenderStats,
   toCommandError,
 } from "../lib/tauri";
-import { senderKey, unsubscribeFrom, useUnsubscribeStore } from "../mail/unsubscribe";
+import { messageKey, unsubscribeFrom, useUnsubscribeStore } from "../mail/unsubscribe";
 import { useAccountStore } from "../store/accountStore";
 import { useStatsStore } from "./statsStore";
 
@@ -462,7 +462,9 @@ function SenderRow({ sender: s, days }: { sender: SenderStats | null; days: numb
 
 function UnsubscribeButton({ sender }: { sender: SenderStats }) {
   // Senders unsubscribed from this session, so no page offers it again (the conversation's too).
-  const state = useUnsubscribeStore((s) => s.senders[senderKey(sender.accountId, sender.sender)]);
+  const state = useUnsubscribeStore((s) =>
+    sender.messageId ? s.senders[messageKey(sender.accountId, sender.messageId)] : undefined,
+  );
   const who = sender.name || sender.sender;
 
   if (sender.unsubscribe === "none" || !sender.threadId) {
@@ -486,7 +488,6 @@ function UnsubscribeButton({ sender }: { sender: SenderStats }) {
       accountId: sender.accountId,
       threadId: sender.threadId!,
       messageId: sender.messageId,
-      address: sender.sender,
       who,
     });
     // A message to send opens over everything: this window would hide it.

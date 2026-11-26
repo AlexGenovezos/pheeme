@@ -5,11 +5,10 @@
 import { create } from "zustand";
 import { toast } from "../components/ui/Toast";
 import { useComposeStore } from "../compose/composeStore";
-import { type MessageDetail, toCommandError, unsubscribeSender } from "../lib/tauri";
+import { type MessageDetail, openMailLink, toCommandError, unsubscribeSender } from "../lib/tauri";
 import { useAccountStore } from "../store/accountStore";
 import { useThreadStore } from "../store/threadStore";
 import { useUiStore } from "../store/uiStore";
-import { openLink } from "./linkify";
 import { parseThreadKey } from "./mailboxes";
 
 export const UNSUBSCRIBE_COMMAND = "conversation.unsubscribe";
@@ -22,7 +21,6 @@ export interface UnsubscribeRequest {
   accountId: string;
   threadId: string;
   messageId: string;
-  address: string;
   /** Who it's from, as the message shows it. */
   who: string;
   method: Exclude<MessageDetail["unsubscribe"], "none">;
@@ -36,9 +34,8 @@ interface UnsubscribeStore {
 }
 export const useUnsubscribeStore = create<UnsubscribeStore>(() => ({ senders: {}, request: null }));
 
-/** The list a message came from: its account and sender address, as the Stats window names a sender. */
-export const senderKey = (accountId: string, address: string) =>
-  `${accountId}\n${address.toLowerCase()}`;
+/** What a result is remembered under: the message acted on, which is what Unsubscribe's link is read from. */
+export const messageKey = (accountId: string, messageId: string) => `${accountId}\n${messageId}`;
 
 function setSenderState(key: string, state: SenderState | undefined) {
   useUnsubscribeStore.setState((s) => {
@@ -74,12 +71,10 @@ export async function unsubscribeFrom(target: {
   accountId: string;
   threadId: string;
   messageId: string | null;
-  /** The sender's address, which the result is remembered under. */
-  address: string;
   who: string;
 }): Promise<UnsubscribeOutcome> {
-  const { accountId, address, who } = target;
-  const key = senderKey(accountId, address);
+  const { accountId, who } = target;
+  const key = messageKey(accountId, target.messageId ?? target.threadId);
   setSenderState(key, "busy");
   try {
     const result = await unsubscribeSender(accountId, target.threadId, target.messageId);
@@ -92,8 +87,8 @@ export async function unsubscribeFrom(target: {
       return "done";
     }
     if (result.web) {
+      await openMailLink(result.web);
       setSenderState(key, "opened");
-      openLink(result.web);
       toast({
         title: `Opened ${who}'s unsubscribe page`,
         description: "Finish there to stop their mail.",
@@ -102,12 +97,17 @@ export async function unsubscribeFrom(target: {
     }
     const mail = result.mailto ? parseMailto(result.mailto) : null;
     if (mail) {
-      setSenderState(key, "opened");
-      useComposeStore.getState().compose(accountId, {
+      const opened = useComposeStore.getState().compose(accountId, {
         to: [{ name: null, address: mail.to }],
         subject: mail.subject,
         bodyHtml: mail.body ? `<p>${escapeHtml(mail.body)}</p>` : "",
       });
+      if (opened < 0) {
+        // The compose panels are full (it said so): nothing is open, so try again later.
+        setSenderState(key, undefined);
+        return "failed";
+      }
+      setSenderState(key, "opened");
       toast({
         title: `${who} unsubscribes by email`,
         description: "Send the message that just opened to stop their mail.",
@@ -139,7 +139,6 @@ export function confirmUnsubscribe(accountId: string, message: MessageDetail) {
       accountId,
       threadId: message.threadId,
       messageId: message.id,
-      address: message.fromAddress,
       who: message.fromName || message.fromAddress,
       method: message.unsubscribe,
     },
@@ -184,6 +183,8 @@ export async function unsubscribeOpenConversation() {
   const { accountId } = parseThreadKey(key);
   const threads = useThreadStore.getState();
   if (!threads.details.has(key)) await threads.load(key);
+  // The user may have moved on while it loaded.
+  if (useUiStore.getState().openThread !== key) return;
   const detail = useThreadStore.getState().details.get(key);
   const own = useAccountStore
     .getState()
@@ -197,8 +198,8 @@ export async function unsubscribeOpenConversation() {
     });
     return;
   }
-  const state = useUnsubscribeStore.getState().senders[senderKey(accountId, message.fromAddress!)];
-  if (state === "done" || state === "opened") {
+  const state = useUnsubscribeStore.getState().senders[messageKey(accountId, message.id)];
+  if (state === "done") {
     toast({ title: `Already unsubscribed from ${message.fromName || message.fromAddress}` });
     return;
   }

@@ -14,7 +14,7 @@ import { threadKey } from "./mailboxes";
 import { printMessage } from "./print";
 import {
   confirmUnsubscribe,
-  senderKey,
+  messageKey,
   UNSUBSCRIBE_COMMAND,
   useUnsubscribeStore,
 } from "./unsubscribe";
@@ -60,9 +60,7 @@ export function MessageCard({
   const name = isDraft ? "Draft" : senderName(message);
   const when = message.date > 0 ? new Date(message.date) : null;
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
-  const unsubscribeState = useUnsubscribeStore((s) =>
-    message.fromAddress ? s.senders[senderKey(accountId, message.fromAddress)] : undefined,
-  );
+  const unsubscribeState = useUnsubscribeStore((s) => s.senders[messageKey(accountId, message.id)]);
 
   if (!expanded) {
     return (
@@ -151,7 +149,8 @@ export function MessageCard({
                       : `Unsubscribe from ${name}`
                   }
                   title={`Unsubscribe from ${name}`}
-                  disabled={unsubscribeState !== undefined}
+                  // "Opened" can be asked again: the page or the message may have been closed unfinished.
+                  disabled={unsubscribeState === "busy" || unsubscribeState === "done"}
                   onClick={() => confirmUnsubscribe(accountId, message)}
                 >
                   <span>{UNSUBSCRIBE_LABEL[unsubscribeState ?? "idle"]}</span>
