@@ -511,6 +511,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_raw_asks_for_the_raw_format_and_decodes_it() {
+        let server = MockServer::start().await;
+        let source = b"Subject: Caf\xc3\xa9\r\n\r\nbody";
+        Mock::given(method("GET"))
+            .and(path("/messages/m1"))
+            .and(query_param("format", "raw"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "m1", "threadId": "t1", "raw": encode_base64url(source)
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (client, _) = client_for(&server);
+        assert_eq!(client.get_raw("m1").await.unwrap(), source);
+    }
+
+    #[tokio::test]
     async fn downloading_an_attachment_does_not_wait_for_slow_backfill_requests() {
         use std::sync::Arc;
         use std::time::Duration;
