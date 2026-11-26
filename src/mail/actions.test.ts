@@ -543,30 +543,15 @@ describe("important", () => {
     expect(toasts()[0].action).toBeDefined();
   });
 
-  test("not important takes the row out of an is:important search too", async () => {
-    setList([
-      thread(1, "a1", { systemLabelIds: ["IMPORTANT"] }),
-      thread(2, "a1", { systemLabelIds: ["IMPORTANT"] }),
-    ]);
+  test("in a search the row stays, like archive", async () => {
+    setList([thread(1, "a1", { systemLabelIds: ["IMPORTANT"] })]);
     useMailStore.setState({
-      query: { accountIds: ["a1"], labelId: "ALL", search: "invoice is:important" },
+      query: { accountIds: ["a1"], labelId: "ALL", search: "is:important" },
     });
     useUiStore.setState({ openThread: key(1) });
     await setImportant(false);
-    expect(listKeys()).toEqual([key(2)]);
-  });
-
-  test("Search options' in:important leaves the same way", async () => {
-    setList([
-      thread(1, "a1", { systemLabelIds: ["IMPORTANT"] }),
-      thread(2, "a1", { systemLabelIds: ["IMPORTANT"] }),
-    ]);
-    useMailStore.setState({
-      query: { accountIds: ["a1"], labelId: "ALL", search: "in:important" },
-    });
-    useUiStore.setState({ openThread: key(1) });
-    await setImportant(false);
-    expect(listKeys()).toEqual([key(2)]);
+    expect(listKeys()).toEqual([key(1)]);
+    expect(useMailStore.getState().threads[0].systemLabelIds).toEqual([]);
   });
 
   test("a partly trashed conversation that still shows IMPORTANT can be cleared", async () => {
