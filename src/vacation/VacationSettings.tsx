@@ -220,8 +220,8 @@ function AccountVacation({
         <div className="settings-row__text">
           <div className="settings-row__title">Message</div>
           <div className="settings-row__description">
-            Bold, italic, underline, lists and links. Other formatting set in Gmail, like colors,
-            pictures or centered text, is dropped once you edit the text here.
+            Gmail's formatting: fonts, sizes, colours, alignment, lists, quotes and links. Pictures,
+            tables and headings set in Gmail are dropped once you edit the text here.
           </div>
         </div>
         <Suspense fallback={<div className="vacation-editor" aria-hidden="true" />}>
