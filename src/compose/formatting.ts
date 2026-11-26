@@ -180,6 +180,7 @@ export function indent(editor: Editor, delta: 1 | -1) {
     return (delta > 0 ? chain.sinkListItem("listItem") : chain.liftListItem("listItem")).run();
   }
   const paragraphs = selectedParagraphs(editor);
+  const stored = editor.state.storedMarks;
   return editor
     .chain()
     .focus()
@@ -193,6 +194,8 @@ export function indent(editor: Editor, delta: 1 | -1) {
         tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: next || null });
         changed = true;
       }
+      // Changing the paragraph would drop a size or font chosen for the text about to be typed.
+      if (stored) tr.setStoredMarks(stored);
       return changed;
     })
     .run();
@@ -200,10 +203,16 @@ export function indent(editor: Editor, delta: 1 | -1) {
 
 /** Align the selected paragraphs; left is the default and is written as no alignment. */
 export function align(editor: Editor, to: Align) {
+  const stored = editor.state.storedMarks;
   return editor
     .chain()
     .focus()
     .updateAttributes("paragraph", { textAlign: to === "left" ? null : to })
+    .command(({ tr }) => {
+      // As for indenting: keep the formatting chosen for the text about to be typed.
+      if (stored) tr.setStoredMarks(stored);
+      return true;
+    })
     .run();
 }
 

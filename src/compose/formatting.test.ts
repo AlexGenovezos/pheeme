@@ -72,6 +72,17 @@ describe("the HTML that goes out is Gmail's", () => {
     expect(html(e)).toBe("<p>One</p>");
   });
 
+  test("aligning or indenting an empty line keeps the size chosen for what's typed next", () => {
+    const e = make("<p></p>");
+    e.commands.setMark("fontSize", { size: "6" });
+    align(e, "center");
+    indent(e, 1);
+    e.commands.insertContent("hello");
+    expect(html(e)).toBe(
+      norm('<p style="text-align:center;margin-left:40px"><font size="6">hello</font></p>'),
+    );
+  });
+
   test("indenting a list item nests it", () => {
     const e = make("<ul><li><p>a</p></li><li><p>b</p></li></ul>");
     e.commands.setTextSelection(8);

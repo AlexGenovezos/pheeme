@@ -145,7 +145,7 @@ export default function EmojiPicker({
           scroller.current?.scrollTo({ top: 0 });
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && first) {
+          if (e.key === "Enter" && first && !(e.metaKey || e.ctrlKey || e.altKey)) {
             e.preventDefault();
             pick(first);
           } else if (e.key === "ArrowDown") {
