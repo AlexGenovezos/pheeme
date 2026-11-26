@@ -102,11 +102,19 @@ export function replaceSignature(editor: TipTap, html: string | null) {
   });
 }
 
-export function EditorBody({ editor, focusSeq }: { editor: TipTap | null; focusSeq: number }) {
+export function EditorBody({
+  editor,
+  focusSeq,
+  inert,
+}: {
+  editor: TipTap | null;
+  focusSeq: number;
+  inert?: boolean;
+}) {
   useEffect(() => {
-    if (focusSeq > 0) editor?.commands.focus("start");
-  }, [editor, focusSeq]);
-  return <EditorContent editor={editor} className="compose-editor" />;
+    if (!inert && focusSeq > 0) editor?.commands.focus("start");
+  }, [editor, focusSeq, inert]);
+  return <EditorContent editor={editor} className="compose-editor" inert={inert} />;
 }
 
 export function EditorToolbar({ editor }: { editor: TipTap | null }) {

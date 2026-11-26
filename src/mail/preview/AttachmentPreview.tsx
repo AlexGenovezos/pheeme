@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { Button } from "../../components/ui/Button";
+import { surfaceLoader } from "../../components/ui/ErrorBoundary";
 import { IconButton } from "../../components/ui/IconButton";
 import { isEditableTarget, registry } from "../../keyboard/registry";
 import { type AttachmentInfo, logPreview, toCommandError } from "../../lib/tauri";
@@ -23,10 +24,10 @@ import "./preview.css";
 import "../../components/ui/Surface.css";
 
 // The heavy readers load the first time a file of their kind is opened.
-const PdfView = lazy(() => import("./PdfView"));
-const DocxView = lazy(() => import("./DocxView"));
-const SheetView = lazy(() => import("./SheetView"));
-const PptxView = lazy(() => import("./PptxView"));
+const PdfView = lazy(surfaceLoader(() => import("./PdfView")));
+const DocxView = lazy(surfaceLoader(() => import("./DocxView")));
+const SheetView = lazy(surfaceLoader(() => import("./SheetView")));
+const PptxView = lazy(surfaceLoader(() => import("./PptxView")));
 
 /** Plain text past this is cut off in the preview. */
 const MAX_TEXT_BYTES = 1024 * 1024;

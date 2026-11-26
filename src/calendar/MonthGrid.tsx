@@ -13,11 +13,11 @@ import { useHeight, useWidth } from "../lib/useWidth";
 import { cx } from "../lib/utils";
 import { useCalendarStore } from "./calendarStore";
 import { focusFromKeyboard } from "../keyboard/focus";
-import { addDays, addMonths, daysBetween, dateOf, formatDay } from "./dates";
+import { addDays, addMonths, daysBetween, formatDay } from "./dates";
 import { createOnDays } from "./drag";
 import { BarEvent, DotEvent, eventKey, timeSpan, useCalendarLookup } from "./EventBlock";
 import { fitRows, inAllDayBand, layoutBand } from "./layout";
-import { useNow } from "./useNow";
+import { useToday } from "./useNow";
 import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
 import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
@@ -210,7 +210,7 @@ export function MonthGrid({
   // Rows that fit under the day number; before measuring, a typical window's worth.
   const weekHeight = height > 0 ? height / weeks.length : 120;
   const capacity = Math.max(1, Math.floor((weekHeight - MONTH_DATE_PX) / MONTH_ROW_PX));
-  const today = dateOf(useNow(), tz);
+  const today = useToday(tz);
   const month = anchor.slice(0, 7);
   const list = useMemo(() => events ?? [], [events]);
   const dated = useDatedTasks(days);

@@ -1,9 +1,10 @@
 // Calendar mode: the calendar sidebar beside a Day, Week or Month view of every account's
 // calendars, with the event popover over it.
 import { ChevronLeft, ChevronRight, Mail, PanelLeftOpen, Search } from "lucide-react";
-import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { Modal } from "../components/ui/Modal";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { DateField } from "../components/ui/DateField";
 import { describeShortcut } from "../keyboard/format";
@@ -14,6 +15,7 @@ import { overlayTitleBar, dragRegion } from "../shell/chrome";
 import { Divider } from "../shell/Divider";
 import { useSidebarFit } from "../shell/sidebarFit";
 import { useWidth } from "../lib/useWidth";
+import { staticPixelToken } from "../lib/staticPixelToken";
 import { useAccountStore } from "../store/accountStore";
 import { PANE, sidebarLayout, useUiStore } from "../store/uiStore";
 import { useTasksStore } from "../tasks/tasksStore";
@@ -35,7 +37,7 @@ import {
 import { CalendarSearch } from "./CalendarSearch";
 import { CalendarSidebar } from "./CalendarSidebar";
 import { displayZone, screenDays, useCalendarStore, weekStartOf } from "./calendarStore";
-import { dateOf, formatDay } from "./dates";
+import { formatDay } from "./dates";
 import { DRAFT_ID, useEditStore } from "./editStore";
 import { EditPrompt } from "./EditPrompt";
 import { eventKey } from "./EventBlock";
@@ -53,7 +55,7 @@ import { MonthGrid } from "./MonthGrid";
 import { PinnedEmail } from "./PinnedEmail";
 import { gutterWidth, MIN_DAY_PX, TimeGrid, useGutterZones } from "./TimeGrid";
 import { type CalendarView, viewTitle } from "./views";
-import { useNow } from "./useNow";
+import { useToday } from "./useNow";
 import "./calendar.css";
 import "./editing.css";
 import "./invite.css";
@@ -86,7 +88,7 @@ function Toolbar({
   const nextShortcut = useKeybinding("calendar.next");
   const searchShortcut = useKeybinding("calendar.search");
   const store = useCalendarStore.getState;
-  const today = formatDay(dateOf(useNow(), displayZone(accounts)), {
+  const today = formatDay(useToday(displayZone(accounts)), {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -232,51 +234,35 @@ function GoToDate() {
 
 function GoToDateForm() {
   const [value] = useState(() => useCalendarStore.getState().anchor);
-  const input = useRef<HTMLButtonElement>(null);
-  useEffect(() => input.current?.focus(), []);
   const close = () => useCalendarStore.getState().setGoToOpen(false);
   const go = (date: string) => {
     useCalendarStore.getState().goTo(date);
     close();
   };
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    go(value);
-  };
   return (
-    <div className="cal-goto__scrim" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <form
-        className="cal-goto"
-        role="dialog"
-        aria-label="Go to date"
-        data-owns-keys=""
-        onSubmit={submit}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            close();
-          }
-        }}
-      >
-        <span className="cal-goto__label" id="cal-goto-date">
-          Go to date
-        </span>
-        {/* Opens on the month grid: arrows and Enter (or a click) go straight to the day. */}
-        <DateField
-          ref={input}
-          aria-labelledby="cal-goto-date"
-          className="cal-goto__input"
-          value={value}
-          weekStart={weekStartOf(useCalendarStore.getState().accounts)}
-          defaultOpen
-          onChange={go}
-        />
-        <Button type="submit" size="sm" variant="primary">
-          Go
-        </Button>
-      </form>
-    </div>
+    <Modal
+      title="Go to date"
+      titleId="cal-goto-date"
+      titleClassName="cal-goto__label"
+      className="cal-goto"
+      scrimClassName="cal-goto__scrim"
+      onClose={close}
+    >
+      {/* Opens on the month grid: arrows and Enter (or a click) go straight to the day. */}
+      <DateField
+        data-autofocus=""
+        aria-labelledby="cal-goto-date"
+        className="cal-goto__input"
+        value={value}
+        weekStart={weekStartOf(useCalendarStore.getState().accounts)}
+        defaultOpen
+        inlinePopover
+        onChange={go}
+      />
+      <Button size="sm" variant="primary" onClick={() => go(value)}>
+        Go
+      </Button>
+    </Modal>
   );
 }
 
@@ -529,15 +515,6 @@ function stepCalendar(direction: 1 | -1) {
   useCalendarStore.getState().step(direction);
 }
 
-/** The pinned email column's width (--pinned-email-width). */
-function pinnedEmailWidth(): number {
-  return (
-    parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue("--pinned-email-width"),
-    ) || 0
-  );
-}
-
 export function CalendarScreen({ onAddAccount }: { onAddAccount?: () => void } = {}) {
   useCalendarCommands();
   useCalendarData();
@@ -556,15 +533,12 @@ export function CalendarScreen({ onAddAccount }: { onAddAccount?: () => void } =
     PANE.viewMin,
     shownDays > 1 ? gutterWidth(zoneColumns) + shownDays * MIN_DAY_PX : 0,
   );
+  const pinnedWidth = pinned ? staticPixelToken("--pinned-email-width") : 0;
   // No room for the calendar beside the pinned email (the Tasks panel took it): the email folds
   // away behind a toolbar button until there's room again.
-  const pinnedFolded = pinned && width > 0 && width - pinnedEmailWidth() < calendarMin;
+  const pinnedFolded = pinned && width > 0 && width - pinnedWidth < calendarMin;
   // The calendar needs its own minimum, plus the email pinned beside it.
-  const layout = useSidebarFit(
-    aside,
-    width,
-    calendarMin + (pinned && !pinnedFolded ? pinnedEmailWidth() : 0),
-  );
+  const layout = useSidebarFit(aside, width, calendarMin + (pinnedFolded ? 0 : pinnedWidth));
   const { setSidebarWidth, resetSidebarWidth } = useUiStore.getState();
   const view = useCalendarStore((s) => s.view);
   const anchor = useCalendarStore((s) => s.anchor);

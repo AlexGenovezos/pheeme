@@ -5,7 +5,7 @@
   display: flex;
   height: 100%;
 }
-.tasks-frame > .shell {
+.tasks-frame > :is(.shell, .tasks-frame__surface) {
   flex: 1;
   min-width: var(--space-0);
 }
@@ -22,7 +22,7 @@
   background: var(--color-pane-bg);
 }
 /* Beside the calendar page, the rail is part of it: no line between them. */
-.tasks-frame:has(> .shell[data-mode="calendar"]) > .tasks-rail {
+.tasks-frame[data-mode="calendar"] > .tasks-rail {
   border-left-color: transparent;
 }
 .tasks-rail .ui-icon-button[aria-pressed="true"] {

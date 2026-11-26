@@ -58,7 +58,6 @@ export function Modal({
         className={className}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
         aria-labelledby={titleId}
         tabIndex={-1}
         data-owns-keys=""

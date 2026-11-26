@@ -100,7 +100,7 @@ async function round(page: Page, n: number) {
   }
 
   await page.getByRole("button", { name: "Settings" }).click();
-  const settings = page.getByRole("dialog", { name: /Settings/ });
+  const settings = page.getByRole("dialog", { name: /^Settings/ });
   const modes = settings.getByRole("radiogroup", { name: "Theme mode" });
   for (const mode of ["Dark", "Light", "System"]) {
     await modes.getByRole("radio", { name: mode }).click();

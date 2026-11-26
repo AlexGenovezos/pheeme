@@ -10,11 +10,12 @@ import { createInColumn, createOnDays } from "./drag";
 import { BarEvent, eventKey, TimedEventBlock, timeSpan, useCalendarLookup } from "./EventBlock";
 import { layoutBand, layoutDay, MIN_EVENT_MINUTES } from "./layout";
 import { useWidth } from "../lib/useWidth";
+import { staticPixelToken } from "../lib/staticPixelToken";
 import { TaskChip, useDatedTasks } from "../tasks/DatedTasks";
 import { layoutTasks } from "../tasks/gridLayout";
 import { taskKey } from "../tasks/outline";
 import { withoutBooked } from "../tasks/plan";
-import { useNow } from "./useNow";
+import { useNow, useToday } from "./useNow";
 import { DayWeather, weatherFit } from "../weather/DayWeather";
 import { type HourRun, useHourRuns } from "../weather/hourly";
 import { HourWeather } from "../weather/HourWeather";
@@ -41,11 +42,7 @@ export const MIN_DAY_PX = NARROW_EVENT_PX;
 
 /** The hour labels' columns: one (--calendar-gutter-width) per zone shown. */
 export function gutterWidth(columns = 1): number {
-  return (
-    (parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue("--calendar-gutter-width"),
-    ) || 0) * columns
-  );
+  return staticPixelToken("--calendar-gutter-width") * columns;
 }
 
 /** The other time zones the gutter shows beside `tz`: the user's, less `tz` itself. */
@@ -104,6 +101,13 @@ function DayHeader({
   );
 }
 
+function NowIndicator({ tz }: { tz: string }) {
+  const { minutes } = wallClock(useNow(), tz);
+  return (
+    <div className="cal-grid__now" style={{ top: (minutes / 60) * HOUR_PX }} aria-hidden="true" />
+  );
+}
+
 export function TimeGrid({
   days,
   tz,
@@ -115,7 +119,7 @@ export function TimeGrid({
   events: CalendarEvent[] | null;
 }) {
   const lookup = useCalendarLookup();
-  const now = wallClock(useNow(), tz);
+  const today = useToday(tz);
   const scrollRef = useRef<HTMLDivElement>(null);
   const list = useMemo(() => events ?? [], [events]);
 
@@ -128,7 +132,7 @@ export function TimeGrid({
   );
   const bandRows = [...band, ...taskBand].reduce((n, s) => Math.max(n, s.row + 1), 0);
   const columns = useMemo(() => days.map((d) => layoutDay(list, d, tz)), [list, days, tz]);
-  const runs = useHourRuns(tz, now.date);
+  const runs = useHourRuns(tz, today);
   const motion = useWeatherMotion(days);
   // Each day's width, for events too narrow for more than a few letters of their title.
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -137,7 +141,7 @@ export function TimeGrid({
   const dayWidth =
     bodyWidth > 0 ? (bodyWidth - gutterWidth(1 + others.length)) / days.length : Infinity;
   // The other zones' hour labels, for today when it's on screen (DST can differ across a week).
-  const gutterDay = days.includes(now.date) ? now.date : days[0];
+  const gutterDay = days.includes(today) ? today : days[0];
   const otherHours = useMemo(
     () => others.map((z) => gutterTimes(gutterDay, tz, z.zone).map(formatGutterTime)),
     [others, gutterDay, tz],
@@ -147,6 +151,7 @@ export function TimeGrid({
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    const now = wallClock(Date.now(), tz);
     const showsToday = days.includes(now.date);
     const reveal = useCalendarStore.getState().reveal;
     const minutes =
@@ -198,7 +203,7 @@ export function TimeGrid({
           <DayHeader
             key={d}
             date={d}
-            today={d === now.date}
+            today={d === today}
             single={days.length === 1}
             width={dayWidth}
             runs={runs[d]}
@@ -269,7 +274,7 @@ export function TimeGrid({
           {days.map((d, i) => (
             <div
               key={d}
-              className={cx("cal-grid__column", d === now.date && "cal-grid__column--today")}
+              className={cx("cal-grid__column", d === today && "cal-grid__column--today")}
               role="gridcell"
               aria-label={formatDay(d, { weekday: "long", month: "long", day: "numeric" })}
               data-cal-drop="time"
@@ -321,13 +326,7 @@ export function TimeGrid({
                   />
                 );
               })}
-              {d === now.date && (
-                <div
-                  className="cal-grid__now"
-                  style={{ top: (now.minutes / 60) * HOUR_PX }}
-                  aria-hidden="true"
-                />
-              )}
+              {d === today && <NowIndicator tz={tz} />}
             </div>
           ))}
         </div>

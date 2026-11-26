@@ -71,20 +71,6 @@ export function TasksPanelHost() {
   const shortcut = useKeybinding(TOGGLE_TASKS_COMMAND, TOGGLE_TASKS_SHORTCUT);
   // `tasks.focus` may have to open the panel first; the focus moves in once its tasks are drawn.
   const wantFocus = useRef(false);
-  const accounts = useTasksStore((s) => s.accounts);
-  const lists = useTasksStore((s) => s.lists);
-  const listErrors = useTasksStore((s) => s.listErrors);
-  const accountsError = useTasksStore((s) => s.accountsError);
-  const focusPanel = () => {
-    const panel = document.getElementById("tasks-panel");
-    if (!panel) return false;
-    focusFromKeyboard(
-      panel.querySelector<HTMLElement>('[aria-label^="Edit task: "]') ??
-        panel.querySelector<HTMLElement>(".tasks-add") ??
-        panel,
-    );
-    return true;
-  };
   useCommands([
     {
       id: "tasks.focus",
@@ -102,16 +88,39 @@ export function TasksPanelHost() {
   ]);
   useEffect(() => {
     if (!open || !wantFocus.current) return;
-    // Still reading (skeleton rows): this runs again when the tasks, or the failure, arrive.
-    const reading = document
-      .getElementById("tasks-panel")
-      ?.querySelector('.tasks-list[aria-hidden="true"], .task-row[aria-hidden="true"]');
-    if (reading) return;
-    wantFocus.current = false;
-    focusPanel();
-    // `focusPanel` only reads the DOM.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, accounts, lists, listErrors, accountsError]);
+    let frame = 0;
+    const focusWhenReady = () => {
+      const panel = document.getElementById("tasks-panel");
+      if (
+        !panel ||
+        panel.querySelector('.tasks-list[aria-hidden="true"], .task-row[aria-hidden="true"]')
+      )
+        return;
+      wantFocus.current = false;
+      unsubscribe();
+      focusPanel();
+    };
+    const unsubscribe = useTasksStore.subscribe((state, previous) => {
+      if (
+        state.accounts === previous.accounts &&
+        state.lists === previous.lists &&
+        state.listErrors === previous.listErrors &&
+        state.accountsError === previous.accountsError &&
+        state.due === previous.due &&
+        state.dueError === previous.dueError
+      )
+        return;
+      // Subscribers run before React commits the rows.
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(focusWhenReady);
+    });
+    focusWhenReady();
+    return () => {
+      unsubscribe();
+      cancelAnimationFrame(frame);
+      wantFocus.current = false;
+    };
+  }, [open]);
   return (
     <>
       <PlanTodayHost />
@@ -128,6 +137,16 @@ export function TasksPanelHost() {
         />
       </div>
     </>
+  );
+}
+
+function focusPanel() {
+  const panel = document.getElementById("tasks-panel");
+  if (!panel) return;
+  focusFromKeyboard(
+    panel.querySelector<HTMLElement>('[aria-label^="Edit task: "]') ??
+      panel.querySelector<HTMLElement>(".tasks-add") ??
+      panel,
   );
 }
 

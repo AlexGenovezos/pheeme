@@ -152,7 +152,7 @@ export function createRegistry({
   /** User rebindings by command id; `null` means the user removed the shortcut. */
   let overrides: Readonly<Record<string, string | null>> = {};
   let pending: string[] = [];
-  let suspended = 0;
+  const suspensions = new Set<{ except?: string }>();
   let pendingTimer: ReturnType<typeof setTimeout> | undefined;
 
   const emit = () => listeners.forEach((l) => l());
@@ -196,11 +196,14 @@ export function createRegistry({
     return prefix.every((id, i) => entry.steps[i] && stepId(entry.steps[i]) === id);
   }
 
-  return {
-    /** Add (or replace) a command. Returns a function that removes it. */
-    register(command: Command): () => void {
+  /** Add or replace commands together. The cleanup removes only entries still owned by this batch. */
+  function registerMany(commands: readonly Command[]): () => void {
+    const added = commands.map((command): Entry => {
       if (command.shortcut) parseShortcut(command.shortcut); // a bad default is a bug: throw now
-      const entry: Entry = { command, steps: stepsFor(command) };
+      return { command, steps: stepsFor(command) };
+    });
+    for (const entry of added) {
+      const { command } = entry;
       const shortcut = effective(command);
       if (import.meta.env.DEV && shortcut) {
         const clash = [...entries.values()].find(
@@ -212,13 +215,22 @@ export function createRegistry({
           );
       }
       entries.set(command.id, entry);
-      rebuild();
-      return () => {
-        if (entries.get(command.id) !== entry) return;
-        entries.delete(command.id);
-        rebuild();
-      };
-    },
+    }
+    if (added.length) rebuild();
+    return () => {
+      let removed = false;
+      for (const entry of added) {
+        const { id } = entry.command;
+        if (entries.get(id) === entry) removed = entries.delete(id);
+      }
+      if (removed) rebuild();
+    };
+  }
+
+  return {
+    /** Add (or replace) a command. Returns a function that removes it. */
+    register: (command: Command) => registerMany([command]),
+    registerMany,
 
     list: (): Command[] => snapshot,
 
@@ -251,15 +263,13 @@ export function createRegistry({
       rebuild();
     },
 
-    /** Stop handling keys (while a dialog owns the keyboard). Returns a function that resumes. */
-    suspend(): () => void {
-      suspended++;
+    /** Stop handling keys while a dialog is open, optionally keeping its own command available. */
+    suspend(except?: string): () => void {
+      const suspension = { except };
+      suspensions.add(suspension);
       setPending([]);
-      let resumed = false;
       return () => {
-        if (resumed) return;
-        resumed = true;
-        suspended--;
+        suspensions.delete(suspension);
       };
     },
 
@@ -298,17 +308,18 @@ export function createRegistry({
 
     /** Returns true when the event triggered (or continued) a shortcut. */
     handleKeyDown(e: KeyboardEvent): boolean {
-      if (
-        suspended ||
-        e.defaultPrevented ||
-        e.isComposing ||
-        MODIFIER_KEYS.has(e.key.toLowerCase())
-      )
+      if (e.defaultPrevented || e.isComposing || MODIFIER_KEYS.has(e.key.toLowerCase()))
+        return false;
+      const allowed = suspensions.values().next().value?.except;
+      if (suspensions.size && (!allowed || [...suspensions].some((s) => s.except !== allowed)))
         return false;
       const editable = isEditableTarget(e.target);
       const live = [...entries.values()].filter(
         // A `global` command rebound to a plain key must not eat that key while the user types.
-        (en) => en.steps.length && (!editable || (en.command.global && hasModifier(en.steps[0]))),
+        (en) =>
+          (!allowed || en.command.id === allowed) &&
+          en.steps.length &&
+          (!editable || (en.command.global && hasModifier(en.steps[0]))),
       );
 
       if (pending.length) {
@@ -357,7 +368,7 @@ export function createRegistry({
       entries.clear();
       runListeners.clear();
       overrides = {};
-      suspended = 0;
+      suspensions.clear();
       setPending([]);
       rebuild();
     },

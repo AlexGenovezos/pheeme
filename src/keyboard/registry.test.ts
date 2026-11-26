@@ -170,6 +170,20 @@ describe("text fields", () => {
 });
 
 describe("registration", () => {
+  test("registering and removing a batch each notify once", () => {
+    const listener = vi.fn();
+    reg.subscribe(listener);
+    const commands = ["one", "two", "three"].map((id) => ({ id, title: id, run: vi.fn() }));
+    const unregister = reg.registerMany(commands);
+    expect(reg.list()).toEqual(commands);
+    expect(listener).toHaveBeenCalledOnce();
+
+    listener.mockClear();
+    unregister();
+    expect(reg.list()).toEqual([]);
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
   test("list reflects register/unregister and notifies subscribers", () => {
     const listener = vi.fn();
     reg.subscribe(listener);

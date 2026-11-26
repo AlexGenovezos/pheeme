@@ -25,7 +25,7 @@ import { openQuickAdd } from "./actions";
 import { screenDays, useCalendarStore, weekStartOf, displayZone } from "./calendarStore";
 import { CalendarColorButton, useCalendarColor } from "./CalendarColor";
 import { calendarColor, eventColors, textOn } from "./colors";
-import { addDays, addMonths, dateOf, formatDay, startOfMonth } from "./dates";
+import { addDays, addMonths, formatDay, startOfMonth } from "./dates";
 import { useCalendarLookup } from "./EventBlock";
 import { gridKeyStep } from "./MonthGrid";
 import { eventDays } from "./layout";
@@ -34,7 +34,7 @@ import { SidebarAgenda } from "./SidebarAgenda";
 import { TravelNote } from "./TravelNote";
 import { SidebarFooter } from "../shell/SidebarFooter";
 import { SidebarTaskLists } from "../tasks/SidebarTaskLists";
-import { useNow } from "./useNow";
+import { useToday } from "./useNow";
 import { visibleDays } from "./views";
 
 /** Each day's dots: the colours of up to three of its calendars, through `last`. */
@@ -64,7 +64,7 @@ function MiniMonth() {
   const accounts = useCalendarStore((s) => s.accounts);
   const view = useCalendarStore((s) => s.view);
   const weekStart = weekStartOf(accounts);
-  const today = dateOf(useNow(), displayZone(accounts));
+  const today = useToday(displayZone(accounts));
   // The month shown; it follows the main view whenever that moves.
   const [shown, setShown] = useState(() => ({ anchor, month: startOfMonth(anchor) }));
   if (shown.anchor !== anchor) setShown({ anchor, month: startOfMonth(anchor) });

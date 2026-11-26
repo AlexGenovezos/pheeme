@@ -28,7 +28,6 @@ const withPending = (key: ThreadKey, detail: ThreadDetail) =>
 export const isComplete = (detail: ThreadDetail) => detail.messages.every((m) => m.bodyAvailable);
 
 interface ThreadState {
-  /** Insertion order is recency: the last entry is the most recently used. */
   details: Map<ThreadKey, ThreadDetail>;
   /** The last failure to load each thread. A thread that isn't there any more is `not_found`. */
   errors: Record<ThreadKey, CommandError>;
@@ -67,6 +66,13 @@ interface ThreadState {
 // A request is current while it is the entry here; evicting or re-requesting a key supersedes it.
 // Foreground requests supersede quiet work: bulk may be waiting for quota.
 const inflight = new Map<ThreadKey, { ticket: number; promise: Promise<void>; quiet: boolean }>();
+// Least to most recently used. A cache hit changes only this order, not the store snapshot.
+const recency = new Set<ThreadKey>();
+function touch(key: ThreadKey) {
+  recency.delete(key);
+  recency.add(key);
+}
+
 let tickets = 0;
 /** The list window plus six 20-row category windows; below the cache size, so preloads don't evict each other. */
 const PREFETCH_LIMIT = 140;
@@ -118,15 +124,16 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         if (!current()) return;
         set((s) => {
           const details = new Map(s.details);
-          details.delete(key); // re-insert as the most recent
           details.set(key, withPending(key, detail));
+          touch(key);
           // Evict the least recent detail that is neither open nor preloaded on purpose. The preload window is
           // smaller than the cache, so there is always one, and preloads never push each other out.
           const keep = new Set([...wanted, useUiStore.getState().openThread]);
-          while (details.size > DETAIL_CACHE_SIZE) {
-            const oldest = [...details.keys()].find((k) => !keep.has(k));
-            if (oldest === undefined) break;
+          for (const oldest of recency) {
+            if (details.size <= DETAIL_CACHE_SIZE) break;
+            if (keep.has(oldest)) continue;
             details.delete(oldest);
+            recency.delete(oldest);
           }
           const errors = { ...s.errors };
           delete errors[key];
@@ -148,6 +155,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
           if (failure.code !== "not_found" || !s.details.has(key)) return { errors };
           const details = new Map(s.details);
           details.delete(key);
+          recency.delete(key);
           return { details, errors };
         });
       } finally {
@@ -179,13 +187,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         return joinOrFetch(key);
       }
       if (cached) {
-        // Touch: move to the most recent position.
-        set((s) => {
-          const details = new Map(s.details);
-          details.delete(key);
-          details.set(key, cached);
-          return { details };
-        });
+        touch(key);
         return Promise.resolve();
       }
       return joinOrFetch(key);
@@ -219,7 +221,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         const current = s.details.get(key);
         if (!current) return {};
         const details = new Map(s.details);
-        details.set(key, fn(current)); // an existing key keeps its place in the LRU order
+        details.set(key, fn(current));
         return { details };
       });
     },
@@ -228,6 +230,7 @@ export const useThreadStore = create<ThreadState>((set, get) => {
       keys.forEach((key) => {
         inflight.delete(key);
         tried.delete(key);
+        recency.delete(key);
       });
       set((s) => {
         const hit = keys.filter((k) => s.details.has(k) || k in s.errors);
@@ -289,6 +292,7 @@ export function __resetThreadStoreForTests() {
   rateLimited = false;
   preloading = 0;
   inflight.clear();
+  recency.clear();
   pendingDetails.clear();
   useThreadStore.setState({ details: new Map(), errors: {}, loading: {} });
 }

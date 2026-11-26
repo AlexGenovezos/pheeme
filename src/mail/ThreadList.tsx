@@ -21,6 +21,7 @@ import {
 import type { ThreadSummary } from "../lib/tauri";
 import { focusFromKeyboard } from "../keyboard/focus";
 import { registry } from "../keyboard/registry";
+import { staticPixelToken } from "../lib/staticPixelToken";
 import { useCommands } from "../keyboard/useCommands";
 import { useAccountStore } from "../store/accountStore";
 import { useLabelStore } from "../store/labelStore";
@@ -52,13 +53,6 @@ const ROW_HEIGHT_TOKEN: Record<ListDensity, string> = {
   comfortable: "--row-height-comfortable",
   compact: "--row-height-thread-compact",
 };
-
-function rowHeightEstimate(density: ListDensity): number {
-  const value = parseFloat(
-    getComputedStyle(document.documentElement).getPropertyValue(ROW_HEIGHT_TOKEN[density]),
-  );
-  return Number.isFinite(value) && value > 0 ? value : FALLBACK_ROW_HEIGHT[density];
-}
 
 export interface ThreadListProps {
   /** The mailbox's display name, for the listbox label and the empty state. */
@@ -164,6 +158,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const search = useMailStore((s) => s.search);
   const searchAccountId = useUiStore((s) => s.searchAccountId);
   const density = useUiStore((s) => s.listDensity);
+  const rowHeight = staticPixelToken(ROW_HEIGHT_TOKEN[density], FALLBACK_ROW_HEIGHT[density]);
   const remoteMore = Object.keys(search?.remoteNext ?? {}).length > 0;
   const canLoadMore = !!next || remoteMore;
   const error = useMailStore((s) => s.error);
@@ -200,7 +195,7 @@ function Rows({ title, onRowAction, rowMenu }: ThreadListProps) {
   const virtualizer = useVirtualizer({
     count: threads.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowHeightEstimate(density),
+    estimateSize: () => rowHeight,
     overscan: 8,
     rangeExtractor,
     getItemKey: (i) => keys[i],

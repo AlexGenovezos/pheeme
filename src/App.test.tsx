@@ -92,6 +92,9 @@ const oneAccount = (cmd: string) => {
   return undefined;
 };
 
+// The first opening imports Settings and its pages.
+const settingsDialog = () => screen.findByRole("dialog", { name: /^Settings/ }, { timeout: 5000 });
+
 test("with accounts it shows them and can add or remove one", async () => {
   const calls: string[] = [];
   mockIPC((cmd) => {
@@ -101,7 +104,7 @@ test("with accounts it shows them and can add or remove one", async () => {
   });
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  const dialog = screen.getByRole("dialog", { name: /Settings/ });
+  const dialog = await settingsDialog();
   fireEvent.click(within(dialog).getByRole("button", { name: "Accounts" }));
   expect(within(dialog).getByText(account.email)).toBeInTheDocument();
 
@@ -115,7 +118,7 @@ test("with accounts it shows them and can add or remove one", async () => {
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
   expect(screen.getByText(/Nothing changes in Gmail/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
   await vi.waitFor(() => expect(screen.queryByText("Me")).not.toBeInTheDocument());
@@ -126,7 +129,7 @@ test("Escape closes the add-account dialog and leaves mail as it was", async () 
   mockIPC(oneAccount);
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  const settings = screen.getByRole("dialog", { name: /Settings/ });
+  const settings = await settingsDialog();
   fireEvent.click(within(settings).getByRole("button", { name: "Accounts" }));
   fireEvent.click(within(settings).getByRole("button", { name: "Add account" }));
   const dialog = screen.getByRole("dialog", { name: "Add account" });
@@ -154,7 +157,7 @@ test("Settings › About › Open guide opens the setup tutorial, not the accoun
   mockIPC(oneAccount);
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  const dialog = screen.getByRole("dialog", { name: /Settings/ });
+  const dialog = await settingsDialog();
   fireEvent.click(within(dialog).getByRole("button", { name: "About" }));
   fireEvent.click(within(dialog).getByRole("button", { name: "Open guide" }));
   expect(screen.queryByRole("dialog", { name: /Settings/ })).not.toBeInTheDocument();
@@ -177,7 +180,7 @@ test("a failed remove keeps the account and shows why", async () => {
   useSettingsStore.setState({ page: "accounts" });
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("No system keychain is available.");
   expect(screen.getByText("Me")).toBeInTheDocument();
@@ -288,7 +291,7 @@ test("settings opens over the inbox, holds the keyboard, and Escape closes it", 
   render(<App />);
   await screen.findByRole("navigation", { name: "Mailboxes" });
   fireEvent.keyDown(window, { key: ",", ctrlKey: true });
-  expect(screen.getByRole("dialog", { name: /Settings/ })).toBeInTheDocument();
+  expect(await settingsDialog()).toBeInTheDocument();
   // The inbox stays mounted behind the dialog, but its shortcuts don't fire.
   expect(screen.getByRole("navigation", { name: "Mailboxes" })).toBeInTheDocument();
   fireEvent.keyDown(window, { key: "b", ctrlKey: true });

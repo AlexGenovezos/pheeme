@@ -48,6 +48,8 @@ export interface PickerPopoverProps {
   className?: string;
   /** At least as wide as the field. */
   matchWidth?: boolean;
+  /** Keep the popup inside a modal that can contain it without clipping. */
+  inline?: boolean;
   children: ReactNode;
 }
 
@@ -58,6 +60,7 @@ export function PickerPopover({
   id,
   className,
   matchWidth = false,
+  inline = false,
   children,
 }: PickerPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -105,7 +108,7 @@ export function PickerPopover({
     };
   }, [place]);
 
-  return createPortal(
+  const popup = (
     <div
       ref={ref}
       id={id}
@@ -117,9 +120,9 @@ export function PickerPopover({
       onContextMenu={(e) => e.preventDefault()}
     >
       {children}
-    </div>,
-    document.body,
+    </div>
   );
+  return inline ? popup : createPortal(popup, document.body);
 }
 
 export interface ListOption {

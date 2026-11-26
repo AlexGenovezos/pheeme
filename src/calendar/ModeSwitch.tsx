@@ -1,5 +1,5 @@
 import { CalendarDays, Mail } from "lucide-react";
-import type { KeyboardEvent } from "react";
+import { type KeyboardEvent, useLayoutEffect, useRef } from "react";
 import { describeShortcut } from "../keyboard/format";
 import { useKeybinding } from "../keyboard/useCommands";
 import { type AppMode, useCalendarStore } from "./calendarStore";
@@ -18,6 +18,8 @@ const MODES: {
     Icon: CalendarDays,
   },
 ];
+
+let focusMode: AppMode | null = null;
 
 function ModeButton({ entry, active }: { entry: (typeof MODES)[number]; active: boolean }) {
   const shortcut = useKeybinding(entry.command);
@@ -43,18 +45,23 @@ function ModeButton({ entry, active }: { entry: (typeof MODES)[number]; active: 
 /** The Mail | Calendar switch, the top row of the sidebar's footer. */
 export function ModeSwitch() {
   const mode = useCalendarStore((s) => s.mode);
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (focusMode === mode)
+      ref.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+    focusMode = null;
+  }, [mode]);
   const onKeyDown = (e: KeyboardEvent) => {
     if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
     e.preventDefault();
     const next = mode === "mail" ? "calendar" : "mail";
+    // The other mode's switch may not mount until its lazy chunk arrives.
+    focusMode = next;
     useCalendarStore.getState().setMode(next);
-    // The other mode's sidebar has its own switch: keep focus on it there.
-    requestAnimationFrame(() =>
-      document.querySelector<HTMLElement>('.mode-switch [aria-checked="true"]')?.focus(),
-    );
   };
   return (
     <div
+      ref={ref}
       role="radiogroup"
       aria-label="Mail or Calendar"
       className="mode-switch"

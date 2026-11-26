@@ -3,7 +3,6 @@ import { useEffect } from "react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { Skeleton } from "../components/ui/Skeleton";
-import { toast } from "../components/ui/Toast";
 import { registry } from "../keyboard/registry";
 import { useCommands, useKeybinding } from "../keyboard/useCommands";
 import type { ThreadSummary } from "../lib/tauri";
@@ -33,10 +32,6 @@ import { SearchBar, SearchStatus, SEARCH_INPUT_ID } from "../search/SearchBar";
 import { dragRegion } from "./chrome";
 import { DEFAULT_KEYS } from "../keyboard/defaultKeys";
 export { SEARCH_INPUT_ID };
-
-/** Placeholder until the mail UI (Phase 6) wires real actions. */
-export const notYet = (action: string) =>
-  toast({ title: `${action} isn't wired up yet`, description: "It arrives with the mail UI." });
 
 const onRowAction = (action: RowAction, t: ThreadSummary) => {
   const keys = [threadKey(t.accountId, t.id)];
@@ -133,7 +128,7 @@ export function ListPane() {
     const ui = useUiStore.getState();
     ui.setSearch(toggleTerm(ui.searchText.trim(), "is", "unread", !unreadPressed));
   };
-  const threads = useMailStore((s) => s.threads);
+  const count = useMailStore((s) => s.threads.length);
 
   // Refetched when the mailbox or the accounts change.
   useEffect(() => {
@@ -266,7 +261,7 @@ export function ListPane() {
             title={scopeEmail && `Searching ${scopeEmail} only`}
             aria-live="polite"
           >
-            {threads.length}
+            {count}
             {next ||
             loading ||
             error ||
@@ -275,7 +270,7 @@ export function ListPane() {
             search?.remoteError
               ? "+"
               : ""}{" "}
-            {threads.length === 1 ? "result" : "results"}
+            {count === 1 ? "result" : "results"}
             {scopeEmail && ` in ${scopeEmail}`}
           </span>
         ) : (
@@ -304,15 +299,18 @@ export function ListPane() {
         <Button
           variant="ghost"
           size="sm"
-          disabled={threads.length === 0 && !anyChecked}
+          disabled={count === 0 && !anyChecked}
           icon={anyChecked ? <X aria-hidden="true" /> : <SquareCheckBig aria-hidden="true" />}
-          title={
-            anyChecked ? "Clear selection" : `Select all ${threads.length} loaded conversations`
-          }
+          title={anyChecked ? "Clear selection" : `Select all ${count} loaded conversations`}
           onClick={() => {
             const ui = useUiStore.getState();
             if (anyChecked) ui.clearChecked();
-            else ui.checkAll(threads.map((thread) => threadKey(thread.accountId, thread.id)));
+            else
+              ui.checkAll(
+                useMailStore
+                  .getState()
+                  .threads.map((thread) => threadKey(thread.accountId, thread.id)),
+              );
           }}
         >
           {anyChecked ? "Clear selection" : "Select all"}
@@ -322,10 +320,10 @@ export function ListPane() {
           {searchText && <SearchStatus />}
           {!anyChecked &&
             !searchText &&
-            (threads.length === 0 && loading ? (
+            (count === 0 && loading ? (
               <Skeleton width="8em" />
             ) : (
-              `${threads.length}${next ? "+" : ""} ${threads.length === 1 ? "conversation" : "conversations"}`
+              `${count}${next ? "+" : ""} ${count === 1 ? "conversation" : "conversations"}`
             ))}
         </span>
         {searchText && !anyChecked && (

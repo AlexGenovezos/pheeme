@@ -1,4 +1,13 @@
-import { type KeyboardEvent, memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Button } from "../components/ui/Button";
 import { Kbd } from "../components/ui/Kbd";
 import { LabelChip } from "../labels/LabelChip";
@@ -116,40 +125,50 @@ function LabelChips({
 
 export function ThreadView() {
   const openKey = useUiStore((s) => s.openThread);
-  const detail = useThreadStore((s) => (openKey ? s.details.get(openKey) : undefined));
   const error = useThreadStore((s) => (openKey ? s.errors[openKey] : undefined));
   const loading = useThreadStore((s) => (openKey ? s.loading[openKey] : undefined));
   const load = useThreadStore((s) => s.load);
-  const details = useThreadStore((s) => s.details);
-  const rows = useMailStore((s) => s.threads);
   const preloadImages = useReadingSettings((s) => s.preloadImages);
   const scroller = useRef<HTMLDivElement>(null);
-  const [mounted, setMounted] = useState<string[]>([]);
   // Find in conversation: 0 is closed; each mod+f counts up, which refocuses the open bar.
   const [find, setFind] = useState(0);
-  if (find && !openKey) setFind(0);
+  useEffect(
+    () =>
+      useUiStore.subscribe((state, previous) => {
+        if (!state.openThread && previous.openThread) setFind(0);
+      }),
+    [],
+  );
   // The open conversation, plus (with Preload images on) two rows either side rendered out of sight, so the next
   // arrow shows a finished email. Images a server won't let us cache only survive in a live document.
-  const keys = rows.map((row) => threadKey(row.accountId, row.id));
-  const at = openKey ? keys.indexOf(openKey) : -1;
-  const nearby = !preloadImages
-    ? []
-    : at < 0
-      ? keys.slice(0, 2)
-      : keys.slice(Math.max(0, at - 2), at + 3);
-  // Neighbours in Spam or Trash aren't rendered ahead: that would load their remote images unopened (`isJunk`).
-  const wanted = new Set(
-    [...nearby, ...(openKey ? [openKey] : [])].filter((key) => {
-      const cached = details.get(key);
-      return cached !== undefined && (key === openKey || !isJunk(cached));
+  const nearby = useMailStore(
+    useShallow(({ threads }) => {
+      if (!preloadImages) return [];
+      const open = openKey ? parseThreadKey(openKey) : null;
+      const at = open
+        ? threads.findIndex((row) => row.accountId === open.accountId && row.id === open.threadId)
+        : -1;
+      return (at < 0 ? threads.slice(0, 2) : threads.slice(Math.max(0, at - 2), at + 3)).map(
+        (row) => threadKey(row.accountId, row.id),
+      );
     }),
   );
-  // Survivors keep their place: moving an iframe in the DOM throws its document away.
-  const next = [
-    ...mounted.filter((key) => wanted.has(key)),
-    ...[...wanted].filter((key) => !mounted.includes(key)),
-  ];
-  if (next.join() !== mounted.join()) setMounted(next);
+  const keys = useMemo(
+    // Keep surviving keys in the same relative DOM order, so React never moves their iframes.
+    () => [...new Set([...nearby, ...(openKey ? [openKey] : [])])].sort(),
+    [nearby, openKey],
+  );
+  const details = useThreadStore(useShallow((s) => keys.map((key) => s.details.get(key))));
+  const next = useMemo(
+    () =>
+      keys.flatMap((key, index) => {
+        const cached = details[index];
+        // Rendering a hidden neighbour in Spam or Trash would load its remote images unopened.
+        return cached && (key === openKey || !isJunk(cached)) ? [{ key, cached }] : [];
+      }),
+    [keys, details, openKey],
+  );
+  const detail = next.find(({ key }) => key === openKey)?.cached;
 
   useEffect(() => {
     if (openKey) void load(openKey);
@@ -263,17 +282,20 @@ export function ThreadView() {
         onKeyUp={(e) => handleScrollKeyUp(e.currentTarget, e.nativeEvent)}
       >
         {content}
-        {mounted.map((key) => (
-          <div
-            key={key}
-            className="thread-view__retained"
-            data-visible={key === openKey}
-            aria-hidden={key !== openKey || undefined}
-            {...(key !== openKey ? { inert: true } : {})}
-          >
-            <Conversation openKey={key} detail={details.get(key)!} active={key === openKey} />
-          </div>
-        ))}
+        {next.map(({ key, cached }) => {
+          const active = key === openKey;
+          return (
+            <div
+              key={key}
+              className="thread-view__retained"
+              data-visible={active}
+              aria-hidden={!active || undefined}
+              inert={!active}
+            >
+              <Conversation openKey={key} detail={cached} active={active} />
+            </div>
+          );
+        })}
       </div>
       {find > 0 && openKey && (
         <FindBar pane={scroller} openKey={openKey} request={find} onClose={() => setFind(0)} />
@@ -283,8 +305,7 @@ export function ThreadView() {
 }
 
 /**
- * Memoized: the view re-renders whenever any cached conversation changes (prefetching neighbours, marking read),
- * and the conversations kept mounted beside the open one only need to when their own detail does.
+ * The conversations kept mounted beside the open one render only when their own props or subscriptions change.
  */
 const Conversation = memo(function Conversation({
   openKey,
@@ -309,13 +330,14 @@ const Conversation = memo(function Conversation({
   const reveal = useRevealStore((s) =>
     active && s.reveal?.key === openKey ? s.reveal.messageId : null,
   );
-  let current = expansion;
-  if (openKey && detail) {
-    current = withNewMessages(expansion, openKey, detail);
-    if (reveal && !current.open.has(reveal) && detail.messages.some((m) => m.id === reveal))
-      current = { ...current, open: new Set(current.open).add(reveal) };
+  let current = withNewMessages(expansion, openKey, detail);
+  if (reveal && !current.open.has(reveal) && detail.messages.some((m) => m.id === reveal))
+    current = { ...current, open: new Set(current.open).add(reveal) };
+  useLayoutEffect(() => {
+    // Preserve the initial expansion and any revealed message before a refresh changes their inputs.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (current !== expansion) setExpansion(current);
-  }
+  }, [current, expansion]);
 
   const toggle = (id: string) =>
     setExpansion((s) => {

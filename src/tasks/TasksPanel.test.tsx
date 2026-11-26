@@ -1,5 +1,5 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { registry } from "../keyboard/registry";
 import { useToastStore } from "../components/ui/Toast";
@@ -291,7 +291,7 @@ describe("Tasks panel", () => {
     await settle();
     const panel = screen.getByRole("complementary", { name: "Tasks" });
     // The first task, once its list has been read, not the Add button that was there before it.
-    expect(document.activeElement).toHaveAccessibleName(/^Edit task: /);
+    await waitFor(() => expect(document.activeElement).toHaveAccessibleName(/^Edit task: /));
     act(() => (document.activeElement as HTMLElement).blur());
     act(() => void registry.run("tasks.focus"));
     expect(panel.contains(document.activeElement)).toBe(true);

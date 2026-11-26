@@ -355,6 +355,13 @@ test("closing while the send prompt is open leaves only the close prompt", async
   const prompts = within(panel).getAllByRole("alertdialog");
   expect(prompts).toHaveLength(1);
   expect(prompts[0]).toHaveAccessibleName("Save draft or discard?");
+  const keepEditing = within(prompts[0]).getByRole("button", { name: "Keep editing" });
+  const saveDraft = within(prompts[0]).getByRole("button", { name: "Save draft" });
+  expect(keepEditing).toHaveFocus();
+  fireEvent.keyDown(keepEditing, { key: "Tab", shiftKey: true });
+  expect(saveDraft).toHaveFocus();
+  fireEvent.keyDown(saveDraft, { key: "Tab" });
+  expect(keepEditing).toHaveFocus();
 });
 
 test("the send prompt takes focus on its Send button", async () => {
@@ -362,7 +369,23 @@ test("the send prompt takes focus on its Send button", async () => {
   const { panel } = await addressed();
   fireEvent.click(within(panel).getByRole("button", { name: "Send" }));
   const prompt = within(panel).getByRole("alertdialog", { name: "Send this message?" });
-  await waitFor(() => expect(within(prompt).getByRole("button", { name: "Send" })).toHaveFocus());
+  const send = within(prompt).getByRole("button", { name: "Send" });
+  await waitFor(() => expect(send).toHaveFocus());
+  fireEvent.keyDown(send, { key: "Tab" });
+  expect(within(prompt).getByRole("button", { name: "Keep editing" })).toHaveFocus();
+});
+
+test("restoring a minimized draft leaves focus in its open confirmation", async () => {
+  const { panel } = await addressed();
+  const id = useComposeStore.getState().windows[0].id;
+  fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+  fireEvent.click(within(panel).getByRole("button", { name: "Minimize" }));
+  act(() => useComposeStore.getState().setMinimized(id, false));
+
+  const prompt = screen.getByRole("alertdialog", { name: "Save draft or discard?" });
+  const keepEditing = within(prompt).getByRole("button", { name: "Keep editing" });
+  await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  expect(keepEditing).toHaveFocus();
 });
 
 test("the signature shows whole in the editor, stays one block, and follows the From account", async () => {

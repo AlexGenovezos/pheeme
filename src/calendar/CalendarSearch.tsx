@@ -11,7 +11,7 @@ import { displayZone, useCalendarStore } from "./calendarStore";
 import { eventColors } from "./colors";
 import { addDays, dateOf, formatDay, zonedMs } from "./dates";
 import { useEditStore } from "./editStore";
-import { useNow } from "./useNow";
+import { useToday } from "./useNow";
 import { eventKey, eventTitle, timeSpan, useCalendarLookup } from "./EventBlock";
 
 /** How long typing pauses before the search runs, in ms. */
@@ -36,7 +36,7 @@ export function CalendarSearch() {
   const list = useRef<HTMLUListElement>(null);
   const latest = useRef(0);
   const trimmed = query.trim();
-  const today = dateOf(useNow(), tz);
+  const today = useToday(tz);
 
   useEffect(() => input.current?.focus(), []);
 

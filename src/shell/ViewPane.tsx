@@ -12,8 +12,10 @@ import {
   Zap,
 } from "lucide-react";
 import { type MouseEvent, type ReactNode, useMemo, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useComposeSettings } from "../compose/composeSettings";
 import { Button } from "../components/ui/Button";
+import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { IconButton } from "../components/ui/IconButton";
 import { describeShortcut } from "../keyboard/format";
 import { useWidth } from "../lib/useWidth";
@@ -36,7 +38,7 @@ import {
   toggleStar,
   trash,
 } from "../mail/actions";
-import { threadKey } from "../mail/mailboxes";
+import { present } from "../mail/change";
 import { PRINT_COMMAND, printOpenConversation } from "../mail/print";
 import {
   lacksUnsubscribe,
@@ -55,7 +57,6 @@ import { useSpeedReaderSettings } from "../speedread/settings";
 import { useMailStore } from "../store/mailStore";
 import { readingPaneShown, useUiStore } from "../store/uiStore";
 import { dragRegion } from "./chrome";
-import { notYet } from "./ListPane";
 
 /** Below this reading-pane width, Reply, Reply all and Forward drop their words to fit the toolbar. */
 const LABELED_REPLIES_MIN = 560;
@@ -95,15 +96,14 @@ export function ViewPane() {
   const checked = useUiStore((s) => s.checked);
   const readingPane = useUiStore(readingPaneShown);
   const defaultReply = useComposeSettings((s) => s.defaultReply);
-  const threads = useMailStore((s) => s.threads);
   const off = !openKey; // Reply and Forward need an open conversation
   // What the mutations act on (the checked rows, else the open one) that is still in the list. Rows that have
   // left it (archived elsewhere) are skipped by the actions, so with none left the buttons stay off.
   // In target order, so the first is the one `toggleStar` (and `s`) decides from.
-  const rows = useMemo(() => {
-    const byKey = new Map(threads.map((t) => [threadKey(t.accountId, t.id), t]));
-    return [...new Set(targetsOf(checked, openKey))].flatMap((k) => byKey.get(k) ?? []);
-  }, [checked, openKey, threads]);
+  const targets = useMemo(() => targetsOf(checked, openKey), [checked, openKey]);
+  const rows = useMailStore(
+    useShallow((s) => present(targets, s.threads).map((row) => row.thread)),
+  );
   const stale = rows.length === 0;
   const slot = useArchiveSlot();
   const anyUnread = rows.some((t) => t.unread);
@@ -189,7 +189,6 @@ export function ViewPane() {
           disabled: !openKey || lacksUnsubscribe(openKey),
           onSelect: () => void unsubscribeOpenConversation(),
         },
-        { id: "original", label: "Show original", onSelect: () => notYet("Show original") },
       ],
       { x: r.left, y: r.bottom },
     );
@@ -327,7 +326,9 @@ export function ViewPane() {
         />
       </div>
 
-      <ThreadView />
+      <ErrorBoundary title="Couldn't show the conversation" resetKey={openKey}>
+        <ThreadView />
+      </ErrorBoundary>
     </div>
   );
 }

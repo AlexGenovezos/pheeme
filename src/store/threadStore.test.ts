@@ -71,6 +71,27 @@ test("LRU stays bounded and protects the open thread", async () => {
   expect(cached()).not.toContain("a:t1");
 });
 
+test("a cache hit updates recency without changing the snapshot or notifying subscribers", async () => {
+  backend(
+    Object.fromEntries(
+      Array.from({ length: DETAIL_CACHE_SIZE + 1 }, (_, i) => [`a:t${i}`, detail(`t${i}`)]),
+    ),
+  );
+  for (let i = 0; i < DETAIL_CACHE_SIZE; i++) await store().load(`a:t${i}`);
+
+  const before = store().details;
+  const notify = vi.fn();
+  const unsubscribe = useThreadStore.subscribe(notify);
+  await store().load("a:t0");
+  unsubscribe();
+  expect(store().details).toBe(before);
+  expect(notify).not.toHaveBeenCalled();
+
+  await store().load(`a:t${DETAIL_CACHE_SIZE}`);
+  expect(cached()).toContain("a:t0");
+  expect(cached()).not.toContain("a:t1");
+});
+
 test("not_found keeps a per-key error and no detail", async () => {
   backend({ "a:t2": detail("t2") });
   await store().load("a:t1");

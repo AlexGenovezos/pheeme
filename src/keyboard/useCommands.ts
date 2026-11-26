@@ -36,10 +36,12 @@ export function useCommands(commands: Command[], reg: CommandRegistry = registry
     .join("\n");
 
   useEffect(() => {
-    const offs = latest.current.map((c) =>
-      reg.register({ ...c, run: () => latest.current.find((x) => x.id === c.id)?.run() }),
+    return reg.registerMany(
+      latest.current.map((c) => ({
+        ...c,
+        run: () => latest.current.find((x) => x.id === c.id)?.run(),
+      })),
     );
-    return () => offs.forEach((off) => off());
     // `signature` captures everything about the commands except `run`, which goes through the ref.
   }, [signature, reg]);
 }
