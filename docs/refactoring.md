@@ -1,6 +1,6 @@
 # Refactoring register
 
-Last audited: 2026-11-04, against `0cf0d27` and the reconciled local work.
+Last reviewed on 2026-11-26 against `59bfee96`. All four recorded refactors have landed.
 This register tracks open maintenance work and completed refactors.
 
 The current service boundaries are useful: mail actions share one frontend entry
@@ -50,16 +50,14 @@ A broad rewrite is not warranted by this audit.
   flows using the production browser preview. The existing onboarding/transfer
   integration tests and three superseded-attempt tests pass in this workspace too.
 
-## Small cleanup when touched
+## Thread-detail cache
 
-- [ ] **R4: Use one foreground request path in the thread-detail cache.**
+- [x] **R4: Use one foreground request path in the thread-detail cache.**
 
-  Evidence: `load` in [threadStore.ts](../src/store/threadStore.ts) repeats the
-  in-flight lookup, starting a fetch, promoting a quiet request, and returning its
-  promise for incomplete cached details and missing details. Return early for a
-  complete cached detail, then let both remaining cases share that existing block.
-  No new abstraction is needed. Completion preserves LRU touching, showing partial
-  bodies during a refresh, foreground error reporting, and request deduplication.
+  `load` calls `joinOrFetch` for both incomplete and missing thread details. It
+  joins an existing foreground request or starts one to supersede a quiet prefetch.
+  Complete cached details still move to the most recently used position.
+  [Implementation](../src/store/threadStore.ts) · [PR #144](https://github.com/AlexGenovezos/pheeme/pull/144)
 
 ## Deliberate repetition to preserve
 
@@ -69,8 +67,8 @@ A broad rewrite is not warranted by this audit.
   Any future consolidation must preserve SQLx compile-time checking, query-plan
   assertions, and pagination/count parity tests.
 - Rust DTOs and TypeScript IPC interfaces describe opposite sides of a process
-  boundary. Watch for drift as new domains land; consider generation if maintaining
-  the contracts becomes a recurring problem. Thin command adapters and the
+  boundary. The [IPC parity test](../src/lib/ipc/parity.test.ts) checks command and
+  sync event names across that boundary. Thin command adapters and the
   `MailApi` trait implementations are useful boundaries, not duplicate services.
 - Browser-preview handlers and Rust's fake Gmail intentionally provide independent
   backends. Keep their observable contracts aligned; do not share production
@@ -90,18 +88,3 @@ Revisit this register when adding a workflow or domain and when a fix has to be
 copied to multiple places. Add a concrete pair of call sites, the maintenance risk,
 and completion criteria for new items. Close an item with its implementing PR;
 keep unrelated cleanup in separate PRs, as the contribution guide requires.
-
-## Reconciliation with main
-
-The original checkout was based on `86ccf86`. Comparing its local changes with
-`0cf0d27` confirmed that credential transfer, desktop diagnostics, Apple Silicon
-release builds, branding, onboarding extraction, unread filtering, prompt send
-dispatch, fixed-width email fitting, and compose access with a collapsed sidebar
-had already landed. Main's newer search, mod support, image-loading behavior,
-and persistent Gmail rejection messages were retained. The brand archives had
-identical extracted contents; only archive metadata differed.
-
-The shared text decoder and subscription ownership changes above were still
-missing. The email-layout fix belongs to a separate active thread and is excluded
-from this reconciliation. Original local implementations were preserved in a
-backup branch before reconciliation.

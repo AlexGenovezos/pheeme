@@ -251,7 +251,6 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     calendarReminders,
   });
   return {
-    greet: (args) => `Hello, ${String(args.name ?? "world")}! (preview)`,
     list_accounts: () => [...accounts],
     get_sync_progress: () =>
       accounts.map((account, i) => {
@@ -529,6 +528,8 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     print_email: (args) => {
       const url = URL.createObjectURL(new Blob([String(args.html)], { type: "text/html" }));
       window.open(url, "_blank", "noopener");
+      // A noopener tab has no load callback here. Give it time to read the blob.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     },
     open_meeting_link: () => undefined,
     save_attachment: () => "/Users/you/Downloads/attachment.pdf",

@@ -5,6 +5,22 @@ on:
   push:
     branches: [main]
   pull_request:
+    # Neither site job is a required check. The demo embeds the release notes and counter mod.
+    paths:
+      - "site/**"
+      - "!site/README.md"
+      - "src/**"
+      - "public/**"
+      - "docs/releases/v*.md"
+      - "examples/mods/counter/manifest.json"
+      - "scripts/release-notes.*"
+      - "index.html"
+      - "package*.json"
+      - ".npmrc"
+      - ".nvmrc"
+      - "tsconfig*.json"
+      - "vite.config.ts"
+      - ".github/workflows/site.yml"
   workflow_dispatch:
 
 permissions:

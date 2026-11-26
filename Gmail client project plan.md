@@ -1,7 +1,6 @@
 # Project Plan: Cross-Platform Gmail Client (Rust + Tauri)
-**For use with Claude Code CLI**
 
-> **Note (2026-10-31):** product name is **Pheeme**. Scope, priorities and phase order are now set by [`docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md`](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md), which overrides this plan where they disagree (search is local-first, multi-account adds a combined inbox, CI lands early, Calendar follows v1). This document remains the detailed technical reference.
+> **Historical archive.** This is Pheeme’s original Gmail proposal. For the current implementation and shipped features, see the [architecture guide](CLAUDE.md#architecture) and the [README](README.md).
 
 ---
 

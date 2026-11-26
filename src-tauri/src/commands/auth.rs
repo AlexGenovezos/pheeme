@@ -40,12 +40,3 @@ pub async fn complete_oauth(
 pub fn cancel_oauth(state: State<'_, AppState>, flow_id: String) {
     state.accounts.cancel_sign_in(&flow_id);
 }
-
-#[tauri::command]
-pub async fn refresh_token(
-    state: State<'_, AppState>,
-    account_id: String,
-) -> Result<(), CommandError> {
-    state.accounts.refresh_access_token(&account_id).await?;
-    Ok(())
-}

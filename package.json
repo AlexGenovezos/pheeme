@@ -67,6 +67,8 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
     "@vitest/coverage-v8": "5.1.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "cross-env": "10.1.0",
     "jscpd": "5.4.3",
     "jsdom": "31.0.1",

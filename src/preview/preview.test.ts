@@ -59,7 +59,6 @@ describe("preview IPC", () => {
     ).resolves.toMatchObject({
       thread: { id: "p-01", messageCount: 4 },
     });
-    await expect(invoke("greet", { name: "Avery" })).resolves.toContain("Avery");
   });
 
   test("sending and saving diagnostics succeed without leaving the browser", async () => {
