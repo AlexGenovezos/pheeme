@@ -74,8 +74,16 @@ export function toSummary(t: FixtureThread, labels: PreviewLabel[]): ThreadSumma
     hasAttachment: t.messages.some((m) => m.attachments.some((a) => !a.isInline)),
     messageCount: t.messages.length,
     labelIds: userLabelIds(t, labels),
+    // Like the cache, a conversation in Trash or Spam carries only that one of its system labels (an Important
+    // marker or an Inbox label doesn't show while it sits there).
     systemLabelIds: [
-      ...t.labelIds.filter((id) => !labels.some((l) => l.accountId === t.accountId && l.id === id)),
+      ...(hasLabel(t, "TRASH")
+        ? ["TRASH"]
+        : hasLabel(t, "SPAM")
+          ? ["SPAM"]
+          : t.labelIds.filter(
+              (id) => !labels.some((l) => l.accountId === t.accountId && l.id === id),
+            )),
       ...(hasLabel(t, "UNREAD") ? ["UNREAD"] : []),
     ].sort(),
   };

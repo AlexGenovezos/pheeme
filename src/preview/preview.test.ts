@@ -405,6 +405,40 @@ describe("preview IPC", () => {
     expect(spam.threads.map((t) => t.id)).toContain("p-05");
   });
 
+  test("a reported conversation drops its Important marker while in Spam, and Undo brings it back", async () => {
+    installPreview();
+    const base = createFixtureThreads().find((t) => t.labelIds.includes("INBOX"))!;
+    const rows = async (labelId: string) =>
+      (
+        await invoke<{ threads: { id: string; systemLabelIds: string[] }[] }>("list_threads", {
+          accountIds: [base.accountId],
+          labelId,
+        })
+      ).threads.find((t) => t.id === base.id);
+    await invoke("modify_threads", {
+      accountId: base.accountId,
+      threadIds: [base.id],
+      add: ["IMPORTANT"],
+      remove: [],
+    });
+    await invoke("modify_threads", {
+      accountId: base.accountId,
+      threadIds: [base.id],
+      add: ["SPAM"],
+      remove: ["INBOX"],
+    });
+    const inSpam = (await rows("SPAM"))?.systemLabelIds ?? [];
+    expect(inSpam).toContain("SPAM");
+    expect(inSpam).not.toContain("IMPORTANT");
+    await invoke("modify_threads", {
+      accountId: base.accountId,
+      threadIds: [base.id],
+      add: ["INBOX"],
+      remove: ["SPAM"],
+    });
+    expect((await rows("INBOX"))?.systemLabelIds).toContain("IMPORTANT");
+  });
+
   test("modify_threads refuses Trash like the backend", () => {
     const handlers = createPreviewHandlers();
     expect(() =>
