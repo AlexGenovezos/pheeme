@@ -170,6 +170,7 @@ function AccountVacation({
         title="First day"
         control={
           <DateField
+            inlinePopover
             aria-label="First day"
             value={form.firstDay}
             disabled={!fieldsOn}
@@ -190,6 +191,7 @@ function AccountVacation({
               onChange={(ends) => edit({ ends })}
             />
             <DateField
+              inlinePopover
               aria-label="Last day"
               value={form.ends ? form.lastDay : ""}
               placeholder="No last day"
