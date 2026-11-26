@@ -106,7 +106,7 @@ pub async fn show(
     let body = CString::new(body)?;
     let identifier = match &target {
         NotifyTarget::Thread(mail) => Some(CString::new(super::notification_id(&mail.thread()))?),
-        NotifyTarget::Event(_) => None,
+        NotifyTarget::Event(event) => Some(CString::new(super::event_notification_id(event))?),
     };
     let target = CString::new(serde_json::to_string(&target)?)?;
     let (tx, rx) = oneshot::channel::<i32>();

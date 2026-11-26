@@ -132,22 +132,22 @@ async fn serve(
                     zbus::Variant::from(crate::identity::APP_IDENTIFIER),
                 )]);
                 // The spec has a category for new mail but none for event reminders.
-                let mut replaces = 0u32;
-                if let NotifyTarget::Thread(thread) = &delivery.target {
+                if let NotifyTarget::Thread(_) = &delivery.target {
                     hints.insert("category", zbus::Variant::from("email.arrived"));
-                    // A conversation keeps one notification: a new message replaces the last.
-                    replaces = ids_of(&targets, &[thread.thread()]).next().unwrap_or(0);
-                    if expired.contains(&replaces) {
-                        // A fresh banner, with the old one taken out of the history.
-                        if let Err(error) = proxy
-                            .call::<_, _, ()>("CloseNotification", &(replaces,))
-                            .await
-                        {
-                            tracing::debug!(%error, "Could not close a notification");
-                        }
-                        targets.remove(&replaces);
-                        replaces = 0;
+                }
+                // A conversation keeps one notification: a new message replaces the last. So does
+                // an event: its reminder at the start replaces the one before.
+                let mut replaces = same_as(&targets, &delivery.target).unwrap_or(0);
+                if expired.contains(&replaces) {
+                    // A fresh banner, with the old one taken out of the history.
+                    if let Err(error) = proxy
+                        .call::<_, _, ()>("CloseNotification", &(replaces,))
+                        .await
+                    {
+                        tracing::debug!(%error, "Could not close a notification");
                     }
+                    targets.remove(&replaces);
+                    replaces = 0;
                 }
                 let result: zbus::Result<u32> = proxy
                     .call(
@@ -211,6 +211,21 @@ async fn serve(
             }
         }
     }
+}
+
+/// The number of the notification `target` replaces: its conversation's, or its event's.
+fn same_as(
+    targets: &BTreeMap<u32, (NotifyTarget, Option<String>)>,
+    target: &NotifyTarget,
+) -> Option<u32> {
+    targets
+        .iter()
+        .find(|(_, (shown, _))| match (shown, target) {
+            (NotifyTarget::Thread(a), NotifyTarget::Thread(b)) => a.thread() == b.thread(),
+            (NotifyTarget::Event(a), NotifyTarget::Event(b)) => a == b,
+            _ => false,
+        })
+        .map(|(id, _)| *id)
 }
 
 /// The notification numbers of these conversations.
@@ -470,6 +485,11 @@ mod protocol_tests {
             calendar_id: "b@example.com".into(),
             event_id: "review".into(),
         });
+        let standup = NotifyTarget::Event(crate::calendar::reminders::EventTarget {
+            account_id: "b".into(),
+            calendar_id: "b@example.com".into(),
+            event_id: "standup".into(),
+        });
         let thread = NotifyTarget::Thread(crate::desktop::MailTarget {
             account_id: "a".into(),
             thread_id: "same-thread-id".into(),
@@ -480,7 +500,7 @@ mod protocol_tests {
             (&thread, None, vec!["default", "Open conversation"]),
             (&event, None, vec!["default", "Open event"]),
             (
-                &event,
+                &standup,
                 Some(call.to_owned()),
                 vec!["default", "Open event", "join", "Join"],
             ),
@@ -510,6 +530,25 @@ mod protocol_tests {
                 "each is a new notification"
             );
         }
+        // An event keeps one notification: its reminder at the start ("Now") replaces the one
+        // before ("In 10 minutes").
+        let (result, done) = oneshot::channel();
+        tx.send(Request::Show(Delivery {
+            target: event.clone(),
+            title: "Design review".into(),
+            body: "Now".into(),
+            join: None,
+            result,
+        }))
+        .await
+        .unwrap();
+        done.await.unwrap().unwrap();
+        calls.recv().await.unwrap();
+        assert_eq!(
+            replaced.recv().await.unwrap(),
+            2,
+            "replaces the event's earlier reminder"
+        );
         let fake = server
             .object_server()
             .interface::<_, FakeDesktop>("/org/freedesktop/Notifications")

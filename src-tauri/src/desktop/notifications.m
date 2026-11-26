@@ -66,7 +66,7 @@ void pheeme_notifications_permission(bool request, void *context, PheemeCompleti
 }
 
 // `identifier`: a conversation's own (the same for each of its messages, so a new one replaces
-// the last), or NULL for a one-off.
+// the last) or an event's (each reminder replaces the one before), or NULL for a one-off.
 void pheeme_notifications_show(const char *title, const char *body, const char *target,
                               const char *identifier, const char *join, void *context,
                               PheemeCompletion callback) {
