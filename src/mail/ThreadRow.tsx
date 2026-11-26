@@ -9,13 +9,15 @@ import { formatListDate } from "../lib/dates";
 import { LabelChip } from "../labels/LabelChip";
 import type { LabelInfo, ThreadSummary } from "../lib/tauri";
 import { ARCHIVE_SLOT_LABEL, archiveSlotIcon, useArchiveSlot } from "./archiveSlot";
+import { ImportantMark } from "./ImportantMark";
 import { CodeChip } from "./CodeCard";
 import { startMailDrag } from "./dragMail";
 import { type Location, threadKey } from "./mailboxes";
+import { canMarkImportance, isImportant } from "./importance";
 import { LIST_CODE_MAX_AGE, rowCode } from "./verificationCode";
 import "./mail.css";
 
-export type RowAction = "archive" | "delete" | "read";
+export type RowAction = "archive" | "delete" | "read" | "important";
 
 export const senderOf = (t: Pick<ThreadSummary, "fromName" | "fromAddress">) =>
   t.fromName ?? t.fromAddress ?? "Unknown sender";
@@ -91,6 +93,7 @@ export const ThreadRow = memo(function ThreadRow({
     return () => clearTimeout(timer);
   }, [code, thread.date]);
   const slot = useArchiveSlot();
+  const important = isImportant(thread);
   const act = (action: RowAction) => (e: MouseEvent) => {
     e.stopPropagation();
     onAction(action, thread);
@@ -111,7 +114,11 @@ export const ThreadRow = memo(function ThreadRow({
       onClick={(e) => onSelect(e, thread)}
       onPointerDown={(e) => {
         // The checkbox and hover actions are buttons, not handles.
-        if ((e.target as Element).closest(".thread-row__lead, .thread-row__actions, .code-chip"))
+        if (
+          (e.target as Element).closest(
+            ".thread-row__lead, .thread-row__actions, .thread-row__important, .code-chip",
+          )
+        )
           return;
         startMailDrag(e, threadKey(thread.accountId, thread.id));
       }}
@@ -142,6 +149,14 @@ export const ThreadRow = memo(function ThreadRow({
       }
       title={
         <>
+          <ImportantMark
+            important={important}
+            enabled={canMarkImportance(thread)}
+            shortcut={registry.shortcutFor(
+              important ? "conversation.mark-not-important" : "conversation.mark-important",
+            )}
+            onClick={act("important")}
+          />
           {showAccountDot && (
             <span
               className="thread-row__account"

@@ -12,6 +12,7 @@ import {
   readChange,
   withLabel,
 } from "./change";
+import { canMarkImportance, isImportant, withImportance } from "./importance";
 import type { ThreadKey } from "./mailboxes";
 
 /** `evenIfGone`: the conversation view's own controls act on the open thread even when its row has left the list. */
@@ -89,6 +90,32 @@ export function setStarred(starred: boolean, keys?: ThreadKey[]): Promise<void> 
 export function toggleStar(keys?: ThreadKey[]): Promise<void> {
   const first = present(keys)[0];
   return first ? setStarred(!first.thread.starred, keys) : Promise.resolve();
+}
+
+/**
+ * Gmail's Mark as important and Mark as not important. Only the conversations that aren't in that state yet change, so
+ * `+` on an important conversation does nothing, like Gmail's. In the Important mailbox, Not important takes the row out; in a search it stays until the next reload, like archive.
+ */
+export function setImportant(important: boolean, keys?: ThreadKey[]): Promise<void> {
+  const to = (value: boolean): Change =>
+    modify(value ? ["IMPORTANT"] : [], value ? [] : ["IMPORTANT"], {
+      patch: (t) => withImportance(t, value),
+      leavesList: !value && inMailbox("IMPORTANT"),
+      detail: withLabel("IMPORTANT", value),
+    });
+  const changing = present(keys).filter(
+    (r) => canMarkImportance(r.thread) && isImportant(r.thread) !== important,
+  );
+  return apply(
+    changing.map((r) => r.key),
+    to(important),
+    {
+      announce: {
+        title: important ? "Marked as important" : "Marked as not important",
+        undo: to(!important),
+      },
+    },
+  );
 }
 
 export function setRead(read: boolean, keys?: ThreadKey[]): Promise<void> {

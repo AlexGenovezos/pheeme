@@ -716,6 +716,52 @@ describe("label chips", () => {
   });
 });
 
+describe("importance marker", () => {
+  const marks = () => document.querySelectorAll<HTMLElement>(".thread-row__important");
+
+  test.each(["comfortable", "compact"] as const)(
+    "every %s row reserves the slot; only important rows fill it",
+    (listDensity) => {
+      useUiStore.setState({ listDensity });
+      useMailStore.setState({
+        threads: [thread(1), { ...thread(2), systemLabelIds: ["IMPORTANT", "INBOX"] }, thread(3)],
+        loading: false,
+        next: null,
+      });
+      render(<ThreadList {...props()} />);
+      expect(marks()).toHaveLength(3);
+      expect([...marks()].map((m) => m.hasAttribute("data-important"))).toEqual([
+        false,
+        true,
+        false,
+      ]);
+      expect(within(row(2)).getByRole("img", { name: "Important" })).toBeInTheDocument();
+    },
+  );
+
+  test("a Spam row keeps the slot but can't be toggled", () => {
+    const onRowAction = vi.fn();
+    useMailStore.setState({
+      threads: [{ ...thread(1), systemLabelIds: ["SPAM"] }],
+      loading: false,
+      next: null,
+    });
+    render(<ThreadList {...props({ onRowAction })} />);
+    expect(marks()[0]).toHaveAttribute("data-disabled");
+    fireEvent.click(marks()[0]);
+    expect(onRowAction).not.toHaveBeenCalled();
+  });
+
+  test("clicking the marker toggles it without opening the row", () => {
+    const onRowAction = vi.fn();
+    useMailStore.setState({ threads: [thread(1)], loading: false, next: null });
+    render(<ThreadList {...props({ onRowAction })} />);
+    fireEvent.click(marks()[0]);
+    expect(onRowAction).toHaveBeenCalledWith("important", expect.objectContaining({ id: "t1" }));
+    expect(useUiStore.getState().openThread).toBeNull();
+  });
+});
+
 describe("list density", () => {
   const load = () => {
     useMailStore.setState({ threads: many(3), loading: false, next: null });

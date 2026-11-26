@@ -28,6 +28,9 @@ import {
   respond,
   openLabelMenu,
   openMoveMenu,
+  canMarkImportance,
+  isImportant,
+  setImportant,
   setRead,
   targetsOf,
   toggleStar,
@@ -100,6 +103,9 @@ export function ViewPane() {
   const slot = useArchiveSlot();
   const anyUnread = rows.some((t) => t.unread);
   const starred = rows[0]?.starred ?? false;
+  // Mark as important unless every target already is, like Mark as read: one slot, its words swapped.
+  const markable = rows.filter(canMarkImportance);
+  const anyNotImportant = markable.some((t) => !isImportant(t));
   const keys = {
     back: useKeybinding("conversation.close"),
     archive: useKeybinding("conversation.archive"),
@@ -107,6 +113,8 @@ export function ViewPane() {
     read: useKeybinding("conversation.mark-read"),
     unread: useKeybinding("conversation.mark-unread"),
     star: useKeybinding("conversation.star"),
+    important: useKeybinding("conversation.mark-important"),
+    notImportant: useKeybinding("conversation.mark-not-important"),
     reply: useKeybinding("conversation.reply"),
     replyAll: useKeybinding("conversation.reply-all"),
     forward: useKeybinding("conversation.forward"),
@@ -121,6 +129,13 @@ export function ViewPane() {
     const r = e.currentTarget.getBoundingClientRect();
     void showContextMenu(
       [
+        {
+          id: "important",
+          label: anyNotImportant ? "Mark as important" : "Mark as not important",
+          shortcut: anyNotImportant ? keys.important : keys.notImportant,
+          disabled: markable.length === 0,
+          onSelect: () => void setImportant(anyNotImportant),
+        },
         {
           id: "label",
           label: "Label as…",

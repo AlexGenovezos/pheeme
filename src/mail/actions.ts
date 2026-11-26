@@ -17,10 +17,12 @@ export {
   archive,
   archiveSlotAction,
   markTabRead,
+  setImportant,
   setRead,
   setStarred,
   toggleStar,
   trash,
 } from "./mutations";
+export { canMarkImportance, isImportant } from "./importance";
 export { findSimilar, markSearchResultsRead } from "./searchActions";
 export { openAndMarkRead, targets, targetsOf } from "./change";
