@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { displayVersion, useUpdateStore } from "../lib/updater";
 import { Button } from "./ui/Button";
 import { CornerCard } from "./ui/CornerCard";
@@ -8,9 +9,17 @@ const manualCheckText = {
   failed: "Couldn't check for updates. Try again later.",
 } as const;
 
+/** "Up to date" needs no answer, so it goes away by itself; a failure waits for OK. */
+export const UP_TO_DATE_MS = 5_000;
+
 /** Pinned under the toasts: an update is downloaded on click, then the app restarts. */
 export function UpdateBanner() {
   const { available, applying, apply, manualCheck, dismissManualCheck } = useUpdateStore();
+  useEffect(() => {
+    if (manualCheck !== "current") return;
+    const id = setTimeout(dismissManualCheck, UP_TO_DATE_MS);
+    return () => clearTimeout(id);
+  }, [manualCheck, dismissManualCheck]);
   if (available) {
     return (
       <CornerCard
