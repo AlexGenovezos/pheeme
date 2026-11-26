@@ -925,6 +925,44 @@ async fn attachment_bytes_are_fetched_once_then_cached() {
 }
 
 #[tokio::test]
+async fn original_reads_the_source_from_gmail_every_time_and_saves_an_eml() {
+    let raw = b"Message-ID: <o1@example.com>\r\nFrom: Bob <bob@example.com>\r\nSubject: Menu\r\n\r\nHi\r\n";
+    let (dir, fake, mail) =
+        attachment_fixture(FakeMsg::from_raw("m1", "t1", &["INBOX"], raw), &[]).await;
+
+    let original = mail.original("a1", "m1", false).await.unwrap();
+    assert_eq!(original.source.as_bytes(), raw);
+    assert!(!original.truncated);
+    assert_eq!(original.summary.subject.as_deref(), Some("Menu"));
+    assert_eq!(
+        original.summary.message_id.as_deref(),
+        Some("<o1@example.com>")
+    );
+
+    let downloads = dir.dir().join("Downloads");
+    let first = mail.save_original("a1", "m1", &downloads).await.unwrap();
+    let second = mail.save_original("a1", "m1", &downloads).await.unwrap();
+    assert_eq!(first.file_name().unwrap(), "Menu.eml");
+    assert_eq!(second.file_name().unwrap(), "Menu (1).eml");
+    assert_eq!(std::fs::read(&first).unwrap(), raw);
+    assert_eq!(fake.calls("message_raw"), 3);
+
+    assert!(matches!(
+        mail.original("a1", "nope", false).await,
+        Err(MailError::Sync(_))
+    ));
+}
+
+#[tokio::test]
+async fn original_says_so_when_gmail_cant_be_reached() {
+    let (_dir, fake, mail) = attachment_fixture(FakeMsg::new("m1", "t1", &["INBOX"]), &[]).await;
+    fake.fail_after("message_raw", 0, GmailError::Offline("down".into()));
+
+    let err = mail.original("a1", "m1", false).await.unwrap_err();
+    assert_eq!(err.code(), "network");
+}
+
+#[tokio::test]
 async fn prefetch_caches_previewable_files_once_and_skips_the_rest() {
     let (dir, fake, mail) = attachment_fixture(
         FakeMsg::new("m1", "t1", &["INBOX"])

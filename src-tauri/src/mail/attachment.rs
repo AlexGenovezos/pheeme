@@ -200,35 +200,11 @@ impl MailService {
         attachment_row_id: &str,
         dir: &Path,
     ) -> Result<PathBuf, MailError> {
-        use tokio::io::AsyncWriteExt;
         let att = self
             .attachment(account_id, message_id, attachment_row_id)
             .await?;
         let name = safe_file_name(att.filename.as_deref());
-        tokio::fs::create_dir_all(dir).await.map_err(io_error)?;
-        // Each collision re-scans, and every occupied entry (even a dangling symlink) is
-        // skipped, so this makes progress; the cap only guards against a runaway.
-        for _ in 0..1000 {
-            let path = unique_path(dir, &name);
-            // `create_new` so a file that appears after the check is never overwritten.
-            match tokio::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-                .await
-            {
-                Ok(mut file) => {
-                    file.write_all(&att.bytes).await.map_err(io_error)?;
-                    file.flush().await.map_err(io_error)?;
-                    return Ok(path);
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(io_error(e)),
-            }
-        }
-        Err(MailError::Invalid(
-            "Couldn't find a free file name in Downloads.".into(),
-        ))
+        write_unique(dir, &name, &att.bytes).await
     }
 
     async fn bytes_of(&self, row: DbAttachment) -> Result<AttachmentBytes, MailError> {
@@ -410,6 +386,40 @@ async fn embedded_bytes(api: &dyn MailApi, row: &DbAttachment) -> Result<Vec<u8>
         .and_then(|a| a.data)
         .filter(|bytes| !bytes.is_empty())
         .ok_or(MailError::NotFound)
+}
+
+/// Writes `bytes` into `dir` (created if missing) as `name`, or `name (1)`, … if that is taken,
+/// and returns the path.
+pub(super) async fn write_unique(
+    dir: &Path,
+    name: &str,
+    bytes: &[u8],
+) -> Result<PathBuf, MailError> {
+    use tokio::io::AsyncWriteExt;
+    tokio::fs::create_dir_all(dir).await.map_err(io_error)?;
+    // Each collision re-scans, and every occupied entry (even a dangling symlink) is
+    // skipped, so this makes progress; the cap only guards against a runaway.
+    for _ in 0..1000 {
+        let path = unique_path(dir, name);
+        // `create_new` so a file that appears after the check is never overwritten.
+        match tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await
+        {
+            Ok(mut file) => {
+                file.write_all(bytes).await.map_err(io_error)?;
+                file.flush().await.map_err(io_error)?;
+                return Ok(path);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(io_error(e)),
+        }
+    }
+    Err(MailError::Invalid(
+        "Couldn't find a free file name in Downloads.".into(),
+    ))
 }
 
 /// Printable ASCII only: nothing that could end a header line or fail response building.

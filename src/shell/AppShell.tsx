@@ -7,6 +7,7 @@ import { UnsubscribeDialogHost } from "../mail/UnsubscribeDialog";
 import { LabelPickerHost } from "../labels/LabelPicker";
 import { CategoryMoveHost } from "../mail/CategoryMoveDialog";
 import { DragCardHost } from "../mail/dragMail";
+import { OriginalHost } from "../mail/OriginalDialog";
 import { PANE, useUiStore } from "../store/uiStore";
 import { ChordHint } from "./ChordHint";
 import { overlayTitleBar } from "./chrome";
@@ -135,6 +136,7 @@ export function AppShell({ onAddAccount }: { onAddAccount?: () => void }) {
       <LabelDialogHost />
       <UnsubscribeDialogHost />
       <ColorPopoverHost />
+      <OriginalHost />
     </div>
   );
 }

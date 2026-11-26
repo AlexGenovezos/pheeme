@@ -28,6 +28,7 @@ import {
 } from "./fixtures";
 import { createComposeHandlers } from "./compose";
 import { sampleAttachment } from "./attachments";
+import { previewOriginal } from "./original";
 import { createLabelHandlers, createPreviewLabels, labelsFor, type PreviewLabel } from "./labels";
 import { createSenderRuleHandlers } from "./senderRules";
 import { createFilterHandlers } from "./filters";
@@ -548,6 +549,16 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     },
     open_meeting_link: () => undefined,
     save_attachment: () => "/Users/you/Downloads/attachment.pdf",
+    message_original: (args) => {
+      const thread = threads.find(
+        (t) => t.accountId === args.accountId && t.messages.some((m) => m.id === args.messageId),
+      );
+      const message = thread?.messages.find((m) => m.id === args.messageId);
+      if (!thread || !message)
+        throw { code: "not_found", message: "That message isn't available any more." };
+      return previewOriginal(message, thread.subject, params.get("original"));
+    },
+    save_original: () => "/Users/you/Downloads/original.eml",
     // Every attachment of a kind reads as the matching sample file.
     read_attachment: (args) => {
       const att = threads

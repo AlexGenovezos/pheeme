@@ -48,6 +48,7 @@ import {
 import { present } from "../mail/change";
 import { FORWARD_AS_ATTACHMENT_COMMAND } from "../compose/respond";
 import { threadKey } from "../mail/mailboxes";
+import { showOriginalOfOpenConversation } from "../mail/original";
 import { PRINT_COMMAND, printOpenConversation } from "../mail/print";
 import {
   lacksUnsubscribe,
@@ -222,6 +223,12 @@ export function ViewPane() {
           shortcut: registry.shortcutFor(UNSUBSCRIBE_COMMAND),
           disabled: !openKey || lacksUnsubscribe(openKey),
           onSelect: () => void unsubscribeOpenConversation(),
+        },
+        {
+          id: "original",
+          label: "Show original",
+          disabled: !openKey,
+          onSelect: () => void showOriginalOfOpenConversation(),
         },
       ],
       { x: r.left, y: r.bottom },

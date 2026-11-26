@@ -2,6 +2,8 @@
 //! Downloads and revealing the result, and clearing downloaded mail.
 
 use super::CommandError;
+use crate::gmail::user_action;
+use crate::mail::OriginalDto;
 use crate::AppState;
 use serde::Serialize;
 use std::path::Path;
@@ -28,6 +30,33 @@ pub async fn save_attachment(
         .mail
         .save_attachment(&account_id, &message_id, &attachment_id, &dir)
         .await?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// A message's source and header summary for Show original; always fetched from Gmail. The
+/// source is cut at 1 MB unless `full` (Copy to clipboard).
+#[tauri::command]
+pub async fn message_original(
+    state: State<'_, AppState>,
+    account_id: String,
+    message_id: String,
+    full: Option<bool>,
+) -> Result<OriginalDto, CommandError> {
+    let full = full.unwrap_or(false);
+    Ok(user_action(state.mail.original(&account_id, &message_id, full)).await?)
+}
+
+/// Saves a message's whole source into the Downloads folder as an `.eml` and returns the
+/// file's absolute path.
+#[tauri::command]
+pub async fn save_original(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    account_id: String,
+    message_id: String,
+) -> Result<String, CommandError> {
+    let dir = downloads_dir(&app)?;
+    let path = user_action(state.mail.save_original(&account_id, &message_id, &dir)).await?;
     Ok(path.to_string_lossy().into_owned())
 }
 

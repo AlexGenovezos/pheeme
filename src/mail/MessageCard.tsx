@@ -13,6 +13,7 @@ import { useThreadStore } from "../store/threadStore";
 import { AttachmentList } from "./AttachmentList";
 import { EmailBody } from "./EmailBody";
 import { threadKey } from "./mailboxes";
+import { showOriginal } from "./original";
 import { printMessage } from "./print";
 import {
   confirmUnsubscribe,
@@ -230,26 +231,30 @@ export function MessageCard({
             icon={<Printer />}
             onClick={() => void printMessage(threadKey(accountId, message.threadId), message.id)}
           />
-          {!isDraft && (
-            <IconButton
-              size="sm"
-              label="More options for this message"
-              icon={<MoreVertical />}
-              onClick={(e: MouseEvent<HTMLButtonElement>) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                void showContextMenu(
-                  [
-                    {
-                      id: "forward-attachment",
-                      label: "Forward as attachment",
-                      onSelect: () => void forwardMessageAsAttachment(accountId, message.id),
-                    },
-                  ],
-                  { x: r.left, y: r.bottom },
-                );
-              }}
-            />
-          )}
+          <IconButton
+            size="sm"
+            label="More options for this message"
+            icon={<MoreVertical />}
+            onClick={(e: MouseEvent<HTMLButtonElement>) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              void showContextMenu(
+                [
+                  {
+                    id: "forward-attachment",
+                    label: "Forward as attachment",
+                    disabled: isDraft,
+                    onSelect: () => void forwardMessageAsAttachment(accountId, message.id),
+                  },
+                  {
+                    id: "original",
+                    label: "Show original",
+                    onSelect: () => showOriginal(accountId, message.id),
+                  },
+                ],
+                { x: r.left, y: r.bottom },
+              );
+            }}
+          />
         </div>
         <button
           type="button"

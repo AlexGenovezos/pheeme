@@ -121,6 +121,34 @@ export const trashThreads = (accountId: string, threadIds: string[]) =>
 /** Saves an attachment into the Downloads folder and resolves to the file's absolute path. */
 export const saveAttachment = (accountId: string, messageId: string, attachmentId: string) =>
   call("save_attachment", { accountId, messageId, attachmentId });
+/** One SPF, DKIM or DMARC result from the message's topmost `Authentication-Results` header. */
+export interface AuthResult {
+  method: "spf" | "dkim" | "dmarc";
+  /** Lowercase: pass, fail, softfail, neutral, none… */
+  result: string;
+  /** What the header says after the result. */
+  detail: string | null;
+}
+
+/** A message's source and the header summary Show original opens with (headers decoded). */
+export interface OriginalMessage {
+  messageId: string | null;
+  /** The Date header, ms since epoch. */
+  createdAt: number | null;
+  from: string | null;
+  to: string | null;
+  subject: string | null;
+  auth: AuthResult[];
+  /** The source as text, cut at 1 MB unless asked for in full. */
+  source: string;
+  truncated: boolean;
+}
+/** A message's source from Gmail (never cached): rejects with `network` when Gmail can't be reached. */
+export const messageOriginal = (accountId: string, messageId: string, full = false) =>
+  call("message_original", { accountId, messageId, full });
+/** Saves a message's whole source into Downloads as an `.eml` and resolves to the file's path. */
+export const saveOriginal = (accountId: string, messageId: string) =>
+  call("save_original", { accountId, messageId });
 /** An attachment's bytes for the preview panel (from the disk cache, else Gmail). */
 export const readAttachment = (accountId: string, messageId: string, attachmentId: string) =>
   call("read_attachment", { accountId, messageId, attachmentId });

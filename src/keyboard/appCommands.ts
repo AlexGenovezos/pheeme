@@ -18,6 +18,7 @@ import {
 import { FORWARD_AS_ATTACHMENT_COMMAND } from "../compose/respond";
 import { openCreateLabel } from "../labels/create";
 import { COPY_CODE_COMMAND, COPY_CODE_SHORTCUT, copyOpenConversationCode } from "../mail/CodeCard";
+import { SHOW_ORIGINAL_COMMAND, showOriginalOfOpenConversation } from "../mail/original";
 import { PRINT_COMMAND, printOpenConversation } from "../mail/print";
 import { UNSUBSCRIBE_COMMAND, unsubscribeOpenConversation } from "../mail/unsubscribe";
 import { FILTER_LIKE_THESE_COMMAND, filterMessagesLikeThese } from "../filters/likeThese";
@@ -346,6 +347,13 @@ export function appCommands(): Command[] {
       group: "Conversation",
       keywords: ["filter", "rule", "sender", "create filter", "automatically"],
       run: () => void filterMessagesLikeThese(),
+    },
+    {
+      id: SHOW_ORIGINAL_COMMAND,
+      title: "Show original",
+      group: "Conversation",
+      keywords: ["source", "headers", "eml", "raw", "spf", "dkim", "dmarc", "download original"],
+      run: () => void showOriginalOfOpenConversation(),
     },
     {
       id: COPY_CODE_COMMAND,
