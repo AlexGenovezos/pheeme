@@ -88,12 +88,16 @@ function AccountVacation({
 
   // One status line under the fields, holding its place whatever it says.
   const saveError = result !== null && result !== "saved" ? result : undefined;
+  const readScopeMissing = readError?.code === "missing_scope";
   // Gmail lets older sign-ins (mail access only) read the responder but not change it.
-  const scopeMissing = (readError ?? saveError)?.code === "missing_scope";
+  const writeScopeMissing = saveError?.code === "missing_scope";
   let status: React.ReactNode;
-  if (scopeMissing)
+  if (readScopeMissing)
     status =
       "Pheeme can't see this account's Gmail settings. Sign in again and allow Pheeme to manage your basic mail settings.";
+  else if (writeScopeMissing)
+    status =
+      "Pheeme isn't allowed to change this account's Gmail settings. Sign in again and allow Pheeme to manage your basic mail settings.";
   else if (readError) status = `Couldn't read it from Gmail: ${readError.message}`;
   else if (!loaded || !opened) status = <Skeleton width="40%" />;
   else if (saving) status = "Saving to Gmail…";
@@ -105,7 +109,7 @@ function AccountVacation({
   const failed = !!readError || !!saveError || (dirty && problem !== null);
 
   let actions;
-  if (scopeMissing) actions = <ReconnectButton accountId={accountId} />;
+  if (readScopeMissing) actions = <ReconnectButton accountId={accountId} />;
   else if (readError)
     actions = (
       <Button
@@ -124,14 +128,19 @@ function AccountVacation({
         <Button size="sm" disabled={!dirty || saving} onClick={discard}>
           Discard
         </Button>
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={!dirty || !ready || problem !== null}
-          onClick={() => void save()}
-        >
-          Save
-        </Button>
+        {/* Save can't work until the account allows it; the draft stays for after. */}
+        {writeScopeMissing ? (
+          <ReconnectButton accountId={accountId} />
+        ) : (
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!dirty || !ready || problem !== null}
+            onClick={() => void save()}
+          >
+            Save
+          </Button>
+        )}
       </>
     );
 
@@ -204,9 +213,8 @@ function AccountVacation({
         <div className="settings-row__text">
           <div className="settings-row__title">Message</div>
           <div className="settings-row__description">
-            {loaded && keepsFormatting(loaded.html)
-              ? "Gmail's message has colors, pictures or layout this editor can't keep. Editing the text here saves it without them; edit it in Gmail to keep them."
-              : "Bold, italic, underline, lists and links."}
+            Bold, italic, underline, lists and links. Other formatting set in Gmail, like colors,
+            pictures or centered text, is dropped once you edit the text here.
           </div>
         </div>
         <Suspense fallback={<div className="vacation-editor" aria-hidden="true" />}>
@@ -262,9 +270,6 @@ function AccountVacation({
     </SettingsSection>
   );
 }
-
-/** Markup the compose editor drops (colors, fonts, pictures, tables), which an edit here would lose. */
-const keepsFormatting = (html: string) => /<(img|table|font)\b|\sstyle=|\scolor=/i.test(html);
 
 export function VacationSettings() {
   const accounts = useAccountStore((s) => s.accounts);

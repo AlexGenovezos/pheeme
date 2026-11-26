@@ -141,8 +141,9 @@ test("an account that can read but not change its responder is asked to sign in 
   fireEvent.click(within(one).getByRole("switch", { name: "Vacation responder for me@gmail.com" }));
   fireEvent.click(within(one).getByRole("button", { name: "Save" }));
   await flush();
-  expect(one).toHaveTextContent("can't see this account's Gmail settings");
+  expect(one).toHaveTextContent("isn't allowed to change this account's Gmail settings");
   expect(within(one).getByRole("button", { name: "Sign in again" })).toBeInTheDocument();
+  expect(within(one).getByRole("button", { name: "Discard" })).toBeEnabled();
 });
 
 /** Holds each account's next read until the test answers it. */
