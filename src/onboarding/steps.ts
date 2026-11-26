@@ -256,3 +256,5 @@ export const ALERTS_STEP = "New mail alerts";
 
 export const stepIndex = (id: StepId) => STEPS.findIndex((step) => step.id === id);
 export const stepById = (id: StepId) => STEPS[stepIndex(id)];
+/** Narrows a view name (or saved string) to a guide step. */
+export const isStepId = (value: string): value is StepId => STEPS.some((step) => step.id === value);
