@@ -32,6 +32,7 @@ pub mod search;
 pub mod secrets;
 pub mod sender_rules;
 pub mod senders;
+mod shutdown;
 mod spelling;
 pub mod stats;
 pub mod storage;
@@ -58,6 +59,8 @@ use tracing::info;
 
 /// How long quitting waits for queries in flight before the database closes.
 const DB_CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+/// How long to let the background tasks stop and any claimed sends settle.
+const BACKGROUND_DRAIN_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub struct AppState {
     pub db: SqlitePool,
@@ -211,12 +214,12 @@ pub async fn build_state(
     compose.sweep_staging().await;
     tokio::spawn({
         let mail = mail.clone();
-        async move { mail.sweep_attachment_cache().await }
+        shutdown::until(async move { mail.sweep_attachment_cache().await })
     });
-    tokio::spawn(body_retention::run(db.clone()));
-    tokio::spawn(contacts.clone().run());
-    tokio::spawn(calendar.clone().run());
-    tokio::spawn(tasks.clone().run());
+    tokio::spawn(shutdown::until(body_retention::run(db.clone())));
+    tokio::spawn(shutdown::until(contacts.clone().run()));
+    tokio::spawn(shutdown::until(calendar.clone().run()));
+    tokio::spawn(shutdown::until(tasks.clone().run()));
     Ok(AppState {
         db,
         accounts,
@@ -475,11 +478,11 @@ pub fn run() {
                 use tauri::Emitter;
                 let _ = activity_events.emit("assistant:activity", ());
             }));
-            tauri::async_runtime::spawn(async move {
+            tauri::async_runtime::spawn(shutdown::until(async move {
                 assistants.apply_setting().await;
-            });
+            }));
             if telemetry::active_in_this_build() {
-                tauri::async_runtime::spawn(telemetry::run(state.db.clone()));
+                tauri::async_runtime::spawn(shutdown::until(telemetry::run(state.db.clone())));
             }
             let hidden = tauri::async_runtime::block_on(db::settings::take_start_hidden(
                 &state.db,
@@ -771,13 +774,29 @@ pub fn run() {
                     // connection still working on its own thread then crashes the process. So
                     // close them all first, letting a query in flight finish for a moment.
                     let db = state.db.clone();
+                    let assistants = state.assistants.clone();
                     db_closed = tauri::async_runtime::block_on(async move {
+                        let drain = async {
+                            shutdown::APP.drain().await;
+                            assistants.stop().await;
+                        };
+                        if tokio::time::timeout(BACKGROUND_DRAIN_WAIT, drain)
+                            .await
+                            .is_err()
+                        {
+                            // A task could still use the pool. Leave with the same fast exit
+                            // as for a busy connection, without running SQLCipher's exit hooks.
+                            tracing::warn!("background work still running at exit");
+                            return false;
+                        }
                         tokio::time::timeout(DB_CLOSE_WAIT, db.close())
                             .await
                             .is_ok()
                     });
                     if !db_closed {
-                        tracing::warn!("database still busy at exit: leaving without exit hooks");
+                        tracing::warn!(
+                            "database did not close at exit: leaving without exit hooks"
+                        );
                     }
                 }
                 if let Some(logs) = app.try_state::<diagnostics::LogGuard>() {

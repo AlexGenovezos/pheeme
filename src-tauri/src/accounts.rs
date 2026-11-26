@@ -152,6 +152,10 @@ pub struct AccountService {
     /// Lets `cancel_sign_in` stop the callback wait even after `complete_sign_in` took it.
     active: Mutex<Option<(String, AbortHandle)>>,
     tokens: Mutex<HashMap<String, (String, Instant)>>,
+    /// One refresh at a time per account, so requests that find the token expired (or get a
+    /// 401) together share one keychain read and one exchange, and a rotated refresh token
+    /// is never raced by a refresh still using the old one.
+    refreshing: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 fn now() -> i64 {
@@ -204,6 +208,7 @@ impl AccountService {
             pending: Mutex::new(None),
             active: Mutex::new(None),
             tokens: Mutex::new(HashMap::new()),
+            refreshing: Mutex::new(HashMap::new()),
         }
     }
 
@@ -568,6 +573,7 @@ impl AccountService {
             .await?;
         tx.commit().await.map_err(anyhow::Error::new)?;
         lock(&self.tokens).remove(account_id);
+        lock(&self.refreshing).remove(account_id);
         Ok(())
     }
 
@@ -576,18 +582,48 @@ impl AccountService {
         lock(&self.tokens).insert(account_id.to_owned(), (token, expires_at));
     }
 
-    /// A valid access token for API calls, refreshing it when it's about to expire.
-    pub async fn access_token(&self, account_id: &str) -> Result<String, AccountError> {
-        if let Some((token, expires_at)) = lock(&self.tokens).get(account_id) {
-            if *expires_at > Instant::now() + EXPIRY_MARGIN {
-                return Ok(token.clone());
-            }
-        }
-        self.refresh_access_token(account_id).await
+    /// The cached access token, if it won't expire within the margin.
+    fn cached_token(&self, account_id: &str) -> Option<String> {
+        let tokens = lock(&self.tokens);
+        let (token, expires_at) = tokens.get(account_id)?;
+        (*expires_at > Instant::now() + EXPIRY_MARGIN).then(|| token.clone())
     }
 
-    /// Exchanges the stored refresh token for a new access token.
+    /// A valid access token for API calls, refreshing it when it's about to expire.
+    pub async fn access_token(&self, account_id: &str) -> Result<String, AccountError> {
+        if let Some(token) = self.cached_token(account_id) {
+            return Ok(token);
+        }
+        self.refresh_after(account_id, None).await
+    }
+
+    /// Exchanges the stored refresh token for a new access token. Callers that ask while
+    /// another refresh for the account runs wait for it and share its token.
     pub async fn refresh_access_token(&self, account_id: &str) -> Result<String, AccountError> {
+        let stale = lock(&self.tokens)
+            .get(account_id)
+            .map(|(token, _)| token.clone());
+        self.refresh_after(account_id, stale.as_deref()).await
+    }
+
+    async fn refresh_after(
+        &self,
+        account_id: &str,
+        rejected: Option<&str>,
+    ) -> Result<String, AccountError> {
+        let gate = Arc::clone(
+            lock(&self.refreshing)
+                .entry(account_id.to_owned())
+                .or_default(),
+        );
+        let _refreshing = gate.lock().await;
+        // A late 401 can arrive after a different request already replaced its token.
+        if let Some(token) = self
+            .cached_token(account_id)
+            .filter(|token| Some(token.as_str()) != rejected)
+        {
+            return Ok(token);
+        }
         let account = self.account(account_id).await?;
         let (creds, refresh_token) = self.saved_credentials(&account).await?;
         let tokens = auth::refresh(&self.http, &self.endpoints, &creds, &refresh_token).await?;
@@ -628,9 +664,12 @@ impl crate::gmail::TokenProvider for AccountTokens {
             .map_err(token_error)
     }
 
-    async fn refresh_access_token(&self) -> Result<String, crate::gmail::GmailError> {
+    async fn refresh_access_token(
+        &self,
+        rejected: &str,
+    ) -> Result<String, crate::gmail::GmailError> {
         self.service
-            .refresh_access_token(&self.account_id)
+            .refresh_after(&self.account_id, Some(rejected))
             .await
             .map_err(token_error)
     }
@@ -1180,6 +1219,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn simultaneous_refreshes_share_one_exchange() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+
+        h.server.reset().await;
+        Mock::given(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "access_token": "access-2", "expires_in": 3600, "refresh_token": "refresh-2"
+                    }))
+                    .set_delay(Duration::from_millis(200)),
+            )
+            .expect(1)
+            .mount(&h.server)
+            .await;
+        // Two requests got a 401 with the same token, then a third 401 came back late.
+        let (a, b) = tokio::join!(
+            h.service.refresh_after(&account.id, Some("access-1")),
+            h.service.refresh_after(&account.id, Some("access-1"))
+        );
+        assert_eq!(
+            (a.unwrap(), b.unwrap()),
+            ("access-2".into(), "access-2".into())
+        );
+        assert_eq!(
+            h.service
+                .refresh_after(&account.id, Some("access-1"))
+                .await
+                .unwrap(),
+            "access-2"
+        );
+        h.server.verify().await;
+        // And two found none cached (at launch): one exchange, with the rotated token.
+        lock(&h.service.tokens).remove(&account.id);
+        h.server.reset().await;
+        Mock::given(path("/token"))
+            .and(body_string_contains("refresh_token=refresh-2"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "access_token": "access-3", "expires_in": 3600, "refresh_token": "refresh-3"
+                    }))
+                    .set_delay(Duration::from_millis(200)),
+            )
+            .expect(1)
+            .mount(&h.server)
+            .await;
+        let (a, b) = tokio::join!(
+            h.service.access_token(&account.id),
+            h.service.access_token(&account.id)
+        );
+        assert_eq!(
+            (a.unwrap(), b.unwrap()),
+            ("access-3".into(), "access-3".into())
+        );
+        h.server.verify().await;
+        assert_eq!(
+            h.secrets.get(&account.id).unwrap().unwrap().refresh_token,
+            "refresh-3"
+        );
+    }
+
+    #[tokio::test]
     async fn account_tokens_feed_the_gmail_client() {
         use crate::gmail::TokenProvider;
         let h = harness().await;
@@ -1197,7 +1301,7 @@ mod tests {
             )
             .mount(&h.server)
             .await;
-        let error = tokens.refresh_access_token().await.unwrap_err();
+        let error = tokens.refresh_access_token("access-1").await.unwrap_err();
         assert!(
             matches!(error, crate::gmail::GmailError::SignedOut(ref m) if m.contains("Sign in again")),
             "{error:?}"

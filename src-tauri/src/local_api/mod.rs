@@ -198,10 +198,7 @@ struct RateLimiter {
 impl RateLimiter {
     /// Count a call at `now`, or refuse it if the client already made `max` in the window.
     fn take(&self, client_id: &str, change: bool, max: usize, now: i64) -> Result<(), Limited> {
-        let mut calls = self
-            .calls
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut calls = crate::lock::lock(&self.calls);
         let times = calls.entry((client_id.to_owned(), change)).or_default();
         while times.front().is_some_and(|t| now - t >= LIMIT_WINDOW_MS) {
             times.pop_front();
@@ -337,18 +334,12 @@ impl LocalApi {
     /// Change the per-client limits (tests use small ones).
     #[cfg(test)]
     pub fn set_limits(&self, limits: Limits) {
-        *self
-            .limits
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = limits;
+        *crate::lock::lock(&self.limits) = limits;
     }
 
     /// Count a call by `caller`, refusing it past the client's limit for its kind.
     fn admit(&self, caller: &Caller, change: bool) -> Result<(), ApiError> {
-        let limits = *self
-            .limits
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let limits = *crate::lock::lock(&self.limits);
         let max = if change { limits.changes } else { limits.reads };
         self.limiter
             .take(&caller.client_id, change, max, now_ms())

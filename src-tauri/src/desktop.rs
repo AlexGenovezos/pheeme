@@ -168,7 +168,7 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
         let app = app.clone();
         let account_id = account_id.clone();
         let messages = messages.clone();
-        tauri::async_runtime::spawn(async move {
+        tauri::async_runtime::spawn(crate::shutdown::until(async move {
             let state = app.state::<AppState>();
             let schedule = db::settings::notify_schedule(&state.db)
                 .await
@@ -240,7 +240,7 @@ pub fn sync_event(app: &AppHandle, event: &SyncEvent) {
                 ),
                 Err(error) => tracing::warn!(%error, "Could not read notification preferences"),
             }
-        });
+        }));
     }
 }
 
@@ -275,7 +275,9 @@ fn dismiss_finished<'a>(
         return;
     }
     let app = app.clone();
-    tauri::async_runtime::spawn(async move { dismiss_checked(&app, candidates).await });
+    tauri::async_runtime::spawn(crate::shutdown::until(async move {
+        dismiss_checked(&app, candidates).await;
+    }));
 }
 
 /// Of `candidates` (conversations with a notification), dismiss the ones that no longer need it.
@@ -562,16 +564,16 @@ pub fn install(app: &AppHandle) {
     // launches. Pick them up, and take away the ones read since, maybe on another device.
     {
         let app = app.clone();
-        tauri::async_runtime::spawn(async move {
+        tauri::async_runtime::spawn(crate::shutdown::until(async move {
             let delivered = platform::delivered().await;
             if delivered.is_empty() {
                 return;
             }
             lock(&app.state::<Arc<Desktop>>().open).extend(delivered.iter().cloned());
             dismiss_checked(&app, delivered).await;
-        });
+        }));
     }
-    tauri::async_runtime::spawn(reminders.run());
+    tauri::async_runtime::spawn(crate::shutdown::until(reminders.run()));
     let shown =
         tauri::async_runtime::block_on(db::settings::tray_icon(&app.state::<AppState>().db))
             .unwrap_or_else(|error| {
@@ -595,7 +597,7 @@ pub fn install(app: &AppHandle) {
             Err(error) => tracing::warn!(%error, "Could not read notification permission"),
         }
     });
-    tauri::async_runtime::spawn(async move {
+    tauri::async_runtime::spawn(crate::shutdown::until(async move {
         loop {
             // Initial snapshot, then only existing sync/account events; no extra mail polling.
             let result = async {
@@ -621,22 +623,16 @@ pub fn install(app: &AppHandle) {
                     .iter()
                     .find(|(id, _)| id == "INBOX")
                     .map_or(0, |(_, n)| *n);
-                if let Some(tray) = app.tray_by_id(TRAY) {
-                    tray.set_tooltip(Some(format!(
-                        "Pheeme — {unread} unread inbox conversations"
-                    )))?;
-                    // The macOS envelope is constant. Replacing it resets its template tint;
-                    // only the title changes there as the unread count moves.
-                    #[cfg(not(target_os = "macos"))]
-                    tray.set_icon(Some(icon::image(unread)))?;
-                    #[cfg(target_os = "macos")]
-                    tray.set_title(Some(if unread > 0 {
-                        unread.to_string()
-                    } else {
-                        String::new()
-                    }))?;
-                    tray.set_menu(Some(menu(&app, unread)?))?;
-                    #[cfg(target_os = "linux")]
+                // Tray methods wait for the main thread when called off it. Schedule them
+                // together so the refresh loop can stop while that thread is draining tasks.
+                let handle = app.clone();
+                let (done, updated) = tokio::sync::oneshot::channel();
+                app.run_on_main_thread(move || {
+                    let _ = done.send(update_tray(&handle, unread));
+                })?;
+                let _updated = updated.await??;
+                #[cfg(target_os = "linux")]
+                if _updated {
                     desktop
                         .can_hide
                         .store(platform::tray_available().await, Ordering::Relaxed);
@@ -649,7 +645,28 @@ pub fn install(app: &AppHandle) {
             }
             desktop.refresh.notified().await;
         }
-    });
+    }));
+}
+
+fn update_tray(app: &AppHandle, unread: i64) -> tauri::Result<bool> {
+    let Some(tray) = app.tray_by_id(TRAY) else {
+        return Ok(false);
+    };
+    tray.set_tooltip(Some(format!(
+        "Pheeme — {unread} unread inbox conversations"
+    )))?;
+    // The macOS envelope is constant. Replacing it resets its template tint;
+    // only the title changes there as the unread count moves.
+    #[cfg(not(target_os = "macos"))]
+    tray.set_icon(Some(icon::image(unread)))?;
+    #[cfg(target_os = "macos")]
+    tray.set_title(Some(if unread > 0 {
+        unread.to_string()
+    } else {
+        String::new()
+    }))?;
+    tray.set_menu(Some(menu(app, unread)?))?;
+    Ok(true)
 }
 
 #[cfg(test)]

@@ -337,6 +337,15 @@ async fn list_threads_dispatches_all_mail_and_primary_and_counts_labels() {
 }
 
 #[tokio::test]
+async fn forgetting_an_account_drops_its_counts() {
+    let (_db, _, _, mail) = events_fixture(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"])).await;
+    mail.label_counts("a1").await.unwrap();
+    assert!(lock(&mail.label_counts).contains_key("a1"));
+    mail.forget_account("a1").await;
+    assert!(!lock(&mail.label_counts).contains_key("a1"));
+}
+
+#[tokio::test]
 async fn label_counts_count_again_only_after_a_change() {
     let (db, _, _, mail) = events_fixture(FakeMsg::new("m1", "t1", &["INBOX", "UNREAD"])).await;
     let inbox = |counts: Vec<LabelCountDto>| {

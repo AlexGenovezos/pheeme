@@ -24,6 +24,7 @@ use crate::gmail::mime::{
     EmailAddress,
 };
 use crate::gmail::{GmailError, MessageFormat};
+use crate::shutdown::Stop;
 use futures::stream::{self, StreamExt};
 use mailparse::MailHeaderMap;
 use serde::{Deserialize, Serialize};
@@ -810,6 +811,21 @@ fn backoff(attempts: i64) -> i64 {
 /// confirmed don't block anything, and a whole-mailbox change that is waiting holds up later
 /// label and trash changes but never a send. Returns whether any op finished.
 pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
+    let shutdown = crate::shutdown::Shutdown::default();
+    process_until(engine, now, &shutdown.track().unwrap()).await
+}
+
+pub(super) async fn process_until(
+    engine: &SyncEngine,
+    now: i64,
+    stop: &Stop,
+) -> Result<bool, SyncError> {
+    let Some(queue) = stop
+        .until(store::queue(engine.db(), engine.account_id(), now))
+        .await
+    else {
+        return Ok(false);
+    };
     let mut progressed = false;
     // Conversations of earlier changes still waiting for Gmail. A later change to none of them
     // goes ahead, so a big job waiting out a refusal doesn't hold up the user's next click.
@@ -819,11 +835,17 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
     // trash change overtakes it. Sends change no labels and go ahead.
     let mut sweep_waiting = false;
     // Sends that can't leave now come without their message (see `store::queue`).
-    for op in store::queue(engine.db(), engine.account_id(), now).await? {
+    for op in queue? {
+        if stop.stopping() {
+            break;
+        }
         match (op.op_kind(), op.op_status()) {
             (Some(OpKind::Send), Some(OpStatus::Checking)) => {
-                if op.next_attempt_at <= now && check_send(engine, &op, now).await? {
-                    progressed = true;
+                if op.next_attempt_at <= now {
+                    let Some(checked) = stop.until(check_send(engine, &op, now, stop)).await else {
+                        break;
+                    };
+                    progressed |= checked?;
                 }
             }
             (Some(OpKind::Send), Some(OpStatus::Unconfirmed | OpStatus::Failed)) => {}
@@ -836,11 +858,16 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
                         Payload::Send(p) => p.draft_id.as_deref(),
                         _ => None,
                     };
-                    match draft {
-                        Some(draft) => {
-                            delete_source_draft(engine, &op.id, draft, op.attempts, now).await?
+                    let cleanup = async {
+                        match draft {
+                            Some(draft) => {
+                                delete_source_draft(engine, &op.id, draft, op.attempts, now).await
+                            }
+                            None => Ok(store::delete(engine.db(), &op.id).await?),
                         }
-                        None => store::delete(engine.db(), &op.id).await?,
+                    };
+                    if let Some(result) = stop.until(cleanup).await {
+                        result?;
                     }
                 }
             }
@@ -870,9 +897,12 @@ pub async fn process(engine: &SyncEngine, now: i64) -> Result<bool, SyncError> {
                     continue;
                 }
                 let step = if is_send {
-                    send(engine, &op, now).await?
+                    send(engine, &op, now, stop).await?
                 } else {
-                    apply_op(engine, &op, now).await?
+                    let Some(step) = stop.until(apply_op(engine, &op, now)).await else {
+                        break;
+                    };
+                    step?
                 };
                 match step {
                     Step::Done => progressed = true,
@@ -1244,7 +1274,7 @@ fn send_status(engine: &SyncEngine, op: &DbOp, status: &str) {
     });
 }
 
-async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncError> {
+async fn send(engine: &SyncEngine, op: &DbOp, now: i64, stop: &Stop) -> Result<Step, SyncError> {
     let payload = SendPayload::of(op)?;
     let raw = payload
         .raw
@@ -1263,9 +1293,16 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
         checks_done: 0,
         last_error: None,
     };
-    if !store::claim_send(engine.db(), &op.id, &checking, now).await? {
+    // Waiting for SQLite's writer is interruptible. Once we start claiming the send,
+    // let it finish and record the outcome, even if shutdown starts meanwhile.
+    let Some(tx) = stop.until(db::begin_write(engine.db())).await else {
+        return Ok(Step::Continue);
+    };
+    let mut tx = tx?;
+    if stop.stopping() || !store::claim_send(&mut *tx, &op.id, &checking, now).await? {
         return Ok(Step::Continue);
     }
+    tx.commit().await.map_err(anyhow::Error::new)?;
     let started = std::time::Instant::now();
     let dispatch_at = now_ms();
     tracing::info!(
@@ -1286,7 +1323,7 @@ async fn send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<Step, SyncErro
     );
     match result {
         Ok(_) => {
-            sent(engine, op, payload.draft_id.as_deref(), now).await?;
+            sent(engine, op, payload.draft_id.as_deref(), now, stop).await?;
             Ok(Step::Done)
         }
         Err(e) if never_sent(&e) => {
@@ -1328,11 +1365,15 @@ async fn sent(
     op: &DbOp,
     draft_id: Option<&str>,
     now: i64,
+    stop: &Stop,
 ) -> Result<(), SyncError> {
     settle_send(engine.db(), &op.id, draft_id, now).await?;
     send_status(engine, op, "sent");
     if let Some(draft) = draft_id {
-        delete_source_draft(engine, &op.id, draft, 0, now).await?;
+        // The cleanup row is durable, so the draft can be deleted after the next launch.
+        stop.until(delete_source_draft(engine, &op.id, draft, 0, now))
+            .await
+            .transpose()?;
     }
     Ok(())
 }
@@ -1375,7 +1416,12 @@ async fn delete_source_draft(
 }
 
 /// One scheduled confirmation check for an ambiguous send. Returns whether it confirmed.
-async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, SyncError> {
+async fn check_send(
+    engine: &SyncEngine,
+    op: &DbOp,
+    now: i64,
+    stop: &Stop,
+) -> Result<bool, SyncError> {
     let Some(rfc) = op.rfc822_message_id.as_deref() else {
         return Ok(false);
     };
@@ -1411,7 +1457,7 @@ async fn check_send(engine: &SyncEngine, op: &DbOp, now: i64) -> Result<bool, Sy
         let mut conn = engine.db().acquire().await?;
         let draft = source_draft(&mut conn, &op.id).await?;
         drop(conn);
-        sent(engine, op, draft.as_deref(), now).await?;
+        sent(engine, op, draft.as_deref(), now, stop).await?;
         return Ok(true);
     }
     let checks_done = op.checks_done + 1;
