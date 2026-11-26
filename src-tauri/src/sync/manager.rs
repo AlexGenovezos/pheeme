@@ -294,7 +294,8 @@ impl SyncManager {
         // Every queued change is something the user did: it goes ahead of sync and backfill, and
         // its Gmail quota counts as theirs.
         let engine = self.engine_for(account_id, a);
-        let dispatch = outbox::process_until(&engine, now_ms(), stop);
+        // Keep the queue's SQL and Gmail futures off the stack of each nested sync caller.
+        let dispatch = Box::pin(outbox::process_until(&engine, now_ms(), stop));
         user_action(usage_source(UsageSource::YourChanges, dispatch)).await?;
         Ok(())
     }
@@ -353,13 +354,13 @@ impl SyncManager {
         let result = crate::gmail::probe::with_probe(gmail.clone(), async {
             outbox().await?;
             let Some(changed) = stop
-                .until(async {
+                .until(Box::pin(async {
                     if full_due {
                         engine.run_incremental_sync().await.map(Some)
                     } else {
                         engine.check_incremental_sync().await
                     }
-                })
+                }))
                 .await
             else {
                 return Ok(None);
