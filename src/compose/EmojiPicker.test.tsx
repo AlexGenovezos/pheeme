@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
-import { useComposeEditor } from "./Editor";
+import { EditorBody, useComposeEditor } from "./Editor";
 import { EmojiButton } from "./EmojiButton";
 import EmojiPicker from "./EmojiPicker";
 import { recentEmoji } from "./emoji";
@@ -78,9 +78,15 @@ test("recently used emoji come first, and a group tab clears the search", async 
   );
 });
 
+let body = "";
 function Compose() {
-  const editor = useComposeEditor("<p>Hi</p>", () => {});
-  return <EmojiButton editor={editor} />;
+  const editor = useComposeEditor("<p>Hi</p>", (html) => (body = html));
+  return (
+    <>
+      <EditorBody editor={editor} focusSeq={0} />
+      <EmojiButton editor={editor} />
+    </>
+  );
 }
 
 test("the footer button opens the picker, which puts emoji in the text", async () => {
@@ -90,6 +96,7 @@ test("the footer button opens the picker, which puts emoji in the text", async (
   const search = await screen.findByRole("searchbox", { name: "Search emoji" });
   fireEvent.change(search, { target: { value: "party popper" } });
   fireEvent.keyDown(search, { key: "Enter" });
+  expect(body).toContain("🎉");
   // Pressing the button again closes it.
   act(() => {
     fireEvent.pointerDown(button);
