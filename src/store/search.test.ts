@@ -404,9 +404,14 @@ test("sync rollback refreshes flags on Gmail-only matches from the cached thread
   stop();
 });
 
-test.each([false, true])(
-  "Gmail rejecting accepted trash restores Gmail-only results (mixed labels: %s)",
-  async (mixed) => {
+test.each([
+  ["TRASH", false],
+  ["TRASH", true],
+  ["SPAM", false],
+  ["SPAM", true],
+])(
+  "Gmail rejecting accepted %s change restores Gmail-only results (mixed labels: %s)",
+  async (junk, mixed) => {
     let trashed = false;
     mockIPC(
       (cmd) => {
@@ -415,8 +420,8 @@ test.each([false, true])(
           return {
             thread: row("match"),
             messages: [
-              { labelIds: trashed ? ["TRASH"] : ["INBOX"] },
-              ...(mixed ? [{ labelIds: ["TRASH"] }] : []),
+              { labelIds: trashed ? [junk] : ["INBOX"] },
+              ...(mixed ? [{ labelIds: [junk] }] : []),
             ],
           };
         return remote(row("match"));

@@ -390,7 +390,22 @@ describe("preview IPC", () => {
     });
   });
 
-  test("modify_threads refuses Trash and Spam like the backend", () => {
+  test("modify_threads reports spam but refuses Trash like the backend", async () => {
+    installPreview();
+    await invoke("modify_threads", {
+      accountId: "acc-personal",
+      threadIds: ["p-05"],
+      add: ["SPAM"],
+      remove: ["INBOX"],
+    });
+    const spam = await invoke<{ threads: { id: string }[] }>("list_threads", {
+      accountIds: ["acc-personal"],
+      labelId: "SPAM",
+    });
+    expect(spam.threads.map((t) => t.id)).toContain("p-05");
+  });
+
+  test("modify_threads refuses Trash like the backend", () => {
     const handlers = createPreviewHandlers();
     expect(() =>
       handlers.modify_threads({
@@ -400,6 +415,16 @@ describe("preview IPC", () => {
         remove: [],
       }),
     ).toThrow();
+  });
+
+  test("search never lists Spam, so a reported hit stays gone after a reload", async () => {
+    installPreview();
+    const spam = createFixtureThreads().find((t) => t.labelIds.includes("SPAM"))!;
+    const page = await invoke<{ threads: { id: string }[] }>("search_messages", {
+      accountIds: [spam.accountId],
+      query: "prize",
+    });
+    expect(page.threads.map((x) => x.id)).not.toContain(spam.id);
   });
 
   test("search and recent searches answer in preview", async () => {

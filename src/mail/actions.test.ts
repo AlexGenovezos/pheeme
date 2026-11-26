@@ -22,6 +22,7 @@ import {
   openFocused,
   openLabelMenu,
   openMoveMenu,
+  reportSpam,
   setImportant,
   setRead,
   setStarred,
@@ -452,6 +453,77 @@ describe("leaving Spam and Trash", () => {
       "UNREAD",
       "INBOX",
     ]);
+  });
+});
+
+describe("report spam", () => {
+  const inbox = { systemLabelIds: ["INBOX"] };
+
+  test("adds Spam and removes INBOX, takes the rows out of the list, and Undo restores the inbox", async () => {
+    useUiStore.setState({ mailbox: { accountId: "a1", labelId: "INBOX" }, openThread: key(1) });
+    setList([thread(1, "a1", inbox), thread(2, "a1", inbox)]);
+    await reportSpam();
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: ["SPAM"], remove: ["INBOX"] },
+    ]);
+    expect(listKeys()).toEqual([key(2)]);
+    expect(toasts()[0].title).toBe("Conversation reported as spam");
+    toasts()[0].action?.run();
+    await flush();
+    expect(modifyCalls()[1]).toEqual({
+      accountId: "a1",
+      threadIds: ["t1"],
+      add: ["INBOX"],
+      remove: ["SPAM"],
+    });
+  });
+
+  test("a selection is reported together; Undo brings INBOX back only to what had it", async () => {
+    useUiStore.setState({
+      mailbox: { accountId: "a1", labelId: "STARRED" },
+      checked: [key(1), key(2)],
+    });
+    setList([thread(1, "a1", inbox), thread(2, "a1", { systemLabelIds: [] })]);
+    await reportSpam();
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t1", "t2"], add: ["SPAM"], remove: ["INBOX"] },
+    ]);
+    expect(toasts()[0].title).toBe("Conversations reported as spam");
+    expect(toasts()[0].description).toBe("2 conversations");
+    toasts()[0].action?.run();
+    await flush();
+    expect(modifyCalls().slice(1)).toEqual([
+      { accountId: "a1", threadIds: ["t1"], add: ["INBOX"], remove: ["SPAM"] },
+      { accountId: "a1", threadIds: ["t2"], add: [], remove: ["SPAM"] },
+    ]);
+  });
+
+  test("skips conversations already in Spam, Trash or Drafts, and does nothing when none are left", async () => {
+    useUiStore.setState({ checked: [key(1), key(2), key(3), key(4)] });
+    setList([
+      thread(1, "a1", { systemLabelIds: ["SPAM"] }),
+      thread(2, "a1", { systemLabelIds: ["TRASH"] }),
+      thread(3, "a1", { systemLabelIds: ["DRAFT"] }),
+      thread(4, "a1", inbox),
+    ]);
+    await reportSpam();
+    expect(modifyCalls()).toEqual([
+      { accountId: "a1", threadIds: ["t4"], add: ["SPAM"], remove: ["INBOX"] },
+    ]);
+    await reportSpam([key(1)]);
+    expect(modifyCalls()).toHaveLength(1);
+  });
+
+  test("in search results the rows leave too: local search never lists Spam", async () => {
+    useMailStore.setState({ query: { accountIds: ["a1"], labelId: "ALL", search: "x" } });
+    setList([thread(1, "a1", inbox), thread(2, "a1", inbox)]);
+    await reportSpam([key(1)]);
+    expect(listKeys()).toEqual([key(2)]);
+  });
+
+  test("is the Report spam command, bound to !", () => {
+    const command = appCommands().find((c) => c.id === "conversation.report-spam");
+    expect(command?.shortcut).toBe("!");
   });
 });
 

@@ -644,8 +644,11 @@ export const useMailStore = create<MailState>((set, get) => {
                     )
                       return;
                     const hidden = removedFromSearch.has(key);
-                    if (hidden && detail.messages.every((m) => m.labelIds.includes("TRASH")))
-                      return;
+                    // Still hidden once Gmail has it in Trash or Spam (deleted or reported), until an Undo or rollback.
+                    const junked = detail.messages.every(
+                      (m) => m.labelIds.includes("TRASH") || m.labelIds.includes("SPAM"),
+                    );
+                    if (hidden && junked) return;
                     if (hidden) removedFromSearch.delete(key);
                     remoteRows.set(key, detail.thread);
                     const query = get().query;

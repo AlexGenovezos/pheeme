@@ -17,6 +17,7 @@ export const DEFAULT_KEYS = {
   "search.focus": "/",
   "conversation.archive": "e",
   "conversation.delete": "#",
+  "conversation.report-spam": "!",
   "conversation.star": "s",
   "conversation.mark-read": "shift+i",
   "conversation.mark-unread": "shift+u",

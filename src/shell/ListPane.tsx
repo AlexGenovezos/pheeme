@@ -14,12 +14,13 @@ import {
   isImportant,
   markSearchResultsRead,
   moveSelection,
+  reportSpam,
   setImportant,
   setRead,
   setStarred,
   trash,
 } from "../mail/actions";
-import { ARCHIVE_SLOT_LABEL, currentArchiveSlot } from "../mail/archiveSlot";
+import { ARCHIVE_SLOT_LABEL, canReportSpam, currentArchiveSlot } from "../mail/archiveSlot";
 import { mailboxTitle, queryFor, threadKey } from "../mail/mailboxes";
 import { ThreadList } from "../mail/ThreadList";
 import type { RowAction } from "../mail/ThreadRow";
@@ -56,6 +57,14 @@ export const rowMenu = (t: ThreadSummary) => {
       label: ARCHIVE_SLOT_LABEL[currentArchiveSlot()],
       shortcut: registry.shortcutFor("conversation.archive"),
       onSelect: () => void archiveSlotAction(keys),
+    },
+    {
+      id: "report-spam",
+      label: "Report spam",
+      shortcut: registry.shortcutFor("conversation.report-spam"),
+      // Not for conversations in Spam, Trash or Drafts, like Gmail; the item keeps its place.
+      disabled: !canReportSpam(t.systemLabelIds),
+      onSelect: () => void reportSpam(keys),
     },
     {
       id: "read",

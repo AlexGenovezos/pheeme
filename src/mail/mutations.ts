@@ -1,19 +1,21 @@
 // Archive, trash, star and read: the mail actions that add or remove a flag or a system label.
 import { toast, toastError } from "../components/ui/Toast";
-import { markInboxTabRead, type ThreadDetail, trashThreads } from "../lib/tauri";
-import { currentArchiveSlot } from "./archiveSlot";
+import { markInboxTabRead, modifyThreads, type ThreadDetail, trashThreads } from "../lib/tauri";
+import { canReportSpam, currentArchiveSlot } from "./archiveSlot";
 import {
   type Change,
   apply,
   inInbox,
   inMailbox,
+  keyOf,
   modify,
   present,
   readChange,
   withLabel,
+  withLabels,
 } from "./change";
 import { canMarkImportance, isImportant, withImportance } from "./importance";
-import type { ThreadKey } from "./mailboxes";
+import { type ThreadKey, threadKey } from "./mailboxes";
 
 /** `evenIfGone`: the conversation view's own controls act on the open thread even when its row has left the list. */
 export function archive(keys?: ThreadKey[], { evenIfGone = false } = {}): Promise<void> {
@@ -56,6 +58,44 @@ export function moveToInbox(keys?: ThreadKey[]): Promise<void> {
     }),
     {
       announce: { title: fromSpam ? "Marked as not spam" : "Moved to Inbox" },
+      cancelsAutoRead: true,
+    },
+  );
+}
+
+/**
+ * Gmail's Report spam: the conversations get SPAM and lose INBOX, and leave the list (Spam is listed only in Spam, search included). Skips what is
+ * already in Spam, Trash or Drafts, where Gmail doesn't offer it. Undo puts back what was there: INBOX only for the
+ * conversations that were in the inbox.
+ */
+export function reportSpam(keys?: ThreadKey[]): Promise<void> {
+  const rows = present(keys).filter((r) => canReportSpam(r.thread.systemLabelIds));
+  if (rows.length === 0) return Promise.resolve();
+  const wasInInbox = new Set(
+    rows.filter((r) => r.thread.systemLabelIds.includes("INBOX")).map((r) => r.key),
+  );
+  const undo: Change = {
+    leavesList: false,
+    detail: (detail) =>
+      withLabels(wasInInbox.has(keyOf(detail.thread)) ? ["INBOX"] : [], ["SPAM"])(detail),
+    send: async (accountId, ids) => {
+      const back = ids.filter((id) => wasInInbox.has(threadKey(accountId, id)));
+      const rest = ids.filter((id) => !wasInInbox.has(threadKey(accountId, id)));
+      if (back.length > 0) await modifyThreads(accountId, back, ["INBOX"], ["SPAM"]);
+      if (rest.length > 0) await modifyThreads(accountId, rest, [], ["SPAM"]);
+    },
+  };
+  return apply(
+    rows.map((r) => r.key),
+    modify(["SPAM"], ["INBOX"], {
+      leavesList: true,
+      detail: withLabels(["SPAM"], ["INBOX"]),
+    }),
+    {
+      announce: {
+        title: rows.length > 1 ? "Conversations reported as spam" : "Conversation reported as spam",
+        undo,
+      },
       cancelsAutoRead: true,
     },
   );

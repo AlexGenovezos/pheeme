@@ -207,6 +207,8 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     const ids = args.accountIds;
     return threads.filter((t) => {
       if (ids.length && !ids.includes(t.accountId)) return false;
+      // Like local search, never Spam or Trash. (The preview reads no operators; `in:` is just a word here.)
+      if (hasLabel(t, "SPAM") || hasLabel(t, "TRASH")) return false;
       const row = summary(t);
       const text = [row.subject, row.fromName, row.fromAddress, row.snippet]
         .join(" ")
@@ -423,12 +425,10 @@ export function createPreviewHandlers(search = ""): PreviewHandlers {
     modify_threads: (args) => {
       const add = args.add;
       const remove = args.remove;
-      // Like the backend: Spam can only be left for the inbox (Not spam), and getting INBOX leaves Trash.
+      // Like the backend: Spam can be added and removed (Report spam, Not spam), Trash has its own command, and
+      // getting INBOX leaves Trash.
       const toInbox = add.includes("INBOX");
-      if (
-        add.some((l) => l === "TRASH" || l === "SPAM") ||
-        remove.some((l) => l === "TRASH" || (l === "SPAM" && !toInbox))
-      ) {
+      if (add.includes("TRASH") || remove.includes("TRASH")) {
         throw { code: "invalid", message: "Use trash for Trash." };
       }
       return changeThreads(args, (t) => {

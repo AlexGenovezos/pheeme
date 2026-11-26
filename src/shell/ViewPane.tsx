@@ -22,9 +22,15 @@ import { useWidth } from "../lib/useWidth";
 import { registry } from "../keyboard/registry";
 import { useKeybinding } from "../keyboard/useCommands";
 import { showContextMenu } from "../lib/contextMenu";
-import { ARCHIVE_SLOT_LABEL, archiveSlotIcon, useArchiveSlot } from "../mail/archiveSlot";
+import {
+  ARCHIVE_SLOT_LABEL,
+  archiveSlotIcon,
+  canReportSpam,
+  useArchiveSlot,
+} from "../mail/archiveSlot";
 import {
   archiveSlotAction,
+  reportSpam,
   closeConversation,
   findSimilar,
   respond,
@@ -106,6 +112,8 @@ export function ViewPane() {
   );
   const stale = rows.length === 0;
   const slot = useArchiveSlot();
+  // Report spam (in More actions) is offered where Gmail does: not for Spam, Trash or Drafts; there it stays, disabled.
+  const spammable = rows.some((t) => canReportSpam(t.systemLabelIds));
   const anyUnread = rows.some((t) => t.unread);
   const starred = rows[0]?.starred ?? false;
   // Mark as important unless every target already is, like Mark as read: one slot, its words swapped.
@@ -154,6 +162,13 @@ export function ViewPane() {
           shortcut: registry.shortcutFor("conversation.move"),
           disabled: stale,
           onSelect: () => openMoveMenu({ x: r.left, y: r.bottom }),
+        },
+        {
+          id: "report-spam",
+          label: "Report spam",
+          shortcut: registry.shortcutFor("conversation.report-spam"),
+          disabled: !spammable,
+          onSelect: () => void reportSpam(),
         },
         {
           id: "create-event",

@@ -38,3 +38,10 @@ export const currentArchiveSlot = (): ArchiveSlot =>
     useUiStore.getState().mailbox.labelId,
     Boolean(useMailStore.getState().query?.search),
   );
+
+/**
+ * Gmail offers Report spam on conversations that aren't in Spam (Not spam is there), Trash or Drafts, judged by
+ * their own system labels, so a search's results and a mixed selection are covered too.
+ */
+export const canReportSpam = (systemLabelIds: string[]): boolean =>
+  !systemLabelIds.some((l) => l === "SPAM" || l === "TRASH" || l === "DRAFT");
