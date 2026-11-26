@@ -1,15 +1,15 @@
-import { createDocument, type Editor as TipTap, getHTMLFromFragment } from "@tiptap/react";
+import { type Editor as TipTap } from "@tiptap/react";
 import { useCallback, useEffect, useRef } from "react";
 import { EditorBody, EditorToolbar, useComposeEditor } from "../compose/Editor";
 import { cx } from "../lib/utils";
 import "../compose/compose.css";
 
-/** What the editor reports for a document: its HTML, "" when empty (as `useComposeEditor` does). */
+/** What the editor reports for its document: its HTML, "" when empty (as `useComposeEditor` does). */
 const EMPTY = "<p></p>";
-const shownHtml = (html: string) => (html === EMPTY ? "" : html);
-/** `html` as the editor would show and report it: its own rewrite, without what it can't keep. */
-const rendered = (editor: TipTap, html: string) =>
-  shownHtml(getHTMLFromFragment(createDocument(html, editor.schema).content, editor.schema));
+const htmlOf = (editor: TipTap) => {
+  const html = editor.getHTML();
+  return html === EMPTY ? "" : html;
+};
 
 /**
  * The vacation message's editor in Settings › Vacation responder: the compose editor with Gmail's
@@ -30,31 +30,30 @@ export default function VacationEditor({
   disabled: boolean;
   onChange(html: string): void;
 }) {
-  // The editor rewrites Gmail's HTML in its own terms (and drops what it can't keep). An edit
-  // undone back to that rewrite reports Gmail's original, so no change is left to save.
+  // The editor rewrites Gmail's HTML in its own terms (dropping what it can't keep, adding a
+  // paragraph after a list or quote). `loaded` is that rewrite, read from the editor once it has
+  // shown `from`; an edit undone back to it reports Gmail's original, so no change is left to save.
+  const loaded = useRef<{ from: string; shown: string } | null>(null);
   const latest = useRef({ onChange, original });
   useEffect(() => {
     latest.current = { onChange, original };
   }, [onChange, original]);
-  const report = useCallback((next: string, from?: TipTap) => {
+  const report = useCallback((next: string) => {
     const { onChange: changed, original: gmail } = latest.current;
-    changed(from && next === rendered(from, gmail) ? gmail : next);
+    const base = loaded.current;
+    changed(base && base.from === gmail && next === base.shown ? gmail : next);
   }, []);
-  const editorRef = useRef<TipTap | null>(null);
-  const editor = useComposeEditor(
-    html,
-    (next) => report(next, editorRef.current ?? undefined),
-    label,
-  );
+  const editor = useComposeEditor(html, report, label);
   useEffect(() => {
-    editorRef.current = editor;
     if (!editor) return;
     const apply = () => {
-      const current = shownHtml(editor.getHTML());
-      const target = html === original ? rendered(editor, original) : html;
+      const showsGmail = html === original;
+      const target = showsGmail && loaded.current?.from === original ? loaded.current.shown : html;
       // Gmail's text arriving (or Discard) isn't an edit, so Undo can't bring back what it replaced.
-      if (current !== target)
+      if (htmlOf(editor) !== target || (showsGmail && loaded.current?.from !== original)) {
         editor.chain().setMeta("addToHistory", false).setContent(html, { emitUpdate: false }).run();
+        if (showsGmail) loaded.current = { from: original, shown: htmlOf(editor) };
+      }
       editor.setEditable(!disabled, false);
     };
     // Its view exists only once it's mounted, which TipTap announces with `create`.
