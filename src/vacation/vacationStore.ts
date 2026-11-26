@@ -26,6 +26,8 @@ interface VacationState {
   accounts: Record<string, AccountVacation>;
   /** Unsaved edits in Settings, per account, until saved or discarded (this session only). */
   drafts: Record<string, VacationForm>;
+  /** Accounts with a save or End now on its way to Gmail; their form waits for it. */
+  writing: Record<string, boolean>;
   setDraft(accountId: string, form: VacationForm | null): void;
   /** Read the account's responder from Gmail. */
   refresh(accountId: string): Promise<void>;
@@ -45,6 +47,7 @@ export const useVacation = create<VacationState>((set) => {
       accounts: { ...s.accounts, [accountId]: { ...s.accounts[accountId], ...change } },
     }));
   const write = async (accountId: string, run: () => Promise<VacationResponder>) => {
+    set((s) => ({ writing: { ...s.writing, [accountId]: true } }));
     try {
       const value = await run();
       writes.set(accountId, (writes.get(accountId) ?? 0) + 1);
@@ -52,11 +55,14 @@ export const useVacation = create<VacationState>((set) => {
       return null;
     } catch (e) {
       return toCommandError(e);
+    } finally {
+      set((s) => ({ writing: { ...s.writing, [accountId]: false } }));
     }
   };
   return {
     accounts: {},
     drafts: {},
+    writing: {},
     setDraft: (accountId, form) =>
       set((s) => {
         const drafts = { ...s.drafts };

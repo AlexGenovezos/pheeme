@@ -29,7 +29,7 @@ function backend(mode: string | null) {
 
 beforeEach(() => {
   calls = [];
-  useVacation.setState({ accounts: {}, drafts: {} });
+  useVacation.setState({ accounts: {}, drafts: {}, writing: {} });
   useAccountStore.setState({ accounts });
 });
 afterEach(() => clearMocks());
@@ -211,4 +211,34 @@ test("an edit put back by hand leaves no draft behind", async () => {
   fireEvent.click(on);
   expect(useVacation.getState().drafts.a1).toBeUndefined();
   expect(subject).toBeDisabled();
+});
+
+test("a form reopened while its save is on the way waits for it", async () => {
+  backend(null);
+  render(<VacationSettings />);
+  await flush();
+  const handlers = createVacationHandlers(accounts, null) as Record<
+    string,
+    (a: unknown) => unknown
+  >;
+  let land!: () => void;
+  mockIPC((cmd, args) =>
+    cmd === "set_vacation_responder"
+      ? new Promise((resolve) => (land = () => resolve(handlers[cmd]!(args))))
+      : handlers[cmd]?.(args),
+  );
+  const toggle = () =>
+    within(section("me@gmail.com")).getByRole("switch", {
+      name: "Vacation responder for me@gmail.com",
+    });
+  fireEvent.click(toggle());
+  fireEvent.click(within(section("me@gmail.com")).getByRole("button", { name: "Save" }));
+  cleanup();
+  render(<VacationSettings />);
+  await flush();
+  expect(toggle()).toBeDisabled();
+  await act(async () => land());
+  await flush();
+  expect(toggle()).toBeEnabled();
+  expect(toggle()).toBeChecked();
 });

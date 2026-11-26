@@ -45,7 +45,8 @@ function AccountVacation({
   // Kept in the store, so an unsaved edit outlives closing Settings (signing in again closes it).
   const draft = useVacation((s) => s.drafts[accountId] ?? null);
   const setDraft = (form: VacationForm | null) => useVacation.getState().setDraft(accountId, form);
-  const [saving, setSaving] = useState(false);
+  // In the store, so a form reopened while its save is on the way waits for it too.
+  const saving = useVacation((s) => s.writing[accountId] ?? false);
   const [result, setResult] = useState<CommandError | "saved" | null>(null);
   // The fields wait for a fresh read when the page opens, so an edit never starts from an
   // answer another device has since changed. Only that read's failure stops them.
@@ -80,9 +81,7 @@ function AccountVacation({
   const save = async () => {
     if (!loaded || problem) return;
     const sent = draft;
-    setSaving(true);
     const error = await useVacation.getState().save(accountId, responderOf(form, workspace));
-    setSaving(false);
     setResult(error ?? "saved");
     // Only the draft it saved: Settings may have been reopened and edited again meanwhile.
     if (!error && useVacation.getState().drafts[accountId] === sent) setDraft(null);
