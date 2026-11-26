@@ -1,53 +1,22 @@
-import { Bell, Lock, RefreshCw, Wallet } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Modal } from "../components/ui/Modal";
-import { TextInput } from "../components/ui/TextInput";
-import { getDesktopSettings, setAccountNotifications } from "../desktop/api";
-import { resetNotificationPrompt } from "../desktop/prompt";
-import {
-  type AccountInfo,
-  type ClientChoice,
-  type CommandError,
-  openExternal,
-  toCommandError,
-} from "../lib/tauri";
-import { parseClientJson } from "./clientJson";
-import { clearProgress, loadProgress, saveProgress } from "./progress";
-import {
-  ALERTS_STEP,
-  type GuideStep,
-  INTRO,
-  STEPS,
-  type StepId,
-  stepById,
-  stepIndex,
-} from "./steps";
-import { BROWSER_PROBLEMS, isCredentialProblem, problemTitle } from "./troubleshooting";
-import { type SignInState, useSignIn } from "./useSignIn";
-import { TELEMETRY_TITLE, TelemetrySwitch } from "../settings/telemetry";
+import { type AccountInfo, type ClientChoice } from "../lib/tauri";
 import { ReceiveCredentials } from "../transfer/ReceiveCredentials";
+import { clearProgress, loadProgress, saveProgress } from "./progress";
+import { type StepId, STEPS, isStepId, stepById, stepIndex } from "./steps";
+import { useSignIn } from "./useSignIn";
+import { type SetupView, currentView } from "./view";
+import { ChooseClient } from "./views/ChooseClient";
+import { Credentials } from "./views/Credentials";
+import { Done } from "./views/Done";
+import { GuidePage } from "./views/GuidePage";
+import { Intro } from "./views/Intro";
+import { Rail } from "./views/Rail";
+import { SignInError } from "./views/SignInError";
+import { Waiting } from "./views/Waiting";
 import "./onboarding.css";
 import "../components/ui/Surface.css";
-
-type View = StepId | "intro" | "choose" | "error" | "done" | "receive" | "receiving";
-
-type SetupView = StepId | "intro" | "choose" | "receive";
-
-function currentView(state: SignInState, setup: SetupView): View {
-  switch (state.phase) {
-    case "idle":
-      return setup;
-    case "receiving":
-      return "receiving";
-    case "authorizing":
-      return "authorize";
-    case "failed":
-      return state.client ? "error" : "receive";
-    case "connected":
-      return "done";
-  }
-}
 
 interface Props {
   /** Accounts already connected. Empty means first run: the full setup guide. */
@@ -60,8 +29,6 @@ interface Props {
   /** Open at the first setup step with the step list (Settings › About › Open guide). */
   tutorial?: boolean;
 }
-
-const CLIENT_ID_SUFFIX = ".apps.googleusercontent.com";
 
 export function Onboarding({ accounts, onConnected, onClose, reconnect, tutorial }: Props) {
   const firstRun = accounts.length === 0;
@@ -84,8 +51,8 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect, tutorial
   const connected = state.phase === "connected" ? state.account : null;
 
   useEffect(() => {
-    if (firstRun && (view === "intro" || stepIndex(view as StepId) !== -1)) {
-      saveProgress({ step: view as StepId | "intro", clientId });
+    if (firstRun && (view === "intro" || isStepId(view))) {
+      saveProgress({ step: view, clientId });
     }
   }, [firstRun, view, clientId]);
 
@@ -142,6 +109,8 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect, tutorial
     );
   }
 
+  // The guide's own pages: every step but the two with views of their own.
+  const guideView = isStepId(view) && view !== "credentials" && view !== "authorize" ? view : null;
   const showRail = guide && view !== "choose" && view !== "receive" && view !== "receiving";
 
   const page = (
@@ -230,28 +199,28 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect, tutorial
           {view === "done" && connected && (
             <Done account={connected} onContinue={() => onConnected(connected)} />
           )}
-          {stepIndex(view as StepId) !== -1 && !["credentials", "authorize"].includes(view) && (
+          {guideView && (
             <GuidePage
-              step={stepById(view as StepId)}
+              step={stepById(guideView)}
               primary={
-                view === "unverified"
+                guideView === "unverified"
                   ? {
                       label: "Continue to Google",
                       onClick: () => choice && void startSignIn(choice),
                     }
                   : {
                       label: "Next",
-                      onClick: () => setView(STEPS[stepIndex(view as StepId) + 1].id),
+                      onClick: () => setView(STEPS[stepIndex(guideView) + 1].id),
                     }
               }
               onBack={
-                view === "unverified"
+                guideView === "unverified"
                   ? () => setView("credentials")
-                  : view === STEPS[0].id
+                  : guideView === STEPS[0].id
                     ? firstRun
                       ? () => setView("intro")
                       : undefined
-                    : () => setView(STEPS[stepIndex(view as StepId) - 1].id)
+                    : () => setView(STEPS[stepIndex(guideView) - 1].id)
               }
             />
           )}
@@ -284,594 +253,5 @@ export function Onboarding({ accounts, onConnected, onClose, reconnect, tutorial
     >
       {page}
     </Modal>
-  );
-}
-
-const INTRO_ICONS = [Wallet, Lock, RefreshCw];
-
-/** First-run welcome: why setup asks for your own Google Cloud app, before the guide starts. */
-function Intro({ onStart, onReceive }: { onStart: () => void; onReceive: () => void }) {
-  const icon = `${import.meta.env.BASE_URL}pheeme-icon.png`;
-  return (
-    <main className="intro">
-      <div className="intro__backdrop" aria-hidden>
-        <img src={icon} alt="" />
-      </div>
-      <div className="intro__art">
-        <img src={icon} alt="" />
-      </div>
-      <div className="intro__copy">
-        <p className="intro__eyebrow">{INTRO.eyebrow}</p>
-        <h1>{INTRO.title}</h1>
-        <p className="intro__lead">{INTRO.lead}</p>
-        <ul className="intro__points">
-          {INTRO.points.map((point, index) => {
-            const Icon = INTRO_ICONS[index];
-            return (
-              <li key={point.title}>
-                <span className="intro__icon" aria-hidden>
-                  <Icon />
-                </span>
-                <div>
-                  <strong>{point.title}</strong>
-                  <p>{point.body}</p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-        <div className="intro__actions">
-          <Button variant="primary" size="lg" onClick={onStart}>
-            Set up my Google app
-          </Button>
-          <Button size="lg" onClick={onReceive}>
-            Receive from another device
-          </Button>
-        </div>
-        <div className="intro__telemetry">
-          <strong>{TELEMETRY_TITLE}</strong>
-          <TelemetrySwitch />
-          <p>{INTRO.telemetry}</p>
-        </div>
-        <p className="intro__fine">
-          Pheeme is open source under the MIT license.{" "}
-          <button
-            type="button"
-            className="link"
-            onClick={() => void openExternal(INTRO.guideUrl).catch(() => {})}
-          >
-            How this works
-          </button>
-        </p>
-      </div>
-    </main>
-  );
-}
-
-function Rail({ current, onSelect }: { current: View; onSelect: (step: StepId) => void }) {
-  const currentIndex = current === "error" ? stepIndex("authorize") : stepIndex(current as StepId);
-  return (
-    <nav className="onboarding-rail" aria-label="Setup steps">
-      <div className="onboarding-rail__brand">Pheeme</div>
-      <ol>
-        {STEPS.map((step, index) => {
-          const state =
-            current === "done" || index < currentIndex
-              ? "done"
-              : index === currentIndex
-                ? "current"
-                : "todo";
-          // Only steps already reached are clickable: the guide is meant to be followed in order.
-          // Not while a sign-in is waiting on the browser or finished.
-          const reachable =
-            state === "done" && !["authorize", "done"].includes(current) && step.id !== "authorize";
-          return (
-            <li key={step.id} className={`rail-step rail-step--${state}`}>
-              <button
-                type="button"
-                disabled={!reachable}
-                aria-current={state === "current" ? "step" : undefined}
-                onClick={() => onSelect(step.id)}
-              >
-                <span className="rail-step__dot" aria-hidden>
-                  {state === "done" ? "✓" : index + 1}
-                </span>
-                {step.short}
-              </button>
-            </li>
-          );
-        })}
-        <li className={`rail-step rail-step--${current === "done" ? "current" : "todo"}`}>
-          <button type="button" disabled aria-current={current === "done" ? "step" : undefined}>
-            <span className="rail-step__dot" aria-hidden>
-              {STEPS.length + 1}
-            </span>
-            {ALERTS_STEP}
-          </button>
-        </li>
-      </ol>
-    </nav>
-  );
-}
-
-function GuidePage({
-  step,
-  primary,
-  onBack,
-}: {
-  step: GuideStep;
-  primary: { label: string; onClick: () => void };
-  onBack?: () => void;
-}) {
-  const numbered = step.id !== "unverified";
-  return (
-    <>
-      <h1>{step.title}</h1>
-      {numbered ? (
-        <ol className="guide-actions">
-          {step.actions.map((action) => (
-            <li key={action}>{action}</li>
-          ))}
-        </ol>
-      ) : (
-        step.actions.map((action) => (
-          <p key={action} className="guide-lead">
-            {action}
-          </p>
-        ))
-      )}
-      {step.link && <ExternalButton label={step.link.label} url={step.link.url} primary />}
-      {step.copy && (
-        <div className="copy-list">
-          {step.copy.map((item) => (
-            <CopyField key={item.label} {...item} />
-          ))}
-        </div>
-      )}
-      {step.screenshot && <img className="guide-shot" src={step.screenshot} alt="" />}
-      {step.why && (
-        <p className="guide-why">
-          <strong>Why: </strong>
-          {step.why}
-        </p>
-      )}
-      <Footer onBack={onBack} primary={primary} />
-    </>
-  );
-}
-
-function Footer({
-  onBack,
-  primary,
-}: {
-  onBack?: () => void;
-  primary: { label: string; onClick: () => void; disabled?: boolean; submit?: boolean };
-}) {
-  return (
-    <div className="onboarding-footer">
-      {onBack ? (
-        <Button variant="ghost" size="lg" onClick={onBack}>
-          Back
-        </Button>
-      ) : (
-        <span />
-      )}
-      <Button
-        type={primary.submit ? "submit" : "button"}
-        variant="primary"
-        size="lg"
-        disabled={primary.disabled}
-        onClick={primary.submit ? undefined : primary.onClick}
-      >
-        {primary.label}
-      </Button>
-    </div>
-  );
-}
-
-function useFlash(): [boolean, () => void] {
-  const [on, setOn] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  return [
-    on,
-    () => {
-      setOn(true);
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => setOn(false), 1500);
-    },
-  ];
-}
-
-function CopyField({ label, value }: { label: string; value: string }) {
-  const [copied, flash] = useFlash();
-  return (
-    <div className="copy-field">
-      <span className="copy-field__label">{label}</span>
-      <code className="copy-field__value">{value}</code>
-      <Button
-        size="sm"
-        onClick={() => void navigator.clipboard.writeText(value).then(flash, () => {})}
-      >
-        {copied ? "Copied" : "Copy"}
-      </Button>
-    </div>
-  );
-}
-
-function ExternalButton({
-  label,
-  url,
-  primary,
-}: {
-  label: string;
-  url: string;
-  primary?: boolean;
-}) {
-  const [failed, flash] = useFlash();
-  return (
-    <Button
-      variant={primary ? "primary" : "secondary"}
-      size={primary ? "lg" : "sm"}
-      className="external"
-      onClick={() =>
-        void openExternal(url).catch(() => {
-          // No browser could be opened: hand the user the link instead.
-          void navigator.clipboard.writeText(url).catch(() => {});
-          flash();
-        })
-      }
-    >
-      {failed ? "Link copied: paste it in your browser" : `${label} ↗`}
-    </Button>
-  );
-}
-
-function Credentials({
-  clientId,
-  clientSecret,
-  onChange,
-  onSubmit,
-  onGuide,
-  onBack,
-}: {
-  clientId: string;
-  clientSecret: string;
-  onChange: (clientId: string, clientSecret: string) => void;
-  onSubmit: () => void;
-  onGuide?: () => void;
-  onBack?: () => void;
-}) {
-  const [jsonError, setJsonError] = useState("");
-  const id = clientId.trim();
-  const idProblem =
-    id && !id.endsWith(CLIENT_ID_SUFFIX) ? `A client ID ends in ${CLIENT_ID_SUFFIX}.` : "";
-  const ready = id.endsWith(CLIENT_ID_SUFFIX) && clientSecret.trim() !== "";
-
-  function onIdInput(text: string) {
-    const parsed = parseClientJson(text);
-    if (parsed === null) {
-      setJsonError("");
-      onChange(text, clientSecret);
-    } else if (parsed.ok) {
-      setJsonError("");
-      onChange(parsed.clientId, parsed.clientSecret);
-    } else {
-      setJsonError(parsed.reason);
-    }
-  }
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (ready) onSubmit();
-      }}
-    >
-      <h1>Paste your client ID and secret</h1>
-      <p className="guide-lead">
-        Copy both from the dialog Google showed when you created the Desktop app client. You can
-        also paste the downloaded JSON file's contents into the first box.
-      </p>
-      <div className="field">
-        <label htmlFor="client-id">Client ID</label>
-        <TextInput
-          id="client-id"
-          size="lg"
-          value={clientId}
-          onChange={(event) => onIdInput(event.target.value)}
-          placeholder={`1234-abcd${CLIENT_ID_SUFFIX}`}
-          autoFocus
-          invalid={Boolean(idProblem || jsonError)}
-        />
-        {(jsonError || idProblem) && (
-          <small className="field__error">{jsonError || idProblem}</small>
-        )}
-      </div>
-      <div className="field">
-        <label htmlFor="client-secret">Client secret</label>
-        <TextInput
-          id="client-secret"
-          size="lg"
-          type="password"
-          value={clientSecret}
-          onChange={(event) => onChange(clientId, event.target.value)}
-        />
-        <small className="field__hint">
-          Stored in your system keychain, never in Pheeme's database.
-        </small>
-      </div>
-      {onGuide && (
-        <p className="guide-why">
-          No client yet?{" "}
-          <button type="button" className="link" onClick={onGuide}>
-            Follow the setup guide
-          </button>
-        </p>
-      )}
-      <Footer
-        onBack={onBack}
-        primary={{ label: "Next", onClick: onSubmit, disabled: !ready, submit: true }}
-      />
-    </form>
-  );
-}
-
-function ChooseClient({
-  accounts,
-  onReuse,
-  onNew,
-}: {
-  accounts: AccountInfo[];
-  onReuse: (accountId: string) => void;
-  onNew: () => void;
-}) {
-  // One option per distinct OAuth client, labelled by the first account using it.
-  const byClient = new Map<string, AccountInfo>();
-  for (const account of accounts)
-    if (!byClient.has(account.clientId)) byClient.set(account.clientId, account);
-  return (
-    <>
-      <h1>Add an account</h1>
-      <p className="guide-lead">
-        Another Google account can sign in through the Google Cloud app you already set up. A work
-        account whose administrator requires its own OAuth client needs a different one.
-      </p>
-      <div className="choice-list">
-        {[...byClient.values()].map((account) => (
-          <button
-            key={account.clientId}
-            type="button"
-            className="choice"
-            onClick={() => onReuse(account.id)}
-          >
-            <strong>Use the same Google Cloud app</strong>
-            <span>The one {account.email} signed in with</span>
-          </button>
-        ))}
-        <button type="button" className="choice" onClick={onNew}>
-          <strong>Use a different OAuth client</strong>
-          <span>Paste another client ID and secret</span>
-        </button>
-      </div>
-    </>
-  );
-}
-
-function Waiting({
-  authUrl,
-  email,
-  onCancel,
-  onFixCredentials,
-}: {
-  authUrl: string;
-  /** Reconnecting: the address to sign in as. */
-  email?: string;
-  onCancel: () => void;
-  onFixCredentials?: () => void;
-}) {
-  const [copied, flash] = useFlash();
-  return (
-    <>
-      <div className="waiting-mark" aria-hidden />
-      <h1>Finish signing in in your browser</h1>
-      <p className="guide-lead">
-        Pheeme opened Google's sign-in page.{" "}
-        {email && (
-          <>
-            Sign in as <strong>{email}</strong>.{" "}
-          </>
-        )}
-        When it says you can close the tab, come back here.
-      </p>
-      <div className="button-row">
-        <Button
-          size="lg"
-          disabled={!authUrl}
-          onClick={() => void openExternal(authUrl).catch(() => {})}
-        >
-          Open the browser again
-        </Button>
-        <Button
-          size="lg"
-          disabled={!authUrl}
-          onClick={() => void navigator.clipboard.writeText(authUrl).then(flash, () => {})}
-        >
-          {copied ? "Copied" : "Copy sign-in link"}
-        </Button>
-        <Button variant="ghost" size="lg" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-      <details className="problems">
-        <summary>Seeing an error from Google in the browser?</summary>
-        <ul>
-          {BROWSER_PROBLEMS.map((problem) => (
-            <li key={problem.code}>
-              <strong>{problem.title}</strong>
-              <p>{problem.fix}</p>
-              <div className="button-row">
-                {problem.link && (
-                  <ExternalButton label={problem.link.label} url={problem.link.url} />
-                )}
-                {problem.action === "credentials" && onFixCredentials && (
-                  <Button size="sm" onClick={onFixCredentials}>
-                    Change client ID or secret
-                  </Button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </details>
-    </>
-  );
-}
-
-function SignInError({
-  error,
-  onRetry,
-  onFixCredentials,
-}: {
-  error: CommandError;
-  onRetry?: () => void;
-  onFixCredentials?: () => void;
-}) {
-  const credentialsFirst = isCredentialProblem(error.code) && onFixCredentials;
-  return (
-    <div role="alert">
-      <h1>{problemTitle(error.code)}</h1>
-      <p className="guide-lead">{error.message}</p>
-      <div className="onboarding-footer">
-        {credentialsFirst ? (
-          <>
-            {onRetry ? (
-              <Button variant="ghost" size="lg" onClick={onRetry}>
-                Try again
-              </Button>
-            ) : (
-              <span />
-            )}
-            <Button variant="primary" size="lg" onClick={onFixCredentials}>
-              Change client ID or secret
-            </Button>
-          </>
-        ) : (
-          <>
-            {onFixCredentials ? (
-              <Button variant="ghost" size="lg" onClick={onFixCredentials}>
-                Change client ID or secret
-              </Button>
-            ) : (
-              <span />
-            )}
-            {onRetry && (
-              <Button variant="primary" size="lg" onClick={onRetry}>
-                Try again
-              </Button>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * The last step: the account is in, and Pheeme asks once whether to alert on its new mail.
- * An account already answered for (signing in again, Settings) just continues.
- */
-function Done({ account, onContinue }: { account: AccountInfo; onContinue: () => void }) {
-  // null until the settings are read; "ask" until answered here.
-  const [alerts, setAlerts] = useState<null | "ask" | "on" | "off">(null);
-  const [busy, setBusy] = useState(false);
-  const [blocked, setBlocked] = useState<string | null>(null);
-
-  useEffect(() => {
-    let stopped = false;
-    getDesktopSettings()
-      .then((settings) => {
-        const entry = settings.accounts.find((a) => a.accountId === account.id);
-        return !entry ? "off" : entry.asked ? (entry.enabled ? "on" : "off") : "ask";
-      })
-      // Settings that can't be read (or a malformed reply) leave the sidebar's offer to ask later.
-      .catch(() => "off" as const)
-      .then((next) => {
-        if (!stopped) setAlerts(next);
-      });
-    return () => {
-      stopped = true;
-    };
-  }, [account.id]);
-
-  async function answer(enabled: boolean) {
-    setBusy(true);
-    try {
-      const next = await setAccountNotifications(account.id, enabled);
-      if (next.accounts.every((a) => a.asked)) resetNotificationPrompt();
-      onContinue();
-    } catch (raw) {
-      // Blocked by the system: Pheeme saved the answer as off, so there's nothing left to ask.
-      setBlocked(toCommandError(raw).message);
-      setAlerts("off");
-      setBusy(false);
-      const next = await getDesktopSettings().catch(() => null);
-      if (next?.accounts.every((a) => a.asked)) resetNotificationPrompt();
-    }
-  }
-
-  const asking = alerts === null || alerts === "ask";
-  return (
-    <>
-      <div className="done-mark" aria-hidden>
-        ✓
-      </div>
-      <h1>{account.email} is connected</h1>
-      <p className="guide-lead">
-        Pheeme can now reach this account. You can add more accounts at any time.
-      </p>
-      <section className="done-alerts" aria-labelledby="done-alerts-title">
-        <Bell aria-hidden="true" />
-        <div>
-          <h2 id="done-alerts-title" className="done-alerts__title">
-            New mail alerts
-          </h2>
-          <p className="done-alerts__description">
-            {asking
-              ? `Get an alert with the sender, subject and preview when new Primary mail arrives for ${account.email}.`
-              : `Alerts are ${alerts} for this account. Change them any time in Settings › Notifications.`}
-          </p>
-          {blocked && <p role="alert">{blocked}</p>}
-        </div>
-      </section>
-      <div className="onboarding-footer">
-        {asking ? (
-          <Button
-            variant="ghost"
-            size="lg"
-            disabled={alerts === null || busy}
-            onClick={() => void answer(false)}
-          >
-            Not now
-          </Button>
-        ) : (
-          <span />
-        )}
-        {asking ? (
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={alerts === null || busy}
-            onClick={() => void answer(true)}
-          >
-            Turn on alerts
-          </Button>
-        ) : (
-          <Button variant="primary" size="lg" onClick={onContinue}>
-            Continue
-          </Button>
-        )}
-      </div>
-    </>
   );
 }
