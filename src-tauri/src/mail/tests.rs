@@ -147,12 +147,18 @@ async fn modify_threads_reports_spam_and_undoes_it_but_never_touches_trash() {
     mail.modify_threads("a1", &["t1".into()], &["SPAM".into()], &["INBOX".into()])
         .await
         .unwrap();
-    assert_eq!((in_mailbox("INBOX").await, in_mailbox("SPAM").await), (0, 1));
+    assert_eq!(
+        (in_mailbox("INBOX").await, in_mailbox("SPAM").await),
+        (0, 1)
+    );
 
     mail.modify_threads("a1", &["t1".into()], &["INBOX".into()], &["SPAM".into()])
         .await
         .unwrap();
-    assert_eq!((in_mailbox("INBOX").await, in_mailbox("SPAM").await), (1, 0));
+    assert_eq!(
+        (in_mailbox("INBOX").await, in_mailbox("SPAM").await),
+        (1, 0)
+    );
 
     for (add, remove) in [("TRASH", "INBOX"), ("INBOX", "TRASH")] {
         assert!(matches!(
