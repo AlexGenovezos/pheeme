@@ -1,4 +1,4 @@
-import { type Editor as TipTap } from "@tiptap/react";
+import { createDocument, type Editor as TipTap, getHTMLFromFragment } from "@tiptap/react";
 import { useCallback, useEffect, useRef } from "react";
 import { EditorBody, EditorToolbar, useComposeEditor } from "../compose/Editor";
 import { cx } from "../lib/utils";
@@ -9,6 +9,12 @@ const EMPTY = "<p></p>";
 const htmlOf = (editor: TipTap) => {
   const html = editor.getHTML();
   return html === EMPTY ? "" : html;
+};
+/** Whether the editor reads two HTML messages as the same document. */
+const sameDocument = (editor: TipTap, a: string, b: string) => {
+  const parsed = (html: string) =>
+    getHTMLFromFragment(createDocument(html, editor.schema).content, editor.schema);
+  return a === b || parsed(a) === parsed(b);
 };
 
 /**
@@ -47,6 +53,16 @@ export default function VacationEditor({
   useEffect(() => {
     if (!editor) return;
     const apply = () => {
+      const base = loaded.current;
+      // Gmail's message changed elsewhere in a way the editor can't tell apart (a picture it
+      // drops): the open draft stays, and undoing it still lands on Gmail's.
+      if (
+        html !== original &&
+        base &&
+        base.from !== original &&
+        sameDocument(editor, base.from, original)
+      )
+        loaded.current = { ...base, from: original };
       const showsGmail = html === original;
       const target = showsGmail && loaded.current?.from === original ? loaded.current.shown : html;
       // Gmail's text arriving (or Discard) isn't an edit, so Undo can't bring back what it replaced.
