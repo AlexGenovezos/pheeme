@@ -45,6 +45,8 @@ export interface PopoverOptions {
   ref: RefObject<HTMLElement | null>;
   /** Viewport coordinates of the top-left corner (clamped to stay on screen). */
   at: { x: number; y: number };
+  /** `at` is the bottom-left corner instead: the panel opens upward (from a bar at the bottom of a window). */
+  above?: boolean;
   onClose(): void;
   /** Whether the window losing focus closes it (default). */
   closeOnBlur?: boolean;
@@ -64,6 +66,7 @@ export interface PopoverOptions {
 export function usePopover({
   ref,
   at,
+  above = false,
   onClose,
   closeOnBlur = true,
   focusIn,
@@ -79,12 +82,12 @@ export function usePopover({
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
     const next = clampToWindow(
-      { x: at.x, y: at.y },
+      { x: at.x, y: above ? at.y - height : at.y },
       { width, height },
       { width: window.innerWidth, height: window.innerHeight },
     );
     setPos((p) => (p.x === next.x && p.y === next.y ? p : next));
-  }, [ref, at.x, at.y]);
+  }, [ref, at.x, at.y, above]);
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;

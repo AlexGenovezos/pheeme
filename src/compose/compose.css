@@ -436,9 +436,13 @@ button.compose-from:hover {
 
 .compose-toolbar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--space-0-5);
   padding: var(--space-1) var(--space-2);
+  /* One row at every width: past the narrowest panel it scrolls rather than wrapping onto a second line. */
+  overflow-x: auto;
+  scrollbar-width: none;
   background: var(--color-pane-bg);
 }
 
@@ -448,18 +452,66 @@ button.compose-from:hover {
 }
 
 .compose-toolbar__separator {
+  flex-shrink: 0;
   width: var(--border-width);
   height: var(--icon-size-md);
   margin-inline: var(--space-1);
   background: var(--color-border-subtle);
 }
 
-.compose-link {
-  display: flex;
-  margin-inline-start: var(--space-1);
+/* A button that opens a menu: its icon (or the font's name), then a small arrow. */
+.compose-toolbar__menu.ui-icon-button--sm {
+  flex-shrink: 0;
+  gap: var(--space-0-5);
+  width: auto;
+  padding-inline: var(--space-1);
+}
+.compose-toolbar__menu .compose-toolbar__caret {
+  width: var(--compose-caret-size);
+  height: var(--compose-caret-size);
+  color: var(--color-foreground-muted);
+}
+.compose-toolbar__menu--font.ui-icon-button--sm {
+  justify-content: space-between;
+  width: var(--compose-font-button-width);
+}
+.compose-toolbar__font {
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.compose-link__input {
+/* The bar's popovers draw over the compose dock and the Settings dialog. */
+.compose-floating .ui-menu,
+.compose-floating .label-color,
+.compose-floating .compose-link,
+.compose-floating .emoji-picker {
+  z-index: var(--z-picker);
+}
+
+.compose-colour {
+  flex-direction: row;
+  gap: var(--space-3);
+}
+.compose-colour__part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.compose-colour__title {
+  font-size: var(--font-size-xs);
+  color: var(--color-foreground-muted);
+}
+
+.compose-link {
+  position: fixed;
+  display: flex;
+  padding: var(--space-1-5);
+}
+
+.compose-link__input,
+.emoji-picker__search {
   width: var(--compose-link-input-width);
   height: var(--control-height-sm);
   padding: var(--space-0) var(--space-2);
@@ -470,9 +522,104 @@ button.compose-from:hover {
   font: inherit;
   font-size: var(--font-size-sm);
 }
-.compose-link__input:focus-visible {
+.compose-link__input:focus-visible,
+.emoji-picker__search:focus-visible {
   border-color: var(--color-focus-border);
   outline: none;
+}
+
+.emoji-picker {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  width: var(--emoji-picker-width);
+  padding: var(--space-2);
+}
+.emoji-picker .emoji-picker__search {
+  width: auto;
+}
+.emoji-picker__tabs {
+  display: flex;
+  justify-content: space-between;
+}
+.emoji-picker__tab,
+.emoji-picker__emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-0);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: default;
+}
+.emoji-picker__tab {
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  font-size: var(--font-size-md);
+}
+.emoji-picker__tab:hover,
+.emoji-picker__emoji:hover {
+  background: var(--color-menu-selection-bg);
+}
+.emoji-picker__tab:focus-visible,
+.emoji-picker__emoji:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-border);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+.emoji-picker__scroll {
+  height: var(--emoji-picker-scroll-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.emoji-picker__section {
+  content-visibility: auto;
+}
+.emoji-picker__heading {
+  position: sticky;
+  top: var(--space-0);
+  margin: var(--space-0);
+  padding: var(--space-1) var(--space-0);
+  background: var(--color-menu-bg);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+.emoji-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--emoji-cell-size));
+}
+.emoji-picker__emoji {
+  width: var(--emoji-cell-size);
+  height: var(--emoji-cell-size);
+  font-size: var(--emoji-font-size);
+  line-height: 1;
+}
+.emoji-picker__empty {
+  margin: var(--space-0);
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+}
+.emoji-picker__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: var(--control-height-sm);
+  border-top: var(--border-width) solid var(--color-border-subtle);
+  padding-top: var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--color-foreground-muted);
+}
+.emoji-picker__name-char {
+  width: var(--icon-size-md);
+  font-size: var(--font-size-lg);
+}
+.emoji-picker__name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .compose-quote {

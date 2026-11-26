@@ -401,6 +401,23 @@ mod tests {
         }
     }
 
+    /// What the compose editor's formatting bar writes (`src/compose/formatting.ts`), Gmail's own markup, reads
+    /// back as it was sent.
+    #[test]
+    fn keeps_gmail_formatting() {
+        let sent = concat!(
+            r#"<p style="text-align: center; margin-left: 40px;">"#,
+            r##"<font face="georgia, serif"><font size="4"><font color="#cc0000">"##,
+            r#"<span style="background-color: rgb(255, 255, 0);">big</span></font></font></font>"#,
+            r#" <s>gone</s></p>"#,
+            r#"<blockquote style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex"><p>q</p></blockquote>"#,
+        );
+        let out = clean(sent).html;
+        assert_eq!(out, sent);
+        let reply = crate::compose::template::clean_html(sent);
+        assert_eq!(reply, sent, "a reply quoting it keeps the formatting too");
+    }
+
     #[test]
     fn keeps_style_selectors_with_child_combinators() {
         let out = clean("<style>a > b { color: red }</style><p>x</p>").html;
