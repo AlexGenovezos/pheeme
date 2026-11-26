@@ -24,7 +24,9 @@ export default function VacationEditor({
     if (!editor) return;
     const apply = () => {
       const current = editor.isEmpty ? "" : editor.getHTML();
-      if (current !== html) editor.commands.setContent(html, { emitUpdate: false });
+      // Gmail's text arriving (or Discard) isn't an edit, so Undo can't bring back what it replaced.
+      if (current !== html)
+        editor.chain().setMeta("addToHistory", false).setContent(html, { emitUpdate: false }).run();
       editor.setEditable(!disabled, false);
     };
     // Its view exists only once it's mounted, which TipTap announces with `create`.

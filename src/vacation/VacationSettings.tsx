@@ -2,7 +2,7 @@
 // read from Gmail when the page opens and saved straight back with Save, as on Gmail's own
 // settings page. Every field is there from the first frame; while the responder is off (or
 // still loading) they stay in place, disabled, and Last day waits for its switch.
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { DateField } from "../components/ui/DateField";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -45,15 +45,25 @@ function AccountVacation({
   const [draft, setDraft] = useState<VacationForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<CommandError | "saved" | null>(null);
-
-  useEffect(() => {
-    void useVacation.getState().refresh(accountId);
+  // The fields wait for a fresh read when the page opens, so an edit never starts from an
+  // answer another device has since changed. Only that read's failure stops them.
+  const [opened, setOpened] = useState(false);
+  const [readError, setReadError] = useState<CommandError | undefined>();
+  const read = useCallback(() => {
+    void useVacation
+      .getState()
+      .refresh(accountId)
+      .then(() => {
+        setReadError(useVacation.getState().accounts[accountId]?.error);
+        setOpened(true);
+      });
   }, [accountId]);
+  useEffect(read, [read]);
 
   const original = loaded ? formOf(loaded) : BLANK;
   const form = draft ?? original;
   const dirty = draft !== null && !sameForm(draft, original);
-  const ready = loaded !== undefined && !saving;
+  const ready = loaded !== undefined && opened && !readError && !saving;
   const fieldsOn = ready && form.enabled;
   const workspace = loaded?.workspace ?? false;
   const domain = email.split("@")[1] ?? "";
@@ -77,27 +87,34 @@ function AccountVacation({
   };
 
   // One status line under the fields, holding its place whatever it says.
-  const readError = !loaded ? state?.error : undefined;
+  const saveError = result !== null && result !== "saved" ? result : undefined;
+  // Gmail lets older sign-ins (mail access only) read the responder but not change it.
+  const scopeMissing = (readError ?? saveError)?.code === "missing_scope";
   let status: React.ReactNode;
-  if (readError?.code === "missing_scope")
+  if (scopeMissing)
     status =
       "Pheeme can't see this account's Gmail settings. Sign in again and allow Pheeme to manage your basic mail settings.";
   else if (readError) status = `Couldn't read it from Gmail: ${readError.message}`;
-  else if (!loaded) status = <Skeleton width="40%" />;
+  else if (!loaded || !opened) status = <Skeleton width="40%" />;
   else if (saving) status = "Saving to Gmail…";
   else if (problem && dirty) status = problem;
   else if (result === "saved") status = "Saved to Gmail.";
-  else if (result) status = `Couldn't save it: ${result.message}`;
+  else if (saveError) status = `Couldn't save it: ${saveError.message}`;
   else if (dirty) status = "Not saved yet.";
   else status = loaded.enabled ? "On in Gmail." : "Off in Gmail.";
-  const failed =
-    !!readError || (result !== null && result !== "saved") || (dirty && problem !== null);
+  const failed = !!readError || !!saveError || (dirty && problem !== null);
 
   let actions;
-  if (readError?.code === "missing_scope") actions = <ReconnectButton accountId={accountId} />;
+  if (scopeMissing) actions = <ReconnectButton accountId={accountId} />;
   else if (readError)
     actions = (
-      <Button size="sm" onClick={() => void useVacation.getState().refresh(accountId)}>
+      <Button
+        size="sm"
+        onClick={() => {
+          setOpened(false);
+          read();
+        }}
+      >
         Try again
       </Button>
     );
@@ -186,6 +203,11 @@ function AccountVacation({
       <div className={cx("settings-row settings-row--stacked", off(fieldsOn))}>
         <div className="settings-row__text">
           <div className="settings-row__title">Message</div>
+          <div className="settings-row__description">
+            {loaded && keepsFormatting(loaded.html)
+              ? "Gmail's message has colors, pictures or layout this editor can't keep. Editing the text here saves it without them; edit it in Gmail to keep them."
+              : "Bold, italic, underline, lists and links."}
+          </div>
         </div>
         <Suspense fallback={<div className="vacation-editor" aria-hidden="true" />}>
           <VacationEditor
@@ -240,6 +262,9 @@ function AccountVacation({
     </SettingsSection>
   );
 }
+
+/** Markup the compose editor drops (colors, fonts, pictures, tables), which an edit here would lose. */
+const keepsFormatting = (html: string) => /<(img|table|font)\b|\sstyle=|\scolor=/i.test(html);
 
 export function VacationSettings() {
   const accounts = useAccountStore((s) => s.accounts);

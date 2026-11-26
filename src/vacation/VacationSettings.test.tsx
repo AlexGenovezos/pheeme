@@ -132,3 +132,57 @@ test("Gmail's message fills the editor once it loads, and a responder that's on 
   expect(within(one).getByRole("combobox", { name: "Last day" })).toBeEnabled();
   expect(within(one).getByRole("button", { name: "Save" })).toBeDisabled();
 });
+
+test("an account that can read but not change its responder is asked to sign in again on Save", async () => {
+  backend("readonly");
+  render(<VacationSettings />);
+  await flush();
+  const one = section("me@gmail.com");
+  fireEvent.click(within(one).getByRole("switch", { name: "Vacation responder for me@gmail.com" }));
+  fireEvent.click(within(one).getByRole("button", { name: "Save" }));
+  await flush();
+  expect(one).toHaveTextContent("can't see this account's Gmail settings");
+  expect(within(one).getByRole("button", { name: "Sign in again" })).toBeInTheDocument();
+});
+
+/** Holds each account's next read until the test answers it. */
+function heldReads(other?: (cmd: string) => unknown) {
+  const pending = new Map<string, (value: unknown) => void>();
+  mockIPC((cmd, args) => {
+    if (cmd !== "get_vacation_responder") return other?.(cmd);
+    const { accountId } = args as { accountId: string };
+    return new Promise((resolve) => pending.set(accountId, resolve));
+  });
+  return (accountId: string, value: unknown) => pending.get(accountId)!(value);
+}
+
+test("the fields wait for a fresh read when the page opens, even with an earlier answer", async () => {
+  backend("on");
+  await useVacation.getState().refresh("a1");
+  const on = useVacation.getState().accounts.a1!.value!;
+  const answer = heldReads();
+  render(<VacationSettings />);
+  await flush();
+  const one = section("me@gmail.com");
+  const subject = within(one).getByRole("textbox", { name: "Subject" });
+  expect(subject).toBeDisabled();
+  await act(async () => answer("a1", { ...on, subject: "Newer" }));
+  await flush();
+  expect(subject).toBeEnabled();
+  expect(subject).toHaveValue("Newer");
+});
+
+test("a read that started before End now can't turn the responder back on", async () => {
+  backend("on");
+  await useVacation.getState().refresh("a1");
+  const on = useVacation.getState().accounts.a1!.value!;
+  const answer = heldReads((cmd) =>
+    cmd === "end_vacation_responder" ? { ...on, enabled: false } : undefined,
+  );
+  const stale = useVacation.getState().refresh("a1");
+  await flush();
+  await useVacation.getState().end("a1");
+  answer("a1", on);
+  await stale;
+  expect(useVacation.getState().accounts.a1?.value?.enabled).toBe(false);
+});

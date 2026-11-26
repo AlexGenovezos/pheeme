@@ -32,6 +32,8 @@ interface VacationState {
 }
 
 const inflight = new Map<string, Promise<void>>();
+/** Bumped by each successful write, so a read that started before it can't put back the old state. */
+const writes = new Map<string, number>();
 
 export const useVacation = create<VacationState>((set) => {
   const patch = (accountId: string, change: AccountVacation) =>
@@ -41,6 +43,7 @@ export const useVacation = create<VacationState>((set) => {
   const write = async (accountId: string, run: () => Promise<VacationResponder>) => {
     try {
       const value = await run();
+      writes.set(accountId, (writes.get(accountId) ?? 0) + 1);
       patch(accountId, { value, error: undefined, at: Date.now() });
       return null;
     } catch (e) {
@@ -52,11 +55,17 @@ export const useVacation = create<VacationState>((set) => {
     refresh(accountId) {
       const running = inflight.get(accountId);
       if (running) return running;
+      const before = writes.get(accountId);
+      const current = () => writes.get(accountId) === before;
       const run = getVacationResponder(accountId)
         .then(
-          (value) => patch(accountId, { value, error: undefined, at: Date.now() }),
+          (value) => {
+            if (current()) patch(accountId, { value, error: undefined, at: Date.now() });
+          },
           // A failed re-read keeps the last answer, so the notice doesn't flicker away offline.
-          (e: unknown) => patch(accountId, { error: toCommandError(e), at: Date.now() }),
+          (e: unknown) => {
+            if (current()) patch(accountId, { error: toCommandError(e), at: Date.now() });
+          },
         )
         .finally(() => inflight.delete(accountId));
       inflight.set(accountId, run);
