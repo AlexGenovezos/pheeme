@@ -56,14 +56,17 @@ impl ComposeService {
             return Err(too_big());
         }
 
+        let count = picks.len();
         let api = self.api(account_id);
-        let api = &api;
-        let mut downloads = stream::iter(&picks)
-            .map(|p| async move { api.message_raw(&p.id).await })
+        let mut downloads = stream::iter(picks.into_iter().map(|p| p.id))
+            .map(|id| {
+                let api = api.clone();
+                async move { api.message_raw(&id).await }
+            })
             .buffered(DOWNLOADS_AT_ONCE);
         let mut names = Names::default();
-        let mut subjects = Vec::with_capacity(picks.len());
-        let mut attachments = Vec::with_capacity(picks.len());
+        let mut subjects = Vec::with_capacity(count);
+        let mut attachments = Vec::with_capacity(count);
         let mut total = 0u64;
         while let Some(raw) = downloads.next().await {
             let staged = async {

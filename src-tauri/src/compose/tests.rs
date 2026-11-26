@@ -915,7 +915,8 @@ async fn forward_as_attachment_carries_each_message_whole_in_the_mime() {
         assert_eq!(disp.params["filename"], name);
         // Byte for byte as Gmail stores it, so the reader opens the original message.
         assert_eq!(part.get_body_raw().unwrap(), original);
-        let inner = mailparse::parse_mail(&part.get_body_raw().unwrap()).unwrap();
+        let body = part.get_body_raw().unwrap();
+        let inner = mailparse::parse_mail(&body).unwrap();
         assert!(inner.headers.get_first_value("Message-ID").is_some());
     }
 }
