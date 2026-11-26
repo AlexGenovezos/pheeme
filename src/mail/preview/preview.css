@@ -136,32 +136,29 @@
   text-align: center;
 }
 
-/* Word: the document's own pages, in a sandboxed frame that scrolls itself. */
+/* Word & PowerPoint: the document's own pages, in a sandboxed frame that scrolls itself.
+   Keep color-scheme light on the element to match its document so dark mode doesn't force an
+   opaque white canvas behind the transparent body on Chromium/WebView2. */
 .file-preview__frame {
   flex: 1;
   width: 100%;
   border: none;
+  color-scheme: light;
 }
 
-/* PowerPoint: the deck's slides stacked down the middle, scrolling themselves. */
-.file-preview__slides {
-  flex: 1;
-  min-height: var(--space-0);
-  overflow: auto;
-  padding: var(--space-4);
+.file-preview__focus-guard {
+  position: fixed;
+  width: var(--border-width);
+  height: var(--border-width);
+  opacity: 0;
+  pointer-events: none;
 }
+
+/* PowerPoint: the frame (styled inside, see PptxView) stays laid out while the deck loads, since
+   the renderer sizes the slides to it. */
 .file-preview__slides[data-state="loading"],
 .file-preview__slides[data-state="failed"] {
   visibility: hidden;
-}
-
-.file-preview__deck {
-  max-width: var(--preview-page-max-width);
-  margin: var(--space-0) auto;
-}
-/* No hover on charts: the renderer's chart tooltips insert the deck's text as markup. */
-.file-preview__deck [_echarts_instance_] {
-  pointer-events: none;
 }
 
 .file-preview__over {

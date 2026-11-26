@@ -1,97 +1,145 @@
 import { PptxViewer, RECOMMENDED_ZIP_LIMITS } from "@aiden0z/pptx-renderer";
-import { useEffect, useRef, useState } from "react";
 import { PreviewMessage } from "./PreviewMessage";
-import { usePreviewTrace } from "./trace";
+import { type FramePreviewProps, useSandboxedFrame } from "./sandboxedFrame";
 
 /**
- * A PowerPoint deck, slide after slide down the panel, drawn as HTML and SVG by pptx-renderer.
- * Slides parse and mount as they scroll into view, so a long deck opens as fast as a short one.
- *
- * The renderer writes slide text as text (never as markup) and builds its own elements, so it
- * runs in the app's document rather than a sandboxed frame (a frame would cut it off from the
- * deck's embedded fonts, which it registers on this document). Nothing loads from outside the
- * file: external media is blocked, and links and click actions are swallowed. Charts take no
- * pointer input (see preview.css): their tooltips would insert the deck's text as markup.
+ * The frame's own policy, on top of the app's: nothing loads from outside the document (pictures
+ * and embedded audio/video come in as `blob:` URLs), and the frame is sandboxed without scripts.
+ * The deck scrolls in `#scroller`; charts take no pointer input, since their tooltips would insert
+ * the deck's text as markup.
  */
-export default function PptxView({ data, name }: { data: ArrayBuffer; name: string }) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const slides = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
-  const trace = usePreviewTrace();
+const shell = (scrollbar: string, width: string) =>
+  "<!doctype html><html><head><meta charset='utf-8'>" +
+  `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; media-src blob:; font-src data: blob:; form-action 'none'; base-uri 'none'">` +
+  "<style>html,body{margin:0;height:100%}body{background:transparent}" +
+  `#scroller{box-sizing:border-box;height:100%;overflow:auto;padding:16px;scrollbar-width:thin;scrollbar-color:${scrollbar} transparent}` +
+  `#deck{max-width:${width};margin:0 auto}` +
+  "#deck [_echarts_instance_]{pointer-events:none}</style>" +
+  "</head><body><div id='scroller'><div id='deck'></div></div></body></html>";
 
-  useEffect(() => {
-    const root = slides.current;
-    const scrollContainer = scroller.current;
-    if (!root || !scrollContainer) return;
-    const stop = new AbortController();
-    setState("loading");
-    // Made before opening so cleanup can always destroy it: an aborted open throws before
-    // the static `PptxViewer.open` would hand the viewer back.
-    const viewer = new PptxViewer(root, {
-      zipLimits: RECOMMENDED_ZIP_LIMITS,
-      externalMedia: "block",
-      // Its PDF fallback for EMF pictures needs blob: workers, which the app's CSP refuses.
-      pdfjs: false,
-      lazyMedia: true,
-      lazySlides: true,
-      scrollContainer,
-      // Links can't go anywhere from a preview; keep their text only. (Just links: SVG
-      // elements such as WordArt's <textPath> use href for references within the slide.)
-      onSlideRendered: (index, el) => {
-        trace?.drew(index + 1, false);
-        for (const link of el.querySelectorAll("a[href]")) link.removeAttribute("href");
-      },
-    });
-    // The viewer may keep the buffer it's given; keep the cached one intact.
-    viewer
-      .open(data.slice(0), {
-        signal: stop.signal,
-        listOptions: { windowed: true, initialSlides: 3, batchSize: 4 },
-      })
-      .then(() => {
-        if (stop.signal.aborted) return;
-        trace?.read();
-        setState("ready");
-      })
-      .catch((error: unknown) => {
-        if (stop.signal.aborted) return;
-        trace?.failed("read", error);
-        setState("failed");
+/**
+ * A PowerPoint deck, slide after slide down the panel, drawn as HTML and SVG by pptx-renderer
+ * inside a script-less sandboxed frame. The parent writes and fills the frame (same origin), so
+ * nothing in the deck can run. Slides parse and mount as they scroll into view, so a long deck
+ * opens as fast as a short one.
+ *
+ * The renderer registers a deck's embedded fonts on the app's document (and briefly stages slide
+ * subtrees offscreen on `document.body` for text measurement before moving them into the frame), so
+ * `externalMedia: "block"` and the pinned renderer version remain load-bearing alongside the iframe
+ * sandbox. Each embedded font is mirrored into the frame and pruned when evicted. Nothing loads
+ * from outside the file, and links and click/keyboard slide actions are disabled.
+ */
+export default function PptxView({ data, name, onFrameKeyDown, onFrameFocus }: FramePreviewProps) {
+  const { frame, state } = useSandboxedFrame(
+    data,
+    onFrameKeyDown,
+    onFrameFocus,
+    (doc, signal, trace) => {
+      const root = doc.getElementById("deck")!;
+      const scrollContainer = doc.getElementById("scroller")!;
+
+      const appFonts = new Set(document.fonts);
+      const mirrored = new Set<FontFace>();
+      const shareFonts = () => {
+        for (const face of mirrored) {
+          if (!document.fonts.has(face)) {
+            doc.fonts.delete(face);
+            mirrored.delete(face);
+          }
+        }
+        for (const face of document.fonts) {
+          if (appFonts.has(face) || mirrored.has(face)) continue;
+          try {
+            doc.fonts.add(face);
+            mirrored.add(face);
+          } catch {
+            // A face the app's CSS declared can't join another set; the deck's own never are.
+          }
+        }
+      };
+
+      // Slides react to clicks (hyperlinks, jumps between slides); a preview stays put.
+      const swallow = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      root.addEventListener("click", swallow, true);
+      root.addEventListener("auxclick", swallow, true);
+
+      // Made before opening so cleanup can always destroy it: an aborted open throws before
+      // the static `PptxViewer.open` would hand the viewer back.
+      const viewer = new PptxViewer(root, {
+        zipLimits: RECOMMENDED_ZIP_LIMITS,
+        externalMedia: "block",
+        // Its PDF fallback for EMF pictures needs blob: workers, which the app's CSP refuses.
+        pdfjs: false,
+        lazyMedia: true,
+        lazySlides: true,
+        scrollContainer,
+        // Links can't go anywhere from a preview; keep their text only. (Just links: SVG
+        // elements such as WordArt's <textPath> use href for references within the slide.)
+        onSlideRendered: (index, el) => {
+          shareFonts();
+          trace?.drew(index + 1, false);
+          for (const link of el.querySelectorAll("a[href], a[*|href]")) {
+            link.removeAttribute("href");
+            link.removeAttributeNS("http://www.w3.org/1999/xlink", "href");
+          }
+          for (const link of el.querySelectorAll<HTMLElement>('[role="link"]')) {
+            link.removeAttribute("role");
+            link.removeAttribute("tabindex");
+            link.style.cursor = "";
+          }
+        },
       });
-    return () => {
-      stop.abort();
-      viewer.destroy();
-    };
-  }, [data, trace]);
+      // PptxViewer runs in the parent realm, so disable its slide-jump and window.open hooks too.
+      viewer.goToSlide = async () => {};
+      (viewer as unknown as { handleNavigate?: () => void }).handleNavigate = () => {};
+      // The viewer may keep the buffer it's given; keep the cached one intact.
+      const done = viewer
+        .open(data.slice(0), {
+          signal,
+          listOptions: { windowed: true, initialSlides: 3, batchSize: 4 },
+        })
+        .then(() => {
+          if (signal.aborted) return;
+          shareFonts();
+          trace?.read();
+        });
+      return {
+        done,
+        cleanup: () => {
+          viewer.destroy();
+          for (const face of mirrored) doc.fonts.delete(face);
+          mirrored.clear();
+          root.removeEventListener("click", swallow, true);
+          root.removeEventListener("auxclick", swallow, true);
+        },
+      };
+    },
+    () => {
+      const tokens = getComputedStyle(document.documentElement);
+      const token = (prop: string, fallback: string) =>
+        tokens.getPropertyValue(prop).trim() || fallback;
+      return shell(
+        token("--color-scrollbar-thumb", "auto"),
+        token("--preview-page-max-width", "900px"),
+      );
+    },
+  );
 
-  // Slides react to clicks (hyperlinks, jumps between slides); a preview stays put.
-  useEffect(() => {
-    const root = slides.current;
-    if (!root) return;
-    const swallow = (e: MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    root.addEventListener("click", swallow, true);
-    root.addEventListener("auxclick", swallow, true);
-    return () => {
-      root.removeEventListener("click", swallow, true);
-      root.removeEventListener("auxclick", swallow, true);
-    };
-  }, []);
-
-  // The slides stay laid out (just invisible) while loading: the viewer sizes them to its box.
+  // The frame stays laid out (just invisible) while loading: the viewer sizes slides to its box.
   return (
     <>
-      <div
-        ref={scroller}
-        className="file-preview__slides selectable"
+      <iframe
+        ref={frame}
+        className="file-preview__frame file-preview__slides"
         data-state={state}
-        aria-label={name}
+        sandbox="allow-same-origin"
+        title={name}
+        referrerPolicy="no-referrer"
         aria-hidden={state !== "ready"}
-      >
-        <div ref={slides} className="file-preview__deck" />
-      </div>
+      />
       {state !== "ready" && (
         <div className="file-preview__over">
           {state === "loading" ? (

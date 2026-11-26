@@ -1,7 +1,6 @@
 import { renderAsync } from "docx-preview";
-import { useEffect, useRef, useState } from "react";
 import { PreviewMessage } from "./PreviewMessage";
-import { usePreviewTrace } from "./trace";
+import { type FramePreviewProps, useSandboxedFrame } from "./sandboxedFrame";
 
 /**
  * The frame's own policy, on top of the app's: nothing loads from outside the document (images and fonts
@@ -17,63 +16,29 @@ const SHELL =
  * A Word document laid out page by page by docx-preview, inside a script-less sandboxed frame. The
  * parent writes and fills the frame (same origin), so nothing in the document can run.
  */
-export default function DocxView({
-  data,
-  name,
-  onFrameFocus,
-}: {
-  data: ArrayBuffer;
-  name: string;
-  /** The frame took focus (a click inside it); keys typed there would never reach the panel. */
-  onFrameFocus?(): void;
-}) {
-  const frame = useRef<HTMLIFrameElement>(null);
-  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
-  const trace = usePreviewTrace();
-
-  useEffect(() => {
-    const doc = frame.current?.contentDocument;
-    if (!doc) return;
-    const stop = new AbortController();
-    setState("loading");
-    doc.open();
-    doc.write(SHELL);
-    doc.close();
-    renderAsync(data, doc.body, doc.head, {
-      className: "docx",
-      useBase64URL: true,
-      renderAltChunks: false,
-      renderComments: false,
-      renderChanges: false,
-      ignoreLastRenderedPageBreak: true,
-      experimental: false,
-    })
-      .then(() => {
-        if (stop.signal.aborted) return;
+export default function DocxView({ data, name, onFrameKeyDown, onFrameFocus }: FramePreviewProps) {
+  const { frame, state } = useSandboxedFrame(
+    data,
+    onFrameKeyDown,
+    onFrameFocus,
+    (doc, signal, trace) => ({
+      done: renderAsync(data, doc.body, doc.head, {
+        className: "docx",
+        useBase64URL: true,
+        renderAltChunks: false,
+        renderComments: false,
+        renderChanges: false,
+        ignoreLastRenderedPageBreak: true,
+        experimental: false,
+      }).then(() => {
+        if (signal.aborted) return;
         // Links can't go anywhere from a preview; keep their text only.
         for (const link of doc.querySelectorAll("[href]")) link.removeAttribute("href");
         trace?.shown();
-        setState("ready");
-      })
-      .catch((error: unknown) => {
-        if (stop.signal.aborted) return;
-        trace?.failed("read", error);
-        setState("failed");
-      });
-    return () => {
-      stop.abort();
-    };
-  }, [data, trace]);
-
-  useEffect(() => {
-    const iframe = frame.current;
-    const host = iframe?.ownerDocument.defaultView;
-    if (!iframe || !host || !onFrameFocus) return;
-    const onBlur = () =>
-      setTimeout(() => iframe.ownerDocument.activeElement === iframe && onFrameFocus());
-    host.addEventListener("blur", onBlur);
-    return () => host.removeEventListener("blur", onBlur);
-  }, [onFrameFocus]);
+      }),
+    }),
+    () => SHELL,
+  );
 
   return (
     <>

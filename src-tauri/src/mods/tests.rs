@@ -299,6 +299,20 @@ fn package_rejects_symlinks() {
     assert!(package::stage(&source, &root.path().join("copy")).is_err());
 }
 
+#[cfg(unix)]
+#[test]
+fn reading_a_package_file_refuses_a_symlink() {
+    // Staging checks each entry's type before reading it; a symlink swapped in between is
+    // refused by the open itself.
+    let root = tempfile::tempdir().unwrap();
+    let real = root.path().join("real.js");
+    fs::write(&real, "ok").unwrap();
+    let link = root.path().join("main.js");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    assert_eq!(package::read_limited(&real, 10).unwrap(), b"ok");
+    assert!(package::read_limited(&link, 10).is_err());
+}
+
 #[tokio::test]
 async fn declared_origins_do_not_grant_local_network_access() {
     let mut manifest: Manifest =

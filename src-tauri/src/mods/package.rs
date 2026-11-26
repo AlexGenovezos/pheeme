@@ -7,12 +7,24 @@ use std::{
 
 pub const MAX_PACKAGE: u64 = 2 * 1024 * 1024;
 
-/// Read through an already-opened handle with a cap: file growth cannot evade limits.
+/// Read through an already-opened handle with a cap: file growth cannot evade limits. On Unix
+/// the open refuses symlinks (`O_NOFOLLOW`) and never blocks on a swapped-in FIFO (`O_NONBLOCK`),
+/// and `fstat` (`file.metadata().is_file()`) rejects non-regular files on the opened descriptor.
 pub fn read_limited(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(
+        &mut options,
+        libc::O_NOFOLLOW | libc::O_NONBLOCK,
+    );
+    let file = options.open(path).map_err(|e| e.to_string())?;
+    ensure(
+        file.metadata().map_err(|e| e.to_string())?.is_file(),
+        "Symbolic links and special files are not allowed in mod packages",
+    )?;
     let mut bytes = Vec::new();
-    fs::File::open(path)
-        .map_err(|e| e.to_string())?
-        .take(limit + 1)
+    file.take(limit + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
     ensure(

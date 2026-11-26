@@ -9,7 +9,6 @@
     "core:window:allow-set-theme",
     "core:window:allow-set-background-color",
     "core:window:allow-show",
-    "opener:default",
     "dialog:allow-open",
     "dialog:allow-save",
     "updater:default",

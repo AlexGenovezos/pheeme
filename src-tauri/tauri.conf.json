@@ -73,9 +73,6 @@
     }
   },
   "plugins": {
-    "shell": {
-      "open": true
-    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE5QjI4QTRCREUyRTA2OUEKUldTYUJpN2VTNHF5R2NtTUxKSERGOUUyREtZd0FQQ3A4Q1ZBaXFhaDN3U1dKcnNrYUwwckdTaDIK",
       "endpoints": [
