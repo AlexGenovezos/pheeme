@@ -298,8 +298,17 @@ mod tests {
         let pool = pool().await;
         let mut m = msg("a1", "m1", "t1", 1, &["INBOX"]);
         m.subject = Some("Quarterly report".into());
-        put(&pool, &m).await;
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(messages::insert_message_if_absent(&mut conn, &m)
+            .await
+            .unwrap());
+        m.subject = Some("Stale report".into());
+        assert!(!messages::insert_message_if_absent(&mut conn, &m)
+            .await
+            .unwrap());
+        drop(conn);
         assert_eq!(fts_hits(&pool, "quarterly").await, ["m1"]);
+        assert!(fts_hits(&pool, "stale").await.is_empty());
         assert_eq!(fts_hits(&pool, "recipients: bob").await, ["m1"]);
         assert!(
             fts_hits(&pool, "address OR name OR null").await.is_empty(),

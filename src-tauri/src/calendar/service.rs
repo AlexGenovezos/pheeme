@@ -5,7 +5,7 @@
 use super::edit::OriginalStart;
 use super::error::CalendarError;
 use super::meeting::{self, MeetingLink};
-use super::recurrence::{self, Instance, Occurrence};
+use super::recurrence::{self, Occurrence};
 use super::sync::{sync_account, SyncError};
 use super::task_block;
 use super::writes::{can_edit, can_write, Target};
@@ -251,7 +251,7 @@ impl CalendarService {
     ) -> Result<Vec<CalendarEventDto>, MailError> {
         let rows = db::calendar::events_overlapping(&self.db, from_ms, to_ms).await?;
         let shown = self
-            .expand_rows(&rows, from_ms, to_ms, display_tz, |_| true)
+            .expand_rows(&rows, from_ms, to_ms, display_tz, None, |_| true)
             .await?;
         Ok(shown.into_iter().map(|(_, dto)| dto).collect())
     }
@@ -273,7 +273,7 @@ impl CalendarService {
         let rows = db::calendar::events_overlapping(&self.db, from_ms, to_ms).await?;
         // A changed occurrence matches by its own text; any other by its series'.
         let mut found: Vec<CalendarEventDto> = self
-            .expand_rows(&rows, from_ms, to_ms, display_tz, |e| {
+            .expand_rows(&rows, from_ms, to_ms, display_tz, None, |e| {
                 matches_words(e, &words)
             })
             .await?
@@ -296,11 +296,8 @@ impl CalendarService {
         display_tz: &str,
         latest: bool,
     ) -> Result<Vec<CalendarEventDto>, MailError> {
-        let rows: Vec<_> = db::calendar::events_overlapping(&self.db, from_ms, to_ms)
-            .await?
-            .into_iter()
-            .filter(|e| e.account_id == account_id)
-            .collect();
+        let rows = db::calendar::events_overlapping_for(&self.db, from_ms, to_ms, Some(account_id))
+            .await?;
         let participates = |e: &DbEvent| {
             e.organizer_email
                 .as_deref()
@@ -316,7 +313,7 @@ impl CalendarService {
                     })
         };
         let mut found = self
-            .expand_rows(&rows, from_ms, to_ms, display_tz, |e| {
+            .expand_rows(&rows, from_ms, to_ms, display_tz, Some(account_id), |e| {
                 e.self_response.as_deref() != Some("declined") && participates(e)
             })
             .await?;
@@ -342,52 +339,45 @@ impl CalendarService {
         from_ms: i64,
         to_ms: i64,
         display_tz: &str,
+        account_id: Option<&str>,
         keep: impl Fn(&DbEvent) -> bool,
     ) -> Result<Vec<(&'a DbEvent, CalendarEventDto)>, MailError> {
         let tz: chrono_tz::Tz = display_tz.parse().unwrap_or(chrono_tz::UTC);
-        let calendars: HashMap<(String, String), db::calendar::DbCalendar> =
-            db::calendar::calendars(&self.db, None)
-                .await?
-                .into_iter()
-                .map(|c| ((c.account_id.clone(), c.id.clone()), c))
-                .collect();
-        // A task block is edited in Google Tasks, never here.
-        let editable = |e: &DbEvent, dto: &CalendarEventDto| {
-            dto.task_link.is_none()
-                && calendars
-                    .get(&(e.account_id.clone(), e.calendar_id.clone()))
-                    .is_some_and(|c| can_edit(c, &serde_json::from_str(&e.raw).unwrap_or_default()))
-        };
+        let calendars = db::calendar::calendars(&self.db, account_id).await?;
+        let calendars: HashMap<_, _> = calendars
+            .iter()
+            .map(|c| ((c.account_id.as_str(), c.id.as_str()), c))
+            .collect();
+        let overrides = recurrence::Overrides::of(rows);
         let mut out = Vec::new();
-        // The series' call, read once for all its occurrences, which come one after another.
-        let mut call: Option<(&DbEvent, Option<meeting::MeetingLink>)> = None;
-        for Instance { row: e, occ } in recurrence::instances(rows, from_ms, to_ms, |_| tz) {
-            if !keep(e) {
+        for e in rows {
+            if e.status == "cancelled"
+                || (e.recurrence.is_none() && !overlaps(e, from_ms, to_ms, tz))
+                || !keep(e)
+            {
                 continue;
             }
-            let dto = match &occ {
-                Some(occ) => {
-                    let call = match &call {
-                        Some((series, call)) if std::ptr::eq(*series, e) => call,
-                        _ => &call.insert((e, meeting::of_event(e))).1,
-                    };
-                    let base = base_dto(e, Some(occ));
-                    CalendarEventDto {
-                        can_edit: editable(e, &base),
-                        meeting: call.clone(),
-                        ..base
-                    }
-                }
-                None if overlaps(e, from_ms, to_ms, tz) => {
-                    let dto = dto(e, None);
-                    CalendarEventDto {
-                        can_edit: editable(e, &dto),
-                        ..dto
-                    }
-                }
-                None => continue,
-            };
-            out.push((e, dto));
+            let instances = recurrence::instances_of(e, &overrides, from_ms, to_ms, tz);
+            if instances.is_empty() {
+                continue;
+            }
+            let raw = serde_json::from_str(&e.raw).unwrap_or_default();
+            let task_link = task_block::task_link(&raw, e.description.as_deref());
+            let meeting = meeting::of_event(e, Some(&raw));
+            // A task block is edited in Google Tasks, never here.
+            let can_edit = task_link.is_none()
+                && calendars
+                    .get(&(e.account_id.as_str(), e.calendar_id.as_str()))
+                    .is_some_and(|c| can_edit(c, &raw));
+            out.extend(instances.into_iter().map(|instance| {
+                let dto = CalendarEventDto {
+                    can_edit,
+                    meeting: meeting.clone(),
+                    task_link: task_link.clone(),
+                    ..base_dto(e, instance.occ.as_ref())
+                };
+                (e, dto)
+            }));
         }
         let start_key = |e: &CalendarEventDto| {
             e.start.ms.unwrap_or_else(|| {
@@ -503,14 +493,16 @@ impl CalendarService {
                 .unwrap_or_default(),
         };
         let can_rsvp = attendees.iter().any(|a| a.is_self && !a.organizer);
-        let event = dto(&row, occurrence.as_ref());
+        let task_link = task_block::task_link(&raw, row.description.as_deref());
         // A task block is edited and deleted in Google Tasks, never here.
-        let task_block = event.task_link.is_some();
+        let task_block = task_link.is_some();
         let editable = !task_block && can_edit(&calendar, &raw_flags);
         Ok(EventDetailDto {
             event: CalendarEventDto {
                 can_edit: editable,
-                ..event
+                task_link,
+                meeting: meeting::of_event(&row, Some(&raw)),
+                ..base_dto(&row, occurrence.as_ref())
             },
             description: row.description.clone(),
             organizer: organizer.as_ref().map(|o| PersonDto {
@@ -740,14 +732,7 @@ pub(super) fn unstored_occurrence(
     }
 }
 
-fn dto(e: &DbEvent, occ: Option<&Occurrence>) -> CalendarEventDto {
-    CalendarEventDto {
-        meeting: meeting::of_event(e),
-        ..base_dto(e, occ)
-    }
-}
-
-/// [`dto`] without the call, which needs the conference and description read.
+/// The event's time and display fields. The caller adds metadata shared by its occurrences.
 fn base_dto(e: &DbEvent, occ: Option<&Occurrence>) -> CalendarEventDto {
     let time = |ms: Option<i64>, date: Option<String>| EventTimeDto {
         ms,
@@ -792,7 +777,7 @@ fn base_dto(e: &DbEvent, occ: Option<&Occurrence>) -> CalendarEventDto {
         color_id: e.color_id.clone(),
         transparency: e.transparency.clone(),
         can_edit: false,
-        task_link: task_block::task_link(&e.raw, e.description.as_deref()),
+        task_link: None,
     }
 }
 

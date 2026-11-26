@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO messages (\n            id, account_id, thread_id, label_ids,\n            from_address, from_name, to_addresses, cc_addresses,\n            subject, snippet, body_html, body_text,\n            date, size_estimate, has_attachment, is_read, is_starred,\n            raw_headers, fully_fetched, rfc822_message_id, body_fetched_at\n        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,\n                  CASE WHEN ? = 1 THEN unixepoch() * 1000 END)\n        ON CONFLICT(id, account_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 21
+    },
+    "nullable": []
+  },
+  "hash": "6da3c8ad454379b4abf56abca5fcec1f35aac3288478945de6d088ded95cb95c"
+}

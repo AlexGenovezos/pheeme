@@ -238,7 +238,7 @@ impl ReminderService {
                         fire_at_ms,
                         summary: e.summary.clone(),
                         location: e.location.clone(),
-                        meeting: meeting::of_event(e),
+                        meeting: meeting::of_event(e, None),
                         start_date: start_date.clone(),
                         zone,
                         also: Vec::new(),

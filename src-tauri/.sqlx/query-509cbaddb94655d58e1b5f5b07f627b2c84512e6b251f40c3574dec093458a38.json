@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT e.account_id, e.calendar_id, e.id, e.ical_uid, e.recurring_event_id,\n                  e.original_start_ms, e.original_start_date, e.status, e.start_ms, e.end_ms,\n                  e.start_date, e.end_date, e.time_zone, e.recurrence, e.recur_until_ms,\n                  e.summary, e.location, e.description, e.organizer_email, e.self_response,\n                  e.attendees, e.conference, e.color_id, e.transparency, e.visibility,\n                  e.reminders, e.html_link, e.etag, e.updated_ms, e.raw\n           FROM events e\n           JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar_id\n           WHERE c.hidden = 0 AND e.recurrence IS NULL AND (\n               (e.status != 'cancelled'\n                AND e.start_ms < ?2 + CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END\n                AND e.end_ms > ?1 - CASE WHEN e.start_date IS NULL THEN 0 ELSE ?3 END)\n               OR (e.recurring_event_id IS NOT NULL\n                   AND coalesce(e.original_start_ms, e.start_ms) < ?2 + ?3))",
+  "query": "SELECT e.account_id, e.calendar_id, e.id, e.ical_uid, e.recurring_event_id,\n                      e.original_start_ms, e.original_start_date, e.status, e.start_ms, e.end_ms,\n                      e.start_date, e.end_date, e.time_zone, e.recurrence, e.recur_until_ms,\n                      e.summary, e.location, e.description, e.organizer_email, e.self_response,\n                      e.attendees, e.conference, e.color_id, e.transparency, e.visibility,\n                      e.reminders, e.html_link, e.etag, e.updated_ms, e.raw\n               FROM events e\n           WHERE e.rowid IN (\n               SELECT s.rowid FROM events s\n               JOIN calendars c ON c.account_id = s.account_id AND c.id = s.calendar_id\n               WHERE c.hidden = 0 AND s.recurrence IS NULL AND s.status != 'cancelled'\n                 AND (?4 IS NULL OR s.account_id = ?4)\n                 AND s.start_ms < ?2 + CASE WHEN s.start_date IS NULL THEN 0 ELSE ?3 END\n                 AND s.end_ms > ?1 - CASE WHEN s.start_date IS NULL THEN 0 ELSE ?3 END\n               UNION\n               SELECT o.rowid FROM json_each(?5) AS series\n               JOIN events o ON o.account_id = series.value ->> 0\n                            AND o.calendar_id = series.value ->> 1\n                            AND o.recurring_event_id = series.value ->> 2\n               WHERE o.recurrence IS NULL AND coalesce(o.original_start_ms, o.start_ms) < ?2 + ?3\n           )",
   "describe": {
     "columns": [
       {
@@ -335,7 +335,7 @@
       }
     ],
     "parameters": {
-      "Right": 3
+      "Right": 5
     },
     "nullable": [
       false,
@@ -370,5 +370,5 @@
       false
     ]
   },
-  "hash": "23bc89f07cff56867ece54ac4a25f8bc8b374d80d33a85b650e6b3ceaeadb0fb"
+  "hash": "509cbaddb94655d58e1b5f5b07f627b2c84512e6b251f40c3574dec093458a38"
 }

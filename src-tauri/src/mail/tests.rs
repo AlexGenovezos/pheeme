@@ -385,6 +385,11 @@ async fn get_thread_includes_attachments() {
         "application/pdf",
         "g1",
     ));
+    fake.seed(
+        FakeMsg::new("m2", "t1", &["INBOX"])
+            .with_attachment("z.pdf", "application/pdf", "g2")
+            .with_attachment("b.pdf", "application/pdf", "g3"),
+    );
     let api = fake.clone();
     let sync = SyncManager::new(
         pool.clone(),
@@ -400,10 +405,18 @@ async fn get_thread_includes_attachments() {
     );
 
     let detail = mail.get_thread("a1", "t1", true).await.unwrap();
+    let attachments = |id| {
+        &detail
+            .messages
+            .iter()
+            .find(|m| m.id == id)
+            .unwrap()
+            .attachments
+    };
 
     assert_eq!(
-        detail.messages[0].attachments,
-        [AttachmentDto {
+        attachments("m1"),
+        &[AttachmentDto {
             id: "0".into(),
             filename: Some("a.pdf".into()),
             mime_type: Some("application/pdf".into()),
@@ -411,6 +424,13 @@ async fn get_thread_includes_attachments() {
             is_inline: false,
             content_id: None,
         }]
+    );
+    assert_eq!(
+        attachments("m2")
+            .iter()
+            .map(|a| a.filename.as_deref().unwrap())
+            .collect::<Vec<_>>(),
+        ["b.pdf", "z.pdf"]
     );
 }
 

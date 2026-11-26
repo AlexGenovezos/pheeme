@@ -17,6 +17,7 @@ pub async fn remove_account(
     account_id: String,
 ) -> Result<(), CommandError> {
     state.accounts.remove_account(&account_id).await?;
+    state.google_clients.forget(&account_id);
     state.sync.forget(&account_id);
     state.contacts.forget(&account_id);
     state.mail.forget_account(&account_id).await;

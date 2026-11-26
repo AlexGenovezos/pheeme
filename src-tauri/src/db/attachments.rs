@@ -73,6 +73,27 @@ pub async fn get_attachments_for_message(
     Ok(rows)
 }
 
+pub(crate) async fn get_attachments_for_thread(
+    pool: &SqlitePool,
+    account_id: &str,
+    thread_id: &str,
+) -> Result<Vec<DbAttachment>> {
+    Ok(sqlx::query_as!(
+        DbAttachment,
+        r#"SELECT id, message_id, account_id, filename, mime_type, size, attachment_id,
+                  content_id, is_inline
+           FROM attachments
+           WHERE account_id = ?1 AND message_id IN (
+               SELECT id FROM messages WHERE account_id = ?1 AND thread_id = ?2
+           )
+           ORDER BY filename"#,
+        account_id,
+        thread_id,
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
 /// The attachment of a message carrying this Content-ID (for `cid:` images).
 pub async fn get_by_content_id(
     pool: &SqlitePool,

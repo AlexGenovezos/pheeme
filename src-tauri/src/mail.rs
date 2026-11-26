@@ -35,7 +35,7 @@ use crate::sync::{outbox, SyncEvent};
 use dto::{has_body, summaries};
 use open_timing::{emit_loading, BodyFetch};
 use sqlx::SqlitePool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -348,12 +348,17 @@ impl MailService {
         let thread = threads::get_thread(&self.db, account_id, thread_id)
             .await?
             .ok_or(MailError::NotFound)?;
+        let mut by_message: HashMap<String, Vec<AttachmentDto>> = HashMap::new();
+        for att in attachments::get_attachments_for_thread(&self.db, account_id, thread_id).await? {
+            by_message
+                .entry(att.message_id.clone())
+                .or_default()
+                .push(att.into());
+        }
         let mut details = Vec::with_capacity(messages.len());
         for m in messages {
-            let atts =
-                attachments::get_attachments_for_message(&self.db, account_id, &m.id).await?;
             let mut dto = MessageDetailDto::from(m);
-            dto.attachments = atts.into_iter().map(Into::into).collect();
+            dto.attachments = by_message.remove(&dto.id).unwrap_or_default();
             if let Some(raw) = dto.body_html.take() {
                 let body = render::sanitize_email_html(&raw, account_id, &dto.id);
                 dto.body_html = Some(body.html);
@@ -577,11 +582,12 @@ impl MailService {
         thread_ids: &[String],
     ) -> Result<Vec<String>, MailError> {
         let mut out = Vec::new();
+        let mut seen = HashSet::new();
         for id in thread_ids {
-            if threads::get_thread(&self.db, account_id, id)
-                .await?
-                .is_some()
-                && !out.contains(id)
+            if seen.insert(id.as_str())
+                && threads::get_thread(&self.db, account_id, id)
+                    .await?
+                    .is_some()
             {
                 out.push(id.clone());
             }
