@@ -293,6 +293,7 @@ struct State {
 }
 
 /// A sync manager over `fake` for every account, with `account_id` synced once (service tests).
+#[cfg(test)]
 pub async fn synced(
     pool: &sqlx::SqlitePool,
     fake: std::sync::Arc<FakeGmail>,

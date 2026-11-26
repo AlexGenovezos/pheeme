@@ -27,6 +27,13 @@ beforeEach(() => {
     calls.push({ cmd, args: a });
     if (cmd === "forwarding_addresses") return forwarding;
     if (cmd === "filter_matches") return 4;
+    if (cmd === "create_label")
+      return { id: "Label_new", accountId: "a1", name: a.name, type: "user" };
+    if (cmd === "replace_filter")
+      return {
+        filter: { id: "f2", matches: "from:a@x.com", actions: [], spec: a.spec },
+        applyError: null,
+      };
     if (cmd === "create_filter")
       return {
         filter: { id: "f9", matches: "from:a@x.com", actions: ["star it"], spec: a.spec },
@@ -120,4 +127,61 @@ test("a filter saved but not applied to existing mail says both", async () => {
     tone: "danger",
   });
   expect(useFilterEditorStore.getState().editor).toBeNull();
+});
+
+test("edits a filter into a new label and a forward, Gmail's way", async () => {
+  forwarding = ["me@else.com"];
+  const onSaved = vi.fn();
+  render(<FilterEditorHost />);
+  act(() =>
+    openFilterEditor({
+      accountId: "a1",
+      filterId: "f1",
+      spec: { from: "a@x.com", important: true },
+      onSaved,
+    }),
+  );
+  await flush();
+  expect(screen.getByRole("heading", { name: "Edit filter" })).toBeTruthy();
+
+  // Always and Never important can't both be ticked.
+  expect(screen.getByLabelText("Always mark it as important")).toHaveProperty("checked", true);
+  fireEvent.click(screen.getByLabelText("Never mark it as important"));
+  expect(screen.getByLabelText("Always mark it as important")).toHaveProperty("checked", false);
+  fireEvent.click(screen.getByLabelText("Always mark it as important"));
+  expect(screen.getByLabelText("Never mark it as important")).toHaveProperty("checked", false);
+
+  fireEvent.click(screen.getByLabelText("Apply the label:"));
+  fireEvent.click(screen.getByRole("combobox", { name: "Label to apply" }));
+  fireEvent.click(await screen.findByRole("option", { name: "New label…" }));
+  const name = screen.getByLabelText("New label name");
+  expect(name).toHaveProperty("disabled", false);
+  fireEvent.change(name, { target: { value: "Newsletters" } });
+
+  expect(screen.getByText("Only addresses Gmail has verified.")).toBeTruthy();
+  fireEvent.click(screen.getByLabelText("Forward it to:"));
+  fireEvent.click(screen.getByRole("combobox", { name: "Forward to" }));
+  fireEvent.click(await screen.findByRole("option", { name: "me@else.com" }));
+
+  fireEvent.click(screen.getByRole("button", { name: "Save filter" }));
+  await flush();
+  await flush();
+
+  expect(callsOf("create_label")).toEqual([{ accountId: "a1", name: "Newsletters", color: null }]);
+  expect(callsOf("replace_filter")).toEqual([
+    {
+      accountId: "a1",
+      filterId: "f1",
+      spec: {
+        ...EMPTY_SPEC,
+        from: "a@x.com",
+        important: true,
+        label: "Label_new",
+        forward: "me@else.com",
+      },
+      applyToExisting: false,
+    },
+  ]);
+  expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: "f2" }), "f1");
+  expect(useToastStore.getState().toasts[0]).toMatchObject({ title: "Filter saved" });
 });
