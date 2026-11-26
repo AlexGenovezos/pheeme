@@ -11,6 +11,7 @@ import {
   toCommandError,
   type VacationResponder,
 } from "../lib/tauri";
+import type { VacationForm } from "./form";
 
 export interface AccountVacation {
   /** Gmail's last answer; `undefined` until the first read finishes. */
@@ -23,6 +24,9 @@ export interface AccountVacation {
 
 interface VacationState {
   accounts: Record<string, AccountVacation>;
+  /** Unsaved edits in Settings, per account, until saved or discarded (this session only). */
+  drafts: Record<string, VacationForm>;
+  setDraft(accountId: string, form: VacationForm | null): void;
   /** Read the account's responder from Gmail. */
   refresh(accountId: string): Promise<void>;
   /** Save it to Gmail; resolves to the failure, or `null` once Gmail has it. */
@@ -52,6 +56,14 @@ export const useVacation = create<VacationState>((set) => {
   };
   return {
     accounts: {},
+    drafts: {},
+    setDraft: (accountId, form) =>
+      set((s) => {
+        const drafts = { ...s.drafts };
+        if (form) drafts[accountId] = form;
+        else delete drafts[accountId];
+        return { drafts };
+      }),
     refresh(accountId) {
       const running = inflight.get(accountId);
       if (running) return running;

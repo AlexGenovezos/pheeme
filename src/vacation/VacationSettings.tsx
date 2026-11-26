@@ -42,7 +42,9 @@ function AccountVacation({
 }) {
   const state = useVacation((s) => s.accounts[accountId]);
   const loaded = state?.value;
-  const [draft, setDraft] = useState<VacationForm | null>(null);
+  // Kept in the store, so an unsaved edit outlives closing Settings (signing in again closes it).
+  const draft = useVacation((s) => s.drafts[accountId] ?? null);
+  const setDraft = (form: VacationForm | null) => useVacation.getState().setDraft(accountId, form);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<CommandError | "saved" | null>(null);
   // The fields wait for a fresh read when the page opens, so an edit never starts from an
@@ -128,7 +130,7 @@ function AccountVacation({
         <Button size="sm" disabled={!dirty || saving} onClick={discard}>
           Discard
         </Button>
-        {/* Save can't work until the account allows it; the draft stays for after. */}
+        {/* Save can't work until the account allows it; the draft waits in the store for after. */}
         {writeScopeMissing ? (
           <ReconnectButton accountId={accountId} />
         ) : (

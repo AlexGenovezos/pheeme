@@ -1,5 +1,5 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import type { AccountInfo } from "../lib/tauri";
 import { createVacationHandlers } from "../preview/vacation";
@@ -29,7 +29,7 @@ function backend(mode: string | null) {
 
 beforeEach(() => {
   calls = [];
-  useVacation.setState({ accounts: {} });
+  useVacation.setState({ accounts: {}, drafts: {} });
   useAccountStore.setState({ accounts });
 });
 afterEach(() => clearMocks());
@@ -144,6 +144,16 @@ test("an account that can read but not change its responder is asked to sign in 
   expect(one).toHaveTextContent("isn't allowed to change this account's Gmail settings");
   expect(within(one).getByRole("button", { name: "Sign in again" })).toBeInTheDocument();
   expect(within(one).getByRole("button", { name: "Discard" })).toBeEnabled();
+
+  // Signing in again closes Settings; the unsaved edit is there when it opens again.
+  cleanup();
+  render(<VacationSettings />);
+  await flush();
+  expect(
+    within(section("me@gmail.com")).getByRole("switch", {
+      name: "Vacation responder for me@gmail.com",
+    }),
+  ).toBeChecked();
 });
 
 /** Holds each account's next read until the test answers it. */
