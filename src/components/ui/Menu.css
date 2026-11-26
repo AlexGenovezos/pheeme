@@ -7,6 +7,9 @@
   animation: ui-menu-in var(--duration-fast) var(--ease-out);
   transform-origin: top left;
 }
+.ui-menu--above {
+  transform-origin: bottom left;
+}
 .ui-menu:focus-visible {
   outline: none;
 }

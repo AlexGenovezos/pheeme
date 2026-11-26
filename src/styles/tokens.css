@@ -312,6 +312,14 @@
   /* Settings › Signatures: the editor for an account's own signature. */
   --signature-editor-min-height: 96px;
   --compose-link-input-width: 220px;
+  /* The formatting bar's font button: wide enough for "Trebuchet MS", so a font change never resizes it. */
+  --compose-font-button-width: 92px;
+  --compose-caret-size: 10px;
+  /* Insert emoji: a fixed-size picker, so searching never resizes it. */
+  --emoji-picker-width: 312px;
+  --emoji-picker-scroll-height: 224px;
+  --emoji-cell-size: 32px;
+  --emoji-font-size: 20px;
   --compose-attachment-max-width: 240px;
   /* Onboarding and account screens. */
   --onboarding-rail-width: 220px;

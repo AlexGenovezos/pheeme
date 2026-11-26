@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { useRef, useState, type KeyboardEvent } from "react";
+import { type CSSProperties, useRef, useState, type KeyboardEvent } from "react";
 import { cx } from "../../lib/utils";
 import { Kbd } from "./Kbd";
 import "./Menu.css";
@@ -15,6 +15,8 @@ export type MenuItem =
       disabled?: boolean;
       /** Renders a check mark (radio/check items). */
       checked?: boolean;
+      /** Draws the label as what it chooses (a font menu's names in their fonts). */
+      labelStyle?: CSSProperties;
       danger?: boolean;
       onSelect(): void;
     }
@@ -25,7 +27,11 @@ export interface MenuProps {
   /** Viewport coordinates of the top-left corner (clamped to stay on screen). */
   x: number;
   y: number;
+  /** `x`/`y` is the bottom-left corner: the menu opens upward. */
+  above?: boolean;
   onClose(): void;
+  /** Presses outside the menu that don't close it (the button that toggles it). */
+  ignore?(target: Node): boolean;
   "aria-label"?: string;
 }
 
@@ -36,11 +42,11 @@ const isActionable = (item: MenuItem) => item.type !== "separator" && !item.disa
  * base for any in-app dropdown. Arrow keys move, Enter/Space choose, Esc and
  * outside clicks close, focus returns to where it was.
  */
-export function Menu({ items, x, y, onClose, ...aria }: MenuProps) {
+export function Menu({ items, x, y, above, onClose, ignore, ...aria }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(() => items.findIndex(isActionable));
   // Kept inside the viewport once its size is known; a press outside or the window blurring closes it.
-  const { pos } = usePopover({ ref, at: { x, y }, onClose });
+  const { pos } = usePopover({ ref, at: { x, y }, above, onClose, ignore });
 
   const choose = (index: number) => {
     const item = items[index];
@@ -91,7 +97,7 @@ export function Menu({ items, x, y, onClose, ...aria }: MenuProps) {
       ref={ref}
       role="menu"
       tabIndex={-1}
-      className="ui-menu popover-surface"
+      className={cx("ui-menu popover-surface", above && "ui-menu--above")}
       style={{ left: pos.x, top: pos.y }}
       aria-activedescendant={active >= 0 ? `ui-menu-item-${active}` : undefined}
       onKeyDown={onKeyDown}
@@ -114,7 +120,9 @@ export function Menu({ items, x, y, onClose, ...aria }: MenuProps) {
             onClick={() => choose(i)}
           >
             <span className="ui-menu__check">{item.checked && <Check />}</span>
-            <span className="ui-menu__label">{item.label}</span>
+            <span className="ui-menu__label" style={item.labelStyle}>
+              {item.label}
+            </span>
             {item.shortcut && <Kbd shortcut={item.shortcut} className="ui-menu__shortcut" />}
           </div>
         ),

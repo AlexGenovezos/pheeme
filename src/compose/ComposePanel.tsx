@@ -31,6 +31,7 @@ import {
   SEND_LATER_COMMAND,
   useComposeStore,
 } from "./composeStore";
+import { EmojiButton } from "./EmojiButton";
 import {
   EditorBody,
   type EditorFiles,
@@ -555,6 +556,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
           disabled={win.sending || !editor}
           onClick={() => setDriveOpen(true)}
         />
+        <EmojiButton editor={editor} disabled={win.sending || !editor} />
         {bytes > 0 && (
           <span
             className={cx("compose__size", overLimit && "compose__size--over")}
