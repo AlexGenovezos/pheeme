@@ -207,6 +207,15 @@ pub struct FilterEntryDto {
     pub spec: Option<FilterSpec>,
 }
 
+/// A saved filter, and why Also apply filter didn't reach the mail already there (the filter
+/// itself is saved either way).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedFilterDto {
+    pub filter: FilterEntryDto,
+    pub apply_error: Option<String>,
+}
+
 fn entry(filter: &Filter, names: &HashMap<String, String>) -> FilterEntryDto {
     let described = describe(filter, names);
     FilterEntryDto {
@@ -464,12 +473,17 @@ pub fn spec_query(spec: &FilterSpec) -> Result<String, MailError> {
     if let Some(from) = found.from {
         criteria.insert("from".into(), from.into());
     }
-    criteria_query(&criteria).ok_or_else(|| MailError::Invalid("Fill in at least one search option.".into()))
+    criteria_query(&criteria)
+        .ok_or_else(|| MailError::Invalid("Fill in at least one search option.".into()))
 }
 
 /// How many conversations the form's search matches now, as far as the cache can tell:
 /// `None` when the search uses syntax only Gmail understands.
-pub async fn count_matches(mail: &MailService, account_id: &str, spec: &FilterSpec) -> Result<Option<usize>, MailError> {
+pub async fn count_matches(
+    mail: &MailService,
+    account_id: &str,
+    spec: &FilterSpec,
+) -> Result<Option<usize>, MailError> {
     let query = spec_query(spec)?;
     let (ids, local) = mail.matching_threads(account_id, &query).await?;
     Ok(local.then_some(ids.len()))
@@ -477,14 +491,25 @@ pub async fn count_matches(mail: &MailService, account_id: &str, spec: &FilterSp
 
 /// "Also apply filter to matching conversations": the filter's label changes for every match,
 /// cached or not, through the change-every-match path (the outbox's sweep), and with Delete it,
-/// the matches to Trash.
-pub async fn apply_to_existing(mail: &MailService, account_id: &str, spec: &FilterSpec) -> Result<(), MailError> {
+/// every match Gmail's search finds to Trash.
+pub async fn apply_to_existing(
+    mail: &MailService,
+    account_id: &str,
+    spec: &FilterSpec,
+) -> Result<(), MailError> {
     let filter = spec.to_filter()?;
     let change = ExistingChange::of(&filter.action);
     if change.is_empty() {
         return Ok(());
     }
     let query = spec_query(spec)?;
+    // Found before anything changes: a label change queued below (Mark as read, say) can take a
+    // conversation out of the search.
+    let trash = if change.trash {
+        mail.every_match(account_id, &query).await?
+    } else {
+        Vec::new()
+    };
     if !change.add.is_empty() || !change.remove.is_empty() {
         let add: Vec<&str> = change.add.iter().map(String::as_str).collect();
         let remove: Vec<&str> = change.remove.iter().map(String::as_str).collect();
@@ -500,11 +525,8 @@ pub async fn apply_to_existing(mail: &MailService, account_id: &str, spec: &Filt
         )
         .await?;
     }
-    if change.trash {
-        let ids = mail.every_match(account_id, &query).await?;
-        if !ids.is_empty() {
-            mail.trash_threads(account_id, &ids).await?;
-        }
+    if !trash.is_empty() {
+        mail.trash_threads(account_id, &trash).await?;
     }
     Ok(())
 }
@@ -603,7 +625,12 @@ pub fn criteria_query(criteria: &serde_json::Map<String, Value>) -> Option<Strin
         }
     };
     let mut parts = Vec::new();
-    for (key, op) in [("from", "from:"), ("to", "to:"), ("subject", "subject:"), ("query", "")] {
+    for (key, op) in [
+        ("from", "from:"),
+        ("to", "to:"),
+        ("subject", "subject:"),
+        ("query", ""),
+    ] {
         if let Some(v) = text(key) {
             parts.push(format!("{op}{}", group(v)));
         }
@@ -613,6 +640,9 @@ pub fn criteria_query(criteria: &serde_json::Map<String, Value>) -> Option<Strin
     }
     if criteria.get("hasAttachment") == Some(&Value::Bool(true)) {
         parts.push("has:attachment".into());
+    }
+    if criteria.get("excludeChats") == Some(&Value::Bool(true)) {
+        parts.push("-in:chats".into());
     }
     if let Some(size) = criteria.get("size").and_then(Value::as_i64) {
         match criteria.get("sizeComparison").and_then(Value::as_str) {
@@ -716,10 +746,10 @@ mod tests {
             criteria_query(criteria.as_object().unwrap()).as_deref(),
             Some("from:(a@x.com OR b@y.com) subject:Sale deal -invoice has:attachment larger:1000")
         );
-        let grouped = json!({ "subject": "Big sale", "query": "-x", "negatedQuery": "OR" });
+        let grouped = json!({ "subject": "Big sale", "query": "-x", "negatedQuery": "OR", "excludeChats": true });
         assert_eq!(
             criteria_query(grouped.as_object().unwrap()).as_deref(),
-            Some("subject:(Big sale) (-x) -(OR)")
+            Some("subject:(Big sale) (-x) -(OR) -in:chats")
         );
         assert_eq!(
             criteria_query(json!({ "from": " " }).as_object().unwrap()),
@@ -831,7 +861,11 @@ mod tests {
             FilterSpec::of(&filter)
         };
         assert!(with(|_| {}).is_some());
-        assert!(with(|f| f.action.add_label_ids.extend(["Label_1".into(), "Label_2".into()])).is_none());
+        assert!(with(|f| f
+            .action
+            .add_label_ids
+            .extend(["Label_1".into(), "Label_2".into()]))
+        .is_none());
         assert!(with(|f| f.action.remove_label_ids.push("Label_1".into())).is_none());
         assert!(with(|f| f.action.add_label_ids.push("SPAM".into())).is_none());
         assert!(with(|f| {
@@ -1069,7 +1103,10 @@ mod tests {
             fake.seed(msg("m3", "t3", &["INBOX"], "Friend <friend@y.com>"));
             let h = setup(fake).await;
 
-            assert_eq!(count_matches(&h.mail, "a1", &spec()).await.unwrap(), Some(2));
+            assert_eq!(
+                count_matches(&h.mail, "a1", &spec()).await.unwrap(),
+                Some(2)
+            );
             let criteria_only = FilterSpec {
                 from: "news@x.com".into(),
                 ..Default::default()
@@ -1083,7 +1120,10 @@ mod tests {
                 subject: "-x".into(),
                 ..spec()
             };
-            assert_eq!(count_matches(&h.mail, "a1", &gmail_only).await.unwrap(), None);
+            assert_eq!(
+                count_matches(&h.mail, "a1", &gmail_only).await.unwrap(),
+                None
+            );
 
             apply_to_existing(&h.mail, "a1", &spec()).await.unwrap();
             let inbox = h
@@ -1117,12 +1157,22 @@ mod tests {
 
             apply_to_existing(&h.mail, "a1", &trash).await.unwrap();
             for _ in 0..100 {
-                if h.fake.message("m1").unwrap().labels.contains(&"TRASH".into()) {
+                if h.fake
+                    .message("m1")
+                    .unwrap()
+                    .labels
+                    .contains(&"TRASH".into())
+                {
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
-            assert!(h.fake.message("m1").unwrap().labels.contains(&"TRASH".into()));
+            assert!(h
+                .fake
+                .message("m1")
+                .unwrap()
+                .labels
+                .contains(&"TRASH".into()));
             assert_eq!(h.fake.message("m2").unwrap().labels, ["INBOX"]);
         }
     }

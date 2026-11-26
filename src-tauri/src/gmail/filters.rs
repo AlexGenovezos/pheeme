@@ -3,9 +3,7 @@
 
 use super::client::{ApiRequest, GmailClient};
 use super::error::GmailError;
-use super::types::{
-    Filter, FilterListResponse, ForwardingAddress, ForwardingAddressListResponse,
-};
+use super::types::{Filter, FilterListResponse, ForwardingAddress, ForwardingAddressListResponse};
 use reqwest::Method;
 use serde_json::json;
 
@@ -145,10 +143,12 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/settings/forwardingAddresses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"forwardingAddresses": [
-                {"forwardingEmail": "me@else.com", "verificationStatus": "accepted"},
-                {"forwardingEmail": "new@else.com", "verificationStatus": "pending"}
-            ]})))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"forwardingAddresses": [
+                    {"forwardingEmail": "me@else.com", "verificationStatus": "accepted"},
+                    {"forwardingEmail": "new@else.com", "verificationStatus": "pending"}
+                ]})),
+            )
             .up_to_n_times(1)
             .mount(&server)
             .await;

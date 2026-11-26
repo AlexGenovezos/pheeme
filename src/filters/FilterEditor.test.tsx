@@ -10,6 +10,7 @@ import { EMPTY_SPEC } from "./form";
 
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
 let forwarding: string[];
+let applyError: string | null;
 const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 const callsOf = (cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
 
@@ -20,13 +21,17 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
   calls = [];
   forwarding = [];
+  applyError = null;
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: a });
     if (cmd === "forwarding_addresses") return forwarding;
     if (cmd === "filter_matches") return 4;
     if (cmd === "create_filter")
-      return { id: "f9", matches: "from:a@x.com", actions: ["star it"], spec: a.spec };
+      return {
+        filter: { id: "f9", matches: "from:a@x.com", actions: ["star it"], spec: a.spec },
+        applyError: applyError,
+      };
     return undefined;
   });
 });
@@ -98,4 +103,21 @@ test("a refusal shows in the slot kept for it, and the dialog stays open", async
   expect(screen.getByRole("alert")).toBe(slot);
   expect(slot.textContent).toBe("Choose at least one thing to do with matching mail.");
   expect(callsOf("create_filter")).toEqual([]);
+});
+
+test("a filter saved but not applied to existing mail says both", async () => {
+  applyError = "Gmail's search didn't answer, so nothing was changed. Try again.";
+  const onSaved = vi.fn();
+  render(<FilterEditorHost />);
+  act(() => openFilterEditor({ accountId: "a1", spec: { from: "a@x.com" }, onSaved }));
+  await flush();
+  fireEvent.click(screen.getByLabelText("Star it"));
+  fireEvent.click(screen.getByRole("button", { name: "Create filter" }));
+  await flush();
+  expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: "f9" }), undefined);
+  expect(useToastStore.getState().toasts[0]).toMatchObject({
+    title: "Filter created, but it couldn't be applied to existing mail",
+    tone: "danger",
+  });
+  expect(useFilterEditorStore.getState().editor).toBeNull();
 });

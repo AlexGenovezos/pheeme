@@ -71,7 +71,7 @@ function AccountFilters({ accountId, title }: { accountId: string; title: string
           ? {
               label: "Undo",
               run: () =>
-                void createFilter(accountId, spec, false).then((entry) => saved(entry), toastError),
+                void createFilter(accountId, spec, false).then((s) => saved(s.filter), toastError),
             }
           : undefined,
       });

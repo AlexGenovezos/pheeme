@@ -2,8 +2,9 @@
 //! [`crate::filters::FilterService`]. Gmail calls run as user actions, ahead of sync.
 
 use super::CommandError;
-use crate::filters::{self, FilterEntryDto, FilterSpec};
+use crate::filters::{self, FilterEntryDto, FilterSpec, SavedFilterDto};
 use crate::gmail::user_action;
+use crate::mail::MailError;
 use crate::AppState;
 use tauri::State;
 
@@ -16,22 +17,17 @@ pub async fn list_filters(
 }
 
 /// Make a filter; with `apply_to_existing`, its label changes (and Delete it) also go to the
-/// conversations already there, once Gmail has the filter.
+/// conversations already there, once Gmail has the filter. A failure there doesn't undo the
+/// filter: it comes back as `apply_error`.
 #[tauri::command]
 pub async fn create_filter(
     state: State<'_, AppState>,
     account_id: String,
     spec: FilterSpec,
     apply_to_existing: bool,
-) -> Result<FilterEntryDto, CommandError> {
-    Ok(user_action(async {
-        let created = state.filters.create_spec(&account_id, &spec).await?;
-        if apply_to_existing {
-            filters::apply_to_existing(&state.mail, &account_id, &spec).await?;
-        }
-        Ok::<_, crate::mail::MailError>(created)
-    })
-    .await?)
+) -> Result<SavedFilterDto, CommandError> {
+    let filter = user_action(state.filters.create_spec(&account_id, &spec)).await?;
+    Ok(applied(&state, &account_id, &spec, apply_to_existing, filter).await)
 }
 
 /// Change a filter (Gmail has no update: the new one is made, then the old one deleted).
@@ -42,18 +38,32 @@ pub async fn replace_filter(
     filter_id: String,
     spec: FilterSpec,
     apply_to_existing: bool,
-) -> Result<FilterEntryDto, CommandError> {
-    Ok(user_action(async {
-        let replaced = state
-            .filters
-            .replace(&account_id, &filter_id, &spec)
-            .await?;
-        if apply_to_existing {
-            filters::apply_to_existing(&state.mail, &account_id, &spec).await?;
+) -> Result<SavedFilterDto, CommandError> {
+    let filter = user_action(state.filters.replace(&account_id, &filter_id, &spec)).await?;
+    Ok(applied(&state, &account_id, &spec, apply_to_existing, filter).await)
+}
+
+/// The saved filter, after applying it to existing mail when asked.
+async fn applied(
+    state: &AppState,
+    account_id: &str,
+    spec: &FilterSpec,
+    apply: bool,
+    filter: FilterEntryDto,
+) -> SavedFilterDto {
+    let mut apply_error = None;
+    if apply {
+        let result: Result<(), MailError> =
+            user_action(filters::apply_to_existing(&state.mail, account_id, spec)).await;
+        if let Err(e) = result {
+            tracing::warn!(account = account_id, filter = filter.id, error = %e, "couldn't apply a saved filter to existing mail");
+            apply_error = Some(e.to_string());
         }
-        Ok::<_, crate::mail::MailError>(replaced)
-    })
-    .await?)
+    }
+    SavedFilterDto {
+        filter,
+        apply_error,
+    }
 }
 
 #[tauri::command]

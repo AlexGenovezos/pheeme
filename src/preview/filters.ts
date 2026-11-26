@@ -1,6 +1,6 @@
 /** Gmail filters for browser preview, with the backend's rules (`src-tauri/src/filters.rs`). */
 
-import type { FilterEntry, FilterSpec } from "../lib/tauri";
+import type { FilterEntry, FilterSpec, SavedFilter } from "../lib/tauri";
 import type { FixtureThread } from "./fixtures";
 import type { PartialHandlers } from "./handlers";
 import type { PreviewLabel } from "./labels";
@@ -57,6 +57,7 @@ function matches(spec: FilterSpec): string {
   add("", spec.query);
   add("-", spec.negatedQuery);
   if (spec.hasAttachment) parts.push("has:attachment");
+  if (spec.excludeChats) parts.push("-in:chats");
   if (spec.size !== null && spec.sizeComparison) parts.push(`${spec.sizeComparison}:${spec.size}`);
   return parts.join(" ");
 }
@@ -181,7 +182,7 @@ export function createFilterHandlers(
       gmail();
       return of(args.accountId).map((f) => entry(args.accountId, f.id, f.spec));
     },
-    create_filter: (args): FilterEntry => {
+    create_filter: (args): SavedFilter => {
       check(args.spec);
       gmail();
       const list = of(args.accountId);
@@ -193,9 +194,9 @@ export function createFilterHandlers(
       const made = { id: `filter_${++next}`, spec: { ...args.spec } };
       list.push(made);
       if (args.applyToExisting) apply(args.accountId, args.spec);
-      return entry(args.accountId, made.id, made.spec);
+      return { filter: entry(args.accountId, made.id, made.spec), applyError: null };
     },
-    replace_filter: (args): FilterEntry => {
+    replace_filter: (args): SavedFilter => {
       check(args.spec);
       gmail();
       const list = of(args.accountId);
@@ -211,7 +212,7 @@ export function createFilterHandlers(
         : { id: `filter_${++next}`, spec: { ...args.spec } };
       list.splice(at, 1, made);
       if (args.applyToExisting) apply(args.accountId, args.spec);
-      return entry(args.accountId, made.id, made.spec);
+      return { filter: entry(args.accountId, made.id, made.spec), applyError: null };
     },
     delete_filter: (args) => {
       gmail();
@@ -227,7 +228,7 @@ export function createFilterHandlers(
     filter_matches: (args): number | null => {
       check(args.spec, false);
       // Like the local search: `-word` is Gmail-only syntax, so only Gmail could count it.
-      if (args.spec.negatedQuery.trim()) return null;
+      if (args.spec.negatedQuery.trim() || args.spec.excludeChats) return null;
       return hits(args.accountId, args.spec).length;
     },
     forwarding_addresses: (args): string[] => {

@@ -46,6 +46,12 @@ export interface FilterEntry {
   spec: FilterSpec | null;
 }
 
+/** A saved filter, and why Also apply filter didn't reach existing mail (the filter is saved either way). */
+export interface SavedFilter {
+  filter: FilterEntry;
+  applyError: string | null;
+}
+
 /** Every Gmail filter on the account. Rejects with `missing_scope` without filters access. */
 export const listFilters = (accountId: string) => call("list_filters", { accountId });
 /** Make a filter; `applyToExisting` also changes the conversations already there. */

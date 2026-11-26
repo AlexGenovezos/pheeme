@@ -3,8 +3,7 @@
 
 use crate::gmail::types::{
     Draft, DraftListResponse, Filter, ForwardingAddress, HistoryListResponse, Label, LabelColor,
-    LabelUpdate, Message,
-    MessageListResponse, SendAs, Thread, ThreadListResponse, UserProfile,
+    LabelUpdate, Message, MessageListResponse, SendAs, Thread, ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailClient, GmailError, MessageFormat};
 

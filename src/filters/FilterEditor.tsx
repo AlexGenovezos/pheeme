@@ -11,7 +11,6 @@ import { addCreatedLabel } from "../labels/create";
 import {
   createFilter,
   createLabel,
-  type FilterEntry,
   filterMatches,
   forwardingAddresses,
   type LabelInfo,
@@ -148,11 +147,21 @@ function FilterEditorForm({ editor, onClose }: { editor: FilterEditorSpec; onClo
         setForm((f) => ({ ...f, label: label.id, newLabel: "" }));
       }
       const apply = applyExisting && existingOn;
-      const saved: FilterEntry = filterId
+      const saved = filterId
         ? await replaceFilter(accountId, filterId, spec, apply)
         : await createFilter(accountId, spec, apply);
-      editor.onSaved?.(saved, filterId);
-      toast({ title: filterId ? "Filter saved" : "Filter created" });
+      editor.onSaved?.(saved.filter, filterId);
+      const title = filterId ? "Filter saved" : "Filter created";
+      // The filter is saved even when existing mail couldn't be changed: say both.
+      toast(
+        saved.applyError
+          ? {
+              title: `${title}, but it couldn't be applied to existing mail`,
+              description: saved.applyError,
+              tone: "danger",
+            }
+          : { title },
+      );
     } catch (err) {
       setSaving(false);
       setError(toCommandError(err).message);

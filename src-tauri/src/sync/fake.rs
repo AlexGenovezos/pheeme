@@ -5,9 +5,9 @@ use super::api::MailApi;
 use crate::gmail::mime::encode_base64url;
 use crate::gmail::types::{
     Draft, DraftListResponse, Filter, ForwardingAddress, Header, HistoryLabelChange,
-    HistoryListResponse,
-    HistoryMessage, HistoryRecord, Label, LabelColor, LabelUpdate, Message, MessageListResponse,
-    MessagePart, MessagePartBody, MessageRef, SendAs, Thread, ThreadListResponse, UserProfile,
+    HistoryListResponse, HistoryMessage, HistoryRecord, Label, LabelColor, LabelUpdate, Message,
+    MessageListResponse, MessagePart, MessagePartBody, MessageRef, SendAs, Thread,
+    ThreadListResponse, UserProfile,
 };
 use crate::gmail::{GmailError, MessageFormat};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};

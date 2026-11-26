@@ -152,7 +152,7 @@ impl MailService {
                 .search_messages(&account, query, before, Some(MAX_PAGE))
                 .await?;
             local &= page.local;
-            thread_ids.extend(page.threads.into_iter().filter(|t| keep(t)).map(|t| t.id));
+            thread_ids.extend(page.threads.into_iter().filter(&keep).map(|t| t.id));
             match page.next {
                 Some(next) => before = Some(next),
                 None => break,
@@ -168,20 +168,17 @@ impl MailService {
         account_id: &str,
         query: &str,
     ) -> Result<(Vec<String>, bool), MailError> {
-        self.cached_matches(account_id, query.trim(), |_| true).await
+        self.cached_matches(account_id, query.trim(), |_| true)
+            .await
     }
 
-    /// Every conversation a search finds: from the cache when the local search can run it,
-    /// else from Gmail's search, page by page (caching what it finds).
+    /// Every conversation Gmail's search finds, downloaded or not, page by page (caching what it
+    /// finds).
     pub async fn every_match(
         &self,
         account_id: &str,
         query: &str,
     ) -> Result<Vec<String>, MailError> {
-        let (ids, local) = self.matching_threads(account_id, query).await?;
-        if local {
-            return Ok(ids);
-        }
         let account = [account_id.to_owned()];
         let mut ids = Vec::new();
         let mut tokens = None;

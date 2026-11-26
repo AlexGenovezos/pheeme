@@ -57,7 +57,7 @@ import type {
 } from "./mail";
 import type { GmailSearchPage, SearchPage } from "./search";
 import type { InboxThread, SavedRules, SenderRule } from "./senderRules";
-import type { FilterEntry, FilterSpec } from "./filters";
+import type { FilterEntry, FilterSpec, SavedFilter } from "./filters";
 import type { ClearedDownloads, ThemeFolderFile } from "./settings";
 import type { MailStats, Unsubscribed } from "./stats";
 import type {
@@ -160,10 +160,10 @@ export interface Commands {
   delete_sender_rule: Command<Account & { ruleId: string }, void>;
   inbox_threads_from: Command<Account & { senders: string[]; category: string }, InboxThread[]>;
   list_filters: Command<Account, FilterEntry[]>;
-  create_filter: Command<Account & { spec: FilterSpec; applyToExisting: boolean }, FilterEntry>;
+  create_filter: Command<Account & { spec: FilterSpec; applyToExisting: boolean }, SavedFilter>;
   replace_filter: Command<
     Account & { filterId: string; spec: FilterSpec; applyToExisting: boolean },
-    FilterEntry
+    SavedFilter
   >;
   delete_filter: Command<Account & { filterId: string }, void>;
   filter_matches: Command<Account & { spec: FilterSpec }, number | null>;
