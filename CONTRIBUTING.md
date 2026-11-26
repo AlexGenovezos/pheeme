@@ -68,9 +68,9 @@ A PR that solves several independent problems must be split, even when each fix 
 underlying problems, not the linked issues.
 
 Include everything that one problem needs: Rust, SQLx migrations and the regenerated `.sqlx/` cache, the
-IPC wrapper in `src/lib/tauri.ts`, frontend, tests and docs. Explain how the pieces relate when it is not
-obvious. An adjacent cleanup, refactor or second fix goes in its own PR. A large diff alone does not show
-that a PR contains unrelated work.
+IPC wrapper in `src/lib/ipc/` (re-exported via `src/lib/tauri.ts`), frontend, tests and docs. Explain how the pieces
+relate when it is not obvious. An adjacent cleanup, refactor or second fix goes in its own PR. A large
+diff alone does not show that a PR contains unrelated work.
 
 Follow the conventions in [CLAUDE.md](CLAUDE.md#key-conventions); for example, mail changes go through the
 outbox, never straight to Gmail. When onboarding guide text changes, update `src/onboarding/steps.ts` and

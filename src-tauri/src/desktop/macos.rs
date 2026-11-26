@@ -86,7 +86,7 @@ pub async fn permission(request: bool) -> anyhow::Result<String> {
     Ok(match rx.await? {
         0 => "notDetermined",
         1 => "denied",
-        2 | 3 | 4 => "granted",
+        2..=4 => "granted",
         _ => {
             anyhow::bail!("Couldn't read notification authorization. Use an installed Pheeme app.")
         }

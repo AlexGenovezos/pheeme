@@ -97,8 +97,10 @@ jobs:
         # Ubuntu runners' resolver intermittently fails on every Ubuntu mirror
         # (2026-11-11), which breaks `playwright install --with-deps`.
         run: sudo resolvectl dns "$(ip route show default | awk '{print $5; exit}')" 1.1.1.1 8.8.8.8
-      - name: Install browser for mod UI proof
+      - name: Install Chromium for browser tests
         run: npx playwright install --with-deps chromium
+      - name: UI score self-test
+        run: node scripts/ui-score/selftest.mjs
       - name: Browser interaction flows
         # Every spec in e2e/ except the memory one (perf.yml runs it as test:memory), so a new
         # spec can't be silently skipped. Its web server runs `vite build` first, which is this
@@ -106,11 +108,11 @@ jobs:
         run: |
           shopt -s extglob
           npx playwright test e2e/!(memory).spec.ts --reporter=list,html
-      - name: Mod UI evidence
+      - name: Browser test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: mod-ui-evidence
+          name: browser-test-results
           path: |
             test-results/
             playwright-report/
@@ -142,9 +144,7 @@ jobs:
       - name: Rust formatting
         working-directory: src-tauri
         run: cargo fmt --check
-      # Linux only: on macOS and Windows clippy compiled the crate a second time (~1 min each).
       - name: Rust clippy
-        if: matrix.os == 'ubuntu-22.04'
         working-directory: src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Rust tests

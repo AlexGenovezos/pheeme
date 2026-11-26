@@ -147,7 +147,7 @@ function main() {
   for (const c of exact) console.error(`duplicated: ${describe(c)}`);
   if (exact.length > 0) {
     console.error(
-      `\n${exact.length} new new block(s) of copied code. Reuse or extract the shared code; if the copy is ` +
+      `\n${exact.length} new block(s) of copied code. Reuse or extract the shared code; if the copy is ` +
         "deliberate, run `npm run dupes:update` and commit .duplication-baseline.json.",
     );
     return 1;

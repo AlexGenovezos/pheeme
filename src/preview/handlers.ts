@@ -11,9 +11,8 @@ export type PartialHandlers = { [K in keyof Commands]?: Handler<K> };
 /** A fake for every command: adding a command to `Commands` fails typecheck until the preview answers it. */
 export type CommandHandlers = { [K in keyof Commands]: Handler<K> };
 
-/** What Tauri's own plugins (dialogs, the updater) and the template's `greet` answer; the app never lists them in `Commands`. */
+/** Handlers for Tauri plugins, which own their commands separately from the app. */
 export interface PluginHandlers {
-  greet: (args: { name?: string }) => string;
   "plugin:dialog|open": () => string[];
   "plugin:dialog|save": () => string;
   "plugin:updater|check": () => null;

@@ -64,7 +64,8 @@ Using Pheeme:
 Building Pheeme:
 
 - [Design](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md): scope, priorities and roadmap
-- [Technical plan](Gmail%20client%20project%20plan.md): the detailed implementation reference
+- [Architecture guide](CLAUDE.md#architecture) for the current implementation
+- [Original Gmail project plan](Gmail%20client%20project%20plan.md) (historical archive)
 - [Performance checks](docs/performance.md): the CI benchmarks, leak checks and nightly memory budgets
 
 ## Develop on macOS

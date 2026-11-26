@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-**Pheeme** — an open-source (MIT), multi-platform Tauri 2 desktop Gmail client with Google Calendar planned post-v1 (React + Rust + SQLite). Users bring their own Google Cloud OAuth client (BYOC), so the app costs nothing to run. Domains: `pheeme.app`, `pheeme.email`. (The bundle identifier is `app.pheeme.desktop`, the crate is `pheeme`, and the GitHub repo is AlexGenovezos/pheeme.)
+**Pheeme** — an open-source (MIT), multi-platform Tauri 2 desktop client for Gmail and Google Calendar (React + Rust + SQLite). Users bring their own Google Cloud OAuth client (BYOC), so the app costs nothing to run. Domains: `pheeme.app`, `pheeme.email`. (The bundle identifier is `app.pheeme.desktop`, the crate is `pheeme`, and the GitHub repo is AlexGenovezos/pheeme.)
 
-**Source of truth:** [docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md) sets scope, priorities and the phase order, and overrides `Gmail client project plan.md` wherever they disagree (see its §9). The plan remains the detailed technical reference.
+The [design](docs/superpowers/specs/2026-10-31-mail-calendar-client-design.md) sets product scope and priorities. The [architecture guide](#architecture) describes the current implementation. The [original Gmail project plan](Gmail%20client%20project%20plan.md) is a historical archive.
 
-**Current state:** Phases 1–11 of design §12 are built: foundation, OAuth + multi-account onboarding, the Gmail API client, the sync engine, the app shell, the mail UI (v0.6), compose (v0.8), search (v0.9), labels (Phase 9: create, edit, delete, colour and show/hide through Gmail's labels API, a nested Labels sidebar section, searchable Label as… (`l`) and Move to… (`v`), coloured chips in the list and conversation), notifications and the tray (Phase 10) and settings (Phase 11, v0.17). Phases 1–11 have passed acceptance (progress per phase: GitHub epic #21); what remains of Phase 12 is cross-platform QA, polish and accessibility. Phase 11 added list density, hiding the reading pane, default reply, confirm before sending, per-account Inbox tabs (mail from a hidden tab shows as Primary), a notification schedule, Clear downloaded mail and reopening the setup guide. v0.9 also includes encrypted Google Cloud client transfer between devices, offline release notes in Settings › About, and default-on persistent diagnostic logs.
+**Current state (v0.34 beta).** Pheeme supports offline-first, multi-account Gmail, Google Calendar and Tasks. Mail integrates with Drive for links and attachments. Calendar can show weather forecasts. A local MCP server connects assistants, and mods add commands and integrations.
 
 ## Commands
 
