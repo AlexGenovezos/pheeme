@@ -1,5 +1,6 @@
 //! Toasts through the WinRT notification API. A conversation's toast carries its thread id as
-//! tag and its account as group, so a new message replaces it and reading it takes it away.
+//! tag and its account as group, so a new message replaces it and reading it takes it away. An
+//! event's reminders share a tag in the event group, so each replaces the one before.
 use super::super::{activate, join_call, NotifyTarget, ThreadTarget};
 use tauri::AppHandle;
 use windows::core::{Interface, HSTRING};
@@ -33,9 +34,15 @@ pub async fn show(
         join.is_some(),
     )))?;
     let toast = ToastNotification::CreateToastNotification(&xml)?;
-    if let NotifyTarget::Thread(thread) = &target {
-        toast.SetTag(&HSTRING::from(&thread.thread_id))?;
-        toast.SetGroup(&HSTRING::from(&thread.account_id))?;
+    match &target {
+        NotifyTarget::Thread(thread) => {
+            toast.SetTag(&HSTRING::from(&thread.thread_id))?;
+            toast.SetGroup(&HSTRING::from(&thread.account_id))?;
+        }
+        NotifyTarget::Event(event) => {
+            toast.SetTag(&HSTRING::from(super::event_tag(event)))?;
+            toast.SetGroup(&HSTRING::from(super::EVENT_GROUP))?;
+        }
     }
     let app = app.clone();
     toast.Activated(&TypedEventHandler::new(
@@ -77,8 +84,8 @@ pub async fn delivered() -> anyhow::Result<Vec<ThreadTarget>> {
     for i in 0..toasts.Size()? {
         let toast = toasts.GetAt(i)?;
         let (tag, group) = (toast.Tag()?, toast.Group()?);
-        // Event reminders carry no tag.
-        if !tag.is_empty() && !group.is_empty() {
+        // Event reminders carry the event group (older ones no tag).
+        if !tag.is_empty() && !group.is_empty() && group.to_string_lossy() != super::EVENT_GROUP {
             threads.push(ThreadTarget {
                 account_id: group.to_string_lossy(),
                 thread_id: tag.to_string_lossy(),
