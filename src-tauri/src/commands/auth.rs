@@ -28,11 +28,11 @@ pub async fn complete_oauth(
     // Signing in again is how an account allows contacts: pick them up straight away.
     let contacts = state.contacts.clone();
     let account_id = account.id.clone();
-    tauri::async_runtime::spawn(async move {
+    tauri::async_runtime::spawn(crate::shutdown::until(async move {
         if let Err(e) = contacts.refresh_google(&account_id).await {
             tracing::warn!(error = %e, "Google Contacts refresh after sign-in failed");
         }
-    });
+    }));
     Ok(account)
 }
 

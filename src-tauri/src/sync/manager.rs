@@ -268,11 +268,10 @@ impl SyncManager {
         lock(&self.forgotten).insert(account_id.to_owned());
     }
 
-    async fn exists(&self, account_id: &str) -> bool {
-        matches!(
-            accounts::get_account(&self.db, account_id).await,
-            Ok(Some(_))
-        )
+    /// Whether the account is still connected. A database error is not a removed account: the
+    /// caller must not forget its state over one.
+    async fn exists(&self, account_id: &str) -> anyhow::Result<bool> {
+        Ok(accounts::get_account(&self.db, account_id).await?.is_some())
     }
 
     async fn live_account(&self, account_id: &str, stop: &Stop) -> Option<Arc<AccountSync>> {
@@ -284,11 +283,17 @@ impl SyncManager {
         if !lock(&self.forgotten).contains(account_id) {
             return Some(self.account(account_id));
         }
-        if stop.until(self.exists(account_id)).await == Some(true) {
-            lock(&self.forgotten).remove(account_id);
-            return Some(self.account(account_id));
+        match stop.until(self.exists(account_id)).await? {
+            Ok(true) => {
+                lock(&self.forgotten).remove(account_id);
+                Some(self.account(account_id))
+            }
+            Ok(false) => None,
+            Err(e) => {
+                tracing::warn!(account = account_id, error = %e, "couldn't check the account; skipping this sync");
+                None
+            }
         }
-        None
     }
 
     /// Serialize queue processing separately from fetching mail. A send whose undo window expires
@@ -338,9 +343,15 @@ impl SyncManager {
             .await
         {
             Some(Ok(Some(account))) => account.history_id.is_none(),
-            Some(_) => {
+            Some(Ok(None)) => {
                 self.forget(account_id);
                 return Ok(());
+            }
+            Some(Err(e)) => {
+                let e = SyncError::Db(e);
+                self.log_failure(account_id, &e, "sync failed");
+                self.report_error(account_id, &e);
+                return Err(e);
             }
             None => return Ok(()),
         };
@@ -427,7 +438,7 @@ impl SyncManager {
                 self.ensure_backfill(account_id, a);
                 Ok(())
             }
-            Err(_) if !self.exists(account_id).await => {
+            Err(_) if matches!(self.exists(account_id).await, Ok(false)) => {
                 self.forget(account_id);
                 Ok(())
             }
@@ -500,7 +511,7 @@ impl SyncManager {
         };
         self.runtime.spawn(async move {
             if stop.until(tokio::time::sleep(delay)).await.is_none()
-                || stop.until(this.exists(&id)).await != Some(true)
+                || !matches!(stop.until(this.exists(&id)).await, Some(Ok(true)))
             {
                 return;
             }
@@ -560,7 +571,8 @@ impl SyncManager {
         self.runtime.spawn(self.shutdown.until(async move {
             let _backfilling = backfilling;
             loop {
-                if !this.exists(&id).await {
+                // A database error pauses it too: the next successful sync starts it again.
+                if !matches!(this.exists(&id).await, Ok(true)) {
                     break;
                 }
                 match engine.backfill_step().await {

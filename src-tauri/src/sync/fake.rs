@@ -1100,18 +1100,21 @@ impl MailApi for FakeGmail {
                     .collect()
             }
             None => {
-                // Grouping only: the fake has no OR, so `(a b) c` means `a b c`. Operator
+                // Grouping only: the fake has no OR, so `((a b) c) d` means `a b c d`. Operator
                 // values like `from:(x)` keep theirs; a group closing after one, as in
                 // `(sale category:promotions)`, doesn't.
                 let q = q
                     .split_whitespace()
-                    .map(|t| match t.strip_prefix('(') {
-                        Some(rest) => rest.strip_suffix(')').unwrap_or(rest),
-                        None if !t.contains(':') => t.strip_suffix(')').unwrap_or(t),
-                        None if t.matches(')').count() > t.matches('(').count() => {
-                            t.strip_suffix(')').unwrap_or(t)
+                    .map(|t| {
+                        let t = t.trim_start_matches('(');
+                        if !t.contains(':') {
+                            return t.trim_end_matches(')');
                         }
-                        None => t,
+                        let mut t = t;
+                        while t.matches(')').count() > t.matches('(').count() {
+                            t = &t[..t.len() - 1];
+                        }
+                        t
                     })
                     .collect::<Vec<_>>()
                     .join(" ");

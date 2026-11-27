@@ -2542,3 +2542,117 @@ fn logged_thread_lists_stay_short() {
     assert!(sample.starts_with("t0,t1,"), "{sample}");
     assert!(sample.ends_with("t9 (+15 more)"), "{sample}");
 }
+
+// ---- races and corrupt rows -----------------------------------------------------------
+
+#[tokio::test]
+async fn a_thread_named_twice_is_queued_once() {
+    let h = harness().await;
+    synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX"])]).await;
+    outbox::enqueue_modify(&h.pool, ACCT, &s(&["t1", "t1"]), &[], &s(&["INBOX"]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(outbox::process(&h.engine, now_ms()).await.unwrap());
+    assert!(server_labels(&h, "m1").is_empty());
+    assert!(ops(&h).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_sweep_of_trash_searches_trash() {
+    let h = harness().await;
+    h.fake
+        .seed(FakeMsg::new("m1", "t1", &["TRASH"]).days_ago(1));
+    outbox::enqueue_sweep(&h.pool, ACCT, &[], &s(&["STARRED"]), &[], "in:trash")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(outbox::process(&h.engine, now_ms()).await.unwrap());
+    assert_eq!(server_labels(&h, "m1"), s(&["STARRED", "TRASH"]));
+}
+
+#[tokio::test]
+async fn a_send_with_no_message_is_dropped_as_failed_and_sync_goes_on() {
+    let h = harness().await;
+    let op = send_op(&h).await;
+    store::set_payload(&h.pool, &op.id, "{}").await.unwrap();
+
+    outbox::process(&h.engine, now_ms()).await.unwrap();
+    assert!(op_status(&h, &op.id).await.is_none());
+    assert!(h.fake.sent().is_empty());
+    assert!(h.events.take().iter().any(|e| matches!(
+        e,
+        SyncEvent::SendStatus { op_id, status, .. } if op_id == &op.id && status == "failed"
+    )));
+}
+
+#[tokio::test]
+async fn resend_leaves_a_send_being_confirmed_alone() {
+    let h = harness().await;
+    let op = send_op(&h).await;
+    let checking = store::OpProgress {
+        status: outbox::CHECKING,
+        attempts: 1,
+        next_attempt_at: 5,
+        checks_done: 1,
+        last_error: None,
+    };
+    store::update_progress(&h.pool, &op.id, &checking, 1)
+        .await
+        .unwrap();
+    assert!(!outbox::resend(&h.pool, &op.id).await.unwrap());
+    let left = store::get(&h.pool, &op.id).await.unwrap().unwrap();
+    assert_eq!(
+        (left.status.as_str(), left.next_attempt_at),
+        (outbox::CHECKING, 5)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_label_deleted_while_a_sync_reads_gmail_does_not_come_back() {
+    let h = harness().await;
+    h.fake.add_user_label("Label_1", "Work", None);
+    synced_inbox(&h, vec![FakeMsg::new("m1", "t1", &["INBOX", "Label_1"])]).await;
+    // An older message not cached yet (outside the Inbox), so history makes sync fetch it.
+    h.fake
+        .seed(FakeMsg::new("m4", "t4", &["CATEGORY_UPDATES"]).days_ago(1));
+    // Elsewhere: m1 is starred, m3 arrives with the label, m4 gets starred.
+    h.fake.relabel("m1", &["STARRED"], &[]);
+    h.fake.add(FakeMsg::new("m3", "t3", &["INBOX", "Label_1"]));
+    h.fake.relabel("m4", &["STARRED"], &[]);
+    // m3 is read from Gmail with the label; then, while m4 is read, the user deletes it.
+    let (fake, pool) = (h.fake.clone(), h.pool.clone());
+    h.fake.before_next_batch_get(move || {
+        fake.clone().before_next_batch_get(move || {
+            let handle = tokio::runtime::Handle::current();
+            std::thread::spawn(move || {
+                handle.block_on(async {
+                    use crate::sync::api::MailApi;
+                    fake.delete_label("Label_1").await.unwrap();
+                    let mut tx = crate::db::begin_write(&pool).await.unwrap();
+                    let touched = labels::purge_labels(&mut tx, ACCT, &s(&["Label_1"]))
+                        .await
+                        .unwrap();
+                    threads::recompute_threads(&mut tx, ACCT, &touched)
+                        .await
+                        .unwrap();
+                    tx.commit().await.unwrap();
+                })
+            })
+            .join()
+            .unwrap();
+        });
+    });
+
+    h.engine.run_incremental_sync().await.unwrap();
+
+    assert_eq!(
+        cached_labels(&h.pool, "m1").await,
+        Some(s(&["INBOX", "STARRED"]))
+    );
+    assert_eq!(cached_labels(&h.pool, "m3").await, Some(s(&["INBOX"])));
+    assert_eq!(
+        cached_labels(&h.pool, "m4").await,
+        Some(s(&["CATEGORY_UPDATES", "STARRED"]))
+    );
+}

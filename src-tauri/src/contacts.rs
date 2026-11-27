@@ -186,9 +186,16 @@ impl ContactService {
         Ok(candidates)
     }
 
-    /// Drop an account's loaded contacts (it was removed, or its Google Contacts changed).
-    pub fn forget(&self, account_id: &str) {
+    /// Drop an account's loaded contacts, so the next suggestions read them again (its Google
+    /// Contacts changed).
+    pub fn invalidate_cache(&self, account_id: &str) {
         lock(&self.loaded).remove(account_id);
+    }
+
+    /// Drop everything kept for a removed account: its loaded contacts and its poll state.
+    pub fn forget(&self, account_id: &str) {
+        self.invalidate_cache(account_id);
+        self.poller.forget(account_id);
     }
 
     pub async fn google_status(&self, account_id: &str) -> Result<GoogleContactsDto, MailError> {
@@ -266,7 +273,7 @@ impl Adapter for ContactService {
             tx.commit().await.map_err(anyhow::Error::from)
         };
         replaced.await.map_err(SyncFailure::Cache)?;
-        self.forget(account_id);
+        self.invalidate_cache(account_id);
         match (saved, other) {
             (Ok(s), Ok(o)) => {
                 info!(

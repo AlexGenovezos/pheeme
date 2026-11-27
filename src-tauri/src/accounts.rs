@@ -405,9 +405,13 @@ impl AccountService {
         }
 
         let account = self
-            .save_account(&profile, &pending.creds, refresh_token)
+            .save_account(
+                &profile,
+                &pending.creds,
+                refresh_token,
+                (tokens.access_token, tokens.expires_in),
+            )
             .await?;
-        self.cache_token(&account.id, tokens.access_token, tokens.expires_in);
         Ok(account.into())
     }
 
@@ -451,18 +455,36 @@ impl AccountService {
     }
 
     /// Signing in to an account that's already connected updates it in place, keeping
-    /// its id (and cached mail); it may switch to a different OAuth client.
+    /// its id (and cached mail); it may switch to a different OAuth client. `access` is the
+    /// sign-in's access token and its lifetime in seconds, cached once the account is saved.
     async fn save_account(
         &self,
         profile: &auth::UserInfo,
         creds: &ClientCredentials,
         refresh_token: String,
+        access: (String, u64),
     ) -> Result<DbAccount, AccountError> {
         let existing = db_accounts::get_account_by_email(&self.db, &profile.email).await?;
         let id = existing
             .as_ref()
             .map(|account| account.id.clone())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        // A refresh running for the account must not write its older secrets or token over
+        // the new sign-in's.
+        let gate = existing.as_ref().map(|_| self.refresh_gate(&id));
+        let _refreshing = match &gate {
+            Some(gate) => {
+                let held = gate.lock().await;
+                // Removed while this waited: no secrets may be left behind for it.
+                if db_accounts::get_account(&self.db, &id).await?.is_none() {
+                    drop(held);
+                    self.drop_refresh_gate(&id, gate);
+                    return Err(AccountError::NotFound);
+                }
+                Some(held)
+            }
+            None => None,
+        };
 
         let secrets = AccountSecrets {
             client_secret: creds.client_secret.clone(),
@@ -514,7 +536,9 @@ impl AccountService {
             }
         };
         saved?;
-        self.account(&id).await
+        let account = self.account(&id).await?;
+        self.cache_token(&id, access.0, access.1);
+        Ok(account)
     }
 
     pub async fn list_accounts(&self) -> Result<Vec<AccountInfo>, AccountError> {
@@ -554,11 +578,33 @@ impl AccountService {
     /// column, so calls that named no account stay). Attachment files on disk are the mail
     /// service's ([`crate::mail::MailService::forget_account`]).
     pub async fn remove_account(&self, account_id: &str) -> Result<(), AccountError> {
+        // Under the refresh gate, so a refresh running now can't write the account's secrets
+        // or cache its token again once it's gone.
+        let gate = self.refresh_gate(account_id);
+        let removed = {
+            let _refreshing = gate.lock().await;
+            self.remove_locked(account_id).await
+        };
+        if matches!(removed, Ok(()) | Err(AccountError::NotFound)) {
+            self.drop_refresh_gate(account_id, &gate);
+        }
+        removed
+    }
+
+    async fn remove_locked(&self, account_id: &str) -> Result<(), AccountError> {
         let account = self.account(account_id).await?;
         let id = account_id.to_owned();
-        if let Some(secrets) = self.keychain(move |store| store.get(&id)).await? {
-            if let Some(error) = self.revoke_within_timeout(&secrets.refresh_token).await {
-                tracing::warn!("couldn't revoke Google access for {account_id}: {error}");
+        // Revoking is best effort: secrets that can't be read (a corrupt old keychain item)
+        // must not keep the account from being removed.
+        match self.keychain(move |store| store.get(&id)).await {
+            Ok(Some(secrets)) => {
+                if let Some(error) = self.revoke_within_timeout(&secrets.refresh_token).await {
+                    tracing::warn!("couldn't revoke Google access for {account_id}: {error}");
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!("couldn't read {account_id}'s secrets to revoke them: {error}");
             }
         }
         let id = account_id.to_owned();
@@ -573,8 +619,25 @@ impl AccountService {
             .await?;
         tx.commit().await.map_err(anyhow::Error::new)?;
         lock(&self.tokens).remove(account_id);
-        lock(&self.refreshing).remove(account_id);
         Ok(())
+    }
+
+    /// The account's refresh gate: token refreshes, saving a new sign-in and removal take it,
+    /// so none of them writes over another.
+    fn refresh_gate(&self, account_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        Arc::clone(
+            lock(&self.refreshing)
+                .entry(account_id.to_owned())
+                .or_default(),
+        )
+    }
+
+    /// Forget the gate of an account that is gone, unless another took its place meanwhile.
+    fn drop_refresh_gate(&self, account_id: &str, gate: &Arc<tokio::sync::Mutex<()>>) {
+        let mut gates = lock(&self.refreshing);
+        if gates.get(account_id).is_some_and(|g| Arc::ptr_eq(g, gate)) {
+            gates.remove(account_id);
+        }
     }
 
     fn cache_token(&self, account_id: &str, token: String, expires_in: u64) {
@@ -611,12 +674,24 @@ impl AccountService {
         account_id: &str,
         rejected: Option<&str>,
     ) -> Result<String, AccountError> {
-        let gate = Arc::clone(
-            lock(&self.refreshing)
-                .entry(account_id.to_owned())
-                .or_default(),
-        );
-        let _refreshing = gate.lock().await;
+        let gate = self.refresh_gate(account_id);
+        let refreshed = {
+            let _refreshing = gate.lock().await;
+            self.refresh_locked(account_id, rejected).await
+        };
+        if matches!(refreshed, Err(AccountError::NotFound)) {
+            self.drop_refresh_gate(account_id, &gate);
+        }
+        refreshed
+    }
+
+    /// [`Self::refresh_after`] under the account's gate. Removal takes the gate too, so the
+    /// account checked here still exists when the rotated secrets and token are written.
+    async fn refresh_locked(
+        &self,
+        account_id: &str,
+        rejected: Option<&str>,
+    ) -> Result<String, AccountError> {
         // A late 401 can arrive after a different request already replaced its token.
         if let Some(token) = self
             .cached_token(account_id)
@@ -713,6 +788,11 @@ mod tests {
     }
 
     async fn harness() -> Harness {
+        harness_with(|secrets| secrets).await
+    }
+
+    /// A harness whose service reads and writes the keychain through `store(secrets)`.
+    async fn harness_with(store: impl FnOnce(Arc<MemoryStore>) -> Arc<dyn SecretStore>) -> Harness {
         let db = TestDb::new().await;
         let server = MockServer::start().await;
         let secrets = Arc::new(MemoryStore::new());
@@ -724,7 +804,7 @@ mod tests {
         };
         let service = AccountService::with_endpoints(
             db.pool.clone(),
-            secrets.clone(),
+            store(secrets.clone()),
             endpoints,
             Duration::from_secs(10),
         );
@@ -1050,6 +1130,77 @@ mod tests {
         );
     }
 
+    /// A keychain whose items can be written and deleted but not read (a corrupt old item).
+    struct UnreadableSecrets(Arc<MemoryStore>);
+
+    impl SecretStore for UnreadableSecrets {
+        fn put(&self, account_id: &str, secrets: &AccountSecrets) -> Result<(), SecretsError> {
+            self.0.put(account_id, secrets)
+        }
+        fn get(&self, _account_id: &str) -> Result<Option<AccountSecrets>, SecretsError> {
+            Err(SecretsError::Other("corrupt item".into()))
+        }
+        fn delete(&self, account_id: &str) -> Result<(), SecretsError> {
+            self.0.delete(account_id)
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_account_survives_unreadable_secrets() {
+        let h = harness_with(|secrets| Arc::new(UnreadableSecrets(secrets))).await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+        h.service.remove_account(&account.id).await.unwrap();
+        assert!(h.service.list_accounts().await.unwrap().is_empty());
+        assert_eq!(h.secrets.get(&account.id).unwrap(), None);
+    }
+
+    /// A token exchange that takes 200 ms and rotates the refresh token to `refresh-2`.
+    fn slow_rotation() -> Mock {
+        Mock::given(path("/token")).respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({
+                    "access_token": "access-2", "expires_in": 3600, "refresh_token": "refresh-2"
+                }))
+                .set_delay(Duration::from_millis(200)),
+        )
+    }
+
+    #[tokio::test]
+    async fn removing_during_a_refresh_waits_and_leaves_no_secrets_or_token() {
+        let h = harness().await;
+        mock_google(&h.server, "me@example.com", "refresh-1").await;
+        let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
+        h.server.reset().await;
+        slow_rotation().mount(&h.server).await;
+        Mock::given(path("/revoke"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&h.server)
+            .await;
+
+        let (refreshed, removed) = tokio::join!(
+            h.service.refresh_access_token(&account.id),
+            h.service.remove_account(&account.id),
+        );
+        assert_eq!(refreshed.unwrap(), "access-2");
+        removed.unwrap();
+        assert_eq!(
+            h.secrets.get(&account.id).unwrap(),
+            None,
+            "no rotated secrets left"
+        );
+        assert!(lock(&h.service.tokens).is_empty());
+        assert!(lock(&h.service.refreshing).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_refresh_for_an_unknown_account_keeps_no_gate() {
+        let h = harness().await;
+        let error = h.service.access_token("missing").await.unwrap_err();
+        assert_eq!(error.code(), "not_found");
+        assert!(lock(&h.service.refreshing).is_empty());
+    }
+
     #[tokio::test]
     async fn remove_account_survives_failed_revoke() {
         let h = harness().await;
@@ -1225,17 +1376,7 @@ mod tests {
         let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
 
         h.server.reset().await;
-        Mock::given(path("/token"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({
-                        "access_token": "access-2", "expires_in": 3600, "refresh_token": "refresh-2"
-                    }))
-                    .set_delay(Duration::from_millis(200)),
-            )
-            .expect(1)
-            .mount(&h.server)
-            .await;
+        slow_rotation().expect(1).mount(&h.server).await;
         // Two requests got a 401 with the same token, then a third 401 came back late.
         let (a, b) = tokio::join!(
             h.service.refresh_after(&account.id, Some("access-1")),

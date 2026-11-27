@@ -265,6 +265,16 @@ impl Payload {
         }
     }
 
+    /// Drop repeated threads from a label or trash change, keeping the first of each.
+    fn dedup_threads(&mut self) {
+        if let Payload::Modify(LabelChange { thread_ids, .. })
+        | Payload::Trash(TrashThreads { thread_ids }) = self
+        {
+            let mut seen = BTreeSet::new();
+            thread_ids.retain(|t| seen.insert(t.clone()));
+        }
+    }
+
     /// Take threads Gmail now has out of a label or trash change.
     fn drop_threads(&mut self, done: &[String]) {
         match self {
@@ -386,8 +396,10 @@ pub async fn enqueue_trash(
 async fn enqueue(
     pool: &SqlitePool,
     account_id: &str,
-    payload: Payload,
+    mut payload: Payload,
 ) -> Result<Option<EnqueueResult>, SyncError> {
+    // A thread named twice would be recorded twice, which `outbox_messages` refuses.
+    payload.dedup_threads();
     let kind = payload.kind().as_str();
     let mut tx = db::begin_write(pool).await?;
     let op_id = uuid::Uuid::new_v4().to_string();
@@ -632,21 +644,8 @@ pub async fn cancel_send(pool: &SqlitePool, op_id: &str) -> Result<bool, SyncErr
 /// "Send again" after the user confirmed: only for a send that's unconfirmed or failed.
 /// It keeps its Message-ID.
 pub async fn resend(pool: &SqlitePool, op_id: &str) -> Result<bool, SyncError> {
-    let Some(op) = store::get(pool, op_id).await? else {
-        return Ok(false);
-    };
-    if !op.is_unsent_send() {
-        return Ok(false);
-    }
-    let progress = OpProgress {
-        status: OpStatus::Pending.as_str(),
-        attempts: op.attempts,
-        next_attempt_at: 0,
-        checks_done: 0,
-        last_error: None,
-    };
-    store::update_progress(pool, op_id, &progress, now_ms()).await?;
-    Ok(true)
+    // One conditional update, so a send confirmed (or claimed) meanwhile is left alone.
+    Ok(store::resend(pool, op_id, now_ms()).await?)
 }
 
 /// A send that didn't go through and is still in the outbox, with enough to show it.
@@ -927,6 +926,12 @@ async fn readable_payload(engine: &SyncEngine, op: &DbOp) -> Result<Option<Paylo
         Ok(payload) => return Ok(Some(payload)),
         Err(e) => e,
     };
+    drop_unreadable(engine, op, &error.to_string()).await?;
+    Ok(None)
+}
+
+/// Drop an op that can't be carried out as stored (see [`readable_payload`]).
+async fn drop_unreadable(engine: &SyncEngine, op: &DbOp, error: &str) -> Result<(), SyncError> {
     tracing::error!(account = %engine.account_id(), op = %op.id, kind = %op.kind, error = %error, "dropping a queued change that can't be read");
     if op.op_kind() == Some(OpKind::Send) {
         // Nothing to put back: a send changes no labels.
@@ -939,9 +944,9 @@ async fn readable_payload(engine: &SyncEngine, op: &DbOp) -> Result<Option<Paylo
         }
     } else {
         // The same path as a change Gmail refuses for good: labels go back and the app is told.
-        rollback(engine, op, &GmailError::Decode(error.to_string())).await?;
+        rollback(engine, op, &GmailError::Decode(error.to_owned())).await?;
     }
-    Ok(None)
+    Ok(())
 }
 
 enum Step {
@@ -1154,13 +1159,15 @@ async fn swept_ids(
     q: &str,
     before_ms: i64,
 ) -> Result<Vec<String>, GmailError> {
-    let q = format!("{q} before:{}", before_ms.div_euclid(1000) + 1);
+    // In brackets, so `before:` narrows the whole search and not only its last `OR` branch.
+    let (q, spam_trash) = crate::search::gmail_query(q);
+    let q = format!("({q}) before:{}", before_ms.div_euclid(1000) + 1);
     let mut ids = Vec::new();
     let mut page_token: Option<String> = None;
     loop {
         let page = engine
             .api()
-            .search_messages(&q, false, page_token.as_deref(), SWEEP_PAGE)
+            .search_messages(&q, spam_trash, page_token.as_deref(), SWEEP_PAGE)
             .await?;
         ids.extend(page.messages.into_iter().map(|m| m.id));
         match page.next_page_token {
@@ -1276,13 +1283,18 @@ fn send_status(engine: &SyncEngine, op: &DbOp, status: &str) {
 
 async fn send(engine: &SyncEngine, op: &DbOp, now: i64, stop: &Stop) -> Result<Step, SyncError> {
     let payload = SendPayload::of(op)?;
-    let raw = payload
-        .raw
-        .as_deref()
-        .ok_or_else(|| SyncError::Db(anyhow::anyhow!("send {} has no message", op.id)))
-        .and_then(|r| {
-            decode_base64url(r).map_err(|e| SyncError::Db(anyhow::anyhow!("send {}: {e}", op.id)))
-        })?;
+    let raw = match payload.raw.as_deref().map(decode_base64url) {
+        Some(Ok(raw)) => raw,
+        // A corrupt row: dropped like one that can't be read, so it never wedges the queue.
+        Some(Err(e)) => {
+            drop_unreadable(engine, op, &format!("send has an unreadable message: {e}")).await?;
+            return Ok(Step::Continue);
+        }
+        None => {
+            drop_unreadable(engine, op, "send has no message").await?;
+            return Ok(Step::Continue);
+        }
+    };
     // Recorded before the request leaves: if the app dies mid-send, it's confirmed through
     // Sent on the next run instead of being sent again. Claimed atomically, so a send
     // cancelled (undo) meanwhile never goes out.
@@ -1447,7 +1459,7 @@ async fn check_send(
                     checks_done: op.checks_done,
                     last_error: Some(&e.to_string()),
                 };
-                store::update_progress(engine.db(), &op.id, &retry, now).await?;
+                store::update_progress_if(engine.db(), &op.id, CHECKING, &retry, now).await?;
                 return Ok(false);
             }
         }
@@ -1472,8 +1484,9 @@ async fn check_send(
         checks_done,
         last_error: None,
     };
-    store::update_progress(engine.db(), &op.id, &progress, now).await?;
-    if status == OpStatus::Unconfirmed {
+    // Sync may have confirmed it meanwhile (`match_sends`): then it is no longer `checking`.
+    let updated = store::update_progress_if(engine.db(), &op.id, CHECKING, &progress, now).await?;
+    if updated && status == OpStatus::Unconfirmed {
         send_status(engine, op, status.as_str());
     }
     Ok(false)

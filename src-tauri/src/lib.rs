@@ -401,10 +401,16 @@ pub fn run() {
                     .app_handle()
                     .try_state::<AppState>()
                     .map(|state| state.mail.clone());
+                // Tracked, so quitting doesn't close the database under it: shutdown answers
+                // "not found" instead of waiting for it.
+                let stop = shutdown::APP.track();
                 tauri::async_runtime::spawn(async move {
-                    let served = match mail {
-                        Some(mail) => mail.serve_inline_image(&uri).await,
-                        None => mail::InlineResponse::not_found(),
+                    let served = match (mail, stop) {
+                        (Some(mail), Some(stop)) => stop
+                            .until(mail.serve_inline_image(&uri))
+                            .await
+                            .unwrap_or_else(mail::InlineResponse::not_found),
+                        _ => mail::InlineResponse::not_found(),
                     };
                     responder.respond(attachment_response(served));
                 });
