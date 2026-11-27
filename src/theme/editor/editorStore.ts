@@ -251,8 +251,7 @@ export function saveThemeEditor(): boolean {
   // A new theme never replaces another: its name (and so its id) is made unique.
   const name = editingId ? typed : uniqueName(typed, null);
   const file: ThemeFile = { ...draft, id: editingId ?? themeIdFromName(name), name };
-  // Install first: if storage refuses it, the preview stays while the editor stays open.
+  // If storage refuses it, this throws before closing: the editor and its preview stay.
   useThemeStore.getState().installThemes([{ file, slot }]);
-  previewTheme(null);
   return closeThemeEditor();
 }
