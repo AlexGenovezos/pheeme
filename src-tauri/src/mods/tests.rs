@@ -431,3 +431,61 @@ async fn disable_cancels_browser_login_and_no_credential_is_saved() {
     assert!(login.await.unwrap().is_err());
     assert!(keychain.0.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn a_failed_upgrade_keeps_the_old_versions_credentials() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    counter(&source, "login.test");
+    let connection = |origin: &str| {
+        json!([{
+            "id":"test", "name":"Test", "authorizationUrl":"https://8.8.8.8/authorize", "tokenUrl":"https://8.8.8.8/token", "scopes":["read"], "apiOrigins":[origin]
+        }])
+    };
+    let write_manifest = |origin: &str| {
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(source.join("manifest.json")).unwrap())
+                .unwrap();
+        manifest["permissions"]["connections"] = connection(origin);
+        fs::write(source.join("manifest.json"), manifest.to_string()).unwrap();
+    };
+    write_manifest("https://8.8.8.8");
+    let keychain = Arc::new(MemoryKeychain::default());
+    let installed = root.path().join("installed");
+    let mods = ModService::open(
+        installed.clone(),
+        keychain.clone(),
+        false,
+        Arc::new(|| {}),
+        Arc::new(|_| Ok(())),
+    )
+    .await
+    .unwrap();
+    mods.install(&mods.prepare(&source).unwrap().ticket)
+        .await
+        .unwrap();
+    let tokens = oauth::Tokens {
+        access_token: "access-secret".into(),
+        refresh_token: None,
+        expires_at: i64::MAX,
+        client_id: "client".into(),
+    };
+    oauth::commit(keychain.as_ref(), "login.test", "test", &tokens).unwrap();
+
+    // The new version sends the connection elsewhere; its package vanishes before it is moved.
+    write_manifest("https://1.1.1.1");
+    let update = mods.prepare(&source).unwrap();
+    fs::remove_dir_all(installed.join("staging").join(&update.ticket)).unwrap();
+    assert!(mods.install(&update.ticket).await.is_err());
+    assert!(oauth::read(keychain.as_ref(), "login.test", "test")
+        .unwrap()
+        .is_some());
+
+    // Once an upgrade goes through, the old provider's credentials are gone.
+    mods.install(&mods.prepare(&source).unwrap().ticket)
+        .await
+        .unwrap();
+    assert!(oauth::read(keychain.as_ref(), "login.test", "test")
+        .unwrap()
+        .is_none());
+}

@@ -160,22 +160,26 @@ fn thread_query(args: &ThreadsArg) -> Result<Option<&str>, ApiError> {
     if args.dry_run && query.is_none() {
         return Err(ApiError::Invalid("dry_run goes with query.".into()));
     }
-    // Gmail's side of a search change leaves Spam and Trash out, so a search into them would
-    // change the cached matches and miss the rest.
-    // Both readings count: Gmail's (`in:anywhere`...) and the local search's, which also
-    // takes operators like `+in:trash`.
-    let reaches_spam_trash = |q: &str| {
-        crate::search::gmail_query(q).1
-            || crate::search::parse(q, crate::sync::engine::now_ms())
-                .is_some_and(|l| l.include_spam_trash)
-    };
     if query.is_some_and(reaches_spam_trash) {
-        return Err(ApiError::Invalid(
-            "A query can't reach Spam or Trash: list those conversations and give thread_ids."
-                .into(),
-        ));
+        return Err(spam_trash_query());
     }
     Ok(query)
+}
+
+/// Whether a search reaches Spam or Trash. Gmail's side of a search change leaves them out,
+/// so a search into them would change the cached matches and miss the rest. Both readings
+/// count: Gmail's (`in:anywhere`...) and the local search's, which also takes operators like
+/// `+in:trash`.
+fn reaches_spam_trash(query: &str) -> bool {
+    crate::search::gmail_query(query).1
+        || crate::search::parse(query, crate::sync::engine::now_ms())
+            .is_some_and(|l| l.include_spam_trash)
+}
+
+fn spam_trash_query() -> ApiError {
+    ApiError::Invalid(
+        "A query can't reach Spam or Trash: list those conversations and give thread_ids.".into(),
+    )
 }
 
 /// Trash and Move to inbox change Trash, which a search can't safely sweep: ids only.
@@ -260,6 +264,9 @@ async fn change_labels(api: &LocalApi, args: ChangeLabels) -> Result<Value, ApiE
     if query.is_some() != args.thread_ids.is_empty() {
         return Err(ApiError::Invalid("Give either thread_ids or query.".into()));
     }
+    if query.is_some_and(reaches_spam_trash) {
+        return Err(spam_trash_query());
+    }
     let (account, found, missing) = match query {
         Some(_) => (
             resolve_account(api, args.account.as_deref()).await?,
@@ -277,8 +284,14 @@ async fn change_labels(api: &LocalApi, args: ChangeLabels) -> Result<Value, ApiE
     };
     let (add, remove) = (ids(&args.add)?, ids(&args.remove)?);
     if let Some(query) = query {
+        // Gmail reads the search as the local search would (`is:unread`, dates, …).
         api.mail
-            .modify_matching(&account.id, query, &add, &remove)
+            .modify_matching(
+                &account.id,
+                &crate::search::gmail_query(query).0,
+                &add,
+                &remove,
+            )
             .await?;
         return Ok(json!({
             "account": account.email,

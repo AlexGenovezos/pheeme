@@ -10,7 +10,11 @@ use crate::search;
 use crate::sync::engine::now_ms;
 use crate::sync::outbox;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+/// The most conversations [`MailService::every_match`] gathers, and the most pages it reads.
+pub(super) const MAX_MATCHES: usize = 10_000;
+const MAX_MATCH_PAGES: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -155,7 +159,8 @@ impl MailService {
     }
 
     /// Every conversation Gmail's search finds, downloaded or not, page by page (caching what it
-    /// finds).
+    /// finds). Past [`MAX_MATCHES`] conversations or [`MAX_MATCH_PAGES`] pages it fails rather
+    /// than answer with only some of them.
     pub async fn every_match(
         &self,
         account_id: &str,
@@ -163,8 +168,9 @@ impl MailService {
     ) -> Result<Vec<String>, MailError> {
         let account = [account_id.to_owned()];
         let mut ids = Vec::new();
+        let mut seen = HashSet::new();
         let mut tokens = None;
-        loop {
+        for _ in 0..MAX_MATCH_PAGES {
             let page = self.search_gmail(&account, query, tokens).await?;
             if !page.failed.is_empty() {
                 return Err(MailError::Invalid(
@@ -172,15 +178,22 @@ impl MailService {
                 ));
             }
             for t in page.threads {
-                if !ids.contains(&t.id) {
+                if seen.insert(t.id.clone()) {
                     ids.push(t.id);
                 }
+            }
+            if ids.len() > MAX_MATCHES {
+                break;
             }
             if page.next.is_empty() {
                 return Ok(ids);
             }
             tokens = Some(page.next);
         }
+        Err(MailError::Invalid(format!(
+            "Gmail's search finds more than {MAX_MATCHES} conversations, so nothing was changed. \
+             Narrow the search and try again."
+        )))
     }
 
     /// Local search over cached mail, newest first, keyset-paged like

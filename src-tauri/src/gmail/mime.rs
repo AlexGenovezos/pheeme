@@ -304,18 +304,32 @@ fn classify(p: &PartInfo) -> PartKind {
     }
 }
 
-fn clean_content_id(raw: &str) -> Option<String> {
-    let id = raw
-        .trim()
-        .trim_start_matches('<')
-        .trim_end_matches('>')
-        .trim();
-    (!id.is_empty()).then(|| id.to_owned())
+/// A `Content-ID` without its angle brackets, or `None` unless what's inside is printable
+/// ASCII with no space, bracket or line break: it goes back into the headers of replies and
+/// forwards, where a CR or LF would start a header of the sender's choosing.
+pub(crate) fn clean_content_id(raw: &str) -> Option<String> {
+    let id = raw.trim();
+    let id = id.strip_prefix('<').unwrap_or(id);
+    let id = id.strip_suffix('>').unwrap_or(id);
+    let valid = !id.is_empty()
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_graphic() && b != b'<' && b != b'>');
+    valid.then(|| id.to_owned())
+}
+
+/// Whether parsing reads a `format=full` part's children: only a multipart's. An attached
+/// `message/rfc822` that Gmail expanded is one attachment, its parts unread, so
+/// `GmailClient::fill_external_bodies` must not fetch their bodies either.
+pub(crate) fn is_multipart(part: &MessagePart) -> bool {
+    part.mime_type
+        .to_ascii_lowercase()
+        .starts_with("multipart/")
 }
 
 fn walk_payload(part: &MessagePart, out: &mut Body) -> Result<(), GmailError> {
     let mime = part.mime_type.to_ascii_lowercase();
-    if mime.starts_with("multipart/") {
+    if is_multipart(part) {
         for child in &part.parts {
             walk_payload(child, out)?;
         }
@@ -650,6 +664,30 @@ mod tests {
         );
         assert_eq!(list[0].name.as_deref(), Some("Doe, Jane"));
         assert!(parse_addresses("To", "undisclosed-recipients:;").is_empty());
+    }
+
+    #[test]
+    fn content_ids_with_spaces_or_line_breaks_are_dropped() {
+        assert_eq!(clean_content_id(" <logo@x> ").as_deref(), Some("logo@x"));
+        assert_eq!(clean_content_id("img1").as_deref(), Some("img1"));
+        for bad in ["<>", "a b", "x\r\nX-Evil: 1", "<a<b>", "caf\u{e9}"] {
+            assert_eq!(clean_content_id(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn an_expanded_attached_message_is_not_walked_into() {
+        let part = |mime: &str, parts: Vec<MessagePart>| -> MessagePart {
+            serde_json::from_value(serde_json::json!({ "mimeType": mime, "parts": parts })).unwrap()
+        };
+        let inner = part("text/plain", vec![]);
+        let forwarded = part("message/rfc822", vec![inner.clone()]);
+        assert!(is_multipart(&part(
+            "multipart/MIXED",
+            vec![forwarded.clone()]
+        )));
+        assert!(!is_multipart(&forwarded));
+        assert!(!is_multipart(&inner));
     }
 
     #[test]

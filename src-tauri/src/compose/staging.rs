@@ -3,6 +3,7 @@
 //! downloading a forwarded attachment again. Handles are random ids, never paths.
 
 use super::{StagedAttachment, MAX_ATTACHMENT_BYTES};
+use crate::gmail::mime::clean_content_id;
 use crate::mail::{safe_file_name, MailError};
 use crate::storage::{EncryptedFiles, StorageKey};
 use std::path::{Path, PathBuf};
@@ -135,7 +136,7 @@ impl Staging {
             filename: safe_file_name(Some(filename)),
             mime_type: mime_type.to_owned(),
             size: bytes.len() as u64,
-            content_id,
+            content_id: content_id.as_deref().and_then(clean_content_id),
         })
     }
 

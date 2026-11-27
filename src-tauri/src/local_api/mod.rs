@@ -193,9 +193,25 @@ struct RateLimiter {
     calls: std::sync::Mutex<
         std::collections::HashMap<(String, bool), std::collections::VecDeque<i64>>,
     >,
+    /// When each client's last refusal went into the activity log.
+    refusals_logged: std::sync::Mutex<std::collections::HashMap<(String, bool), i64>>,
 }
 
 impl RateLimiter {
+    /// Whether a refusal at `now` goes into the activity log: one per client and kind a
+    /// window, so a client hammering past its limit can't push older calls out of the log.
+    fn log_refusal(&self, client_id: &str, change: bool, now: i64) -> bool {
+        let mut logged = crate::lock::lock(&self.refusals_logged);
+        let last = logged
+            .entry((client_id.to_owned(), change))
+            .or_insert(i64::MIN);
+        if now.saturating_sub(*last) < LIMIT_WINDOW_MS {
+            return false;
+        }
+        *last = now;
+        true
+    }
+
     /// Count a call at `now`, or refuse it if the client already made `max` in the window.
     fn take(&self, client_id: &str, change: bool, max: usize, now: i64) -> Result<(), Limited> {
         let mut calls = crate::lock::lock(&self.calls);
@@ -388,20 +404,35 @@ impl LocalApi {
             .as_ref()
             .map(|r| r.summary())
             .unwrap_or_else(|_| String::new());
+        // Every call counts against a limit before anything else (a malformed or refused one as
+        // well), so none can be repeated fast enough to flood the activity log.
         let result = match parsed {
-            Ok(request) => match request.permission() {
-                Some(p) if !self.allows(p).await? => Err(ApiError::NotAllowed(p)),
-                permission => match self.admit(caller, permission.is_some()) {
+            Ok(request) => {
+                let permission = request.permission();
+                match self.admit(caller, permission.is_some()) {
                     Err(e) => Err(e),
-                    Ok(()) => {
-                        let run =
-                            gmail::usage_source(gmail::UsageSource::Assistants, self.run(request));
-                        gmail::user_action(run).await
-                    }
-                },
-            },
-            Err(e) => Err(e),
+                    Ok(()) => match permission {
+                        Some(p) if !self.allows(p).await? => Err(ApiError::NotAllowed(p)),
+                        _ => {
+                            let run = gmail::usage_source(
+                                gmail::UsageSource::Assistants,
+                                self.run(request),
+                            );
+                            gmail::user_action(run).await
+                        }
+                    },
+                }
+            }
+            Err(e) => self.admit(caller, false).and(Err(e)),
         };
+        if let Err(ApiError::RateLimited(limited)) = &result {
+            if !self
+                .limiter
+                .log_refusal(&caller.client_id, limited.change, now_ms())
+            {
+                return result;
+            }
+        }
         let error = result.as_ref().err().map(|e| e.to_string());
         let returned = result.as_ref().ok().map(|value| audit_result(tool, value));
         let at = now_ms();

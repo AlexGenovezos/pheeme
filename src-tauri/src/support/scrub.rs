@@ -24,11 +24,30 @@ static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 
-/// `text` with email addresses other than `own_addresses` replaced by `<email>`, the query
+/// Secrets that must never leave the machine: MCP client tokens, transfer invitations (they
+/// carry the key), bearer credentials and Google OAuth access tokens, each with what it was.
+static SECRETS: LazyLock<[(Regex, &str); 4]> = LazyLock::new(|| {
+    [
+        (r"pheeme_[A-Za-z0-9_-]{16,}", "pheeme_<redacted>"),
+        (
+            r#"pheeme-transfer-v\d+:[^\s"'<>]+"#,
+            "pheeme-transfer-<redacted>",
+        ),
+        (r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+", "Bearer <redacted>"),
+        (r"ya29\.[A-Za-z0-9._-]+", "ya29.<redacted>"),
+    ]
+    .map(|(pattern, with)| (Regex::new(pattern).unwrap(), with))
+});
+
+/// `text` with secrets (see [`SECRETS`]) redacted, email addresses other than `own_addresses` replaced by `<email>`, the query
 /// strings of http(s) URLs by `?<redacted>`, `q=` values by `q=<redacted>`, Gmail's error
 /// text by `<redacted>`, and the `home` directory prefix by `~`.
 pub fn scrub(text: &str, own_addresses: &[String], home: Option<&Path>) -> String {
-    let text = URL_QUERY.replace_all(text, "$1?<redacted>");
+    let mut text = text.to_owned();
+    for (secret, with) in SECRETS.iter() {
+        text = secret.replace_all(&text, *with).into_owned();
+    }
+    let text = URL_QUERY.replace_all(&text, "$1?<redacted>");
     let text = SEARCH.replace_all(&text, "q=<redacted>");
     let text = GMAIL_MESSAGE.replace_all(&text, "message=<redacted>$1");
     let text = GMAIL_API_ERROR.replace_all(&text, "$1: <redacted>");
@@ -113,6 +132,28 @@ mod tests {
             out.contains("Gmail API error 400 (invalidArgument): <redacted>"),
             "{out}"
         );
+    }
+
+    #[test]
+    fn scrub_redacts_tokens_and_transfer_invitations() {
+        let text = "INFO pheeme_lib::mcp: token=pheeme_AbCdEfGh0123456789_-xyz\n\
+                    invite \"pheeme-transfer-v1:100.64.0.2:4000/c2VjcmV0a2V5\" sent\n\
+                    header authorization: bearer abc.DEF-123/xyz= done\n\
+                    access ya29.a0AfH6SMB_secret-1 refreshed\n";
+        let out = scrub(text, &[], None);
+        for gone in [
+            "AbCdEfGh0123456789",
+            "c2VjcmV0a2V5",
+            "abc.DEF-123",
+            "a0AfH6SMB",
+        ] {
+            assert!(!out.contains(gone), "{gone} survived: {out}");
+        }
+        assert!(out.contains("pheeme_lib::mcp"), "{out}");
+        assert!(out.contains("token=pheeme_<redacted>"), "{out}");
+        assert!(out.contains("\"pheeme-transfer-<redacted>\" sent"), "{out}");
+        assert!(out.contains("Bearer <redacted> done"), "{out}");
+        assert!(out.contains("ya29.<redacted> refreshed"), "{out}");
     }
 
     #[test]

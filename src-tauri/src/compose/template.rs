@@ -207,6 +207,7 @@ pub(crate) fn clean_html(html: &str) -> String {
         .url_schemes(std::collections::HashSet::from([
             "http", "https", "mailto", "cid",
         ]))
+        .url_relative(ammonia::UrlRelative::Deny)
         .link_rel(Some("noopener noreferrer"))
         .clean(html)
         .to_string()

@@ -232,13 +232,13 @@ impl ModService {
             let id = manifest.id.clone();
             let previous = state.records.get(&id).cloned();
             // A changed OAuth declaration cannot inherit credentials issued to the old provider.
-            if let Some(old) = &previous {
-                for connection in &old.manifest.permissions.connections {
-                    if !manifest.permissions.connections.contains(connection) {
-                        oauth::disconnect(self.keychain.as_ref(), &id, &connection.id)?;
-                    }
-                }
-            }
+            // They are deleted once the new version is saved, so a failed upgrade keeps them.
+            let stale: Vec<String> = previous
+                .iter()
+                .flat_map(|old| &old.manifest.permissions.connections)
+                .filter(|c| !manifest.permissions.connections.contains(c))
+                .map(|c| c.id.clone())
+                .collect();
             Self::stop_locked(&mut state, &id);
             let directory = uuid::Uuid::new_v4().to_string();
             fs::rename(
@@ -255,11 +255,21 @@ impl ModService {
                 },
             );
             state.errors.remove(&id);
-            if let Err(error) = self.persist(&state) {
+            // The credentials go before the new version starts, which must never see them.
+            let installed = self.persist(&state).and_then(|()| {
+                stale
+                    .iter()
+                    .try_for_each(|c| oauth::disconnect(self.keychain.as_ref(), &id, c))
+            });
+            if let Err(error) = installed {
                 if let Some(old) = &previous {
                     state.records.insert(id.clone(), old.clone());
                 } else {
                     state.records.remove(&id);
+                }
+                // Undoes a save that went through before a credential couldn't be deleted.
+                if let Err(e) = self.persist(&state) {
+                    tracing::warn!(error = %e, "couldn't save a failed mod install's rollback");
                 }
                 let _ = fs::remove_dir_all(self.root.join("packages").join(directory));
                 return Err(error);

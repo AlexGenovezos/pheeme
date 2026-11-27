@@ -3,7 +3,7 @@
 //! Subject and the SPF, DKIM and DMARC results from `Authentication-Results`), and saving the
 //! source as an `.eml` file.
 
-use super::attachment::{openable_file_name, write_unique};
+use super::attachment::{cap_bytes, openable_file_name_or, write_unique, MAX_NAME_BYTES};
 use super::{MailError, MailService};
 use crate::sync::engine::SyncError;
 use mailparse::{dateparse, parse_headers, MailHeaderMap};
@@ -54,15 +54,22 @@ pub struct OriginalDto {
     pub truncated: bool,
 }
 
-/// Splits `s` at the `;`s outside parentheses (a result's comment may hold one).
+/// Splits `s` at the `;`s outside comments and quoted strings (a result's comment or value
+/// may hold one), honouring backslash escapes in both (RFC 8601, RFC 5322 quoted-pair).
 fn split_semicolons(s: &str) -> Vec<&str> {
     let mut parts = Vec::new();
-    let (mut depth, mut start) = (0usize, 0);
+    let (mut depth, mut quoted, mut escaped, mut start) = (0usize, false, false, 0);
     for (i, c) in s.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
         match c {
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            ';' if depth == 0 => {
+            '\\' if quoted || depth > 0 => escaped = true,
+            '"' if depth == 0 => quoted = !quoted,
+            '(' if !quoted => depth += 1,
+            ')' if !quoted => depth = depth.saturating_sub(1),
+            ';' if depth == 0 && !quoted => {
                 parts.push(&s[start..i]);
                 start = i + 1;
             }
@@ -73,12 +80,44 @@ fn split_semicolons(s: &str) -> Vec<&str> {
     parts
 }
 
+/// The server that added an `Authentication-Results` header: its authserv-id, without the
+/// comments and version that may follow it.
+fn authserv_id(segment: &str) -> String {
+    let (mut depth, mut escaped, mut out) = (0usize, false, String::new());
+    for c in segment.chars() {
+        if escaped {
+            escaped = false;
+        } else if c == '\\' && depth > 0 {
+            escaped = true;
+        } else if c == '(' {
+            depth += 1;
+        } else if c == ')' {
+            depth = depth.saturating_sub(1);
+        } else if depth == 0 {
+            out.push(c);
+        }
+    }
+    out.split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
+/// The server whose `Authentication-Results` the summary shows: Gmail's own. A header any
+/// other server added (or the sender forged, on mail Gmail didn't receive itself) is ignored.
+const GMAIL_AUTHSERV_ID: &str = "mx.google.com";
+
 /// The SPF, DKIM and DMARC results of one `Authentication-Results` value
-/// (`mx.google.com; dkim=pass header.i=@a.com; spf=pass (…) smtp.mailfrom=a.com`, RFC 8601).
+/// (`mx.google.com; dkim=pass header.i=@a.com; spf=pass (…) smtp.mailfrom=a.com`, RFC 8601),
+/// or none when Gmail didn't add it.
 fn auth_results(value: &str) -> Vec<AuthResult> {
-    split_semicolons(value)
+    let segments = split_semicolons(value);
+    if authserv_id(segments[0]) != GMAIL_AUTHSERV_ID {
+        return Vec::new();
+    }
+    segments
         .into_iter()
-        .skip(1) // the authserv-id
+        .skip(1)
         .filter_map(|segment| {
             let segment = segment.trim();
             let (method, rest) = segment.split_once('=')?;
@@ -147,14 +186,9 @@ fn source_text(raw: &[u8], full: bool) -> (String, bool) {
 
 /// The file Download original writes: the subject (made safe on every platform) and `.eml`.
 fn eml_name(subject: Option<&str>) -> String {
-    let subject = subject.map(|s| s.chars().take(100).collect::<String>());
-    let stem = match openable_file_name(subject.as_deref()) {
-        // A missing name comes back as "attachment"; this is a message.
-        n if subject.as_deref().is_none_or(|s| s.trim().is_empty()) && n == "attachment" => {
-            "message".to_owned()
-        }
-        n => n,
-    };
+    // A subject that cleans to nothing ("...", "/") is still a message, not an attachment.
+    let stem = openable_file_name_or(subject, "message");
+    let stem = cap_bytes(&stem, MAX_NAME_BYTES - ".eml".len()).trim_end_matches(['.', ' ']);
     format!("{stem}.eml")
 }
 
@@ -246,7 +280,9 @@ Hello\r\n";
 
     #[test]
     fn a_semicolon_inside_a_comment_does_not_split_a_result() {
-        let r = auth_results("mx; spf=softfail (a; b) smtp.mailfrom=x; auth=pass; dkim=none");
+        let r = auth_results(
+            "mx.google.com; spf=softfail (a; b) smtp.mailfrom=x; auth=pass; dkim=none",
+        );
         assert_eq!(r.len(), 2);
         assert_eq!(r[0].result, "softfail");
         assert_eq!(r[0].detail.as_deref(), Some("(a; b) smtp.mailfrom=x"));
@@ -254,6 +290,38 @@ Hello\r\n";
             (&*r[1].method, &*r[1].result, &r[1].detail),
             ("dkim", "none", &None)
         );
+    }
+
+    #[test]
+    fn quoted_strings_and_escapes_do_not_split_or_forge_results() {
+        let r = auth_results(
+            r#"mx.google.com; spf=pass smtp.mailfrom="a;dkim=pass"; dmarc=fail (x \) ; dkim=pass) header.from=x"#,
+        );
+        let shown: Vec<_> = r.iter().map(|a| (&*a.method, &*a.result)).collect();
+        assert_eq!(shown, [("spf", "pass"), ("dmarc", "fail")]);
+    }
+
+    #[test]
+    fn only_gmails_own_header_is_believed() {
+        for id in [
+            "mx.google.com",
+            "MX.Google.com 1",
+            "mx.google.com (Google Transport Security)",
+            " (relay) mx.google.com",
+        ] {
+            assert_eq!(auth_results(&format!("{id}; spf=pass")).len(), 1, "{id}");
+        }
+        for id in [
+            "evil.example",
+            "mx.google.com.evil.example",
+            "",
+            "(mx.google.com)",
+        ] {
+            assert!(auth_results(&format!("{id}; spf=pass")).is_empty(), "{id}");
+        }
+        // A sender's forged header on mail Gmail didn't receive (an import) shows nothing.
+        let forged = b"Authentication-Results: spoof.example; spf=pass; dkim=pass\r\n\r\nHi";
+        assert_eq!(summarize(forged).auth, []);
     }
 
     #[test]
@@ -289,6 +357,13 @@ Hello\r\n";
         assert_eq!(eml_name(Some("Can we meet?")), "Can we meet_.eml");
         assert_eq!(eml_name(None), "message.eml");
         assert_eq!(eml_name(Some("  ")), "message.eml");
-        assert!(eml_name(Some(&"x".repeat(500))).len() <= 104);
+        assert_eq!(eml_name(Some("...")), "message.eml");
+        assert_eq!(eml_name(Some("/")), "message.eml");
+        assert_eq!(eml_name(Some("CON")), "_CON.eml");
+        for long in ["x".repeat(500), "報".repeat(300), "😀".repeat(300)] {
+            let name = eml_name(Some(&long));
+            assert!(name.len() <= 255, "{}", name.len());
+            assert!(name.ends_with(".eml"));
+        }
     }
 }

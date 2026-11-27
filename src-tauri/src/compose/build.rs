@@ -6,7 +6,7 @@
 //! headers because the Gmail API reads recipients from them (and strips it on delivery).
 
 use super::{ComposeDraft, StagedAttachment, MAX_ATTACHMENT_BYTES};
-use crate::gmail::mime::EmailAddress;
+use crate::gmail::mime::{clean_content_id, EmailAddress};
 use crate::mail::MailError;
 use crate::text::decode_html_entities;
 use lettre::message::header::{ContentTransferEncoding, ContentType};
@@ -193,11 +193,23 @@ pub fn build_message(out: &Outgoing<'_>) -> Result<Vec<u8>, MailError> {
     for a in &draft.bcc {
         builder = builder.bcc(mailbox(a)?);
     }
-    if let Some(id) = draft.in_reply_to.as_deref().filter(|s| !s.is_empty()) {
-        builder = builder.in_reply_to(id.to_owned());
+    // Both come from the original's headers, which its sender wrote: only well-formed ids go
+    // back out, so a CR or LF in them can't add headers to the reply.
+    if let Some(id) = draft
+        .in_reply_to
+        .as_deref()
+        .and_then(|s| s.split_whitespace().find_map(message_id))
+    {
+        builder = builder.in_reply_to(id);
     }
-    if !draft.references.is_empty() {
-        builder = builder.references(draft.references.join(" "));
+    let references: Vec<String> = draft
+        .references
+        .iter()
+        .flat_map(|r| r.split_whitespace())
+        .filter_map(message_id)
+        .collect();
+    if !references.is_empty() {
+        builder = builder.references(references.join(" "));
     }
 
     let html = full_html(draft);
@@ -205,7 +217,7 @@ pub fn build_message(out: &Outgoing<'_>) -> Result<Vec<u8>, MailError> {
     let (inline, files): (Vec<_>, Vec<_>) = out
         .attachments
         .iter()
-        .partition(|(att, _)| att.content_id.is_some());
+        .partition(|(att, _)| content_id(att).is_some());
     if !inline.is_empty() {
         let mut related = MultiPart::related().multipart(body);
         for (att, bytes) in inline {
@@ -226,10 +238,29 @@ pub fn build_message(out: &Outgoing<'_>) -> Result<Vec<u8>, MailError> {
     Ok(message.formatted())
 }
 
+/// `<id>` when `token` is one message id (`<left@right>`, printable ASCII, no space or
+/// bracket inside); a bare `left@right` gets its brackets.
+fn message_id(token: &str) -> Option<String> {
+    let inner = token
+        .strip_prefix('<')
+        .and_then(|t| t.strip_suffix('>'))
+        .unwrap_or(token);
+    let valid = inner.contains('@')
+        && inner
+            .bytes()
+            .all(|b| b.is_ascii_graphic() && b != b'<' && b != b'>');
+    valid.then(|| format!("<{inner}>"))
+}
+
+/// The attachment's `Content-ID` if it is a valid one (see [`clean_content_id`]).
+fn content_id(att: &StagedAttachment) -> Option<String> {
+    att.content_id.as_deref().and_then(clean_content_id)
+}
+
 fn attachment_part(att: &StagedAttachment, bytes: Vec<u8>) -> SinglePart {
     let octets = || ContentType::parse("application/octet-stream").expect("valid");
-    let builder = match att.content_id.as_deref() {
-        Some(cid) => Attachment::new_inline_with_name(cid.to_owned(), att.filename.clone()),
+    let builder = match content_id(att) {
+        Some(cid) => Attachment::new_inline_with_name(cid, att.filename.clone()),
         None => Attachment::new(att.filename.clone()),
     };
     if att.mime_type.trim().eq_ignore_ascii_case(FORWARDED_MESSAGE) {
@@ -603,6 +634,44 @@ mod tests {
             .get_body()
             .unwrap()
             .contains("<b>there</b>"));
+    }
+
+    #[test]
+    fn header_ids_with_line_breaks_or_junk_are_left_out() {
+        use mailparse::MailHeaderMap;
+        let draft = ComposeDraft {
+            to: vec![addr(None, "bo@example.com")],
+            in_reply_to: Some("<a@x>\r\nBcc: evil@example.com".into()),
+            references: vec![
+                "<root@x>".into(),
+                "<b@x>\r\nX-Injected: 1".into(),
+                "<no at>".into(),
+                "<c@x".into(),
+            ],
+            ..Default::default()
+        };
+        let image = StagedAttachment {
+            id: "1".into(),
+            filename: "a.png".into(),
+            mime_type: "image/png".into(),
+            size: 1,
+            content_id: Some("x\r\nX-Injected: 1".into()),
+        };
+        let raw = build(&draft, &[(image, vec![1])]);
+        let mail = parse(&raw);
+        assert_eq!(
+            mail.headers.get_first_value("In-Reply-To").unwrap(),
+            "<a@x>"
+        );
+        assert_eq!(
+            mail.headers.get_first_value("References").unwrap(),
+            "<root@x> <b@x>"
+        );
+        assert!(mail.headers.get_first_value("Bcc").is_none());
+        let text = String::from_utf8_lossy(&raw);
+        assert!(!text.contains("X-Injected"), "{text}");
+        // An invalid Content-ID sends the image as a plain file.
+        assert_eq!(mail.ctype.mimetype, "multipart/mixed");
     }
 
     #[test]

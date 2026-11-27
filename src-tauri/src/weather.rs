@@ -17,6 +17,8 @@ const FORECAST_TTL: Duration = Duration::from_secs(60 * 60);
 const TIMEOUT: Duration = Duration::from_secs(15);
 /// The most parts of an event's location searched for a town.
 const MAX_LOCATION_QUERIES: usize = 4;
+/// The most forecasts and event locations kept in memory each.
+const MAX_CACHED: usize = 256;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WeatherError {
@@ -24,6 +26,8 @@ pub enum WeatherError {
     Network,
     #[error("The weather service didn't answer as expected ({0}).")]
     Unavailable(String),
+    #[error("That isn't a place on Earth.")]
+    InvalidPlace,
 }
 
 impl WeatherError {
@@ -31,6 +35,7 @@ impl WeatherError {
         match self {
             WeatherError::Network => "network",
             WeatherError::Unavailable(_) => "weather_unavailable",
+            WeatherError::InvalidPlace => "invalid_input",
         }
     }
 }
@@ -160,6 +165,25 @@ struct Hourly {
 /// A forecast and when it was read.
 type CachedForecast = (Instant, Arc<Forecast>);
 
+/// Caches `forecast`, first dropping the expired ones and, at [`MAX_CACHED`], the oldest.
+fn keep_forecast(
+    cache: &mut HashMap<(String, TemperatureUnit), CachedForecast>,
+    key: (String, TemperatureUnit),
+    forecast: Arc<Forecast>,
+) {
+    cache.retain(|_, (at, _)| at.elapsed() < FORECAST_TTL);
+    if cache.len() >= MAX_CACHED {
+        let oldest = cache
+            .iter()
+            .min_by_key(|(_, (at, _))| *at)
+            .map(|(k, _)| k.clone());
+        if let Some(oldest) = oldest {
+            cache.remove(&oldest);
+        }
+    }
+    cache.insert(key, (Instant::now(), forecast));
+}
+
 pub struct WeatherService {
     http: reqwest::Client,
     forecasts: Mutex<HashMap<(String, TemperatureUnit), CachedForecast>>,
@@ -240,6 +264,10 @@ impl WeatherService {
         longitude: f64,
         unit: TemperatureUnit,
     ) -> Result<Arc<Forecast>, WeatherError> {
+        let on_earth = (-90.0..=90.0).contains(&latitude) && (-180.0..=180.0).contains(&longitude);
+        if !on_earth {
+            return Err(WeatherError::InvalidPlace);
+        }
         // About a kilometre: the same town shares one forecast.
         let key = (format!("{latitude:.2},{longitude:.2}"), unit);
         if let Some((at, forecast)) = lock(&self.forecasts).get(&key) {
@@ -270,7 +298,7 @@ impl WeatherService {
             ),
             days: days_of(response.daily),
         });
-        lock(&self.forecasts).insert(key, (Instant::now(), forecast.clone()));
+        keep_forecast(&mut lock(&self.forecasts), key, forecast.clone());
         Ok(forecast)
     }
 
@@ -287,7 +315,12 @@ impl WeatherService {
             }
         }
         let place = pick(location, found).map(Place::from);
-        lock(&self.locations).insert(key, place.clone());
+        let mut locations = lock(&self.locations);
+        if locations.len() >= MAX_CACHED {
+            // Each is only a lookup to repeat.
+            locations.clear();
+        }
+        locations.insert(key, place.clone());
         Ok(place)
     }
 
@@ -538,6 +571,44 @@ fn us_state_code(state: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn points_off_the_globe_are_refused_before_any_request() {
+        let weather = WeatherService::new();
+        for (lat, lon) in [
+            (f64::NAN, 0.0),
+            (0.0, f64::INFINITY),
+            (91.0, 0.0),
+            (0.0, -180.5),
+        ] {
+            let e = weather
+                .forecast(lat, lon, TemperatureUnit::Celsius)
+                .await
+                .unwrap_err();
+            assert!(matches!(e, WeatherError::InvalidPlace), "{lat},{lon}: {e}");
+        }
+    }
+
+    #[test]
+    fn the_forecast_cache_drops_expired_and_stays_bounded() {
+        let forecast = || {
+            Arc::new(Forecast {
+                days: Vec::new(),
+                hours: Vec::new(),
+            })
+        };
+        let key = |i: usize| (format!("{i}"), TemperatureUnit::Celsius);
+        let mut cache = HashMap::new();
+        if let Some(old) = Instant::now().checked_sub(FORECAST_TTL * 2) {
+            cache.insert(key(usize::MAX), (old, forecast()));
+        }
+        for i in 0..MAX_CACHED + 10 {
+            keep_forecast(&mut cache, key(i), forecast());
+        }
+        assert_eq!(cache.len(), MAX_CACHED);
+        assert!(!cache.contains_key(&key(usize::MAX)));
+        assert!(cache.contains_key(&key(MAX_CACHED + 9)));
+    }
 
     fn town(name: &str, admin1: &str, code: &str, country: &str) -> Found {
         Found {
