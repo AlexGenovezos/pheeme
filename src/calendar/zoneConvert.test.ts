@@ -93,6 +93,9 @@ describe("searchZones", () => {
     expect(searchZones("PT", now)[0].zone).toBe("America/Los_Angeles");
     expect(searchZones("utc+5:45", now).map((z) => z.zone)).toContain("Asia/Kathmandu");
     expect(searchZones("  ", now)).toEqual([]);
+    // West of UTC, typed with a hyphen or a true minus.
+    expect(searchZones("utc-5", now).map((z) => z.zone)).toContain("America/New_York");
+    expect(searchZones("utc\u22125", now).map((z) => z.zone)).toContain("America/New_York");
     expect(searchZones("a", now, 5)).toHaveLength(5);
   });
 });

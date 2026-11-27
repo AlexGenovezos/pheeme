@@ -390,11 +390,8 @@ impl CalendarService {
                     .date
                     .as_deref()
                     .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                    .and_then(|d| {
-                        tz.from_local_datetime(&d.and_time(chrono::NaiveTime::MIN))
-                            .earliest()
-                    })
-                    .map_or(0, |d| d.timestamp_millis())
+                    .and_then(|d| super::availability::local_midnight_ms(tz, d))
+                    .unwrap_or(0)
             })
         };
         out.sort_by_key(|(_, e)| (start_key(e), !e.all_day, e.id.clone()));

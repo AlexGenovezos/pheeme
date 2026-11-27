@@ -516,6 +516,21 @@ describe("Tasks panel", () => {
     );
   });
 
+  test("past midnight, what was due today shows as overdue and the new day's tasks join", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"], now: NOW });
+    await openPanel();
+    const due = () =>
+      within(list("Today"))
+        .getByRole("button", { name: "Edit task: Send the lease back" })
+        .querySelector(".task-row__due");
+    expect(due()).not.toHaveClass("task-row__due--overdue");
+    vi.setSystemTime(new Date(2026, 10, 12, 0, 1));
+    await act(() => vi.advanceTimersByTimeAsync(30_000));
+    await settle();
+    expect(due()).toHaveClass("task-row__due--overdue");
+    expect(rows("Today")).toContain("Review the Q4 roadmap");
+  });
+
   test("Today keeps its shape while loading, and says Nothing due today only once it's empty", async () => {
     hold.add("tasks_due_through");
     answers.set("tasks_due_through", []);

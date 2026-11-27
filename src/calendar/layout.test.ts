@@ -98,6 +98,20 @@ describe("views", () => {
 describe("layoutDay", () => {
   const d = "2026-11-11";
 
+  test("an event in the hour repeated as clocks go back keeps its length", () => {
+    // 2026-11-01 in New York: 1:30 EDT (05:30Z) to 1:15 EST (06:15Z) is 45 minutes.
+    const day = "2026-11-01";
+    const e = timed(Date.UTC(2026, 10, 1, 5, 30), Date.UTC(2026, 10, 1, 6, 15));
+    expect(layoutDay([e], day, NY)[0]).toMatchObject({ start: 90, end: 135 });
+    // Across the change: 0:30 EDT to 1:30 EST is two hours.
+    const across = timed(Date.UTC(2026, 10, 1, 4, 30), Date.UTC(2026, 10, 1, 6, 30));
+    expect(layoutDay([across], day, NY)[0]).toMatchObject({ start: 30, end: 150 });
+    // On other days, seconds don't stretch an event into the next one's minute.
+    const d = "2026-11-11";
+    const first = timed(at(d, 9), at(d, 10) + 30_000);
+    expect(layoutDay([first], d, NY)[0]).toMatchObject({ start: 540, end: 600 });
+  });
+
   test("overlapping cards are wider than their lanes and a lone one takes the whole day", () => {
     const a = timed(at(d, 14), at(d, 15));
     const b = timed(at(d, 14, 30), at(d, 15, 30));

@@ -30,5 +30,6 @@ export function useNow(): number {
 
 /** Consumers that only display the date update when midnight passes in their zone. */
 export function useToday(tz: string): string {
-  return useSyncExternalStore(subscribe, () => dateOf(Date.now(), tz));
+  const [initial] = useState(Date.now);
+  return useSyncExternalStore(subscribe, () => dateOf(timer === undefined ? initial : now, tz));
 }

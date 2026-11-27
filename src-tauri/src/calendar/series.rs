@@ -1,6 +1,7 @@
 //! Repeating-rule arithmetic: splitting a series in two for "this and following", and moving
 //! every occurrence to another day for an "all events" date change.
 
+use super::availability::{local_ms, local_time};
 use super::edit::OriginalStart;
 use super::error::CalendarError;
 use super::recurrence::{self, rule_count_before};
@@ -218,9 +219,7 @@ fn value_ms(v: &str, zone: chrono_tz::Tz) -> Option<i64> {
     } else {
         NaiveDateTime::parse_from_str(v, "%Y%m%dT%H%M%S").ok()?
     };
-    zone.from_local_datetime(&local)
-        .earliest()
-        .map(|t| t.timestamp_millis())
+    local_ms(zone, local)
 }
 
 /// How a series moves: by wall-clock time, from its old zone's clock to its new zone's.
@@ -253,9 +252,7 @@ impl Move {
         }
         let moved = |instant: chrono::DateTime<Utc>| {
             let local = instant.with_timezone(&self.from_tz).naive_local();
-            self.to_tz
-                .from_local_datetime(&local.checked_add_signed(self.delta)?)
-                .earliest()
+            local_time(self.to_tz, local.checked_add_signed(self.delta)?)
         };
         if let Some(utc) = v.strip_suffix(['Z', 'z']) {
             let t = NaiveDateTime::parse_from_str(utc, "%Y%m%dT%H%M%S").ok()?;
@@ -263,11 +260,7 @@ impl Move {
             return Some(m.with_timezone(&Utc).format("%Y%m%dT%H%M%SZ").to_string());
         }
         let t = NaiveDateTime::parse_from_str(v, "%Y%m%dT%H%M%S").ok()?;
-        let instant = value_zone
-            .unwrap_or(self.from_tz)
-            .from_local_datetime(&t)
-            .earliest()?
-            .with_timezone(&Utc);
+        let instant = local_time(value_zone.unwrap_or(self.from_tz), t)?.with_timezone(&Utc);
         let m = moved(instant)?;
         let zone = value_zone.unwrap_or(self.to_tz);
         Some(m.with_timezone(&zone).format("%Y%m%dT%H%M%S").to_string())
@@ -1116,5 +1109,14 @@ mod tests {
             ),
             Err(CalendarError::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn a_local_value_in_the_skipped_hour_reads_an_hour_later() {
+        let ny: chrono_tz::Tz = NY.parse().unwrap();
+        assert_eq!(
+            value_ms("20260308T023000", ny),
+            Some(ms("2026-03-08T07:30:00Z"))
+        );
     }
 }

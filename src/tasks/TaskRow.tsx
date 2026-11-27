@@ -1,7 +1,8 @@
 // One task in a list: tick it off, open it for editing, drag it by its grip, and the menu to indent, move and delete.
 import { Check, GripVertical, MoreHorizontal } from "lucide-react";
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { dateOf, systemZone } from "../calendar/dates";
+import { systemZone } from "../calendar/dates";
+import { useToday } from "../calendar/useNow";
 import { IconButton } from "../components/ui/IconButton";
 import {
   type ContextMenuItem,
@@ -25,7 +26,6 @@ import { bookTask } from "./planStore";
 import { useTasksStore } from "./tasksStore";
 
 const store = useTasksStore.getState;
-const today = () => dateOf(Date.now(), systemZone());
 
 export function TaskRow({
   task,
@@ -46,7 +46,7 @@ export function TaskRow({
   editKey?: string;
 }) {
   const title = taskTitle(task);
-  const now = today();
+  const now = useToday(systemZone());
   const move = (p: Placement | null) => p && void store().moveTask(task, p);
   const indent = task.completed ? null : indentPlacement(open, task);
   const outdent = task.completed ? null : outdentPlacement(task);

@@ -39,3 +39,18 @@ test("an end picked from the list as a length lands on the right day", () => {
     expect.objectContaining({ endDate: "2026-11-13", endMinutes: 23 * 60 }),
   );
 });
+
+test("unticking All day on a day starting at 11 PM ends at midnight the next day", () => {
+  const onChange = vi.fn();
+  render(
+    <TimeFields
+      compact
+      form={timed({ allDay: true, startMinutes: 23 * 60, endMinutes: 23 * 60 })}
+      onChange={onChange}
+    />,
+  );
+  fireEvent.click(screen.getByRole("checkbox", { name: "All day" }));
+  expect(onChange).toHaveBeenLastCalledWith(
+    expect.objectContaining({ allDay: false, endDate: "2026-11-14", endMinutes: 0 }),
+  );
+});

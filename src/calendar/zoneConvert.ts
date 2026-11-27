@@ -70,7 +70,9 @@ export interface ZoneOption {
  * start with the text. At most `limit`.
  */
 export function searchZones(query: string, now: number, limit = 50): ZoneOption[] {
-  const q = query.trim().toLowerCase();
+  // Offsets are shown with a true minus ("UTC−5"); a typed hyphen means the same.
+  const minus = (s: string) => s.replace(/\u2212/g, "-");
+  const q = minus(query.trim().toLowerCase());
   if (!q) return [];
   const words = q.split(/\s+/);
   const exact = findZone(q)?.zone;
@@ -79,7 +81,7 @@ export function searchZones(query: string, now: number, limit = 50): ZoneOption[
       const city = zoneCity(zone);
       const region = zoneRegion(zone);
       const offset = formatOffset(offsetMinutes(now, zone));
-      const text = `${city} ${region} ${zone} ${offset}`.toLowerCase();
+      const text = minus(`${city} ${region} ${zone} ${offset}`.toLowerCase());
       if (zone !== exact && !words.every((w) => text.includes(w))) return null;
       const c = city.toLowerCase();
       const rank = zone === exact ? 0 : c.startsWith(q) ? 1 : c.includes(q) ? 2 : 3;

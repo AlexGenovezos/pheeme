@@ -106,8 +106,12 @@ fn until_as_utc(line: &str, tz: chrono_tz::Tz) -> String {
             ) else {
                 return keep();
             };
-            // Both ends of a repeated hour are before the end of a day; take the later.
-            let Some(at) = tz.from_local_datetime(&local).latest() else {
+            // Both ends of a repeated hour are before the end of a day; take the later. A time
+            // in the hour skipped as clocks go forward is an hour later.
+            let Some(at) = tz.from_local_datetime(&local).latest().or_else(|| {
+                tz.from_local_datetime(&(local + chrono::TimeDelta::hours(1)))
+                    .latest()
+            }) else {
                 return keep();
             };
             format!(
@@ -120,11 +124,11 @@ fn until_as_utc(line: &str, tz: chrono_tz::Tz) -> String {
 }
 
 /// An all-day series' date-only values as UTC midnights, to match its DTSTART:
-/// `EXDATE;VALUE=DATE:20261111` → `EXDATE:20261111T000000Z`, and `UNTIL=20261231` → the
-/// end of that day.
+/// `EXDATE;VALUE=DATE:20261111` (with any other parameters, or none) →
+/// `EXDATE:20261111T000000Z`, and `UNTIL=20261231` → the end of that day.
 fn dates_at_utc_midnight(line: &str) -> String {
     static DATE_LIST: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r"^(?i)(EXDATE|RDATE);VALUE=DATE:(.*)$").unwrap()
+        regex::Regex::new(r"^(?i)(EXDATE|RDATE)(?:;[^:]*)?:(\d{8}(?:\s*,\s*\d{8})*)\s*$").unwrap()
     });
     static UNTIL: std::sync::LazyLock<regex::Regex> =
         std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)UNTIL=(\d{8})(;|$)").unwrap());
@@ -925,5 +929,36 @@ mod tests {
         other.calendar_id = "other".into();
         let rows = [master, other];
         assert_eq!(shown(&rows).len(), 4);
+    }
+
+    #[test]
+    fn floating_until_in_the_skipped_hour_still_converts() {
+        // 02:30 on 2026-03-08 doesn't exist in New York; it reads as 03:30 EDT.
+        let ny: chrono_tz::Tz = NY.parse().unwrap();
+        assert_eq!(
+            until_as_utc("RRULE:FREQ=DAILY;UNTIL=20260308T023000", ny),
+            "RRULE:FREQ=DAILY;UNTIL=20260308T073000Z"
+        );
+    }
+
+    #[test]
+    fn all_day_dates_with_other_parameters_or_none_are_utc_midnights() {
+        assert_eq!(
+            dates_at_utc_midnight("EXDATE;TZID=UTC;VALUE=DATE:20261111"),
+            "EXDATE:20261111T000000Z"
+        );
+        assert_eq!(
+            dates_at_utc_midnight("EXDATE:20261111,20261113"),
+            "EXDATE:20261111T000000Z,20261113T000000Z"
+        );
+        assert_eq!(
+            dates_at_utc_midnight("rdate;value=date:20261120"),
+            "rdate:20261120T000000Z"
+        );
+        // Date-times are left alone.
+        assert_eq!(
+            dates_at_utc_midnight("EXDATE:20261111T000000Z"),
+            "EXDATE:20261111T000000Z"
+        );
     }
 }

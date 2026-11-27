@@ -570,7 +570,7 @@ export function InviteCard({
               size="sm"
               icon={<CalendarDays />}
               disabled={!event}
-              onClick={() => event && openInCalendar(pinned, event)}
+              onClick={() => event && void openInCalendar(pinned, event)}
             >
               {day
                 ? `Open ${formatDay(day, { weekday: "long", month: "short", day: "numeric" })} in Calendar`

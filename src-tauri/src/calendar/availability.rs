@@ -187,15 +187,23 @@ impl CalendarService {
     }
 }
 
-/// The moment a wall-clock time names in `tz` (the earlier one when clocks go back).
+/// The moment a wall-clock time names in `tz` (the earlier one when clocks go back, an hour
+/// later when it falls in the hour skipped as clocks go forward).
+pub(crate) fn local_time(tz: Tz, naive: NaiveDateTime) -> Option<chrono::DateTime<Tz>> {
+    tz.from_local_datetime(&naive).earliest().or_else(|| {
+        tz.from_local_datetime(&(naive + Duration::hours(1)))
+            .earliest()
+    })
+}
+
+/// [`local_time`] as ms.
 pub(crate) fn local_ms(tz: Tz, naive: NaiveDateTime) -> Option<i64> {
-    tz.from_local_datetime(&naive)
-        .earliest()
-        .or_else(|| {
-            tz.from_local_datetime(&(naive + Duration::hours(1)))
-                .earliest()
-        })
-        .map(|d| d.timestamp_millis())
+    local_time(tz, naive).map(|d| d.timestamp_millis())
+}
+
+/// The start of `day` in `tz`: 01:00 where clocks skip midnight.
+pub(crate) fn local_midnight_ms(tz: Tz, day: NaiveDate) -> Option<i64> {
+    local_ms(tz, day.and_time(NaiveTime::MIN))
 }
 
 pub(crate) fn day_of(tz: Tz, ms: i64) -> NaiveDate {
@@ -468,6 +476,21 @@ mod tests {
                 (ms("2026-11-20T09:00:00Z"), ms("2026-11-20T10:00:00Z")),
                 (ms("2026-11-23T09:00:00Z"), ms("2026-11-23T12:00:00Z")),
             ]
+        );
+    }
+
+    #[test]
+    fn a_day_whose_midnight_is_skipped_starts_at_one() {
+        // Chile moves its clocks from 00:00 to 01:00 on 2026-09-06.
+        let santiago = chrono_tz::America::Santiago;
+        let day = NaiveDate::from_ymd_opt(2026, 9, 6).unwrap();
+        assert_eq!(
+            local_midnight_ms(santiago, day),
+            Some(
+                chrono::DateTime::parse_from_rfc3339("2026-09-06T01:00:00-03:00")
+                    .unwrap()
+                    .timestamp_millis()
+            )
         );
     }
 }

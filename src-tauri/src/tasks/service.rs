@@ -108,10 +108,16 @@ pub(super) fn access_dto(access: Option<&DbTasksAccess>) -> TasksAccessDto {
 }
 
 /// Tasks in the order the list shows them: top-level tasks by position, each followed by its
-/// subtasks by position. A subtask whose parent isn't cached shows at the top level.
+/// subtasks by position. A subtask whose parent isn't cached, or a task that is its own
+/// parent, shows at the top level; tasks nested deeper or in a loop follow at the end, so no
+/// cached task goes missing.
 pub fn outline(rows: &[DbTask]) -> Vec<&DbTask> {
     let ids: HashSet<&str> = rows.iter().map(|t| t.id.as_str()).collect();
-    let is_top = |t: &DbTask| t.parent.as_deref().is_none_or(|p| !ids.contains(p));
+    let is_top = |t: &DbTask| {
+        t.parent
+            .as_deref()
+            .is_none_or(|p| p == t.id || !ids.contains(p))
+    };
     let mut children: HashMap<&str, Vec<&DbTask>> = HashMap::new();
     let mut top = Vec::new();
     for t in rows {
@@ -130,6 +136,9 @@ pub fn outline(rows: &[DbTask]) -> Vec<&DbTask> {
             out.extend(subs);
         }
     }
+    let mut rest: Vec<&DbTask> = children.into_values().flatten().collect();
+    rest.sort_by(by_position);
+    out.extend(rest);
     out
 }
 
@@ -659,5 +668,16 @@ pub(super) mod tests {
         ];
         let ids: Vec<&str> = outline(&rows).iter().map(|t| t.id.as_str()).collect();
         assert_eq!(ids, vec!["a", "a1", "a2", "orphan", "b"]);
+
+        let rows = vec![
+            row("self", Some("self"), "0"),
+            row("x", Some("y"), "1"),
+            row("y", Some("x"), "2"),
+            row("top", None, "3"),
+            row("sub", Some("top"), "4"),
+            row("deep", Some("sub"), "5"),
+        ];
+        let ids: Vec<&str> = outline(&rows).iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, vec!["self", "top", "sub", "x", "y", "deep"]);
     }
 }

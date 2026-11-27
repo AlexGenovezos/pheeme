@@ -84,10 +84,11 @@ export function describeWhen(e: CalendarEvent, tz: string): string {
   const startDay = dateOf(e.start.ms, tz);
   const start = formatTime(e.start.ms, tz);
   if (e.end.ms == null) return `${formatDay(startDay, long)} · ${start}`;
-  const endDay = dateOf(e.end.ms - 1, tz);
   const end = formatTime(e.end.ms, tz);
-  if (endDay === startDay) return `${formatDay(startDay, long)} · ${start} – ${end}`;
-  return `${formatDay(startDay, { month: "short", day: "numeric" })}, ${start} – ${formatDay(endDay, { month: "short", day: "numeric" })}, ${end}`;
+  // Ending at midnight still reads as one day; past it, the end is said on its own date.
+  const sameDay = e.end.ms <= e.start.ms || dateOf(e.end.ms - 1, tz) === startDay;
+  if (sameDay) return `${formatDay(startDay, long)} · ${start} – ${end}`;
+  return `${formatDay(startDay, { month: "short", day: "numeric" })}, ${start} – ${formatDay(dateOf(e.end.ms, tz), { month: "short", day: "numeric" })}, ${end}`;
 }
 
 export interface ZoneLine {

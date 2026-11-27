@@ -288,6 +288,12 @@ describe("repeat rules", () => {
   test("rules the editor can't show are kept as they are", () => {
     const { repeat } = parseRecurrence(["RRULE:FREQ=MONTHLY;BYMONTHDAY=1,15"]);
     expect(repeat).toEqual({ kind: "other", lines: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=1,15"] });
+    // The editor offers the first to fourth and the last weekday of a month, nothing else.
+    for (const day of ["5SU", "-2MO", "1XX", "2WEX"]) {
+      const lines = [`RRULE:FREQ=MONTHLY;BYDAY=${day}`];
+      expect(parseRecurrence(lines).repeat).toEqual({ kind: "other", lines });
+    }
+    expect(parseRecurrence(["RRULE:FREQ=MONTHLY;BYDAY=-1FR"]).repeat.kind).toBe("rule");
   });
 
   test("UNTIL is the end of the last day in the event's zone, or a date for all-day events", () => {
