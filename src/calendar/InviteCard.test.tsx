@@ -300,12 +300,24 @@ describe("createEventFromEmail", () => {
 });
 
 test("Open in Calendar before the calendar's first load stays on the event's day", async () => {
-  backend("on");
+  // Wednesday 3 PM UTC is already Thursday on Kiritimati (UTC+14), the Calendar zone.
+  const lookup = byName(createCalendarHandlers(ACCOUNTS, "on", NOW, "Pacific/Kiritimati"));
+  let reads = 0;
+  mockIPC(async (cmd, args) => {
+    // The second account read answers later than the first.
+    if (cmd === "calendar_accounts" && ++reads === 2)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    return lookup[cmd]?.((args ?? {}) as Record<string, unknown>);
+  });
   const event = {
     start: { ms: Date.UTC(2026, 11, 3, 15), date: null, timeZone: null },
   } as CalendarEvent;
-  await openInCalendar(PINNED, event);
+  // Another read starts while Open in Calendar's is under way, and overtakes it.
+  const opening = openInCalendar(PINNED, event);
+  const other = useCalendarStore.getState().loadAccounts();
+  await Promise.all([opening, other]);
+  expect(useCalendarStore.getState()).toMatchObject({ mode: "calendar", anchor: "2026-12-04" });
   // The calendar screen reading the accounts again doesn't move it back to today.
   await useCalendarStore.getState().loadAccounts();
-  expect(useCalendarStore.getState()).toMatchObject({ mode: "calendar", anchor: "2026-12-03" });
+  expect(useCalendarStore.getState().anchor).toBe("2026-12-04");
 });

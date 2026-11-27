@@ -151,6 +151,8 @@ export function screenDays(s: Pick<CalendarState, "view" | "anchor" | "accounts"
 }
 
 let accountsTicket = 0;
+/** The newest account read. */
+let accountsLoad: Promise<void> = Promise.resolve();
 let eventsTicket = 0;
 /** The newest events read still going, what it reads (`key`), and when it lands. */
 let latest: { ticket: number; key: string; done: Promise<void> } | null = null;
@@ -314,20 +316,26 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
     setGoToOpen: (goToOpen) => set({ goToOpen }),
     pin: (pinned, reveal = null) => set({ pinned, reveal }),
 
-    loadAccounts: async () => {
+    loadAccounts: () => {
       const ticket = ++accountsTicket;
-      try {
-        const accounts = (await getCalendarAccounts()) ?? [];
-        if (ticket !== accountsTicket) return;
-        const firstLoad = get().accounts === null;
-        set({ accounts, loadError: null });
-        // Today in the Calendar zone can differ from the computer's.
-        if (firstLoad) set({ anchor: dateOf(Date.now(), displayZone(accounts)) });
-        // Accounts, zone or week start may have changed what's on screen (a local read).
-        void get().loadEvents();
-      } catch (e) {
-        if (ticket === accountsTicket) set({ loadError: toCommandError(e).message });
-      }
+      // A read overtaken by a newer one settles with it, so awaiting either means the accounts are in.
+      const load = (async () => {
+        try {
+          const accounts = (await getCalendarAccounts()) ?? [];
+          if (ticket !== accountsTicket) return accountsLoad;
+          const firstLoad = get().accounts === null;
+          set({ accounts, loadError: null });
+          // Today in the Calendar zone can differ from the computer's.
+          if (firstLoad) set({ anchor: dateOf(Date.now(), displayZone(accounts)) });
+          // Accounts, zone or week start may have changed what's on screen (a local read).
+          void get().loadEvents();
+        } catch (e) {
+          if (ticket !== accountsTicket) return accountsLoad;
+          set({ loadError: toCommandError(e).message });
+        }
+      })();
+      accountsLoad = load;
+      return load;
     },
 
     loadEvents: () => show(target(), true),

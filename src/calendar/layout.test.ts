@@ -106,6 +106,10 @@ describe("layoutDay", () => {
     // Across the change: 0:30 EDT to 1:30 EST is two hours.
     const across = timed(Date.UTC(2026, 10, 1, 4, 30), Date.UTC(2026, 10, 1, 6, 30));
     expect(layoutDay([across], day, NY)[0]).toMatchObject({ start: 30, end: 150 });
+    // On other days, seconds don't stretch an event into the next one's minute.
+    const d = "2026-11-11";
+    const first = timed(at(d, 9), at(d, 10) + 30_000);
+    expect(layoutDay([first], d, NY)[0]).toMatchObject({ start: 540, end: 600 });
   });
 
   test("overlapping cards are wider than their lanes and a lone one takes the whole day", () => {

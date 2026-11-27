@@ -64,7 +64,8 @@ export function layoutDay(events: CalendarEvent[], date: string, tz: string): Ti
     if (!onDay) continue;
     const start = s <= dayStart ? 0 : wallClock(s, tz).minutes;
     // When clocks go back, the wall clock repeats an hour: the time that passed is the longer.
-    const elapsed = start + (e - Math.max(s, dayStart)) / 60_000;
+    // Whole minutes, so on other days it never passes the wall clock's end.
+    const elapsed = start + Math.floor((e - Math.max(s, dayStart)) / 60_000);
     const end =
       e >= dayEnd
         ? DAY_MINUTES

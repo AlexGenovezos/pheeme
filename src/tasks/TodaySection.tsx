@@ -1,7 +1,7 @@
 // Today, at the top of the Tasks panel: every account's open tasks due today or earlier, overdue
 // ones first (their date in red), each a normal task row, with Plan today to decide on them one at
 // a time. It keeps its shape while it reads, and says "Nothing due today" only once it has.
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { systemZone } from "../calendar/dates";
 import { useToday } from "../calendar/useNow";
 import { Button } from "../components/ui/Button";
@@ -27,6 +27,13 @@ export function TodaySection() {
   const shortcut = useKeybinding(PLAN_TODAY_COMMAND);
   const today = useToday(systemZone());
   const tasks = useMemo(() => (due ? planQueue(due, today) : null), [due, today]);
+  // Past midnight, read again: what's due through the new day.
+  const shownDay = useRef(today);
+  useEffect(() => {
+    if (shownDay.current === today) return;
+    shownDay.current = today;
+    void useTasksStore.getState().loadDue();
+  }, [today]);
   return (
     <section className="tasks-list tasks-today" aria-label="Today">
       <div className="tasks-list__head">
