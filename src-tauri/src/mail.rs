@@ -12,8 +12,8 @@ mod original;
 mod search;
 
 pub use attachment::{
-    invite_part, safe_file_name, unique_path, AttachmentBytes, InlineResponse, PREFETCH_MAX_FILE,
-    PREFETCH_MAX_TOTAL,
+    invite_part, safe_file_name, unique_path, windows_reserved, AttachmentBytes, InlineResponse,
+    PREFETCH_MAX_FILE, PREFETCH_MAX_TOTAL,
 };
 pub use dto::{
     AttachmentDto, BodyErrorDto, CountDto, LabelCountDto, LabelDto, MessageDetailDto,

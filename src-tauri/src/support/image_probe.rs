@@ -5,6 +5,7 @@
 //! size: nothing fetched is kept. Addresses on this computer or the local network are left alone,
 //! whether written in the URL, resolved from its name or reached by a redirect.
 
+use crate::http::public_ip;
 use futures::stream::{self, StreamExt};
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use reqwest::{redirect, Url};
@@ -127,46 +128,6 @@ fn is_public(url: &str) -> bool {
         Err(_) => {
             let name = host.trim_end_matches('.').to_ascii_lowercase();
             !(name == "localhost" || name.ends_with(".localhost") || name.ends_with(".local"))
-        }
-    }
-}
-
-/// Whether `ip` is a unicast address reachable across the internet (what the unstable
-/// `IpAddr::is_global` decides): not private, shared (carrier-grade NAT, also used by VPNs like
-/// Tailscale), loopback, link-local, multicast, documentation, benchmarking or reserved.
-fn public_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            let [a, b, c, _] = v4.octets();
-            !(v4.is_private()
-                || v4.is_loopback()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_multicast()
-                || v4.is_documentation()
-                || a == 0 // "this network"
-                || a >= 240 // reserved and broadcast
-                || (a == 100 && (b & 0xc0) == 64) // shared address space, 100.64.0.0/10
-                || (a == 192 && b == 0 && c == 0) // protocol assignments
-                || (a == 198 && (b & 0xfe) == 18)) // benchmarking, 198.18.0.0/15
-        }
-        IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return public_ip(IpAddr::V4(v4));
-            }
-            let [first, second, ..] = v6.segments();
-            // Global unicast is 2000::/3; everything else (loopback, unique local, link-local,
-            // multicast, IPv4-compatible) stays off. Inside it, the special-purpose blocks that
-            // aren't globally reachable stay off too, whole: IETF protocol assignments
-            // (2001::/23, which holds benchmarking), 6to4 (2002::/16, which can wrap a private
-            // IPv4 address), documentation (2001:db8::/32, 3fff::/20) and segment routing
-            // (5f00::/16).
-            (first & 0xe000) == 0x2000
-                && !(first == 0x2001 && second < 0x0200)
-                && !(first == 0x2001 && second == 0x0db8)
-                && first != 0x2002
-                && (first & 0xfff0) != 0x3ff0
-                && first != 0x5f00
         }
     }
 }

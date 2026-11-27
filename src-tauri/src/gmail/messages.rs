@@ -4,7 +4,7 @@ use super::client::{
     ApiRequest, GmailClient, Priority, MAX_BULK_REQUESTS, MAX_CONCURRENT_REQUESTS,
 };
 use super::error::GmailError;
-use super::mime::{decode_base64url, encode_base64url, is_body_part};
+use super::mime::{decode_base64url, encode_base64url, is_body_part, is_multipart};
 use super::types::{AttachmentBody, Message, MessageFormat, MessageListResponse, MessagePart};
 use futures::stream::{self, StreamExt};
 use serde_json::json;
@@ -115,9 +115,11 @@ impl GmailClient {
         priority: Priority,
     ) -> futures::future::BoxFuture<'a, Result<(), GmailError>> {
         Box::pin(async move {
-            for child in &mut part.parts {
-                self.fill_external_bodies(message_id, child, priority)
-                    .await?;
+            if is_multipart(part) {
+                for child in &mut part.parts {
+                    self.fill_external_bodies(message_id, child, priority)
+                        .await?;
+                }
             }
             if let (true, None, Some(attachment_id)) = (
                 is_body_part(part),

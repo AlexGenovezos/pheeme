@@ -41,6 +41,16 @@ impl InlineResponse {
 /// without `:`, control characters or invisible bidirectional formatting (which can make
 /// `gnp.exe` display as `exe.png`), no leading/trailing dots or spaces.
 pub fn safe_file_name(name: Option<&str>) -> String {
+    let cleaned = cleaned_file_name(name);
+    if cleaned.is_empty() {
+        "attachment".to_owned()
+    } else {
+        cleaned
+    }
+}
+
+/// [`safe_file_name`] without the fallback: empty when nothing usable is left.
+fn cleaned_file_name(name: Option<&str>) -> String {
     let last = name
         .unwrap_or_default()
         .rsplit(['/', '\\'])
@@ -50,12 +60,9 @@ pub fn safe_file_name(name: Option<&str>) -> String {
         .chars()
         .filter(|c| *c != ':' && !c.is_control() && !is_bidi_format(*c))
         .collect();
-    let cleaned = cleaned.trim_matches(|c: char| c == '.' || c.is_whitespace());
-    if cleaned.is_empty() {
-        "attachment".to_owned()
-    } else {
-        cleaned.to_owned()
-    }
+    cleaned
+        .trim_matches(|c: char| c == '.' || c.is_whitespace())
+        .to_owned()
 }
 
 /// Invisible characters that reorder how text displays: LRM/RLM, the embeddings and
@@ -68,25 +75,67 @@ fn is_bidi_format(c: char) -> bool {
 /// (`CON.pdf`, `com1.txt`) gets a leading `_`. Used for copies opened in the default app, which
 /// only need to keep the extension.
 pub(super) fn openable_file_name(name: Option<&str>) -> String {
-    let name: String = safe_file_name(name)
-        .chars()
-        .map(|c| if "<>\"|?*".contains(c) { '_' } else { c })
-        .collect();
+    openable_file_name_or(name, "attachment")
+}
+
+/// The longest file name, in UTF-8 bytes, Pheeme writes: most file systems allow 255, and
+/// this leaves room for the ` (12)` [`unique_path`] may add.
+pub(super) const MAX_NAME_BYTES: usize = 240;
+
+/// The longest start of `s` within `max` bytes, cut on a character.
+pub(super) fn cap_bytes(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let end = (0..=max)
+        .rev()
+        .find(|&i| s.is_char_boundary(i))
+        .unwrap_or(0);
+    &s[..end]
+}
+
+/// [`openable_file_name`] with `fallback` for a name that cleans to nothing, at most
+/// [`MAX_NAME_BYTES`] long (the stem is cut, a short extension kept).
+pub(super) fn openable_file_name_or(name: Option<&str>, fallback: &str) -> String {
+    let cleaned = cleaned_file_name(name);
+    let name: String = if cleaned.is_empty() {
+        fallback
+    } else {
+        cleaned.as_str()
+    }
+    .chars()
+    .map(|c| if "<>\"|?*".contains(c) { '_' } else { c })
+    .collect();
+    let name = if name.len() > MAX_NAME_BYTES {
+        let (stem, ext) = match name.rfind('.') {
+            Some(i) if i > 0 && name.len() - i <= 16 => name.split_at(i),
+            _ => (name.as_str(), ""),
+        };
+        let stem = cap_bytes(stem, MAX_NAME_BYTES - ext.len()).trim_end_matches(['.', ' ']);
+        format!("{stem}{ext}")
+    } else {
+        name
+    };
+    if windows_reserved(&name) {
+        format!("_{name}")
+    } else {
+        name
+    }
+}
+
+/// Whether Windows reserves `name` for a device (`CON.pdf`, `com1.txt`, `NUL`), whatever its
+/// extension, so no file can have it.
+pub fn windows_reserved(name: &str) -> bool {
     let stem = name
         .split('.')
         .next()
         .unwrap_or_default()
         .trim_end()
         .to_ascii_uppercase();
-    let reserved = matches!(
+    matches!(
         stem.as_str(),
         "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
-    ) || matches!(stem.as_bytes(), [b'C', b'O', b'M', d] | [b'L', b'P', b'T', d] if d.is_ascii_digit());
-    if reserved {
-        format!("_{name}")
-    } else {
-        name
-    }
+    ) || matches!(stem.as_bytes(), [b'C', b'O', b'M', d] | [b'L', b'P', b'T', d] if d.is_ascii_digit())
 }
 
 /// `dir/name`, or `dir/name (1).ext`, `dir/name (2).ext`, … if that already exists.
@@ -148,7 +197,17 @@ impl MailService {
         let Some(id) = attachment_row_id else {
             return self.invite_text(account_id, message_id).await;
         };
-        let bytes = self.attachment(account_id, message_id, id).await?.bytes;
+        let row = attachments::get_one(&self.db, account_id, message_id, id)
+            .await?
+            .ok_or(MailError::NotFound)?;
+        let too_big = || MailError::Invalid("That calendar file is too big to read.".into());
+        if row.size.is_some_and(|s| s > INVITE_MAX_BYTES) {
+            return Err(too_big());
+        }
+        let bytes = self.bytes_of(row).await?.bytes;
+        if bytes.len() as u64 > INVITE_MAX_BYTES as u64 {
+            return Err(too_big());
+        }
         Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
     }
 
@@ -203,7 +262,7 @@ impl MailService {
         let att = self
             .attachment(account_id, message_id, attachment_row_id)
             .await?;
-        let name = safe_file_name(att.filename.as_deref());
+        let name = openable_file_name(att.filename.as_deref());
         write_unique(dir, &name, &att.bytes).await
     }
 

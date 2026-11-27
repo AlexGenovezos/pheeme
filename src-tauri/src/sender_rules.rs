@@ -119,19 +119,20 @@ impl SenderRuleService {
             .collect();
         for sender in &senders {
             if let Err(e) = save_one(api.as_ref(), &rules, sender, category, &mut saved).await {
-                tracing::warn!(account = account_id, ?senders, category, error = %e, "couldn't save sender rules; putting back what changed");
+                tracing::warn!(account = account_id, senders = senders.len(), category, error = %e, "couldn't save sender rules; putting back what changed");
                 undo(api.as_ref(), &saved).await;
                 return Err(e.into());
             }
         }
-        // Rules aren't cached, so this is the only local record that a sender's mail was sent
-        // somewhere (the filters themselves live in Gmail).
+        // Rules aren't cached, so this is the only local record that senders' mail was sent
+        // somewhere (the filters themselves live in Gmail). Counts and filter ids, never the
+        // correspondents' addresses.
         tracing::info!(
             account = account_id,
-            ?senders,
+            senders = senders.len(),
             category,
             created = ?saved.created,
-            replaced = ?saved.replaced.iter().map(|r| (&r.id, &r.sender, &r.category)).collect::<Vec<_>>(),
+            replaced = ?saved.replaced.iter().map(|r| (&r.id, &r.category)).collect::<Vec<_>>(),
             "sender rules saved"
         );
         Ok(saved)
@@ -154,7 +155,7 @@ impl SenderRuleService {
         tracing::info!(
             account = account_id,
             deleted = ?saved.created,
-            restored = ?saved.replaced.iter().map(|r| (&r.sender, &r.category)).collect::<Vec<_>>(),
+            restored = ?saved.replaced.iter().map(|r| &r.category).collect::<Vec<_>>(),
             "sender rules undone"
         );
         Ok(())
@@ -175,7 +176,6 @@ impl SenderRuleService {
                 tracing::info!(
                     account = account_id,
                     rule = rule_id,
-                    sender = rule.as_ref().map(|r| r.sender.as_str()),
                     category = rule.as_ref().map(|r| r.category.as_str()),
                     "sender rule deleted"
                 );
@@ -468,7 +468,7 @@ mod tests {
         assert_eq!(line.len(), 1, "{}", logs.text());
         for field in [
             "account=\"a1\"",
-            "moved@x.com",
+            "senders=1",
             "category=\"CATEGORY_PROMOTIONS\"",
             &saved.created[0],
             &old,
@@ -488,7 +488,9 @@ mod tests {
         h.rules.delete_rule("a1", &rule.id).await.unwrap();
         let line = logs.lines("sender rule deleted");
         assert_eq!(line.len(), 1, "{}", logs.text());
-        assert!(line[0].contains("moved@x.com"), "{}", line[0]);
+        assert!(line[0].contains(&rule.id), "{}", line[0]);
+        // Correspondents' addresses stay out of the log.
+        assert!(!logs.text().contains("moved@x.com"), "{}", logs.text());
     }
 
     #[tokio::test]

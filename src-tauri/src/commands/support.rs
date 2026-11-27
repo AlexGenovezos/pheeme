@@ -97,14 +97,20 @@ pub async fn prepare_screenshot(
     data: Option<String>,
     path: Option<String>,
 ) -> Result<ScreenshotDto, CommandError> {
+    let dropped = path.is_some();
     let bytes = match (data, path) {
         (Some(data), None) => decode(&data)?,
         (None, Some(path)) => read_dropped(&path).await?,
         _ => return Err(SupportError::Invalid("Add one screenshot at a time.".into()).into()),
     };
-    let shot = tokio::task::spawn_blocking(move || screenshot::clean(&bytes))
+    let shot = match tokio::task::spawn_blocking(move || screenshot::clean(&bytes))
         .await
-        .map_err(|e| SupportError::Internal(e.to_string()))??;
+        .map_err(|e| SupportError::Internal(e.to_string()))?
+    {
+        // A path could name any file: it is refused in the same words whatever it holds.
+        Err(SupportError::Invalid(_)) if dropped => Err(drop_refused()),
+        shot => shot,
+    }?;
     Ok(ScreenshotDto {
         png: BASE64.encode(&shot.png),
         width: shot.width,
@@ -112,18 +118,32 @@ pub async fn prepare_screenshot(
     })
 }
 
+/// The one answer to a dropped file that isn't a screenshot, whether it is missing, unreadable,
+/// too big or not an image, so a drop can't tell what else is on the disk.
+fn drop_refused() -> SupportError {
+    SupportError::Invalid("That isn't a screenshot. Add a PNG or JPEG image under 25 MB.".into())
+}
+
+/// The file's bytes, if its name is a PNG's or JPEG's and it is a file small enough to clean.
 async fn read_dropped(path: &str) -> Result<Vec<u8>, SupportError> {
-    let unreadable = || SupportError::Invalid("That file couldn't be read.".into());
-    let meta = tokio::fs::metadata(path).await.map_err(|_| unreadable())?;
-    if !meta.is_file() {
-        return Err(unreadable());
+    let image_name = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| {
+            ["png", "jpg", "jpeg"]
+                .iter()
+                .any(|x| e.eq_ignore_ascii_case(x))
+        });
+    if !image_name {
+        return Err(drop_refused());
     }
-    if meta.len() > screenshot::MAX_INPUT_BYTES as u64 {
-        return Err(SupportError::Invalid(
-            "That image is too large. Add one under 25 MB.".into(),
-        ));
+    let meta = tokio::fs::metadata(path)
+        .await
+        .map_err(|_| drop_refused())?;
+    if !meta.is_file() || meta.len() > screenshot::MAX_INPUT_BYTES as u64 {
+        return Err(drop_refused());
     }
-    tokio::fs::read(path).await.map_err(|_| unreadable())
+    tokio::fs::read(path).await.map_err(|_| drop_refused())
 }
 
 /// How long a picked conversation took to show in the window (`src/mail/openTiming.ts`).
@@ -191,5 +211,32 @@ mod tests {
             let e = prepare_screenshot(data, path).await.unwrap_err();
             assert_eq!(e.code, "invalid_input", "{}", e.message);
         }
+    }
+
+    #[tokio::test]
+    async fn a_dropped_path_is_refused_in_the_same_words_whatever_it_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = dir.path().join("notes.txt");
+        std::fs::write(&text, "secret").unwrap();
+        let fake = dir.path().join("shot.png");
+        std::fs::write(&fake, "not an image").unwrap();
+        let big = dir.path().join("big.jpg");
+        std::fs::File::create(&big)
+            .unwrap()
+            .set_len(screenshot::MAX_INPUT_BYTES as u64 + 1)
+            .unwrap();
+        let mut messages = Vec::new();
+        for path in [
+            text,
+            dir.path().join("missing.txt"),
+            dir.path().join("missing.png"),
+            fake,
+            big,
+            dir.path().to_path_buf(),
+        ] {
+            let path = Some(path.to_string_lossy().into_owned());
+            messages.push(prepare_screenshot(None, path).await.unwrap_err().message);
+        }
+        assert!(messages.iter().all(|m| *m == messages[0]), "{messages:?}");
     }
 }

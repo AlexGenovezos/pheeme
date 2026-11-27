@@ -202,6 +202,8 @@ fn eml_stem(subject: Option<&str>) -> String {
     let stem = short.trim_matches(|c: char| c == '.' || c.is_whitespace());
     if stem.is_empty() {
         "(no subject)".to_owned()
+    } else if crate::mail::windows_reserved(stem) {
+        format!("_{stem}")
     } else {
         stem.to_owned()
     }
@@ -223,6 +225,8 @@ mod tests {
             names.next(Some("a/b\\c<d>e\"f|g?h*i\r\nj")),
             "a b c d e f g h i j.eml"
         );
+        assert_eq!(names.next(Some("CON")), "_CON.eml");
+        assert_eq!(names.next(Some("lpt1.")), "_lpt1.eml");
         let long = names.next(Some(&"é".repeat(200)));
         assert_eq!(long.chars().count(), MAX_NAME_CHARS + 4);
     }

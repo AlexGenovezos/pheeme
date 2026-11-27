@@ -4,11 +4,12 @@
 
 use crate::db::messages::{self, DbSenderStats, SenderQuery};
 use crate::gmail::types::Header;
+use crate::http::public_ip;
 use crate::mail::{MailError, MailService};
 use reqwest::Url;
 use serde::Serialize;
 use sqlx::SqlitePool;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::Duration;
 
 /// One sender's mail over the report window.
@@ -179,40 +180,6 @@ fn safe_one_click(url: &str) -> Option<Url> {
     (!local).then_some(url)
 }
 
-/// Whether an address is on the public internet (not loopback, private, link-local, shared,
-/// reserved or the like), so a sender's link can't reach the user's own network.
-fn is_public(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            let [a, b, ..] = v4.octets();
-            !(v4.is_private()
-                || v4.is_loopback()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_broadcast()
-                || v4.is_documentation()
-                || v4.is_multicast()
-                || a == 0
-                || a >= 240
-                || (a == 100 && (64..128).contains(&b))
-                || (a == 198 && (18..20).contains(&b))
-                || (a == 192 && b == 0))
-        }
-        IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_public(IpAddr::V4(v4));
-            }
-            let first = v6.segments()[0];
-            !(v6.is_loopback()
-                || v6.is_unspecified()
-                || v6.is_multicast()
-                || (first & 0xfe00) == 0xfc00
-                || (first & 0xffc0) == 0xfe80
-                || (first == 0x2001 && v6.segments()[1] == 0x0db8))
-        }
-    }
-}
-
 fn not_public() -> MailError {
     MailError::Invalid(
         "Pheeme only unsubscribes in one click through an https link to a public site.".into(),
@@ -232,10 +199,11 @@ pub async fn one_click(url: &str) -> Result<(), MailError> {
         .await
         .map_err(|e| MailError::Invalid(format!("Couldn't find the sender's site: {e}")))?
         .collect();
-    if addrs.is_empty() || addrs.iter().any(|a| !is_public(a.ip())) {
+    if addrs.is_empty() || addrs.iter().any(|a| !public_ip(a.ip())) {
         return Err(not_public());
     }
     let client = crate::http::client_builder()
+        .no_proxy()
         .resolve_to_addrs(&host, &addrs)
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(20))
@@ -381,32 +349,6 @@ mod tests {
             "not a url",
         ] {
             assert!(safe_one_click(bad).is_none(), "{bad}");
-        }
-    }
-
-    #[test]
-    fn only_public_addresses_pass() {
-        for public in ["8.8.8.8", "1.1.1.1", "2606:4700::1111"] {
-            assert!(is_public(public.parse().unwrap()), "{public}");
-        }
-        for private in [
-            "127.0.0.1",
-            "10.1.2.3",
-            "172.16.0.1",
-            "192.168.1.1",
-            "169.254.169.254",
-            "100.64.0.1",
-            "0.0.0.0",
-            "198.18.0.1",
-            "240.0.0.1",
-            "::1",
-            "::",
-            "fd00::1",
-            "fe80::1",
-            "::ffff:192.168.1.1",
-            "2001:db8::1",
-        ] {
-            assert!(!is_public(private.parse().unwrap()), "{private}");
         }
     }
 

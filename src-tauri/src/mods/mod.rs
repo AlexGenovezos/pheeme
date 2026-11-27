@@ -223,7 +223,7 @@ impl ModService {
 
     pub async fn install(self: &Arc<Self>, ticket: &str) -> Result<(), String> {
         let _operation = self.operation.lock().await;
-        let (id, previous, directory) = {
+        let (id, previous, directory, taken) = {
             let mut state = lock(&self.state);
             let manifest = state
                 .staged
@@ -232,13 +232,12 @@ impl ModService {
             let id = manifest.id.clone();
             let previous = state.records.get(&id).cloned();
             // A changed OAuth declaration cannot inherit credentials issued to the old provider.
-            if let Some(old) = &previous {
-                for connection in &old.manifest.permissions.connections {
-                    if !manifest.permissions.connections.contains(connection) {
-                        oauth::disconnect(self.keychain.as_ref(), &id, &connection.id)?;
-                    }
-                }
-            }
+            let stale: Vec<String> = previous
+                .iter()
+                .flat_map(|old| &old.manifest.permissions.connections)
+                .filter(|c| !manifest.permissions.connections.contains(c))
+                .map(|c| c.id.clone())
+                .collect();
             Self::stop_locked(&mut state, &id);
             let directory = uuid::Uuid::new_v4().to_string();
             fs::rename(
@@ -246,6 +245,15 @@ impl ModService {
                 self.root.join("packages").join(&directory),
             )
             .map_err(|e| e.to_string())?;
+            // Deleted, and held, before the new version is saved, so nothing saved ever pairs it
+            // with them; if the install fails from here on, they are put back.
+            let taken = match self.take_credentials(&id, &stale) {
+                Ok(taken) => taken,
+                Err(error) => {
+                    let _ = fs::remove_dir_all(self.root.join("packages").join(directory));
+                    return Err(error);
+                }
+            };
             state.records.insert(
                 id.clone(),
                 Record {
@@ -256,6 +264,7 @@ impl ModService {
             );
             state.errors.remove(&id);
             if let Err(error) = self.persist(&state) {
+                self.restore_credentials(&id, &taken);
                 if let Some(old) = &previous {
                     state.records.insert(id.clone(), old.clone());
                 } else {
@@ -264,7 +273,7 @@ impl ModService {
                 let _ = fs::remove_dir_all(self.root.join("packages").join(directory));
                 return Err(error);
             }
-            (id, previous, directory)
+            (id, previous, directory, taken)
         };
         if !self.safe_mode {
             if let Err(error) = self.start(&id).await {
@@ -282,6 +291,7 @@ impl ModService {
                     self.persist(&state)?;
                 }
                 if let Some(old) = &previous {
+                    self.restore_credentials(&id, &taken);
                     let _ = fs::remove_dir_all(self.root.join("packages").join(directory));
                     if old.enabled {
                         if let Err(reason) = self.start(&id).await {
@@ -298,6 +308,41 @@ impl ModService {
         }
         (self.changed)();
         Ok(())
+    }
+
+    /// Deletes the mod's credentials for `connections` and returns them, so a failed install can
+    /// put them back; if one can't be deleted, those already deleted are put back first.
+    fn take_credentials(
+        &self,
+        id: &str,
+        connections: &[String],
+    ) -> Result<Vec<(String, oauth::Tokens)>, String> {
+        let keychain = self.keychain.as_ref();
+        let mut taken = Vec::new();
+        for connection in connections {
+            // Only what could be put back is deleted.
+            let tokens = oauth::read(keychain, id, connection)
+                .and_then(|tokens| oauth::disconnect(keychain, id, connection).map(|()| tokens));
+            let tokens = match tokens {
+                Ok(tokens) => tokens,
+                Err(e) => {
+                    self.restore_credentials(id, &taken);
+                    return Err(e);
+                }
+            };
+            if let Some(tokens) = tokens {
+                taken.push((connection.clone(), tokens));
+            }
+        }
+        Ok(taken)
+    }
+
+    fn restore_credentials(&self, id: &str, taken: &[(String, oauth::Tokens)]) {
+        for (connection, tokens) in taken {
+            if let Err(e) = oauth::commit(self.keychain.as_ref(), id, connection, tokens) {
+                tracing::warn!(error = %e, "couldn't restore a mod's credentials");
+            }
+        }
     }
 
     fn stop_locked(state: &mut State, id: &str) {

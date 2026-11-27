@@ -565,6 +565,17 @@ async fn labels_every_match_of_a_search_without_reading_each_conversation() {
         .await
         .unwrap_err();
     assert!(err.to_string().contains("thread_ids or query"), "{err}");
+
+    for query in ["in:trash", "+in:spam receipts"] {
+        let err = h
+            .call(
+                "change_labels",
+                json!({ "query": query, "add": ["receipts"] }),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("Spam or Trash"), "{query}: {err}");
+    }
 }
 
 #[tokio::test]
@@ -1820,6 +1831,39 @@ async fn each_client_gets_its_own_limit_for_reads_and_changes() {
     assert!(refused
         .iter()
         .any(|a| a.error.as_deref().is_some_and(|e| e.contains("Too many"))));
+}
+
+#[tokio::test]
+async fn refused_and_malformed_calls_cannot_flush_the_activity_log() {
+    let h = setup(FakeGmail::new()).await;
+    h.api.set_limits(Limits {
+        reads: 3,
+        changes: 1,
+    });
+    h.call("list_accounts", json!({})).await.unwrap();
+    for _ in 0..20 {
+        assert!(h.call("no_such_tool", json!({})).await.is_err());
+    }
+    let log = h.api.activity(100).await.unwrap();
+    // The read, two malformed calls under the limit and one refusal: the rest aren't logged.
+    assert_eq!(log.len(), 4, "{log:?}");
+    assert_eq!(log.last().unwrap().tool, "list_accounts");
+    assert_eq!(
+        log.iter()
+            .filter(|a| a.error.as_deref().is_some_and(|e| e.contains("Too many")))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn a_refusal_is_logged_once_a_window() {
+    let limiter = RateLimiter::default();
+    assert!(limiter.log_refusal("c", false, 0));
+    assert!(!limiter.log_refusal("c", false, 59_999));
+    assert!(limiter.log_refusal("c", true, 1));
+    assert!(limiter.log_refusal("other", false, 1));
+    assert!(limiter.log_refusal("c", false, 60_000));
 }
 
 #[test]

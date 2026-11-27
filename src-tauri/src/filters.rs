@@ -623,6 +623,23 @@ fn category_name(id: &str) -> &str {
     }
 }
 
+/// Whether every `(` in `v` has its `)`, outside quoted phrases.
+fn balanced(v: &str) -> bool {
+    let (mut depth, mut quoted) = (0usize, false);
+    for c in v.chars() {
+        match c {
+            '"' => quoted = !quoted,
+            '(' if !quoted => depth += 1,
+            ')' if !quoted => match depth.checked_sub(1) {
+                Some(d) => depth = d,
+                None => return false,
+            },
+            _ => {}
+        }
+    }
+    depth == 0 && !quoted
+}
+
 /// Gmail search for what a filter's criteria match (Gmail's own criteria field names).
 pub fn criteria_query(criteria: &serde_json::Map<String, Value>) -> Option<String> {
     let text = |key: &str| {
@@ -641,8 +658,12 @@ pub fn criteria_query(criteria: &serde_json::Map<String, Value>) -> Option<Strin
             && !matches!(v, "OR" | "AND" | "AROUND");
         if plain {
             v.to_owned()
-        } else {
+        } else if balanced(v) {
             format!("({v})")
+        } else {
+            // A stray `(` or `)` would close the group early and spill the rest into the search
+            // around it: searched as a phrase instead.
+            format!("\"{}\"", v.replace('"', ""))
         }
     };
     let mut parts = Vec::new();
@@ -775,6 +796,17 @@ mod tests {
         assert_eq!(
             criteria_query(json!({ "from": " " }).as_object().unwrap()),
             None
+        );
+        // A stray parenthesis can't close the group and leak the rest into the search.
+        let stray = json!({ "subject": "a) OR in:trash (b", "query": "x\") y" });
+        assert_eq!(
+            criteria_query(stray.as_object().unwrap()).as_deref(),
+            Some("subject:\"a) OR in:trash (b\" \"x) y\"")
+        );
+        let nested = json!({ "query": "(a OR b) \"c)\"" });
+        assert_eq!(
+            criteria_query(nested.as_object().unwrap()).as_deref(),
+            Some("((a OR b) \"c)\")")
         );
     }
 

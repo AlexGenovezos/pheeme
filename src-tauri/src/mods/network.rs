@@ -2,7 +2,7 @@ use super::schema::{ensure, https_url, origin, Manifest, MAX_JSON};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     time::Duration,
 };
 
@@ -68,36 +68,7 @@ pub fn allowed(manifest: &Manifest, request: &Request) -> Result<Url, String> {
     Ok(url)
 }
 
-/// Only public unicast addresses. Check resolved addresses, then pin the actual request
-/// to them; a second DNS lookup must not be able to redirect access into the LAN.
-pub fn public_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => public_v4(ip),
-        IpAddr::V6(ip) => {
-            if let Some(ip) = ip.to_ipv4_mapped() {
-                return public_v4(ip);
-            }
-            // Global unicast only, excluding special-use 2001::/23 and documentation.
-            let segments = ip.segments();
-            (segments[0] & 0xe000) == 0x2000
-                && !(segments[0] == 0x2001 && segments[1] < 0x0200)
-                && !(segments[0] == 0x2001 && segments[1] == 0x0db8)
-                && !(segments[0] == 0x2002)
-                && !(segments[0] == 0x3fff && segments[1] < 0x1000)
-        }
-    }
-}
-
-fn public_v4(ip: Ipv4Addr) -> bool {
-    let [a, b, c, _] = ip.octets();
-    !matches!(a, 0 | 10 | 127 | 224..=255)
-        && !(a == 100 && (64..=127).contains(&b))
-        && !(a == 169 && b == 254)
-        && !(a == 172 && (16..=31).contains(&b))
-        && !(a == 192 && (b == 0 || (b == 168) || (b == 88 && c == 99)))
-        && !(a == 198 && (b == 18 || b == 19 || (b == 51 && c == 100)))
-        && !(a == 203 && b == 0 && c == 113)
-}
+pub use crate::http::public_ip;
 
 pub async fn client(url: &Url) -> Result<Client, String> {
     let host = url.host_str().ok_or("Missing network host")?;
