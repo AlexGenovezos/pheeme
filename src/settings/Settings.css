@@ -831,6 +831,14 @@
   letter-spacing: var(--letter-spacing-tight);
 }
 
+.release-notes__date {
+  margin-left: auto;
+  color: var(--color-foreground-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  letter-spacing: var(--letter-spacing-normal);
+}
+
 .release-notes__body {
   padding: var(--space-3) var(--space-4) var(--space-4);
 }

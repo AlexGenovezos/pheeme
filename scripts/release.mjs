@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Release helper. `prepare X.Y` bumps the version and drafts docs/releases/vX.Y.md from the PRs
 // merged since the last tag; `check X.Y` is the gate before tagging (and in the release workflow);
-// `notes X.Y` prints the notes as the release workflow publishes them (the GitHub release text). The steps around it live in the `release` skill
+// `notes X.Y` prints the notes as the release workflow publishes them (the GitHub release text).
+// `prepare` also records when each published release went out in docs/releases/dates.json, which
+// the app's What's new shows. The steps around it live in the `release` skill
 // (.claude/skills/release/SKILL.md).
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -27,6 +29,23 @@ export function parseVersion(input) {
 }
 
 export const notesPath = (root, tag) => path.join(root, NOTES_DIR, `${tag}.md`);
+export const datesPath = (root) => path.join(root, NOTES_DIR, "dates.json");
+
+/**
+ * `recorded` ("X.Y" → ISO time) plus the published releases it lacks, newest version first.
+ * `releases`: GitHub's [{ tagName, publishedAt, isDraft }]. A recorded date is kept as it is.
+ */
+export function mergeReleaseDates(recorded, releases) {
+  const dates = { ...recorded };
+  for (const { tagName, publishedAt, isDraft } of releases) {
+    const version = /^v(\d+\.\d+)$/.exec(tagName ?? "")?.[1];
+    if (version && publishedAt && !isDraft && !dates[version]) dates[version] = publishedAt;
+  }
+  return Object.fromEntries(
+    Object.entries(dates).sort(([a], [b]) => (isNewer(a, b) ? -1 : isNewer(b, a) ? 1 : 0)),
+  );
+}
+
 /** `file` relative to the repo, with `/` on every OS (for messages). */
 const shown = (root, file) => path.relative(root, file).split(path.sep).join("/");
 
@@ -172,6 +191,18 @@ function addedMigrations(root, prevTag) {
     .filter((f) => f.endsWith(".sql"));
 }
 
+/** Adds the published releases' dates to docs/releases/dates.json; how many it added. */
+function recordReleaseDates(root) {
+  const file = datesPath(root);
+  const recorded = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+  const releases = JSON.parse(
+    sh(root, "gh", ["release", "list", "-L", "1000", "--json", "tagName,publishedAt,isDraft"]),
+  );
+  const dates = mergeReleaseDates(recorded, releases);
+  fs.writeFileSync(file, `${JSON.stringify(dates, null, 2)}\n`);
+  return Object.keys(dates).length - Object.keys(recorded).length;
+}
+
 function prepare(root, input, { force = false } = {}) {
   const { version, tag } = parseVersion(input);
   const current = readVersions(root).packageJson;
@@ -186,12 +217,19 @@ function prepare(root, input, { force = false } = {}) {
   setVersion(root, version);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, draftNotes({ tag, prevTag, prs, migrations }));
+  let dated;
+  try {
+    dated = recordReleaseDates(root);
+  } catch (e) {
+    console.warn(`Couldn't read release dates from GitHub (${e.message.split("\n")[0]}).`);
+  }
 
   const rel = shown(root, file);
   console.log(
     `Version set to ${version}.0 in package.json, package-lock.json, Cargo.toml, Cargo.lock, tauri.conf.json.`,
   );
   console.log(`Drafted ${rel} from ${prs.length} PRs since ${prevTag ?? "the start"}.`);
+  if (dated) console.log(`Recorded ${dated} release dates in ${shown(root, datesPath(root))}.`);
   if (migrations.length)
     console.log(`New migrations since ${prevTag}: ${migrations.join(", ")} (Heads-up added).`);
   console.log(`\nNext: write the notes, then \`npm run release:check -- ${version}\`.`);

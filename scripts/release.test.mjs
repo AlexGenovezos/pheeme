@@ -8,6 +8,7 @@ import {
   checkRelease,
   draftNotes,
   isNewer,
+  mergeReleaseDates,
   notesPath,
   parseVersion,
   prNumbersFromSubjects,
@@ -143,4 +144,22 @@ it("publishes the notes without the writing guide", () => {
   expect(publishedNotes("<!-- guide\n  more -->\n\nCompose is here.\n\n")).toBe(
     "Compose is here.\n",
   );
+});
+
+it("adds published releases' dates it lacks, keeping recorded ones, newest version first", () => {
+  const recorded = { 0.9: "2026-11-04T03:42:45Z" };
+  const releases = [
+    { tagName: "v0.10", publishedAt: "2026-11-04T06:28:58Z", isDraft: false },
+    { tagName: "v0.9", publishedAt: "2026-12-01T00:00:00Z", isDraft: false },
+    { tagName: "v0.11", publishedAt: null, isDraft: true },
+    { tagName: "v0.8", publishedAt: "2026-11-03T23:47:41Z", isDraft: false },
+    { tagName: "nightly", publishedAt: "2026-11-05T00:00:00Z", isDraft: false },
+  ];
+  const dates = mergeReleaseDates(recorded, releases);
+  expect(dates).toEqual({
+    "0.10": "2026-11-04T06:28:58Z",
+    0.9: "2026-11-04T03:42:45Z",
+    0.8: "2026-11-03T23:47:41Z",
+  });
+  expect(Object.keys(dates)).toEqual(["0.10", "0.9", "0.8"]);
 });

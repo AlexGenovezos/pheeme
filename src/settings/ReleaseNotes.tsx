@@ -44,8 +44,10 @@ export function ReleaseNotes({ releases, current }: { releases: Release[]; curre
   );
 }
 
+const RELEASE_DAY = new Intl.DateTimeFormat(undefined, { dateStyle: "long" });
+
 function ReleaseCard({
-  release: { version, blocks },
+  release: { version, date, blocks },
   current,
 }: {
   release: Release;
@@ -56,6 +58,11 @@ function ReleaseCard({
       <h4 className="release-notes__version">
         Version {version}
         {version === displayVersion(current) && <Badge tone="accent">This version</Badge>}
+        {date && (
+          <time className="release-notes__date" dateTime={date}>
+            {RELEASE_DAY.format(new Date(date))}
+          </time>
+        )}
       </h4>
       <div className="release-notes__body">
         {blocks.map((block, i) => {

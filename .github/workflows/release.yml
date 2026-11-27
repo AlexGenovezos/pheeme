@@ -114,8 +114,11 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+      # Reads this run's creation time, which is when the tag was pushed.
+      actions: read
     outputs:
       id: ${{ steps.draft.outputs.id }}
+      pushed-at: ${{ steps.pushed.outputs.at }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -130,6 +133,12 @@ jobs:
               -f target_commitish="$GITHUB_SHA" -f name="$RELEASE_NAME" -f body="" -F draft=true --jq .id)
           fi
           echo "id=$id" >> "$GITHUB_OUTPUT"
+      # The app's What's new dates this release with it (src/settings/releases.ts). A re-run keeps
+      # the run's creation time; a moved tag starts a new run, so it dates the new push.
+      - id: pushed
+        run: |
+          at=$(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID" --jq .created_at)
+          echo "at=$at" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build (${{ matrix.name }})
@@ -176,6 +185,7 @@ jobs:
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          VITE_RELEASE_PUSHED_AT: ${{ needs.create-release.outputs.pushed-at }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
