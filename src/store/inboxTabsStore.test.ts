@@ -63,16 +63,33 @@ function heldSaves() {
   return held;
 }
 
-test("an older toggle's answer or failure never undoes a newer one", async () => {
+test("toggles are saved in order; a failed one never undoes a newer one", async () => {
   const held = heldSaves();
-  const first = useInboxTabs.getState().setHidden("a", "CATEGORY_SOCIAL", true);
-  const second = useInboxTabs.getState().setHidden("a", "CATEGORY_FORUMS", true);
-  expect(useInboxTabs.getState().hidden.a).toEqual(["CATEGORY_SOCIAL", "CATEGORY_FORUMS"]);
-  held[1].answer();
-  await second;
+  const first = useInboxTabs.getState().setHidden("x", "CATEGORY_SOCIAL", true);
+  const second = useInboxTabs.getState().setHidden("x", "CATEGORY_FORUMS", true);
+  expect(useInboxTabs.getState().hidden.x).toEqual(["CATEGORY_SOCIAL", "CATEGORY_FORUMS"]);
+  // The second waits for the first, so the backend ends with the newest choice.
+  await vi.waitFor(() => expect(held).toHaveLength(1));
   held[0].answer(true);
   await expect(first).rejects.toBeTruthy();
-  expect(useInboxTabs.getState().hidden.a).toEqual(["CATEGORY_SOCIAL", "CATEGORY_FORUMS"]);
+  await vi.waitFor(() => expect(held).toHaveLength(2));
+  expect(held[1].hidden).toEqual(["CATEGORY_SOCIAL", "CATEGORY_FORUMS"]);
+  held[1].answer();
+  await second;
+  expect(useInboxTabs.getState().hidden.x).toEqual(["CATEGORY_SOCIAL", "CATEGORY_FORUMS"]);
+});
+
+test("when every toggle fails, the tabs go back to what was last saved", async () => {
+  const held = heldSaves();
+  const first = useInboxTabs.getState().setHidden("y", "CATEGORY_SOCIAL", true);
+  const second = useInboxTabs.getState().setHidden("y", "CATEGORY_FORUMS", true);
+  const failed = Promise.allSettled([first, second]);
+  await vi.waitFor(() => expect(held).toHaveLength(1));
+  held[0].answer(true);
+  await vi.waitFor(() => expect(held).toHaveLength(2));
+  held[1].answer(true);
+  expect((await failed).map((r) => r.status)).toEqual(["rejected", "rejected"]);
+  expect(useInboxTabs.getState().hidden.y).toEqual([]);
 });
 
 test("a load answered after a toggle, or after a newer load, keeps what's newer", async () => {

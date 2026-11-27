@@ -24,6 +24,10 @@ const NONE: string[] = [];
 let loads = 0;
 /** Per account, how many toggles have started: only the latest one's answer (or failure) is applied. */
 const toggles = new Map<string, number>();
+/** Per account, the last write: the next waits for it, so they reach the backend in the order they were made. */
+const writes = new Map<string, Promise<unknown>>();
+/** Per account, the hidden tabs last read or saved, which a failed toggle goes back to. */
+const confirmed = new Map<string, string[]>();
 
 export const useInboxTabs = create<InboxTabsState>((set, get) => ({
   hidden: {},
@@ -34,6 +38,7 @@ export const useInboxTabs = create<InboxTabsState>((set, get) => ({
       accountIds.map(async (id) => [id, await getInboxTabs(id).catch(() => null)] as const),
     );
     if (ticket !== loads) return;
+    for (const [id, tabs] of entries) if (tabs) confirmed.set(id, tabs);
     set((state) => ({
       hidden: Object.fromEntries(
         entries.map(([id, tabs]) => {
@@ -49,6 +54,7 @@ export const useInboxTabs = create<InboxTabsState>((set, get) => ({
     toggles.set(accountId, mine);
     const latest = () => toggles.get(accountId) === mine;
     const before = get().hidden[accountId] ?? NONE;
+    if (!confirmed.has(accountId)) confirmed.set(accountId, before);
     const next = HIDEABLE.filter((l) => (l === label ? hidden : before.includes(l)));
     set((state) => ({ hidden: { ...state.hidden, [accountId]: next } }));
     if (hidden) {
@@ -56,8 +62,13 @@ export const useInboxTabs = create<InboxTabsState>((set, get) => ({
       if (mailbox.accountId === accountId && mailbox.category === label)
         setMailbox(categoryMailbox(accountId, PRIMARY));
     }
+    const write = (writes.get(accountId) ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => setInboxTabs(accountId, next));
+    writes.set(accountId, write);
     try {
-      const saved = await setInboxTabs(accountId, next);
+      const saved = await write;
+      confirmed.set(accountId, saved);
       // A later toggle is already shown, and its own answer comes after this one.
       if (latest()) set((state) => ({ hidden: { ...state.hidden, [accountId]: saved } }));
       // Primary gains or loses mail and the hidden tab's list changes, but no message event says so.
@@ -65,8 +76,12 @@ export const useInboxTabs = create<InboxTabsState>((set, get) => ({
       if (mailbox.accountId === accountId && mailbox.category)
         await useMailStore.getState().reload();
     } catch (error) {
-      if (latest()) set((state) => ({ hidden: { ...state.hidden, [accountId]: before } }));
+      // Back to what was last saved: `before` may hold an earlier toggle that failed too.
+      const kept = confirmed.get(accountId) ?? before;
+      if (latest()) set((state) => ({ hidden: { ...state.hidden, [accountId]: kept } }));
       throw error;
+    } finally {
+      if (writes.get(accountId) === write) writes.delete(accountId);
     }
   },
 }));

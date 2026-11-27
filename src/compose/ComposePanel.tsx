@@ -298,9 +298,13 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   const accountDefault = sendAsLists[win.accountId]
     ? useSendAs.getState().defaultFrom(win.accountId)
     : null;
+  // The address filled in that way, so the signature it brings is a fill-in too.
+  const autoFrom = useRef<string | null>(null);
   useEffect(() => {
-    if (win.kind === "new" && !win.draft.from && accountDefault)
+    if (win.kind === "new" && !win.draft.from && accountDefault) {
+      autoFrom.current = accountDefault.address;
       store.fillIn(win.id, { from: accountDefault });
+    }
     // oxlint-disable-next-line react/exhaustive-deps
   }, [accountDefault?.address, win.kind, win.id]);
 
@@ -330,12 +334,12 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     signedAs.current = { accountId: win.accountId, from: fromAddress };
     const signatures = useSignatures.getState();
     const next = signatures.signatureFor(win.accountId, use, fromAddress);
-    // Gmail's default address arriving for an untouched message only fills in its signature.
-    const untouched =
-      useComposeStore.getState().windows.find((w) => w.id === win.id)?.version === 0;
+    // Gmail's default address arriving late only fills in its signature; a From the user picks is an edit.
+    const filled = autoFrom.current !== null && sameAddress(autoFrom.current, fromAddress);
+    autoFrom.current = null;
     if (next !== signatures.signatureFor(was.accountId, use, was.from))
-      replaceSignature(editor, next, { fillIn: untouched });
-  }, [editor, win.id, win.accountId, fromAddress, use]);
+      replaceSignature(editor, next, { fillIn: filled });
+  }, [editor, win.accountId, fromAddress, use]);
 
   // Focus: replies start in the body, new messages in To.
   useEffect(() => {

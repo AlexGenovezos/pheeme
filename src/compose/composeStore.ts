@@ -240,6 +240,8 @@ const savedDrafts = new Map<number, { accountId: string; draftId: string }>();
 const savedMessages = new Map<number, string>();
 /** Every Drafts message each window's draft has been (the one it was opened from, then one per save). */
 const draftMessages = new Map<number, Set<string>>();
+/** Each window's account switches, so a save can tell its window moved meanwhile (even back again). */
+const switches = new Map<number, number>();
 const noteDraftMessage = (id: number, messageId: string) => {
   const known = draftMessages.get(id) ?? new Set<string>();
   draftMessages.set(id, known.add(messageId));
@@ -256,6 +258,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
     savedDrafts.delete(id);
     savedMessages.delete(id);
     draftMessages.delete(id);
+    switches.delete(id);
     set((s) => ({ windows: s.windows.filter((w) => w.id !== id) }));
   };
   /** A user edit. Ignored while sending: the message already went to the outbox as it was. */
@@ -513,6 +516,7 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       if (!win || win.sending || win.accountId === accountId || win.kind !== "new") return;
       const old = win.draft.draftId;
       if (old) void deleteDraft(win.accountId, old).catch(() => {});
+      switches.set(id, (switches.get(id) ?? 0) + 1);
       // Those drafts were the old account's: a discard or Send later must not use them here.
       savedDrafts.delete(id);
       savedMessages.delete(id);
@@ -589,12 +593,12 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         }
         const version = win.version;
         const accountId = win.accountId;
+        const switched = switches.get(id);
         patch(id, { saving: true });
         try {
           const saved = await saveDraft(accountId, outgoingDraft(win.draft));
-          // Moved to another account while saving: that draft is no one's now.
-          const now = find(id);
-          if (now && now.accountId !== accountId) {
+          // Moved to another account while saving (even if back again): that draft is no one's now.
+          if (find(id) && switches.get(id) !== switched) {
             void deleteDraft(accountId, saved.draftId).catch(() => {});
             patch(id, { saving: false });
             return true;
@@ -814,6 +818,7 @@ export function __resetComposeStoreForTests() {
   savedDrafts.clear();
   savedMessages.clear();
   draftMessages.clear();
+  switches.clear();
   nextId = 1;
   useComposeStore.setState({ windows: [], focusRequest: null });
 }

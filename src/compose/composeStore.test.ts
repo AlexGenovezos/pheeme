@@ -330,6 +330,19 @@ test("a save that lands after an account switch deletes its draft from the old a
   expect(called("delete_draft")).toEqual([{ accountId: "a1", draftId: "d1" }]);
 });
 
+test("a save that lands after switching away and back doesn't claim its draft", async () => {
+  const release = heldSave();
+  const id = written();
+  const saving = store().save(id);
+  await vi.waitFor(() => expect(called("save_draft")).toHaveLength(1));
+  store().setAccount(id, "a2");
+  store().setAccount(id, "a1");
+  release();
+  await saving;
+  expect(win(id)).toMatchObject({ accountId: "a1", saving: false, draft: { draftId: null } });
+  expect(called("delete_draft")).toEqual([{ accountId: "a1", draftId: "d1" }]);
+});
+
 test("discarding after a switch that raced a save deletes that draft from its own account", async () => {
   const release = heldSave();
   const id = written();

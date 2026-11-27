@@ -432,6 +432,8 @@ test("a new message opened before the first Gmail signature fetch gets it when i
   });
   await waitFor(() => expect(editor.querySelector(".gmail_signature b")?.textContent).toBe("Late"));
   expect(editor.querySelectorAll(".gmail_signature")).toHaveLength(1);
+  // Filled in, not typed: the message is still untouched, so closing it asks nothing.
+  expect(useComposeStore.getState().windows[0].version).toBe(0);
 });
 
 test("the From picker offers each sendable address and swaps in its signature", async () => {
