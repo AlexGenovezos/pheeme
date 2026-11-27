@@ -26,10 +26,13 @@ pub async fn save_attachment(
     attachment_id: String,
 ) -> Result<String, CommandError> {
     let dir = downloads_dir(&app)?;
-    let path = state
-        .mail
-        .save_attachment(&account_id, &message_id, &attachment_id, &dir)
-        .await?;
+    let path = user_action(state.mail.save_attachment(
+        &account_id,
+        &message_id,
+        &attachment_id,
+        &dir,
+    ))
+    .await?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -69,10 +72,12 @@ pub async fn read_attachment(
     message_id: String,
     attachment_id: String,
 ) -> Result<tauri::ipc::Response, CommandError> {
-    let att = state
-        .mail
-        .attachment(&account_id, &message_id, &attachment_id)
-        .await?;
+    let att = user_action(
+        state
+            .mail
+            .attachment(&account_id, &message_id, &attachment_id),
+    )
+    .await?;
     Ok(tauri::ipc::Response::new(att.bytes))
 }
 
@@ -85,12 +90,15 @@ pub fn prefetch_attachments(
     message_ids: Vec<String>,
 ) {
     let mail = state.mail.clone();
-    tauri::async_runtime::spawn(async move {
-        let fetched = mail.prefetch_attachments(&account_id, &message_ids).await;
-        if fetched > 0 {
-            tracing::debug!(fetched, "prefetched attachments");
-        }
-    });
+    // Background work: it must not hold up what the reader asks for meanwhile.
+    tauri::async_runtime::spawn(crate::shutdown::until(crate::gmail::background(
+        async move {
+            let fetched = mail.prefetch_attachments(&account_id, &message_ids).await;
+            if fetched > 0 {
+                tracing::debug!(fetched, "prefetched attachments");
+            }
+        },
+    )));
 }
 
 /// Opens an attachment in the user's default app for its type, from a private copy in the
@@ -111,10 +119,12 @@ pub async fn open_attachment(
             message: "Couldn't find Pheeme's cache folder.".into(),
         })?
         .join("opened");
-    let path = state
-        .mail
-        .open_copy(&account_id, &message_id, &attachment_id, &dir)
-        .await?;
+    let path = user_action(
+        state
+            .mail
+            .open_copy(&account_id, &message_id, &attachment_id, &dir),
+    )
+    .await?;
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|error| CommandError {
         code: "open_failed".into(),
         message: format!("Couldn't open the file ({error})."),

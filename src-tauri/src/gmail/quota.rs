@@ -78,13 +78,32 @@ impl QuotaLimiter {
     pub(super) async fn take(&self, units: u32) {
         let send_at = {
             let mut pace = self.pace();
-            let now = Instant::now();
-            let rate = self.rate_at(&pace, now);
-            let start = pace.next.max(now);
-            pace.next = start + Duration::from_secs_f64(f64::from(units) / rate);
-            start.checked_sub(QUOTA_BURST).unwrap_or(now)
+            self.book(&mut pace, units, Instant::now())
         };
         tokio::time::sleep_until(send_at).await;
+    }
+
+    /// [`Self::take`], unless a [`Self::cool_down`] is running: then nothing is booked and the
+    /// time left comes back at once, so background work never waits it out holding its slots.
+    pub(super) async fn take_unless_cooling(&self, units: u32) -> Result<(), Duration> {
+        let send_at = {
+            let mut pace = self.pace();
+            let now = Instant::now();
+            if let Some(left) = cooling_at(&pace, now) {
+                return Err(left);
+            }
+            self.book(&mut pace, units, now)
+        };
+        tokio::time::sleep_until(send_at).await;
+        Ok(())
+    }
+
+    /// Reserve `units` on the schedule; when the request may go.
+    fn book(&self, pace: &mut Pace, units: u32, now: Instant) -> Instant {
+        let rate = self.rate_at(pace, now);
+        let start = pace.next.max(now);
+        pace.next = start + Duration::from_secs_f64(f64::from(units) / rate);
+        start.checked_sub(QUOTA_BURST).unwrap_or(now)
     }
 
     /// [`Self::take`] for the user's requests: they wait only behind each other, at the full rate
@@ -131,13 +150,18 @@ impl QuotaLimiter {
 
     /// The time left of a [`Self::cool_down`].
     pub(super) fn cooling(&self) -> Option<Duration> {
-        let (_, until) = self.pace().cut?;
-        let left = until.saturating_duration_since(Instant::now());
-        (!left.is_zero()).then_some(left)
+        cooling_at(&self.pace(), Instant::now())
     }
 
     #[cfg(test)]
     pub(super) fn rate(&self) -> f64 {
         self.rate_at(&self.pace(), Instant::now())
     }
+}
+
+/// The time left at `now` of a cool-down (a cut that takes effect later).
+fn cooling_at(pace: &Pace, now: Instant) -> Option<Duration> {
+    let (_, until) = pace.cut?;
+    let left = until.saturating_duration_since(now);
+    (!left.is_zero()).then_some(left)
 }

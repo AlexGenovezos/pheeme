@@ -283,6 +283,48 @@ pub async fn update_progress<'e>(
     Ok(())
 }
 
+/// Update an op's progress only while its status is still `expected`. False when it changed
+/// meanwhile (a send confirmed by sync, say), in which case nothing is written.
+pub async fn update_progress_if<'e>(
+    ex: impl SqliteExecutor<'e>,
+    op_id: &str,
+    expected: &str,
+    p: &OpProgress<'_>,
+    now_ms: i64,
+) -> Result<bool> {
+    let done = sqlx::query!(
+        r#"UPDATE outbox SET status = ?, attempts = ?, next_attempt_at = ?, checks_done = ?,
+                             last_error = ?, updated_at = ?
+           WHERE id = ? AND status = ?"#,
+        p.status,
+        p.attempts,
+        p.next_attempt_at,
+        p.checks_done,
+        p.last_error,
+        now_ms,
+        op_id,
+        expected
+    )
+    .execute(ex)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Send again a send that failed or was never confirmed: back to `pending`, due now, keeping
+/// its attempts. False when it is no longer one (confirmed, claimed or gone meanwhile).
+pub async fn resend<'e>(ex: impl SqliteExecutor<'e>, op_id: &str, now_ms: i64) -> Result<bool> {
+    let done = sqlx::query!(
+        r#"UPDATE outbox SET status = 'pending', next_attempt_at = 0, checks_done = 0,
+                             last_error = NULL, updated_at = ?
+           WHERE id = ? AND kind = 'send' AND status IN ('failed', 'unconfirmed')"#,
+        now_ms,
+        op_id
+    )
+    .execute(ex)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
 /// Make every change that failed and is waiting out its backoff due at `now_ms` (the connection
 /// came back). Sends still in their undo window (no attempt yet) keep their time.
 pub async fn retry_waiting<'e>(ex: impl SqliteExecutor<'e>, now_ms: i64) -> Result<()> {

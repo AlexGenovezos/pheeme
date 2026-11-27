@@ -512,8 +512,14 @@ impl GmailClient {
             if user {
                 self.quota.take_first(units).await;
             } else {
+                // Checked and booked at once: booked behind a cooldown that began since this
+                // request took its slots, it would sleep it out holding them.
                 if background {
-                    self.bulk_quota.take(units).await;
+                    if let Err(left) = self.bulk_quota.take_unless_cooling(units).await {
+                        return Err(GmailError::RateLimit {
+                            retry_after: Some(left),
+                        });
+                    }
                 }
                 self.quota.take(units).await;
                 // A user request or a rate limit may have come up while this one was paced.

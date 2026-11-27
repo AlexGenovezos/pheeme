@@ -343,11 +343,11 @@ impl MailService {
         } else if !preload && messages.iter().any(|m| m.fully_fetched == 0) {
             let engine = self.sync.engine(account_id);
             let thread = thread_id.to_owned();
-            tokio::spawn(async move {
+            tokio::spawn(crate::shutdown::until(async move {
                 if let Err(e) = engine.load_thread_bodies(&thread).await {
                     tracing::info!(thread, error = %e, "couldn't refresh cached messages");
                 }
-            });
+            }));
         }
         let thread = threads::get_thread(&self.db, account_id, thread_id)
             .await?

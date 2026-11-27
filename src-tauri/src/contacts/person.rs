@@ -161,7 +161,7 @@ impl ContactService {
             } else { MailError::Sync(SyncError::Gmail(e)) }
         })?;
         db::contacts::save_person(&self.db, account_id, &address, name).await?;
-        self.forget(account_id);
+        self.invalidate_cache(account_id);
         Ok(())
     }
 }

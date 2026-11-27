@@ -1050,3 +1050,39 @@ async fn sent_paths(server: &MockServer) -> Vec<String> {
     let sent = server.received_requests().await.unwrap();
     sent.iter().map(|r| r.url.path().to_owned()).collect()
 }
+
+#[tokio::test]
+async fn background_work_waiting_for_a_slot_is_turned_away_by_a_cooldown_begun_meanwhile() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&server)
+        .await;
+    let (client, _) = client_for(&server);
+    let slots = client.bulk_permits.clone();
+    let held = slots.acquire_many(MAX_BULK_REQUESTS as u32).await.unwrap();
+    let request = background(client.send_json::<Value>(ApiRequest::get(&["messages", "m1"])));
+    tokio::pin!(request);
+    assert!(
+        futures::poll!(&mut request).is_pending(),
+        "waits for a slot"
+    );
+
+    // A rate limit starts a cooldown while it waits; then it gets its slot.
+    client.bulk_quota.cool_down();
+    drop(held);
+    let err = tokio::time::timeout(Duration::from_secs(1), request)
+        .await
+        .expect("it slept out the cooldown holding its slots")
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            GmailError::RateLimit {
+                retry_after: Some(_)
+            }
+        ),
+        "{err:?}"
+    );
+    assert!(sent_paths(&server).await.is_empty());
+}

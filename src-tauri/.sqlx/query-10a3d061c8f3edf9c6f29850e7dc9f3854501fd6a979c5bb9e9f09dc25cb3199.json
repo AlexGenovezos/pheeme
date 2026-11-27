@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE messages\n           SET body_html = NULL, body_text = NULL, raw_headers = NULL,\n               fully_fetched = 0, body_fetched_at = NULL\n           WHERE rowid IN (\n             SELECT rowid FROM messages\n             WHERE body_fetched_at IS NOT NULL AND body_fetched_at < ? AND date < ?\n               AND NOT EXISTS (SELECT 1 FROM json_each(messages.label_ids) WHERE value = 'DRAFT')\n             LIMIT ?\n           )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "10a3d061c8f3edf9c6f29850e7dc9f3854501fd6a979c5bb9e9f09dc25cb3199"
+}

@@ -238,11 +238,12 @@ impl CacheWrite<'_> {
 /// What history says should happen to one message.
 #[derive(Debug, Clone)]
 enum Intent {
-    /// Cached; these are its labels after the records seen so far.
+    /// Cached; the label changes the records seen so far make to it, in order (`true` adds).
+    /// Replayed onto its labels as they are when written, not as they were read here: a label
+    /// deleted meanwhile must not come back.
     Labels {
         thread: String,
-        labels: Vec<String>,
-        changed: bool,
+        changes: Vec<(String, bool)>,
     },
     /// Not cached. `new`: history added it (new mail), so it's fetched in full; otherwise
     /// only its labels changed, and it's fetched like the backfill would have.
@@ -546,6 +547,8 @@ impl SyncEngine {
         cursor: &str,
         hidden_tabs: &[String],
     ) -> Result<bool, SyncError> {
+        // Read before anything is fetched: a label gone by the write was deleted meanwhile.
+        let labels_before = self.label_ids(&self.db).await?;
         let intents = self.fold_history(records).await?;
         let fetch = |wanted: bool| -> Vec<String> {
             intents
@@ -602,6 +605,15 @@ impl SyncEngine {
                     .into_iter()
                     .collect();
                 let known = messages::existing_ids(&mut w.tx, &self.account_id, &added_ids).await?;
+                let deleted = self.deleted_since(&mut w.tx, &labels_before).await?;
+                let relabelled: Vec<String> = intents
+                    .iter()
+                    .filter(
+                        |(_, i)| matches!(i, Intent::Labels { changes, .. } if !changes.is_empty()),
+                    )
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                let live = messages::label_map(&mut w.tx, &self.account_id, &relabelled).await?;
                 let mut touched: Vec<String> = Vec::new();
                 for (id, intent) in &intents {
                     match intent {
@@ -619,17 +631,27 @@ impl SyncEngine {
                             }
                             touched.push(thread.clone());
                         }
-                        Intent::Labels {
-                            thread,
-                            labels,
-                            changed: true,
-                        } => {
-                            messages::set_labels(&mut w.tx, &self.account_id, id, labels).await?;
+                        Intent::Labels { thread, changes } if !changes.is_empty() => {
+                            // Not cached any more (deleted meanwhile): nothing to change.
+                            let Some((_, labels)) = live.get(id) else {
+                                continue;
+                            };
+                            let mut labels = labels.clone();
+                            for (l, adding) in changes {
+                                labels.retain(|x| x != l);
+                                if *adding && !deleted.contains(l) {
+                                    labels.push(l.clone());
+                                }
+                            }
+                            messages::set_labels(&mut w.tx, &self.account_id, id, &labels).await?;
                             touched.push(thread.clone());
                         }
                         Intent::Fetch { thread, .. } => touched.push(thread.clone()),
                         Intent::Labels { .. } => {}
                     }
+                }
+                for msg in full.iter_mut().chain(headers_only.iter_mut()) {
+                    msg.label_ids.retain(|l| !deleted.contains(l));
                 }
                 touched.extend(self.store_messages(&mut w.tx, &full, true).await?);
                 touched.extend(self.store_messages(&mut w.tx, &headers_only, false).await?);
@@ -719,10 +741,9 @@ impl SyncEngine {
                 .get(id)
                 .cloned()
                 .unwrap_or_else(|| match cached.get(id) {
-                    Some((t, l)) => Intent::Labels {
+                    Some((t, _)) => Intent::Labels {
                         thread: t.clone(),
-                        labels: l.clone(),
-                        changed: false,
+                        changes: Vec::new(),
                     },
                     None => Intent::Fetch {
                         thread: thread.to_owned(),
@@ -758,19 +779,11 @@ impl SyncEngine {
                 let msg = &change.message;
                 let next = match current(&intents, &msg.id, &msg.thread_id) {
                     Intent::Labels {
-                        thread, mut labels, ..
+                        thread,
+                        mut changes,
                     } => {
-                        for l in &change.label_ids {
-                            labels.retain(|x| x != l);
-                            if adding {
-                                labels.push(l.clone());
-                            }
-                        }
-                        Intent::Labels {
-                            thread,
-                            labels,
-                            changed: true,
-                        }
+                        changes.extend(change.label_ids.iter().map(|l| (l.clone(), adding)));
+                        Intent::Labels { thread, changes }
                     }
                     other => other,
                 };
@@ -847,6 +860,7 @@ impl SyncEngine {
         let below = Some(position.as_str()).filter(|p| !p.is_empty());
         let ids =
             messages::ids_below(&self.db, &self.account_id, below, RESYNC_CHUNK as i64).await?;
+        let labels_before = self.label_ids(&self.db).await?;
         let mut fresh = Vec::new();
         let mut gone = Vec::new();
         // One failed read (usually a rate limit) keeps what the others returned: their labels
@@ -877,11 +891,13 @@ impl SyncEngine {
                 // As cached now, under the write lock: only real differences are written, so
                 // only threads that changed are rebased, recomputed and announced.
                 let cached = messages::label_map(&mut w.tx, &self.account_id, &ids).await?;
+                let deleted = self.deleted_since(&mut w.tx, &labels_before).await?;
                 let mut touched = Vec::new();
-                for msg in &fresh {
+                for msg in &mut fresh {
                     let Some((thread, labels)) = cached.get(&msg.id) else {
                         continue;
                     };
+                    msg.label_ids.retain(|l| !deleted.contains(l));
                     let same = labels.len() == msg.label_ids.len()
                         && labels.iter().all(|l| msg.label_ids.contains(l));
                     if !same
@@ -1345,6 +1361,29 @@ impl SyncEngine {
             Err(e) if unreadable(&self.account_id, &msg.id, &e) => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// The ids of the account's cached labels.
+    async fn label_ids<'e>(
+        &self,
+        ex: impl sqlx::SqliteExecutor<'e>,
+    ) -> Result<BTreeSet<String>, SyncError> {
+        Ok(labels::get_labels(ex, &self.account_id)
+            .await?
+            .into_iter()
+            .map(|l| l.id)
+            .collect())
+    }
+
+    /// The labels of `before` no longer cached: deleted since, so mail read from Gmail before
+    /// then must not bring them back. A label created meanwhile is in neither and is kept.
+    async fn deleted_since(
+        &self,
+        conn: &mut SqliteConnection,
+        before: &BTreeSet<String>,
+    ) -> Result<BTreeSet<String>, SyncError> {
+        let now = self.label_ids(&mut *conn).await?;
+        Ok(before.difference(&now).cloned().collect())
     }
 
     /// Upsert fetched messages (and attachments); returns their thread ids.

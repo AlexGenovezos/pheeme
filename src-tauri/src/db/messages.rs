@@ -328,8 +328,9 @@ pub async fn set_body(conn: &mut SqliteConnection, msg: &DbMessage) -> Result<()
 }
 
 /// Drop the cached bodies of up to `limit` messages sent before `sent_before` whose body
-/// was downloaded before `fetched_before` (both ms). They go back to metadata only, so
-/// opening one downloads the body again. Returns how many were trimmed.
+/// was downloaded before `fetched_before` (both ms), except drafts (whose body is what the
+/// compose panel edits). They go back to metadata only, so opening one downloads the body
+/// again. Returns how many were trimmed.
 pub async fn trim_old_bodies<'e>(
     ex: impl SqliteExecutor<'e>,
     sent_before: i64,
@@ -343,6 +344,7 @@ pub async fn trim_old_bodies<'e>(
            WHERE rowid IN (
              SELECT rowid FROM messages
              WHERE body_fetched_at IS NOT NULL AND body_fetched_at < ? AND date < ?
+               AND NOT EXISTS (SELECT 1 FROM json_each(messages.label_ids) WHERE value = 'DRAFT')
              LIMIT ?
            )"#,
         fetched_before,
@@ -845,6 +847,34 @@ mod tests {
                 date: Some(1),
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn trimming_old_bodies_keeps_drafts() {
+        let db = crate::db::test_support::TestDb::with_account("a").await;
+        let mut draft = message("d1", "t1");
+        draft.label_ids = Some(r#"["DRAFT"]"#.into());
+        upsert_message(&db.pool, &draft).await.unwrap();
+        upsert_message(&db.pool, &message("m1", "t2"))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE messages SET body_fetched_at = 1")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(trim_old_bodies(&db.pool, 10, 10, 100).await.unwrap(), 1);
+        let kept = |id: &'static str| {
+            let pool = db.pool.clone();
+            async move {
+                get_message(&pool, "a", id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .body_text
+            }
+        };
+        assert_eq!(kept("d1").await.as_deref(), Some("body"));
+        assert_eq!(kept("m1").await, None);
     }
 
     #[tokio::test]

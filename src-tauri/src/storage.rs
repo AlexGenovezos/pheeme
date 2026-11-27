@@ -311,16 +311,26 @@ impl EncryptedFiles {
         Ok(aad)
     }
 
+    /// Decrypting (attachments run to tens of MB) happens on a blocking thread, off the async
+    /// workers, as does encrypting in [`Self::write`].
     pub async fn read(&self, path: &Path) -> std::io::Result<Vec<u8>> {
-        self.key
-            .open(&tokio::fs::read(path).await?, &self.aad(path)?)
+        let aad = self.aad(path)?;
+        let sealed = tokio::fs::read(path).await?;
+        let key = self.key.clone();
+        tokio::task::spawn_blocking(move || key.open(&sealed, &aad))
+            .await
+            .map_err(std::io::Error::other)?
     }
 
     pub async fn write(&self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-        let encrypted = self.key.seal(bytes, &self.aad(path)?)?;
+        let aad = self.aad(path)?;
+        let key = self.key.clone();
+        let bytes = bytes.to_vec();
         let path = path.to_path_buf();
         let durable = self.durable;
         tokio::task::spawn_blocking(move || {
+            let encrypted = key.seal(&bytes, &aad)?;
+            drop(bytes);
             let parent = path.parent().ok_or_else(invalid_file)?;
             private_dir(parent)?;
             let mut name = path.file_name().ok_or_else(invalid_file)?.to_os_string();
