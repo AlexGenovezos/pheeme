@@ -35,6 +35,18 @@ describe("Avatar", () => {
     fireEvent.error(screen.getByRole("img", { name: "Sam Lindqvist" }).querySelector("img")!);
     expect(screen.getByText("SL")).toBeInTheDocument();
   });
+
+  test("a new image address gets its own try after one failed", () => {
+    const { rerender } = render(
+      <Avatar name="Sam Lindqvist" src="https://example.invalid/a.png" />,
+    );
+    fireEvent.error(screen.getByRole("img", { name: "Sam Lindqvist" }).querySelector("img")!);
+    rerender(<Avatar name="Sam Lindqvist" src="https://example.invalid/b.png" />);
+    expect(screen.getByRole("img", { name: "Sam Lindqvist" }).querySelector("img")).toHaveAttribute(
+      "src",
+      "https://example.invalid/b.png",
+    );
+  });
 });
 
 test("Badge caps large counts", () => {

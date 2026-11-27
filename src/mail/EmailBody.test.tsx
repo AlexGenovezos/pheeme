@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { registry } from "../keyboard/registry";
 import { platform } from "../lib/platform";
 import type { MessageDetail } from "../lib/tauri";
+import { builtInThemes } from "../styles/themes";
 import { useThemeStore } from "../theme/theme";
 import { EmailBody, MAX_FRAME_HEIGHT } from "./EmailBody";
 
@@ -63,7 +64,11 @@ beforeEach(() => {
   opened = [];
   FakeResizeObserver.instances = [];
   globalThis.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver;
-  useThemeStore.setState({ resolved: "light" });
+  useThemeStore.setState({
+    resolved: "light",
+    choices: { light: builtInThemes.light.id, dark: builtInThemes.dark.id },
+    previewing: null,
+  });
   mockIPC((cmd, args) => {
     if (cmd === "open_mail_link") opened.push((args as { url: string }).url);
     return undefined;
@@ -376,6 +381,21 @@ test("theme changes rewrite the frame document", () => {
   act(() => useThemeStore.setState({ resolved: "dark" }));
   expect(frameStyles()).toContain("invert(1) hue-rotate(180deg)");
   expect(frame().contentDocument!.body.innerHTML).toBe("<p>Hello <b>there</b></p>");
+});
+
+test("the frame follows the theme on screen, not the mode: a light theme in Dark mode, a previewed one", () => {
+  render(<EmailBody message={message()} />);
+  act(() =>
+    useThemeStore.setState({
+      resolved: "dark",
+      choices: { light: builtInThemes.light.id, dark: builtInThemes.light.id },
+    }),
+  );
+  expect(frameStyles()).not.toContain("invert(");
+  act(() => useThemeStore.setState({ previewing: builtInThemes.dark }));
+  expect(frameStyles()).toContain("invert(1) hue-rotate(180deg)");
+  act(() => useThemeStore.setState({ previewing: null }));
+  expect(frameStyles()).not.toContain("invert(");
 });
 
 test("lets go of the old frame document when it is rewritten or the body unmounts", async () => {

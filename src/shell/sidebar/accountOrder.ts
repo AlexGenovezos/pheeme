@@ -77,7 +77,8 @@ let active: (() => void) | null = null;
  * until the button comes up, which puts it where it was let go. Escape cancels; a drag swallows the click after it.
  */
 export function startAccountDrag(event: ReactPointerEvent, accountId: string): void {
-  if (event.button !== 0 || active) return;
+  // A touch drag scrolls the sidebar.
+  if (event.button !== 0 || event.pointerType === "touch" || active) return;
   const start = { x: event.clientX, y: event.clientY };
   const ids = useAccountStore.getState().accounts.map((a) => a.id);
   if (ids.length < 2) return;
@@ -116,6 +117,7 @@ export function startAccountDrag(event: ReactPointerEvent, accountId: string): v
     window.removeEventListener("pointerup", up);
     window.removeEventListener("pointercancel", stop);
     window.removeEventListener("keydown", key, true);
+    window.removeEventListener("blur", stop);
     useAccountDrag.setState({ dragging: null, order: null });
     active = null;
   };
@@ -123,6 +125,8 @@ export function startAccountDrag(event: ReactPointerEvent, accountId: string): v
   window.addEventListener("pointerup", up);
   window.addEventListener("pointercancel", stop);
   window.addEventListener("keydown", key, true);
+  // Let go outside the window (switched apps): no pointerup comes, so the drag would stay stuck.
+  window.addEventListener("blur", stop);
   active = stop;
 }
 

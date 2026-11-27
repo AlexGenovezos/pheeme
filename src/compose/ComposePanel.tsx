@@ -271,7 +271,8 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   );
   const editor = useComposeEditor(
     draft.bodyHtml,
-    (bodyHtml) => store.update(win.id, { bodyHtml }),
+    (bodyHtml, fillIn) =>
+      fillIn ? store.fillIn(win.id, { bodyHtml }) : store.update(win.id, { bodyHtml }),
     undefined,
     files,
   );
@@ -297,9 +298,13 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   const accountDefault = sendAsLists[win.accountId]
     ? useSendAs.getState().defaultFrom(win.accountId)
     : null;
+  // The address filled in that way, so the signature it brings is a fill-in too.
+  const autoFrom = useRef<string | null>(null);
   useEffect(() => {
-    if (win.kind === "new" && !win.draft.from && accountDefault)
-      store.setFrom(win.id, accountDefault);
+    if (win.kind === "new" && !win.draft.from && accountDefault) {
+      autoFrom.current = accountDefault.address;
+      store.fillIn(win.id, { from: accountDefault });
+    }
     // oxlint-disable-next-line react/exhaustive-deps
   }, [accountDefault?.address, win.kind, win.id]);
 
@@ -316,6 +321,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     replaceSignature(
       editor,
       useSignatures.getState().signatureFor(win.accountId, "new", fromAddress),
+      { fillIn: true },
     );
     // oxlint-disable-next-line react/exhaustive-deps
   }, [editor, gmailHtml, win.accountId]);
@@ -328,8 +334,11 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     signedAs.current = { accountId: win.accountId, from: fromAddress };
     const signatures = useSignatures.getState();
     const next = signatures.signatureFor(win.accountId, use, fromAddress);
+    // Gmail's default address arriving late only fills in its signature; a From the user picks is an edit.
+    const filled = autoFrom.current !== null && sameAddress(autoFrom.current, fromAddress);
+    autoFrom.current = null;
     if (next !== signatures.signatureFor(was.accountId, use, was.from))
-      replaceSignature(editor, next);
+      replaceSignature(editor, next, { fillIn: filled });
   }, [editor, win.accountId, fromAddress, use]);
 
   // Focus: replies start in the body, new messages in To.
@@ -418,7 +427,12 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
         <div className="compose-field">
           <span className="compose-field__label">From</span>
           {canChooseFrom ? (
-            <button type="button" className="compose-from" onClick={chooseFrom}>
+            <button
+              type="button"
+              className="compose-from"
+              onClick={chooseFrom}
+              disabled={win.sending}
+            >
               <span className="compose-from__text">{fromShown ?? "Choose account"}</span>
               <ChevronDown aria-hidden="true" />
             </button>

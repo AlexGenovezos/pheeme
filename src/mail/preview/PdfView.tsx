@@ -58,6 +58,20 @@ export default function PdfView({ data, name }: { data: ArrayBuffer; name: strin
   );
 }
 
+/** Largest canvas side and area: past them a webview refuses the canvas (or runs out of memory) and the page is blank. */
+const MAX_CANVAS_SIDE = 4096;
+const MAX_CANVAS_AREA = 16_000_000;
+
+/** How much to shrink a page of this size so its canvas stays within the limits (1 when it already does). */
+export function canvasFit({ width, height }: { width: number; height: number }): number {
+  return Math.min(
+    1,
+    MAX_CANVAS_SIDE / width,
+    MAX_CANVAS_SIDE / height,
+    Math.sqrt(MAX_CANVAS_AREA / (width * height)),
+  );
+}
+
 function PdfPage({
   doc,
   number,
@@ -77,8 +91,13 @@ function PdfPage({
   useEffect(() => {
     const el = holder.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
+    // Once near the view it stays drawn: nothing more to watch.
     const io = new IntersectionObserver(
-      (entries) => entries.some((e) => e.isIntersecting) && setVisible(true),
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        setVisible(true);
+        io.disconnect();
+      },
       { rootMargin: "100% 0px" },
     );
     io.observe(el);
@@ -95,8 +114,12 @@ function PdfPage({
       .getPage(number)
       .then((page) => {
         if (stop.signal.aborted) return;
+        // Nothing to draw into (a page with no width, or a holder not laid out).
+        if (el.clientWidth <= 0 || !(size.width > 0)) return;
         const scale = (el.clientWidth / size.width) * (window.devicePixelRatio || 1);
-        const viewport = page.getViewport({ scale });
+        const viewport = page.getViewport({
+          scale: scale * canvasFit(page.getViewport({ scale })),
+        });
         c.width = Math.floor(viewport.width);
         c.height = Math.floor(viewport.height);
         task = page.render({ canvas: c, viewport });

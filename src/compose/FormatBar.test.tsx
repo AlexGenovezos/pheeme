@@ -141,6 +141,20 @@ test("the link popover sets, then clears, a link", () => {
   expect(screen.queryByRole("textbox", { name: "Link address" })).toBeNull();
 });
 
+test("a bare domain links to https; a script address isn't taken", () => {
+  const bar = setup();
+  fireEvent.click(within(bar).getByRole("button", { name: "Link" }));
+  const field = screen.getByRole("textbox", { name: "Link address" });
+  fireEvent.change(field, { target: { value: "javascript:alert(1)" } });
+  fireEvent.submit(field);
+  expect(field).toHaveAttribute("aria-invalid", "true");
+  expect(html).not.toContain("href");
+  fireEvent.change(field, { target: { value: "pheeme.app" } });
+  expect(field).not.toHaveAttribute("aria-invalid");
+  fireEvent.submit(field);
+  expect(html).toContain('href="https://pheeme.app"');
+});
+
 test("a link typed with nothing selected goes in as its own text", () => {
   const bar = setup("<p>Hi </p>");
   act(() => void editor().commands.setTextSelection(4));

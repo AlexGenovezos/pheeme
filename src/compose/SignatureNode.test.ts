@@ -1,6 +1,7 @@
 import { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { afterEach, expect, test } from "vitest";
+import { replaceSignature } from "./Editor";
 import { SignatureNode } from "./SignatureNode";
 import { cleanSignature, signatureBlock } from "./signatures";
 
@@ -68,4 +69,36 @@ test("signature HTML can't cover or restyle the app", () => {
 
   // Even a top-level one (pasted, or a draft flattened by an older version) renders without the overlay.
   expect(parsed(OVERLAY).html).not.toMatch(/position|z-index/);
+});
+
+test("signature HTML can't play audio or video", () => {
+  const cleaned = cleanSignature(
+    '<audio autoplay src="https://example.com/a.mp3"></audio>' +
+      '<video autoplay><source src="https://example.com/v.mp4"></video><b>Me</b>',
+  );
+  expect(cleaned).not.toMatch(/<audio|<video|<source/i);
+  expect(cleaned).toContain("<b>Me</b>");
+});
+
+test("a link in the signature is inert in the editor: a click never navigates the app", () => {
+  const element = document.body.appendChild(document.createElement("div"));
+  editor = new Editor({
+    element,
+    extensions: [StarterKit, SignatureNode],
+    content: `<p>Hi</p>${signatureBlock('<a href="https://example.com/">site</a>')}`,
+  });
+  const link = element.querySelector(".gmail_signature a")!;
+  const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+  link.dispatchEvent(click);
+  expect(click.defaultPrevented).toBe(true);
+  element.remove();
+});
+
+test("a signature filled in after the panel opened isn't something Undo takes back", () => {
+  editor = new Editor({ extensions: [StarterKit, SignatureNode], content: "<p></p>" });
+  replaceSignature(editor, "<b>Me</b>", { fillIn: true });
+  expect(editor.getHTML()).toContain("<b>Me</b>");
+  expect(editor.can().undo()).toBe(false);
+  replaceSignature(editor, "<b>Other</b>");
+  expect(editor.can().undo()).toBe(true);
 });

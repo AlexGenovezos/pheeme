@@ -8,6 +8,7 @@ import {
   fontName,
   FORMATTING,
   indent,
+  linkHref,
   PALETTE,
   QUOTE_STYLE,
   removeFormatting,
@@ -148,4 +149,14 @@ test("font names", () => {
   expect(FONTS).toHaveLength(11);
   expect(PALETTE).toHaveLength(64);
   expect(new Set(PALETTE.map((p) => p.name)).size).toBe(64);
+});
+
+test("a typed link: a bare domain gets https, only web and mail addresses are kept", () => {
+  expect(linkHref(" pheeme.app ")).toBe("https://pheeme.app");
+  expect(linkHref("pheeme.app/docs?x=1")).toBe("https://pheeme.app/docs?x=1");
+  expect(linkHref("http://x.test")).toBe("http://x.test");
+  expect(linkHref("mailto:mira@example.com")).toBe("mailto:mira@example.com");
+  expect(linkHref("javascript:alert(1)")).toBeNull();
+  expect(linkHref("file:///etc/passwd")).toBeNull();
+  expect(linkHref("")).toBeNull();
 });

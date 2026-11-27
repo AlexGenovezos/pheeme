@@ -527,6 +527,9 @@ button.compose-from:hover {
   border-color: var(--color-focus-border);
   outline: none;
 }
+.compose-link__input[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
 
 .emoji-picker {
   position: fixed;

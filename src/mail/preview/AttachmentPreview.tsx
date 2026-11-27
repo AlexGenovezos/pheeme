@@ -5,6 +5,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -360,6 +361,7 @@ function ImageView({ data, file }: { data: ArrayBuffer; file: AttachmentInfo }) 
     reader.readAsDataURL(new Blob([data], { type }));
     return () => {
       stop.abort();
+      reader.abort(); // a large image stops being read once nothing will show it
     };
   }, [data, file.filename, file.mimeType, trace]);
 
@@ -383,7 +385,11 @@ function TextView({ data }: { data: ArrayBuffer }) {
   const trace = usePreviewTrace();
   useEffect(() => trace?.shown(), [trace]);
   const cut = data.byteLength > MAX_TEXT_BYTES;
-  const text = new TextDecoder().decode(cut ? data.slice(0, MAX_TEXT_BYTES) : data);
+  // Decoded once per file, not on every render.
+  const text = useMemo(
+    () => new TextDecoder().decode(cut ? data.slice(0, MAX_TEXT_BYTES) : data),
+    [data, cut],
+  );
   return (
     <pre className="file-preview__text selectable">
       {text}

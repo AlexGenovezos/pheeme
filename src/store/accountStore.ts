@@ -79,16 +79,34 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   },
   upsert: (account) =>
     set((state) => {
+      // Signed in (again): a failure from before says nothing about it now.
+      const syncErrors = { ...state.syncErrors };
+      delete syncErrors[account.id];
       const others = state.accounts.filter((a) => a.id !== account.id);
       const index = state.accounts.findIndex((a) => a.id === account.id);
-      if (index === -1) return { accounts: [...others, account] };
+      if (index === -1) return { accounts: [...others, account], syncErrors };
       const accounts = [...state.accounts];
       accounts[index] = account;
-      return { accounts };
+      return { accounts, syncErrors };
     }),
   remove: async (accountId) => {
     await removeAccount(accountId);
-    set((state) => ({ accounts: state.accounts.filter((a) => a.id !== accountId) }));
+    clearTimeout(slowSyncTimers.get(accountId));
+    slowSyncTimers.delete(accountId);
+    usageAskedAt.delete(accountId);
+    set((state) => {
+      // Nothing about it should show once it's gone (or come back if it's added again).
+      const syncErrors = { ...state.syncErrors };
+      const slowSync = { ...state.slowSync };
+      delete syncErrors[accountId];
+      delete slowSync[accountId];
+      return {
+        accounts: state.accounts.filter((a) => a.id !== accountId),
+        syncErrors,
+        slowSync,
+        reconnecting: state.reconnecting === accountId ? null : state.reconnecting,
+      };
+    });
     // Navigation pointing at the removed account would keep querying it.
     useUiStore.getState().forgetAccount(accountId, get().accounts);
   },

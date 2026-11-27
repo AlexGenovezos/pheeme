@@ -585,6 +585,27 @@ describe("important", () => {
     expect(modifyCalls()[1]).toMatchObject({ add: [], remove: ["IMPORTANT"] });
   });
 
+  test("Undo takes the label back off the open conversation's messages too", async () => {
+    setList([thread(1, "a1", { systemLabelIds: ["INBOX"] })]);
+    useUiStore.setState({ openThread: key(1) });
+    useThreadStore.setState({
+      details: new Map([
+        [
+          key(1),
+          {
+            thread: thread(1, "a1", { systemLabelIds: ["INBOX"] }),
+            messages: [{ id: "m1", labelIds: ["INBOX"] } as MessageDetail],
+          } as ThreadDetail,
+        ],
+      ]),
+    });
+    await setImportant(true);
+    const labels = () => useThreadStore.getState().details.get(key(1))?.messages[0].labelIds;
+    expect(labels()).toContain("IMPORTANT");
+    toasts()[0].action!.run();
+    expect(labels()).not.toContain("IMPORTANT");
+  });
+
   test("only the conversations that aren't in that state yet change; none left does nothing", async () => {
     setList([
       thread(1, "a1", { systemLabelIds: ["IMPORTANT"] }),

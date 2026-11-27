@@ -1,6 +1,6 @@
 // Settings › Compose › Signature: for each account, its Gmail signature (fetched when the page opens), its own signature,
 // and which of them new messages and replies/forwards start with.
-import { lazy, Suspense, useEffect, useMemo } from "react";
+import { lazy, type MouseEvent, Suspense, useEffect, useMemo } from "react";
 import { Button } from "../components/ui/Button";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -12,6 +12,7 @@ import {
   type SignatureChoice,
   useSignatures,
 } from "../compose/signatures";
+import { openLink } from "../mail/linkify";
 import { ReconnectButton } from "../onboarding/Reconnect";
 import { useAccountStore } from "../store/accountStore";
 import { accountSectionTitle, SettingsRow, SettingsSection } from "./rows";
@@ -24,10 +25,30 @@ const CHOICES: { value: SignatureChoice; label: string }[] = [
   { value: "none", label: "None" },
 ];
 
+/** A link clicked in the preview opens in the browser; one that isn't a whole web or mail address goes nowhere. */
+function openSignatureLink(e: MouseEvent<HTMLDivElement>) {
+  const link = (e.target as Element).closest("a[href]");
+  if (!link) return;
+  e.preventDefault(); // never a navigation of the app's own window
+  try {
+    const url = new URL(link.getAttribute("href") ?? "");
+    if (["http:", "https:", "mailto:"].includes(url.protocol)) openLink(url.href);
+  } catch {
+    // Relative: nothing to open.
+  }
+}
+
 /** A signature as it will look in a message. */
 function SignaturePreview({ html }: { html: string }) {
   const clean = useMemo(() => cleanSignature(html), [html]);
-  return <div className="signature-preview" dangerouslySetInnerHTML={{ __html: clean }} />;
+  return (
+    // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- the links inside are what's clicked
+    <div
+      className="signature-preview"
+      onClick={openSignatureLink}
+      dangerouslySetInnerHTML={{ __html: clean }}
+    />
+  );
 }
 
 function GmailRow({ accountId, gmail }: { accountId: string; gmail: GmailSignature | undefined }) {

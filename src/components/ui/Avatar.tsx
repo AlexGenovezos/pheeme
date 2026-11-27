@@ -33,7 +33,9 @@ export interface AvatarProps {
 }
 
 export function Avatar({ name, email, src, size = "md", className }: AvatarProps) {
-  const [failed, setFailed] = useState(false);
+  // The address that failed, so a new `src` gets its own try.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const failed = failedSrc !== null && failedSrc === src;
   const color = avatarColorIndex(email ?? name);
   return (
     <span
@@ -43,7 +45,7 @@ export function Avatar({ name, email, src, size = "md", className }: AvatarProps
       aria-label={name}
     >
       {src && !failed ? (
-        <img src={src} alt="" draggable={false} onError={() => setFailed(true)} />
+        <img src={src} alt="" draggable={false} onError={() => setFailedSrc(src)} />
       ) : (
         <span aria-hidden="true">{initialsFor(name)}</span>
       )}

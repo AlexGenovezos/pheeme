@@ -36,6 +36,7 @@ import {
   fontName,
   GMAIL_KEYS,
   indent,
+  linkHref,
   PALETTE,
   removeFormatting,
   SIZES,
@@ -449,14 +450,22 @@ function LinkPopover({
     returnFocus: editor.view.dom,
   });
   const [href, setHref] = useState<string>(() => editor.getAttributes("link").href ?? "");
+  const [invalid, setInvalid] = useState(false);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const url = href.trim();
+    const typed = href.trim();
+    const url = linkHref(typed);
+    // Not a web or mail address: stays open to be corrected.
+    if (typed && !url) return setInvalid(true);
     const chain = editor.chain().focus().extendMarkRange("link");
     if (!url) chain.unsetLink().run();
     else if (editor.state.selection.empty && !editor.isActive("link"))
       chain
-        .insertContent({ type: "text", text: url, marks: [{ type: "link", attrs: { href: url } }] })
+        .insertContent({
+          type: "text",
+          text: typed,
+          marks: [{ type: "link", attrs: { href: url } }],
+        })
         .run();
     else chain.setLink({ href: url }).run();
     onClose();
@@ -472,8 +481,12 @@ function LinkPopover({
         className="compose-link__input"
         placeholder="Paste or type a link"
         aria-label="Link address"
+        aria-invalid={invalid || undefined}
         value={href}
-        onChange={(e) => setHref(e.target.value)}
+        onChange={(e) => {
+          setHref(e.target.value);
+          setInvalid(false);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.preventDefault();
