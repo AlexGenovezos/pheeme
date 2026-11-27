@@ -102,7 +102,9 @@ export function paintMatches(matches: readonly Range[], current: number) {
   for (const range of matches) {
     const doc = range.startContainer.ownerDocument;
     if (!doc) continue;
-    byDoc.set(doc, [...(byDoc.get(doc) ?? []), range]);
+    const ranges = byDoc.get(doc);
+    if (ranges) ranges.push(range);
+    else byDoc.set(doc, [range]);
   }
   const currentRange = matches[current];
   const currentDoc = currentRange?.startContainer.ownerDocument;

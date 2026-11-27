@@ -20,19 +20,34 @@ interface InboxTabsState {
 
 const NONE: string[] = [];
 
+/** The latest `load`: an older one answering late changes nothing. */
+let loads = 0;
+/** Per account, how many toggles have started: only the latest one's answer (or failure) is applied. */
+const toggles = new Map<string, number>();
+
 export const useInboxTabs = create<InboxTabsState>((set, get) => ({
   hidden: {},
   async load(accountIds) {
+    const ticket = ++loads;
+    const started = new Map(accountIds.map((id) => [id, toggles.get(id) ?? 0]));
     const entries = await Promise.all(
       accountIds.map(async (id) => [id, await getInboxTabs(id).catch(() => null)] as const),
     );
+    if (ticket !== loads) return;
     set((state) => ({
       hidden: Object.fromEntries(
-        entries.map(([id, tabs]) => [id, tabs ?? state.hidden[id] ?? NONE]),
+        entries.map(([id, tabs]) => {
+          // Toggled while this read was out: what it read is older than what's shown.
+          const toggled = (toggles.get(id) ?? 0) !== started.get(id);
+          return [id, (!toggled && tabs) || state.hidden[id] || NONE];
+        }),
       ),
     }));
   },
   async setHidden(accountId, label, hidden) {
+    const mine = (toggles.get(accountId) ?? 0) + 1;
+    toggles.set(accountId, mine);
+    const latest = () => toggles.get(accountId) === mine;
     const before = get().hidden[accountId] ?? NONE;
     const next = HIDEABLE.filter((l) => (l === label ? hidden : before.includes(l)));
     set((state) => ({ hidden: { ...state.hidden, [accountId]: next } }));
@@ -43,13 +58,14 @@ export const useInboxTabs = create<InboxTabsState>((set, get) => ({
     }
     try {
       const saved = await setInboxTabs(accountId, next);
-      set((state) => ({ hidden: { ...state.hidden, [accountId]: saved } }));
+      // A later toggle is already shown, and its own answer comes after this one.
+      if (latest()) set((state) => ({ hidden: { ...state.hidden, [accountId]: saved } }));
       // Primary gains or loses mail and the hidden tab's list changes, but no message event says so.
       const { mailbox } = useUiStore.getState();
       if (mailbox.accountId === accountId && mailbox.category)
         await useMailStore.getState().reload();
     } catch (error) {
-      set((state) => ({ hidden: { ...state.hidden, [accountId]: before } }));
+      if (latest()) set((state) => ({ hidden: { ...state.hidden, [accountId]: before } }));
       throw error;
     }
   },

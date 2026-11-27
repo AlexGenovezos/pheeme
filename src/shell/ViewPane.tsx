@@ -194,11 +194,13 @@ export function ViewPane() {
         {
           id: "similar-sender",
           label: "Find emails from this sender",
+          disabled: stale,
           onSelect: () => void findSimilar("sender"),
         },
         {
           id: "similar-subject",
           label: "Find emails with this subject",
+          disabled: stale,
           onSelect: () => void findSimilar("subject"),
         },
         {

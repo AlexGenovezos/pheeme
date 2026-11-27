@@ -172,6 +172,11 @@ interface ComposeState {
   /** Edit a saved draft (the message in Drafts). */
   editDraft(accountId: string, messageId: string): Promise<void>;
   update(id: number, change: Partial<ComposeDraft>): void;
+  /**
+   * Fill in what the message would have started with had it been known (Gmail's default address, a signature
+   * fetched late). Not an edit of the user's: a message nobody has touched stays untouched, with nothing to save.
+   */
+  fillIn(id: number, change: Partial<ComposeDraft>): void;
   /** Change who a new message is from. A draft already saved in the old account is removed from it. */
   setAccount(id: number, accountId: string): void;
   /** Send from another of the account's addresses (a send-as alias). */
@@ -229,8 +234,8 @@ const pastes = new Map<number, Promise<unknown>>();
 const saves = new Map<number, Promise<boolean>>();
 /** Sends being handed to the outbox, by panel: quitting waits for them. */
 const sends = new Map<number, Promise<void>>();
-/** The Gmail draft each window's last save made, read by a discard that raced it. */
-const savedDrafts = new Map<number, string>();
+/** The Gmail draft (and its account) each window's last save made, read by a discard that raced it. */
+const savedDrafts = new Map<number, { accountId: string; draftId: string }>();
 /** The message id of each window's last saved draft (it changes with every save), for Send later. */
 const savedMessages = new Map<number, string>();
 /** Every Drafts message each window's draft has been (the one it was opened from, then one per save). */
@@ -488,11 +493,30 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       edit(id, (w) => ({ draft: { ...w.draft, ...change } }));
     },
 
+    fillIn(id, change) {
+      set((s) => ({
+        windows: s.windows.map((w) =>
+          w.id === id && !w.sending
+            ? {
+                ...w,
+                draft: { ...w.draft, ...change },
+                version: w.version === 0 ? 0 : w.version + 1,
+              }
+            : w,
+        ),
+      }));
+    },
+
     setAccount(id, accountId) {
       const win = find(id);
-      if (!win || win.accountId === accountId || win.kind !== "new") return;
+      // A queued send owns the message (and its draft) now.
+      if (!win || win.sending || win.accountId === accountId || win.kind !== "new") return;
       const old = win.draft.draftId;
       if (old) void deleteDraft(win.accountId, old).catch(() => {});
+      // Those drafts were the old account's: a discard or Send later must not use them here.
+      savedDrafts.delete(id);
+      savedMessages.delete(id);
+      draftMessages.delete(id);
       edit(id, (w) => ({
         accountId,
         draft: { ...w.draft, from: useSendAs.getState().defaultFrom(accountId), draftId: null },
@@ -568,12 +592,20 @@ export const useComposeStore = create<ComposeState>((set, get) => {
         patch(id, { saving: true });
         try {
           const saved = await saveDraft(accountId, outgoingDraft(win.draft));
-          savedDrafts.set(id, saved.draftId);
+          // Moved to another account while saving: that draft is no one's now.
+          const now = find(id);
+          if (now && now.accountId !== accountId) {
+            void deleteDraft(accountId, saved.draftId).catch(() => {});
+            patch(id, { saving: false });
+            return true;
+          }
+          // Kept even when the panel closed meanwhile: a discard that raced this save takes it.
+          savedDrafts.set(id, { accountId, draftId: saved.draftId });
           savedMessages.set(id, saved.messageId);
           noteDraftMessage(id, saved.messageId);
           set((s) => ({
             windows: s.windows.map((w) =>
-              w.id === id && w.accountId === accountId
+              w.id === id
                 ? {
                     ...w,
                     saving: false,
@@ -585,11 +617,6 @@ export const useComposeStore = create<ComposeState>((set, get) => {
                 : w,
             ),
           }));
-          // Closed (or moved to another account) while saving: that draft is no one's now.
-          const now = find(id);
-          if (!now) return true;
-          if (now.accountId !== accountId)
-            void deleteDraft(accountId, saved.draftId).catch(() => {});
           return true;
         } catch (e) {
           const message = toCommandError(e).message;
@@ -740,14 +767,15 @@ export const useComposeStore = create<ComposeState>((set, get) => {
       const saving = saves.get(id);
       dispose(id, win.draft.attachments);
       await saving?.catch(() => {});
-      const draftId = savedDrafts.get(id) ?? win.draft.draftId ?? null;
+      const saved = savedDrafts.get(id);
+      const draftId = saved?.draftId ?? win.draft.draftId ?? null;
       // The save may have put back what removing the panel cleared.
       savedDrafts.delete(id);
       savedMessages.delete(id);
       draftMessages.delete(id);
       if (draftId) {
         try {
-          await deleteDraft(win.accountId, draftId);
+          await deleteDraft(saved?.accountId ?? win.accountId, draftId);
         } catch (e) {
           toastError(e);
           return;

@@ -3,7 +3,7 @@ import { Button } from "../components/ui/Button";
 import { isEditableTarget, registry, type CommandRegistry } from "../keyboard/registry";
 import { platform } from "../lib/platform";
 import type { CommandError, MessageDetail, ThreadLoading as Loading } from "../lib/tauri";
-import { useThemeStore } from "../theme/theme";
+import { themeFor, useThemeStore } from "../theme/theme";
 import { imageRetrier } from "./imageRetry";
 import { linkify, openLink } from "./linkify";
 import { BROKEN_IMAGE, buildSrcdoc } from "./srcdoc";
@@ -111,7 +111,10 @@ interface HtmlBodyProps {
 }
 
 export function HtmlBody({ messageId, html, declaresDark, allowRemote = true }: HtmlBodyProps) {
-  const dark = useThemeStore((s) => s.resolved === "dark");
+  // The theme on screen, whose own kind counts (a light theme can be the one chosen for Dark mode).
+  const theme = useThemeStore(
+    (s) => s.previewing ?? themeFor(s.resolved, s.choices, s.customThemes, s.folderThemes),
+  );
   const wrapper = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const stopWatching = useRef<(() => void) | null>(null);
@@ -124,12 +127,12 @@ export function HtmlBody({ messageId, html, declaresDark, allowRemote = true }: 
       // Bodies mount only when a message (or quoted original) is expanded. Opening it loads its images,
       // except in Spam until Show images (`MessageHtml`).
       allowRemote,
-      dark,
+      dark: theme.kind === "dark",
       declaresDark,
       textColor: tokens.getPropertyValue("--color-foreground"),
       linkColor: tokens.getPropertyValue("--color-link"),
     });
-  }, [html, dark, declaresDark, allowRemote]);
+  }, [html, theme, declaresDark, allowRemote]);
 
   const detach = useCallback(() => {
     stopWatching.current?.();

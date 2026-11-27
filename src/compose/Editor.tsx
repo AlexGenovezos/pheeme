@@ -9,6 +9,11 @@ import { SignatureNode } from "./SignatureNode";
 
 /** What TipTap gives back for an empty document; stored as "" so a blank message stays blank. */
 const EMPTY = "<p></p>";
+/**
+ * Marks a change that fills in what the message would have started with had it been known (a signature fetched
+ * after the panel opened): not the user's edit, so not one to undo.
+ */
+const FILL_IN = "pheeme-fill-in";
 
 /** What the compose panel does for the editor: files pasted into it, and the images its text shows. */
 export interface EditorFiles {
@@ -25,7 +30,8 @@ export interface EditorFiles {
  */
 export function useComposeEditor(
   initialHtml: string,
-  onChange: (html: string) => void,
+  /** `fillIn` when the change only filled in what the message starts with (`replaceSignature`'s `fillIn`). */
+  onChange: (html: string, fillIn: boolean) => void,
   label = "Message",
   files?: EditorFiles,
 ) {
@@ -64,9 +70,9 @@ export function useComposeEditor(
         return true;
       },
     },
-    onUpdate: ({ editor: e }) => {
+    onUpdate: ({ editor: e, transaction }) => {
       const html = e.getHTML();
-      changed.current(html === EMPTY ? "" : html);
+      changed.current(html === EMPTY ? "" : html, transaction.getMeta(FILL_IN) === true);
     },
   });
 }
@@ -87,9 +93,13 @@ export function removeImages(editor: TipTap, contentIds: string[]) {
   });
 }
 
-/** Put `html` in place of the body's signature (or after the body when it has none); `null` removes it. */
-export function replaceSignature(editor: TipTap, html: string | null) {
+/**
+ * Put `html` in place of the body's signature (or after the body when it has none); `null` removes it. `fillIn`
+ * when it is what the message would have started with: kept out of Undo and reported as a fill-in.
+ */
+export function replaceSignature(editor: TipTap, html: string | null, opts?: { fillIn?: boolean }) {
   editor.commands.command(({ tr, state }) => {
+    if (opts?.fillIn) tr.setMeta("addToHistory", false).setMeta(FILL_IN, true);
     let at: { from: number; to: number } | null = null;
     state.doc.forEach((node, offset) => {
       if (!at && node.type.name === "signature") at = { from: offset, to: offset + node.nodeSize };

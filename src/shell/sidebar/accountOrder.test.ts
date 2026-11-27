@@ -1,5 +1,7 @@
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { expect, test } from "vitest";
-import { dropped, moved } from "./accountOrder";
+import { useAccountStore } from "../../store/accountStore";
+import { dropped, moved, startAccountDrag, useAccountDrag } from "./accountOrder";
 
 test("Move up and Move down step an account one place, and stop at the ends", () => {
   const ids = ["a", "b", "c"];
@@ -18,4 +20,22 @@ test("a dragged account lands before the first account whose middle is below the
   expect(dropped(ids, "a", middles, 60)).toEqual(["b", "c", "a"]);
   // Over its own place: where it was.
   expect(dropped(ids, "b", middles, 30)).toEqual(ids);
+});
+
+const press = (pointerType: string) =>
+  ({ button: 0, clientX: 0, clientY: 0, pointerType }) as unknown as ReactPointerEvent;
+
+test("a drag ends when the window loses focus, and touch never starts one", () => {
+  useAccountStore.setState({
+    accounts: [{ id: "a" }, { id: "b" }] as ReturnType<typeof useAccountStore.getState>["accounts"],
+  });
+  startAccountDrag(press("mouse"), "a");
+  window.dispatchEvent(new MouseEvent("pointermove", { clientX: 0, clientY: 50 }));
+  expect(useAccountDrag.getState().dragging).toBe("a");
+  window.dispatchEvent(new Event("blur"));
+  expect(useAccountDrag.getState()).toEqual({ dragging: null, order: null });
+
+  startAccountDrag(press("touch"), "a");
+  window.dispatchEvent(new MouseEvent("pointermove", { clientX: 0, clientY: 50 }));
+  expect(useAccountDrag.getState().dragging).toBeNull();
 });

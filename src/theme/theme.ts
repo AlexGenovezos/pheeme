@@ -201,6 +201,8 @@ interface ThemeState {
   customThemes: ThemeFile[];
   /** Themes read from the themes folder at launch (not saved; the files are the source). */
   folderThemes: ThemeFile[];
+  /** A theme being edited, shown in place of the chosen one (`previewTheme`). */
+  previewing: ThemeDefinition | null;
   setMode(mode: ThemeMode): void;
   /** Flip between Light and Dark, starting from whatever is showing now. */
   toggle(): void;
@@ -289,7 +291,7 @@ function commit(mode: ThemeMode) {
   const chosen = themeFor(resolved, choices, customThemes, folderThemes);
   const theme = preview ?? chosen;
   applyTheme(theme, document.documentElement, sidebarStyle);
-  useThemeStore.setState({ mode, resolved });
+  useThemeStore.setState({ mode, resolved, previewing: preview });
   const appBg = (kind: ResolvedTheme) =>
     themeColorToHex(themeFor(kind, choices, customThemes, folderThemes).tokens["--color-app-bg"]);
   writeItem(THEME_BOOT_KEY, JSON.stringify({ light: appBg("light"), dark: appBg("dark") }));
@@ -312,6 +314,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   sidebarStyle: "light",
   customThemes: [],
   folderThemes: [],
+  previewing: null,
   setMode(mode) {
     writeThemeMode(mode);
     commit(mode);

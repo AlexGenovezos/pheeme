@@ -54,6 +54,10 @@ export const SignatureNode = Node.create({
     return ({ node }) => {
       const dom = signatureDom(node.attrs.html);
       dom.setAttribute("contenteditable", "false");
+      // Its links are inert, as the editor's own are (`openOnClick: false`): a click never navigates the app.
+      dom.addEventListener("click", (event) => {
+        if ((event.target as Element | null)?.closest?.("a[href]")) event.preventDefault();
+      });
       return { dom };
     };
   },

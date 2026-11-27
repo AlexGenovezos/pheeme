@@ -94,7 +94,10 @@ function SyncNotices() {
     ];
   });
 
-  const slowIds = Object.keys(slowSync).filter((id) => !covered.includes(id));
+  // Only connected accounts: a removed one's note would otherwise wait out its hold.
+  const slowIds = Object.keys(slowSync).filter(
+    (id) => !covered.includes(id) && accounts.some((a) => a.id === id),
+  );
   let slow = null;
   if (!offline && slowIds.length > 0) {
     const key = `slow:${Math.min(...slowIds.map((id) => slowSync[id]!.since))}`;

@@ -102,7 +102,19 @@ signaturePurifier.addHook("afterSanitizeAttributes", (node) => {
 export const cleanSignature = (html: string) =>
   signaturePurifier.sanitize(html, {
     WHOLE_DOCUMENT: false,
-    FORBID_TAGS: ["style", "form", "input", "button", "select", "textarea", "option", "dialog"],
+    FORBID_TAGS: [
+      "style",
+      "form",
+      "input",
+      "button",
+      "select",
+      "textarea",
+      "option",
+      "dialog",
+      "audio",
+      "video",
+      "source",
+    ],
   });
 
 /** The block a signature takes in a message body; the editor keeps it as one piece (`SignatureNode`). */

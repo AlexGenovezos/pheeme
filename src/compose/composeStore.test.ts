@@ -315,6 +315,55 @@ test("switching account moves the draft out of the old account", async () => {
   expect(called("delete_draft")).toEqual([{ accountId: "a1", draftId: "d1" }]);
 });
 
+test("a save that lands after an account switch deletes its draft from the old account only", async () => {
+  const release = heldSave();
+  const id = written();
+  const saving = store().save(id);
+  await vi.waitFor(() => expect(called("save_draft")).toHaveLength(1));
+  store().setAccount(id, "a2");
+  release();
+  await saving;
+  expect(win(id)).toMatchObject({ accountId: "a2", saving: false, draft: { draftId: null } });
+  expect(called("delete_draft")).toEqual([{ accountId: "a1", draftId: "d1" }]);
+  // Discarding now has no a1 draft to delete from a2.
+  await store().discard(id);
+  expect(called("delete_draft")).toEqual([{ accountId: "a1", draftId: "d1" }]);
+});
+
+test("discarding after a switch that raced a save deletes that draft from its own account", async () => {
+  const release = heldSave();
+  const id = written();
+  const saving = store().save(id);
+  await vi.waitFor(() => expect(called("save_draft")).toHaveLength(1));
+  store().setAccount(id, "a2");
+  const discarding = store().discard(id);
+  release();
+  await saving;
+  await discarding;
+  expect(called("delete_draft")).toEqual([{ accountId: "a1", draftId: "d1" }]);
+});
+
+test("the account can't change while the message is sending", async () => {
+  handlers.send_email = () => new Promise(() => {});
+  const id = written();
+  void store().send(id);
+  await vi.waitFor(() => expect(win(id).sending).toBe(true));
+  store().setAccount(id, "a2");
+  expect(win(id).accountId).toBe("a1");
+});
+
+test("filling in what an untouched message starts with leaves nothing to save", async () => {
+  const id = store().compose("a1");
+  store().fillIn(id, { from: mira, bodyHtml: "<p></p><div>sig</div>" });
+  expect(win(id)).toMatchObject({ version: 0, draft: { from: mira } });
+  await store().save(id);
+  expect(called("save_draft")).toEqual([]);
+  // Once it's been edited, a fill-in is a change like any other.
+  store().update(id, { subject: "Hi" });
+  store().fillIn(id, { from: mira });
+  expect(win(id).version).toBe(2);
+});
+
 test(`at most ${MAX_WINDOWS} panels; opening one tucks the others away`, () => {
   for (let i = 0; i < MAX_WINDOWS; i++) store().compose("a1");
   expect(store().windows.map((w) => w.minimized)).toEqual([true, true, false]);

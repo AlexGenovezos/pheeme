@@ -3,7 +3,7 @@
 // It stays open after a pick, as Gmail's does, so several can go in a row. Its size never changes: searching
 // swaps what the grid holds, and the name line under it is always there.
 import raw from "unicode-emoji-json/data-by-group.json";
-import { type KeyboardEvent, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePopover } from "../components/ui/usePopover";
 import { type Emoji, emojiGroups, recentEmoji, rememberEmoji, searchEmoji } from "./emoji";
 import "../components/ui/Surface.css";
@@ -44,6 +44,49 @@ function verticalNeighbour(buttons: HTMLElement[], from: number, down: boolean):
   }
   return best;
 }
+
+/**
+ * Every section's buttons. Memoized: pointing at an emoji changes only the name line, so the ~1,800 buttons don't
+ * render again with each move.
+ */
+const EmojiGrid = memo(function EmojiGrid({
+  sections,
+  first,
+  onShow,
+  onPick,
+}: {
+  sections: Section[];
+  first: Emoji | null;
+  onShow(emoji: Emoji): void;
+  onPick(emoji: Emoji): void;
+}) {
+  return sections.map((s) => (
+    <section key={s.id} className="emoji-picker__section" data-group={s.id} aria-label={s.name}>
+      <h3 className="emoji-picker__heading">{s.name}</h3>
+      {s.emojis.length === 0 ? (
+        <p className="emoji-picker__empty">No emoji match.</p>
+      ) : (
+        <div className="emoji-picker__grid">
+          {s.emojis.map((emoji) => (
+            <button
+              key={emoji.char}
+              type="button"
+              className="emoji-picker__emoji"
+              aria-label={emoji.name}
+              // One tab stop for the grid: arrow keys move inside it.
+              tabIndex={emoji === first ? 0 : -1}
+              onPointerEnter={() => onShow(emoji)}
+              onFocus={() => onShow(emoji)}
+              onClick={() => onPick(emoji)}
+            >
+              {emoji.char}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  ));
+});
 
 export default function EmojiPicker({
   at,
@@ -86,10 +129,15 @@ export default function EmojiPicker({
   }, [query, recent]);
   const first = sections.find((s) => s.emojis.length > 0)?.emojis[0] ?? null;
 
-  const pick = (emoji: Emoji) => {
-    onPick(emoji.char);
+  // Stable, so the memoized grid keeps it; it reads the latest `onPick`.
+  const picked = useRef(onPick);
+  useEffect(() => {
+    picked.current = onPick;
+  }, [onPick]);
+  const pick = useCallback((emoji: Emoji) => {
+    picked.current(emoji.char);
     rememberEmoji(emoji.char);
-  };
+  }, []);
 
   const buttons = () => [
     ...(scroller.current?.querySelectorAll<HTMLElement>(".emoji-picker__emoji") ?? []),
@@ -177,37 +225,7 @@ export default function EmojiPicker({
         ))}
       </div>
       <div ref={scroller} className="emoji-picker__scroll" onKeyDown={onGridKey}>
-        {sections.map((s) => (
-          <section
-            key={s.id}
-            className="emoji-picker__section"
-            data-group={s.id}
-            aria-label={s.name}
-          >
-            <h3 className="emoji-picker__heading">{s.name}</h3>
-            {s.emojis.length === 0 ? (
-              <p className="emoji-picker__empty">No emoji match.</p>
-            ) : (
-              <div className="emoji-picker__grid">
-                {s.emojis.map((emoji) => (
-                  <button
-                    key={emoji.char}
-                    type="button"
-                    className="emoji-picker__emoji"
-                    aria-label={emoji.name}
-                    // One tab stop for the grid: arrow keys move inside it.
-                    tabIndex={emoji === first ? 0 : -1}
-                    onPointerEnter={() => setShown(emoji)}
-                    onFocus={() => setShown(emoji)}
-                    onClick={() => pick(emoji)}
-                  >
-                    {emoji.char}
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        ))}
+        <EmojiGrid sections={sections} first={first} onShow={setShown} onPick={pick} />
       </div>
       {/* Always there, so pointing at an emoji never moves anything. */}
       <div className="emoji-picker__name" aria-hidden="true">

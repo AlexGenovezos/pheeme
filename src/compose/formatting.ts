@@ -139,6 +139,22 @@ export const BackgroundColor = Mark.create({
   },
 });
 
+/**
+ * The address a typed link points to: a bare domain (`pheeme.app`) becomes `https://`, and only web and `mailto:`
+ * links are kept, so a link never becomes relative to the reader's page or runs script. `null` when it can't be one.
+ */
+export function linkHref(typed: string): string | null {
+  const text = typed.trim();
+  if (!text) return null;
+  const withScheme = /^[a-z][a-z\d+.-]*:/i.test(text) ? text : `https://${text}`;
+  try {
+    const url = new URL(withScheme);
+    return ["http:", "https:", "mailto:"].includes(url.protocol) ? withScheme : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The marks Remove formatting takes off: everything but links. */
 const isFormatting = (name: string) => name !== "link";
 

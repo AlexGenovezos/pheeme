@@ -271,7 +271,8 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
   );
   const editor = useComposeEditor(
     draft.bodyHtml,
-    (bodyHtml) => store.update(win.id, { bodyHtml }),
+    (bodyHtml, fillIn) =>
+      fillIn ? store.fillIn(win.id, { bodyHtml }) : store.update(win.id, { bodyHtml }),
     undefined,
     files,
   );
@@ -299,7 +300,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     : null;
   useEffect(() => {
     if (win.kind === "new" && !win.draft.from && accountDefault)
-      store.setFrom(win.id, accountDefault);
+      store.fillIn(win.id, { from: accountDefault });
     // oxlint-disable-next-line react/exhaustive-deps
   }, [accountDefault?.address, win.kind, win.id]);
 
@@ -316,6 +317,7 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     replaceSignature(
       editor,
       useSignatures.getState().signatureFor(win.accountId, "new", fromAddress),
+      { fillIn: true },
     );
     // oxlint-disable-next-line react/exhaustive-deps
   }, [editor, gmailHtml, win.accountId]);
@@ -328,9 +330,12 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
     signedAs.current = { accountId: win.accountId, from: fromAddress };
     const signatures = useSignatures.getState();
     const next = signatures.signatureFor(win.accountId, use, fromAddress);
+    // Gmail's default address arriving for an untouched message only fills in its signature.
+    const untouched =
+      useComposeStore.getState().windows.find((w) => w.id === win.id)?.version === 0;
     if (next !== signatures.signatureFor(was.accountId, use, was.from))
-      replaceSignature(editor, next);
-  }, [editor, win.accountId, fromAddress, use]);
+      replaceSignature(editor, next, { fillIn: untouched });
+  }, [editor, win.id, win.accountId, fromAddress, use]);
 
   // Focus: replies start in the body, new messages in To.
   useEffect(() => {
@@ -418,7 +423,12 @@ function ComposeForm({ win }: { win: ComposeWindow }) {
         <div className="compose-field">
           <span className="compose-field__label">From</span>
           {canChooseFrom ? (
-            <button type="button" className="compose-from" onClick={chooseFrom}>
+            <button
+              type="button"
+              className="compose-from"
+              onClick={chooseFrom}
+              disabled={win.sending}
+            >
               <span className="compose-from__text">{fromShown ?? "Choose account"}</span>
               <ChevronDown aria-hidden="true" />
             </button>

@@ -46,12 +46,29 @@ function setSenderState(key: string, state: SenderState | undefined) {
   });
 }
 
-/** The address and the fields Pheeme can fill in from a `mailto:` link. */
+/** Percent-decoded, or as written when it isn't valid percent-encoding. */
+const decode = (s: string) => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+};
+
+/** The address and the fields Pheeme can fill in from a `mailto:` link (RFC 6068). */
 export function parseMailto(url: string): { to: string; subject: string; body: string } | null {
   if (!/^mailto:/i.test(url)) return null;
-  const [path, query = ""] = url.slice("mailto:".length).split("?", 2);
-  const params = new URLSearchParams(query);
-  const to = decodeURIComponent(path).split(",")[0]?.trim() || params.get("to") || "";
+  const rest = url.slice("mailto:".length);
+  const mark = rest.indexOf("?");
+  const path = mark < 0 ? rest : rest.slice(0, mark);
+  // Field names ignore case; the first of each counts. A `?` later in the query is part of a value.
+  const params = new Map<string, string>();
+  for (const pair of mark < 0 ? [] : rest.slice(mark + 1).split("&")) {
+    const eq = pair.indexOf("=");
+    const name = decode(eq < 0 ? pair : pair.slice(0, eq)).toLowerCase();
+    if (!params.has(name)) params.set(name, decode(eq < 0 ? "" : pair.slice(eq + 1)));
+  }
+  const to = decode(path).split(",")[0]?.trim() || params.get("to")?.split(",")[0]?.trim() || "";
   if (!to) return null;
   return {
     to,

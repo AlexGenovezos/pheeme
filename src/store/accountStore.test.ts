@@ -160,6 +160,31 @@ describe("sync:rate_limited", () => {
     stop();
   });
 
+  test("removing an account forgets its slowdown and failure; signing in again forgets the failure", async () => {
+    const { stop, asked } = await setup(aloneUsage);
+    await emit("sync:rate_limited", { accountId: "a", retryInMs: null });
+    await vi.waitFor(() => expect(asked).toHaveBeenCalledTimes(1));
+    useAccountStore.setState({
+      syncErrors: { a: { code: "auth", message: "Sign in again" } },
+      reconnecting: "a",
+    });
+    await useAccountStore.getState().remove("a");
+    expect(useAccountStore.getState()).toMatchObject({
+      slowSync: {},
+      syncErrors: {},
+      reconnecting: null,
+    });
+    // Added back within the hold: a new refusal starts over, asking for the usage again.
+    useAccountStore.getState().upsert(account("a", true));
+    await emit("sync:rate_limited", { accountId: "a", retryInMs: null });
+    await vi.waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
+
+    useAccountStore.setState({ syncErrors: { b: { code: "auth", message: "Sign in again" } } });
+    useAccountStore.getState().upsert(account("b", true));
+    expect(useAccountStore.getState().syncErrors).toEqual({});
+    stop();
+  });
+
   test("asks for the usage at most once a minute per account", async () => {
     const { stop, asked } = await setup(aloneUsage);
     for (let i = 0; i < 5; i++)

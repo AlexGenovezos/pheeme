@@ -9,6 +9,7 @@ import { UnsubscribeDialogHost } from "./UnsubscribeDialog";
 import {
   __resetUnsubscribedForTests,
   lacksUnsubscribe,
+  parseMailto,
   unsubscribableMessage,
   unsubscribeOpenConversation,
 } from "./unsubscribe";
@@ -195,4 +196,24 @@ test("an opened page can be asked for again", async () => {
   const opened = screen.getByRole("button", { name: "Unsubscribe from The Review" });
   expect(opened).toHaveTextContent("Opened");
   expect(opened).toBeEnabled();
+});
+
+test("mailto links: field names in any case, a ? inside a value, bad percent-encoding", () => {
+  expect(parseMailto("MAILTO:list@example.com?Subject=Stop&BODY=please")).toEqual({
+    to: "list@example.com",
+    subject: "Stop",
+    body: "please",
+  });
+  expect(parseMailto("mailto:list@example.com?subject=why?&body=a%20b")).toEqual({
+    to: "list@example.com",
+    subject: "why?",
+    body: "a b",
+  });
+  expect(parseMailto("mailto:?To=list@example.com&subject=100%")).toEqual({
+    to: "list@example.com",
+    subject: "100%",
+    body: "",
+  });
+  expect(parseMailto("mailto:l%ist@example.com")?.to).toBe("l%ist@example.com");
+  expect(parseMailto("mailto:?subject=x")).toBeNull();
 });

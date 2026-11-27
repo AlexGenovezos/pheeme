@@ -85,7 +85,9 @@ function byAccount(keys: ThreadKey[]): Map<string, string[]> {
   const groups = new Map<string, string[]>();
   for (const key of keys) {
     const { accountId, threadId } = parseThreadKey(key);
-    groups.set(accountId, [...(groups.get(accountId) ?? []), threadId]);
+    const ids = groups.get(accountId);
+    if (ids) ids.push(threadId);
+    else groups.set(accountId, [threadId]);
   }
   return groups;
 }
@@ -293,6 +295,7 @@ async function revert(done: Map<string, string[]>, original: Change, inverse: Ch
   );
   if (inverse.patch) op.rows(inverse.patch);
   if (inverse.leavesList) op.remove();
+  if (inverse.detail) op.detail(inverse.detail);
   await send(done, inverse, op);
   // Rows the change had taken out of the list can only come back from the cache.
   if (original.leavesList) await mail().reload(true);
