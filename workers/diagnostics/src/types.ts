@@ -7,9 +7,11 @@ export interface BucketObject {
   json<T>(): Promise<T>;
 }
 
-/** R2 bucket binding (`put` and `get` only). */
+/** R2 bucket binding (`put`, `get` and `head` only). */
 export interface Bucket {
   get(key: string): Promise<BucketObject | null>;
+  /** The object's metadata without its body, or null when there is none. */
+  head(key: string): Promise<unknown>;
   put(
     key: string,
     value: ArrayBuffer,

@@ -92,6 +92,22 @@ test("opens on the chosen page, and Escape or the close button closes it", () =>
   expect(useSettingsStore.getState().open).toBe(false);
 });
 
+test("Escape in a panel outside Settings that owns its keys leaves Settings open", () => {
+  render(
+    <>
+      <Harness />
+      <div data-owns-keys="">
+        <input aria-label="mod field" />
+      </div>
+    </>,
+  );
+  open();
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "mod field" }), { key: "Escape" });
+  expect(useSettingsStore.getState().open).toBe(true);
+  fireEvent.keyDown(dialog(), { key: "Escape" });
+  expect(useSettingsStore.getState().open).toBe(false);
+});
+
 test("app shortcuts don't fire while the dialog is open", () => {
   render(<Harness />);
   open();

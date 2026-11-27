@@ -130,6 +130,12 @@ function repoUrl(root) {
   return m ? `https://github.com/${m[1]}` : null;
 }
 
+/** The commit subject that names PR `number`: `#12` but not `#120`. */
+export function subjectOf(subjects, number) {
+  const ref = new RegExp(`#${number}\\b`);
+  return subjects.find((s) => ref.test(s)) ?? "";
+}
+
 function mergedPrs(root, prevTag) {
   const range = prevTag ? [`${prevTag}..HEAD`] : ["HEAD"];
   const subjects = sh(root, "git", ["log", "--first-parent", "--format=%s", ...range])
@@ -142,7 +148,7 @@ function mergedPrs(root, prevTag) {
       return { number, title: pr.title, url: pr.url };
     } catch {
       // No gh or no network: fall back to the commit subject.
-      const subject = subjects.find((s) => s.includes(`#${number}`)) ?? "";
+      const subject = subjectOf(subjects, number);
       return {
         number,
         title: subject.replace(/\s*\(#\d+\)\s*$/, ""),

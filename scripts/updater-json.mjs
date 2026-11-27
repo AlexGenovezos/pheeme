@@ -10,6 +10,7 @@
 // usage: node scripts/updater-json.mjs <version> <assets.json> <sig-dir>
 //   assets.json  `gh api repos/{owner}/{repo}/releases/{id}/assets` output
 //   sig-dir      directory holding every *.sig asset, downloaded under its asset name
+//   The release's tag comes from GITHUB_REF_NAME (the release job runs on the tag push).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,11 +42,27 @@ function platformKeys(name) {
 }
 
 /**
- * @param {{version: string, assets: {name: string, url: string}[],
+ * The asset's public download link (github.com/…/releases/download/…), not its API URL, which
+ * shares GitHub's 60 requests an hour for anyone signed out. While the release is a draft the link
+ * says `untagged-…` and stops working once it's published, so the tag goes in its place, as
+ * tauri-action does.
+ */
+function downloadUrl(asset, tag) {
+  const url = asset.browser_download_url;
+  if (!url) throw new Error(`no download link for asset ${asset.name}`);
+  const untagged = /\/releases\/download\/untagged-[^/]+\//;
+  if (!untagged.test(url)) return url;
+  if (!tag) throw new Error(`asset ${asset.name} is on a draft; the release's tag is needed`);
+  return url.replace(untagged, `/releases/download/${encodeURIComponent(tag)}/`);
+}
+
+/**
+ * @param {{version: string, tag?: string,
+ *          assets: {name: string, browser_download_url: string}[],
  *          signatures: Record<string, string>, pubDate: string}} input
  *   signatures maps an asset name (without .sig) to its signature file's contents.
  */
-export function buildUpdaterJson({ version, assets, signatures, pubDate }) {
+export function buildUpdaterJson({ version, tag, assets, signatures, pubDate }) {
   const platforms = {};
   // msi after nsis so `windows-x86_64` ends up on the msi when there is one, as tauri-action does.
   const signed = assets
@@ -53,7 +70,7 @@ export function buildUpdaterJson({ version, assets, signatures, pubDate }) {
     .sort((a, b) => Number(a.name.endsWith(".msi")) - Number(b.name.endsWith(".msi")));
   for (const asset of signed) {
     for (const key of platformKeys(asset.name)) {
-      platforms[key] = { signature: signatures[asset.name], url: asset.url };
+      platforms[key] = { signature: signatures[asset.name], url: downloadUrl(asset, tag) };
     }
   }
   return { version, notes: "", pub_date: pubDate, platforms };
@@ -72,6 +89,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   const json = buildUpdaterJson({
     version,
+    tag: process.env.GITHUB_REF_NAME,
     assets,
     signatures,
     pubDate: new Date().toISOString(),

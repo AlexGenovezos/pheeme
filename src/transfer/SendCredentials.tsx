@@ -119,7 +119,8 @@ export function SendCredentials({ accounts }: { accounts: AccountInfo[] }) {
     try {
       await approveClientTransfer(offer.transferId);
       if (current !== attempt.current) return;
-      setStatus((s) => (s ? { ...s, phase: "sending" } : s));
+      // A poll may already have moved past approval (to completed or failed).
+      setStatus((s) => (s?.phase === "approval" ? { ...s, phase: "sending" } : s));
     } catch (raw) {
       if (current === attempt.current) setError(toCommandError(raw).message);
     } finally {

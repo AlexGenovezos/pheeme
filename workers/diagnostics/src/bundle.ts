@@ -20,6 +20,10 @@ const SCREENSHOT = /^screenshots\/[1-3]\.png$/;
 /** Matches `MAX_PNG_BYTES` and `MAX_SIDE` in `screenshot.rs`. */
 export const MAX_SCREENSHOT_BYTES = 1_000_000;
 export const MAX_SCREENSHOT_SIDE = 2560;
+/** What one file may unpack to: the app's log is at most 20 MiB (`MAX_LOG_BYTES` in `bundle.rs`). */
+export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+/** What the whole bundle may unpack to, so a small zip of deflated zeros can't be a zip bomb. */
+export const MAX_UNPACKED_BYTES = 100 * 1024 * 1024;
 
 const EOCD_SIG = 0x06054b50;
 const CENTRAL_SIG = 0x02014b50;
@@ -44,6 +48,7 @@ export function checkBundle(zip: Uint8Array): string | null {
   }
 
   const names = new Set<string>();
+  let unpacked = 0;
   let at = dirStart;
   for (let i = 0; i < count; i++) {
     if (at + 46 > eocd || view.getUint32(at, true) !== CENTRAL_SIG) {
@@ -65,6 +70,9 @@ export function checkBundle(zip: Uint8Array): string | null {
 
     if (flags & 1) return "Bundle is encrypted";
     if (names.has(name)) return "Bundle repeats a file";
+    unpacked += size;
+    if (size > MAX_FILE_BYTES || unpacked > MAX_UNPACKED_BYTES)
+      return "Bundle is too large unpacked";
     names.add(name);
     if (SCREENSHOT.test(name)) {
       if (method !== STORED || packed !== size) return "Screenshot is compressed";

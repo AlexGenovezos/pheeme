@@ -35,16 +35,17 @@ export function useDiagnosticScreenshots(
 ) {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [dropOver, setDropOver] = useState(false);
-  // Slots taken, kept in step by the handlers so several adds before a render still count.
-  const count = useRef(0);
+  // Slots taken, kept in step by the handlers so several adds before a render still count. A set, so
+  // removing the same slot twice (a double click before the render) frees it only once.
+  const taken = useRef(new Set<number>());
 
   const add = (sources: Source[]) => {
     if (!sources.length) return;
-    const room = MAX_SCREENSHOTS - count.current;
+    const room = MAX_SCREENSHOTS - taken.current.size;
     if (sources.length > room) onError(`Add at most ${MAX_SCREENSHOTS} screenshots.`);
     for (const source of sources.slice(0, Math.max(0, room))) {
       const id = nextId++;
-      count.current += 1;
+      taken.current.add(id);
       setSlots((s) => [...s, { id, shot: null }]);
       void (async () => {
         try {
@@ -59,7 +60,7 @@ export function useDiagnosticScreenshots(
           );
           setSlots((s) => s.map((slot) => (slot.id === id ? { id, shot } : slot)));
         } catch (raw) {
-          count.current -= 1;
+          taken.current.delete(id);
           setSlots((s) => s.filter((slot) => slot.id !== id));
           onError(toCommandError(raw).message);
         }
@@ -109,7 +110,7 @@ export function useDiagnosticScreenshots(
     dropOver,
     add,
     remove: (id: number) => {
-      count.current -= 1;
+      taken.current.delete(id);
       setSlots((s) => s.filter((slot) => slot.id !== id));
     },
     /** Still being checked: Send waits for them. */

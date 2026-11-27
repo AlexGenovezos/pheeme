@@ -1,6 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { MAX_SCREENSHOT_BYTES, checkBundle, checkPng, crc32 } from "./bundle";
+import {
+  MAX_FILE_BYTES,
+  MAX_SCREENSHOT_BYTES,
+  MAX_UNPACKED_BYTES,
+  checkBundle,
+  checkPng,
+  crc32,
+} from "./bundle";
 import { APP_BUNDLE_BASE64, fromBase64, goodPng, ihdr, pngOf, zipOf } from "./testdata";
 
 const text = (s: string) => new TextEncoder().encode(s);
@@ -101,6 +108,18 @@ describe("checkBundle", () => {
       }
     }
     expect(checkBundle(zipOf(entries))).toBeNull();
+  });
+
+  it("refuses a small zip that would unpack to too much", () => {
+    const deflated = (name: string, size: number) => ({ name, data: text("x"), method: 8, size });
+    const oneHuge = zipOf([summary, deflated("logs/pheeme.log", MAX_FILE_BYTES + 1)]);
+    expect(checkBundle(oneHuge)).toBe("Bundle is too large unpacked");
+    const each = Math.floor(MAX_FILE_BYTES / 2);
+    const count = Math.ceil(MAX_UNPACKED_BYTES / each) + 1;
+    const many = [summary];
+    for (let m = 0; m < count; m++) many.push(deflated(`email/m${m}/body.txt`, each));
+    expect(checkBundle(zipOf(many))).toBe("Bundle is too large unpacked");
+    expect(checkBundle(zipOf([summary, deflated("logs/pheeme.log", MAX_FILE_BYTES)]))).toBeNull();
   });
 
   it("refuses a zip whose directory points past the end", () => {

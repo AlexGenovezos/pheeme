@@ -224,18 +224,19 @@ function ThemeEditorPanel() {
   }
 
   function drag(e: PointerEvent<HTMLElement>) {
-    if ((e.target as Element).closest("button") || !pos) return;
+    if (e.button !== 0 || (e.target as Element).closest("button") || !pos) return;
     const start = { x: e.clientX - pos.x, y: e.clientY - pos.y };
     const el = e.currentTarget;
     el.setPointerCapture(e.pointerId);
     const move = (m: globalThis.PointerEvent) =>
       setPos(clampPosition(m.clientX - start.x, m.clientY - start.y, panel.current));
-    const up = () => {
+    const ends = ["pointerup", "pointercancel", "lostpointercapture"] as const;
+    const end = () => {
       el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
+      for (const type of ends) el.removeEventListener(type, end);
     };
     el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
+    for (const type of ends) el.addEventListener(type, end);
   }
 
   const query = filter.trim().toLowerCase();

@@ -11,6 +11,7 @@ import {
   notesPath,
   parseVersion,
   prNumbersFromSubjects,
+  subjectOf,
   publishedNotes,
 } from "./release.mjs";
 import { setVersion } from "./version.mjs";
@@ -45,6 +46,13 @@ it("finds PRs in squash and merge subjects, oldest first, once each", () => {
       "Merge pull request #62 from o/fix/email",
     ]),
   ).toEqual([62, 64, 63, 65]);
+});
+
+it("finds a PR's own subject offline, not one naming a longer number", () => {
+  const subjects = ["feat(mail): later (#120)", "fix(mail): earlier (#12)"];
+  expect(subjectOf(subjects, 12)).toBe("fix(mail): earlier (#12)");
+  expect(subjectOf(subjects, 120)).toBe("feat(mail): later (#120)");
+  expect(subjectOf(subjects, 1)).toBe("");
 });
 
 describe("draftNotes", () => {

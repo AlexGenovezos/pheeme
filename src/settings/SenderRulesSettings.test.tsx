@@ -1,6 +1,7 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { useToastStore } from "../components/ui/Toast";
 import { useAccountStore } from "../store/accountStore";
 import { SenderRulesSettings } from "./SenderRulesSettings";
 
@@ -53,6 +54,30 @@ test("lists each account's rules, deletes one, and asks old accounts to sign in 
   await flush();
   expect(deleted).toEqual([{ accountId: "a1", ruleId: "f1" }]);
   expect(one).not.toHaveTextContent("news@x.com");
+});
+
+test("a delete Gmail refuses keeps the list and says why", async () => {
+  useAccountStore.setState({ accounts: [{ id: "a1", email: "one@example.com" } as never] });
+  mockIPC((cmd) => {
+    if (cmd === "list_sender_rules") return rules.a1;
+    if (cmd === "delete_sender_rule")
+      throw { code: "network", message: "Google can't be reached." };
+    return undefined;
+  });
+  render(<SenderRulesSettings />);
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Delete the rule for news@x.com" }));
+  await flush();
+  const section = screen.getByRole("region", { name: "Sender rules" });
+  expect(section).toHaveTextContent("news@x.com");
+  expect(section).not.toHaveTextContent("Couldn't load sender rules");
+  expect(useToastStore.getState().toasts).toContainEqual(
+    expect.objectContaining({
+      title: "Couldn't delete the rule for news@x.com",
+      description: "Google can't be reached.",
+      tone: "danger",
+    }),
+  );
 });
 
 test("while rules load, the section shows a placeholder shaped like a rule, not a Loading message", async () => {

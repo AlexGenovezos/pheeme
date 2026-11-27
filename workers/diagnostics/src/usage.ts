@@ -20,6 +20,8 @@ const MAX_REBOUND = 300;
 const MAX_FIELD_CHARS = 100;
 const MAX_COUNT = 1_000_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** The longest local day: the one the clocks go back on. */
+const LONGEST_DAY_MS = 25 * 60 * 60 * 1000;
 /** How far back a day may be: the app drops what it couldn't send in 14 days. */
 const OLDEST_DAY_MS = 20 * DAY_MS;
 const INSTALL_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -51,7 +53,7 @@ export async function handleUsage(request: Request, deps: UsageDeps): Promise<Re
   if (!parsed) return status(400, "Malformed report");
   const { installId, record } = parsed;
 
-  if (!(await deps.bucket.get(`${INSTALLS_PREFIX}${installId}.json`))) {
+  if (!(await deps.bucket.head(`${INSTALLS_PREFIX}${installId}.json`))) {
     return status(403, "Unknown install");
   }
   await deps.bucket.put(
@@ -86,7 +88,8 @@ export function parseUsage(
   const outScreens: UsageRecord["screens"] = [];
   for (const s of screens) {
     if (!isObject(s) || !isName(s.name) || !isCount(s.opens)) return null;
-    if (!Number.isInteger(s.ms) || (s.ms as number) < 0 || (s.ms as number) > DAY_MS) return null;
+    if (!Number.isInteger(s.ms) || (s.ms as number) < 0 || (s.ms as number) > LONGEST_DAY_MS)
+      return null;
     outScreens.push({ name: s.name as string, opens: s.opens as number, ms: s.ms as number });
   }
   const outCommands: UsageRecord["commands"] = [];
