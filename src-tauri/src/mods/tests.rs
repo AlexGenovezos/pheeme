@@ -489,3 +489,81 @@ async fn a_failed_upgrade_keeps_the_old_versions_credentials() {
         .unwrap()
         .is_none());
 }
+
+/// Deletes fail for names containing `refuse`.
+struct RefusingKeychain {
+    inner: MemoryKeychain,
+    refuse: &'static str,
+}
+impl Keychain for RefusingKeychain {
+    fn read(&self, name: &str) -> keyring::Result<Option<String>> {
+        self.inner.read(name)
+    }
+    fn write(&self, name: &str, value: &str) -> keyring::Result<()> {
+        self.inner.write(name, value)
+    }
+    fn delete(&self, name: &str) -> keyring::Result<()> {
+        if name.contains(self.refuse) {
+            return Err(keyring::Error::NoEntry);
+        }
+        self.inner.delete(name)
+    }
+}
+
+#[tokio::test]
+async fn a_credential_that_cannot_be_deleted_rolls_the_upgrade_back_whole() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    counter(&source, "login.test");
+    let write_manifest = |origin: &str| {
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(source.join("manifest.json")).unwrap())
+                .unwrap();
+        manifest["permissions"]["connections"] = json!(["first", "second"].map(|id| json!({
+            "id": id, "name": id, "authorizationUrl":"https://8.8.8.8/authorize", "tokenUrl":"https://8.8.8.8/token", "scopes":["read"], "apiOrigins":[origin]
+        })));
+        fs::write(source.join("manifest.json"), manifest.to_string()).unwrap();
+    };
+    write_manifest("https://8.8.8.8");
+    let keychain = Arc::new(RefusingKeychain {
+        inner: MemoryKeychain::default(),
+        refuse: ":second",
+    });
+    let mods = ModService::open(
+        root.path().join("installed"),
+        keychain.clone(),
+        false,
+        Arc::new(|| {}),
+        Arc::new(|_| Ok(())),
+    )
+    .await
+    .unwrap();
+    mods.install(&mods.prepare(&source).unwrap().ticket)
+        .await
+        .unwrap();
+    let tokens = oauth::Tokens {
+        access_token: "access-secret".into(),
+        refresh_token: None,
+        expires_at: i64::MAX,
+        client_id: "client".into(),
+    };
+    for connection in ["first", "second"] {
+        oauth::commit(keychain.as_ref(), "login.test", connection, &tokens).unwrap();
+    }
+
+    write_manifest("https://1.1.1.1");
+    assert!(mods
+        .install(&mods.prepare(&source).unwrap().ticket)
+        .await
+        .is_err());
+    for connection in ["first", "second"] {
+        assert!(
+            oauth::read(keychain.as_ref(), "login.test", connection)
+                .unwrap()
+                .is_some(),
+            "{connection}"
+        );
+    }
+    let snapshot = mods.snapshot();
+    assert!(snapshot.mods[0].enabled);
+}

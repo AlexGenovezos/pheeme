@@ -238,18 +238,28 @@ pub fn build_message(out: &Outgoing<'_>) -> Result<Vec<u8>, MailError> {
     Ok(message.formatted())
 }
 
-/// `<id>` when `token` is one message id (`<left@right>`, printable ASCII, no space or
-/// bracket inside); a bare `left@right` gets its brackets.
+/// `token` when it is one message id as RFC 5322 writes it: `<dot-atom@dot-atom>`, or a
+/// `[literal]` on the right.
 fn message_id(token: &str) -> Option<String> {
-    let inner = token
-        .strip_prefix('<')
-        .and_then(|t| t.strip_suffix('>'))
-        .unwrap_or(token);
-    let valid = inner.contains('@')
-        && inner
-            .bytes()
-            .all(|b| b.is_ascii_graphic() && b != b'<' && b != b'>');
-    valid.then(|| format!("<{inner}>"))
+    let atext = |b: u8| b.is_ascii_alphanumeric() || b"!#$%&'*+-/=?^_`{|}~".contains(&b);
+    let dot_atom = |s: &str| {
+        !s.is_empty()
+            && s.split('.')
+                .all(|atom| !atom.is_empty() && atom.bytes().all(atext))
+    };
+    let literal = |s: &str| {
+        s.strip_prefix('[')
+            .and_then(|s| s.strip_suffix(']'))
+            .is_some_and(|d| {
+                d.bytes()
+                    .all(|b| b.is_ascii_graphic() && !b"[]\\".contains(&b))
+            })
+    };
+    let (left, right) = token
+        .strip_prefix('<')?
+        .strip_suffix('>')?
+        .split_once('@')?;
+    (dot_atom(left) && (dot_atom(right) || literal(right))).then(|| token.to_owned())
 }
 
 /// The attachment's `Content-ID` if it is a valid one (see [`clean_content_id`]).
@@ -647,6 +657,13 @@ mod tests {
                 "<b@x>\r\nX-Injected: 1".into(),
                 "<no at>".into(),
                 "<c@x".into(),
+                "d@x".into(),
+                "<@x>".into(),
+                "<e@>".into(),
+                "<f@g@x>".into(),
+                "<h..i@x>".into(),
+                "<j\"k@x>".into(),
+                "<l@[10.0.0.1]>".into(),
             ],
             ..Default::default()
         };
@@ -665,7 +682,7 @@ mod tests {
         );
         assert_eq!(
             mail.headers.get_first_value("References").unwrap(),
-            "<root@x> <b@x>"
+            "<root@x> <b@x> <l@[10.0.0.1]>"
         );
         assert!(mail.headers.get_first_value("Bcc").is_none());
         let text = String::from_utf8_lossy(&raw);

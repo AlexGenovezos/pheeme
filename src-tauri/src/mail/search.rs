@@ -183,17 +183,21 @@ impl MailService {
                 }
             }
             if ids.len() > MAX_MATCHES {
-                break;
+                return Err(MailError::Invalid(format!(
+                    "Gmail's search finds more than {MAX_MATCHES} conversations, so nothing was \
+                     changed. Narrow the search and try again."
+                )));
             }
             if page.next.is_empty() {
                 return Ok(ids);
             }
             tokens = Some(page.next);
         }
-        Err(MailError::Invalid(format!(
-            "Gmail's search finds more than {MAX_MATCHES} conversations, so nothing was changed. \
-             Narrow the search and try again."
-        )))
+        Err(MailError::Invalid(
+            "Gmail's search went on for too many pages, so nothing was changed. Narrow the \
+             search and try again."
+                .into(),
+        ))
     }
 
     /// Local search over cached mail, newest first, keyset-paged like

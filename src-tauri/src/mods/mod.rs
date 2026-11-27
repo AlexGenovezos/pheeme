@@ -232,7 +232,7 @@ impl ModService {
             let id = manifest.id.clone();
             let previous = state.records.get(&id).cloned();
             // A changed OAuth declaration cannot inherit credentials issued to the old provider.
-            // They are deleted once the new version is saved, so a failed upgrade keeps them.
+            // They are deleted once the new version is in place, so a failed upgrade keeps them.
             let stale: Vec<String> = previous
                 .iter()
                 .flat_map(|old| &old.manifest.permissions.connections)
@@ -246,28 +246,43 @@ impl ModService {
                 self.root.join("packages").join(&directory),
             )
             .map_err(|e| e.to_string())?;
+            // Saved disabled until the stale credentials are gone, so a crash in between can't
+            // start the new version with them.
+            let enabled = !self.safe_mode;
             state.records.insert(
                 id.clone(),
                 Record {
                     manifest,
                     directory: directory.clone(),
-                    enabled: !self.safe_mode,
+                    enabled: enabled && stale.is_empty(),
                 },
             );
             state.errors.remove(&id);
-            // The credentials go before the new version starts, which must never see them.
-            let installed = self.persist(&state).and_then(|()| {
-                stale
-                    .iter()
-                    .try_for_each(|c| oauth::disconnect(self.keychain.as_ref(), &id, c))
-            });
+            let mut taken = Vec::new();
+            let installed = 'install: {
+                if let Err(e) = self.persist(&state) {
+                    break 'install Err(e);
+                }
+                if stale.is_empty() {
+                    break 'install Ok(());
+                }
+                match self.take_credentials(&id, &stale) {
+                    Ok(t) => taken = t,
+                    Err(e) => break 'install Err(e),
+                }
+                if let Some(record) = state.records.get_mut(&id) {
+                    record.enabled = enabled;
+                }
+                self.persist(&state)
+            };
             if let Err(error) = installed {
+                self.restore_credentials(&id, &taken);
                 if let Some(old) = &previous {
                     state.records.insert(id.clone(), old.clone());
                 } else {
                     state.records.remove(&id);
                 }
-                // Undoes a save that went through before a credential couldn't be deleted.
+                // Undoes a save that went through before a later step failed.
                 if let Err(e) = self.persist(&state) {
                     tracing::warn!(error = %e, "couldn't save a failed mod install's rollback");
                 }
@@ -308,6 +323,37 @@ impl ModService {
         }
         (self.changed)();
         Ok(())
+    }
+
+    /// Deletes the mod's credentials for `connections` and returns them, so a failed install can
+    /// put them back; if one can't be deleted, those already deleted are put back first.
+    fn take_credentials(
+        &self,
+        id: &str,
+        connections: &[String],
+    ) -> Result<Vec<(String, oauth::Tokens)>, String> {
+        let keychain = self.keychain.as_ref();
+        let mut taken = Vec::new();
+        for connection in connections {
+            // One that can't be read can't be put back either; it is deleted all the same.
+            let tokens = oauth::read(keychain, id, connection).ok().flatten();
+            if let Err(e) = oauth::disconnect(keychain, id, connection) {
+                self.restore_credentials(id, &taken);
+                return Err(e);
+            }
+            if let Some(tokens) = tokens {
+                taken.push((connection.clone(), tokens));
+            }
+        }
+        Ok(taken)
+    }
+
+    fn restore_credentials(&self, id: &str, taken: &[(String, oauth::Tokens)]) {
+        for (connection, tokens) in taken {
+            if let Err(e) = oauth::commit(self.keychain.as_ref(), id, connection, tokens) {
+                tracing::warn!(error = %e, "couldn't restore a mod's credentials");
+            }
+        }
     }
 
     fn stop_locked(state: &mut State, id: &str) {

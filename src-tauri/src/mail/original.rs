@@ -80,10 +80,11 @@ fn split_semicolons(s: &str) -> Vec<&str> {
     parts
 }
 
-/// The server that added an `Authentication-Results` header: its authserv-id, without the
-/// comments and version that may follow it.
-fn authserv_id(segment: &str) -> String {
-    let (mut depth, mut escaped, mut out) = (0usize, false, String::new());
+/// The server that added an `Authentication-Results` header: its authserv-id, when the
+/// segment is that id with nothing after it but comments and an optional numeric version.
+fn authserv_id(segment: &str) -> Option<String> {
+    // Comments become spaces, so the text around one can't join into another name.
+    let (mut depth, mut escaped, mut text) = (0usize, false, String::new());
     for c in segment.chars() {
         if escaped {
             escaped = false;
@@ -91,16 +92,22 @@ fn authserv_id(segment: &str) -> String {
             escaped = true;
         } else if c == '(' {
             depth += 1;
-        } else if c == ')' {
-            depth = depth.saturating_sub(1);
+            text.push(' ');
+        } else if c == ')' && depth > 0 {
+            depth -= 1;
         } else if depth == 0 {
-            out.push(c);
+            text.push(c);
         }
     }
-    out.split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase()
+    if depth > 0 {
+        return None;
+    }
+    let mut words = text.split_whitespace();
+    let id = words.next()?.to_ascii_lowercase();
+    let version = words.next();
+    let valid =
+        words.next().is_none() && version.is_none_or(|v| v.bytes().all(|b| b.is_ascii_digit()));
+    valid.then_some(id)
 }
 
 /// The server whose `Authentication-Results` the summary shows: Gmail's own. A header any
@@ -112,7 +119,7 @@ const GMAIL_AUTHSERV_ID: &str = "mx.google.com";
 /// or none when Gmail didn't add it.
 fn auth_results(value: &str) -> Vec<AuthResult> {
     let segments = split_semicolons(value);
-    if authserv_id(segments[0]) != GMAIL_AUTHSERV_ID {
+    if authserv_id(segments[0]).as_deref() != Some(GMAIL_AUTHSERV_ID) {
         return Vec::new();
     }
     segments
@@ -316,6 +323,10 @@ Hello\r\n";
             "mx.google.com.evil.example",
             "",
             "(mx.google.com)",
+            "mx.google(x).com",
+            "mx.google.com evil",
+            "mx.google.com 1 2",
+            "mx.google.com (open",
         ] {
             assert!(auth_results(&format!("{id}; spf=pass")).is_empty(), "{id}");
         }
