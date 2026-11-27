@@ -108,6 +108,17 @@ test("a load answered after a toggle, or after a newer load, keeps what's newer"
     a: ["CATEGORY_SOCIAL"],
     b: ["CATEGORY_UPDATES"],
   });
+  // What that load read for `a` is older than the save: a failed toggle goes back to the save.
+  mockIPC((command) => {
+    if (command === "set_inbox_tabs") throw { code: "x" };
+  });
+  await expect(
+    useInboxTabs.getState().setHidden("a", "CATEGORY_FORUMS", true),
+  ).rejects.toBeTruthy();
+  expect(useInboxTabs.getState().hidden.a).toEqual(["CATEGORY_SOCIAL"]);
+  mockIPC((command) => {
+    if (command === "inbox_tabs") return new Promise((resolve) => reads.push(resolve));
+  });
 
   const older = useInboxTabs.getState().load(["a"]);
   const newer = useInboxTabs.getState().load(["a"]);

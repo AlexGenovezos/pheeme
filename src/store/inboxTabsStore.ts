@@ -34,18 +34,18 @@ export const useInboxTabs = create<InboxTabsState>((set, get) => ({
   async load(accountIds) {
     const ticket = ++loads;
     const started = new Map(accountIds.map((id) => [id, toggles.get(id) ?? 0]));
+    const writing = new Set(accountIds.filter((id) => writes.has(id)));
     const entries = await Promise.all(
       accountIds.map(async (id) => [id, await getInboxTabs(id).catch(() => null)] as const),
     );
     if (ticket !== loads) return;
-    for (const [id, tabs] of entries) if (tabs) confirmed.set(id, tabs);
+    // Toggled, or saving, while this read was out: what it read may be older than what's shown and saved.
+    const fresh = (id: string) =>
+      (toggles.get(id) ?? 0) === started.get(id) && !writing.has(id) && !writes.has(id);
+    for (const [id, tabs] of entries) if (tabs && fresh(id)) confirmed.set(id, tabs);
     set((state) => ({
       hidden: Object.fromEntries(
-        entries.map(([id, tabs]) => {
-          // Toggled while this read was out: what it read is older than what's shown.
-          const toggled = (toggles.get(id) ?? 0) !== started.get(id);
-          return [id, (!toggled && tabs) || state.hidden[id] || NONE];
-        }),
+        entries.map(([id, tabs]) => [id, (fresh(id) && tabs) || state.hidden[id] || NONE]),
       ),
     }));
   },
