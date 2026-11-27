@@ -788,13 +788,24 @@ mod tests {
     }
 
     async fn harness() -> Harness {
+        harness_with(|secrets| secrets).await
+    }
+
+    /// A harness whose service reads and writes the keychain through `store(secrets)`.
+    async fn harness_with(store: impl FnOnce(Arc<MemoryStore>) -> Arc<dyn SecretStore>) -> Harness {
         let db = TestDb::new().await;
         let server = MockServer::start().await;
         let secrets = Arc::new(MemoryStore::new());
+        let endpoints = Endpoints {
+            auth: format!("{}/auth", server.uri()),
+            token: format!("{}/token", server.uri()),
+            userinfo: format!("{}/userinfo", server.uri()),
+            revoke: format!("{}/revoke", server.uri()),
+        };
         let service = AccountService::with_endpoints(
             db.pool.clone(),
-            secrets.clone(),
-            endpoints(&server),
+            store(secrets.clone()),
+            endpoints,
             Duration::from_secs(10),
         );
         Harness {
@@ -802,15 +813,6 @@ mod tests {
             service,
             secrets,
             server,
-        }
-    }
-
-    fn endpoints(server: &MockServer) -> Endpoints {
-        Endpoints {
-            auth: format!("{}/auth", server.uri()),
-            token: format!("{}/token", server.uri()),
-            userinfo: format!("{}/userinfo", server.uri()),
-            revoke: format!("{}/revoke", server.uri()),
         }
     }
 
@@ -1145,18 +1147,23 @@ mod tests {
 
     #[tokio::test]
     async fn remove_account_survives_unreadable_secrets() {
-        let h = harness().await;
+        let h = harness_with(|secrets| Arc::new(UnreadableSecrets(secrets))).await;
         mock_google(&h.server, "me@example.com", "refresh-1").await;
         let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
-        let service = AccountService::with_endpoints(
-            h.db.pool.clone(),
-            Arc::new(UnreadableSecrets(h.secrets.clone())),
-            endpoints(&h.server),
-            Duration::from_secs(10),
-        );
-        service.remove_account(&account.id).await.unwrap();
-        assert!(service.list_accounts().await.unwrap().is_empty());
+        h.service.remove_account(&account.id).await.unwrap();
+        assert!(h.service.list_accounts().await.unwrap().is_empty());
         assert_eq!(h.secrets.get(&account.id).unwrap(), None);
+    }
+
+    /// A token exchange that takes 200 ms and rotates the refresh token to `refresh-2`.
+    fn slow_rotation() -> Mock {
+        Mock::given(path("/token")).respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({
+                    "access_token": "access-2", "expires_in": 3600, "refresh_token": "refresh-2"
+                }))
+                .set_delay(Duration::from_millis(200)),
+        )
     }
 
     #[tokio::test]
@@ -1165,16 +1172,7 @@ mod tests {
         mock_google(&h.server, "me@example.com", "refresh-1").await;
         let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
         h.server.reset().await;
-        Mock::given(path("/token"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({
-                        "access_token": "access-2", "expires_in": 3600, "refresh_token": "refresh-2"
-                    }))
-                    .set_delay(Duration::from_millis(200)),
-            )
-            .mount(&h.server)
-            .await;
+        slow_rotation().mount(&h.server).await;
         Mock::given(path("/revoke"))
             .respond_with(ResponseTemplate::new(200))
             .mount(&h.server)
@@ -1378,17 +1376,7 @@ mod tests {
         let account = sign_in(&h, new_client(CLIENT_A)).await.unwrap();
 
         h.server.reset().await;
-        Mock::given(path("/token"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({
-                        "access_token": "access-2", "expires_in": 3600, "refresh_token": "refresh-2"
-                    }))
-                    .set_delay(Duration::from_millis(200)),
-            )
-            .expect(1)
-            .mount(&h.server)
-            .await;
+        slow_rotation().expect(1).mount(&h.server).await;
         // Two requests got a 401 with the same token, then a third 401 came back late.
         let (a, b) = tokio::join!(
             h.service.refresh_after(&account.id, Some("access-1")),
