@@ -481,6 +481,18 @@ async fn a_failed_upgrade_keeps_the_old_versions_credentials() {
         .unwrap()
         .is_some());
 
+    // The new version is saved but can't start: the old one comes back with its credentials.
+    let main = fs::read_to_string(source.join("main.js")).unwrap();
+    fs::write(source.join("main.js"), "while (true) {}").unwrap();
+    assert!(mods
+        .install(&mods.prepare(&source).unwrap().ticket)
+        .await
+        .is_err());
+    assert!(oauth::read(keychain.as_ref(), "login.test", "test")
+        .unwrap()
+        .is_some());
+    fs::write(source.join("main.js"), main).unwrap();
+
     // Once an upgrade goes through, the old provider's credentials are gone.
     mods.install(&mods.prepare(&source).unwrap().ticket)
         .await

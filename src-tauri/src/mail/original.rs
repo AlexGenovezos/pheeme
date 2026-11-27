@@ -102,7 +102,8 @@ fn authserv_id(segment: &str) -> Option<String> {
     if depth > 0 {
         return None;
     }
-    let mut words = text.split_whitespace();
+    // Only ASCII whitespace separates (RFC 5322 folding white space).
+    let mut words = text.split_ascii_whitespace();
     let id = words.next()?.to_ascii_lowercase();
     let version = words.next();
     let valid =
@@ -327,6 +328,7 @@ Hello\r\n";
             "mx.google.com evil",
             "mx.google.com 1 2",
             "mx.google.com (open",
+            "mx.google.com\u{a0}1",
         ] {
             assert!(auth_results(&format!("{id}; spf=pass")).is_empty(), "{id}");
         }
