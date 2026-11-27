@@ -32,7 +32,9 @@ test("renders headings, bullets and code, and opens links in the browser", () =>
   ].join("\n");
   render(
     <ReleaseNotes
-      releases={releasesFrom({ "x/v0.9.md": notes, "x/v0.8.md": "Older.\n" }, "0.9.0")}
+      releases={releasesFrom({ "x/v0.9.md": notes, "x/v0.8.md": "Older.\n" }, "0.9.0", {
+        "0.9": "2026-11-04T12:00:00Z",
+      })}
       current="0.9.0"
     />,
   );
@@ -43,6 +45,12 @@ test("renders headings, bullets and code, and opens links in the browser", () =>
   expect(v09).not.toContainElement(v08);
   expect(within(v09).getByText("This version")).toBeInTheDocument();
   expect(within(v08).queryByText("This version")).not.toBeInTheDocument();
+  // The day the release went out, in this computer's time zone; none when it isn't known.
+  const day = new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(
+    new Date("2026-11-04T12:00:00Z"),
+  );
+  expect(within(v09).getByText(day)).toHaveAttribute("datetime", "2026-11-04T12:00:00Z");
+  expect(v08.querySelector("time")).toBeNull();
   expect(within(v09).getByRole("heading", { name: "Sending" })).toBeInTheDocument();
   expect(within(v09).getByText("Cmd/Ctrl+Enter").tagName).toBe("CODE");
 

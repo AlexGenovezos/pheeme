@@ -22,7 +22,9 @@ Versions are `MAJOR.MINOR` (files store `X.Y.0`). Betas go up by one minor: v0.7
 2. **Prepare.** From an up-to-date main: `wt switch -c release/vX.Y`, then
    `npm run release:prepare -- X.Y`. It sets the version in all five files and drafts
    `docs/releases/vX.Y.md` from the PRs merged since the last tag, with a Heads-up if a database
-   migration was added.
+   migration was added. It also adds each published release's date to `docs/releases/dates.json`
+   (What's new in Settings › About shows them; the release build dates its own version with when
+   the tag was pushed). Commit that file with the rest.
 3. **Write the notes.** Read each PR the DRAFT block lists (`gh pr view <n>`) and write for people
    using the app. Match `docs/releases/v0.7.md`:
    - one line saying what the release is about
