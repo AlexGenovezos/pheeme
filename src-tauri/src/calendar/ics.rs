@@ -369,7 +369,7 @@ fn weekday(code: &str) -> Option<Weekday> {
 fn yearly_rule(rule: &str) -> Option<(u32, i32, Weekday)> {
     let mut month = None;
     let mut day = None;
-    for part in rule.split(';') {
+    for part in rule.split(';').filter(|p| !p.is_empty()) {
         let (k, v) = part.split_once('=')?;
         match k.to_ascii_uppercase().as_str() {
             "FREQ" if !v.eq_ignore_ascii_case("YEARLY") => return None,
@@ -390,9 +390,11 @@ fn yearly_rule(rule: &str) -> Option<(u32, i32, Weekday)> {
     Some((month?, n, wd))
 }
 
-/// The `n`th `wd` of `month` (negative: from the end).
+/// The `n`th `wd` of `month` (negative: from the end), if the month has one.
 fn nth_weekday(year: i32, month: u32, n: i32, wd: Weekday) -> Option<NaiveDate> {
-    if n > 0 {
+    let day = if n == 0 {
+        return None;
+    } else if n > 0 {
         let first = NaiveDate::from_ymd_opt(year, month, 1)?;
         let shift = (7 + wd.num_days_from_monday() - first.weekday().num_days_from_monday()) % 7;
         first.checked_add_signed(Duration::try_days(
@@ -409,7 +411,8 @@ fn nth_weekday(year: i32, month: u32, n: i32, wd: Weekday) -> Option<NaiveDate> 
         last.checked_sub_signed(Duration::try_days(
             i64::from(shift) + 7 * (-i64::from(n) - 1),
         )?)
-    }
+    }?;
+    (day.month() == month).then_some(day)
 }
 
 impl VTimezone {
@@ -1067,6 +1070,22 @@ mod tests {
         assert_eq!(
             iana_zone("/mozilla.org/20050126_1/America/New_York").map(|z| z.name()),
             Some("America/New_York")
+        );
+    }
+
+    #[test]
+    fn yearly_rules_ignore_a_trailing_semicolon_and_missing_weekdays() {
+        assert_eq!(
+            yearly_rule("FREQ=YEARLY;BYMONTH=3;BYDAY=2SU;"),
+            Some((3, 2, Weekday::Sun))
+        );
+        // February 2026 has four Sundays.
+        assert_eq!(nth_weekday(2026, 2, 5, Weekday::Sun), None);
+        assert_eq!(nth_weekday(2026, 2, -5, Weekday::Sun), None);
+        assert_eq!(nth_weekday(2026, 2, 0, Weekday::Sun), None);
+        assert_eq!(
+            nth_weekday(2026, 3, 5, Weekday::Sun),
+            NaiveDate::from_ymd_opt(2026, 3, 29)
         );
     }
 }

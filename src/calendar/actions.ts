@@ -500,8 +500,8 @@ export async function saveEditor(spec: EditorSpec, form: EventForm): Promise<Sav
   const problem = formProblem(form);
   if (problem) return { kind: "failed", message: problem };
   if (!spec.event || !spec.initial) {
-    await saveNew(form, closeEditor);
-    return { kind: "saved" };
+    // A failure was said in a toast; the editor stays open with the form.
+    return (await saveNew(form, closeEditor)) ? { kind: "saved" } : { kind: "cancelled" };
   }
   const event = spec.event;
   const edit = formEdit(form, spec.initial);

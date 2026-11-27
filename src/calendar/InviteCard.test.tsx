@@ -1,7 +1,7 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { MessageDetail, ThreadDetail } from "../lib/tauri";
+import type { CalendarEvent, MessageDetail, ThreadDetail } from "../lib/tauri";
 import { createCalendarHandlers } from "../preview/calendar";
 import { useAccountStore } from "../store/accountStore";
 import { useThreadStore } from "../store/threadStore";
@@ -9,7 +9,7 @@ import { useUiStore } from "../store/uiStore";
 import { useCalendarStore } from "./calendarStore";
 import { useEditStore } from "./editStore";
 import { InviteCard } from "./InviteCard";
-import { backToMail, createEventFromEmail } from "./mailActions";
+import { backToMail, createEventFromEmail, openInCalendar } from "./mailActions";
 import { byName } from "../preview/handlers";
 
 const ACCOUNTS = [
@@ -297,4 +297,15 @@ describe("createEventFromEmail", () => {
     expect(useEditStore.getState().editor).toBeNull();
     expect(useCalendarStore.getState().mode).toBe("calendar");
   });
+});
+
+test("Open in Calendar before the calendar's first load stays on the event's day", async () => {
+  backend("on");
+  const event = {
+    start: { ms: Date.UTC(2026, 11, 3, 15), date: null, timeZone: null },
+  } as CalendarEvent;
+  await openInCalendar(PINNED, event);
+  // The calendar screen reading the accounts again doesn't move it back to today.
+  await useCalendarStore.getState().loadAccounts();
+  expect(useCalendarStore.getState()).toMatchObject({ mode: "calendar", anchor: "2026-12-03" });
 });

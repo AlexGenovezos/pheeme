@@ -81,15 +81,19 @@ export function TimeFields({
           : form.endDate;
       onChange({ ...form, allDay, endDate: last < form.startDate ? form.startDate : last });
     } else {
-      // Back to times: the same days, the hour it had (or 9 to 10).
+      // Back to times: the same days, the hour it had (or 9 to 10; an hour from 11 PM ends the
+      // next day).
       const sameDay = daysBetween(form.startDate, form.endDate) === 0;
+      if (!sameDay || form.endMinutes > form.startMinutes) {
+        onChange({ ...form, allDay });
+        return;
+      }
+      const end = form.startMinutes + 60;
       onChange({
         ...form,
         allDay,
-        endMinutes:
-          sameDay && form.endMinutes <= form.startMinutes
-            ? form.startMinutes + 60
-            : form.endMinutes,
+        endMinutes: end % DAY,
+        endDate: end >= DAY ? addDays(form.startDate, 1) : form.endDate,
       });
     }
   };

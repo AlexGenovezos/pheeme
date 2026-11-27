@@ -5,7 +5,7 @@ import { Pause, Play } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { IconButton } from "../components/ui/IconButton";
 import { Skeleton } from "../components/ui/Skeleton";
-import { daysBetween, dateOf, formatDay } from "../calendar/dates";
+import { daysBetween, dateOf, formatDay, isValidZone } from "../calendar/dates";
 import { cx } from "../lib/utils";
 import {
   type CalendarEvent,
@@ -79,7 +79,8 @@ export function EventWeather({ event, tz }: { event: CalendarEvent; tz: string }
   }
   const forecast = load.kind === "ready" ? load.forecast : null;
   // The day in the place's own time zone, which the forecast's dates are in.
-  const placeDate = forecast?.place.timeZone ? eventDate(event, forecast.place.timeZone) : date;
+  const placeZone = forecast?.place.timeZone;
+  const placeDate = isValidZone(placeZone) ? eventDate(event, placeZone) : date;
   const day = forecast?.days.find((d) => d.date === placeDate);
   if (!day) {
     const why =

@@ -2,6 +2,8 @@
 // ones first (their date in red), each a normal task row, with Plan today to decide on them one at
 // a time. It keeps its shape while it reads, and says "Nothing due today" only once it has.
 import { useMemo } from "react";
+import { systemZone } from "../calendar/dates";
+import { useToday } from "../calendar/useNow";
 import { Button } from "../components/ui/Button";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useKeybinding } from "../keyboard/useCommands";
@@ -13,7 +15,7 @@ import { PLAN_TODAY_COMMAND, usePlanStore } from "./planStore";
 import { LoadError, SkeletonRows } from "./LoadStates";
 import { TaskEditor } from "./TaskEditor";
 import { TaskRow } from "./TaskRow";
-import { todayDate, useTasksStore } from "./tasksStore";
+import { useTasksStore } from "./tasksStore";
 
 /** The `editing` key of a task opened from Today, so its editor shows here, not in its list. */
 const todayKey = (task: Task) => `today\n${taskKey(task)}`;
@@ -23,7 +25,8 @@ export function TodaySection() {
   const dueError = useTasksStore((s) => s.dueError);
   const editing = useTasksStore((s) => s.editing);
   const shortcut = useKeybinding(PLAN_TODAY_COMMAND);
-  const tasks = useMemo(() => (due ? planQueue(due, todayDate()) : null), [due]);
+  const today = useToday(systemZone());
+  const tasks = useMemo(() => (due ? planQueue(due, today) : null), [due, today]);
   return (
     <section className="tasks-list tasks-today" aria-label="Today">
       <div className="tasks-list__head">

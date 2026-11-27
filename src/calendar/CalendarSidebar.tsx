@@ -37,11 +37,12 @@ import { SidebarTaskLists } from "../tasks/SidebarTaskLists";
 import { useToday } from "./useNow";
 import { visibleDays } from "./views";
 
-/** Each day's dots: the colours of up to three of its calendars, through `last`. */
+/** Each day's dots: the colours of up to three of its calendars, from `first` through `last`. */
 function dayDots(
   events: CalendarEvent[] | null,
   tz: string,
   lookup: ReturnType<typeof useCalendarLookup>,
+  first: string,
   last: string,
 ): Map<string, string[]> {
   const map = new Map<string, string[]>();
@@ -50,7 +51,8 @@ function dayDots(
     const span = eventDays(e, tz);
     if (!span) continue;
     const color = eventColors(e, lookup(e)).background;
-    for (let d = span.first; d <= span.last && d <= last; d = addDays(d, 1)) {
+    const from = span.first < first ? first : span.first;
+    for (let d = from; d <= span.last && d <= last; d = addDays(d, 1)) {
       const list = map.get(d) ?? [];
       if (list.length < 3 && !list.includes(color)) list.push(color);
       map.set(d, list);
@@ -71,7 +73,7 @@ function MiniMonth() {
   const month = shown.month;
   const setMonth = (m: string) => setShown({ anchor, month: m });
 
-  const days = visibleDays("month", month, weekStart);
+  const days = useMemo(() => visibleDays("month", month, weekStart), [month, weekStart]);
   // Day and Week mark their days; Month is the whole grid already.
   const onScreen = useMemo(
     () => new Set(view === "month" ? [] : screenDays({ view, anchor, accounts }).days),
@@ -83,7 +85,10 @@ function MiniMonth() {
   const events = useRangeEvents(days[0], days[days.length - 1]);
   const lookup = useCalendarLookup();
   const tz = displayZone(accounts);
-  const dots = dayDots(events, tz, lookup, days[days.length - 1]);
+  const dots = useMemo(
+    () => dayDots(events, tz, lookup, days[0], days[days.length - 1]),
+    [events, tz, lookup, days],
+  );
 
   // Roving focus, as in the Month view: one day is in the tab order, the last one focused, else the
   // day the calendar is on, else today, else the 1st. Arrows move by day and week, Home/End to the

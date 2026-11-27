@@ -171,6 +171,8 @@ impl ReminderService {
         let mut out: Vec<Reminder> = Vec::new();
         // The same event on two accounts' calendars (iCalUID, start, lead) reminds once.
         let mut seen: HashMap<(String, i64, i64), usize> = HashMap::new();
+        // Those that already fired from one of the copies.
+        let mut done: HashSet<(String, i64, i64)> = HashSet::new();
         for e in &rows {
             // Access taken away (or never given): the cache may be stale.
             let Some((status, account_zone)) = access.get(&e.account_id) else {
@@ -220,14 +222,16 @@ impl ReminderService {
                         start_ms,
                         minutes,
                     };
-                    if fired.contains(&key) {
-                        continue;
-                    }
                     let same = (
                         e.ical_uid.clone().unwrap_or_else(|| event_id.clone()),
                         start_ms,
                         minutes,
                     );
+                    if fired.contains(&key) {
+                        // Another account's copy synced later still reminds only once.
+                        done.insert(same);
+                        continue;
+                    }
                     if let Some(&first) = seen.get(&same) {
                         out[first].also.push(key);
                         continue;
@@ -246,6 +250,15 @@ impl ReminderService {
                 }
             }
         }
+        let drop: HashSet<usize> = done
+            .iter()
+            .filter_map(|same| seen.get(same).copied())
+            .collect();
+        let mut out: Vec<Reminder> = out
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, r)| (!drop.contains(&i)).then_some(r))
+            .collect();
         out.sort_by(|a, b| (a.fire_at_ms, &a.key).cmp(&(b.fire_at_ms, &b.key)));
         Ok(out)
     }
@@ -418,9 +431,7 @@ fn popup_minutes(e: &DbEvent, calendar: &DbCalendar) -> Vec<i64> {
 
 fn midnight(day: &str, zone: chrono_tz::Tz) -> Option<i64> {
     let day = NaiveDate::parse_from_str(day, "%Y-%m-%d").ok()?;
-    zone.from_local_datetime(&day.and_time(chrono::NaiveTime::MIN))
-        .earliest()
-        .map(|d| d.timestamp_millis())
+    super::availability::local_midnight_ms(zone, day)
 }
 
 fn plural(n: i64, one: &str) -> String {
@@ -956,6 +967,20 @@ mod tests {
         assert_eq!(s.alerts.take().len(), 1);
         let fired = db::reminders::fired(s.pool()).await.unwrap();
         assert_eq!(fired.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn the_same_invite_synced_on_a_second_account_after_firing_doesnt_remind_again() {
+        let s = setup(&["a", "b"]).await;
+        s.put("a", review()).await;
+        s.tick("2026-11-11T13:50:00-05:00").await;
+        assert_eq!(s.alerts.take().len(), 1);
+        let mut on_b = review();
+        on_b["id"] = json!("review-b");
+        on_b["iCalUID"] = json!("review@google.com");
+        s.put("b", on_b).await;
+        s.tick("2026-11-11T13:52:00-05:00").await;
+        assert!(s.alerts.take().is_empty());
     }
 
     #[tokio::test]

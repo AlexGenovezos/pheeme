@@ -75,7 +75,7 @@ function AddFromFileDialog({ source, file }: { source: FileSource; file: Calenda
 
   const show = (e: FileEvent) => {
     close();
-    openInCalendar(source, asEvent(e, source.accountId));
+    void openInCalendar(source, asEvent(e, source.accountId));
   };
 
   const submit = async (e: FormEvent) => {
@@ -101,7 +101,7 @@ function AddFromFileDialog({ source, file }: { source: FileSource; file: Calenda
           description: "The organizer has been told you're going.",
           action: {
             label: "Open in Calendar",
-            run: () => openInCalendar(source, asEvent(event, source.accountId)),
+            run: () => void openInCalendar(source, asEvent(event, source.accountId)),
           },
         });
       } else if (target) {
@@ -124,7 +124,7 @@ function AddFromFileDialog({ source, file }: { source: FileSource; file: Calenda
           action: {
             label: "Open in Calendar",
             run: () =>
-              openInCalendar(source, {
+              void openInCalendar(source, {
                 ...asEvent(firstEvent, target.accountId),
                 ...added.events[0],
               }),

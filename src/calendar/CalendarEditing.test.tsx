@@ -11,6 +11,8 @@ import { CalendarScreen } from "./CalendarScreen";
 import { useCalendarStore } from "./calendarStore";
 import { systemZone, zonedMs } from "./dates";
 import { useEditStore } from "./editStore";
+import { saveEditor } from "./actions";
+import { newForm } from "./eventForm";
 import { useTemplatesStore } from "./templatesStore";
 import { byName } from "../preview/handlers";
 
@@ -429,6 +431,21 @@ describe("changing events", () => {
     expect(within(friday).getByRole("button", { name: /^Lunch with Dana,/ })).toBeInTheDocument();
     expect(within(friday).getByRole("button", { name: /^1:1 Alex,/ })).toBeInTheDocument();
     expect(useEditStore.getState().moving).toEqual({});
+  });
+
+  test("a new event Google refuses keeps the editor open rather than saying it saved", async () => {
+    backend({ create_calendar_event: { code: "network", message: "offline" } });
+    const form = newForm({
+      accountId: "acc-personal",
+      calendarId: "avery@example.com",
+      zone: tz,
+      allDay: false,
+      start: zonedMs("2026-11-12", 10 * 60, tz),
+      end: zonedMs("2026-11-12", 11 * 60, tz),
+    });
+    const result = await saveEditor({ form, initial: null, event: null, detail: null }, form);
+    expect(result).toEqual({ kind: "cancelled" });
+    expect(sent("create_calendar_event")).toHaveLength(1);
   });
 
   test("a change made elsewhere first says so and reads the calendar again", async () => {

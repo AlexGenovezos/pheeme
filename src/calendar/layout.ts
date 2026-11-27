@@ -63,7 +63,12 @@ export function layoutDay(events: CalendarEvent[], date: string, tz: string): Ti
     const onDay = s < dayEnd && (e > dayStart || (e === s && s >= dayStart));
     if (!onDay) continue;
     const start = s <= dayStart ? 0 : wallClock(s, tz).minutes;
-    const end = e >= dayEnd ? DAY_MINUTES : Math.max(wallClock(e, tz).minutes, start);
+    // When clocks go back, the wall clock repeats an hour: the time that passed is the longer.
+    const elapsed = start + (e - Math.max(s, dayStart)) / 60_000;
+    const end =
+      e >= dayEnd
+        ? DAY_MINUTES
+        : Math.min(DAY_MINUTES, Math.max(wallClock(e, tz).minutes, elapsed, start));
     blocks.push({
       event,
       start,

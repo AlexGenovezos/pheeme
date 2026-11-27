@@ -19,13 +19,17 @@ export const CREATE_EVENT_COMMAND = "conversation.create-event";
 /** Shift+E: E archives, and Calendar's own E (edit) only runs in Calendar mode. */
 export const CREATE_EVENT_SHORTCUT = "shift+e";
 
-/** Calendar mode on the event's day (keeping the view), scrolled to its time, with the email pinned. */
-export function openInCalendar(pinned: PinnedEmail, event: CalendarEvent) {
+/**
+ * Calendar mode on the event's day (keeping the view), scrolled to its time, with the email pinned.
+ * The accounts are read first, for their Calendar zone and so their first load can't move the day.
+ */
+export async function openInCalendar(pinned: PinnedEmail, event: CalendarEvent) {
+  if (calendar().accounts === null) await calendar().loadAccounts();
   const tz = displayZone(calendar().accounts);
   const reveal = event.start.ms != null ? wallClock(event.start.ms, tz).minutes : null;
   calendar().pin(pinned, reveal);
   calendar().setMode("calendar");
-  void calendar().goTo(startDay(event, tz));
+  await calendar().goTo(startDay(event, tz));
 }
 
 /** Mail in front again, on the pinned conversation. */

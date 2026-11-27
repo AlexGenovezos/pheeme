@@ -186,7 +186,10 @@ function parseRule(line: string, zone: string): RepeatRule | null {
   if (!Number.isInteger(interval) || interval < 1) return null;
   const byDay = parts.get("BYDAY")?.split(",").filter(Boolean) ?? [];
   if (freq === "WEEKLY" && byDay.some((d) => !WEEKDAYS.includes(d as never))) return null;
-  if (freq === "MONTHLY" && (byDay.length > 1 || byDay.some((d) => !/^-?[1-5][A-Z]{2}$/.test(d))))
+  if (
+    freq === "MONTHLY" &&
+    (byDay.length > 1 || byDay.some((d) => !/^(?:[1-4]|-1)(?:SU|MO|TU|WE|TH|FR|SA)$/.test(d)))
+  )
     return null;
   if ((freq === "DAILY" || freq === "YEARLY") && byDay.length) return null;
   let ends: RepeatEnd = { kind: "never" };
