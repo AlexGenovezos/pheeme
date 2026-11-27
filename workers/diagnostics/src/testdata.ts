@@ -27,7 +27,8 @@ export function fromBase64(text: string): Uint8Array<ArrayBuffer> {
 
 /** A zip of `entries`, each stored (or marked deflated, its bytes as given) with its CRC. */
 export function zipOf(
-  entries: { name: string; data: Uint8Array; method?: number; crc?: number }[],
+  /** `size` overrides the unpacked size the directory claims (a deflated entry's real size). */
+  entries: { name: string; data: Uint8Array; method?: number; crc?: number; size?: number }[],
 ): Uint8Array<ArrayBuffer> {
   const encoder = new TextEncoder();
   const locals: Uint8Array[] = [];
@@ -55,7 +56,7 @@ export function zipOf(
     cv.setUint16(10, method, true);
     cv.setUint32(16, crc, true);
     cv.setUint32(20, e.data.length, true);
-    cv.setUint32(24, e.data.length, true);
+    cv.setUint32(24, e.size ?? e.data.length, true);
     cv.setUint16(28, name.length, true);
     cv.setUint32(42, offset, true);
     central.set(name, 46);

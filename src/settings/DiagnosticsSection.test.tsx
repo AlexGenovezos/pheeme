@@ -1,5 +1,5 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { useCalendarStore } from "../calendar/calendarStore";
 import type { AccountInfo, ThreadDetail } from "../lib/tauri";
@@ -266,6 +266,27 @@ test("a pasted image is added, up to three, and each can be removed", async () =
   fireEvent.click(screen.getByRole("button", { name: "Remove screenshot 2" }));
   expect(thumbnails()).toHaveLength(2);
   expect(screen.getByRole("button", { name: "Add screenshot…" })).toBeInTheDocument();
+});
+
+test("a double click on Remove frees one slot, not two", async () => {
+  setAccounts([account("a1", "me@gmail.com")]);
+  screenshots();
+  render(<DiagnosticsSection />);
+  const paste = (...files: File[]) =>
+    fireEvent.paste(window, { clipboardData: { files, getData: () => "" } });
+  paste(png("1"), png("2"), png("3"));
+  await waitFor(() => expect(thumbnails()).toHaveLength(3));
+
+  const remove = screen.getByRole("button", { name: "Remove screenshot 2" });
+  // Both clicks land before React renders the first one's removal.
+  act(() => {
+    remove.click();
+    remove.click();
+  });
+  expect(thumbnails()).toHaveLength(2);
+  paste(png("4"), png("5"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Add at most 3 screenshots.");
+  await waitFor(() => expect(thumbnails()).toHaveLength(3));
 });
 
 test("pasting text isn't taken for a screenshot", () => {

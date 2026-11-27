@@ -71,6 +71,8 @@ function PanelBody({
       data-owns-keys
       onKeyDown={(event) => {
         if (event.key === "Escape") {
+          // Handled: Settings, open behind, must not close too.
+          event.preventDefault();
           event.stopPropagation();
           useModStore.getState().openPanel(null);
         }

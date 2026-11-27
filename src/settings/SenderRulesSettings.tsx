@@ -2,6 +2,7 @@
 // "This and future mail from…" when moving mail. Fetched when the page opens; they aren't synced.
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../components/ui/Button";
+import { toast } from "../components/ui/Toast";
 import { deleteSenderRule, listSenderRules, type SenderRule, toCommandError } from "../lib/tauri";
 import { categoryName } from "../mail/CategoryMoveDialog";
 import { ReconnectButton } from "../onboarding/Reconnect";
@@ -55,7 +56,12 @@ function AccountRules({ accountId, title }: { accountId: string; title: string }
         s.kind === "ready" ? { kind: "ready", rules: s.rules.filter((r) => r.id !== rule.id) } : s,
       );
     } catch (raw) {
-      setState({ kind: "error", message: toCommandError(raw).message });
+      // The list is still right: say why this one wasn't deleted and keep it.
+      toast({
+        title: `Couldn't delete the rule for ${rule.sender}`,
+        description: toCommandError(raw).message,
+        tone: "danger",
+      });
     } finally {
       setBusy((b) => {
         const next = new Set(b);

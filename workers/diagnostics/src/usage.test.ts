@@ -41,13 +41,16 @@ function report(opts: { json?: unknown; raw?: string; method?: string } = {}): R
 
 function deps(over: { known?: boolean; limited?: boolean } = {}) {
   const put = vi.fn(async () => ({}));
-  const get = vi.fn(async () => (over.known === false ? null : { json: async <T>() => ({}) as T }));
+  const get = vi.fn(async () => {
+    throw new Error("usage only needs the object's metadata");
+  });
+  const head = vi.fn(async () => (over.known === false ? null : {}));
   const d: UsageDeps = {
-    bucket: { put, get },
+    bucket: { put, get, head },
     perIp: { limit: async () => ({ success: !over.limited }) },
     now: () => NOW,
   };
-  return { d, put, get };
+  return { d, put, head };
 }
 
 function written(put: ReturnType<typeof deps>["put"]): { key: string; record: UsageRecord } {
@@ -57,10 +60,10 @@ function written(put: ReturnType<typeof deps>["put"]): { key: string; record: Us
 
 describe("handleUsage", () => {
   it("stores one report per install and day, only the known fields", async () => {
-    const { d, put, get } = deps();
+    const { d, put, head } = deps();
     const res = await handleUsage(report({ json: body({ extra: "dropped" }) }), d);
     expect(res.status).toBe(204);
-    expect(get).toHaveBeenCalledWith(`installs/${ID}.json`);
+    expect(head).toHaveBeenCalledWith(`installs/${ID}.json`);
     const { key, record } = written(put);
     expect(key).toBe(`usage/2026-11-15/${ID}.json`);
     expect(record).toEqual({ ...body(), installId: undefined, receivedAt: NOW.toISOString() });
@@ -76,7 +79,7 @@ describe("handleUsage", () => {
   it.each([
     ["a name that isn't an app id", { screens: [{ name: "Label: Taxes", opens: 1, ms: 1 }] }],
     ["a negative count", { commands: [{ id: "go.inbox", key: -1, palette: 0, button: 0 }] }],
-    ["more than a day on screen", { screens: [{ name: "mail.inbox", opens: 1, ms: 90_000_000 }] }],
+    ["more than a day on screen", { screens: [{ name: "mail.inbox", opens: 1, ms: 90_000_001 }] }],
     ["a day too old", { day: "2026-10-01" }],
     ["a day in the future", { day: "2026-11-20" }],
     ["a day that doesn't exist", { day: "2026-02-30" }],
@@ -87,6 +90,13 @@ describe("handleUsage", () => {
     const { d, put } = deps();
     expect((await handleUsage(report({ json: body(overrides) }), d)).status).toBe(400);
     expect(put).not.toHaveBeenCalled();
+  });
+
+  it("takes the 25 hours of the day the clocks go back", async () => {
+    const { d, put } = deps();
+    const screens = [{ name: "mail.inbox", opens: 1, ms: 25 * 60 * 60 * 1000 }];
+    expect((await handleUsage(report({ json: body({ screens }) }), d)).status).toBe(204);
+    expect(written(put).record.screens).toEqual(screens);
   });
 
   it("refuses non-JSON, other methods, floods and oversized bodies", async () => {

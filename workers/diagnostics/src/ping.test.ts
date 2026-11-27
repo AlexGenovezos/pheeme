@@ -52,7 +52,7 @@ function deps(
   const limit = vi.fn(async () => ({ success: !over.limited }));
   const takeInstall = vi.fn<(ip: string) => Promise<QuotaResult>>(async () => over.quota ?? "ok");
   const d: PingDeps = {
-    bucket: { put, get },
+    bucket: { put, get, head: async () => null },
     perIp: { limit },
     installs: { takeInstall },
     now: () => NOW,

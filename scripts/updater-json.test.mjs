@@ -2,9 +2,11 @@
 import { describe, expect, it } from "vitest";
 import { buildUpdaterJson } from "./updater-json.mjs";
 
+// As `gh api …/releases/{id}/assets` lists them while the release is still a draft.
 const asset = (name, id) => ({
   name,
   url: `https://api.github.com/repos/o/r/releases/assets/${id}`,
+  browser_download_url: `https://github.com/o/r/releases/download/untagged-1a2b3c/${name}`,
 });
 
 // The v0.4 release's assets.
@@ -24,11 +26,14 @@ const assets = [
 const signatures = Object.fromEntries(
   assets.filter((a) => a.name.endsWith(".sig")).map((a) => [a.name.slice(0, -4), `sig-${a.name}`]),
 );
-const url = (id) => `https://api.github.com/repos/o/r/releases/assets/${id}`;
+/** The public link to the `id`th asset of `list`, under the tag the release is published with. */
+const url = (id, list = assets, tag = "v0.4") =>
+  `https://github.com/o/r/releases/download/${tag}/${list[id - 1].name}`;
 
 describe("buildUpdaterJson", () => {
   const json = buildUpdaterJson({
     version: "0.4.0",
+    tag: "v0.4",
     assets,
     signatures,
     pubDate: "now",
@@ -90,18 +95,36 @@ describe("buildUpdaterJson", () => {
     );
     const { platforms } = buildUpdaterJson({
       version: "0.8.0",
+      tag: "v0.8",
       assets: split,
       signatures: sigs,
       pubDate: "now",
     });
-    expect(platforms["darwin-aarch64"].url).toBe(url(1));
-    expect(platforms["darwin-aarch64-app"].url).toBe(url(1));
-    expect(platforms["darwin-x86_64"].url).toBe(url(3));
-    expect(platforms["darwin-x86_64-app"].url).toBe(url(3));
+    expect(platforms["darwin-aarch64"].url).toBe(url(1, split, "v0.8"));
+    expect(platforms["darwin-aarch64-app"].url).toBe(url(1, split, "v0.8"));
+    expect(platforms["darwin-x86_64"].url).toBe(url(3, split, "v0.8"));
+    expect(platforms["darwin-x86_64-app"].url).toBe(url(3, split, "v0.8"));
     expect(platforms["darwin-universal"]).toBeUndefined();
-    expect(platforms["windows-x86_64"].url).toBe(url(7));
-    expect(platforms["windows-x86_64-nsis"].url).toBe(url(7));
+    expect(platforms["windows-x86_64"].url).toBe(url(7, split, "v0.8"));
+    expect(platforms["windows-x86_64-nsis"].url).toBe(url(7, split, "v0.8"));
     expect(platforms["windows-x86_64-msi"]).toBeUndefined();
+  });
+
+  it("links the public download, not GitHub's rate-limited API, under the release's tag", () => {
+    for (const { url: link } of Object.values(json.platforms)) {
+      expect(link).toMatch(/^https:\/\/github\.com\/o\/r\/releases\/download\/v0\.4\//);
+    }
+    const published = { ...assets[0], browser_download_url: url(1) };
+    const { platforms } = buildUpdaterJson({
+      version: "0.4.0",
+      assets: [published],
+      signatures,
+      pubDate: "now",
+    });
+    expect(platforms["darwin-aarch64"].url).toBe(url(1));
+    expect(() =>
+      buildUpdaterJson({ version: "0.4.0", assets: [assets[0]], signatures, pubDate: "now" }),
+    ).toThrow(/tag is needed/);
   });
 
   it("fails on a signed asset it has no platform for", () => {

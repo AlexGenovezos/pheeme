@@ -58,7 +58,9 @@ function SettingsDialog({ pages }: { pages: SettingsPageDef[] }) {
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (e.key === "Escape") {
+      // A panel outside Settings that owns its keys (a mod panel, say) answers Escape itself.
+      const owner = e.target instanceof Element ? e.target.closest("[data-owns-keys]") : null;
+      if (e.key === "Escape" && !(owner && !dialogRef.current?.contains(owner))) {
         e.preventDefault();
         close();
       } else if (

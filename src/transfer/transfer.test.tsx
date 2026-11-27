@@ -146,6 +146,31 @@ test("sender requires explicit approval and closing settings cancels its native 
   });
 });
 
+test("a slow approval doesn't undo a transfer the status already shows as completed", async () => {
+  let approved!: () => void;
+  let phase = "approval";
+  backend({
+    transfer_interfaces: () => ["192.168.1.2"],
+    offer_client_transfer: () => offer,
+    client_transfer_status: () => ({ phase, peer: "192.168.1.3", error: null }),
+    approve_client_transfer: () =>
+      new Promise<void>((resolve) => {
+        approved = resolve;
+      }),
+  });
+  render(<SendCredentials accounts={[account]} />);
+  await vi.waitFor(() =>
+    expect(screen.getByRole("button", { name: "Send to another device" })).toBeEnabled(),
+  );
+  click("Send to another device");
+  await screen.findByRole("button", { name: "Approve transfer" });
+  click("Approve transfer");
+  phase = "completed";
+  await screen.findByText("Credentials sent", {}, { timeout: 3000 });
+  await act(async () => approved());
+  expect(screen.getByText("Credentials sent")).toBeInTheDocument();
+});
+
 test("a late offer created after closing settings is immediately cancelled", async () => {
   let finish!: (offer: TransferOffer) => void;
   const calls = backend({

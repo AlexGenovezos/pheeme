@@ -126,6 +126,62 @@ describe("the theme editor", () => {
     fireEvent.change(hexInput("Accent"), { target: { value: "#e0457b" } });
     expect(rootColor("--color-accent-hover")).toBe("#123456");
   });
+
+  test("simple mode rebuilds only from two real colors", () => {
+    render(<ThemeEditorHost />);
+    act(() => openThemeEditor({}));
+    const before = useThemeEditorStore.getState().draft;
+    // A theme file's seeds are its own JSON, so one may not be a color.
+    act(() => useThemeEditorStore.setState({ seeds: { background: "nope", accent: "#000000" } }));
+    fireEvent.change(hexInput("Accent"), { target: { value: "#2b91af" } });
+    expect(useThemeEditorStore.getState().draft).toBe(before);
+    fireEvent.change(hexInput("Background"), { target: { value: "#121314" } });
+    expect(rootColor("--color-app-bg")).toBe("#121314");
+  });
+
+  test("a save that storage refuses keeps the editor and its preview", () => {
+    render(<ThemeEditorHost />);
+    act(() => openThemeEditor({}));
+    fireEvent.change(hexInput("Background"), { target: { value: "#121314" } });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
+    fireEvent.click(within(panel()).getByRole("button", { name: "Save theme" }));
+    vi.restoreAllMocks();
+    expect(panel()).toBeInTheDocument();
+    expect(useThemeStore.getState().customThemes).toEqual([]);
+    expect(rootColor("--color-app-bg")).toBe("#121314");
+  });
+
+  test("the panel moves with a primary-button drag and stops when the pointer is lost", () => {
+    render(<ThemeEditorHost />);
+    act(() => openThemeEditor({}));
+    const header = panel().querySelector("header")!;
+    header.setPointerCapture = () => {};
+    const left = () => panel().style.left;
+    const start = left();
+    const press = (button: number) =>
+      fireEvent.pointerDown(header, { button, pointerId: 1, clientX: 900, clientY: 60 });
+    const moveTo = (clientX: number) =>
+      fireEvent.pointerMove(header, { pointerId: 1, clientX, clientY: 60 });
+
+    press(2);
+    moveTo(800);
+    expect(left()).toBe(start);
+
+    press(0);
+    moveTo(800);
+    const moved = left();
+    expect(moved).not.toBe(start);
+    fireEvent(header, new Event("pointercancel"));
+    moveTo(700);
+    expect(left()).toBe(moved);
+
+    press(0);
+    fireEvent(header, new Event("lostpointercapture"));
+    moveTo(600);
+    expect(left()).toBe(moved);
+  });
 });
 
 describe("the color picker", () => {

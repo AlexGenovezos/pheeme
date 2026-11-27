@@ -192,10 +192,11 @@ function withoutSeeds(draft: ThemeFile): ThemeFile {
 
 /** Simple mode: rebuild every color from the background and accent. */
 export function setSeed(which: keyof ThemeSeeds, value: string) {
-  const color = toCanonicalThemeColor(value);
   const { draft, seeds } = useThemeEditorStore.getState();
   const next = { ...seeds, [which]: value };
-  if (!color) return useThemeEditorStore.setState({ seeds: next });
+  // Both colors must read as colors: the other one may still be half typed.
+  if (!toCanonicalThemeColor(next.background) || !toCanonicalThemeColor(next.accent))
+    return useThemeEditorStore.setState({ seeds: next });
   const built = themeFromSeeds(draft.name || "Theme", {
     background: next.background,
     accent: next.accent,
@@ -250,8 +251,8 @@ export function saveThemeEditor(): boolean {
   // A new theme never replaces another: its name (and so its id) is made unique.
   const name = editingId ? typed : uniqueName(typed, null);
   const file: ThemeFile = { ...draft, id: editingId ?? themeIdFromName(name), name };
-  // Clear the preview first so installing commits the saved theme, not the draft.
-  previewTheme(null);
+  // Install first: if storage refuses it, the preview stays while the editor stays open.
   useThemeStore.getState().installThemes([{ file, slot }]);
+  previewTheme(null);
   return closeThemeEditor();
 }

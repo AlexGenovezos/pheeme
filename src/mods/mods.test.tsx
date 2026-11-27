@@ -100,7 +100,8 @@ test("a mod panel opens, renders contributed controls, and closes with Escape", 
   expect(panel).toHaveFocus();
   fireEvent.click(within(panel).getByRole("button", { name: "Add one" }));
   expect(await within(panel).findByText("My counter: 1")).toBeVisible();
-  fireEvent.keyDown(panel, { key: "Escape" });
+  // Handled here, so Settings, open behind, leaves it alone (fireEvent says false).
+  expect(fireEvent.keyDown(panel, { key: "Escape" })).toBe(false);
   expect(screen.queryByRole("region", { name: "Counter panel" })).not.toBeInTheDocument();
 });
 
