@@ -473,7 +473,16 @@ impl AccountService {
         // the new sign-in's.
         let gate = existing.as_ref().map(|_| self.refresh_gate(&id));
         let _refreshing = match &gate {
-            Some(gate) => Some(gate.lock().await),
+            Some(gate) => {
+                let held = gate.lock().await;
+                // Removed while this waited: no secrets may be left behind for it.
+                if db_accounts::get_account(&self.db, &id).await?.is_none() {
+                    drop(held);
+                    self.drop_refresh_gate(&id, gate);
+                    return Err(AccountError::NotFound);
+                }
+                Some(held)
+            }
             None => None,
         };
 

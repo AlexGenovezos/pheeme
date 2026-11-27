@@ -442,6 +442,9 @@ impl SyncEngine {
         };
 
         // Read every page first: a failure while listing applies nothing.
+        // Read before any history: a label gone by a write was deleted meanwhile, and a
+        // `labelsAdded` record listed before then must not bring it back.
+        let labels_before = self.label_ids(&self.db).await?;
         let mut records = Vec::new();
         let mut page_token: Option<String> = None;
         let listing = std::time::Instant::now();
@@ -513,7 +516,9 @@ impl SyncEngine {
                         Some(record) if n < last => record.id.as_str(),
                         _ => latest.as_str(),
                     };
-                    changed |= self.apply_history(chunk, cursor, &hidden_tabs).await?;
+                    changed |= self
+                        .apply_history(chunk, cursor, &hidden_tabs, &labels_before)
+                        .await?;
                 }
                 Ok::<_, SyncError>(changed)
             };
@@ -546,9 +551,8 @@ impl SyncEngine {
         records: &[HistoryRecord],
         cursor: &str,
         hidden_tabs: &[String],
+        labels_before: &BTreeSet<String>,
     ) -> Result<bool, SyncError> {
-        // Read before anything is fetched: a label gone by the write was deleted meanwhile.
-        let labels_before = self.label_ids(&self.db).await?;
         let intents = self.fold_history(records).await?;
         let fetch = |wanted: bool| -> Vec<String> {
             intents
@@ -605,7 +609,7 @@ impl SyncEngine {
                     .into_iter()
                     .collect();
                 let known = messages::existing_ids(&mut w.tx, &self.account_id, &added_ids).await?;
-                let deleted = self.deleted_since(&mut w.tx, &labels_before).await?;
+                let deleted = self.deleted_since(&mut w.tx, labels_before).await?;
                 let relabelled: Vec<String> = intents
                     .iter()
                     .filter(
